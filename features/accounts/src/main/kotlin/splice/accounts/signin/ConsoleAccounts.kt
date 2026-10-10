@@ -43,12 +43,47 @@ public data class LoginStatus(
     val head: String,
     val state: LoginState,
     val prompt: LoginPrompt = LoginPrompt(),
-    val failureReason: String? = null,
+    val failure: FailedLogin? = null,
     /** The label actually written, which can differ from an automatic request's candidate. */
     val label: String? = null,
     /** Archived quota path for a labeled renewal, null when no record was set aside. */
     val usageSetAside: String? = null,
-)
+) {
+    public val failureReason: String? get() = failure?.reason
+    public val failureKind: LoginFailure? get() = failure?.kind
+
+    /** This login, failed for [reason], which is of [kind]. */
+    public fun failed(kind: LoginFailure, reason: String): LoginStatus =
+        copy(state = LoginState.FAILED, failure = FailedLogin(kind, reason))
+}
+
+/** Why a login failed: its [kind], which a surface names, and splice's own sentence, which the log keeps. */
+public data class FailedLogin(val kind: LoginFailure, val reason: String)
+
+/** Why a sign-in failed, one word per reason a surface shows. The network, a file and the config can fail any flow;
+ *  the rest come only from running Claude Code's own sign-in. A file or config failure fails again until it is fixed. */
+public enum class LoginFailure(public val wire: String) {
+    NOT_COMPLETED("not_completed"),
+    NETWORK("network"),
+    FILE("file"),
+    CONFIG("config"),
+
+    /** Claude Code's sign-in ran past its time. */
+    EXPIRED("expired"),
+
+    /** Claude Code's sign-in process stopped on its own. */
+    STOPPED("stopped"),
+    CANCELLED("cancelled"),
+
+    /** Another sign-in to the same place is still running. */
+    IN_PROGRESS("in_progress"),
+
+    /** The account signed into is already one of this command's. */
+    ALREADY_ADDED("already_added"),
+
+    /** A session of the command is running, or its login is being edited, so the login can't change under it. */
+    IN_USE("in_use"),
+}
 
 /** What a sign-in asks the person to do. [userCode] and [verificationUri] are the device flow's announcement;
  *  [browserUrl] is the OAuth flow's, for the console to open. A flow fills only the part it has. */

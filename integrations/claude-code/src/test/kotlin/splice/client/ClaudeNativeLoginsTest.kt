@@ -55,8 +55,11 @@ class ClaudeNativeLoginsTest {
         live(target, "account", "live bytes")
         val stored = home.resolve("refused-store")
         val logins = ClaudeLogins(stored)
-        for (sessions in listOf(HeadSessions.Read(listOf("live")), HeadSessions.Unreadable("unreadable"))) {
-            assertTrue(logins.prepareNative(target, "next", sessions) is ClaudeNativeLoginPreparation.Refused)
+        // A running session is the one the console names In use; an unreadable inventory is no such claim.
+        val cases = listOf(HeadSessions.Read(listOf("live")) to true, HeadSessions.Unreadable("unreadable") to false)
+        for ((sessions, inUse) in cases) {
+            val refused = logins.prepareNative(target, "next", sessions)
+            assertEquals(inUse, (refused as ClaudeNativeLoginPreparation.Refused).inUse)
             assertEquals("live bytes", Files.readString(target.head.configDir.resolve(".credentials.json")))
             assertFalse(Files.exists(stored))
         }

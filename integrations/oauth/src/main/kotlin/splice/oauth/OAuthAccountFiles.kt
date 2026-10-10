@@ -11,6 +11,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 internal const val FIELD_KIND = "splice_auth_kind"
@@ -70,6 +71,7 @@ public class OAuthLoginAccount(
     private val writtenLabel = AtomicReference<String?>(null)
     private val setAsideQuota = AtomicReference<Path?>(null)
     private val refusal = AtomicReference<String?>(null)
+    private val refusedOnDisk = AtomicBoolean(false)
 
     /** A RE-PLANNED destination for a login that has not started, now bound to a reserved [label]: the label is
      *  final, so the default and the token-derived move are dropped. The reservation and the persisted label are
@@ -98,12 +100,17 @@ public class OAuthLoginAccount(
     /** Authored refusal, never a provider body. The console uses the same words as the CLI. */
     public fun refusal(): String? = refusal.get()
 
+    /** Whether [refusal] is the credential failing to reach disk, which fails again until the disk is fixed, rather
+     *  than a refusal of the account itself. */
+    public fun refusedOnDisk(): Boolean = refusedOnDisk.get()
+
     internal fun recordSetAsideQuota(path: Path?) {
         setAsideQuota.set(path)
     }
 
-    internal fun recordRefusal(reason: String) {
+    internal fun recordRefusal(reason: String, onDisk: Boolean) {
         refusal.set(reason)
+        refusedOnDisk.set(onDisk)
     }
 
     internal fun releaseReservation() {

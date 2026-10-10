@@ -75,7 +75,7 @@ internal object Said {
     /** A demotion found on the way is said beside whatever the verb then did or refused. */
     fun withNote(result: ClaudeLoginResult, note: String): ClaudeLoginResult = when (result) {
         is ClaudeLoginResult.Done -> ClaudeLoginResult.Done("${result.said} $note")
-        is ClaudeLoginResult.Refused -> ClaudeLoginResult.Refused("${result.reason} $note")
+        is ClaudeLoginResult.Refused -> result.copy(reason = "${result.reason} $note")
         ClaudeLoginResult.Ok -> result
     }
 }

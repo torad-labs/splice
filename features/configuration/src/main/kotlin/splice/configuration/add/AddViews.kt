@@ -148,6 +148,7 @@ internal class AddViews {
         put("verification_uri", status.prompt.verificationUri)
         put("browser_url", status.prompt.browserUrl)
         put("failure_reason", status.failureReason)
+        put("failure_kind", status.failureKind?.wire)
     }
 
     private fun model(m: AddModel): JsonObject = buildJsonObject {

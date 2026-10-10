@@ -12,7 +12,7 @@ internal class ClaudeNativeLogins(private val store: LoginStore) {
         if (label != null && !nativeLabelShape.matches(label)) {
             return ClaudeNativeLoginPreparation.Refused("invalid Claude login label")
         }
-        refusal(target.head, sessions)?.let { return ClaudeNativeLoginPreparation.Refused(it) }
+        refusal(target.head, sessions)?.let { return ClaudeNativeLoginPreparation.Refused(it, running(sessions)) }
         return Cancellables.runCatchingCancellable {
             val records = store.records()
             val expected = label?.let { records[it]?.account?.uuid }
@@ -57,7 +57,7 @@ internal class ClaudeNativeLogins(private val store: LoginStore) {
         if (prepared.target != target || prepared.store !== store) {
             return ClaudeLoginResult.Refused("native login preparation belongs to another command destination")
         }
-        refusal(target.head, sessions)?.let { return ClaudeLoginResult.Refused(it) }
+        refusal(target.head, sessions)?.let { return ClaudeLoginResult.Refused(it, running(sessions)) }
         return Cancellables.runCatchingCancellable {
             val live = HeadLogin.read(target.head.configDir, target.accountFile) as? Live.Held
                 ?: return@runCatchingCancellable ClaudeLoginResult.Refused(
@@ -94,6 +94,8 @@ internal class ClaudeNativeLogins(private val store: LoginStore) {
     private fun automaticLabel(account: Account): String = "account-${account.uuid}".also {
         require(nativeLabelShape.matches(it)) { "the native account needs an explicit valid save-back label" }
     }
+
+    private fun running(sessions: HeadSessions): Boolean = sessions is HeadSessions.Read && sessions.live.isNotEmpty()
 
     private fun refusal(head: ClaudeHead, sessions: HeadSessions): String? = when (sessions) {
         is HeadSessions.Unreadable -> Refusals.unknownSessions(head, sessions.why)

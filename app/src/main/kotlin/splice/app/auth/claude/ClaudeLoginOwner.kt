@@ -12,6 +12,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.AccountMutation
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.client.ClaudeLoginResult
@@ -38,8 +39,8 @@ private class NativeAttempt(
     @Volatile
     var child: NativeClaudeAuthRun? = null
 
-    fun fail(reason: String): LoginStatus =
-        status.updateAndGet { it.copy(state = LoginState.FAILED, failureReason = reason) }
+    fun fail(kind: LoginFailure, reason: String): LoginStatus =
+        status.updateAndGet { it.failed(kind, reason) }
 }
 
 internal class ClaudeLoginOwner(
@@ -110,18 +111,23 @@ internal class ClaudeLoginOwner(
     ): NativeAttempt? {
         val location = locations.singleOrNull { it.id == place }
         if (location == null) {
-            runner.failed(cell, "native login place is not configured")
+            runner.failed(cell, LoginFailure.CONFIG, "native login place is not configured")
             return null
         }
-        val busy = refusal(location.target.head.configDir)
+        val dir = location.target.head.configDir
+        val busy = refusal(dir)
         if (busy != null) {
-            runner.failed(cell, busy)
+            // [refusal] names an edit before a running sign-in: an edit holds the login In use, while a sign-in
+            // already running is In progress.
+            val editing = locations.any { it.id in mutating && dirs.same(it.target.head.configDir, dir) }
+            runner.failed(cell, if (editing) LoginFailure.IN_USE else LoginFailure.IN_PROGRESS, busy)
             return null
         }
         val store = logins.getValue(place)
         return when (val prepared = store.prepareNative(location.target, label, sessions.read(location))) {
             is ClaudeNativeLoginPreparation.Refused -> {
-                runner.failed(cell, prepared.reason)
+                val kind = if (prepared.inUse) LoginFailure.IN_USE else LoginFailure.NOT_COMPLETED
+                runner.failed(cell, kind, prepared.reason)
                 null
             }
             is ClaudeNativeLoginPreparation.Ready -> NativeAttempt(location, store, prepared, cell)
@@ -175,7 +181,7 @@ internal class ClaudeLoginOwner(
     private fun releaseQuietly(attempt: NativeAttempt) {
         synchronized(lock) {
             if (attempt.status.get().state == LoginState.STARTING || attempt.status.get().state == LoginState.WAITING) {
-                runner.failed(attempt.status, "native Claude login was cancelled")
+                runner.failed(attempt.status, LoginFailure.CANCELLED, "native Claude login was cancelled")
             }
             if (active[attempt.location.id] === attempt && attempt.child?.stopped != false) {
                 active.remove(attempt.location.id)
@@ -194,12 +200,12 @@ private class NativeLoginRunner(
         try {
             val outcome = Cancellables.runCatchingCancellable {
                 withTimeout(NATIVE_LOGIN_TIMEOUT_MS) { authenticate(attempt) }
-            }.onFailure { attempt.fail("native Claude login stopped (${it::class.simpleName})") }
+            }.onFailure { attempt.fail(LoginFailure.STOPPED, "native Claude login stopped (${it::class.simpleName})") }
             Cancellables.discard(outcome, "the attempt status records classified native process failure")
         } catch (_: TimeoutCancellationException) {
-            attempt.fail("native Claude login expired")
+            attempt.fail(LoginFailure.EXPIRED, "native Claude login expired")
         } catch (cancelled: CancellationException) {
-            attempt.fail("native Claude login was cancelled")
+            attempt.fail(LoginFailure.CANCELLED, "native Claude login was cancelled")
             throw cancelled
         }
     }
@@ -207,7 +213,7 @@ private class NativeLoginRunner(
     private suspend fun authenticate(attempt: NativeAttempt) {
         val child: NativeClaudeAuthRun = when (val begun = auth.begin(attempt.location)) {
             is NativeSignIn.Refused -> {
-                attempt.fail(begun.reason)
+                attempt.fail(LoginFailure.CONFIG, begun.reason)
                 return
             }
             is NativeSignIn.Running -> begun.run
@@ -219,7 +225,11 @@ private class NativeLoginRunner(
                     it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url))
                 }
             }
-            if (completed) land(attempt) else attempt.fail("native Claude login did not complete")
+            if (completed) {
+                land(attempt)
+            } else {
+                attempt.fail(LoginFailure.NOT_COMPLETED, "native Claude login did not complete")
+            }
         } finally {
             child.close()
         }
@@ -228,17 +238,21 @@ private class NativeLoginRunner(
     private fun land(attempt: NativeAttempt) {
         val target = attempt.location.target
         when (val result = attempt.logins.completeNative(target, attempt.prepared, sessions.read(attempt.location))) {
-            is ClaudeLoginResult.Refused -> failed(attempt.status, result.reason)
+            is ClaudeLoginResult.Refused -> {
+                val kind = if (result.inUse) LoginFailure.IN_USE else LoginFailure.NOT_COMPLETED
+                failed(attempt.status, kind, result.reason)
+            }
             is ClaudeLoginResult.Done -> {
                 changes?.publish(target.head.key)
                 attempt.status.updateAndGet { it.copy(state = LoginState.SIGNED_IN, label = attempt.logins.selected()) }
             }
-            ClaudeLoginResult.Ok -> failed(attempt.status, "native login did not record a completed account")
+            ClaudeLoginResult.Ok ->
+                failed(attempt.status, LoginFailure.NOT_COMPLETED, "native login did not record a completed account")
         }
     }
 
-    fun failed(cell: AtomicReference<LoginStatus>, reason: String): LoginStatus =
-        cell.updateAndGet { it.copy(state = LoginState.FAILED, failureReason = reason) }
+    fun failed(cell: AtomicReference<LoginStatus>, kind: LoginFailure, reason: String): LoginStatus =
+        cell.updateAndGet { it.failed(kind, reason) }
 }
 
 /** Whether two config folders are one directory, following links. */

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.client.wrap.ClaudeToRun
@@ -127,6 +128,8 @@ class ClaudeAccountSignInTest {
 
         assertEquals(LoginState.FAILED, again.state)
         assertEquals("that account is already on this command as 'work'", again.failureReason)
+        assertEquals(LoginFailure.ALREADY_ADDED, again.failureKind)
+        assertEquals("work", again.label, "the console pulses the card already there by this label")
         assertEquals(listOf("work"), folders().accounts(HEAD).map { it.label }, "no second folder was filed")
         assertFalse(Files.exists(credentials(HEAD, "second")))
     }
@@ -137,6 +140,7 @@ class ClaudeAccountSignInTest {
 
         assertEquals(LoginState.FAILED, refused.state)
         assertEquals("the sign-in recorded no account", refused.failureReason)
+        assertEquals(LoginFailure.NOT_COMPLETED, refused.failureKind)
         assertEquals(emptyList<String>(), folders().accounts(HEAD).map { it.label })
         assertFalse(Files.exists(state.resolve("claude-accounts-pending").resolve(HEAD).resolve("work")))
     }
@@ -157,6 +161,7 @@ class ClaudeAccountSignInTest {
 
         assertEquals(LoginState.FAILED, refused.state)
         assertNotNull(refused.failureReason)
+        assertEquals(LoginFailure.CONFIG, refused.failureKind)
         assertEquals(emptyList<String>(), folders().accounts(HEAD).map { it.label })
     }
 

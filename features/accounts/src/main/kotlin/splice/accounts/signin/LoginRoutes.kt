@@ -61,6 +61,7 @@ internal object LoginStatusJson {
         put("verification_uri", status.prompt.verificationUri)
         put("browser_url", status.prompt.browserUrl)
         put("failure_reason", status.failureReason)
+        put("failure_kind", status.failureKind?.wire)
         put("label", status.label)
         put("usage_set_aside", status.usageSetAside)
     }.toString()

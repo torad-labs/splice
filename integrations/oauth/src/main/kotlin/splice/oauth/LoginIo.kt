@@ -160,7 +160,7 @@ internal class LoginIo(
             } else {
                 "credential persistence error: ${SafeFailureText.render(failure)}"
             }
-            account?.recordRefusal(reason)
+            account?.recordRefusal(reason, onDisk = failure !is OAuthAccountRefused)
             output.line("splice: $reason")
             null
         } ?: return false

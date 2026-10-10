@@ -17,6 +17,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.core.util.Cancellables
@@ -64,11 +65,11 @@ internal class ClaudeAccountSignIn(
     private fun prepare(head: String, label: String?, cell: AtomicReference<LoginStatus>): ClaudePendingAccount? {
         val wanted = label?.takeIf { it.isNotBlank() } ?: mint(head)
         if (busy(head, wanted)) {
-            failed(cell, "a sign-in for '$wanted' on $head is already running")
+            failed(cell, LoginFailure.IN_PROGRESS, "a sign-in for '$wanted' on $head is already running")
             return null
         }
         val pending = Cancellables.runCatchingCancellable { folders.pending(head, wanted) }
-            .onFailure { why -> failed(cell, why.message ?: "that account label cannot be used") }
+            .onFailure { why -> failed(cell, LoginFailure.CONFIG, why.message ?: "that account label cannot be used") }
             .getOrNull() ?: return null
         active[key(head, wanted)] = cell
         cell.updateAndGet { it.copy(label = wanted) }
@@ -95,12 +96,12 @@ internal class ClaudeAccountSignIn(
         try {
             val outcome = Cancellables.runCatchingCancellable {
                 withTimeout(ADD_ACCOUNT_TIMEOUT_MS) { authenticate(pending, cell, restart) }
-            }.onFailure { why -> failed(cell, "the sign-in stopped (${why::class.simpleName})") }
+            }.onFailure { why -> failed(cell, LoginFailure.STOPPED, "the sign-in stopped (${why::class.simpleName})") }
             Cancellables.discard(outcome, "the attempt status records a classified sign-in failure")
         } catch (_: TimeoutCancellationException) {
-            failed(cell, "the sign-in expired")
+            failed(cell, LoginFailure.EXPIRED, "the sign-in expired")
         } catch (cancelled: CancellationException) {
-            failed(cell, "the sign-in was cancelled")
+            failed(cell, LoginFailure.CANCELLED, "the sign-in was cancelled")
             throw cancelled
         }
     }
@@ -112,7 +113,7 @@ internal class ClaudeAccountSignIn(
     ) {
         val child = when (val begun = auth.begin(pending.directory)) {
             is NativeSignIn.Refused -> {
-                failed(cell, begun.reason)
+                failed(cell, LoginFailure.CONFIG, begun.reason)
                 return
             }
             is NativeSignIn.Running -> begun.run
@@ -121,7 +122,11 @@ internal class ClaudeAccountSignIn(
             val completed = child.await { url ->
                 cell.updateAndGet { it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url)) }
             }
-            if (completed) land(pending, cell, restart) else failed(cell, "the sign-in did not complete")
+            if (completed) {
+                land(pending, cell, restart)
+            } else {
+                failed(cell, LoginFailure.NOT_COMPLETED, "the sign-in did not complete")
+            }
         } finally {
             child.close()
         }
@@ -147,9 +152,11 @@ internal class ClaudeAccountSignIn(
                     }
                 }
             }
-            is ClaudeAccountLanding.AlreadyAdded ->
-                failed(cell, "that account is already on this command as '${landed.label}'")
-            is ClaudeAccountLanding.Unreadable -> failed(cell, landed.why)
+            is ClaudeAccountLanding.AlreadyAdded -> cell.updateAndGet { // the label names the account already there
+                val said = "that account is already on this command as '${landed.label}'"
+                it.failed(LoginFailure.ALREADY_ADDED, said).copy(label = landed.label)
+            }
+            is ClaudeAccountLanding.Unreadable -> failed(cell, LoginFailure.NOT_COMPLETED, landed.why)
         }
     }
 
@@ -163,13 +170,13 @@ internal class ClaudeAccountSignIn(
 
     private fun release(pending: ClaudePendingAccount, cell: AtomicReference<LoginStatus>) {
         synchronized(lock) {
-            if (busy(pending.head, pending.label)) failed(cell, "the sign-in was cancelled")
+            if (busy(pending.head, pending.label)) failed(cell, LoginFailure.CANCELLED, "the sign-in was cancelled")
             active.remove(key(pending.head, pending.label), cell)
         }
     }
 
-    private fun failed(cell: AtomicReference<LoginStatus>, reason: String): LoginStatus =
-        cell.updateAndGet { it.copy(state = LoginState.FAILED, failureReason = reason) }
+    private fun failed(cell: AtomicReference<LoginStatus>, kind: LoginFailure, reason: String): LoginStatus =
+        cell.updateAndGet { it.failed(kind, reason) }
 
     private fun key(head: String, label: String): String = "$head/$label"
 }

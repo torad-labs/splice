@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.ConsoleAccounts
 import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
@@ -89,13 +90,11 @@ internal class LoginSessions(
         val result = Cancellables.runCatchingBestEffort {
             LoginCommand().runLoginAttempt(attempt.headKey, attempt.provider, attempt.topology, attempt.label, observer)
         }.getOrElse { e ->
-            update(cell) { it.copy(state = LoginState.FAILED, failureReason = SafeFailureText.render(e)) }
+            update(cell) { it.failed(thrown(e), SafeFailureText.render(e)) }
             null
         } ?: return
         if (!result.ok) {
-            update(cell) {
-                it.copy(state = LoginState.FAILED, failureReason = result.refusal ?: "login did not complete")
-            }
+            update(cell) { it.failed(refused(result), result.refusal ?: "login did not complete") }
             return
         }
         update(cell) {
@@ -108,6 +107,24 @@ internal class LoginSessions(
         if (restart == null) return
         val restarted = Cancellables.runCatchingBestEffort { restart.restart() }.isSuccess
         if (restarted) update(cell) { it.copy(state = LoginState.LIVE_AFTER_RESTART) }
+    }
+
+    /** The kinds SafeFailureText keeps whole: a path for a file, a host or a timeout for the network. */
+    private fun thrown(e: Throwable): LoginFailure = when (e) {
+        is java.nio.file.FileSystemException -> LoginFailure.FILE
+        is java.net.SocketException,
+        is java.net.UnknownHostException,
+        is java.io.InterruptedIOException,
+        is java.io.EOFException,
+        -> LoginFailure.NETWORK
+        else -> LoginFailure.NOT_COMPLETED
+    }
+
+    /** A refusal splice wrote: the credential not reaching disk, or the account or label refused by the config. */
+    private fun refused(result: LoginCommand.LoginResult): LoginFailure = when {
+        result.account?.refusedOnDisk() == true -> LoginFailure.FILE
+        result.refusal != null -> LoginFailure.CONFIG
+        else -> LoginFailure.NOT_COMPLETED
     }
 
     private fun announce(cell: AtomicReference<LoginStatus>, detail: LoginAnnouncement) {

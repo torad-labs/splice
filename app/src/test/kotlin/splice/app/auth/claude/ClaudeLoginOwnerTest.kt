@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.signin.AccountMutation
+import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
@@ -180,6 +181,7 @@ class ClaudeLoginOwnerTest {
                 assertNotNull(owner.refusal(alias))
                 val duplicate = owner.login(ClaudeLoginPlaceId.NATIVE, null)
                 assertEquals(LoginState.FAILED, duplicate.state)
+                assertEquals(LoginFailure.IN_PROGRESS, duplicate.failureKind)
                 assertEquals(1, launches.get())
                 val savedOutgoing = location.storeDir.resolve("account-outgoing.credentials.json")
                 assertEquals("outgoing rotated bytes", Files.readString(savedOutgoing))
@@ -278,6 +280,7 @@ class ClaudeLoginOwnerTest {
                     while (owner.poll(login.id)?.state != LoginState.FAILED) yield()
                 }
                 assertTrue(owner.poll(login.id)?.failureReason.orEmpty().contains("wrap state /x is missing"))
+                assertEquals(LoginFailure.CONFIG, owner.poll(login.id)?.failureKind)
             } finally {
                 scope.coroutineContext[Job]!!.cancelAndJoin()
             }

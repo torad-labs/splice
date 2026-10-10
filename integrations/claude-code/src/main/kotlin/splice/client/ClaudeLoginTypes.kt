@@ -10,7 +10,9 @@ public sealed class ClaudeLoginResult {
 
     /** [ClaudeLogins.login] went through; [said] tells the operator what changed and what comes next. */
     public data class Done(val said: String) : ClaudeLoginResult()
-    public data class Refused(val reason: String) : ClaudeLoginResult()
+
+    /** [inUse]: refused because a session of the command is running, so its login can't change under it. */
+    public data class Refused(val reason: String, val inUse: Boolean = false) : ClaudeLoginResult()
 }
 
 /** The sessions of the head whose login [ClaudeLogins.login] would change, as the caller's session
@@ -36,7 +38,9 @@ public sealed class ClaudeNativeLoginPreparation {
         internal val expectedAccountUuid: String?,
         internal val generatedSaveBackLabel: String? = null,
     ) : ClaudeNativeLoginPreparation()
-    public data class Refused(val reason: String) : ClaudeNativeLoginPreparation()
+
+    /** [inUse] as on [ClaudeLoginResult.Refused]. */
+    public data class Refused(val reason: String, val inUse: Boolean = false) : ClaudeNativeLoginPreparation()
 }
 
 /** An account as Claude Code names it in oauthAccount; the uuid decides, the email is for display. */

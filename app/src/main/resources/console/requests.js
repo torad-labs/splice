@@ -154,12 +154,13 @@ const refusalOf = (res, subject) => (res.status === 0 ? `${subject}: splice is n
 // exactly where a browser filter finds nothing. What the daemon reads is a SUPERSET of what the word means -- a
 // silence must also have begun after the first byte, and only this page compares that -- so WHY's own check still
 // runs over the answer and the two together are exact. `tier` is this command's own silence setting, not a figure
-// this page chose. "Started over" asks for NOTHING: splice records no key yet that tells a round run from scratch
-// from one resumed from its partial answer, and a filter drawn around an absent key would promise what no row holds.
+// this page chose. "Resumed" and "Started over" are asked APART, as fin's two phrases mean them: a request whose
+// re-anchor re-posted it verbatim started over, and the resumed doors leave it out.
 const WHY_ASKS = {
   gaveup: { outcome: "error:turn-cap" }, overloaded: { outcome: "failure:overloaded_error" },
   restarted: { outcome: "error:restarted" }, queued: { queued_ms: "1" }, waited: { silence_ms: "tier" },
-  resumed: { resumed: "1" }, silentresume: { resumed: "1" }, startedover: {}, silentover: {},
+  resumed: { resumed: "1", started_over: "0" }, silentresume: { resumed: "1", started_over: "0" },
+  startedover: { started_over: "1" }, silentover: { started_over: "1" },
 };
 function turnsPath(head, filtered) {
   const p = new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: filtered ? String(MAX_HELD) : "1" });
@@ -235,8 +236,11 @@ function mapRow(head, row) {
   const firstByteAt = row.first_byte != null ? started + row.first_byte : null;
   const waited = gapAt && gap >= tier && (firstByteAt == null || gapAt >= firstByteAt) ? { ms: gap, at: gapAt } : null;
   // a re-anchor ends a silence, so the tick stands at the end of the one the row recorded; with no interval recorded
-  // there is no tick, never a guessed place
+  // there is no tick, never a guessed place. A re-anchor that re-posted the request VERBATIM is a round STARTED OVER,
+  // not an answer resumed from its partial (reanchors_from_scratch, ReanchorRunner's own comparison): two different
+  // things to the person reading the row, and the row now says which.
   const resumed = row.reanchors ?? 0;
+  const fresh = (row.reanchors_from_scratch ?? 0) > 0;
   const stall = row.stall_ms ?? null;
   const sid = row.session_id || row.session || null;
   return {
@@ -249,8 +253,12 @@ function mapRow(head, row) {
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
     queued: row.admit_wait_ms ?? 0,
     silent: waited ? waited.ms : 0, silentFrom: waited ? waited.at - started : 0,
-    resumed, resumedAt: resumed && waited ? waited.at + waited.ms - started : 0, resumedFresh: false, stallMs: stall,
-    in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? 0, out: row.out_tokens ?? null,
+    resumed, resumedAt: resumed && waited ? waited.at + waited.ms - started : 0, resumedFresh: fresh, stallMs: stall,
+    // the cache-write figure is LEFT OUT when the row carries none, like the other two: a refused request reports no
+    // tokens at all (no cache_write_tokens key on any error:rate-limited or error:plan-limit row in the live file),
+    // and the open request drew "Cache write 0" over it, which is a measurement nobody made. `cached` keeps its zero:
+    // it is never printed, only compared, and it decides whether the "% cached" line is drawn at all.
+    in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? null, out: row.out_tokens ?? null,
     cost: row.cost_usd ?? null, reason: row.cost_reason ?? null,
     reset: row.earliest_reset_epoch_seconds ? new Date(row.earliest_reset_epoch_seconds * 1000) : null,
     repo: state.sessions[sid]?.repo?.name ?? null,
@@ -259,6 +267,13 @@ function mapRow(head, row) {
 
 /** One search hit as a row. A hit carries its turn's own ending, so a request older than the perf window the page
  *  holds is drawn from the hit alone (TraceSearch.kt) — never dropped because the rows do not reach it. */
+// A SNIPPET IS ONE LINE OF READING, not a slice of JSON. The body the daemon searched is a JSON string, so the line
+// breaks inside it stand there as the two characters \ and n; the daemon collapses real whitespace and cannot collapse
+// those. Left alone the list read "t.*\n\n**Amendment X.** Powers this Constitution..." where the words should be.
+// A conversation is JSON inside JSON, so a break can stand as one backslash or several; any run of them before n, r or t
+// is whitespace, and a run before a quote is the quote.
+const oneLine = (text) => String(text ?? "").replace(/\\+[nrt]/g, " ").replace(/\\+"/g, '"').replace(/\s+/g, " ").trim();
+
 function mapHit(head, hit) {
   const row = {
     ts: hit.ts, total: hit.total, first_byte: hit.first_byte, first_delta: hit.first_delta, admit_wait_ms: hit.admit_wait_ms,
@@ -266,7 +281,7 @@ function mapHit(head, hit) {
     outcome: hit.outcome ?? "ok", model: hit.model, session: hit.session, compact: hit.compact, attempts: hit.attempts,
     turn: hit.turn, cost_usd: hit.cost_usd, cost_reason: hit.cost_usd == null ? "uncounted" : null,
   };
-  return { ...mapRow(head, row), said: { where: hit.where, text: hit.text } };
+  return { ...mapRow(head, row), said: { where: hit.where, text: oneLine(hit.text) } };
 }
 
 /** The search over what was sent and what came back, one head at a time, each saying how far back it read. */
@@ -515,9 +530,15 @@ function paneHtml() {
 // ---------- render ----------
 function render({ keep = true } = {}) {
   const sc = root.querySelector(".rqpane .scroll"), top = keep && sc ? sc.scrollTop : 0;
-  root.className = `requests${ui.open ? " open" : ""}`;
+  // THE LAYOUT FOLLOWS THE PANE THAT DREW, never the request the page meant to hold open. A request stays open
+  // through a filter that excludes it (paneHtml reads past the filter on purpose), but a reload whose window no
+  // longer carries its row at all leaves nothing to draw — and the two-column layout then stood with an empty
+  // second column, 2,660 px of nothing beside the list at 3,828. One answer decides both, so they cannot disagree.
+  const pane = paneHtml();
+  if (!pane) ui.open = null;
+  root.className = `requests${pane ? " open" : ""}`;
   document.getElementById("filters").innerHTML = state.loading ? "" : filtersHtml();
-  root.innerHTML = listHtml() + paneHtml();
+  root.innerHTML = listHtml() + pane;
   const nsc = root.querySelector(".rqpane .scroll");
   if (nsc) nsc.scrollTop = top;
   const m = document.querySelector(".fmenu");

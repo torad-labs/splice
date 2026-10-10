@@ -174,6 +174,8 @@ public data class AccountQuotaReading(
     val observedAtEpochSeconds: Long? = null,
     /** Each model's own weekly window, where the provider reports one (Claude). */
     val sevenDayModels: List<ModelQuota> = emptyList(),
+    /** Epoch SECONDS the provider last answered with no usage for this account (QuotaSnapshot.answeredEmpty). */
+    val noUsageAtEpochSeconds: Long? = null,
 )
 
 /** One quota window of an account as a status surface reads it: how full it is, when it resets (epoch SECONDS) and

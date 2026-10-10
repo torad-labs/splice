@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.pool.AccountPoolJson
+import splice.accounts.pool.HeadAccountPoolView
 import splice.core.config.ConfigService
 import splice.core.usage.PlanWindows
 import splice.core.usage.QuotaView
@@ -65,7 +66,7 @@ public class UsagePayloads(
                 heads.all().forEach { m ->
                     val usage = m.usage.snapshot()
                     val pool = m.sinks.accountPool?.view(null)
-                    val selectedQuota = quotaFor(m, pool?.selectedQuota(), usage.quota, nowSeconds)
+                    val selectedQuota = quotaFor(m, pool, usage.quota, nowSeconds)
                     val rlView = usage.ratelimit
                     val rl = rlView?.currentAt(nowSeconds)?.let {
                         RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
@@ -129,11 +130,18 @@ public class UsagePayloads(
     }
 
     /** Native snapshots are already identity-joined; an absent one must never borrow a head aggregate. */
-    private fun quotaFor(head: UsageHead, pooled: QuotaView?, tracked: QuotaView?, nowSeconds: Long): QuotaView? =
+    private fun quotaFor(
+        head: UsageHead,
+        pool: HeadAccountPoolView?,
+        tracked: QuotaView?,
+        nowSeconds: Long,
+    ): QuotaView? =
         if (head.anthropicUpstream) {
             current(tracked, nowSeconds)
         } else {
-            current(pooled, nowSeconds) ?: current(tracked, nowSeconds)
+            // The head's tracker is the primary's: it never stands in for another account (finding 3).
+            current(pool?.selectedQuota(), nowSeconds)
+                ?: current(tracked?.takeIf { pool?.headQuotaApplies() != false }, nowSeconds)
         }
 
     /** Retain native observations for display while only current windows contribute to warn. */

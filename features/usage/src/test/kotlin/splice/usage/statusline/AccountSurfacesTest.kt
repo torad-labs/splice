@@ -19,7 +19,11 @@ import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
 import splice.core.auth.AuthDescription
+import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 
 class AccountSurfacesTest {
     @Test
@@ -173,6 +177,70 @@ class AccountSurfacesTest {
         assertNull(unknown.selectedAccount(), "a rejected selection must not fall back to the primary")
         assertNull(unknown.selectedQuota(), "and lends no windows to the status line")
         assertEquals("backup", poolView().selectedAccount()?.label, "control: a known selection is named")
+    }
+
+    // Review of adf35c39e, finding 3. The head's own tracked quota is the PRIMARY's, so it can stand in for
+    // the selected account only while the primary is the one in view. Drawn under another account's name it
+    // was the primary's bars on the wrong account.
+    @Test
+    fun `an account with no reading shows no bars, never the head's tracked ones under its name`() {
+        val primaryBars = QuotaView(QuotaWindowView(100, NOW_S + 3_600L, NOW_S), null, "plus")
+        val fresh = HeadAccountPoolView(
+            selectedLabel = "work",
+            accounts = listOf(
+                HeadAccountView("primary", true, false, true, "plus"),
+                HeadAccountView("work", false, true, true, "pro"),
+            ),
+            lastSwitch = null,
+        )
+        val renderer = StatuslineRenderer(label = "Codex", now = WallClock { NOW_S * 1_000L }, accountPool = { fresh })
+        val usage = HeadUsageSource { UsageView(0L, 0, null, primaryBars) }
+
+        val line = renderer.render("""{"model":{"display_name":"Codex"}}""", usage, StatuslineWarn(80, 0), "s")
+
+        assertTrue(line.contains("work"), line)
+        assertFalse(line.contains("100%"), "the primary's bars are not the work account's: $line")
+        assertNull(fresh.quotaOr(primaryBars), "an account with no reading yet shows none")
+    }
+
+    @Test
+    fun `the head's tracked quota still stands in while the primary is the account in view`() {
+        val primaryBars = QuotaView(QuotaWindowView(61, NOW_S + 3_600L, NOW_S), null, "plus")
+        val onPrimary = HeadAccountPoolView(
+            selectedLabel = "primary",
+            accounts = listOf(
+                HeadAccountView("primary", true, true, true, "plus"),
+                HeadAccountView("work", false, false, true, "pro"),
+            ),
+            lastSwitch = null,
+        )
+
+        assertEquals(primaryBars, onPrimary.quotaOr(primaryBars))
+    }
+
+    @Test
+    fun `a provider's answer of no usage is kept as that answer and not replaced by the head's bars`() {
+        val answered = HeadAccountPoolView(
+            selectedLabel = "work",
+            accounts = listOf(
+                HeadAccountView("primary", true, false, true, "plus"),
+                HeadAccountView(
+                    "work",
+                    false,
+                    true,
+                    true,
+                    "pro",
+                    HeadAccountQuota(noUsageAtEpochSeconds = NOW_S),
+                ),
+            ),
+            lastSwitch = null,
+        )
+
+        val shown = answered.selectedQuota()
+
+        assertEquals(NOW_S, shown?.noUsageAt, "Accounts keeps its no-usage marker for the selected account")
+        assertNull(shown?.fiveHour)
+        assertNull(shown?.sevenDay)
     }
 
     private fun poolView(): HeadAccountPoolView = HeadAccountPoolView(

@@ -23,7 +23,9 @@ internal object AccountHeadAdapter {
         // Same fallback UsagePayloads.usageJson() reads for /api/usage's quota: the pool's selected
         // account when this head has a pool, else the head's own tracked snapshot.
         quota = HeadQuotaSource {
-            head.authSurface.accountPool?.view(null)?.selectedQuota() ?: head.sources.usage.snapshot().quota
+            val pool = head.authSurface.accountPool?.view(null)
+            val tracked = head.sources.usage.snapshot().quota
+            if (pool == null) tracked else pool.quotaOr(tracked)
         },
         answers = HeadAccountAnswerSource { account -> head.head.providerAnswer(account) },
     )

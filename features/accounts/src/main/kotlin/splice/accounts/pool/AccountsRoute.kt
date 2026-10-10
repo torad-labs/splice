@@ -152,6 +152,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
             ),
             observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
             sevenDayModels = account.quota.sevenDayModels,
+            noUsageAt = account.quota.noUsageAtEpochSeconds,
         ),
         authExclusion = AuthExclusionView(
             account.credential.excludedUntilEpochMillis,

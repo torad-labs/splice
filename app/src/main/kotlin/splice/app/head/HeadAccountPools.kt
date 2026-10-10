@@ -127,6 +127,7 @@ internal class HeadAccountPools {
                     ),
                     observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
                     sevenDayModels = account.quota.sevenDayModels,
+                    noUsageAtEpochSeconds = account.quota.noUsageAtEpochSeconds,
                 ),
                 credential = HeadAccountCredential(
                     present = account.credential.present,

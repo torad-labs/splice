@@ -76,6 +76,7 @@ internal class StatuslineRenderer(
         val account = pool?.selectedAccount()
         rateLimits.record(sessionId, account?.label, root)
         val selectedQuota = pool?.selectedQuota()
+        val shownQuota = if (pool == null) snapshot?.quota else pool.quotaOr(snapshot?.quota)
         val switchReason = pool?.lastSwitch?.takeIf { it.to == account?.label }?.reason
         val accountText = account?.let { selected ->
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
@@ -90,7 +91,7 @@ internal class StatuslineRenderer(
             accountText,
             spend.segment(bars, root, sessionId, modelId, blob.sessionStartMs(root, nowMs)),
         ) +
-            bars.limitSegments(root, selectedQuota ?: snapshot?.quota, selectedQuota != null, nowSeconds) +
+            bars.limitSegments(root, shownQuota, selectedQuota != null, nowSeconds) +
             listOfNotNull(
                 contextSegment(root, unanswered),
                 cacheSegment(root, unanswered),

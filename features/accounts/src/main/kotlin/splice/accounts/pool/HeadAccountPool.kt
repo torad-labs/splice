@@ -73,8 +73,19 @@ public data class HeadAccountPoolView(
         }
         val fiveHour = windowView(account.quota.fiveHour)
         val sevenDay = windowView(account.quota.sevenDay)
-        return if (fiveHour == null && sevenDay == null) null else QuotaView(fiveHour, sevenDay, account.plan)
+        if (fiveHour != null || sevenDay != null) return QuotaView(fiveHour, sevenDay, account.plan)
+        // A provider that ANSWERED with no usage is an answer: the account has no bars, and says so.
+        return account.quota.noUsageAtEpochSeconds?.let { QuotaView(null, null, account.plan, noUsageAt = it) }
     }
+
+    /** What to show for the selected account: its own reading, else [tracked], the HEAD's reading. The head's
+     *  tracker follows the primary's file, so it stands in only while the primary (or no pool selection) is the
+     *  account in view: drawn under another account's name it would be the primary's bars on the wrong account
+     *  (review of adf35c39e, finding 3). An account with no reading yet shows none. */
+    public fun quotaOr(tracked: QuotaView?): QuotaView? = selectedQuota() ?: tracked?.takeIf { headQuotaApplies() }
+
+    /** Whether the head's own tracked quota can stand in for the selected account: only the primary's. */
+    public fun headQuotaApplies(): Boolean = selectedAccount()?.primary != false
 }
 
 public data class HeadAccountView(
@@ -104,6 +115,8 @@ public data class HeadAccountQuota(
     val observedAtEpochSeconds: Long? = null,
     /** Each model's own weekly window, where the provider reports one (Claude). */
     val sevenDayModels: List<ModelQuota> = emptyList(),
+    /** Epoch SECONDS the provider last answered with no usage for this account (QuotaView.noUsageAt). */
+    val noUsageAtEpochSeconds: Long? = null,
 )
 
 /** One quota window of a head's account as the control surface reads it: how full it is, when it resets (epoch

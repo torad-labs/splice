@@ -353,6 +353,8 @@ public class AccountPool(
                 ),
                 observedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
                 sevenDayModels = snapshot?.models.orEmpty(),
+                noUsageAtEpochSeconds = snapshot?.takeIf { it.answeredEmpty }
+                    ?.let { java.util.concurrent.TimeUnit.MILLISECONDS.toSeconds(it.updatedAt) },
             ),
             credential = AccountCredentialReading(
                 present = credential.credentialPresent,

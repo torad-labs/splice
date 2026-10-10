@@ -106,8 +106,8 @@ public class SessionsRoutes(
         val accounts = accountOf.forRecords(listing.sessions)
         // A read that refused leaves the rows without their edges summary and says so once, beside the
         // store's own state: the edges are a hint ON a row and the listing is the page.
-        val edgeRead = edgeRoutes.read(listing.sessions)
-        val edges = edgeRead.index
+        val edgeRead = edgeRoutes.read()
+        val edges = edgeRead.summaries
         // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
         val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
         val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
@@ -172,7 +172,7 @@ public class SessionsRoutes(
 
     private fun row(
         s: SessionRecord,
-        edges: EdgeIndex?,
+        edges: EdgeSummaries?,
         resumable: Resumability,
         accounts: SessionAccountOf = accountOf,
     ): JsonObject = buildJsonObject {

@@ -101,6 +101,7 @@ public class MessageEdgeStore(
     maxCacheBytes: Long = EDGE_CACHE_BYTES,
 ) {
     private val cache = MessageEdgeCache(days, files, decode, heap, maxCacheBytes)
+    private val counts = MessageEdgeTotals(days, files, decode, heap, maxCacheBytes)
 
     public fun inventory(): DayInventory = files.inventory(retentionDays)
     public fun deleteKept(): DayInventory = files.deleteKept(retentionDays)
@@ -146,4 +147,8 @@ public class MessageEdgeStore(
 
     /** Every retained edge, oldest first, one per tool_use id (the earliest observation wins). */
     public fun edges(): List<MessageEdge> = cache.edges()
+
+    /** What each session sent and was sent, over every retained day, as one snapshot. Holds a count per distinct
+     *  sender and recipient, never the edges, so it does not grow with the window (MessageEdgeTotals). */
+    public fun totals(): EdgeTotals = counts.totals()
 }

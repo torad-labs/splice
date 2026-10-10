@@ -38,10 +38,9 @@ internal const val EDGES_UNWIRED = "the activity stores are not wired into this 
 // and the refusal's own words follow this. The store's state is reported separately and stays true.
 internal const val EDGES_UNREAD = "the message edges could not be read: "
 
-/** What one read of the edge store came back with. [index] is null when there is nothing to resolve
- *  against the records, and then [reason] says why in the words the console shows. Both null means a
- *  store that answered: an index resolved, nothing to explain. */
-internal data class EdgeRead(val index: EdgeIndex?, val reason: String?)
+/** What one read of the edge store came back with. [summaries] is null when the store gave no counts, and then
+ *  [reason] says why in the words the console shows. Both null is not a state: a store that answered has summaries. */
+internal data class EdgeRead(val summaries: EdgeSummaries?, val reason: String?)
 
 /** The only two durable activity stores this control plane may list or delete. */
 public enum class KeptActivity { EDGES, LABELS }
@@ -153,7 +152,7 @@ public class ActivityRoutes(
         source()?.let { EdgeIndex(it.edges.edges(), records) }
 
     /**
-     * One read of the edge store that CANNOT FAIL THE CALLER. [EdgeRead.index] is null when the stores
+     * One read of the edge store that CANNOT FAIL THE CALLER. [EdgeRead.summaries] is null when the stores
      * are unwired or when this read did not come back, and [EdgeRead.reason] says which.
      *
      * A HINT THAT CANNOT BE READ IS A MISSING HINT, NOT A MISSING PAGE. Reading the edges opens the
@@ -166,9 +165,9 @@ public class ActivityRoutes(
      * ON a row. The listing IS the page. This is the same lesson as the resumable hint (cac62c805),
      * found the second time because the first fix was made where it was found rather than as a rule.
      */
-    internal fun read(records: List<SessionRecord> = registry.read()): EdgeRead {
+    internal fun read(): EdgeRead {
         val stores = source() ?: return EdgeRead(null, EDGES_UNWIRED)
-        return Cancellables.runCatchingCancellable { EdgeIndex(stores.edges.edges(), records) }.fold(
+        return Cancellables.runCatchingCancellable { EdgeSummaries(stores.edges.totals()) }.fold(
             onSuccess = { EdgeRead(it, null) },
             onFailure = { failure -> EdgeRead(null, EDGES_UNREAD + SafeFailureText.render(failure)) },
         )

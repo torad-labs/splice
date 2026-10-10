@@ -279,7 +279,7 @@ const resets = (w) => (w.left != null ? `<span class="when">${ring(w)}Resets ${a
 // empty figure, and the reset it already had (Marlin, Oct 10, overruling the muted figure). Muting was not enough and
 // neither is an outline at the old width — an outline at 98% still draws 98%, the same false figure in another form
 // (hitstop, Oct 10). The row stands empty for the seconds it takes the re-read to land, and then it is the truth.
-const spent = (cls) => `${bar(0, cls)}<span class="pct"></span>`;
+const spent = (cls) => `${bar(0, `gone ${cls}`)}<span class="pct"></span>`;
 // The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
 // as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
 // browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.

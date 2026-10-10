@@ -224,6 +224,10 @@ button { font: inherit; color: inherit; }
 .bar.grow > b { transition: width var(--t-snap) var(--e-out); }
 .bar.full > b { background: var(--limit); border-right: 0; border-radius: .3rem; }
 .bar.stale > b { background: transparent; box-shadow: inset 0 0 0 .12rem var(--c); border-right: 0; }
+/* a window whose reset has gone by (hitstop, Oct 10): no fill AND no track. A solid empty track is the same
+   drawing as 0% used, so a stack of them says "nothing used", which is the old figure back in another form.
+   Dashed already means "not set yet" here (.pickbtn.unset); on a bar it means "not read since its reset". */
+.bar.gone { background: none; box-shadow: none; outline: .1rem dashed var(--track-line); outline-offset: -.1rem; }
 .bar.reading { background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem); background-size: 200% 100%; animation: reading .9s linear infinite; }
 @keyframes reading { to { background-position: -1.27rem 0; } }
 .pct { font: 500 1.1rem/1 var(--font-data); text-align: right; min-width: 3.6rem; font-variant-numeric: tabular-nums; white-space: nowrap; }

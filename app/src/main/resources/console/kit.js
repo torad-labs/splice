@@ -110,7 +110,18 @@ const ICON = {
   watch: (sec) => G(`<circle cx="12" cy="13.5" r="7.5"/><path d="M10 3h4M12 3v3"/><path class="hand" d="M12 13.5V9" style="transform: rotate(${sec * 6}deg)"/>`, 'class="watch" aria-hidden="true"'),
   caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
   door: G('<path d="M7 17L17 7M9 7h8v8"/>', 'aria-hidden="true"'),
+  wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
   lock: G('<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>', 'aria-hidden="true"'),
+};
+// A refused Stop, in fin's words, by the refusal's reason key and never its sentence (SessionDrive.Refusal). Ended and
+// a head's 404 draw no line: the card's re-read state says it. A closed pane splice opened says only that, because
+// nothing runs there to stop. Anything unmatched is "Not stopped", and every cause goes to the log.
+const STOP_REFUSED = { closed: "Terminal closed", not_ours: "Not stopped · Started elsewhere", pane_gone: "Not stopped · Terminal closed",
+  pane_taken: "Not stopped · Terminal reused", no_terminal: "Not stopped · No terminal" };
+const stopRefusal = (res) => {
+  if (res.ok || res.status === 404 || res.body?.reason === "ended") return null;
+  if (res.body?.error) console.warn("stop refused:", res.body.error);
+  return STOP_REFUSED[res.body?.reason] ?? "Not stopped";
 };
 // AN ABSENT FIELD IS NOTHING, NOT THE WORD "undefined". The drawing's own esc was String(s), which was safe
 // there because the mock's data was always complete; a real route leaves a field out whenever splice does not

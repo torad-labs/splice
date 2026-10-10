@@ -338,7 +338,7 @@ function meterHtml(c, pick = null) {
 // here the words take their own line under the figure, with no dot (fin)
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
 // Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
-const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} ${c.onPlan ? "on your plan" : "with no price"}`;
+const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "request" : "requests"} ${c.onPlan ? "on your plan" : "with no price"}`;
 const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
 // The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
 // the hourly totals cannot split them, so they are said once, apart from the day's figure.
@@ -349,7 +349,7 @@ const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${
 // Only the tile with no budget draws it: a budgeted head reads its day from the budget's own exact figure, which has
 // no half-hour it cannot place, so `opening` is null there by construction (see where the command rows are built).
 const openingRow = (c) => (c.opening && !c.local ? `<span class="unpriced opening">${openingNote(c.opening)}</span>` : "");
-const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "turn" : "turns"}`} in the hour holding midnight, not counted`;
+const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "request" : "requests"}`} in the hour holding midnight, not counted`;
 function editorHtml(c, tag) {
   const ed = ui.editor;
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");

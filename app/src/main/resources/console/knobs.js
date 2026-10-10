@@ -153,7 +153,7 @@ const KNOBS = (() => {
   }
   function saidHtml(id) {
     if (st.bad[id]) return `<span class="said limit">${esc(st.bad[id])}</span>`;
-    if (st.slow[id]) return `<span class="said">${esc(st.slow[id])}</span>`;
+    if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
     return st.said[id] ? `<span class="said ok">${esc(st.said[id])}</span>` : "";
   }
   // one command's own value, and the value it goes back to: the shared one, drawn as the way back. It says it in
@@ -230,9 +230,9 @@ const KNOBS = (() => {
     if (d.kact === "over" || d.kact === "unover") { st.bad[`${d.key}@${d.cmd}`] = "Not saved: one command's own value is a splice.toml change"; return true; }
     return true;
   }
-  /** Sends the change and redraws when the daemon answers; the row says "Saving…" while it is out. */
+  /** Sends the change and redraws when the daemon answers; the row says "Saving" with the wait ring while it is out. */
   function sent(id, v, render, sure = false) {
-    st.slow[id] = "Saving…";
+    st.slow[id] = "Saving";
     delete st.said[id];
     patch(id, v, sure).then((r) => { delete st.slow[id]; render(r); }).catch(() => { delete st.slow[id]; st.bad[id] = "Not saved"; render(); });
   }

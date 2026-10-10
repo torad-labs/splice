@@ -21,7 +21,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set() };
+const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map() };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
@@ -77,7 +77,7 @@ function sessionOf(row) {
   return {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
-    model: row.model ? state.modelLabel[row.model] ?? row.model : turn?.model ? state.modelLabel[turn.model] ?? turn.model : null,
+    model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model), // a running turn's model is the one in use now
     team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
@@ -118,6 +118,14 @@ function metaHtml(s, L, inPane) {
 // (`last.asks`); a permission's choices belong to the client's version, so they are read off its screen or not drawn.
 // Each answer is the digit the person would press (POST .../answer). A session splice did not open can't be answered
 // from here, and the card says where it is answered instead of offering an act it can't carry.
+/** What a permission will run, off its screen: the tool, the command its client framed, whole, and the line above it that
+ *  says why (hitstop 9e95ae4), so nothing is approved blind. Empty when the screen framed nothing. */
+function runHtml(call, offer) {
+  const panel = offer?.panel || [], at = panel.findIndex((l) => l.framed);
+  if (at < 0) return "";
+  const run = panel.filter((l) => l.framed).map((l) => l.text).join("\n"), why = at > 0 ? panel[at - 1].text : "";
+  return `<p class="cmd"><span class="tname">${esc(call?.tool || panel[0].text)}</span>${esc(run)}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
+}
 function askHtml(s, where = "card") {
   const a = s.ask, offer = state.screens[s.id], can = drivable(s);
   const busy = ui.sending.has(s.id) ? " disabled" : "";
@@ -135,20 +143,28 @@ function askHtml(s, where = "card") {
   // in the open session the refusal is the Message field's Deny, which also carries what to do instead
   const deny = where === "pane" && composerHtml(s) ? denyOf(s) : null;
   const choices = offer.choices.filter((c) => c !== deny);
-  return `<div class="ask">${call}${q}<div class="answers">${choices.map((c, i) => pick(c.choice, c.label, i)).join("")}</div></div>`;
+  // the whole prompt its screen drew, when it drew one: the tool, what it runs, and why, so nothing is approved blind
+  const said = runHtml(a.call, offer) || call + q;
+  return `<div class="ask">${said}<div class="answers">${choices.map((c, i) => pick(c.choice, c.label, i)).join("")}</div></div>`;
 }
 
 const lastOf = (s) => s.row.last;
+// From the press until splice answers, Stop keeps its place, disabled, reading Stopping with the wait ring (hitstop 9e95ae4)
+const stopHtml = (s, cls, icon) => ui.stopping.has(s.id)
+  ? `<button class="${cls} stopping" disabled>${ICON.wait}Stopping</button>`
+  : canStop(s) ? `<button class="${cls}" data-act="stop" data-s="${esc(s.id)}">${icon}Stop</button>` : "";
 const canStop = (s) => s.state === "working" && (s.live || drivable(s));
 function cardHtml(s) {
   const L = look(s), last = lastOf(s);
-  const stop = canStop(s) ? `<button class="act quiet small" data-act="stop" data-s="${esc(s.id)}"${ui.stopping.has(s.id) ? " disabled" : ""}>Stop</button>` : "";
+  const stop = stopHtml(s, "act quiet small", "");
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   let body = "";
   if (s.state === "needs") body = askHtml(s);
   else if (last?.text) body = last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
   const failed = ui.failed.get(s.id);
-  return `<article class="card s ${L.cls}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
+  // a card whose state changed since it was last drawn rings once where it stands
+  const was = ui.looks.get(s.id); ui.looks.set(s.id, L.cls);
+  return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
     + `${metaHtml(s, L, false)}${body}${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}</article>`;
@@ -158,13 +174,19 @@ function cardHtml(s) {
 const RANK = (s) => (s.state === "needs" ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
 const matches = (s) => !ui.q || [s.name, s.repo, s.cmd, s.row.repo?.root, s.row.cwd].some((v) => v && v.toLowerCase().includes(ui.q));
 function sorted() { // what waits on him: the longest waiting first; the rest: the latest first
-  return state.rows.filter((s) => s.state !== "ended" && matches(s))
+  const list = state.rows.filter((s) => s.state !== "ended" && matches(s))
     .sort((a, b) => RANK(a) - RANK(b) || (RANK(a) <= 1 ? a.at - b.at : b.at - a.at));
+  if (!ui.hold) return list;
+  // while he works in the list it holds the order last drawn, so a card never moves under his pointer; a new one joins
+  // at the end (Marlin p163, hitstop 9e95ae4)
+  const at = (s) => { const i = ui.order.indexOf(s.id); return i < 0 ? Infinity : i; };
+  return list.map((s, i) => [s, i]).sort(([a, i], [b, j]) => at(a) - at(b) || i - j).map(([s]) => s);
 }
 function listHtml() {
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
-  const list = sorted(), ended = state.rows.filter((s) => s.state === "ended" && matches(s)).sort((a, b) => b.at - a.at);
+  const list = sorted(); ui.order = list.map((s) => s.id);
+  const ended = state.rows.filter((s) => s.state === "ended" && matches(s)).sort((a, b) => b.at - a.at);
   if (!list.length && !ended.length) {
     return ui.q ? `<div class="list"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`
       : `<div class="list"><div class="nomatch"><span class="state">No sessions</span></div></div>`;
@@ -231,7 +253,7 @@ function paneHtml() {
   const s = state.rows.find((x) => x.id === ui.open);
   if (!s) return "";
   const L = look(s);
-  const stop = canStop(s) ? `<button class="act" data-act="stop" data-s="${esc(s.id)}"${ui.stopping.has(s.id) ? " disabled" : ""}>${ICON.stop}Stop</button>` : "";
+  const stop = stopHtml(s, "act", ICON.stop);
   const close = `<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`;
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s, "pane")}</div>` : "";
@@ -257,7 +279,8 @@ function composerHtml(s) {
 }
 
 // ---------- render ----------
-function render({ stick = true } = {}) {
+function render({ stick = true, slide = false } = {}) {
+  const before = slide ? new Map([...root.querySelectorAll(".list .s")].map((el) => [el.dataset.key, el.getBoundingClientRect().top])) : null;
   const oldLog = root.querySelector(".log"), keep = oldLog && !stick ? oldLog.scrollTop : null;
   // the five-second read redraws the page: the Message field keeps his focus and caret through it
   const say = document.activeElement?.id === "say" ? document.activeElement : null, caret = say ? [say.selectionStart, say.selectionEnd] : null;
@@ -270,7 +293,32 @@ function render({ stick = true } = {}) {
   if (location.hash !== addr) history.replaceState(history.state, "", `${location.pathname}${location.search}${addr}`);
   const log = root.querySelector(".log");
   if (log) log.scrollTop = keep ?? log.scrollHeight;
+  if (before) slideFrom(before);
 }
+/** The sliding move: each card starts where it stood and eases to its new place. */
+function slideFrom(before) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (const el of root.querySelectorAll(".list .s")) {
+    const dy = (before.get(el.dataset.key) ?? el.getBoundingClientRect().top) - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) continue;
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
+}
+// the list holds still while the pointer is over it or focus is inside it; on release it redraws, sliding only if the
+// order it held is not the order it would draw
+let pointerIn = false;
+function holdList() {
+  const hold = pointerIn || Boolean(document.activeElement?.closest?.(".list"));
+  if (hold === ui.hold) return;
+  ui.hold = hold;
+  if (hold) return;
+  const held = ui.order.join();
+  if (sorted().map((s) => s.id).join() !== held) render({ stick: false, slide: true });
+}
+root.addEventListener("pointerover", (e) => { pointerIn = Boolean(e.target.closest(".list")); holdList(); });
+root.addEventListener("pointerleave", () => { pointerIn = false; holdList(); });
+document.addEventListener("focusin", holdList);
+document.addEventListener("focusout", () => setTimeout(holdList));
 const find = (id) => state.rows.find((s) => s.id === id);
 
 function open(id) {
@@ -307,7 +355,7 @@ function usageHtml(s) {
   if (!u?.requests) return "";
   const num = (v) => `<span class="num">${v}</span>`;
   const figs = [`${num(u.requests.toLocaleString("en-US"))} ${u.requests === 1 ? "request" : "requests"}`,
-    u.noIn < u.requests ? `${num(kTok(u.tin))} in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} out` : "",
+    u.noIn < u.requests ? `${num(kTok(u.tin))} tokens in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} ${u.noIn < u.requests ? "" : "tokens "}out` : "",
     u.unpriced === 0 ? num(`≈${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`) : ""].filter(Boolean);
   return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}</a>`;
 }
@@ -330,7 +378,8 @@ async function stop(s) {
   const res = drivable(s) ? await API.post(sessionPath(s, "stop"))
     : await API.post(`/api/heads/${encodeURIComponent(s.turn.head)}/turns/${encodeURIComponent(s.turn.id)}/stop`);
   ui.stopping.delete(s.id);
-  if (!res.ok && res.status !== 404) ui.failed.set(s.id, refusalOf(res, "The turn could not be stopped"));
+  const refused = stopRefusal(res);
+  if (refused) ui.failed.set(s.id, refused);
   await reload();
 }
 

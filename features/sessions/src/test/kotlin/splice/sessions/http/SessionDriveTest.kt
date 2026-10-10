@@ -5,11 +5,15 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
+import splice.http.JsonReply
 
 class SessionDriveTest {
     private val terminal = FakeTerminal()
@@ -49,6 +53,7 @@ class SessionDriveTest {
         listOf(said, answered, stopped).forEach {
             assertEquals(HttpStatusCode.Conflict, it.status)
             assertTrue(it.body.contains("terminal it runs in"), it.body)
+            assertEquals("not_ours", reason(it))
         }
         assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "a pane splice did not open is untouched")
     }
@@ -66,17 +71,26 @@ class SessionDriveTest {
     @Test
     fun `a closed pane, no terminal, and a terminal that fails each answer in words`() {
         terminal.live = false
-        assertEquals(HttpStatusCode.Conflict, drive.stop(OURS).status)
+        val closed = drive.stop(OURS)
+        assertEquals(HttpStatusCode.Conflict, closed.status)
+        assertEquals("closed", reason(closed))
 
         terminal.live = true
         terminal.sendFails = true
         val failed = drive.sayJson(OURS, """{"text": "hello"}""")
         assertEquals(HttpStatusCode.BadGateway, failed.status)
         assertTrue(failed.body.contains("the terminal did not take it"), failed.body)
+        assertEquals("refused", reason(failed))
 
         wired = false
-        assertEquals(HttpStatusCode.ServiceUnavailable, drive.sayJson(OURS, """{"text": "hello"}""").status)
+        val unwired = drive.sayJson(OURS, """{"text": "hello"}""")
+        assertEquals(HttpStatusCode.ServiceUnavailable, unwired.status)
+        assertEquals("no_terminal", reason(unwired))
     }
+
+    /** The refusal as the key a page names it by, never its sentence. */
+    private fun reason(reply: JsonReply): String? =
+        Json.parseToJsonElement(reply.body).jsonObject["reason"]?.jsonPrimitive?.content
 
     @Test
     fun `a session started in his own terminal is driven through the pane its launch recorded`() {
@@ -94,11 +108,13 @@ class SessionDriveTest {
         val taken = launchedDrive.answerJson(LAUNCHED, """{"choice": 1}""")
         assertEquals(HttpStatusCode.Conflict, taken.status)
         assertTrue(taken.body.contains("running something else"), taken.body)
+        assertEquals("pane_taken", reason(taken))
 
         terminal.live = false
         val gone = launchedDrive.stop(LAUNCHED)
         assertEquals(HttpStatusCode.Conflict, gone.status)
         assertTrue(gone.body.contains("is gone"), gone.body)
+        assertEquals("pane_gone", reason(gone))
         assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty())
     }
 

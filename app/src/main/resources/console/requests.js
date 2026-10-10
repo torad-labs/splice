@@ -76,7 +76,7 @@ const REASON = { plan: "Plan", local: "This computer", vast: "vast.ai", unanswer
 // words). A row names the key it was sent with as `VARIABLE:fingerprint` (KeyAccount.kt), so a rotated key reads as
 // its own account and the one it replaced keeps its own history, marked Replaced — on Requests as on Accounts
 // (Marcos, Oct 8). A plan's label has no colon and no key behind it, and prints as it stands.
-const keyNameOf = (account) => String(account ?? "").slice(0, String(account ?? "").lastIndexOf(":"));
+const keyNameOf = (account) => { const s = String(account ?? ""), at = s.lastIndexOf(":"); return at < 0 ? s : s.slice(0, at); };
 const acctHtml = (r) => {
   const key = state.keySeen[r.account];
   if (!key) return esc(keyNameOf(r.account) || r.account);

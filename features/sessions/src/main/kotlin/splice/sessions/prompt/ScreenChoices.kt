@@ -27,6 +27,11 @@ import splice.core.session.SessionKey
 // is whatever glyph the client points with. The digit is 1 to 9 because those are the keys that answer it.
 private val CHOICE_LINE = Regex("""^\s*([>❯→*•]\s*)?([1-9])[.)]\s+(\S.*)$""")
 
+// why: the client opens a prompt's panel with a solid rule across the screen, and frames what it will run (a
+// command, a diff's path) between dashed rules inside it. Those rules are the drawing's structure, not its words.
+private val PANEL_RULE = Regex("""^\s*─{3,}\s*$""")
+private val FRAME_RULE = Regex("""^\s*╌{3,}\s*$""")
+
 // why: how a numbered choice is named in the contract, so the digit on the screen names the key that answers it.
 private const val CHOICE = "CHOICE_"
 
@@ -34,9 +39,19 @@ private const val CHOICE = "CHOICE_"
  *  [here] is true for the option the client is pointing at, which is what ACCEPT would take. */
 public data class ScreenChoice(val key: SessionKey, val label: String, val here: Boolean)
 
+/** One line of the panel above a prompt's choices, as the client drew it. [framed] is true for a line the client set
+ *  between dashed rules: what the call will run, which a person reads before choosing. */
+public data class ScreenLine(val text: String, val framed: Boolean)
+
 /** What a session's screen is offering. [asked] is the text above the first choice, as the client wrote it,
- *  and is empty when the screen opens straight into the choices. */
-public data class ScreenOffer(val asked: String, val choices: List<ScreenChoice>) {
+ *  and is empty when the screen opens straight into the choices. [panel] is the whole prompt the client drew above
+ *  the choices, from its opening rule down: the tool, what it runs and why, so no one answers a call they cannot see.
+ *  It is empty when the screen shows no opening rule above the choices. */
+public data class ScreenOffer(
+    val asked: String,
+    val choices: List<ScreenChoice>,
+    val panel: List<ScreenLine> = emptyList(),
+) {
     /** Whether the screen is offering anything to press. Nothing offered is not "nothing pending". */
     public val offering: Boolean get() = choices.isNotEmpty()
 }
@@ -56,7 +71,7 @@ public class ScreenChoices {
         val choices = block.mapNotNull { at -> CHOICE_LINE.matchEntire(lines[at])?.let { drawn(it) } }
             .distinctBy { it.key }
             .sortedBy { it.key.ordinal }
-        return ScreenOffer(asked(lines, block.first), choices)
+        return ScreenOffer(asked(lines, block.first), choices, panel(lines, block.first))
     }
 
     /**
@@ -81,6 +96,18 @@ public class ScreenChoices {
     private fun drawn(hit: MatchResult): ScreenChoice {
         val (marker, number, label) = hit.destructured
         return ScreenChoice(SessionKey.valueOf(CHOICE + number), label.trim(), here = marker.isNotEmpty())
+    }
+
+    /** The prompt's panel: every line between the last solid rule above the choices and the first choice, blank
+     *  lines left out and the dashed rules turned into [ScreenLine.framed]. No rule above them is no panel. */
+    private fun panel(lines: List<String>, firstChoice: Int): List<ScreenLine> {
+        val rule = lines.subList(0, firstChoice).indexOfLast { PANEL_RULE.matches(it) }
+        if (rule < 0) return emptyList()
+        var framed = false
+        return lines.subList(rule + 1, firstChoice).mapNotNull { line ->
+            if (FRAME_RULE.matches(line)) framed = !framed
+            line.trim().takeIf { it.isNotEmpty() && !FRAME_RULE.matches(line) }?.let { ScreenLine(it, framed) }
+        }
     }
 
     /** The question above the choices: the last run of non-empty lines before the first one, which is how

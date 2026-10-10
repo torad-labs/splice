@@ -54,6 +54,40 @@ class ScreenChoicesTest {
         )
     }
 
+    /** Claude Code 2.1.296's Bash permission, as captured off a real pane on Oct 10, 2026. */
+    @Test
+    fun `the whole prompt above the choices comes back, with what it runs framed, so nothing is approved blind`() {
+        val screen = """
+              Running the tax tests
+              ⎿  $ npm test -- tax.spec.ts
+
+            ────────────────────────────────────────
+             Bash command
+             Run the tax tests
+            ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+             npm test -- tax.spec.ts
+            ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+             This command requires approval
+
+             Do you want to proceed?
+             ❯ 1. Yes
+               2. Yes, and don’t ask again for: npm test *
+               3. No
+        """.trimIndent()
+
+        assertEquals(
+            listOf(
+                ScreenLine("Bash command", framed = false),
+                ScreenLine("Run the tax tests", framed = false),
+                ScreenLine("npm test -- tax.spec.ts", framed = true),
+                ScreenLine("This command requires approval", framed = false),
+                ScreenLine("Do you want to proceed?", framed = false),
+            ),
+            choices.on(screen).panel,
+        )
+        assertEquals(emptyList<ScreenLine>(), choices.on(PERMISSION).panel, "no opening rule, no panel")
+    }
+
     @Test
     fun `the question above the choices comes back as the client wrote it`() {
         assertEquals("Do you want to proceed?", choices.on(PERMISSION).asked)

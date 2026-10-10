@@ -191,9 +191,9 @@ function useOf(tm, slotId) {
 }
 function figures(u, since) {
   if (!u) return "";
-  const left = u.unpriced ? `<span class="unpriced">· leaves out ${u.unpriced} ${u.unpriced === 1 ? "turn" : "turns"} with no price</span>` : "";
+  const left = u.unpriced ? `<span class="unpriced">· leaves out ${u.unpriced} ${u.unpriced === 1 ? "request" : "requests"} with no price</span>` : "";
   const money = u.usd == null ? (u.unpriced ? `<span class="unpriced">No price</span>` : "") : `<span>${usd(u.usd)}${left}</span>`;
-  return `<span class="figs"><span>${u.turns} turns</span><span>${big(u.tokens)} tokens</span>${money}` +
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
@@ -311,7 +311,7 @@ const turnsOf = (session) => {
   // means the count is a floor (and an unknown session start reads true), so it is drawn "12+". The client never
   // compares the two timestamps itself, because `started_at` carries no unit on the wire.
   const floor = session.turns_partial === true ? "+" : "";
-  return ` · ${session.turns}${floor} ${session.turns === 1 && !floor ? "turn" : "turns"}`;
+  return ` · ${session.turns}${floor} ${session.turns === 1 && !floor ? "request" : "requests"}`;
 };
 
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
@@ -659,7 +659,12 @@ document.addEventListener("click", async (e) => {
       ui.menu = null;
       await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }), "The session was not bound");
       break;
-    case "stop": await act(await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`), "The turn was not stopped"); break;
+    case "stop": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
+      const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
+      const refused = stopRefusal(res);
+      if (refused) { state.error = refused; render(); } else await read();
+      break;
+    }
     case "answer": await answerSlot(tm, slot, Number(b.dataset.i)); break;
     // the composer
     case "pick": ui.pick = ui.pick?.i === i && ui.pick.what === b.dataset.what ? null : { i, what: b.dataset.what }; render(); break;

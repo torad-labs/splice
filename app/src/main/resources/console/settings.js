@@ -71,8 +71,8 @@ const DATA_ROWS = [
   { id: "originals", g: "text", name: "Transcript copies", noRoute: true, yours: true, always: true },
   { id: "recordings", g: "text", name: "Compaction summaries", noRoute: true, always: true },
   { id: "journals", g: "text", name: "Code mode work", noRoute: true, always: true },
-  { id: "reasoning", g: "text", name: "Reasoning between turns", noRoute: true },
-  { id: "hist", g: "records", name: "Usage and request history", unit: "turns", door: ["usage.html", "Usage"] },
+  { id: "reasoning", g: "text", name: "Reasoning between requests", noRoute: true },
+  { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"] },
   { id: "labels", g: "records", name: "What each agent is doing", unit: "lines", door: ["teams.html", "Teams"] },
 ];
@@ -118,7 +118,7 @@ function histRow(r) {
     amount: amountOf(x, r.unit),
     keep: `${ctlHtml(KNOB.historyRetentionDays, a ? a.v : val("historyRetentionDays"))}${saidHtml("historyRetentionDays")}${rate}`,
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
-    more: a && a.h ? `<div class="dmore hask">${histBar(a.h)}<div class="hacts"><button class="act danger small" data-act="shorten">Delete ${fmt(a.h.cut.turns)} turns</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>`
+    more: a && a.h ? `<div class="dmore hask">${histBar(a.h)}<div class="hacts"><button class="act danger small" data-act="shorten">Delete ${fmt(a.h.cut.turns)} requests</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>`
       : a ? `<div class="dmore hask"><div class="hbar reading"><span class="hend"></span><div class="hdays"></div><span class="hend">Today</span></div><div class="hacts"><button class="act danger small" disabled>Delete</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>` : "",
   });
 }

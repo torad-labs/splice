@@ -28,6 +28,8 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.http.JsonReply
+import splice.sessions.http.Refusal.CLOSED
+import splice.sessions.http.Refusal.REFUSED
 import splice.sessions.prompt.ScreenChoices
 import splice.sessions.prompt.ScreenOffer
 
@@ -106,7 +108,7 @@ public class SessionDrive(
     /** What the session's prompt asks right now, and the numbered choices its own client drew. A screen splice cannot
      *  read a choice on answers 200 with none, so a card keeps its fallback rather than failing over one pane. */
     public fun screen(session: String): JsonReply {
-        val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
+        val driving = driver() ?: return unwired()
         val at = locate(driving, session, SCREEN_NOT_OURS, "its terminal is closed, so nothing is being asked")
         val pane = at.pane ?: return requireNotNull(at.refusal)
         return Cancellables.runCatchingCleanup { driving.terminal.screen(pane) }.fold(
@@ -121,12 +123,12 @@ public class SessionDrive(
         closed: String,
         act: (SessionDriver, SessionPane) -> Unit,
     ): JsonReply {
-        val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
+        val driving = driver() ?: return unwired()
         val at = locate(driving, session, notOurs, closed)
         val pane = at.pane ?: return requireNotNull(at.refusal)
         return Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, buildJsonObject { put("session_id", session) }.toString()) },
-            onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it)) },
+            onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED) },
         )
     }
 
@@ -135,8 +137,8 @@ public class SessionDrive(
      *  open AND still has the session's process in front, so a closed or reused terminal is refused by name. */
     private fun locate(driving: SessionDriver, session: String, notOurs: String, closed: String): Located {
         val mine = driving.panes.paneFor(session)
-        if (mine != null) return if (driving.terminal.isOpen(mine)) Located(pane = mine) else refused(closed)
-        val launch = launched.of(session) ?: return refused(notOurs)
+        if (mine != null) return if (driving.terminal.isOpen(mine)) Located(pane = mine) else refused(closed, CLOSED)
+        val launch = launched.of(session) ?: return refused(notOurs, Refusal.NOT_OURS)
         return launchedPane(driving.terminal, launch)
     }
 
@@ -144,13 +146,16 @@ public class SessionDrive(
     private fun launchedPane(terminal: SessionTerminal, launch: LaunchedTerminal): Located {
         val pane = terminal.recorded(launch.pane, launch.server)?.takeIf(terminal::isOpen)
         return when {
-            pane == null -> refused(LAUNCH_PANE_GONE)
-            !terminal.hosts(pane, launch.pid) -> refused(LAUNCH_PANE_TAKEN)
+            pane == null -> refused(LAUNCH_PANE_GONE, Refusal.PANE_GONE)
+            !terminal.hosts(pane, launch.pid) -> refused(LAUNCH_PANE_TAKEN, Refusal.PANE_TAKEN)
             else -> Located(pane = pane)
         }
     }
 
-    private fun refused(sentence: String) = Located(refusal = refuse(HttpStatusCode.Conflict, sentence))
+    private fun unwired() = refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE, Refusal.NO_TERMINAL)
+
+    private fun refused(sentence: String, reason: Refusal) =
+        Located(refusal = refuse(HttpStatusCode.Conflict, sentence, reason))
 
     /** Either the pane to act in or the refusal, never both. */
     private data class Located(val pane: SessionPane? = null, val refusal: JsonReply? = null)
@@ -160,6 +165,17 @@ public class SessionDrive(
         buildJsonObject {
             put("session_id", session)
             put("asked", offer.asked)
+            // The whole prompt above the choices: the tool, what it runs (framed) and why, read before answering.
+            putJsonArray("panel") {
+                offer.panel.forEach { line ->
+                    add(
+                        buildJsonObject {
+                            put("text", line.text)
+                            if (line.framed) put("framed", true)
+                        },
+                    )
+                }
+            }
             putJsonArray("choices") {
                 offer.choices.forEach { choice ->
                     add(
@@ -175,6 +191,37 @@ public class SessionDrive(
         }.toString(),
     )
 
-    private fun refuse(status: HttpStatusCode, sentence: String) =
-        JsonReply(status, buildJsonObject { put("error", sentence) }.toString())
+    /** [reason] is the refusal as a key a page can name in a word (fin): the sentence is for the log, never matched. */
+    private fun refuse(status: HttpStatusCode, sentence: String, reason: Refusal? = null) =
+        JsonReply(
+            status,
+            buildJsonObject {
+                put("error", sentence)
+                reason?.let { put("reason", it.key) }
+            }.toString(),
+        )
+}
+
+/** Why an act on a session was refused, as the stable key a refusal body carries beside its sentence. */
+public enum class Refusal(public val key: String) {
+    /** The member holds no session, so nothing runs to act on: its card's own state says so. */
+    ENDED("ended"),
+
+    /** The terminal splice opened for it is closed, so nothing runs there. */
+    CLOSED("closed"),
+
+    /** splice did not start it and no launch recorded its terminal. */
+    NOT_OURS("not_ours"),
+
+    /** The terminal its launch recorded is closed. */
+    PANE_GONE("pane_gone"),
+
+    /** The terminal its launch recorded runs something else now. */
+    PANE_TAKEN("pane_taken"),
+
+    /** splice has no terminal wired to drive sessions in. */
+    NO_TERMINAL("no_terminal"),
+
+    /** The terminal did not take the keys. */
+    REFUSED("refused"),
 }

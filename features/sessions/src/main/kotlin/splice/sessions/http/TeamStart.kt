@@ -130,7 +130,8 @@ public class TeamStart(
         return when (val member = locate(store, teamId, slotId)) {
             is Located.Missing -> member.reply
             is Located.Member ->
-                member.slot.session?.let(act) ?: refuse(HttpStatusCode.Conflict, "${member.slot.id} has no session")
+                member.slot.session?.let(act)
+                    ?: refuse(HttpStatusCode.Conflict, "${member.slot.id} has no session", Refusal.ENDED)
         }
     }
 
@@ -232,6 +233,12 @@ public class TeamStart(
         store.bind(member.team.id, mapOf(member.slot.id to member.slot.session))
     }
 
-    private fun refuse(status: HttpStatusCode, sentence: String) =
-        JsonReply(status, buildJsonObject { put("error", sentence) }.toString())
+    private fun refuse(status: HttpStatusCode, sentence: String, reason: Refusal? = null) =
+        JsonReply(
+            status,
+            buildJsonObject {
+                put("error", sentence)
+                reason?.let { put("reason", it.key) }
+            }.toString(),
+        )
 }

@@ -27,6 +27,17 @@ class CommandParserTest {
     }
 
     @Test
+    fun `doctor hands its report flags to the command whole, in the order typed`() {
+        assertEquals(Command.Doctor(emptyList()), parser.parse(arrayOf("doctor")))
+        assertEquals(Command.Doctor(listOf("--json")), parser.parse(arrayOf("doctor", "--json")))
+        val shareable = arrayOf("doctor", "--json", "--with-logs", "--out", "report.json")
+        assertEquals(
+            Command.Doctor(listOf("--json", "--with-logs", "--out", "report.json")),
+            parser.parse(shareable),
+        )
+    }
+
+    @Test
     fun `login carries the head and the optional label`() {
         assertEquals(Command.Login("claudex", null), parser.parse(arrayOf("login", "claudex")))
         assertEquals(Command.Login("claudex", "work"), parser.parse(arrayOf("login", "claudex", "--label", "work")))

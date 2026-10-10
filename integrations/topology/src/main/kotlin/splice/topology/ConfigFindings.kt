@@ -35,22 +35,45 @@ public sealed class ConfigRead {
  *  [stateBase] only satisfies the knob check's constructor; nothing here reads state. */
 public object ConfigFindings {
     public fun read(text: String, stateBase: Path): ConfigRead {
+        // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
+        // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
-        val decoded = try {
-            TopologyLoader.decode(text)
-        } catch (broken: IllegalArgumentException) {
-            return refused(structural + undecodable(text, broken))
-        } catch (broken: SerializationException) {
-            return refused(structural + undecodable(text, broken))
-        }
-        val checks = TopologyFindings.of(decoded, HeadDiscoveredModels { emptyList() }, stateBase, rosters = false)
+        if (structural.isNotEmpty()) return refused(structural + TopologyTypeMismatch.all(text))
+        val decoded = decode(text)
+        val topology = decoded.getOrNull()
+            ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())))
+        val checks = TopologyFindings.of(topology, HeadDiscoveredModels { emptyList() }, stateBase, rosters = false)
             .map { it.copy(line = lineOf(text, it.path)) }
-        return refused(structural + checks, decoded)
+        return refused(checks, topology)
     }
 
-    /** A file the decode refused: every wrong type and unknown key the schema proves, else the decode's own safe sentence. */
-    private fun undecodable(text: String, broken: Throwable): List<TopologyFinding> =
-        TopologyTypeMismatch.all(text).ifEmpty { listOf(finding(broken)) }
+    /** The decode as a value: its failure is a finding, never a throw out of a read. */
+    private fun decode(text: String): Result<Topology> = try {
+        Result.success(TopologyLoader.decode(text))
+    } catch (broken: IllegalArgumentException) {
+        Result.failure(broken)
+    } catch (broken: SerializationException) {
+        Result.failure(broken)
+    }
+
+    /** A file the decode refused: every wrong type and unknown key the schema proves, the line the parser names for a
+     *  syntax error, and only when neither says anything a sentence that the text is withheld. */
+    private fun undecodable(text: String, broken: Throwable): List<TopologyFinding> {
+        val scanned = TopologyTypeMismatch.all(text)
+        val syntax = syntaxFinding(broken)
+        return when {
+            syntax != null -> scanned + syntax
+            scanned.isNotEmpty() -> scanned
+            else -> listOf(TopologyFinding(FINDING_FILE, WITHHELD))
+        }
+    }
+
+    /** The parser's own "Line N:" prefix is the only part of its message read, and only its digits: the rest can quote
+     *  the value on that line. */
+    private fun syntaxFinding(broken: Throwable): TopologyFinding? =
+        PARSER_LINE.find(broken.message.orEmpty())?.let { found ->
+            TopologyFinding(FINDING_FILE, SYNTAX, found.groupValues[1].toInt())
+        }
 
     private fun refused(findings: List<TopologyFinding>, topology: Topology? = null): ConfigRead = when {
         findings.isNotEmpty() -> ConfigRead.Refused(findings)
@@ -64,7 +87,9 @@ public object ConfigFindings {
         return if (broken is TopologyTypeFailure) {
             TopologyFinding(broken.key, "expects ${broken.expected.label}: ${broken.fix()}", broken.line)
         } else {
-            TopologyFinding(FINDING_FILE, SafeFailureText.render(broken))
+            val said = SafeFailureText.render(broken)
+            val at = STRUCTURE_LINE.find(said)?.groupValues?.get(1)?.toInt()
+            TopologyFinding(FINDING_FILE, said.replace(STRUCTURE_LINE, ""), at)
         }
     }
 
@@ -93,4 +118,10 @@ public object ConfigFindings {
     private fun keyOf(line: String): String? = line.takeIf { it.contains('=') }?.substringBefore("=")?.trim()
 
     private const val FINDING_FILE = "splice.toml"
+    private const val SYNTAX =
+        "the parser cannot read this line; check it for a missing =, quote or bracket, or a value the setting rejects"
+    private const val WITHHELD =
+        "the file cannot be decoded and the parser's text is withheld because it can quote values; check the last edit"
+    private val PARSER_LINE = Regex("^Line (\\d+):")
+    private val STRUCTURE_LINE = Regex(" \\(line (\\d+)\\)")
 }

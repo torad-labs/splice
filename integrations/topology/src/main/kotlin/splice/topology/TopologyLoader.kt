@@ -54,9 +54,19 @@ internal object TopologyTypeMismatch {
     private val table = Regex("^[ \\t]*\\[{1,2}(.+?)\\]{1,2}[ \\t]*$")
     private val segments = Regex("\\\"[^\\\"]+\\\"|'[^']+'|[A-Za-z0-9_-]+")
     private val assignment = Regex("^[ \\t]*([A-Za-z0-9_.-]+|\\?[ \\t]*)[ \\t]*=[ \\t]*(\\S)")
+    private const val BROKEN_SECTION = "?"
     private val inlineEntry = Regex("[{},][ \\t]*([A-Za-z0-9_-]+)[ \\t]*=[ \\t]*(\\S)")
 
     fun first(text: String): WrongTopologyType? {
+        scan(text) { section, line, source, at -> diagnoseLine(section, line, source, at)?.let { return it } }
+        return null
+    }
+
+    /** Each line of [text] that is not a table header, with the table it sits under, over the masked text so a string
+     *  or a comment can neither fake nor hide a key. A header the parser cannot read makes its section [BROKEN_SECTION]
+     *  and its keys are not judged at all: they belong to no table anyone can name, and the parser's own error names
+     *  that line. */
+    private inline fun scan(text: String, visit: (String, String, String, Int) -> Unit) {
         var section = ""
         val sourceLines = text.lineSequence().iterator()
         TomlStructureMasker(text).mask().lineSequence().forEachIndexed { at, line ->
@@ -64,28 +74,21 @@ internal object TopologyTypeMismatch {
             val header = table.matchEntire(line)
             if (header != null) {
                 section = source.substring(checkNotNull(header.groups[1]).range)
-            } else {
-                diagnoseLine(section, line, source, at + 1)?.let { return it }
+            } else if (line.trimStart().startsWith("[")) {
+                section = BROKEN_SECTION
+            } else if (section != BROKEN_SECTION) {
+                visit(section, line, source, at + 1)
             }
         }
-        return null
     }
 
     /** EVERY finding the schema and the masked source prove: each wrong type and each key the schema does not
      *  declare, with its line. The decode stops at its first failure; a person fixing a file needs the rest. */
     fun all(text: String): List<TopologyFinding> {
         val found = mutableListOf<TopologyFinding>()
-        var section = ""
-        val sourceLines = text.lineSequence().iterator()
-        TomlStructureMasker(text).mask().lineSequence().forEachIndexed { at, line ->
-            val source = sourceLines.next()
-            val header = table.matchEntire(line)
-            if (header != null) {
-                section = source.substring(checkNotNull(header.groups[1]).range)
-            } else {
-                val wrong = diagnoseLine(section, line, source, at + 1)?.let { typeFinding(it) }
-                (unknownKey(section, line, source, at + 1) ?: wrong)?.let { found += it }
-            }
+        scan(text) { section, line, source, at ->
+            val wrong = diagnoseLine(section, line, source, at)?.let { typeFinding(it) }
+            (unknownKey(section, line, source, at) ?: wrong)?.let { found += it }
         }
         return found
     }

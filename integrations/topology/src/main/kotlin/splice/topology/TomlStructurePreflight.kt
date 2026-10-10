@@ -115,7 +115,12 @@ internal object TomlStructurePreflight {
                 val names = keys.findAll(body).map { it.groupValues[1].lowercase() }.toList()
                 names.distinct().size != names.size
             }
-            if (repeated) found += TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
+            if (repeated) {
+                found += TopologyStructureFailure(
+                    "model_slots in ${tableName(header)} (line ${lineOf(structure, start)}) " +
+                        "${TopologySlotsFailure.Problem.DUPLICATE.detail}",
+                )
+            }
             start = end
         }
         return found
@@ -130,7 +135,10 @@ internal object TomlStructurePreflight {
             if (firstElement == '{' || firstElement == ']') {
                 null
             } else {
-                IllegalArgumentException("models must be an array of inline tables; write models = [{ id = \"...\" }]")
+                TopologyStructureFailure(
+                    "models (line ${lineOf(structure, assignment.range.first)}) must be an array of inline tables: " +
+                        "write models = [{ id = \"...\" }]",
+                )
             }
         }.toList()
 }

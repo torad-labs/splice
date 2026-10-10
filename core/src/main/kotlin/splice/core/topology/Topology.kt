@@ -298,9 +298,8 @@ public data class ProviderConfig(
     public fun catalogRefusal(head: HeadConfig, discovered: List<DiscoveredModel> = emptyList()): String? {
         val roster = HeadModels(this).select(head, rosterWith(discovered))
         if (roster is HeadModels.Roster.Refused) return roster.detail
+        HeadCatalogStatics.refusal(head)?.let { return it.detail }
         return when {
-            head.contextWindow?.let { it <= 0 } == true -> "head context_window must be positive"
-            head.discoveryPrefix.isEmpty() -> "discovery prefix is the picker namespace and is never empty"
             !clientPicksModels && rowsFor(head, discovered).isEmpty() -> "a catalog needs at least one picker model"
             else -> null
         }

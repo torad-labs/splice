@@ -56,7 +56,7 @@ class FailClosedBootTest {
     }
 
     @Test
-    fun `a structural finding and a topology finding are listed together`(@TempDir root: Path) {
+    fun `a structural finding is answered alone, before the decode the roster would loop`(@TempDir root: Path) {
         val path = config(
             root,
             provider + """
@@ -74,7 +74,7 @@ class FailClosedBootTest {
 
         val said = refusal.message.orEmpty()
         assertTrue(said.contains("is defined twice"), said)
-        assertTrue(said.contains("heads.one.provider"), said)
+        assertFalse(said.contains("not declared under"), "the decode never ran: $said")
     }
 
     @Test
@@ -116,5 +116,81 @@ class FailClosedBootTest {
         assertTrue(said.contains("heads.one.port (line 10)"), said)
         assertTrue(said.contains("heads.one.bogus_key (line 13): is not a splice.toml setting"), said)
         assertFalse(said.contains(SECRET), "no value reaches the refusal")
+    }
+
+    @Test
+    fun `a roster written as an array of strings is refused before any decode`(@TempDir root: Path) {
+        val path = config(
+            root,
+            provider + """
+            [heads.one]
+            provider = "demo"
+            port = 3101
+            discovery_prefix = "claude-one--"
+            pinned_model = "m"
+            models = ["m", "n"]
+            """,
+        )
+
+        val refusal = assertThrows(TopologyRefusal::class.java) { TopologyLoader.loadForBoot(path) }
+
+        val said = refusal.message.orEmpty()
+        assertTrue(said.contains("must be an array of inline tables"), said)
+        assertTrue(said.contains("(line 13)"), "the structural finding names its line: $said")
+        assertFalse(said.contains("not declared under"), "the decode and its checks never ran: $said")
+    }
+
+    @Test
+    fun `a syntax error names its line and withholds the parser text`(@TempDir root: Path) {
+        val path = config(root, provider + "\n[heads.one\nport = 3101\n")
+
+        val refusal = assertThrows(TopologyRefusal::class.java) { TopologyLoader.loadForBoot(path) }
+
+        val said = refusal.message.orEmpty()
+        assertTrue(said.contains("the parser cannot read this line"), said)
+        assertTrue(said.contains("(line 8)"), said)
+        assertFalse(said.contains(SECRET), said)
+    }
+
+    @Test
+    fun `a head that can never have a catalog is a boot finding, naming the key and a fix`(@TempDir root: Path) {
+        val path = config(
+            root,
+            provider + """
+            [heads.one]
+            provider = "demo"
+            port = 3101
+            discovery_prefix = ""
+            pinned_model = "m"
+            context_window = -1
+            """,
+        )
+
+        val refusal = assertThrows(TopologyRefusal::class.java) { TopologyLoader.loadForBoot(path) }
+
+        val said = refusal.message.orEmpty()
+        assertTrue(said.contains("heads.one.context_window"), said)
+        assertTrue(said.contains("must be positive; correct the value"), said)
+    }
+
+    @Test
+    fun `an undeclared provider names the key and a fix without repeating what was written`(@TempDir root: Path) {
+        val path = config(
+            root,
+            provider + """
+            [heads.one]
+            provider = "$SECRET"
+            port = 3101
+            discovery_prefix = "claude-one--"
+            pinned_model = "m"
+            """,
+        )
+
+        val refusal = assertThrows(TopologyRefusal::class.java) { TopologyLoader.loadForBoot(path) }
+
+        val said = refusal.message.orEmpty()
+        assertTrue(said.contains("heads.one.provider (line 9)"), said)
+        assertTrue(said.contains("is not declared under [providers]"), said)
+        assertFalse(said.contains(SECRET), "the text a person wrote never reaches the finding: $said")
     }
 }

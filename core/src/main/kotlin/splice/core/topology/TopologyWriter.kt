@@ -251,25 +251,36 @@ private class TopologyChecks(
 ) {
 
     fun findings(): List<TopologyFinding> =
-        references() + ports() + (if (withRosters) rosters() else emptyList()) + knobs()
+        references() + ports() + (if (withRosters) rosters() else statics()) + knobs()
 
     private fun references(): List<TopologyFinding> = topology.heads
         .filter { (_, head) -> head.provider !in topology.providers }
         .map { (key, head) ->
-            TopologyFinding("heads.$key.provider", "provider '${head.provider}' is not declared under [providers]")
+            TopologyFinding(
+                "heads.$key.provider",
+                "the provider this head names is not declared under [providers]; declare it, or name one that is",
+            )
         }
 
     private fun ports(): List<TopologyFinding> {
         val invalid = topology.invalidPortHeads().map { (key, port) ->
-            TopologyFinding("heads.$key.port", "port $port is outside ${validPortRange.first}-${validPortRange.last}")
+            val range = "${validPortRange.first}-${validPortRange.last}"
+            TopologyFinding("heads.$key.port", "port $port is outside $range; use a port in that range")
         }
         val shared = topology.portCollisions().flatMap { (port, owners) ->
             owners.map { owner ->
                 val at = if (owner in topology.heads) "heads.$owner.port" else "daemon.control_port"
-                TopologyFinding(at, "port $port is shared by ${owners.joinToString(", ")}")
+                TopologyFinding(at, "port $port is shared by ${owners.joinToString(", ")}; give each its own port")
             }
         }
         return invalid + shared
+    }
+
+    /** What boot can ask without a runtime: the reasons a head can never have a catalog, whatever is discovered. */
+    private fun statics(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
+        HeadCatalogStatics.refusal(head)?.let { why ->
+            TopologyFinding("heads.$key.${why.field}", "${why.detail}; correct the value")
+        }
     }
 
     private fun rosters(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
@@ -295,11 +306,13 @@ private class TopologyChecks(
             log = LogSink {},
         ).coerceRejects()
         val global = topology.defaults.keys.mapNotNull { key ->
-            ignored[key]?.let { TopologyFinding("defaults.$key", it) }
+            ignored[key]?.let { TopologyFinding("defaults.$key", "$it; fix the value or remove the line") }
         }
         val perHead = topology.heads.flatMap { (head, config) ->
             config.overrides.keys.mapNotNull { key ->
-                ignored["heads.$head.$key"]?.let { TopologyFinding("heads.$head.overrides.$key", it) }
+                ignored["heads.$head.$key"]?.let {
+                    TopologyFinding("heads.$head.overrides.$key", "$it; fix the value or remove the line")
+                }
             }
         }
         return global + perHead

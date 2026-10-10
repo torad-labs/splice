@@ -84,7 +84,8 @@ class TopologyWriterTest {
     @Test
     fun `a port outside the TCP range is refused by name`() {
         val findings = untouched(writer(mapOf(FILE to topology())).write(topology(port = 0)))
-        assertEquals(TopologyFinding("heads.ex.port", "port 0 is outside 1-65535"), findings.single())
+        val expected = TopologyFinding("heads.ex.port", "port 0 is outside 1-65535; use a port in that range")
+        assertEquals(expected, findings.single())
     }
 
     @Test

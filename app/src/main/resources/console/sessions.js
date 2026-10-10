@@ -12,7 +12,7 @@
 //   POST /api/sessions/{id}/say · answer · stop   the Message field, an answer's button, and Stop, in the pane splice
 //                                           opened for it (SessionDrive.kt); a session it did not open draws none of them
 //
-// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): Continue on, a limit or sign-out that ended a turn, a session's
+// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): Continue on, a session's
 // model when no turn is running, a teammate's message as its sender's, and the joint where a session moved. None is
 // explained on screen: each appears with the read or the act that makes it true.
 "use strict";

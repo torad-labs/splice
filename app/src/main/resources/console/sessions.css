@@ -68,7 +68,7 @@
    ellipsis, so an At limit line naming its account and reset never pushes the time under it (3828, side by side) */
 .card.s .meta { flex-wrap: nowrap; }
 .card.s .meta > span:not([class]) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card.s .meta .when { flex: none; }
+.card.s .meta > [class] { flex: none; white-space: nowrap; }  /* the state, its detail, the account and the time stay whole (hitstop) */
 /* today's use under the open session's name: one tap opens its requests from midnight (Marlin's walk, Oct 10) */
 .today { display: flex; align-items: center; gap: .45rem; margin-top: .45rem; min-width: 0; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); text-decoration: none; }
 .today .words { min-width: 0; overflow-wrap: anywhere; }

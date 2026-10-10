@@ -41,6 +41,8 @@ complexity:
     constructorThreshold: 8
     ignoreDefaultParameters: false
     ignoreDataClasses: false
+    # Marcos, 2026-10-09: the one exception to no-ignores. @Serializable classes mirror an outside format field by field
+    # (splice.toml, saved state, the Claude and OpenAI wire bodies), so grouping their fields would change the format.
     ignoreAnnotated: [Serializable]
   TooManyFunctions:
     active: true

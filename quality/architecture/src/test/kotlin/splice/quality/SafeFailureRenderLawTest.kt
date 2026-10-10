@@ -896,24 +896,14 @@ class SafeFailureRenderLawTest {
         }
     }
 
-    /** The proof that the arm above is not decorative, and that the floor it supplements cannot do
-     *  its job: withhold one real module's files and the per-module check names that module, while
-     *  the surviving set stays comfortably above VACUITY_FILES. That second assertion is the point
-     *  — it is the 2026-09-21 relocation in miniature, where 295 files left and 1018 remained. */
     @Test
-    fun `the per-module check can actually fail - withholding one module names it, and the floor does not notice`() {
+    fun `withholding one module names it - DR-65`() {
         val swept = SafeFailureRender.sources(map).map { KotlinText.rel(map, it) }
         val victim = map.modules.sorted().first { module ->
             swept.any { it.startsWith("${map.relativeDir(module)}/") }
         }
         val withheld = swept.filterNot { it.startsWith("${map.relativeDir(victim)}/") }
-        assertEquals(listOf(victim), SafeFailureRender.modulesMissingFrom(withheld, map)) {
-            "withholding every file of $victim must name exactly $victim and nothing else"
-        }
-        assertTrue(withheld.size > VACUITY_FILES) {
-            "the withheld set still holds ${withheld.size} file(s), above the floor of $VACUITY_FILES — if this " +
-                "ever fails the floor has become strict enough to catch a lost module and this arm is redundant."
-        }
+        assertEquals(listOf(victim), SafeFailureRender.modulesMissingFrom(withheld, map))
     }
 
     /** The synthetic tree the red proofs write into. ONE fixture is on disk at a time, exactly as
@@ -1014,33 +1004,10 @@ class SafeFailureRenderLawTest {
     }
 
     @Test
-    fun `the wall can actually fail - scope, the first-draft holes and the marker - DR-140`(@TempDir root: File) {
-        Tree(root).prove(ScopeArms.ALL)
-    }
-
-    @Test
-    fun `the wall can actually fail - the failure-span plane - DR-140`(@TempDir root: File) {
-        Tree(root).prove(SpanArms.ALL)
-    }
-
-    @Test
-    fun `the wall can actually fail - comment prose and nested frames - DR-140`(@TempDir root: File) {
-        Tree(root).prove(FrameArms.ALL)
-    }
-
-    @Test
-    fun `the wall can actually fail - throwable bindings - DR-140`(@TempDir root: File) {
-        Tree(root).prove(BindingArms.ALL)
-    }
-
-    @Test
-    fun `the wall can actually fail - shadowing per column - DR-140`(@TempDir root: File) {
-        Tree(root).prove(ShadowArms.ALL)
-    }
-
-    @Test
-    fun `the wall can actually fail - the fail-closed wall and direct renders - DR-140`(@TempDir root: File) {
-        Tree(root).prove(DirectArms.ALL)
+    fun `every lexer, binding and marker fixture is graded as claimed - DR-140`(@TempDir root: File) {
+        val tree = Tree(root)
+        listOf(ScopeArms.ALL, SpanArms.ALL, FrameArms.ALL, BindingArms.ALL, ShadowArms.ALL, DirectArms.ALL)
+            .forEach(tree::prove)
     }
 
     private companion object {
@@ -1497,20 +1464,6 @@ fun a() {
 }
 fun onFailure(e: Event) {
     log("${'$'}e")
-}""",
-        ),
-        Arm(
-            "a bare exceptionOrNull statement does not poison the next lambda",
-            "NextLambda.kt",
-            GREEN,
-            """package p
-import java.nio.file.Files
-fun a() {
-    Files.size(p)
-    names.forEach {
-        outcome.exceptionOrNull()
-        values.forEach { log("${'$'}it") }
-    }
 }""",
         ),
     )

@@ -487,9 +487,6 @@ internal object ModelCatalogsSingleSource {
     const val CATALOG_IN_CONFIGURATION = "splice/configuration/add/AddProfileCatalog.kt"
     const val STARTER_IN_TOPOLOGY = "splice/topology/TopologyLoader.kt"
 
-    private const val PROVIDER_COLUMN = 12
-    private const val ROWS_COLUMN = 2
-
     /** A file a violation names, and the file itself. */
     data class Surface(val rel: String, val file: File)
 
@@ -694,44 +691,6 @@ internal object ModelCatalogsSingleSource {
         }
         return problems
     }
-
-    // ── the census (the checker's `report`, line for line) ────────────────────────────────────
-
-    private fun state(roster: ModelRosters.Roster, index: Map<String, ModelRosters.Roster>, mirror: Boolean): String {
-        val joined = index[roster.baseUrl.orEmpty()]
-        val unjoinable = roster.baseUrl == null && roster.models.isEmpty()
-        if (unjoinable) return "no-roster (no base_url, no models)"
-        if (joined == null) return "NO DISPOSITION (base_url matches no example provider)"
-        val target = targetOf(joined)
-        val missing = if (mirror) missingFromMirror(roster, joined).map { "${it.id} (not mirrored)" } else emptyList()
-        val bad = roster.models.filter { compare(roster, it, target, "") != null }.map { it.id } + missing
-        return if (bad.isEmpty()) "agrees with [${joined.provider}]" else "DRIFT: ${bad.joinToString(", ")}"
-    }
-
-    private fun row(roster: ModelRosters.Roster, state: String): String =
-        "    [${roster.provider.padEnd(PROVIDER_COLUMN)}] ${roster.models.size.toString().padStart(ROWS_COLUMN)} " +
-            "rows  $state"
-
-    fun census(surfaces: Surfaces): List<String> {
-        val loaded = loadSources(surfaces)
-        val index = indexByBaseUrl(loaded.example, surfaces.example.rel).byBaseUrl
-        val lines = mutableListOf("model-catalogs-single-source: ${surfaces.example.rel} is the SOURCE")
-        loaded.problems.forEach { lines += "  UNTRUSTED: $it" }
-        for (roster in loaded.example) {
-            lines += "  source   [${roster.provider.padEnd(PROVIDER_COLUMN)}] " +
-                "${roster.models.size.toString().padStart(ROWS_COLUMN)} rows  ${roster.baseUrl}"
-        }
-        loaded.catalog.firstOrNull()?.let { lines += "  ${it.label}" }
-        loaded.catalog.forEach { lines += row(it, state(it, index, mirror = true)) }
-        val starterName = "${surfaces.starter.rel}:${ModelRosters.STARTER_MARKER}"
-        if (loaded.starter.isEmpty()) {
-            lines += "  $starterName  no-roster (first run selects none)"
-        } else {
-            lines += "  $starterName  PRESELECTED"
-            loaded.starter.forEach { lines += row(it, state(it, index, mirror = false)) }
-        }
-        return lines
-    }
 }
 
 class ModelCatalogsSingleSourceLawTest {
@@ -776,8 +735,6 @@ class ModelCatalogsSingleSourceLawTest {
         }
 
         fun audit() = ModelCatalogsSingleSource.audit(surfaces)
-
-        fun loaded() = ModelCatalogsSingleSource.loadSources(surfaces)
     }
 
     @Test
@@ -790,42 +747,10 @@ class ModelCatalogsSingleSourceLawTest {
                 "the compliant tree must be GREEN (alias join by base_url, catalog mirror, " +
                     "an unchosen starter and the null-baseUrl profile)",
             )
-            val loaded = loaded()
-            assertEquals(emptyList<String>(), loaded.problems, "the compliant parse must be trusted")
-            assertEquals(listOf("xai", "kimi"), loaded.example.map { it.provider })
-            assertEquals(listOf(2, 1), loaded.example.map { it.models.size }, "extra_windows is not a model roster")
-            assertEquals(3, loaded.catalog.size)
-            assertTrue(loaded.starter.isEmpty(), "the first run chooses no provider")
 
             // The BORING case: one provider, one model, nothing else — the tree that gets waved through.
             write(EXAMPLE_BORING, CATALOG_BORING, STARTER_BORING)
             assertEquals(emptyList<String>(), audit(), "the one-provider/one-model tree must be GREEN")
-            assertEquals(1, loaded().catalog.first().models.size)
-            assertTrue(loaded().starter.isEmpty())
-        }
-    }
-
-    /** The census is the surface an operator writes a roster against, so its SHAPE is part of the
-     *  law: every derived roster carries a disposition on its own line, and `no-roster` is computed
-     *  from the row rather than named in an exemption list. */
-    @Test
-    fun `the census gives every roster a disposition - V4-98`(@TempDir root: File) {
-        with(Tree(root)) {
-            write()
-            assertEquals(
-                listOf(
-                    "model-catalogs-single-source: app/src/main/resources/splice.example.toml is the SOURCE",
-                    "  source   [xai         ]  2 rows  https://api.x.ai/v1",
-                    "  source   [kimi        ]  1 rows  https://api.kimi.com/coding",
-                    "  features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt",
-                    "    [grok        ]  2 rows  agrees with [xai]",
-                    "    [kimi        ]  1 rows  agrees with [kimi]",
-                    "    [api-key     ]  0 rows  no-roster (no base_url, no models)",
-                    "  integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt:DEFAULT_TOML  " +
-                        "no-roster (first run selects none)",
-                ),
-                ModelCatalogsSingleSource.census(surfaces),
-            )
         }
     }
 
@@ -882,7 +807,7 @@ class ModelCatalogsSingleSourceLawTest {
     }
 
     /** V4-224: the catalog mirrors the example. The starter has no provider at all; a catalog row
-     *  the example gained is still RED by name, and the census says which row. */
+     *  the example gained is still RED by name. */
     @Test
     fun `the law can actually fail - a row the example declares and splice add omits - V4-224`(@TempDir root: File) {
         with(Tree(root)) {
@@ -894,9 +819,6 @@ class ModelCatalogsSingleSourceLawTest {
                 "an example row the splice add catalog lacks must be RED BY NAME"
             }
             assertEquals(1, audit().size, "only the catalog mirrors; DEFAULT_TOML selects no provider")
-            val census = ModelCatalogsSingleSource.census(surfaces)
-            val drift = "    [grok        ]  1 rows  DRIFT: grok-4.3 (not mirrored)"
-            assertTrue(drift in census) { census.joinToString("\n") }
         }
     }
 

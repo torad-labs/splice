@@ -293,6 +293,37 @@ class LiveTurnsTest {
         assertTrue(listed.getValue("sess-streaming").silence.seenOutput, "this one answered, and then went quiet")
     }
 
+    /** A RESUME IS COUNTED WHERE IT HAPPENS. The gate hands a continuation its own borrowed handle over
+     *  the source's one counted permit, and that handle is admitted again, so the one live row sees every
+     *  re-send without any dialect reporting one. The arm also pins what it is NOT: a fresh turn on a new
+     *  slot starts at zero, so the count belongs to the turn and not to the session. */
+    @Test
+    fun `each re-send of a held turn is counted on its one live row, and a new turn starts at zero`() {
+        val original = slot()
+        turns.admitted(original, meta("source-session"), hash("go"))
+        assertEquals(0, turns.list().single().silence.resumes, "a turn that has run straight through has had none")
+
+        val lease = original.retainSource("source-session")
+        original.release()
+        val resumed = checkNotNull(gate.resumeSource("source-session"))
+        turns.admitted(resumed, meta("source-session"), hash("again"))
+
+        assertEquals(1, turns.list().single().silence.resumes, "the re-send splice made itself, on the same row")
+
+        resumed.release()
+        val twice = checkNotNull(gate.resumeSource("source-session"))
+        turns.admitted(twice, meta("source-session"), hash("third"))
+
+        assertEquals(2, turns.list().single().silence.resumes)
+
+        twice.release()
+        lease.release()
+        val fresh = slot()
+        turns.admitted(fresh, meta("other-session"), hash("go"))
+        assertEquals(0, turns.list().single().silence.resumes, "a different turn carries none of that history")
+        fresh.release()
+    }
+
     /** Why the fact is its own flag and not lastByte compared against admission: a fast provider's
      *  first byte lands in the millisecond the turn was admitted, and a derived read would call that
      *  turn unanswered for as long as it ran — wrong for the common case, not the rare one. */

@@ -75,6 +75,17 @@ public data class TurnSilence(
     val idleMs: Long,
     /** Whether the provider has answered at all yet. */
     val seenOutput: Boolean = false,
+    /** How many times splice has already ended a silence on this turn by re-sending it upstream and
+     *  carrying on, invisibly to the client. Zero for a turn that has run straight through. Here
+     *  because a resume is what a silence ends in, so it is read with [idleMs] and never apart from it.
+     *
+     *  IT IS A COUNT OF WHAT HAPPENED, NOT A PREDICTION OF WHAT WILL. A reader deciding whether THIS
+     *  silence is about to end in another re-send needs more than this and more than the head's armed
+     *  tier: the round must also still be eligible, and one of those conditions — whether the round has
+     *  already emitted a tool call — lives inside the dialect's own round state, which this seam cannot
+     *  see. So this says how many resumes a turn has had, which is true, and says nothing about the
+     *  next one, which would not be. */
+    val resumes: Int = 0,
 )
 
 /** One live turn as the console lists it. [session] is the client's full session id when it sent one;
@@ -116,6 +127,9 @@ public class LiveTurns(
          *  that lands in the same millisecond as admission would read as no byte at all, and on a fast
          *  provider that is the common case rather than the rare one. */
         private val answered = AtomicBoolean(false)
+
+        /** How many times splice has re-sent this turn upstream and carried on. */
+        private val resumes = AtomicLong(0)
         override val turnId: String get() = id
 
         override fun received() {
@@ -130,6 +144,10 @@ public class LiveTurns(
         }
 
         fun isStopped(): Boolean = stopped.get()
+
+        fun resumed() {
+            resumes.incrementAndGet()
+        }
 
         /** True for the first stop only: a second stop of the same turn changes nothing. */
         fun claimStop(): Boolean = stopped.compareAndSet(false, true)
@@ -146,7 +164,7 @@ public class LiveTurns(
             compact,
             now - since,
             stopped.get(),
-            TurnSilence((now - lastByte.get()).coerceAtLeast(0L), answered.get()),
+            TurnSilence((now - lastByte.get()).coerceAtLeast(0L), answered.get(), resumes.get().toInt()),
         )
     }
 
@@ -180,6 +198,11 @@ public class LiveTurns(
             created
         }
         turn.messages = messagesHash
+        // A BORROWED HANDLE ON A ROW THAT ALREADY EXISTS IS A RESUME. The gate hands a continuation its
+        // own Slot over the source's one counted permit (InflightGate.Slot.resumedSource), and that
+        // continuation is admitted again through here, finding the row rather than creating it. So the
+        // count of resumes is observable at this one seam, without reaching into any dialect's round.
+        if (slot.resumedSource) turn.resumed()
         if (turn.isStopped()) mark(turn)
     }
 

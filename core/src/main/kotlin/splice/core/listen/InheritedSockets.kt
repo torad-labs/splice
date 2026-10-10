@@ -10,10 +10,11 @@ import splice.core.util.EnvReader
 /** The first descriptor a socket manager passes (sd_listen_fds' SD_LISTEN_FDS_START). */
 internal const val LISTEN_FDS_START: Int = 3
 
-/** The three variables of the protocol. */
+/** The three variables of the protocol. [LISTEN_FDNAMES] is public because the capability report names it as what
+ *  splice matches sockets BY, and one source for that word is the point (`splice capabilities`). */
 internal const val LISTEN_PID: String = "LISTEN_PID"
 internal const val LISTEN_FDS: String = "LISTEN_FDS"
-internal const val LISTEN_FDNAMES: String = "LISTEN_FDNAMES"
+public const val LISTEN_FDNAMES: String = "LISTEN_FDNAMES"
 
 /** The names a socket manager passes the listeners under, and `splice listeners` prints: one source for both. */
 public class ListenerNames {

@@ -6,9 +6,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -71,11 +73,21 @@ class ListenerInventoryTest {
     }
 
     @Test
-    fun `capabilities say adoption is not built until it is`() {
+    fun `capabilities say adoption is built, and whether this machine can actually serve a handed-over socket`() {
         val out = mutableListOf<String>()
-        assertEquals(0, CapabilityReport { line: String -> out += line }.print())
+        assertEquals(0, CapabilityReport(TerminalOutput { line: String -> out += line }).print())
         val body = Json.parseToJsonElement(out.single()).jsonObject.getValue("socket_activation").jsonObject
         assertEquals("true", body.getValue("adopt_inherited").jsonPrimitive.content)
         assertEquals("LISTEN_FDNAMES", body.getValue("matches_by").jsonPrimitive.content)
+        // The machine answer, which a manager reads before it stops the running daemon: on this Linux box the native
+        // transport loads, so available is true and no cause is printed. A box without it reads false WITH a cause,
+        // and that is the whole point of the field — a static true would have told a manager nothing.
+        val native = body.getValue("native_transport").jsonObject
+        assertEquals("true", native.getValue("available").jsonPrimitive.content)
+        assertNull(native["cause"])
+        assertTrue(
+            body.getValue("refuses").jsonArray.map { it.jsonPrimitive.content }.contains("native_unavailable"),
+            "a manager must be able to expect the refusal it will be given",
+        )
     }
 }

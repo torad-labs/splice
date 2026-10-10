@@ -102,6 +102,13 @@ public class DescriptorAdoption {
         return if (reasons.isEmpty()) Adoption.Ready(AdoptedListeners(fds)) else Adoption.Refused(reasons)
     }
 
+    /**
+     * Null when the native transport loaded and a hand-off can be served on this machine; otherwise the reason it
+     * cannot, in the same words a refused boot would use. A manager asks BEFORE it stops the running daemon, since
+     * `adopt_inherited` only says this jar implements adoption, never that the library is loadable here (2026-10-10).
+     */
+    public fun nativeUnavailableCause(): String? = if (Epoll.isAvailable()) null else nativeUnavailable()
+
     /** Named the way a boot finding is: what is missing, and what to do about it. */
     private fun nativeUnavailable(): String {
         val cause = Epoll.unavailabilityCause()?.toString()?.lineSequence()?.firstOrNull().orEmpty()

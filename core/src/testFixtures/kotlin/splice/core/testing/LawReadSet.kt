@@ -36,7 +36,9 @@ class LawReadSet(
                 start = index + 1
             }
         }
-        check(start == bytes.size) { "the read-set list does not end with a NUL: ${hex(bytes.copyOfRange(start, bytes.size))}" }
+        check(start == bytes.size) {
+            "the read-set list does not end with a NUL: ${hex(bytes.copyOfRange(start, bytes.size))}"
+        }
         val names = linkedSetOf<String>()
         for (field in fields) {
             check(field.isNotEmpty()) { "the read-set list holds an empty field before its end" }
@@ -66,7 +68,9 @@ class LawReadSet(
         file
     }
 
-    private val realRoot: Path by lazy { if (Files.exists(root)) root.toRealPath() else root.toAbsolutePath().normalize() }
+    private val realRoot: Path by lazy {
+        if (Files.exists(root)) root.toRealPath() else root.toAbsolutePath().normalize()
+    }
 
     /** The declared files that exist, as real paths (symlinks and `..` resolved). A declared file that is missing is files()'s
      *  to report, by name. */

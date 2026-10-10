@@ -67,7 +67,9 @@ internal fun classificationProblems(map: LayerMap, declared: Set<String>): List<
         .filter { layersOf[it].isNullOrEmpty() }
         .map { "$it is a Gradle module the layer map does not classify — add it to layer-map.toml" }
     val doubled = layersOf.filterValues { it.size > 1 }.toSortedMap()
-        .map { (module, layers) -> "$module is classified in ${layers.map { it.key }} — a module plays exactly one layer" }
+        .map { (module, layers) ->
+            "$module is classified in ${layers.map { it.key }} — a module plays exactly one layer"
+        }
     val stale = layersOf.keys.filter { it !in declared }.sorted()
         .map { "$it is in layer-map.toml but the build does not declare it — delete the stale entry" }
     return unclassified + doubled + stale
@@ -89,7 +91,9 @@ internal fun packageOwners(files: List<ScannedFile>): Pair<Map<String, Layer>, L
         .mapNotNull { file -> file.packageName?.let { it to file.layer } }
         .groupBy({ it.first }, { it.second })
     val problems = layersOf.filterValues { it.distinct().size > 1 }.toSortedMap()
-        .map { (pkg, layers) -> "package $pkg is declared in ${layers.distinct().map { it.key }} — a package belongs to one layer" }
+        .map { (pkg, layers) ->
+            "package $pkg is declared in ${layers.distinct().map { it.key }} — a package belongs to one layer"
+        }
     val owners = layersOf.mapValues { (_, layers) -> layers.first() }
     return owners to problems
 }

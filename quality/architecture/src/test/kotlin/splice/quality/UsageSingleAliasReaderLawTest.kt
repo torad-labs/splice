@@ -164,7 +164,8 @@ class UsageSingleAliasReaderLawTest {
         assertHit(UsageSingleAliasReader.audit(COMPLIANT - CHAIN, CHAIN), "missing") {
             "a missing chain must be RED"
         }
-        val hollow = COMPLIANT + (CHAIN to "public object JsonScalars { public fun str(e: JsonElement?): String? = null }\n")
+        val hollow =
+            COMPLIANT + (CHAIN to "public object JsonScalars { public fun str(e: JsonElement?): String? = null }\n")
         assertHit(UsageSingleAliasReader.audit(hollow, CHAIN), "does not declare the firstLong multi-key chain") {
             "an unanchored chain must be RED"
         }

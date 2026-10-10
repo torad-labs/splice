@@ -58,8 +58,9 @@ internal object OneMissingExpiryPolicy {
         val problems = mutableListOf<String>()
         val providers = sources.keys.filter { AUTH_PROVIDER.matches(it) }.sorted()
         if (providers.isEmpty()) {
-            problems += "no *AuthProvider.kt under integrations/providers/ was swept — this law's denominator comes from the " +
-                "tree, so an empty sweep means the extractor or the project map broke, not that the policy holds"
+            problems += "no *AuthProvider.kt under integrations/providers/ was swept — this law's denominator comes " +
+                "from the tree, so an empty sweep means the extractor or the project map broke, not that the policy " +
+                "holds"
         }
         problems += helperProblems(sources[HELPER_FILE])
         providers.forEach { rel -> problems += dispositionProblems(rel, sources.getValue(rel)) }

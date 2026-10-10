@@ -120,7 +120,7 @@ class DiscoveredCatalogTest {
     // 2026-09-23 (review): a retired model, or a start whose discovery timed out, once threw here and
     // took the whole head down with it. The row is dropped instead and HeadBoot names it.
     @Test
-    fun `an allowlisted model the endpoint did not list is dropped, and only a provider that lists nothing refuses it`() {
+    fun `an allowlisted model the endpoint did not list is dropped, and only an empty listing refuses it`() {
         val allowlisted = head.copy(models = listOf(HeadModel("grok-4.6", "opus"), HeadModel("grok-4.7", "sonnet")))
         assertEquals(listOf("grok-4.6"), provider.catalogFor(allowlisted).availableModelIds())
         val off = provider.copy(discovery = ModelDiscoveryConfig(exclude = listOf("*")))

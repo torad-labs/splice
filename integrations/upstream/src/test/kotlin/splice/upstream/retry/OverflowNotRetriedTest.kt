@@ -49,7 +49,8 @@ class OverflowNotRetriedTest {
     @Test
     fun `an OpenAI-shaped overflow is sent once`() = runTest {
         val openAi = """{"error":{"message":"This model's maximum context length is 128000 tokens. However, """ +
-            """your messages resulted in 131072 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}}"""
+            """your messages resulted in 131072 tokens.","type":"invalid_request_error",""" +
+            """"code":"context_length_exceeded"}}"""
 
         assertEquals(1, sendsFor(openAi))
     }

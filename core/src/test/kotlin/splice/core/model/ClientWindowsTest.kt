@@ -105,7 +105,8 @@ class ClientWindowsTest(@param:TempDir private val tmp: Path) {
             override fun supportedFileAttributeViews(): Set<String> = emptySet()
             override fun getPath(first: String, vararg more: String): Path = throw UnsupportedOperationException()
             override fun getPathMatcher(syntaxAndPattern: String): PathMatcher = throw UnsupportedOperationException()
-            override fun getUserPrincipalLookupService(): UserPrincipalLookupService = throw UnsupportedOperationException()
+            override fun getUserPrincipalLookupService(): UserPrincipalLookupService =
+                throw UnsupportedOperationException()
             override fun newWatchService(): WatchService = throw UnsupportedOperationException()
         }
         return object : Path by file {

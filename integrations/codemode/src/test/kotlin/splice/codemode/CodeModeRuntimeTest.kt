@@ -412,27 +412,6 @@ class CodeModeRuntimeTest {
         }
     }
 
-    @Test
-    fun `runtime close tolerates a registry emptying after its size was observed`() {
-        for (name in listOf("cells")) {
-            val runtime = runtime()
-            // Deterministically model ConcurrentHashMap's weakly consistent size/iterator pair.
-            val disappearing = object : AbstractMutableSet<JvmCodeModeCell>() {
-                override val size: Int get() = 1
-
-                override fun iterator(): MutableIterator<JvmCodeModeCell> = mutableSetOf<JvmCodeModeCell>().iterator()
-
-                override fun add(element: JvmCodeModeCell): Boolean = error("fixture is read-only")
-            }
-            val ownerField = JvmCodeModeRuntime::class.java.getDeclaredField("cells").apply { isAccessible = true }
-            val owner = ownerField.get(runtime)
-            val field = owner.javaClass.getDeclaredField(name).apply { isAccessible = true }
-            field.set(owner, disappearing)
-
-            runtime.close()
-        }
-    }
-
     // THE `<Unit>` IS LOAD-BEARING, NOT STYLE — do not tidy it away. This body ends in
     // assertThrows(...), which RETURNS the exception it checked for, so without the explicit type
     // argument runBlocking returns that exception and JUnit never discovers the method: no

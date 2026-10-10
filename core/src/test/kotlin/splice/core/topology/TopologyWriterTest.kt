@@ -47,7 +47,9 @@ class TopologyWriterTest {
     private fun writer(table: Map<String, Topology>, parse: TopologyParse? = null): TopologyWriter = TopologyWriter(
         file,
         tmp.resolve("backups"),
-        parse ?: TopologyParse { text -> table[text] ?: throw IllegalArgumentException("not a text this test predicted") },
+        parse ?: TopologyParse { text ->
+            table[text] ?: throw IllegalArgumentException("not a text this test predicted")
+        },
         WallClock { NOW },
     )
 

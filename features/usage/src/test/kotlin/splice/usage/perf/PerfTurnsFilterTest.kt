@@ -120,16 +120,17 @@ class PerfTurnsFilterTest {
         }
 
     @Test
-    fun `Failed includes watchdog cancellation but excludes stops however many newer rows fill the list`() = testApplication {
-        mount()
-        val head = ask(client, "n=2000&outcome=failed")
-        assertEquals(
-            listOf(5_000L, 9_300L),
-            stamps(head),
-            "the refusal and watchdog cancellation, never stops, `?` or a clean empty answer",
-        )
-        assertEquals(2L, count(head), "the count is the rows the filter matches")
-    }
+    fun `Failed includes watchdog cancellation but excludes stops however many newer rows fill the list`() =
+        testApplication {
+            mount()
+            val head = ask(client, "n=2000&outcome=failed")
+            assertEquals(
+                listOf(5_000L, 9_300L),
+                stamps(head),
+                "the refusal and watchdog cancellation, never stops, `?` or a clean empty answer",
+            )
+            assertEquals(2L, count(head), "the count is the rows the filter matches")
+        }
 
     @Test
     fun `Stopped finds every stopped outcome before the clamp with its full matched count`() = testApplication {
@@ -167,18 +168,19 @@ class PerfTurnsFilterTest {
     }
 
     @Test
-    fun `compact=1 finds the compactions in the window, and compact=0 every request that was not one`() = testApplication {
-        mount()
-        val compacted = ask(client, "compact=1")
-        assertEquals(listOf(6_000L), stamps(compacted))
-        assertEquals(1L, count(compacted))
-        val rest = stamps(ask(client, "until=10000&compact=0"))
-        assertEquals(
-            listOf(5_000L, 7_000L, 8_000L, 9_100L, 9_200L, 9_300L),
-            rest,
-            "a row with no compact field is not one",
-        )
-    }
+    fun `compact=1 finds the compactions in the window, and compact=0 every request that was not one`() =
+        testApplication {
+            mount()
+            val compacted = ask(client, "compact=1")
+            assertEquals(listOf(6_000L), stamps(compacted))
+            assertEquals(1L, count(compacted))
+            val rest = stamps(ask(client, "until=10000&compact=0"))
+            assertEquals(
+                listOf(5_000L, 7_000L, 8_000L, 9_100L, 9_200L, 9_300L),
+                rest,
+                "a row with no compact field is not one",
+            )
+        }
 
     @Test
     fun `a filter spelled wrong is refused by name, never ignored`() = testApplication {

@@ -75,7 +75,8 @@ class LlamaCppErrorShapesTest {
     // vendor's text — including a near-miss of that literal — reaches the client byte-identical.
     @Test
     fun `every other vendor's text comes back unchanged`() {
-        val openAi = """{"error":{"message":"The server had an error while processing your request.","type":"server_error"}}"""
+        val openAi =
+            """{"error":{"message":"The server had an error while processing your request.","type":"server_error"}}"""
 
         assertEquals(
             "The server had an error while processing your request.",

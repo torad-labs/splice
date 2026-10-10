@@ -25,23 +25,44 @@ private const val NESTED_MODULE = ":provider-x"
 
 private const val NESTED_DIR = "providers/x"
 
-private const val MISSING_BUILD_FILE_EXPECTED = "the project map places :provider-x at providers/x, which ships no build.gradle.kts — a module whose build file cannot be read is UNGRADED, not compliant. Fix the module's directory or restore its build file."
+private const val MISSING_BUILD_FILE_EXPECTED =
+    "the project map places :provider-x at providers/x, which ships no build.gradle.kts — a module whose build file " +
+        "cannot be read is UNGRADED, not compliant. Fix the module's directory or restore its build file."
 
-private const val ABSENT_CHANNEL_EXPECTED = "no -Dsplice.projectMap: the laws grade the modules the BUILD declares, and an absent map grades nothing while every law still reports green. quality/architecture/build.gradle.kts is what supplies it."
+private const val ABSENT_CHANNEL_EXPECTED =
+    "no -Dsplice.projectMap: the laws grade the modules the BUILD declares, and an absent map grades nothing while " +
+        "every law still reports green. quality/architecture/build.gradle.kts is what supplies it."
 
-private const val MALFORMED_ENTRY_EXPECTED = "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
+private const val MALFORMED_ENTRY_EXPECTED =
+    "splice.projectMap entry 'core=core' is not ':<gradle path>=<directory relative to the repository root>' — a " +
+        "half-read map is a map that drops modules silently."
 
-private const val EMPTY_DIRECTORY_EXPECTED = "splice.projectMap entry ':core=' is not ':<gradle path>=<directory relative to the repository root>' — a half-read map is a map that drops modules silently."
+private const val EMPTY_DIRECTORY_EXPECTED =
+    "splice.projectMap entry ':core=' is not ':<gradle path>=<directory relative to the repository root>' — a " +
+        "half-read map is a map that drops modules silently."
 
-private const val DUPLICATE_ENTRY_EXPECTED = "splice.projectMap maps :core twice ('core' and 'elsewhere') — the build cannot place one module in two directories; the channel is corrupt."
+private const val DUPLICATE_ENTRY_EXPECTED =
+    "splice.projectMap maps :core twice ('core' and 'elsewhere') — the build cannot place one module in two " +
+        "directories; the channel is corrupt."
 
-private const val UNMAPPED_DIR_EXPECTED = "providers/x ships production Kotlin under src/main/kotlin and the project map claims no module there — include it in settings.gradle.kts so every law grades it, or delete the sources; a module the build never included is silently ungoverned."
+private const val UNMAPPED_DIR_EXPECTED =
+    "providers/x ships production Kotlin under src/main/kotlin and the project map claims no module there — include " +
+        "it in settings.gradle.kts so every law grades it, or delete the sources; a module the build never included " +
+        "is silently ungoverned."
 
-private const val STALE_NAME_EXPECTED = "the project map has no :ghost — the laws grade the modules the build declares, so a name this file asks for and the build does not include is a stale entry, not a gap."
+private const val STALE_NAME_EXPECTED =
+    "the project map has no :ghost — the laws grade the modules the build declares, so a name this file asks for and " +
+        "the build does not include is a stale entry, not a gap."
 
-private const val ABSENT_CENSUS_EXPECTED = "no -Dsplice.censusNotSwept: the unmapped-source sweep skips exactly the directory names the build's census input excludes, and a sweep that cannot see that list would walk trees the build never fingerprints. quality/architecture/build.gradle.kts is what supplies it."
+private const val ABSENT_CENSUS_EXPECTED =
+    "no -Dsplice.censusNotSwept: the unmapped-source sweep skips exactly the directory names the build's census " +
+        "input excludes, and a sweep that cannot see that list would walk trees the build never fingerprints. " +
+        "quality/architecture/build.gradle.kts is what supplies it."
 
-private const val GENERATED_DIR_EXPECTED = "build ships production Kotlin under src/main/kotlin and the project map claims no module there — include it in settings.gradle.kts so every law grades it, or delete the sources; a module the build never included is silently ungoverned."
+private const val GENERATED_DIR_EXPECTED =
+    "build ships production Kotlin under src/main/kotlin and the project map claims no module there — include it in " +
+        "settings.gradle.kts so every law grades it, or delete the sources; a module the build never included is " +
+        "silently ungoverned."
 
 /** Synthetic fixtures live under a temp dir, so this list is fixture data; the LIVE list is the
  *  build's, read through [ProjectMap.CENSUS_PROPERTY]. */

@@ -103,9 +103,9 @@ internal object EnvVarsDocumented {
         val constants = CONST_DECL.findAll(code).associate { it.groupValues[1] to it.groupValues[2] }
         for (direct in DIRECT_GETENV.findAll(code)) {
             if (kinds[direct.range.first] == KotlinText.STRING) continue
-            scan.problems += "DIRECT READ OUTSIDE THE SEAM: $rel:${KotlinText.lineOf(code, direct.range.first)} calls " +
-                "getenv() directly — this scan cannot see the name it reads, so the denominator is incomplete and no " +
-                "green from this run is true. Inject an EnvReader instead (kt-no-system-getenv)"
+            scan.problems += "DIRECT READ OUTSIDE THE SEAM: $rel:${KotlinText.lineOf(code, direct.range.first)} " +
+                "calls getenv() directly — this scan cannot see the name it reads, so the denominator is incomplete " +
+                "and no green from this run is true. Inject an EnvReader instead (kt-no-system-getenv)"
         }
         for (call in SEAM_CALL.findAll(code)) {
             if (kinds[call.range.first] == KotlinText.STRING) continue
@@ -148,8 +148,8 @@ internal object EnvVarsDocumented {
      *  problem that stops the parse. */
     private fun knobEntries(code: String, knobRel: String): Pair<String?, String?> {
         val decl = ENUM_DECL.find(code)
-            ?: return null to "$knobRel: no `enum class Knob` declaration found — the enum has moved or been renamed, " +
-                "so this run has no knob denominator and must not pass"
+            ?: return null to "$knobRel: no `enum class Knob` declaration found — the enum has moved or been " +
+                "renamed, so this run has no knob denominator and must not pass"
         val ctorEnd = KotlinText.closeParen(code, code.indexOf('(', decl.range.last + 1))
             ?: return null to "$knobRel: the Knob primary constructor could not be parsed"
         val brace = code.indexOf('{', ctorEnd)
@@ -179,7 +179,8 @@ internal object EnvVarsDocumented {
             .firstOrNull { it.trim().startsWith("listOf(") }
             ?.trim()
         if (listed == null) {
-            problems += "$knobRel: $entry declares no envNames listOf(...) — its env aliases cannot be read from the source"
+            problems += "$knobRel: $entry declares no envNames listOf(...) — its env aliases cannot be read from " +
+                "the source"
             return null
         }
         val innerEnd = KotlinText.closeParen(listed, listed.indexOf('('))
@@ -202,8 +203,8 @@ internal object EnvVarsDocumented {
             if (literal != null) {
                 names += EnvName(literal.groupValues[1], "knob", "Knob.$entry")
             } else if (alias.isNotBlank()) {
-                problems += "$knobRel: $entry lists a non-literal env alias (${KotlinText.pyRepr(alias.trim())}) — the " +
-                    "name cannot be read from the source"
+                problems += "$knobRel: $entry lists a non-literal env alias (${KotlinText.pyRepr(alias.trim())}) — " +
+                    "the name cannot be read from the source"
             }
         }
     }
@@ -212,7 +213,8 @@ internal object EnvVarsDocumented {
     fun scanKnobAliases(knob: File, knobRel: String): Pair<List<EnvName>, List<String>> {
         if (!knob.isFile) {
             return emptyList<EnvName>() to listOf(
-                "$knobRel: missing — its envNames lists are the largest part of the denominator, so its absence cannot pass",
+                "$knobRel: missing — its envNames lists are the largest part of the denominator, so its absence " +
+                    "cannot pass",
             )
         }
         val (entriesText, stop) = knobEntries(KotlinText.blankComments(knob.readText()), knobRel)
@@ -262,13 +264,14 @@ internal object EnvVarsDocumented {
     private fun checkedBlock(text: String, surfaceRel: String, count: Int, problems: MutableList<String>): String {
         val (block, line) = headerBlock(text)
         if (block == null) {
-            problems += "$surfaceRel: no `# ENVIRONMENT VARIABLES` header block — environment is the highest-precedence " +
-                "config layer and the file that teaches the config does not mention it. Add the block, state the " +
-                "precedence chain (env > TOML > default) in it, and describe each of the $count variables splice reads"
+            problems += "$surfaceRel: no `# ENVIRONMENT VARIABLES` header block — environment is the " +
+                "highest-precedence config layer and the file that teaches the config does not mention it. Add the " +
+                "block, state the precedence chain (env > TOML > default) in it, and describe each of the $count " +
+                "variables splice reads"
         } else if (!PRECEDENCE_CHAIN.containsMatchIn(block)) {
-            problems += "$surfaceRel:$line: the ENVIRONMENT VARIABLES block does not state the precedence chain — a var " +
-                "list that does not say env beats TOML beats default leaves the one fact an operator needs unwritten. " +
-                "Write `env > TOML > default`"
+            problems += "$surfaceRel:$line: the ENVIRONMENT VARIABLES block does not state the precedence chain — a " +
+                "var list that does not say env beats TOML beats default leaves the one fact an operator needs " +
+                "unwritten. Write `env > TOML > default`"
         }
         return block ?: ""
     }
@@ -283,9 +286,9 @@ internal object EnvVarsDocumented {
             marked || nameToken(name).containsMatchIn(block) -> null
             else -> {
                 val outside = if (nameToken(name).containsMatchIn(text)) "" else " (not named anywhere in the file)"
-                "NO DISPOSITION: $name (${env.kind}, read at ${env.where}) is not documented in the ENVIRONMENT VARIABLES " +
-                    "block of $surfaceRel$outside; document it there against the precedence chain, or retire it with " +
-                    "`# retired: $name — <reason>`"
+                "NO DISPOSITION: $name (${env.kind}, read at ${env.where}) is not documented in the ENVIRONMENT " +
+                    "VARIABLES block of $surfaceRel$outside; document it there against the precedence chain, or " +
+                    "retire it with `# retired: $name — <reason>`"
             }
         }
     }
@@ -320,7 +323,8 @@ class EnvVarsDocumentedLawTest {
         assertTrue(
             files.size > 10,
         ) {
-            "the map yielded ${files.size} production file(s) — the walk is broken, and a law that reads no files passes vacuously."
+            "the map yielded ${files.size} production file(s) — the walk is broken, and a law that reads no files " +
+                "passes vacuously."
         }
         val knob = File(map.mainSources(":core"), EnvVarsDocumented.KNOB_IN_CORE)
         val problems = EnvVarsDocumented.audit(
@@ -404,12 +408,14 @@ class EnvVarsDocumentedLawTest {
                     "XDG_CONFIG_HOME",
                 ),
                 d.names.keys.sorted(),
-                "the denominator: three literal/const/.invoke reads and four knob aliases; a read inside a comment never enters it",
+                "the denominator: three literal/const/.invoke reads and four knob aliases; a read inside a comment " +
+                    "never enters it",
             )
             assertEquals(
                 1,
                 d.computed.size,
-                "exactly the one real computed site; a seam-shaped call inside a string literal is not a seam site: ${d.computed}",
+                "exactly the one real computed site; a seam-shaped call inside a string literal is not a seam site: " +
+                    "${d.computed}",
             )
             assertTrue(d.computed[0].contains("env(envVar)"), d.computed[0])
 
@@ -558,13 +564,17 @@ dialect = "openai-chat"
             "",
         )
         val NO_CHAIN_DOC = COMPLIANT_DOC.replace(
-            "# Precedence: env > TOML > default. An env var set in the daemon's environment wins\n# over anything in this file.\n",
+            "# Precedence: env > TOML > default. An env var set in the daemon's environment wins\n" +
+                "# over anything in this file.\n",
             "# Set these in the daemon's environment.\n",
         )
 
         // SPLICE_CONFIG named only OUTSIDE the block — past a live TOML line, which is what ends the
         // block: the drift a file-wide token search misses.
-        val OUTSIDE_BLOCK_DOC = COMPLIANT_DOC.replace("#   SPLICE_CONFIG        absolute path to splice.toml; overrides the XDG lookup\n", "") +
+        val OUTSIDE_BLOCK_DOC = COMPLIANT_DOC.replace(
+            "#   SPLICE_CONFIG        absolute path to splice.toml; overrides the XDG lookup\n",
+            "",
+        ) +
             "# SPLICE_CONFIG is mentioned down here, in an unrelated provider comment.\n"
         val RETIRED_NOREASON_DOC = COMPLIANT_DOC.replace(
             "# retired: GROK_PROXY_PORT — the grok head takes its port from [heads.*.port]",

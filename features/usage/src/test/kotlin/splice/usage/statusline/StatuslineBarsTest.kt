@@ -70,7 +70,8 @@ class StatuslineBarsTest {
         val trackedLine = renderAt(nowMs, """{"model":{"id":"claude-opus-5-5"}}""", tracked)
         assertTrue("5h" !in trackedLine && "7d ████████ 98%" in trackedLine, trackedLine)
         val client = """{"model":{"id":"claude-opus-5-5"},
-            "rate_limits":{"five_hour":{"used_percentage":95,"resets_at":${nowS - 60L}},"seven_day":{"used_percentage":98,"resets_at":${nowS + 345_600L}}}}"""
+            "rate_limits":{"five_hour":{"used_percentage":95,"resets_at":${nowS - 60L}},
+            "seven_day":{"used_percentage":98,"resets_at":${nowS + 345_600L}}}}"""
         val clientLine = renderAt(nowMs, client, null)
         assertTrue("5h" !in clientLine && "7d ████████ 98%" in clientLine, clientLine)
     }
@@ -94,7 +95,8 @@ class StatuslineBarsTest {
         val line = renderAt(
             1_788_000_000_000L,
             """{"model":{"id":"grok-4.6","display_name":"Grok 4.6"},"effort":{"level":"high"},"cost":{"total_cost_usd":61.44},
-                "rate_limits":{"five_hour":{"used_percentage":14,"resets_at":1788010000},"seven_day":{"used_percentage":42.4,"resets_at":1788500000}}}""",
+                "rate_limits":{"five_hour":{"used_percentage":14,"resets_at":1788010000},
+                "seven_day":{"used_percentage":42.4,"resets_at":1788500000}}}""",
             null,
         )
         assertTrue("Grok 4.6·high" in line, "effort rides beside the model: $line")

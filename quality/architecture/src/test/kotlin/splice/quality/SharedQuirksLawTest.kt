@@ -215,7 +215,8 @@ class SharedQuirksLawTest {
         val vendor = File(root, "integrations/providers/codex/src/main/kotlin").apply { mkdirs() }
         val synthetic = ProjectMap.parse(
             root,
-            ":integrations-dialects-openai-responses=integrations/dialects/openai-responses;:providers-codex=integrations/providers/codex",
+            ":integrations-dialects-openai-responses=integrations/dialects/openai-responses;" +
+                ":providers-codex=integrations/providers/codex",
             setOf("build"),
         )
         File(dialect, "ResponsesQuirks.kt").writeText(COMPLIANT)
@@ -228,7 +229,9 @@ class SharedQuirksLawTest {
         File(dialect, "ResponsesQuirks.kt").writeText(REGEX_VIOLATION)
         assertEquals(
             listOf(
-                "integrations/dialects/openai-responses/src/main/kotlin/ResponsesQuirks.kt: ResponsesQuirks.effortMaxRejectModelRegex model-id default: Regex(\"mini\", RegexOption.IGNORE_CASE)",
+                "integrations/dialects/openai-responses/src/main/kotlin/ResponsesQuirks.kt: " +
+                    "ResponsesQuirks.effortMaxRejectModelRegex model-id default: Regex(\"mini\", " +
+                    "RegexOption.IGNORE_CASE)",
             ),
             SharedQuirks.checkTree(synthetic),
             "the dialect's Regex default must be RED by file and field",

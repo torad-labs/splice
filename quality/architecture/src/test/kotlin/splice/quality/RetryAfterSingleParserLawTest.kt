@@ -53,8 +53,9 @@ internal object RetryAfterSingleParser {
             if (rel == parserRel || !HEADER_MENTION.containsMatchIn(text)) continue
             val markers = PARSER_MARKERS.filter { it.containsMatchIn(text) }.map { it.pattern }
             if (markers.isNotEmpty()) {
-                problems += "SECOND PARSER: $rel parses the Retry-After header itself (${markers.joinToString(", ")}) — " +
-                    "splice.upstream.retry.RetryAfter is the ONE parser; call it, do not re-derive it"
+                problems += "SECOND PARSER: $rel parses the Retry-After header itself " +
+                    "(${markers.joinToString(", ")}) — splice.upstream.retry.RetryAfter is the ONE parser; call it, " +
+                    "do not re-derive it"
             }
         }
         return problems
@@ -93,7 +94,8 @@ class RetryAfterSingleParserLawTest {
 
         // A parser token in a file that never names the header is out of scope: the class is
         // "re-deriving THIS header", not "using a date formatter".
-        val unrelated = COMPLIANT + ("core/src/main/kotlin/Clock.kt" to "val f = DateTimeFormatter.RFC_1123_DATE_TIME\n")
+        val unrelated =
+            COMPLIANT + ("core/src/main/kotlin/Clock.kt" to "val f = DateTimeFormatter.RFC_1123_DATE_TIME\n")
         assertEquals(
             emptyList<String>(),
             RetryAfterSingleParser.audit(unrelated, PARSER),
@@ -137,7 +139,8 @@ class RetryAfterSingleParserLawTest {
             """.trimIndent(),
         )
         val MIRRORS: List<Pair<String, String>> = listOf(
-            "date formatter" to "val h = headers[\"Retry-After\"]\nval at = ZonedDateTime.parse(h, DateTimeFormatter.RFC_1123_DATE_TIME)\n",
+            "date formatter" to "val h = headers[\"Retry-After\"]\n" +
+                "val at = ZonedDateTime.parse(h, DateTimeFormatter.RFC_1123_DATE_TIME)\n",
             "digit guard (reject)" to "val h = headers[\"retry_after\"]\nif (h.any { it !in '0'..'9' }) return null\n",
             "digit guard (accept)" to "val retryAfter = h\nif (h.all { it in '0'..'9' }) return h.toLong()\n",
             "leading-zero normaliser" to "val retryAfterS = raw.trimStart('0').ifEmpty { \"0\" }\n",

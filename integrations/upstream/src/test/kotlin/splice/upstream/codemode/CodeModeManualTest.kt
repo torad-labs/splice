@@ -174,7 +174,8 @@ SOURCE: /[\s\S]+/
         val tool = NestedTool("mcp__ast-grep__find_code", "Find code.", json("""{"type":"object"}"""))
         assertEquals(
             "Find code.\n\nexec tool declaration:\n```ts\n" +
-                "declare const tools: { mcp__ast_grep__find_code(args: { [key: string]: unknown; }): Promise<unknown>; };\n```",
+                "declare const tools: { mcp__ast_grep__find_code(args: { [key: string]: unknown; }): " +
+                "Promise<unknown>; };\n```",
             CodeModeManual.augmented(tool),
         )
         assertTrue(CodeModeManual.description(listOf(tool), false).contains(CodeModeManual.augmented(tool)))

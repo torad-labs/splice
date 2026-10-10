@@ -50,7 +50,8 @@ internal object MaxInflightMeasured {
                 null,
                 listOf(
                     "$rel: no '<pct>% turn failure at inflight<=<n>' measurement line — the ceiling is read from " +
-                        "the config's own measurement, never hardcoded, so without it there is no ceiling to grade against",
+                        "the config's own measurement, never hardcoded, so without it there is no ceiling to " +
+                        "grade against",
                 ),
             )
         return Read(measure.groupValues[2].toLong(), emptyList(), measure.groupValues[1])
@@ -105,7 +106,9 @@ class MaxInflightMeasuredLawTest {
         assertHit(audit(knob(15), EXAMPLE), "default 15 exceeds") { "one over the ceiling must be RED" }
 
         // A commented-out old entry is history: only the live entry is the default.
-        val commented = "    // MAX_INFLIGHT(\"maxInflight\", KnobKind.NUMBER, listOf(\"CLAUDEX_MAX_INFLIGHT\"), 100L),\n" + knob(12)
+        val commented =
+            "    // MAX_INFLIGHT(\"maxInflight\", KnobKind.NUMBER, listOf(\"CLAUDEX_MAX_INFLIGHT\"), 100L),\n" +
+                knob(12)
         assertEquals(emptyList<String>(), audit(commented, EXAMPLE), "a commented-out 100 is not the default")
 
         assertHit(audit(knob(12), "# no measurement here\n"), "no", "measurement line") { "a missing line must REFUSE" }

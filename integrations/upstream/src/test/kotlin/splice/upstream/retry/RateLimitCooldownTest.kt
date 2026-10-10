@@ -532,37 +532,38 @@ class RateLimitCooldownBudgetTest {
     // give-up and the arm — "retry every 15 seconds" measured, not asserted on a plan object. The
     // header says 5301s; the schedule must not.
     @Test
-    fun `a non-pooled 429 with a long retry-after is retried on the 15s schedule until the budget is spent`() = runTest {
-        val calls = AtomicInteger()
-        val waiter = RecordingWaiter()
-        val engine = MockEngine {
-            calls.incrementAndGet()
-            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "5301"))
+    fun `a non-pooled 429 with a long retry-after is retried on the 15s schedule until the budget is spent`() =
+        runTest {
+            val calls = AtomicInteger()
+            val waiter = RecordingWaiter()
+            val engine = MockEngine {
+                calls.incrementAndGet()
+                respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "5301"))
+            }
+            val client = UpstreamClient(
+                totalTimeoutMs = 60_000L,
+                maxRetries = 3,
+                client = HttpClient(engine),
+                pacing = RetryPacing(waiter = waiter),
+                clock = ElapsedClock { 0L },
+            )
+            val context = PostContext(
+                url = "https://api.example.test/v1",
+                auth = fakeAuth,
+                extraHeaders = { emptyMap() },
+                limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
+            )
+
+            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+
+            assertEquals(3, calls.get(), "every attempt in the budget is spent before the client sees a 429")
+            assertEquals(listOf(15_000L, 15_000L), waiter.waits, "the schedule is the 15s floor, not the 5301s header")
+            assertEquals(
+                MAX_RATE_LIMIT_COOLDOWN_MS,
+                client.rateLimitedForMs,
+                "exhaustion arms the follower horizon, clamped",
+            )
         }
-        val client = UpstreamClient(
-            totalTimeoutMs = 60_000L,
-            maxRetries = 3,
-            client = HttpClient(engine),
-            pacing = RetryPacing(waiter = waiter),
-            clock = ElapsedClock { 0L },
-        )
-        val context = PostContext(
-            url = "https://api.example.test/v1",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
-        )
-
-        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
-
-        assertEquals(3, calls.get(), "every attempt in the budget is spent before the client sees a 429")
-        assertEquals(listOf(15_000L, 15_000L), waiter.waits, "the schedule is the 15s floor, not the 5301s header")
-        assertEquals(
-            MAX_RATE_LIMIT_COOLDOWN_MS,
-            client.rateLimitedForMs,
-            "exhaustion arms the follower horizon, clamped",
-        )
-    }
 
     // V4-48 REVERSED THIS. It used to assert that a short pooled 429 never enters retry backoff —
     // 1 call, no wait, the cooldown armed. A short pushback now takes the same BACKOFF branch a 408

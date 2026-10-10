@@ -97,9 +97,9 @@ internal object KnobKeysDocumented {
         if (keys.isEmpty()) return keys to problems
         val kinds = KIND_MENTION.findAll(KotlinText.stripComments(source)).count()
         if (kinds != keys.size) {
-            problems += "$label: parsed ${keys.size} enum entries but the file holds $kinds `KnobKind.` mentions — every " +
-                "entry passes exactly one kind, so the parser and the source disagree and no key list from this run " +
-                "can be trusted"
+            problems += "$label: parsed ${keys.size} enum entries but the file holds $kinds `KnobKind.` mentions — " +
+                "every entry passes exactly one kind, so the parser and the source disagree and no key list from " +
+                "this run can be trusted"
         }
         return keys to problems
     }
@@ -120,8 +120,8 @@ internal object KnobKeysDocumented {
         for ((rel, text) in texts) {
             val (marked, reason) = KotlinText.retiredReason(text, key)
             if (marked && reason.isEmpty()) {
-                problems += "$rel: $key is retired with NO reason — a retirement without a written reason is an absence " +
-                    "wearing a label"
+                problems += "$rel: $key is retired with NO reason — a retirement without a written reason is an " +
+                    "absence wearing a label"
             }
             if (marked || keyToken(key).containsMatchIn(text)) disposed = true
         }
@@ -143,12 +143,14 @@ internal object KnobKeysDocumented {
         if (surface.isFile) {
             texts[surfaceRel] = surface.readText()
         } else {
-            problems += "$surfaceRel: disposition surface missing — a surface that cannot be read cannot document anything"
+            problems += "$surfaceRel: disposition surface missing — a surface that cannot be read cannot document " +
+                "anything"
         }
         for (knob in keys) {
             if (disposed(knob.key, texts, problems)) continue
-            problems += "NO DISPOSITION: ${knob.key} (Knob.${knob.entry}) is documented nowhere in $surfaceRel; document it " +
-                "there with its default, its unit and what it does, or retire it with `# retired: ${knob.key} — <reason>`"
+            problems += "NO DISPOSITION: ${knob.key} (Knob.${knob.entry}) is documented nowhere in $surfaceRel; " +
+                "document it there with its default, its unit and what it does, or retire it with `# retired: " +
+                "${knob.key} — <reason>`"
         }
         return problems
     }
@@ -226,8 +228,10 @@ class KnobKeysDocumentedLawTest {
             )
 
             val mutated = COMPLIANT_SOURCE.replace(
-                "    GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\"), 3100L, restartRequired = true),\n}",
-                "    GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\"), 3100L, restartRequired = true),\n$FAKE_KEY_ENTRY",
+                "    GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\"), 3100L, " +
+                    "restartRequired = true),\n}",
+                "    GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\"), 3100L, " +
+                    "restartRequired = true),\n$FAKE_KEY_ENTRY",
             )
             assertTrue(
                 mutated != COMPLIANT_SOURCE,
@@ -348,6 +352,7 @@ public enum class Knob(
 ) {
 }
 """
-        const val FAKE_KEY_ENTRY = "    FAKE_NEW_KNOB(\"fakeNewKnob\", KnobKind.BOOL, listOf(\"CLAUDEX_FAKE\"), false),\n}"
+        const val FAKE_KEY_ENTRY =
+            "    FAKE_NEW_KNOB(\"fakeNewKnob\", KnobKind.BOOL, listOf(\"CLAUDEX_FAKE\"), false),\n}"
     }
 }

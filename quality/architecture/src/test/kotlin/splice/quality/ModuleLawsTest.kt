@@ -77,7 +77,10 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":integrations-providers-grok" to ADAPTER_BASE + ":integrations-dialects-openai-responses",
     ":integrations-providers-kimi" to ADAPTER_BASE + ":integrations-dialects-anthropic",
     ":integrations-providers-muse" to ADAPTER_BASE,
-    ":integrations-providers-openai" to ADAPTER_BASE + setOf(":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
+    ":integrations-providers-openai" to ADAPTER_BASE + setOf(
+        ":integrations-dialects-openai-responses",
+        ":integrations-dialects-openai-chat",
+    ),
     // the transport serves any dialect; it must not know a CONCRETE provider (that is :app's job).
     ":features-turns" to ADAPTER_BASE + DIALECTS + setOf(":integrations-http", ":features-sessions"),
     // the session registry and its routes, and `splice sessions`, which names each session's head from
@@ -101,7 +104,12 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ),
     // the daemon's own lifecycle: the draining restart, the upgrade surface, and `splice upgrade`, which
     // asks the local daemon through its client and repoints the files launch's install layout names.
-    ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":integrations-topology", ":features-launch"),
+    ":features-lifecycle" to setOf(
+        ":core",
+        ":integrations-daemon-client",
+        ":integrations-topology",
+        ":features-launch",
+    ),
     // the doctor report, the one-prompt playground, and the operator's reads of a running head
     // (`splice wire`, `splice logs`) through the daemon client. `splice doctor` reads every surface it
     // diagnoses: the account pools, the local runtimes, the Claude head's wrap, the installed shim.
@@ -288,15 +296,25 @@ private const val CORE_ESCAPE_PROCESS_BUILDER_SOURCE = "package splice.core\nval
 
 private const val CORE_ESCAPE_RUNTIME_EXEC_SOURCE = "package splice.core\nval r = Runtime.getRuntime().exec(\"x\")\n"
 
-private const val CORE_ESCAPE_SOCKET_EXPECTED = "core/X.kt:2 imports java.net.Socket — :core opens no network; declare a port in :core and implement it in :app (mirror FileIoTask/DirectoryProbe)."
+private const val CORE_ESCAPE_SOCKET_EXPECTED =
+    "core/X.kt:2 imports java.net.Socket — :core opens no network; declare a port in :core and implement it in :app " +
+        "(mirror FileIoTask/DirectoryProbe)."
 
-private const val CORE_ESCAPE_HTTP_CLIENT_EXPECTED = "core/H.kt:2 imports java.net.http.HttpClient — :core opens no network; declare a port in :core and implement it in :app (mirror FileIoTask/DirectoryProbe)."
+private const val CORE_ESCAPE_HTTP_CLIENT_EXPECTED =
+    "core/H.kt:2 imports java.net.http.HttpClient — :core opens no network; declare a port in :core and implement it " +
+        "in :app (mirror FileIoTask/DirectoryProbe)."
 
-private const val CORE_ESCAPE_FQN_URL_EXPECTED = "core/F.kt:2 names java.net.URL fully qualified — :core opens no network, and skipping the import does not skip the law; declare a port in :core and implement it in :app (mirror FileIoTask/DirectoryProbe)."
+private const val CORE_ESCAPE_FQN_URL_EXPECTED =
+    "core/F.kt:2 names java.net.URL fully qualified — :core opens no network, and skipping the import does not skip " +
+        "the law; declare a port in :core and implement it in :app (mirror FileIoTask/DirectoryProbe)."
 
-private const val CORE_ESCAPE_PROCESS_BUILDER_EXPECTED = "core/Z.kt:2 uses ProcessBuilder — :core spawns no process; java.lang is imported implicitly, so no import denylist can see this. Declare a port in :core and implement it in :app."
+private const val CORE_ESCAPE_PROCESS_BUILDER_EXPECTED =
+    "core/Z.kt:2 uses ProcessBuilder — :core spawns no process; java.lang is imported implicitly, so no import " +
+        "denylist can see this. Declare a port in :core and implement it in :app."
 
-private const val CORE_ESCAPE_RUNTIME_EXEC_EXPECTED = "core/W.kt:2 uses Runtime.getRuntime — :core spawns no process; java.lang is imported implicitly, so no import denylist can see this. Declare a port in :core and implement it in :app."
+private const val CORE_ESCAPE_RUNTIME_EXEC_EXPECTED =
+    "core/W.kt:2 uses Runtime.getRuntime — :core spawns no process; java.lang is imported implicitly, so no import " +
+        "denylist can see this. Declare a port in :core and implement it in :app."
 
 /** V4-91 (audit C row 4): the Gradle module law, PARSED — the single source of truth for
  *  MAIN-configuration edges.
@@ -489,13 +507,21 @@ private fun driftStricterTestPlane(): List<String> = lawDriftViolations(
     unrestricted = emptySet(),
 )
 
-private const val DRIFT_FORGOTTEN_EXPECTED = ":spi is governed by the Gradle module law's main plane but appears in neither MODULE_DEPENDENCY_LAW nor UNRESTRICTED_MODULES — its TEST edges are ungoverned."
+private const val DRIFT_FORGOTTEN_EXPECTED =
+    ":spi is governed by the Gradle module law's main plane but appears in neither MODULE_DEPENDENCY_LAW nor " +
+        "UNRESTRICTED_MODULES — its TEST edges are ungoverned."
 
-private const val DRIFT_GHOST_EXPECTED = "MODULE_DEPENDENCY_LAW governs :ghost, which the Gradle module law does not mention — one of the two maps is stale; the build's map is the main plane's truth."
+private const val DRIFT_GHOST_EXPECTED =
+    "MODULE_DEPENDENCY_LAW governs :ghost, which the Gradle module law does not mention — one of the two maps is " +
+        "stale; the build's map is the main plane's truth."
 
-private const val DRIFT_HARNESS_EXPECTED = "the harness sets have drifted: splice.module-law.gradle.kts says nonLibrary=[:app, :spikes], this file says UNRESTRICTED_MODULES=[:app]. UNRESTRICTED_MODULES' own comment claims they are the same set."
+private const val DRIFT_HARNESS_EXPECTED =
+    "the harness sets have drifted: splice.module-law.gradle.kts says nonLibrary=[:app, :spikes], this file says " +
+        "UNRESTRICTED_MODULES=[:app]. UNRESTRICTED_MODULES' own comment claims they are the same set."
 
-private const val DRIFT_STRICTER_EXPECTED = ":spi: the Gradle main plane allows [:core] which MODULE_DEPENDENCY_LAW does not — a main dependency is on the test compile classpath by construction, so the test plane cannot be stricter than the main one."
+private const val DRIFT_STRICTER_EXPECTED =
+    ":spi: the Gradle main plane allows [:core] which MODULE_DEPENDENCY_LAW does not — a main dependency is on the " +
+        "test compile classpath by construction, so the test plane cannot be stricter than the main one."
 
 /** P0: the synthetic build files the nested-module proof grades. Small enough to read, and
  *  independent of the live build's map — a proof that borrowed the real law would move with it. */
@@ -513,7 +539,10 @@ private val NESTED_MODULE_BUILD_FILE = """
     }
 """.trimIndent()
 
-private const val NESTED_EDGE_EXPECTED = ":provider-x may not depend on :daemon-head in a MAIN configuration (the build's map allows [:core]). This is also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in gradle/module-law.txt if the architecture moved."
+private const val NESTED_EDGE_EXPECTED =
+    ":provider-x may not depend on :daemon-head in a MAIN configuration (the build's map allows [:core]). This is " +
+        "also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in " +
+        "gradle/module-law.txt if the architecture moved."
 
 class ModuleLawsTest {
 
@@ -970,7 +999,8 @@ class ModuleLawsTest {
         // V4-91: the same spellings, plus the CONFIGURATION that decides the edge's plane, plus the
         // `testFixtures(project(...))` wrapper the path-only matcher swallowed without noticing.
         val CONFIGURED_DEPENDENCY = Regex(
-            """([A-Za-z][A-Za-z0-9]*)\s*\(\s*(?:testFixtures\s*\(\s*)?project\(\s*(?:path\s*=\s*)?"(:[A-Za-z0-9._-]+)"""",
+            """([A-Za-z][A-Za-z0-9]*)\s*\(\s*(?:testFixtures\s*\(\s*)?project\(\s*(?:path\s*=\s*)?""" +
+                """"(:[A-Za-z0-9._-]+)"""",
         )
         val BLOCK_COMMENT = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
         val LINE_COMMENT = Regex("//[^\n]*")

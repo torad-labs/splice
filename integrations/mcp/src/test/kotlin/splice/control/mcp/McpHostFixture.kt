@@ -24,7 +24,8 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 internal const val MCP_HOST_INIT =
-    """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
+    """{"jsonrpc":"2.0","id":1,"method":"initialize",""" +
+        """"params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
 internal const val MCP_HOST_LIST = """{"jsonrpc":"2.0","id":3,"method":"tools/list"}"""
 internal const val MCP_HOST_STREAM_WAIT_MS = 5_000L
 
@@ -98,7 +99,12 @@ abstract class McpHostFixture {
         host = McpHost(
             sharing,
             { global },
-            McpHostConfig(idleTimeout = 30.minutes, maxServers = maxServers, requestTimeout = requestTimeout, clock = clock),
+            McpHostConfig(
+                idleTimeout = 30.minutes,
+                maxServers = maxServers,
+                requestTimeout = requestTimeout,
+                clock = clock,
+            ),
             log = LogSink { line ->
                 synchronized(log) { log.append(line) }
                 logWaiters.forEach { it.offer(line) }

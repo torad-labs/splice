@@ -129,11 +129,9 @@ class SharedWorkerChannelCellCloseTest {
     fun `a cancelled slot cannot claim a fatal reply through a stale recipient lookup`() = runBlocking {
         val process = SyntheticHost()
         val parent = CoroutineScope(coroutineContext + Dispatchers.Default)
-        SharedWorkerChannel(process, parent).use { host ->
+        val replies = CancellationRaceReplies()
+        SharedWorkerChannel(process, parent, pending = replies).use { host ->
             host.awaitReady()
-            val replies = CancellationRaceReplies()
-            val field = SharedWorkerChannel::class.java.getDeclaredField("pending").apply { isAccessible = true }
-            field.set(host, replies)
             val gone = CompletableDeferred<Unit>()
             host.afterExit {
                 // Exit is published before the held cancellation is released: once remove() returns, the
@@ -181,14 +179,14 @@ class SharedWorkerChannelCellCloseTest {
         }
     }
 
-    private class CancellationRaceReplies : ConcurrentHashMap<Long, Any>() {
+    private class CancellationRaceReplies : ConcurrentHashMap<Long, PendingHostReply>() {
         val lookedUp = CountDownLatch(1)
         val removed = CountDownLatch(1)
         val retired = CountDownLatch(1)
 
         @Volatile var holdLookup = false
 
-        override fun get(key: Long): Any? {
+        override fun get(key: Long): PendingHostReply? {
             val reply = super.get(key)
             if (holdLookup && reply != null) {
                 lookedUp.countDown()
@@ -197,7 +195,7 @@ class SharedWorkerChannelCellCloseTest {
             return reply
         }
 
-        override fun remove(key: Long): Any? {
+        override fun remove(key: Long): PendingHostReply? {
             val reply = super.remove(key)
             if (holdLookup && reply != null) {
                 removed.countDown()
@@ -208,10 +206,7 @@ class SharedWorkerChannelCellCloseTest {
         }
     }
 
-    private fun pendingCount(host: SharedWorkerChannel): Int {
-        val field = SharedWorkerChannel::class.java.getDeclaredField("pending").apply { isAccessible = true }
-        return (field.get(host) as Map<*, *>).size
-    }
+    private fun pendingCount(host: SharedWorkerChannel): Int = host.pending.size
 
     private class SyntheticHost : Process() {
         val sent = Channel<HostFrame>(Channel.UNLIMITED)

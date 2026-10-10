@@ -558,7 +558,11 @@ private fun readmeMutations(): List<Mutation> = listOf(
     Mutation("the example config without password-equivalent", "example-password-equivalent", "password-equivalent") {
         file(EXAMPLE_TOML, "# keys\n")
     },
-    Mutation("TopologyLoader calling its examples experimental", "topology-loader-not-experimental", "still contains 'experimental'") {
+    Mutation(
+        "TopologyLoader calling its examples experimental",
+        "topology-loader-not-experimental",
+        "still contains 'experimental'",
+    ) {
         file(TOPOLOGY_LOADER, "// Experimental examples remain opt-in\n")
     },
 ) + DISCLAIMERS.map { phrase ->

@@ -23,7 +23,8 @@ import java.lang.management.ManagementFactory
 class JsonWireTest {
     @Test
     fun `wire strings preserve non ASCII escaping nested tool blocks and scalar spellings`() {
-        val golden = """{"text":"café 🐉\nquote \" and slash \\","tool":{"input":{"nested":[{"tab":"\t"}],"number":1.0,"null":null}}}"""
+        val golden = """{"text":"café 🐉\nquote \" and slash \\",""" +
+            """"tool":{"input":{"nested":[{"tab":"\t"}],"number":1.0,"null":null}}}"""
         val tree = Json.parseToJsonElement(golden)
         assertEquals(golden, JsonWire.string(tree))
         val output = ByteArrayOutputStream()

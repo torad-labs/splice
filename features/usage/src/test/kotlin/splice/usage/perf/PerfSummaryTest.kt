@@ -36,9 +36,33 @@ class PerfSummaryTest {
             listOf(
                 row(20_000, "ok", "first_byte" to 5000L, "stream_end" to 9000L, "total" to 9500L, "inflight" to 7L),
                 row(21_000, "ok", "first_byte" to 6000L, "stream_end" to 9500L, "total" to 9900L),
-                row(30_000, "ok", "first_byte" to 120L, "stream_end" to 420L, "total" to 520L, "retries" to 2L, "refreshes" to 1L),
-                row(31_000, "ok", "first_byte" to 130L, "stream_end" to 430L, "total" to 530L, "retries" to 2L, "refreshes" to 1L),
-                row(32_000, "ok", "first_byte" to 140L, "stream_end" to 440L, "total" to 540L, "retries" to 2L, "refreshes" to 1L),
+                row(
+                    30_000,
+                    "ok",
+                    "first_byte" to 120L,
+                    "stream_end" to 420L,
+                    "total" to 520L,
+                    "retries" to 2L,
+                    "refreshes" to 1L,
+                ),
+                row(
+                    31_000,
+                    "ok",
+                    "first_byte" to 130L,
+                    "stream_end" to 430L,
+                    "total" to 530L,
+                    "retries" to 2L,
+                    "refreshes" to 1L,
+                ),
+                row(
+                    32_000,
+                    "ok",
+                    "first_byte" to 140L,
+                    "stream_end" to 440L,
+                    "total" to 540L,
+                    "retries" to 2L,
+                    "refreshes" to 1L,
+                ),
                 // async_io_drops is the daemon's CUMULATIVE counter: oldest first these read 0, 1, 1, 3 —
                 // two drops happened inside the window, whatever every later row keeps carrying.
                 row(40_000, "error:upstream-failed", "total" to 300L, "async_io_drops" to 3L),

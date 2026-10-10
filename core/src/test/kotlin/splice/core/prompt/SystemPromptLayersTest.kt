@@ -32,7 +32,11 @@ class SystemPromptLayersTest {
     private fun head(text: String, mode: SystemPromptMode) =
         HeadSystemPrompt(text = text, mode = mode, source = "head:codex")
 
-    private fun layers(headMode: SystemPromptMode, projectMode: SystemPromptMode, headLayerMode: SystemPromptMode): List<EffectiveSystemPrompt> {
+    private fun layers(
+        headMode: SystemPromptMode,
+        projectMode: SystemPromptMode,
+        headLayerMode: SystemPromptMode,
+    ): List<EffectiveSystemPrompt> {
         val projects = mapOf(
             repo to ProjectConfig(
                 systemPrompt = "P",

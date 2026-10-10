@@ -416,8 +416,7 @@ class AccountPoolTest {
         }
 
         val pool = AccountPool(listOf(account("primary", true), account("plus-a", false)), WallClock(now::get))
-        val sessions = AccountPool::class.java.getDeclaredField("sessions").apply { isAccessible = true }.get(pool)
-        monitorHolder.set(sessions)
+        monitorHolder.set(pool.sessionMonitor)
 
         pool.chosen("session")
 

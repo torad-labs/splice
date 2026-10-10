@@ -99,8 +99,8 @@ internal object QuirksKeysDocumented {
         if (classes == 0) problems += "$label: no data class found — the denominator is absent"
         val serialsRaw = SERIAL_NAME.findAll(KotlinText.stripComments(source)).count()
         if (serialsRaw != serialsParsed) {
-            problems += "$label: parsed $serialsParsed @SerialName keys but the file holds $serialsRaw — the parser and " +
-                "the source disagree, so no key list from this run can be trusted"
+            problems += "$label: parsed $serialsParsed @SerialName keys but the file holds $serialsRaw — the parser " +
+                "and the source disagree, so no key list from this run can be trusted"
         }
         return keys to problems
     }
@@ -168,8 +168,8 @@ internal object QuirksKeysDocumented {
         val surfaceNames = surfaces.joinToString(" or ") { it.rel }
         for (quirk in keys) {
             if (disposed(quirk, texts, problems)) continue
-            problems += "NO DISPOSITION: ${quirk.table}.${quirk.key} (${quirk.klass}.${quirk.prop}) is documented nowhere " +
-                "in $surfaceNames; document it there, or retire it with `# retired: ${quirk.key} — <reason>`"
+            problems += "NO DISPOSITION: ${quirk.table}.${quirk.key} (${quirk.klass}.${quirk.prop}) is documented " +
+                "nowhere in $surfaceNames; document it there, or retire it with `# retired: ${quirk.key} — <reason>`"
         }
         return problems
     }

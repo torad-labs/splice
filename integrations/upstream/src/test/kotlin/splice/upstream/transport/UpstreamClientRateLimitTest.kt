@@ -31,14 +31,13 @@ class NativeRateLimitHeadersTest {
             val posted = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
-            val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal","resets_in_seconds":3600}}"""
             val engine = MockEngine {
                 if (requests++ == 0) {
                     posted.complete(Unit)
                     release.await()
                     respond("synthetic success", HttpStatusCode.OK)
                 } else {
-                    respond(native, HttpStatusCode.TooManyRequests, headersOf("Retry-After", "60"))
+                    respond(NATIVE_REFUSAL, HttpStatusCode.TooManyRequests, headersOf("Retry-After", "60"))
                 }
             }
             val http = HttpClient(engine)
@@ -128,6 +127,9 @@ class NativeRateLimitHeadersTest {
         assertEquals(1, attempts, "neither proxy retries nor the held follower reach upstream")
     }
 }
+
+private const val NATIVE_REFUSAL = """{"type":"error","error":{"type":"rate_limit_error",""" +
+    """"message":"synthetic refusal","resets_in_seconds":3600}}"""
 
 class UpstreamClientRateLimitTest {
 

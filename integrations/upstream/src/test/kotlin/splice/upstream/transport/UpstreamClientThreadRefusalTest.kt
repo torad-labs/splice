@@ -147,7 +147,7 @@ class UpstreamClientThreadRefusalTest {
     // (AsyncTimeout.insertIntoQueue starts the watchdog with no handler, okio 3.17.0). The retry sends the
     // request again, so it is a possible duplicate, whatever the refusal was.
     @Test
-    fun `a thread refused at the response read, after the upstream took the request, retries as a possible duplicate`() {
+    fun `a thread refused at the response read, after the upstream took the request, retries as a duplicate`() {
         LoopbackUpstream().use { upstream ->
             val retries = CopyOnWriteArrayList<String>()
             val client = UpstreamClient(

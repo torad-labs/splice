@@ -120,9 +120,9 @@ class LocalRuntimeProbeTest {
 
     @Test
     fun `LM Studio answering 200 with an error object on Ollama's paths is still LM Studio`() {
+        val row = """{"id":"qwen/qwen3-4b","max_context_length":32768,"state":"loaded","loaded_context_length":8192}"""
         val lmStudio = LocalHttp { _, url, _ ->
             if (url.endsWith("/api/v0/models")) {
-                val row = """{"id":"qwen/qwen3-4b","max_context_length":32768,"state":"loaded","loaded_context_length":8192}"""
                 LocalHttpReply(200, """{"data":[$row],"object":"list"}""")
             } else {
                 LocalHttpReply(200, """{"error":"Unexpected endpoint or method. (GET ${url.substringAfter(":1")})"}""")

@@ -64,6 +64,49 @@ public data class AddProfile internal constructor(
     internal val origin: String get() = labels.origin ?: "splice add $name"
 }
 
+/** The provider table a profile renders: the wire [dialect] it speaks, the [authKind] that signs it in, whether the
+ *  operator must supply a key, and any [extra] provider lines. Only this module constructs one. */
+@ConsistentCopyVisibility
+public data class AddProviderSpec internal constructor(
+    internal val dialect: String,
+    public val authKind: String,
+    /** Whether an API-key profile needs a key from the operator. Local runtimes use a non-secret
+     *  placeholder at save instead; OAuth and client profiles have their own sign-in path. */
+    internal val requiresKey: Boolean = authKind == API_KEY,
+    /** Extra provider lines, already valid TOML (a default vendor header, for one). */
+    internal val extra: List<String> = emptyList(),
+)
+
+/** The head a profile adds: the [key] it is known by (provider AND head key) and the wrapper [command] that
+ *  launches it. Only this module constructs one. */
+@ConsistentCopyVisibility
+public data class AddHeadSpec internal constructor(
+    /** Default provider AND head key; empty when the operator must name it (`--name`). */
+    public val key: String,
+    /** Default wrapper command; empty means `claude-<key>`. */
+    internal val command: String,
+)
+
+/** How a profile describes itself: the [summary] line the wizard lists and the [origin] its TOML comment and the
+ *  verb's title name. */
+internal data class AddLabels(
+    val summary: String,
+    /** What added the row; null means a catalogue row, added by `splice add <name>`. A runtime-described row
+     *  (RuntimeHeadAdd) is not in this catalogue, so naming a verb that cannot reproduce it would send the
+     *  operator to a command that fails. */
+    val origin: String? = null,
+)
+
+/** How the endpoint's model list is used for a profile. */
+internal data class AddModelPolicy(
+    /** Whether the endpoint's model list decides the models check. False for a server that answers
+     *  ANY model id (llama-server lists a file path, not the id a row sends): there an unlisted row
+     *  is trusted and reported as such, the rule LocalRuntimeProbe applies at boot. */
+    val listAuthoritative: Boolean = true,
+    /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
+    val discoverRoster: Boolean = false,
+)
+
 public class AddProfiles {
 
     private val profiles = AddProfileCatalog().rows

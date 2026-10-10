@@ -16,6 +16,14 @@ public data class SessionHistoryEntry(
     val files: SessionFiles,
 )
 
+/** Which on-disk sources know a session: a history row, a primary transcript file, or both. */
+public data class SessionFiles(
+    val hasHistory: Boolean,
+    val hasTranscript: Boolean,
+    /** An empty primary file remains in the census but cannot continue a conversation. */
+    val resumable: Boolean = hasTranscript,
+)
+
 /** The denominator comes from the on-disk sources, not from a registry of running processes.
  *  [skipped] counts non-session artifacts by reason; [errors] names unreadable sources. */
 public data class SessionHistoryScan(

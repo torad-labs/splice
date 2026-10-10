@@ -29,6 +29,13 @@ internal data class DoctorCheck(
     val notes: DoctorCheckNotes = DoctorCheckNotes(),
 )
 
+/** What a check says beside its finding. [pendingRestart]: the declared restart-required value differs
+ *  from the running daemon's value. [details]: supporting counts shown separately from the finding. */
+internal data class DoctorCheckNotes(
+    val pendingRestart: Boolean = false,
+    val details: String? = null,
+)
+
 /** What a check's `fix` is: `fix_kind` on the wire (absent with no fix). */
 internal enum class FixKind(val wire: String) {
     /** One shell line, complete and safe to paste: no placeholder, no trailing note. */

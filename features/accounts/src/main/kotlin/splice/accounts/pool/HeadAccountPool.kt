@@ -86,6 +86,30 @@ public data class HeadAccountView(
     val credential: HeadAccountCredential = HeadAccountCredential(),
 )
 
+/** A head account's credential standing: whether splice can load it, and the timed authentication hold, if any,
+ *  that keeps it out of selection, with the reason. */
+public data class HeadAccountCredential(
+    val present: Boolean = true,
+    val excludedUntilEpochMillis: Long? = null,
+    val exclusionReason: String? = null,
+)
+
+/** A head account's quota: its two windows and when they were observed, epoch SECONDS (the reset fields' unit), or
+ *  null when its tracker names no observation. */
+public data class HeadAccountQuota(
+    val fiveHour: HeadAccountWindow = HeadAccountWindow(),
+    val sevenDay: HeadAccountWindow = HeadAccountWindow(),
+    val observedAtEpochSeconds: Long? = null,
+)
+
+/** One quota window of a head's account as the control surface reads it: how full it is, when it resets (epoch
+ *  SECONDS) and its own reported length in seconds. Every field is null when the account names no such window. */
+public data class HeadAccountWindow(
+    val usedPercent: Double? = null,
+    val resetEpochSeconds: Long? = null,
+    val windowSeconds: Long? = null,
+)
+
 public data class HeadAccountSwitchView(
     val from: String,
     val to: String,

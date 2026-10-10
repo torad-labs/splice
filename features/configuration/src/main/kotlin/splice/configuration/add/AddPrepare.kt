@@ -16,6 +16,7 @@ import java.net.ServerSocket
 import java.net.URI
 import java.net.URISyntaxException
 import java.nio.file.Files
+import java.nio.file.Path
 
 private const val FIRST_HEAD_PORT = 3099
 
@@ -52,6 +53,14 @@ internal data class AddCandidate(
     /** The wrapper command the head is launched by, as the resolved profile names it. */
     val command: String get() = resolved.head.command
 }
+
+/** The config file an add edits: its [path], the text it held when the add was prepared ([existing]) and the
+ *  tables the add appends to it ([appended]). */
+internal data class AddFileEdit(
+    val path: Path,
+    val existing: String,
+    val appended: String,
+)
 
 /** What preparing an add decided, before any side effect: a candidate, or why there is none. */
 internal sealed class AddPrepared {

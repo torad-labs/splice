@@ -50,6 +50,14 @@ public data class LoginStatus(
     val usageSetAside: String? = null,
 )
 
+/** What a sign-in asks the person to do. [userCode] and [verificationUri] are the device flow's announcement;
+ *  [browserUrl] is the OAuth flow's, for the console to open. A flow fills only the part it has. */
+public data class LoginPrompt(
+    val userCode: String? = null,
+    val verificationUri: String? = null,
+    val browserUrl: String? = null,
+)
+
 public sealed class LoginStart {
     public data class Started(val status: LoginStatus) : LoginStart()
     public data object UnknownHead : LoginStart()

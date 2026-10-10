@@ -18,6 +18,7 @@ import splice.oauth.LoginSpec
 import splice.oauth.OAuthAccountRefused
 import splice.oauth.OAuthLoginAccount
 import splice.oauth.OAuthLoginFlow
+import splice.oauth.codex.CodexDeviceLogin
 import splice.oauth.codex.LoginCodex
 import splice.oauth.grok.LoginGrok
 import splice.oauth.kimi.LoginKimi
@@ -101,6 +102,9 @@ internal class LoginCommand(
                 val ok = DeviceLoginFlow(output).run(spec, observer = observer)
                 LoginResult(ok, spec.account, spec.account?.refusal())
             }
+            // Spec section 11: the console watches a ChatGPT login through the device flow; the browser flow
+            // stays terminal-only.
+            "chatgpt-oauth" -> chatgptLogin(headKey, provider, topology, label, observer)
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
             "api-key" -> if (label == null) {
@@ -109,15 +113,7 @@ internal class LoginCommand(
                 println("splice: --label is only supported for OAuth heads")
                 LoginResult(false)
             }
-            else -> {
-                val spec = specFor(headKey, topology, label)
-                if (spec == null) {
-                    LoginResult(false)
-                } else {
-                    val ok = OAuthLoginFlow(output).run(spec, observer)
-                    LoginResult(ok, spec.account, spec.account?.refusal())
-                }
-            }
+            else -> browserLogin(headKey, topology, label, observer)
         }
     } catch (e: OAuthAccountRefused) {
         println("splice: ${e.reason}")
@@ -126,6 +122,30 @@ internal class LoginCommand(
         val reason = SafeFailureText.render(e)
         println("splice: $reason")
         LoginResult(false, refusal = reason)
+    }
+
+    private suspend fun chatgptLogin(
+        headKey: String,
+        provider: ProviderConfig,
+        topology: Topology,
+        label: String?,
+        observer: LoginObserver?,
+    ): LoginResult {
+        if (observer == null) return browserLogin(headKey, topology, label, null)
+        val spec = codex.deviceSpec(headKey, oauthAuthPath(provider), label)
+        val ok = CodexDeviceLogin(output).run(spec, observer = observer)
+        return LoginResult(ok, spec.account, spec.account?.refusal())
+    }
+
+    private suspend fun browserLogin(
+        headKey: String,
+        topology: Topology,
+        label: String?,
+        observer: LoginObserver?,
+    ): LoginResult {
+        val spec = specFor(headKey, topology, label) ?: return LoginResult(false)
+        val ok = OAuthLoginFlow(output).run(spec, observer)
+        return LoginResult(ok, spec.account, spec.account?.refusal())
     }
 
     // internal (V4-132): LoginSessions (splice.app) reads .ok/.account off runLoginAttempt's result.

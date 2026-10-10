@@ -62,6 +62,26 @@ public class LoginCodex {
         )
     }
 
+    /** The console's ChatGPT login: OpenAI's device-code sequence instead of the browser loopback (spec section 11). */
+    public fun deviceSpec(head: String, authPath: Path, label: String? = null): CodexDeviceSpec {
+        val account = OAuthAccountFiles().loginAccount(
+            AuthKind.ChatgptOAuth,
+            authPath,
+            label,
+            OAuthAccountLabel(::defaultLabel),
+            OAuthAccountIdentity(::accountId),
+        )
+        return CodexDeviceSpec(
+            head = head,
+            issuer = CodexOAuthEndpoints.issuer(env),
+            clientId = CodexOAuthEndpoints.clientId(env),
+            tokenUrl = CodexOAuthEndpoints.tokenUrl(env),
+            authPath = authPath,
+            account = account,
+            toAuthJson = { body -> authJson(body) },
+        )
+    }
+
     private fun authJson(body: String): String {
         val obj = json.parseToJsonElement(body).jsonObject
         fun s(k: String) = JsonScalars.str(obj, k)

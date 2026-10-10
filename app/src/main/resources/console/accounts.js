@@ -50,7 +50,7 @@ const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 // One read of everything the page shows. Each provider: its commands (with their order, pin and day) and its accounts.
 async function load() {
   NOW = new Date();
-  const [st, ac, ks, bg, ec, md] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/economics", "/api/models"].map((p) => API.get(p)));
+  const [st, ac, ks, bg, ec, md, hd] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/economics", "/api/models", "/api/heads"].map((p) => API.get(p)));
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
@@ -59,6 +59,8 @@ async function load() {
     .reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 })]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
+  // a local runtime splice could not reach on its port (/api/heads runtimeNotAnswering): its card says so, as a signed-out one does
+  const down = new Set(((Array.isArray(hd.body) ? hd.body : hd.body?.heads) || []).filter((h) => h.runtimeNotAnswering).map((h) => h.key));
   const pinnedModel = new Map((md.body?.heads || []).map((h) => [h.head, (h.models || []).find((m) => m.pinned)?.label || h.pinned_model]));
   const keyRows = ks.body?.keys || [];
   const provs = new Map();
@@ -103,7 +105,7 @@ async function load() {
         for (const r of k.replaced || []) p.accounts.push({ id: `${k.name}#${r.fingerprint}`, env: k.name, has: true, from: "replaced", seen: day(r.first_seen_epoch_seconds) });
       }
     } else {
-      for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "" });
+      for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "", down: down.has(c.head) });
     }
   }
   // each plan command's own order and pin (AccountOrderStore.kt:1, :24): no order is the soonest-reset rule
@@ -249,7 +251,9 @@ function meterHtml(c, pick = null) {
   if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
   // A figure that leaves out a turn is no figure: until every turn has a price, the day shows only how many lack one
   // (Marlin, Oct 10), never "$0.00" over turns that cost something.
-  const spent = c.unpriced || c.local ? "" : money(c.spent);
+  // a spend splice is still reading (spend_pending, used_usd null after a restart) is no figure yet: it once threw here
+  // and left the whole board empty on the first open after a restart
+  const spent = c.unpriced || c.local || c.spent == null ? "" : money(c.spent);
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${resets(day)}</div>`;
@@ -381,6 +385,7 @@ function slotHtml(p, c, a, serves) {
   // the pin says what pressing it does, at rest and on touch: both walkers clicked a bare pin on a guess (p153, p154)
   const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}">${ICON.pin}Unpin</button>` : "";
   const chips = serves.map((x) => `<span class="chip" data-key="chip:${x.cmd}"><i></i>${esc(x.cmd)}</span>`).join("");
+  if (a.down) return `<span class="state">Not answering</span>`; // placeholder until fin's words (Marlin, Oct 10)
   if (serves.length && (!c || serves.includes(c))) return `${pin}${chips}`;
   if (a.out) return `<span class="state">Signed out</span>`;
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
@@ -443,7 +448,7 @@ function cardHtml(p, c, a, i, serves) {
     // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
     body = `<div class="keysrc"><span class="state">${esc(p.name)} doesn't report limits</span></div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
-  else body = `<div class="local-model"><i></i>${esc(a.model)}</div>`;
+  else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
     + `${nameHtml(p, a, spot)}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`

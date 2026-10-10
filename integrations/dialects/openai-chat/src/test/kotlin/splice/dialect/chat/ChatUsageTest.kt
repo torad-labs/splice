@@ -54,7 +54,9 @@ class ChatUsageTest {
         val s = driveEvents(
             ev("""{"choices":[{"delta":{"content":"x"},"finish_reason":null}]}"""),
             ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":80}}}""",
+                """{"choices":[{"delta":{},"finish_reason":"stop"}],""" +
+                    """"usage":{"prompt_tokens":100,"completion_tokens":5,""" +
+                        """"prompt_tokens_details":{"cached_tokens":80}}}""",
             ),
         ) as TurnOutcome.Success
         assertEquals(100, s.usage.inputTokens)
@@ -103,7 +105,8 @@ class ChatUsageTest {
     fun `usage cached tokens fall back to flat cached_tokens`() = runTest {
         val s = driveEvents(
             ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"cached_tokens":40}}""",
+                """{"choices":[{"delta":{},"finish_reason":"stop"}],""" +
+                    """"usage":{"prompt_tokens":100,"completion_tokens":5,"cached_tokens":40}}""",
             ),
         ) as TurnOutcome.Success
         assertEquals(40, s.usage.cachedTokens)
@@ -113,7 +116,8 @@ class ChatUsageTest {
     fun `usage cached tokens fall back to deepseek prompt_cache_hit_tokens`() = runTest {
         val s = driveEvents(
             ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_cache_hit_tokens":25}}""",
+                """{"choices":[{"delta":{},"finish_reason":"stop"}],""" +
+                    """"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_cache_hit_tokens":25}}""",
             ),
         ) as TurnOutcome.Success
         assertEquals(25, s.usage.cachedTokens)
@@ -123,7 +127,8 @@ class ChatUsageTest {
     fun `usage cached tokens absent defaults to zero`() = runTest {
         val s = driveEvents(
             ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5}}""",
+                """{"choices":[{"delta":{},"finish_reason":"stop"}],""" +
+                    """"usage":{"prompt_tokens":100,"completion_tokens":5}}""",
             ),
         ) as TurnOutcome.Success
         assertEquals(0, s.usage.cachedTokens)

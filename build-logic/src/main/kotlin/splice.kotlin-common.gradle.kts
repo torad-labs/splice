@@ -137,4 +137,39 @@ tasks.withType<Test>().configureEach {
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showStackTraces = true
     }
+    // A RESULTS DIRECTORY LEFT MID-WRITE RECOVERS HERE, INSTEAD OF ENDING EVERY RUN AFTER IT.
+    // gradle's reporter finishes by moving its in-progress file onto the final one
+    // (SerializableTestResultStore$Writer.close: Files.move(in-progress-results-generic.bin,
+    // results-generic.bin, REPLACE_EXISTING)), so an existing TARGET is harmless and a missing
+    // SOURCE is fatal — NoSuchFileException at DefaultRootTestEventReporter.close, which names an
+    // internal binary and nothing a reader can act on. Two gradle runs sharing one project
+    // directory is how the source goes missing, and on 2026-10-10 that cost a seat three runs with
+    // a different wrong diagnosis each time: a flake, then concurrency, then memory.
+    //
+    // ONE GRADLE AT A TIME IS THE WRAPPER'S JOB NOW (./gradlew routes itself through the slot), so
+    // an in-progress file sitting here BEFORE this task runs belongs to no live run: it is what a
+    // killed or collided run left behind. Clearing it costs this run nothing it was going to keep —
+    // the run rewrites these reports anyway — and keeping it costs every run after.
+    val resultsDir = reports.junitXml.outputLocation
+    val binaryDir = binaryResultsDirectory
+    val htmlDir = reports.html.outputLocation
+    doFirst {
+        val binary = binaryDir.get().asFile
+        val leftMidWrite = binary.listFiles { file -> file.name.startsWith("in-progress-") }.orEmpty()
+        if (leftMidWrite.isNotEmpty()) {
+            val named = leftMidWrite.joinToString(", ") { it.name }
+            // The XML directory is the binary directory's parent, so one delete covers both.
+            val clearing = listOf(resultsDir.get().asFile, htmlDir.get().asFile)
+            clearing.forEach { it.deleteRecursively() }
+            val kept = clearing.filter { it.exists() }
+            if (kept.isNotEmpty()) {
+                throw GradleException(
+                    "$path: a previous run left $named in $binary, which makes gradle's test reporter " +
+                        "fail at close on every later run, and this could not be cleared. Delete it and " +
+                        "run again:\n" + kept.joinToString("\n") { "    rm -rf $it" },
+                )
+            }
+            logger.lifecycle("$path: cleared a results directory a previous run left mid-write ($named)")
+        }
+    }
 }

@@ -5,7 +5,7 @@
 # user with an empty HOME. The release artifacts and the checkout are mounted at run time, so the
 # same image proves any build. The container runs with --network none: every byte the daemon and
 # the wrapper move goes to the two in-container mock upstreams, or the run fails.
-FROM eclipse-temurin:21-jre-noble
+FROM eclipse-temurin:21-jre-noble AS fresh
 
 # Every input is pinned so two builds a month apart prove the same machine (review of #116):
 # Node from the official tarball, verified against its published sha256; Claude Code at an exact
@@ -45,3 +45,14 @@ USER tester
 WORKDIR /home/tester
 ENV HOME=/home/tester
 ENV PATH="/home/tester/.local/bin:${PATH}"
+
+# The machine an EXISTING 0.3.x user upgrades on: the fresh machine plus python3, which 0.3.x's launch shim
+# lists as a prerequisite (its README, install.sh) and parses /health with. Without it the old shim cannot read its
+# own healthy daemon and refuses ("port is occupied by a non-splice or malformed health endpoint"), so the
+# rehearsal never reaches the upgrade. Only the upgrade run builds this stage; the fresh machine stays without it,
+# because 0.4.0 needs none.
+# NO-PYTHON-EXEMPT[2026-10-10]: runs a published 0.3.x as shipped, which needs python3 (President for Marcos, 2026-10-10); remove when the oldest supported upgrade source no longer needs python3.
+FROM fresh AS upgrade
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+USER tester

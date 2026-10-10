@@ -22,10 +22,14 @@
  *     package script (no-python-shell.ts); the spawn calls of a TypeScript, Kotlin
  *     or Java source (no-python-sources.ts); a launcher entry whose command is the interpreter. A
  *     sentence, a comment, a label or an `echo` that names it is not an invocation.
- *   · THERE IS NO LIST AND NO EXEMPTION. Every census is graded against zero, and this library, its
+ *   · THERE IS NO LIST, AND ONE NAMED EXEMPTION. Every census is graded against zero, and this library, its
  *     command and its tests are judged like any other file: a law that exempts its own declaration
  *     site is a law that can be broken from there. Their pattern strings are not invocations, so they
- *     need no allowance.
+ *     need no allowance. The one exemption (President for Marcos, 2026-10-10) is a Dockerfile STAGE,
+ *     never a file: the comment line directly above its FROM reads `NO-PYTHON-EXEMPT[date]: reason`, and
+ *     only that stage's instructions are skipped. It lets the upgrade rehearsal run a published 0.3.x as
+ *     its users run it (that shim needs the interpreter). The interpreter in any other stage of the same
+ *     file, or a marker with no reason, still fails.
  *
  * The denominator comes from git, never from a list (global rules §24): ONE domain for every kind of
  * check, the tracked files plus the untracked files that are not ignored, enumerated NUL-separated so
@@ -123,10 +127,14 @@ interface Extract {
 
 const word = (value: string): ShellWord => ({ raw: JSON.stringify(value), value });
 
+const DOCKER_EXEMPT_STAGE = /^\s*#\s*NO-PYTHON-EXEMPT\[\d{4}-\d{2}-\d{2}\]:\s*\S/;
+const EXEMPT_STAGE_TOKEN = "\u0000exempt-stage";
+
 function dockerExtract(text: string, out: Extract): void {
   const lines: string[] = [];
   let carry = "";
   for (const line of text.split("\n")) {
+    if (!carry && DOCKER_EXEMPT_STAGE.test(line)) lines.push(EXEMPT_STAGE_TOKEN);
     if (!carry && /^\s*#/.test(line)) continue;
     const joined = carry + line;
     if (/\\\s*$/.test(joined)) carry = joined.replace(/\\\s*$/, " ");
@@ -136,17 +144,27 @@ function dockerExtract(text: string, out: Extract): void {
     }
   }
   if (carry) lines.push(carry);
+  let marked = false;
+  let exemptStage = false;
   for (const line of lines) {
+    if (line === EXEMPT_STAGE_TOKEN) {
+      marked = true;
+      continue;
+    }
     const m = /^\s*(?:ONBUILD\s+)?([A-Za-z]+)\s+([\s\S]*)$/.exec(line);
     if (!m) continue;
     const instruction = m[1]!.toUpperCase();
     let rest = m[2]!.trim();
     if (instruction === "FROM") {
+      exemptStage = marked;
+      marked = false;
       const image = rest.split(/\s+/).find((w) => !w.startsWith("--")) ?? "";
       const name = image.split("/").pop()!.split(/[:@]/)[0]!;
       if (/^(?:python|pypy)\d*$/.test(name)) out.interpreter = true;
       continue;
     }
+    marked = false;
+    if (exemptStage) continue;
     if (instruction === "HEALTHCHECK") rest = rest.replace(/^(?:--\S+\s+)*CMD\s+/i, "");
     else if (instruction !== "RUN" && instruction !== "CMD" && instruction !== "ENTRYPOINT") continue;
     rest = rest.replace(/^(?:--\S+\s+)+/, ""); // RUN --mount=... --network=...

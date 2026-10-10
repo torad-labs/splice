@@ -226,6 +226,24 @@ describe("the no-python wall: invocations by structure", () => {
     }, (r) => isTracked(r, path));
   }
 
+  // ── the one named exemption: a Dockerfile STAGE, never the file ─────────────────────────
+  const STAGES = (fresh: string, mark: string, upgrade: string) =>
+    `FROM debian AS fresh\n${fresh}${mark}FROM fresh AS upgrade\n${upgrade}`;
+  const MARK = "# NO-PYTHON-EXEMPT[2026-10-10]: runs a published 0.3.x as shipped (test)\n";
+  const PY = "RUN apt-get install -y python3\n";
+  const dockerArm = (label: string, expect_: "red" | "green", text: string) =>
+    arm(label, expect_, (r) => {
+      w(r, "docker/Dockerfile", text);
+      commit(r);
+    }, (r) => isTracked(r, "docker/Dockerfile"));
+  dockerArm("python in the marked stage only", "green", STAGES("RUN echo ok\n", MARK, PY));
+  dockerArm("python in the stage BEFORE the marked one", "red", STAGES(PY, MARK, "RUN echo ok\n"));
+  dockerArm("python in a stage AFTER the marked one", "red", STAGES("RUN echo ok\n", MARK, "RUN echo ok\n") + "FROM debian AS later\n" + PY);
+  dockerArm("python in the same file with no marker", "red", STAGES("RUN echo ok\n", "", PY));
+  dockerArm("a marker with no reason", "red", STAGES("RUN echo ok\n", "# NO-PYTHON-EXEMPT[2026-10-10]:\n", PY));
+  dockerArm("a marker with no date", "red", STAGES("RUN echo ok\n", "# NO-PYTHON-EXEMPT: a reason\n", PY));
+  dockerArm("a marker above an unrelated instruction, not the FROM", "red", STAGES("RUN echo ok\n", "", "") + MARK + "RUN echo x\n" + "FROM debian AS later\n" + PY);
+
   // ── the compat modules: a NAME is not an invocation ────────────────────────────────────────
   // tools/e2e/src/compat/python-{http,json,values}.ts exist so this repo does NOT shell into Python.
   // The red arm is the boundary: importing one is clean, importing one AND spawning python3 is not.

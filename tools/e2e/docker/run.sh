@@ -32,6 +32,7 @@ TESTED_CLAUDE_CODE="$(sed -nE 's/^((public|internal) )?const val TESTED_CLAUDE_C
   "$ROOT/core/src/main/kotlin/splice/core/Versions.kt" | head -1)"
 [ -n "$TESTED_CLAUDE_CODE" ] || { echo "run.sh: TESTED_CLAUDE_CODE is missing or malformed" >&2; exit 2; }
 IMAGE="splice-e2e-fresh:local"
+IMAGE_TARGET="fresh"
 RELEASE=""; JAR=""; SHIM=""; KEEP=0; BUILD=1; UPGRADE_FROM=""; SCENARIO_NAME=""; PLAN_RESET_S=""; PROBE_MESSAGE=""
 CLIENT_MODEL=""
 while [ $# -gt 0 ]; do
@@ -141,6 +142,7 @@ if [ -n "$UPGRADE_FROM" ]; then
     (cd "$ART" && sha256sum splice.jar splice-launch > sha256sums.txt) && chmod 0644 "$ART/sha256sums.txt"
   fi
   SCENARIO="upgrade.sh"; RECEIPT_NAME="upgrade-$UPGRADE_FROM"
+  IMAGE="splice-e2e-upgrade:local"; IMAGE_TARGET="upgrade"
   MODE_ARGS=(-e "SPLICE_UPGRADE_FROM=$UPGRADE_FROM" -v "$FROM_ART:/from:ro")
 fi
 
@@ -151,7 +153,7 @@ if [ "$BUILD" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   HOST_UID="$(id -u)"
   [ "$HOST_UID" != 0 ] || { echo "run.sh: run as a non-root user (the image's tester account needs a non-zero uid)" >&2; exit 2; }
   echo "run.sh: building $IMAGE (Claude Code $TESTED_CLAUDE_CODE)"
-  docker build -q --build-arg "CLAUDE_CODE_VERSION=$TESTED_CLAUDE_CODE" --build-arg "UID=$HOST_UID" \
+  docker build -q --target "$IMAGE_TARGET" --build-arg "CLAUDE_CODE_VERSION=$TESTED_CLAUDE_CODE" --build-arg "UID=$HOST_UID" \
     -t "$IMAGE" "$ROOT/tools/e2e/docker" >/dev/null
 fi
 

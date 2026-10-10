@@ -7,6 +7,7 @@ package splice.app.control
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.setBody
@@ -14,6 +15,7 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
@@ -76,5 +78,29 @@ class ConfigPersistRouteTest {
         assertEquals("low", obj["applied"]!!.jsonObject["effort"]?.jsonPrimitive?.content, "it still applies: $body")
         assertEquals(JsonNull, obj["persisted"], body)
         assertTrue("could not be written" in obj["not_persisted"]?.jsonPrimitive?.content.orEmpty(), body)
+    }
+
+    private suspend fun patchConfig(body: String) = json.parseToJsonElement(
+        client.patch("http://127.0.0.1:${control.listeningPort}/api/config") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody(body)
+        }.bodyAsText(),
+    ).jsonObject
+
+    @Test
+    fun `config patch flags a restart-only knob as restart_required and not a live knob`() = runBlocking<Unit> {
+        val restartOnly = patchConfig("""{"summary":"auto"}""")
+        assertEquals(listOf("summary"), restartOnly["restart_required"]!!.jsonArray.map { it.jsonPrimitive.content })
+        val live = patchConfig("""{"maxInflight":7,"maxQueued":99}""")
+        assertEquals(2, live["applied"]!!.jsonObject.size, live.toString())
+        assertEquals(0, live["restart_required"]!!.jsonArray.size, live.toString())
+        // Live means the next read already sees it: the effective view is what admission reads per request.
+        val read = client.get("http://127.0.0.1:${control.listeningPort}/api/config") {
+            header("Authorization", "Bearer $key")
+        }.bodyAsText()
+        val effective = json.parseToJsonElement(read).jsonObject["effective"]!!.jsonObject
+        assertEquals("7", effective["maxInflight"]?.jsonPrimitive?.content)
+        assertEquals("99", effective["maxQueued"]?.jsonPrimitive?.content)
     }
 }

@@ -88,7 +88,8 @@ class LocalHeadBootTest {
 
         val refusal = assertThrows(IllegalStateException::class.java) { arm().chatProvider(ctx, "local") }
 
-        assertTrue(refusal.message!!.contains("refuses 'synthetic': not listed by the runtime (listed: other)"), "${refusal.message}")
+        val said = refusal.message.orEmpty()
+        assertTrue(said.contains("refuses 'synthetic': not listed by the runtime (listed: other)"), said)
         assertTrue(seen.all { it.startsWith("GET http://localhost:1/") || it.startsWith("POST http://localhost:1/") })
     }
 

@@ -402,27 +402,6 @@ class ControlServerTest {
         assertEquals(0, obj["targets"]!!.jsonArray.size) // single JVM, no fanout
     }
 
-    private suspend fun patchConfig(body: String) = json.parseToJsonElement(
-        client.patch("http://127.0.0.1:$port/api/config") {
-            header("Authorization", "Bearer $key")
-            header("Content-Type", "application/json")
-            setBody(body)
-        }.bodyAsText(),
-    ).jsonObject
-
-    @Test
-    fun `config patch flags a restart-only knob as restart_required and not a live knob`() = runTest {
-        val restartOnly = patchConfig("""{"summary":"auto"}""")
-        assertEquals(listOf("summary"), restartOnly["restart_required"]!!.jsonArray.map { it.jsonPrimitive.content })
-        val live = patchConfig("""{"maxInflight":7,"maxQueued":99}""")
-        assertEquals(2, live["applied"]!!.jsonObject.size, live.toString())
-        assertEquals(0, live["restart_required"]!!.jsonArray.size, live.toString())
-        // Live means the next read already sees it: the effective view is what admission reads per request.
-        val effective = json.parseToJsonElement(authed("/api/config")).jsonObject["effective"]!!.jsonObject
-        assertEquals("7", effective["maxInflight"]?.jsonPrimitive?.content)
-        assertEquals("99", effective["maxQueued"]?.jsonPrimitive?.content)
-    }
-
     @Test
     fun `usage soft-warn fires from a 90 percent ratelimit`() = runTest {
         // Node shape: {window_hours, warn_pct, warn_tokens_5h, heads:[{key,label,usage:{...,warn}}]}

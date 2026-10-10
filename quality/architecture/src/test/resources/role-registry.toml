@@ -62,7 +62,7 @@ dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
 reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
 
-# ── 21 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+# ── 20 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
 dated = "2026-10-05"
@@ -80,7 +80,6 @@ names = [
     "ProtocolAnomaly",
     "PulseTick",
     "RawSseFlush",
-    "ReanchorSpentHook",
     "RecordingCompleted",
     "RestoreStep",
     "ShutdownDaemon",
@@ -108,8 +107,7 @@ headers, watchdog touch, socket pings or client keep-alives), TurnEnd (a built t
 provider gives back what it held for it, a llama-server slot lease since V4-165). Actions the caller commands: HaltJvm (exit the \
 process), StopControl (shut the control plane down), ShutdownDaemon \
 (the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \
-(release the worker's cell), RawSseFlush (push buffered bytes to the client socket), ReanchorSpentHook \
-(stamp one spent re-anchor on the perf row), RecordingCompleted (FrameRecording.complete returned \
+(release the worker's cell), RawSseFlush (push buffered bytes to the client socket), RecordingCompleted (FrameRecording.complete returned \
 successfully, so the detached drive may keep its recording only if its terminal also ended cleanly; \
 this acknowledgement never runs after failed completion, unlike the earlier HandoffMark or the \
 provider resource release at TurnEnd, proved by TurnStreamerCleanupTest), RestoreStep \
@@ -584,3 +582,9 @@ signature = "(Long)->Boolean"
 dated = "2026-10-03"
 names = ["CurrentUpstreamAttempt", "PidAlive"]
 reason = """CurrentUpstreamAttempt takes a turn's upstream ATTEMPT number and answers whether that attempt is still the live one, so a read or hold interval reported by a retired attempt's late callback is dropped instead of overwriting the current attempt's perf maxima. PidAlive takes an operating-system PROCESS id and answers whether that process still runs, for the session registry's liveness. An attempt counter and a pid are both Long: a swap would ask the kernel about attempt 2, or keep a dead attempt's intervals because some process with that number happens to exist, and both compile in silence."""
+
+[[groups]]
+signature = "(Boolean)->Unit"
+dated = "2026-10-10"
+names = ["ReanchorSpentHook", "WsRoundAnswer"]
+reason = """ReanchorSpentHook stamps one spent re-anchor on the turn's perf row, with a flag saying whether the re-anchor restarted the request from scratch; it is called once per continuation the loop spends and writes only a count. WsRoundAnswer reports whether the upstream accepted one websocket round, so the transport's consumers can learn the outcome without seeing a credential. Wiring an acceptance report where the re-anchor count belongs would charge a healthy round as a restart, and the inverse would hide a rejected round from the transport."""

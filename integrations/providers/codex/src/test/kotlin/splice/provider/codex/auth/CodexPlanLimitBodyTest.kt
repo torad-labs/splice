@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.PlanLimit
-import splice.provider.codex.auth.CodexPlanLimitBody
+import splice.provider.codex.CodexAuthProvider
 import java.nio.file.Path
 
 private const val NOW_S = 1_790_584_000L

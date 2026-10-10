@@ -91,7 +91,10 @@ class ProjectsRoutesTest {
     @Test
     fun `each root is a row with its live sessions, teams and today's turns and dollars`() {
         rig.team()
-        val archived = rig.store.upsert(rig.store.teams().single().copy(id = "", name = "old"))
+        val atlas = rig.store.teams().single()
+        // The archived copy keeps its history but binds no session: one session is on one active team.
+        val unbound = atlas.slots.map { it.copy(session = null) }
+        val archived = rig.store.upsert(atlas.copy(id = "", name = "old", slots = unbound))
         rig.store.archive(archived.id)
         val codex = rig.head(
             "codex",

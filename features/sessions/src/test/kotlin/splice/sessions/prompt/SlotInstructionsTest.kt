@@ -14,7 +14,9 @@ import splice.core.util.WallClock
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.teams.TeamStore
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 
 private const val LEAD = "c3c3c3c3-0000-4000-8000-000000000003"
 private const val BUILDER = "d4d4d4d4-0000-4000-8000-000000000004"
@@ -61,7 +63,13 @@ class SlotInstructionsTest {
         var now = 1_789_725_600_000L
         val store = TeamStore(dir.resolve("teams.json"), clock = WallClock { now++ })
         val first = bound(store)
+        // The store no longer lets a bind make this state, but older data holds it and the prompt still has to tell
+        // both teams' blocks: bind the second while the first is archived, then let the first go live again in the file.
+        store.archive(first)
         val second = bound(store, name = "zephyr", instructions = null)
+        val file = dir.resolve("teams.json")
+        Files.writeString(file, Files.readString(file).replace("\"archived\": true", "\"archived\": false"))
+        Files.setLastModifiedTime(file, FileTime.fromMillis(Files.getLastModifiedTime(file).toMillis() + 5000))
         val prompt = SlotInstructions(store).forSession(BUILDER)!!
         assertEquals("slot:$first/b1+slot:$second/b1", prompt.source)
         assertTrue(prompt.text.contains("reach it at session $LEAD."), prompt.text)

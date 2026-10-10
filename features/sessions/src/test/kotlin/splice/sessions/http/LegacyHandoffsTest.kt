@@ -43,7 +43,9 @@ class LegacyHandoffsTest {
     private val stores by lazy { ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { AT }) }
     private val sessions by lazy { Files.createDirectories(tmp.resolve("sessions")) }
 
+    /** The team, made on first use: asking twice means the same team, because a session is on one. */
     private fun team(): Team {
+        store.teams().firstOrNull()?.let { return it }
         val id = store.upsert(
             Team(
                 name = "atlas",

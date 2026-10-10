@@ -69,7 +69,7 @@ class CompactionTailTest {
     }
 
     @Test
-    fun `unknown session resolves global directly`() {
+    fun `unknown session has no project tier, so its model rule applies and any other model gets global`() {
         val resolver = CompactionTail(
             CompactionInstructions(
                 CompactionConfig(
@@ -81,7 +81,7 @@ class CompactionTailTest {
             projectFor = { null },
         )
 
-        assertEquals("global", resolver.resolve(true, "astra", null)?.text)
+        assertEquals("model", resolver.resolve(true, "astra", null)?.text)
         assertEquals("global", resolver.resolve(true, "other", "unknown")?.text)
     }
 

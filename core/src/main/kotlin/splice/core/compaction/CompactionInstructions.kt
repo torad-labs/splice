@@ -89,12 +89,13 @@ public class CompactionInstructions(
     }
 
     /** project/model > project > model > global. Within either project tier, the longest matching
-     *  absolute path wins. An unknown project uses global directly; empty text remains an opt-out. */
+     *  absolute path wins. An unknown project has no project tier and falls to the model rule, then global;
+     *  empty text remains an opt-out. */
     public fun resolve(model: String, project: Path?): EffectiveCompactionInstructions {
         val normalized = project?.normalize()?.takeIf { it.isAbsolute }?.let(::realPath)
-        val selected = normalized?.let { path ->
-            projectRule(path, model) ?: projectRule(path, null) ?: models[model] ?: global
-        } ?: global
+        val selected = normalized?.let { path -> projectRule(path, model) ?: projectRule(path, null) }
+            ?: models[model]
+            ?: global
         return selected?.let { EffectiveCompactionInstructions(currentText(it), it.scope, it.source) }
             ?: EffectiveCompactionInstructions(null, CompactionScope.CLIENT, CompactionScope.CLIENT.wire)
     }
@@ -132,11 +133,12 @@ public class CompactionInstructions(
      *   - the longest model-less project rule, which, when it exists, SHADOWS every model rule and
      *     the global one for this project (resolve stops at it for any model);
      *   - otherwise each model rule no project-model rule already took for its model, then global.
-     *  A [project] that is not absolute is the unknown project [resolve] answers with global alone.
+     *  A [project] that is not absolute is the unknown project: [resolve] gives it no project tier, so every model
+     *  rule and then global.
      *  Empty means no rule applies anywhere in it: the client's own instructions stand. */
     public fun rulesFor(project: Path): List<EffectiveCompactionInstructions> {
         val path = project.normalize().takeIf { it.isAbsolute }?.let(::realPath)
-            ?: return listOfNotNull(global).map(::effective)
+            ?: return (models.values + listOfNotNull(global)).map(::effective)
         val projectModels = projects.mapNotNull { it.model }.distinct()
             .mapNotNull { model -> projectRule(path, model)?.let { model to it } }
         val projectWide = projectRule(path, null)

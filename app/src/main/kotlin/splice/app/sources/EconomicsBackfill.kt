@@ -69,8 +69,12 @@ internal class EconomicsBackfill(
         from: Long,
         oldestHeld: Long?,
     ): List<EconomicsBucket> {
-        val probes = evidence.probes.toSet()
-        val byHour = evidence.work.rows.filterNot { it in probes }
+        // The same rows ProbeEconomics expects a recorded hour to EQUAL, selected by the same
+        // reader. An hour built from a different set of rows than the one that grades it reads as a
+        // disagreement, and the console then answers Unavailable for that head's whole hourly
+        // history rather than for the hour: a legacy probe left out, or a budget refusal that never
+        // reached a provider left in, is enough to hide a month.
+        val byHour = EconomicsRows().recorded(evidence)
             .groupBy { it.ts / BACKFILL_HOUR_MS * BACKFILL_HOUR_MS }
         val partial = byHour.keys.minOrNull()
         return byHour

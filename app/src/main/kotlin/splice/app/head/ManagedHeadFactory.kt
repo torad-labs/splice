@@ -25,6 +25,7 @@ import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.model.TurnPrice
+import splice.core.perf.HistoryWindow
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
@@ -156,7 +157,7 @@ internal class ManagedHeadFactory(
         return ManagedHead(
             head = server,
             auth = wired.auth,
-            sources = sourcesFor(key, stores, quotaPollers, TurnPrice(ctx.catalog)),
+            sources = sourcesFor(key, stores, quotaPollers, TurnPrice(ctx.catalog), ctx.cfg.historyWindow),
             usageWarning = UsageWarning(warnPct = cfg.usageWarnPct, warnTokens5h = cfg.usageWarnTokens5h),
             authSurface = HeadAuthSurface(
                 authKind = ctx.providerCfg.auth.kind,
@@ -178,6 +179,9 @@ internal class ManagedHeadFactory(
         stores: HeadStores,
         quotaPollers: List<QuotaPoller>,
         price: TurnPrice,
+        /** The same window the store trims by, so the hours it backfills reach as far as the ones
+         *  it keeps. Left at its default, an install that keeps 90 days or forever rebuilt only 35. */
+        window: HistoryWindow,
     ): HeadSources {
         val perfRows = perfSources.rowsFor(key)
         return HeadSources(
@@ -186,7 +190,7 @@ internal class ManagedHeadFactory(
             logs = LogFileSource(statePaths.logsDir.resolve("daemon.log"), "[$key]"),
             perf = PerfStatsSource(stores.telemetry.perfStats),
             perfRows = perfRows,
-            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows, price),
+            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows, price, window),
         )
     }
 

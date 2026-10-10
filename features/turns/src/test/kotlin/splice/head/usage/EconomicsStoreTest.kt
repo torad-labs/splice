@@ -24,6 +24,8 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 private const val HOUR = 3_600_000L
 private const val FABLE = "claude-fable-5"
@@ -413,6 +415,32 @@ class EconomicsStoreTest {
             listOf(1L, 2L),
             kept.read().map { it.inTokens },
             "forever keeps the oldest hour: no cutoff is ever computed for it",
+        )
+    }
+
+    /** A window of zero keeps TODAY, and today is the operator's own day. An hour bucket starts on a
+     *  UTC hour, so in a half-hour zone the cutoff falls INSIDE the bucket a turn just after local
+     *  midnight was recorded in: comparing starts would drop the spend the Day figure is made of. */
+    @Test
+    fun `keeping nothing still keeps the hour that today began inside`(@TempDir tmp: Path) {
+        val kolkata = ZoneId.of("Asia/Kolkata") // UTC+5:30, so local midnight is 18:30 UTC
+        val midnight = ZonedDateTime.of(2026, 10, 10, 0, 0, 0, 0, kolkata).toInstant().toEpochMilli()
+        var now = midnight + 20 * 60 * 1000 // 00:20 local, the first turn of the person's day
+        val store = EconomicsStore(
+            tmp.resolve("today.json"),
+            UNPRICED,
+            WallClock { now },
+            window = HistoryWindow(0, kolkata),
+        )
+
+        store.record(turn(inTokens = 11))
+        now += 40 * 60 * 1000 // 01:00 local, still today, and the trim runs again
+        store.record(turn(inTokens = 7))
+
+        assertEquals(
+            18L,
+            store.read().sumOf { it.inTokens },
+            "the spend of a day that began mid-hour is what that day's budget is measured against",
         )
     }
 

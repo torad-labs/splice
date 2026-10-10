@@ -77,20 +77,22 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
      *  1. `historyRetentionDays`, when the person has set it. A bad word never reaches here —
      *     ConfigCoercion refuses it by name and the knob stays absent, so a typo reads as "unset"
      *     rather than as a short window that would delete history.
-     *  2. otherwise the records window the install ALREADY HAD (`perfArchiveRetentionDays`, 90 by
-     *     default): an upgrade never shortens history on its own, so a 90 stays 90 and nothing is
-     *     deleted because splice learned a new name for the question (Marlin, Oct 10, 2026). That
-     *     knob governs nothing else now, and this getter is the one place left that reads it.
-     *  3. the legacy 0 is the one value that does not carry: it said "keep no retired perf
-     *     generations", which says nothing about the hourly totals a person holds. Taken as the
-     *     unified window it would delete them, so it reads as [HISTORY_DEFAULT_DAYS] instead and
-     *     the person can write a 0 back in the file, where the row reads "Not saved".
+     *  2. otherwise the WIDEST of the windows this one setting replaced, never the narrowest: the
+     *     records window the install already had (`perfArchiveRetentionDays`, 90 by default) and
+     *     the 35 days the hourly totals always kept (V4-122's fixed economics window, now
+     *     [HISTORY_DEFAULT_DAYS]). An upgrade never shortens history on its own (Marlin, Oct 10,
+     *     2026), and it has to hold for BOTH files: an install that had set a one-day archive
+     *     window would otherwise have 34 days of spending deleted the first time this daemon ran,
+     *     because splice learned a new name for the question. Taking the wider one keeps records
+     *     the person may not want any more, which they can shorten here in one place and see
+     *     counted before it happens; taking the narrower one deletes what nobody can bring back.
+     *     The legacy 0, "keep no retired generations", falls out of the same rule as 35.
      *
-     * A fresh install never reaches 2 or 3: its starter splice.toml carries the default in writing.
+     * A fresh install never reaches 2: its starter splice.toml carries the default in writing.
      */
     public val historyWindow: HistoryWindow
         get() = string(Knob.HISTORY_RETENTION_DAYS)?.let(HistoryWindowWords::of)
-            ?: HistoryWindow(long(Knob.PERF_ARCHIVE_RETENTION_DAYS).toInt().takeIf { it > 0 } ?: HISTORY_DEFAULT_DAYS)
+            ?: HistoryWindow(maxOf(long(Knob.PERF_ARCHIVE_RETENTION_DAYS).toInt(), HISTORY_DEFAULT_DAYS))
 
     /** V4-174: the longest body a trace record keeps whole, in characters; at least one. */
     public val traceMaxBodyChars: Int

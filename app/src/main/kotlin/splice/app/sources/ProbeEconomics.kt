@@ -2,7 +2,6 @@
 package splice.app.sources
 
 import splice.core.model.TurnBill
-import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.head.usage.BucketBytes
 import splice.head.usage.BucketTokens
@@ -12,15 +11,6 @@ import splice.usage.perf.PerfRow
 import kotlin.time.Duration.Companion.hours
 
 private val PROBE_BUCKET_MS = 1.hours.inWholeMilliseconds
-private val LOCAL_ECONOMICS_REFUSALS = setOf(
-    OutcomeTag.RATE_LIMITED.wire,
-    OutcomeTag.PLAN_LIMIT.wire,
-    OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire,
-    OutcomeTag.BUDGET_BLOCKED.wire,
-    OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE.wire,
-    OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE.wire,
-    OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW.wire,
-)
 
 /** Why one head's legacy probe deduction cannot be made, each a fixed sentence the console shows for that head. */
 internal enum class ProbeGap(val sentence: String) {
@@ -51,6 +41,10 @@ private sealed class ProbeRead {
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     private var deductions: Map<Long, EconomicsBucket>? = null
 
+    // The one answer to "which rows is this hour made of", shared with the backfill that writes
+    // hours this reconciliation then grades. EconomicsRows says why it cannot be two answers.
+    private val rows = EconomicsRows()
+
     fun withoutProbes(buckets: List<EconomicsBucket>): ProbeDeduction = synchronized(this) {
         if (buckets.isEmpty()) return@synchronized ProbeDeduction.Done(buckets)
         val held = deductions ?: when (val read = read(buckets)) {
@@ -68,11 +62,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     private fun read(buckets: List<EconomicsBucket>): ProbeRead {
         val evidence = perf.economicsEvidence(buckets.minOf { it.hour })
         if (evidence.work.readError != null || evidence.work.skipped != 0) return ProbeRead.Gapped(ProbeGap.UNREADABLE)
-        // TurnTelemetry.recordLocalRefusal writes perf, but never EconomicsStore.record.
-        val work = evidence.work.rows.filterNot {
-            it.outcome in LOCAL_ECONOMICS_REFUSALS && it.fields[PerfKeys.ATTEMPTS] == 0L
-        }
-        val all = summarize(work + evidence.probes)
+        val all = summarize(rows.recorded(evidence))
         val probes = summarize(evidence.probes)
         if (!reconciles(buckets, all, probes)) return ProbeRead.Gapped(ProbeGap.UNRECONCILED)
         val recorded = buckets.associateBy { it.hour }

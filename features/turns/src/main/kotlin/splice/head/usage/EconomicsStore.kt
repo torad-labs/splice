@@ -278,7 +278,11 @@ public class EconomicsStore(
     // the hours stay exactly as they are rather than being compared against an invented horizon.
     private fun trimUnderLock() {
         val cutoff = window.cutoffMs(clock()) ?: return
-        buckets.keys.filter { it < cutoff }.forEach { buckets.remove(it) }
+        // An hour is dropped only when it ENDS before the cutoff. A bucket starts on a UTC hour and
+        // a window of zero cuts at the operator's own midnight, which in a half-hour zone (Kolkata,
+        // UTC+5:30) falls INSIDE an hour: comparing starts would drop the bucket a paid turn just
+        // after midnight landed in, and with it the Day figure that turn is budgeted against.
+        buckets.keys.filter { it + HOUR_MS <= cutoff }.forEach { buckets.remove(it) }
     }
 
     // best-effort by design: a missing/corrupt file reads as empty; cancellation propagates.

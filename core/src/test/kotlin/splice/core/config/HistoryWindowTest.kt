@@ -65,15 +65,21 @@ class HistoryWindowTest {
         }
     }
 
+    /** The one setting replaced two, and it carries the WIDER of them. The hourly totals always kept
+     *  35 days (V4-122), so a narrow archive window the person once set for their disk must not
+     *  become the window their spending is kept for: nobody asked for a month of it to be deleted,
+     *  and nothing brings it back. They can shorten it here afterwards and see the count first. */
     @Test
-    fun `the legacy archive-off does not delete the hourly totals it never governed`() {
-        val carried = written("perfArchiveRetentionDays" to "0").historyWindow
-        assertEquals(
-            HistoryWindow(HISTORY_DEFAULT_DAYS),
-            carried,
-            "0 said keep no retired perf generations, which says nothing about the hours a person holds",
-        )
-        assertFalse(carried.nothing)
+    fun `a narrow legacy archive window never shortens the hours the install already kept`() {
+        listOf("0", "1", "8", "34").forEach { legacy ->
+            val carried = written("perfArchiveRetentionDays" to legacy).historyWindow
+            assertEquals(
+                HistoryWindow(HISTORY_DEFAULT_DAYS),
+                carried,
+                "an upgrade may widen a records window, never shorten a spending one: $legacy",
+            )
+            assertFalse(carried.nothing, "and it is never the window that keeps nothing: $legacy")
+        }
         assertTrue(written("historyRetentionDays" to "0").historyWindow.nothing, "a 0 they wrote themselves holds")
     }
 

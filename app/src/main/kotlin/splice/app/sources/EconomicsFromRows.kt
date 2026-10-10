@@ -22,6 +22,38 @@ import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsTurnCounts
 import splice.usage.perf.PerfRow
 
+// why: a turn the budget or the plan refused before any attempt is written to perf and never to the
+// rollup (TurnTelemetry.recordLocalRefusal), so it is a row that is not part of any hour.
+private val LOCAL_ECONOMICS_REFUSALS = setOf(
+    OutcomeTag.RATE_LIMITED.wire,
+    OutcomeTag.PLAN_LIMIT.wire,
+    OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire,
+    OutcomeTag.BUDGET_BLOCKED.wire,
+    OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE.wire,
+    OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE.wire,
+    OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW.wire,
+)
+
+/**
+ * WHICH rows an hour of the rollup is made of, kept apart from the arithmetic over them because the
+ * two readers that need the answer do not both have a price to apply.
+ *
+ * They have to select the same rows. ProbeEconomics reconciles each recorded hour against the rows
+ * behind it and refuses to deduct anything when they disagree, and the backfill WRITES hours that
+ * are then read back through that same reconciliation. One of them counting a probe, or a refusal
+ * that never reached a provider, and the other not, is a disagreement on every hour that holds one,
+ * and the console answers Unavailable for that head's whole hourly history rather than for the hour.
+ */
+internal class EconomicsRows {
+    /** Everything the rollup recorded in an hour: the work that reached a provider, and the probes,
+     *  which the rollup records like any other turn and ProbeEconomics subtracts again afterwards. */
+    fun recorded(evidence: EconomicsPerfEvidence): List<PerfRow> = billed(evidence.work.rows) + evidence.probes
+
+    /** The work rows an hour holds, without the local refusals that never reached a provider. */
+    fun billed(rows: List<PerfRow>): List<PerfRow> =
+        rows.filterNot { it.outcome in LOCAL_ECONOMICS_REFUSALS && it.fields[PerfKeys.ATTEMPTS] == 0L }
+}
+
 /** Reads one hour of economics back from the perf rows written inside it. */
 internal class EconomicsFromRows(private val price: TurnPrice) {
     /** The hour [at] as its [rows] describe it, priced at the cards this daemon holds now. */

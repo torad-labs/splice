@@ -34,6 +34,16 @@ private fun rowAt(at: Long): String =
         """"tools_eager":3,"tools_deferred":2,"in_tokens":5,"cached_tokens":2,""" +
         """"cache_write_tokens":1,"out_tokens":10}"""
 
+/** A pre-marker liveness probe, by the fingerprint LivenessProbe.legacyRow measures. */
+private fun probeAt(at: Long): String =
+    """{"ts":$at,"model":"","outcome":"error:upstream-failed","req_bytes":30,""" +
+        """"upstream_req_bytes":15,"tools_eager":2,"tools_deferred":1}"""
+
+/** A turn the budget refused before any attempt: a perf row the rollup never recorded. */
+private fun refusedAt(at: Long): String =
+    """{"ts":$at,"model":"synthetic","outcome":"error:budget-blocked","attempts":0,"req_bytes":40,""" +
+        """"upstream_req_bytes":0}"""
+
 class EconomicsBackfillTest {
     private val card = ModelCatalog(
         discoveryPrefix = "synthetic--",
@@ -134,6 +144,95 @@ class EconomicsBackfillTest {
             fromTheFileAlone,
             "the hour stands on its own once written, and is trimmed by the window like any other",
         )
+    }
+
+    /** An hour the rollup has to be rebuilt from rows that include a legacy probe. ProbeEconomics
+     *  reconciles every recorded hour against the rows behind it and refuses to deduct anything at
+     *  all when they disagree, so an hour rebuilt WITHOUT its probe hides that head's whole hourly
+     *  history behind a sentence, not just the hour. */
+    @Test
+    fun `an hour rebuilt from rows that hold a legacy probe is still reconciled and read`(@TempDir dir: Path) {
+        val perf = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            perf,
+            listOf(5 * HOUR_MS, 6 * HOUR_MS).joinToString("\n") { rowAt(it) } + "\n" +
+                probeAt(6 * HOUR_MS) + "\n" + rowAt(NOW_MS) + "\n",
+        )
+        val store = store(dir)
+        store.record(work())
+
+        val rows = source(store, perf).rows()
+
+        assertEquals(
+            listOf(6 * HOUR_MS, 10 * HOUR_MS),
+            rows.map { it.hour },
+            "the rebuilt hour is there, which means the hour it was rebuilt into reconciled",
+        )
+        assertEquals(
+            1L,
+            rows.first().counts.turns,
+            "the probe is counted into the rebuilt hour and then deducted from it, like any recorded hour",
+        )
+    }
+
+    /** The other half of the same agreement: a turn the budget refused before any attempt is written
+     *  to the request log and never to the rollup, so an hour rebuilt WITH it disagrees the same way. */
+    @Test
+    fun `a refusal that never reached a provider is not part of a rebuilt hour`(@TempDir dir: Path) {
+        val perf = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            perf,
+            listOf(5 * HOUR_MS, 6 * HOUR_MS).joinToString("\n") { rowAt(it) } + "\n" +
+                refusedAt(6 * HOUR_MS) + "\n" + rowAt(NOW_MS) + "\n",
+        )
+        val store = store(dir)
+        store.record(work())
+
+        val rows = source(store, perf).rows()
+
+        assertEquals(listOf(6 * HOUR_MS, 10 * HOUR_MS), rows.map { it.hour }, "the rebuilt hour reconciled")
+        assertEquals(1L, rows.first().counts.turns, "the refusal is not a turn the rollup would have counted")
+    }
+
+    /** How far back the rebuild reaches is the window the install KEEPS, not the one a fresh install
+     *  ships with: an upgraded install holding 90 days of records, or forever, rebuilt only 35. */
+    @Test
+    fun `the rebuild reaches as far back as the window the install keeps`(@TempDir dir: Path) {
+        val day = 24 * HOUR_MS
+        val now = 100 * day
+        val perf = dir.resolve("head-perf.jsonl")
+        // The oldest hour on disk is always left out (a generation can begin mid-hour), so the one
+        // being asked about is the 39-day-old hour between it and the recorded hour.
+        Files.writeString(
+            perf,
+            listOf(now - 40 * day, now - 39 * day, now).joinToString("\n") { rowAt(it) } + "\n",
+        )
+        // One window governs the store and the rebuild together, as ManagedHeadFactory wires them.
+        val short = reaching(dir, perf, HistoryWindow(35), now)
+        assertEquals(1, short.size, "a 35-day window has no gap to fill 39 days back")
+
+        val kept = reaching(dir, perf, HistoryWindow(null), now)
+        assertEquals(2, kept.size, "forever reaches the hour the turns are still on disk for")
+        assertEquals((now - 39 * day) / HOUR_MS * HOUR_MS, kept.first().hour)
+    }
+
+    /** One head's economics as an install keeping [window] would read it. */
+    private fun reaching(dir: Path, perf: Path, window: HistoryWindow, now: Long): List<EconomicsRow> {
+        val store = EconomicsStore(
+            dir.resolve("economics-${window.text}.json"),
+            TurnPrice(card),
+            WallClock { now },
+            log = { },
+            window = window,
+        )
+        store.record(work())
+        return EconomicsStoreSource(
+            store,
+            PerfRowsFileSource(perf),
+            TurnPrice(card),
+            window = window,
+            clock = WallClock { now },
+        ).rows()
     }
 
     private fun EconomicsStoreSource.rows(): List<EconomicsRow> =

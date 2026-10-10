@@ -140,11 +140,6 @@ public data class ProviderConfig(
     /** v0.4.0 (FEATURES.md §10): a user-managed local runtime (Ollama, LM Studio, vLLM) on the
      *  openai-chat dialect. Absent = auto: an openai-chat provider on a loopback base_url is local. */
     val local: Boolean? = null,
-    /** Oct 10, 2026: whose machine runs this provider, when its address cannot say. A rented GPU reached through
-     *  an SSH tunnel answers on loopback like a server on this machine, so `family = "vast"` groups it as vast.ai
-     *  in the console where the loopback rule would say This computer. Absent = [ProviderFamilyRule] decides from
-     *  the auth kind, the provider's key and its address. */
-    val family: String? = null,
     /** 2026-09-22: where this provider publishes its model list, when that is not where its dialect
      *  says ([UpstreamRosterUrl]). Read by the daemon at start, to discover the models its heads
      *  offer, and by `splice models` — never by a turn. It exists so the one vendor whose list sits
@@ -159,6 +154,9 @@ public data class ProviderConfig(
     /** Whether this provider is a local runtime: what the operator said, else the loopback rule. */
     public val isLocal: Boolean
         get() = local ?: LocalProviderRule().isLocalByDefault(dialect, baseUrl)
+
+    /** Whose machine runs this provider, as the operator wrote it under [discovery] (`family = "vast"`), else null. */
+    public val family: String? get() = discovery.family
 
     /**
      * [extraHeaders] with TOML key quoting removed — THE accessor every consumer must use.

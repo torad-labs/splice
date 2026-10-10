@@ -223,7 +223,8 @@ context_window = 256000
 
 # ── local runtime: Ollama / LM Studio / vLLM on this machine (Chat Completions) ─
 # A runtime on a rented GPU reached through an SSH tunnel answers on loopback too, so no address tells it from one on
-# this machine: family = "vast" on its provider groups it as vast.ai in the console instead of This computer.
+# this machine: `discovery = { family = "vast" }` on its provider groups it as vast.ai in the console instead of This
+# computer (discovery is where splice finds and places a provider: its models and its machine family).
 # A loopback base_url is local by default (local = true|false overrides). splice never downloads a
 # model or starts the runtime; at boot and in `splice doctor` it asks the runtime what it serves and
 # REFUSES a row the runtime does not list or that declares more context than the runtime serves

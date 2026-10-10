@@ -42,7 +42,7 @@ class ProviderFamilyRuleTest {
     fun `a family the operator wrote names a rented GPU behind a tunnel, which its address cannot`() {
         val tunnel = provider(API_KEY_WIRE, "http://127.0.0.1:8100/v1")
         assertEquals("local", rule.of("bonsai-vast", tunnel))
-        assertEquals("vast", rule.of("bonsai-vast", tunnel.copy(family = "vast")))
+        assertEquals("vast", rule.of("bonsai-vast", tunnel.copy(discovery = ModelDiscoveryConfig(family = "vast"))))
     }
 
     @Test

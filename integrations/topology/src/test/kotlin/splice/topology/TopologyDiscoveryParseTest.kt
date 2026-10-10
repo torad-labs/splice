@@ -26,6 +26,36 @@ class TopologyDiscoveryParseTest {
     ).providers.getValue("openrouter")
 
     @Test
+    fun `family is a discovery key, inline or as a sub-table, and its absence keeps the other keys`() {
+        val inline = provider("""discovery = { family = "vast" }""")
+        assertEquals("vast", inline.family)
+        assertEquals(ModelDiscoveryConfig(family = "vast"), inline.discovery)
+
+        val table = TopologyLoader.parse(
+            """
+            [providers.bonsai]
+            dialect = "openai-chat"
+            base_url = "http://127.0.0.1:8100/v1"
+            auth = { kind = "api-key", env = "BONSAI_API_KEY" }
+
+            [providers.bonsai.discovery]
+            include = ["bonsai-*"]
+            family = "vast"
+            """.trimIndent(),
+        ).providers.getValue("bonsai")
+        assertEquals(ModelDiscoveryConfig(include = listOf("bonsai-*"), family = "vast"), table.discovery)
+
+        val none = provider("""discovery = { include = ["openai/*"] }""")
+        assertEquals(null, none.family)
+        assertEquals(ModelDiscoveryConfig(include = listOf("openai/*")), none.discovery)
+    }
+
+    @Test
+    fun `a family written at the provider's top level, where it used to live, is refused rather than ignored`() {
+        assertThrows<Exception> { provider("""family = "vast"""") }
+    }
+
+    @Test
     fun `include and exclude reach the provider as written`() {
         val parsed = provider("""discovery = { include = ["openai/*", "qwen/*"], exclude = ["*:batch", "*:free"] }""")
         assertEquals(

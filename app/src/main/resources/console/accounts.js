@@ -7,9 +7,12 @@ let NOW = new Date(); // read again at every load, so a reset reads in the viewe
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
 const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local", vast: "--local" };
 
-// splice's budget day runs midnight to midnight on this computer's clock (BudgetEnforcement.kt:10), so it refills at local midnight.
+// splice's budget day runs midnight to midnight on the DAEMON's clock (BudgetEnforcement.kt:10), and the daemon says
+// when it next rolls over (day_resets_at_epoch_ms). A browser in another zone computing its own midnight disagreed
+// with the admission that actually blocks (re-review, Oct 10). Only a daemon that answers nothing falls back here.
+let DAY_RESETS_AT = null;
 function dayReset() {
-  const next = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
+  const next = DAY_RESETS_AT ?? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
   return { left: Math.round((next - NOW.getTime()) / 60000), resetMs: next };
 }
 
@@ -54,7 +57,12 @@ async function load() {
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
-  const dayStart = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate()).getTime();
+  DAY_RESETS_AT = bg.body?.day_resets_at_epoch_ms ?? null;
+  // The day splice is counting, from the boundary it says it next crosses. Buckets are whole UTC hours, so in a zone
+  // offset by half an hour the day starts INSIDE a bucket: the hour holding local midnight is taken, or every turn in
+  // its first thirty minutes would vanish from both the spend and the count of turns with no price (re-review, Oct 10).
+  const dayEnd = DAY_RESETS_AT ?? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
+  const dayStart = Math.floor((dayEnd - 86400000) / 3600000) * 3600000;
   const spendToday = new Map((ec.body?.heads || []).map((h) => [h.key, (h.buckets || []).filter((b) => b.hour >= dayStart)
     .reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 })]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
@@ -380,7 +388,12 @@ function howFor(p, a, c) {
   if (a.row?.login_place) return { start: `/api/claude-logins/${encodeURIComponent(a.row.login_place.id)}/login`, body: { label: null }, poll: head, native: true };
   // its name on that command; the first account of a ChatGPT, Grok, Kimi or Muse command is "primary" there
   const label = a.row?.account_labels?.[head] || a.row?.label;
-  return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: label ? { label } : {}, poll: head };
+  // A removed primary has no file to sign in to under its reserved name, so the login refuses before the browser
+  // ever opens (OAuthAccountFiles.kt:181). Signing in with NO name is what creates the primary, so a signed-out
+  // primary sends none. A named account still sends its name: signing it in nameless would move it into the
+  // primary slot (re-review, Oct 10).
+  const reserved = label === "primary" && !a.row?.credential_present;
+  return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: label && !reserved ? { label } : {}, poll: head };
 }
 // ---------- an account ----------
 // serves: every command this account serves now, each riding it as a chip. Use now pins it on the rail's command.

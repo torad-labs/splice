@@ -24,6 +24,7 @@ import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 private const val SPEND_DAY_MS = 86_400_000L
@@ -165,4 +166,52 @@ class BudgetSpendTest {
         assertFalse(reply.body.contains("account"))
         assertTrue(route.read().body.contains("\"used_usd\":null"))
     }
+
+    @Test
+    fun `the budgets reply says when the budget day next rolls over, drawn in the ledger's own zone`() {
+        val store = BudgetStore(directory.resolve("budgets.json"))
+        val paths = StatePaths(baseOverride = directory.resolve("state"))
+        val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(emptyList()) } }
+        // 01:00 UTC on Oct 4, 2024, which is still Oct 3 in Chicago: the two zones name different next midnights.
+        val at = 20_000L * SPEND_DAY_MS + 3_600_000L
+        val route = BudgetRoutes(BudgetSource { store }, ConfigService(paths))
+
+        fun resetIn(zone: ZoneId): Long {
+            val owner = BudgetEnforcement(
+                store,
+                BudgetAlert { _, _ -> },
+                history,
+                {},
+                WallClock { at },
+                immediateSeed(),
+                zone,
+            )
+            return owner.dayResetsAtMs()
+        }
+
+        val utc = resetIn(ZoneOffset.UTC)
+        val chicago = resetIn(ZoneId.of("America/Chicago"))
+        assertEquals(20_001L * SPEND_DAY_MS, utc, "UTC rolls at the next UTC midnight")
+        assertEquals(
+            20_000L * SPEND_DAY_MS + 5 * 3_600_000L,
+            chicago,
+            "Chicago rolls five hours later, still the same UTC day",
+        )
+        assertTrue(
+            route.read(owner(store, history, at, ZoneId.of("America/Chicago"))).body
+                .contains("\"day_resets_at_epoch_ms\":"),
+            "the reply carries the ledger's boundary, not the machine's",
+        )
+        assertTrue(route.read().body.contains("\"day_resets_at_epoch_ms\":null"), "nothing wired names no boundary")
+    }
+
+    private fun owner(store: BudgetStore, history: HeadPerfHistory, at: Long, zone: ZoneId) = BudgetEnforcement(
+        store,
+        BudgetAlert { _, _ -> },
+        history,
+        {},
+        WallClock { at },
+        immediateSeed(),
+        zone,
+    )
 }

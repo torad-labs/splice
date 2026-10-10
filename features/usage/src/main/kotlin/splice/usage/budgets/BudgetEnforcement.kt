@@ -54,6 +54,11 @@ public class BudgetEnforcement(
     public fun forHead(head: String, catalog: ModelCatalog?): HeadBudget =
         ledgers.computeIfAbsent(head) { BudgetLedger(head, TurnPrice(catalog), history.rowsFor(head), context) }
 
+    /** When the budget day next rolls over, as the LEDGER draws it: admission blocks until this instant, so a
+     *  console on another clock draws the day splice enforces rather than its own browser's midnight
+     *  (re-review, Oct 10). */
+    public fun dayResetsAtMs(): Long = context.dayStart(context.localDay(context.clock()) + 1)
+
     /** Unknown when no live head ledger exists; otherwise the same daily tally admission weighs. */
     internal fun spending(head: String): BudgetSpend? = ledgers[head]?.snapshot()
 }

@@ -1,8 +1,10 @@
 // NEW: V4-133, FEATURES.md §5/§6 — GET/PUT /api/budgets. "spend budgets per head and per day with
 // warn and block", one of the table-stakes items the operator kept in.
 //
-//   GET /api/budgets   {budgets: Budget[], unreadable: string|null} — unreadable names why the list is
-//                       empty when budgets.json does not parse (V4-296); every head runs unbudgeted then
+//   GET /api/budgets   {budgets: Budget[], unreadable: string|null, day_resets_at_epoch_ms: number|null} —
+//                       unreadable names why the list is empty when budgets.json does not parse (V4-296);
+//                       every head runs unbudgeted then. day_resets_at_epoch_ms is when the budget day next
+//                       rolls over, as admission draws it, so a console on another clock draws the same day
 //   PUT /api/budgets   body {budgets: Budget[]} -> the set as SAVED (console/src/entities/budget/api:
 //                       "the store takes what the daemon now holds, rather than the request: a
 //                       value the daemon clamped or refused must not read as applied")
@@ -99,6 +101,9 @@ public class BudgetRoutes(
         enforcement: BudgetEnforcement? = null,
     ): String = buildJsonObject {
         put("unreadable", unreadable)
+        // The instant the budget day next rolls over, drawn where admission draws it. A console on another clock
+        // computing its own midnight disagreed with the daemon (re-review, Oct 10); null when nothing is wired.
+        put("day_resets_at_epoch_ms", enforcement?.dayResetsAtMs())
         putJsonArray("budgets") {
             budgets.forEach { budget ->
                 val fields = json.encodeToJsonElement(Budget.serializer(), budget).jsonObject

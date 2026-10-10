@@ -93,6 +93,8 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         },
     ),
     "check-config" to CommandRegistration("", CommandFactory.Alone(Command.CheckConfig)),
+    "listeners" to CommandRegistration("", CommandFactory.Alone(Command.Listeners)),
+    "capabilities" to CommandRegistration("", CommandFactory.Alone(Command.Capabilities)),
     "shim-version" to CommandRegistration("", CommandFactory.Alone(Command.ShimVersion)),
     "init" to CommandRegistration("", CommandFactory.Alone(Command.Init)),
     "install" to CommandRegistration("[<head>|--all]", CommandFactory.OneHead { a -> Command.Install(a.getOrNull(1)) }),

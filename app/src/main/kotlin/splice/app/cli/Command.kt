@@ -51,6 +51,16 @@ public sealed class Command {
     public data object CheckConfig : Command() {
         override suspend fun run(): Int = ConfigPreflight(EnvReader(System::getenv)).check()
     }
+
+    /** The ports this build would listen on, for a socket manager to hold (ListenerInventory). */
+    public data object Listeners : Command() {
+        override suspend fun run(): Int = ListenerInventory(EnvReader(System::getenv)).print()
+    }
+
+    /** What this build can do about inherited sockets (CapabilityReport). */
+    public data object Capabilities : Command() {
+        override suspend fun run(): Int = CapabilityReport().print()
+    }
     public data object ShimVersion : Command() { override suspend fun run(): Int = success { println(SHIM_VERSION) } }
     public data object Init : Command() {
         override suspend fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }

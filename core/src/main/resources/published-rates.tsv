@@ -2,12 +2,16 @@
 # A plan turn priced here reads as what the same work would cost on the vendor's API.
 # A row in splice.toml, a head's card, or a price the provider's model list publishes always wins over these.
 # tier_over: a request whose input is MORE than this many tokens is billed at the tier for all of its tokens.
-# Anthropic: platform.claude.com/docs/en/about-claude/pricing.
+# Anthropic: platform.claude.com/docs/en/about-claude/pricing. cache_write is the 5-minute write; Haiku 5.5 bills its higher
+#   card for a prompt over 100,000 tokens. Opus 4.1, Opus 4, Sonnet 4 and Haiku 3.5 are retired and have no row.
 # OpenAI: developers.openai.com/api/docs/pricing (Standard; prompts over 272K input are 2x input and cache, 1.5x output).
+#   The page states the 272K threshold on its gpt-5.5 and gpt-5.4 rows; the gpt-6 and gpt-5.6 rows show short and
+#   long prices with no threshold, so theirs is taken to be the same 272K.
 # xAI: docs.x.ai/docs/models and docs.x.ai/docs/models/grok-4.7 (a prompt that reaches 200k bills the higher rate);
 #   grok-build-latest is docs.x.ai's alias of grok-4.5.
 # Meta: dev.meta.ai/docs/pricing-rate-limits.
-# Kimi: platform.kimi.ai/docs/pricing/chat-k3 and docs/guide/context-caching (cache write at the 5m TTL); k3-256k is K3.
+# Kimi: platform.kimi.ai/docs/pricing/chat-k3 and docs/guide/context-caching (cache write at the 5m TTL). k3-256k is priced as K3:
+#   no page prices it apart. The price is the Moonshot platform's K3 list price, read for the api.kimi.com host.
 # DeepSeek: api-docs.deepseek.com/quick_start/pricing. The row is the off-peak card; peak bills peak_factor times it
 #   in the UTC hours peak_hours_utc names (end exclusive), on peak_days (weekdays: Monday to Friday; empty: every day).
 #   deepseek-v4-flash is the legacy name DeepSeek still accepts and bills at the Flash price.
@@ -20,6 +24,13 @@ api.anthropic.com	claude-opus-5-5	4	0.2	20	5
 api.anthropic.com	claude-sonnet-5	2	0.2	10	2.5								
 api.anthropic.com	claude-sonnet-5-5	2	0.1	10	2.5								
 api.anthropic.com	claude-haiku-4-5	1	0.1	5	1.25								
+api.anthropic.com	claude-opus-4-8	5	0.5	25	6.25								
+api.anthropic.com	claude-opus-4-7	5	0.5	25	6.25								
+api.anthropic.com	claude-opus-4-6	5	0.5	25	6.25								
+api.anthropic.com	claude-opus-4-5	5	0.5	25	6.25								
+api.anthropic.com	claude-sonnet-4-6	3	0.3	15	3.75								
+api.anthropic.com	claude-sonnet-4-5	3	0.3	15	3.75								
+api.anthropic.com	claude-haiku-5-5	0.1	0.01	0.5	0.125	100000	0.5	0.05	2.5	0.625			
 chatgpt.com	gpt-6-astra	10	1	50	12.5	272000	20	2	75	25			
 chatgpt.com	gpt-6.1-sol	2	0.1	10	2.5	272000	4	0.2	15	5			
 chatgpt.com	gpt-6-sol	2	0.2	10	2.5	272000	4	0.4	15	5			

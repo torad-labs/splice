@@ -16,8 +16,8 @@
 // WHY NOT AGGREGATE THE PERF JSONL. It carries every field needed, but claudex-perf.jsonl is 53MB
 // and PerfStats.tailNumeric is bounded to a 256KB tail (~500 rows) — a weekly SUM is not
 // recoverable from p50/p95/max over the last few hundred turns, and re-reading 53MB per dashboard
-// poll is not an option. This is an O(1)-per-turn accumulator instead: hourly buckets, 8 days
-// retained (192 rows, single-digit KB).
+// poll is not an option. This is an O(1)-per-turn accumulator instead: hourly buckets, 35 days
+// retained (840 rows, under 300 KB).
 //
 // SHAPE MIRRORS UsageStore deliberately — same bounded file lane, same coalesced debounce, same
 // atomic replace, same best-effort doctrine. A turn must never pay for, nor fail on, telemetry.
@@ -57,8 +57,9 @@ private const val HOUR_MS = 60L * 60 * 1000
 // window in HOURS from :daemon-control/api, which has no dependency edge to this module, so the comment
 // that used to claim the two mirrored each other is replaced by one declaration both can read.
 
-// 192 buckets x ~200 bytes is single-digit KB; 1MB is a corrupt-file guard with headroom.
-private const val MAX_FILE_BYTES = 1L * 1024 * 1024
+// 840 buckets (35 days) at the ~340 bytes a live head writes is under 300 KB; 4MB is a corrupt-file guard
+// with headroom. Measured Oct 10, 2026 on claude-splice: 182 buckets, 61231 bytes.
+private const val MAX_FILE_BYTES = 4L * 1024 * 1024
 private const val ECONOMICS_FLUSH_DELAY_MS = 1_000L
 
 /** One hour's client turns and code-mode steps, grouped without widening the economics bucket. */

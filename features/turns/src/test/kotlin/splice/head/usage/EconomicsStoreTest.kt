@@ -363,18 +363,22 @@ class EconomicsStoreTest {
         assertEquals(320, b.upstreamBytes)
     }
 
-    /** Retention is what keeps the file small enough to read on every dashboard poll. */
+    /** Retention is what keeps the file small enough to read on every dashboard poll. The window is a month
+     *  and the days it is read over (Marlin, Oct 10, 2026), because plans and keys are paid by the month. */
     @Test
     fun `buckets older than the retention window are dropped`(@TempDir tmp: Path) {
         var now = 1_000 * HOUR
         val store = EconomicsStore(tmp.resolve("e.json"), UNPRICED, WallClock { now })
         store.record(turn(inTokens = 1))
-        now += 9 * 24 * HOUR // nine days later, past the 8-day window
+        now += 30 * 24 * HOUR // a month later, still inside the window: the month's view needs it
         store.record(turn(inTokens = 2))
+        assertEquals(2, store.read().size, "a month-old bucket is what the month's view is made of")
 
+        now += 6 * 24 * HOUR // the first bucket is now 36 days old, past the window
+        store.record(turn(inTokens = 4))
         val buckets = store.read()
-        assertEquals(1, buckets.size, "the nine-day-old bucket must be gone")
-        assertEquals(2, buckets[0].inTokens)
+        assertEquals(2, buckets.size, "the bucket past the window must be gone")
+        assertEquals(listOf(2L, 4L), buckets.map { it.inTokens })
     }
 
     @Test

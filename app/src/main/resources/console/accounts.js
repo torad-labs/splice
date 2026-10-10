@@ -441,7 +441,9 @@ function slotHtml(p, c, a, serves) {
   // the pin says what pressing it does, at rest and on touch: both walkers clicked a bare pin on a guess (p153, p154)
   const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}">${ICON.pin}Unpin</button>` : "";
   const chips = serves.map((x) => `<span class="chip" data-key="chip:${x.cmd}"><i></i>${esc(x.cmd)}</span>`).join("");
-  if (a.down) return `<span class="state">Not answering</span>`; // placeholder until fin's words (Marlin, Oct 10)
+  // "Not answering" is the word (fin, Oct 10): it is what the watch measures, no reply at the
+  // address in time (LocalRuntimeReach.kt), and it is what splice status already prints.
+  if (a.down) return `<span class="state">Not answering</span>`;
   if (serves.length && (!c || serves.includes(c))) return `${pin}${chips}`;
   if (a.out) return `<span class="state">Signed out</span>`;
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;

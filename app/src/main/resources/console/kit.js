@@ -40,10 +40,31 @@ const OUTCOME_WORD = { client_abort: "Stopped", "error:stopped": "Stopped", "err
 // A turn splice gave up on after no progress from the model for the limit reads "Given up". splice writes no
 // such tag yet: it lands as an Overloaded error with "splice progress timeout expired" (CancellationSeal.kt:149).
 OUTCOME_WORD["error:turn-cap"] = "Given up";
+// THE `failure:` FAMILY CLOSES IN CODE: splice writes `failure:` plus one of seven ErrorType names
+// (TurnOutcome.kt:138-146, OutcomeTags.failure), so all seven are worded here and the reader below rarely fires.
+// Rate limited is the SAME FACT as error:rate-limited and takes the same word, and api_error the same fact as
+// error:upstream-failed. "Credentials refused" is deliberately not "Signed out": the provider rejected the key or
+// token, where Signed out is splice having none at all (error:auth-missing) -- different things to do about them.
+Object.assign(OUTCOME_WORD, {
+  "failure:rate_limit_error": "Rate limited", "failure:invalid_request_error": "Invalid request",
+  "failure:authentication_error": "Credentials refused", "failure:permission_error": "No access",
+  "failure:not_found_error": "Not found", "failure:api_error": "Provider error",
+});
+// A tag the words above do not cover is READ OFF THE TAG, never drawn as a generic "Failed" and never left blank
+// (fin): drop the prefix, underscores and hyphens become spaces, the first letter rises, "api" is "API". So
+// failure:context_window_error reads "Context window error". It is for an older row, a type a provider adds later,
+// or an error: kind no page words yet. A tag with no prefix (ok, client_abort) is not read this way: it keeps
+// whatever its page says about it, which for a clean request is nothing.
+const tagWord = (tag) => {
+  const at = typeof tag === "string" ? tag.indexOf(":") : -1;
+  if (at < 0) return undefined;
+  const words = tag.slice(at + 1).split(/[_-]/).map((w) => (w === "api" ? "API" : w)).join(" ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
 // A COUNT of turns an outcome ended reads with "when", so "60 when splice restarted" is sixty turns cut, not
 // sixty restarts (fin, after p85 and p78); a single request keeps the outcome's own word.
 const COUNT_WORD = { "error:restarted": "when splice restarted" };
-const countWord = (o) => COUNT_WORD[o] ?? OUTCOME_WORD[o];
+const countWord = (o) => COUNT_WORD[o] ?? OUTCOME_WORD[o] ?? tagWord(o);
 const STOPPED = new Set(["client_abort", "error:stopped"]);
 const isClean = (o) => o === "ok" || o === "empty_message";
 const isFailed = (o) => !isClean(o) && !STOPPED.has(o);

@@ -40,12 +40,21 @@ const money = (usd) => `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1
 
 // ---------- what an outcome tag says: fin's words, none of splice's sentences ----------
 // Clean: ok and empty_message, no word. Stopped: client_abort and error:stopped. Every other tag is a failure, with its glyph.
+// A provider's own failure takes the glyph of the FACT it shares: a rate limit is the limit, an api_error is the
+// retries splice spent on it, and a refused credential is the credential glyph (its word, "Credentials refused",
+// is what separates it from being signed out). The rest are the plain bang.
 const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit",
   "error:all-accounts-exhausted": "limit", "error:budget-blocked": "limit", "error:auth-missing": "signout", "error:upstream-failed": "retries",
-  "failure:overloaded_error": "retries", "error:conn-reset": "retries", "error:upstream-frame-too-large": "bang", empty_model: "bang", "error:unexpected": "bang" };
+  "failure:overloaded_error": "retries", "error:conn-reset": "retries", "error:upstream-frame-too-large": "bang", empty_model: "bang", "error:unexpected": "bang",
+  "failure:rate_limit_error": "limit", "failure:api_error": "retries", "failure:authentication_error": "signout",
+  "failure:invalid_request_error": "bang", "failure:permission_error": "bang", "failure:not_found_error": "bang" };
 const OUTCOME = Object.fromEntries(Object.keys(OUTCOME_WORD).concat(["ok", "empty_message"]).map((tag) => [tag, {
   cls: isClean(tag) ? "clean" : STOPPED.has(tag) ? "stopped" : "fail", word: OUTCOME_WORD[tag] ?? "" , glyph: GLYPH_OF[tag] }]));
-const outcomeOf = (r) => (r.local ? { cls: "step", word: "Step" } : OUTCOME[r.outcome] || { cls: "fail", word: "Failed", glyph: "bang" });
+// NO ROW READS "Failed": a tag fin has worded gets fin's word, and anything else shows the provider's own type made
+// readable (kit.js tagWord), because a person can act on "Context window error" and can act on nothing at all with
+// "Failed". "Failed" is the Outcome switch's label, which counts every failure, and belongs nowhere else on this page.
+const outcomeOf = (r) => (r.local ? { cls: "step", word: "Step" } : OUTCOME[r.outcome]
+  || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" });
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
 // DECIDES, not the tag: splice writes the reset when it turned a request away because every account was spent
 // (ExhaustedAccountAdmission.kt:32), and a request that met the window mid-flight ends error:plan-limit with no reset
@@ -85,13 +94,18 @@ const sessTitle = (sid) => { const s = state.sessions[sid]; return s?.name || (s
 // ---------- reading splice ----------
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
 async function readStanding() {
-  const [heads, models, sessions, keys] = await Promise.all([
-    API.get("/api/heads"), API.get("/api/models"), API.get("/api/sessions"), API.get("/api/keys"),
+  const [heads, models, sessions, keys, topology] = await Promise.all([
+    API.get("/api/heads"), API.get("/api/models"), API.get("/api/sessions"), API.get("/api/keys"), API.get("/api/topology"),
   ]);
   state.error = heads.ok ? null : refusalOf(heads, "The commands could not be read");
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
+  // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called:
+  // his own model servers and the tunnel to a rented GPU both answer at 127.0.0.1 (splice.toml base_url), and both
+  // draw in the one colour the kit gives a local provider. The address is the fact; the name is not.
+  const bases = topology.body?.topology?.providers || {};
+  const local = (name) => /^https?:\/\/(127\.0\.0\.1|\[?::1\]?|localhost)\b/.test(bases[name]?.base_url || "");
   for (const row of models.body?.heads || []) {
-    state.providerOf[row.head] = FAMILY[row.provider] ?? row.provider;
+    state.providerOf[row.head] = FAMILY[row.provider] ?? (local(row.provider) ? "local" : row.provider);
     for (const m of row.models || []) if (m.id) state.modelLabel[m.id] = m.label || m.id;
   }
   // A session's name is its own page's to read. When that read refuses, the rows still list by the id splice recorded

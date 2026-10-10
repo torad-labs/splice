@@ -47,12 +47,13 @@ public data class CodexDeviceSpec(
 
 public class CodexDeviceLogin(
     private val output: TerminalOutput,
+    maxWaitMs: Long = DEVICE_CODE_MAX_WAIT_MS,
     // The daemon never opens a browser: the console is open in one already and shows the code and link itself.
     // Without a console observer the code and link print for the person to open.
 ) {
     private val loginIo = LoginIo(output, BrowserOpener { false })
     private val json = Json { ignoreUnknownKeys = true }
-    private val grant = CodexDeviceGrant(output, loginIo)
+    private val grant = CodexDeviceGrant(output, loginIo, maxWaitMs)
 
     /** Runs the flow to completion; true when credentials were written. [observer] present means the console is
      *  watching, so the code and link go through it instead of a terminal and a browser on the daemon's desktop. */

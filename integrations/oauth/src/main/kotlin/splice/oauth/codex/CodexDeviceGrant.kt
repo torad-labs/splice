@@ -23,11 +23,15 @@ import splice.provider.codex.CodexOAuth
 import splice.upstream.Waiter
 
 // why: OpenAI's device codes live 15 minutes (codex-rs/login device_code_auth.rs), so polling past that is pointless.
-private const val DEVICE_CODE_MAX_WAIT_MS = 15 * 60 * MS_PER_S
+internal const val DEVICE_CODE_MAX_WAIT_MS = 15 * 60 * MS_PER_S
 
 internal data class UserCode(val deviceAuthId: String, val userCode: String, val intervalS: Long)
 
-internal class CodexDeviceGrant(private val output: TerminalOutput, private val loginIo: LoginIo) {
+internal class CodexDeviceGrant(
+    private val output: TerminalOutput,
+    private val loginIo: LoginIo,
+    private val maxWaitMs: Long = DEVICE_CODE_MAX_WAIT_MS,
+) {
     private data class Grant(val code: String, val verifier: String)
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -44,26 +48,38 @@ internal class CodexDeviceGrant(private val output: TerminalOutput, private val 
         code: UserCode,
         waiter: Waiter,
     ): Grant? {
-        val deadline = System.currentTimeMillis() + DEVICE_CODE_MAX_WAIT_MS
+        val deadline = System.currentTimeMillis() + maxWaitMs
         while (System.currentTimeMillis() < deadline) {
-            waiter.wait(code.intervalS.coerceAtLeast(0L) * MS_PER_S)
-            val resp = postJson(
-                client,
-                "${spec.issuer}/api/accounts/deviceauth/token",
-                buildJsonObject {
-                    put("device_auth_id", code.deviceAuthId)
-                    put("user_code", code.userCode)
-                },
-            )
-            val body = resp.bodyAsText()
-            if (resp.status.isSuccess()) return grantFrom(body)
-            if (resp.status.value != HttpStatus.FORBIDDEN && resp.status.value != HttpStatus.NOT_FOUND) {
-                output.line("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
-                return null
+            // A server interval longer than the time left must not sleep past the code's life: cap the sleep,
+            // then look at the clock again before asking.
+            val left = deadline - System.currentTimeMillis()
+            waiter.wait(minOf(code.intervalS.coerceAtLeast(0L) * MS_PER_S, left))
+            if (System.currentTimeMillis() < deadline) {
+                val resp = postJson(
+                    client,
+                    "${spec.issuer}/api/accounts/deviceauth/token",
+                    buildJsonObject {
+                        put("device_auth_id", code.deviceAuthId)
+                        put("user_code", code.userCode)
+                    },
+                )
+                val body = resp.bodyAsText()
+                if (resp.status.isSuccess()) return grantFrom(body)
+                if (resp.status.value != HttpStatus.FORBIDDEN && resp.status.value != HttpStatus.NOT_FOUND) {
+                    output.line(failure("login failed", resp.status.value, body))
+                    return null
+                }
             }
         }
         output.line("splice: the code expired after 15 minutes; try again.")
         return null
+    }
+
+    /** What a refusal says: the HTTP status and the OAuth error code, never the body, which can carry a token or an
+     *  email the person never asked to see in a log. */
+    private fun failure(what: String, status: Int, body: String): String {
+        val oauthError = loginIo.errorCode(body)
+        return "splice: $what (HTTP $status)" + if (oauthError.isEmpty()) "" else ": ${loginIo.sanitize(oauthError)}"
     }
 
     private fun grantFrom(body: String): Grant? {
@@ -84,7 +100,7 @@ internal class CodexDeviceGrant(private val output: TerminalOutput, private val 
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
-            output.line("splice: token exchange failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
+            output.line(failure("token exchange failed", resp.status.value, body))
             return null
         }
         return body

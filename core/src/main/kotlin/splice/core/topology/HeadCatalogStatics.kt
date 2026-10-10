@@ -4,11 +4,11 @@
 package splice.core.topology
 
 /** One static reason a head has no catalog: the key it concerns and what is wrong with it. */
-public data class HeadCatalogRefusal(val field: String, val detail: String)
+internal data class HeadCatalogRefusal(val field: String, val detail: String)
 
-public object HeadCatalogStatics {
+internal object HeadCatalogStatics {
     /** The first static reason [head] can never have a catalog, or null. */
-    public fun refusal(head: HeadConfig): HeadCatalogRefusal? = when {
+    fun refusal(head: HeadConfig): HeadCatalogRefusal? = when {
         head.contextWindow?.let { it <= 0 } == true ->
             HeadCatalogRefusal("context_window", "head context_window must be positive")
         head.discoveryPrefix.isEmpty() ->

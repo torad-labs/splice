@@ -124,13 +124,14 @@ StopControl kills the process \
 where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
 middle of a turn. These need MORE naming than a shared shape, not less."""
 
-# ── 15 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 16 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
 dated = "2026-09-27"
 names = [
     "ClientFrameEmitted",
     "ClientGone",
+    "ConfigRepair",
     "ConsolePresence",
     "ContentReached",
     "DaemonRestart",
@@ -171,7 +172,10 @@ Swapping those roles could scan past the deadline, stop a healthy read, or bypas
 StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
 until the daemon is up) is a logging decision read per line; read as any of the others it would either \
 re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \
-shared BooleanSupplier would make every one of those substitutions compile."""
+shared BooleanSupplier would make every one of those substitutions compile. ConfigRepair (2026-10-10) offers the \
+fix session for a splice.toml boot refuses and answers whether every finding was fixed: its true lets `splice \
+restart` read the file again and go on to stop and start a daemon, so wired where a probe is wanted it would \
+restart on a read, and a probe wired here would restart on a file still broken."""
 
 # ── 6 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]

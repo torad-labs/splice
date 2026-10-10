@@ -118,6 +118,35 @@ class AccountsRouteTest {
         assertEquals(listOf("solo"), row["heads"]!!.jsonArray.map { it.jsonPrimitive.content })
     }
 
+    // Oct 10, 2026: a command's first OAuth account is renamed like the accounts added after it, and removed when its
+    // file is splice's own; a file the config shares with the vendor's CLI keeps its refusal.
+    @Test
+    fun `a first OAuth account offers rename, and remove only when its file is splice's own`() = runBlocking {
+        val firsts = object : FirstAccounts {
+            override fun name(kind: String, path: String) = "work".takeIf { path == "/own/codex.json" }
+            override fun shared(kind: String, path: String) = path != "/own/codex.json"
+        }
+        fun head(key: String, path: String) = base(key, "chatgpt-oauth").copy(
+            auth = object : AuthProvider {
+                override suspend fun credentials() = null
+                override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", mapOf("auth_path" to path))
+            },
+        )
+        val heads = mapOf("own" to head("own", "/own/codex.json"), "shared" to head("shared", "/home/.codex/auth.json"))
+
+        val rows = json.parseToJsonElement(AccountsRoute(heads, firsts).accountsJson()).jsonObject["accounts"]!!
+            .jsonArray.associateBy { it.jsonObject["heads"]!!.jsonArray.single().jsonPrimitive.content }
+        val own = rows.getValue("own").jsonObject
+        assertEquals("work", own["display_name"]!!.jsonPrimitive.content)
+        assertEquals("true", own["can_rename"]!!.jsonPrimitive.content)
+        assertEquals("true", own["can_remove"]!!.jsonPrimitive.content)
+        assertEquals("primary", own["edit_target"]!!.jsonObject["id"]!!.jsonPrimitive.content)
+        val shared = rows.getValue("shared").jsonObject
+        assertEquals("Primary", shared["display_name"]!!.jsonPrimitive.content)
+        assertEquals("true", shared["can_rename"]!!.jsonPrimitive.content)
+        assertEquals("false", shared["can_remove"]!!.jsonPrimitive.content)
+    }
+
     // console live evidence, 2026-09-24: claudex/claude-grok/claude-kimi/claude-muse all read
     // five_hour_*/seven_day_*/plan null on /api/accounts while /api/usage carried real numbers for
     // the same heads — foldSingleLogin hard-coded the windows instead of reading the head's quota.

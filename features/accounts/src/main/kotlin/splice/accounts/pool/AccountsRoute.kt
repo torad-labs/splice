@@ -27,7 +27,9 @@ import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
 import splice.core.usage.QuotaWindowView as PlanWindow
 
-public class AccountsRoute(private val heads: Map<String, AccountHead>) {
+/** [firsts] answers for a command's first OAuth account, so its row can be renamed and removed. Null leaves it
+ *  fixed. */
+public class AccountsRoute(private val heads: Map<String, AccountHead>, private val firsts: FirstAccounts? = null) {
     private val extras = AccountRowExtras(heads)
     private val management = AccountRowManagement()
 
@@ -197,11 +199,21 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         providers: Map<String, String>,
     ) {
         extras.write(into, row.labelsByHead, providers)
-        management.write(into, row.label, row.primary, row.authExclusion.displayName, row.authExclusion.identity)
+        val first = first(row)
+        val name = row.authExclusion.displayName ?: first?.name ?: row.label ?: "Primary"
+        management.write(into, name, row.authExclusion.identity, management.edit(row.label, row.primary, first))
         writeQuota(into, row, nowSeconds)
         val answer = row.labelsByHead.mapNotNull { (head, label) -> heads[head]?.answers?.answer(label) }
             .maxByOrNull { it.observedAtEpochMs }
         AccountAnswerJson.write(into, answer)
+    }
+
+    /** A first OAuth account's name and whether it may be removed; null for every other row. */
+    private fun first(row: JoinedAccount): FirstAccountEdit? {
+        val path = row.credential.path?.takeIf { row.primary && AuthKindRegistry.isOAuth(row.credential.kind) }
+        val facts = firsts ?: return null
+        val kind = row.credential.kind
+        return path?.let { FirstAccountEdit(facts.name(kind, it), !facts.shared(kind, it)) }
     }
 
     private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {

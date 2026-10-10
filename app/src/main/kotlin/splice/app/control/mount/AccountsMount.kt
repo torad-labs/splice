@@ -15,6 +15,7 @@ import splice.accounts.keys.KeyRoutes
 import splice.accounts.keys.KeyStoreSource
 import splice.accounts.order.AccountOrderRoute
 import splice.accounts.pool.AccountsRoute
+import splice.accounts.pool.FirstAccounts
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.ConsoleAccountsSource
 import splice.accounts.signin.LoginRoutes
@@ -23,7 +24,11 @@ import splice.app.control.AccountHeadAdapter
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.api.HeadResolver
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.util.LogSink
+import splice.oauth.OAuthPrimaryAccount
+import java.nio.file.Path
 
 internal class AccountsMount(
     heads: Map<String, ManagedHead>,
@@ -44,7 +49,7 @@ internal class AccountsMount(
         ConsoleAccountsSource { ports.accounts },
         ClaudeLoginPlacesSource { ports.claudeLogins },
     )
-    private val accountsRoute = AccountsRoute(accountHeads)
+    private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts())
     private val claudeRoutes = ClaudeLoginRoutes(ClaudeLoginPlacesSource { ports.claudeLogins })
     private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
@@ -102,5 +107,15 @@ internal class AccountsMount(
         route.get("/api/keys") { guard.guarded(call) { keyRoutes.list(call) } }
         route.put("/api/keys/{name}") { guard.guarded(call) { keyRoutes.set(call) } }
         route.delete("/api/keys/{name}") { guard.guarded(call) { keyRoutes.unset(call) } }
+    }
+
+    /** A command's first OAuth account, as the OAuth file layer keeps it: its name, and whether its file is shared. */
+    private class OAuthFirstAccounts(private val first: OAuthPrimaryAccount = OAuthPrimaryAccount()) : FirstAccounts {
+        override fun name(kind: String, path: String): String? = oauth(kind)?.let { first.name(it, Path.of(path)) }
+
+        override fun shared(kind: String, path: String): Boolean =
+            oauth(kind)?.let { first.shared(it, Path.of(path)) } ?: true
+
+        private fun oauth(kind: String): AuthKind.OAuth? = AuthKindRegistry.from(kind) as? AuthKind.OAuth
     }
 }

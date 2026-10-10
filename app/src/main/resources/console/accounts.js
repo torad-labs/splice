@@ -155,13 +155,14 @@ const FAILS = {
   stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true }, in_progress: { word: "In progress" },
   already_added: { word: "Already added", pulse: true }, in_use: { word: "In use", retry: true },
 };
-// A name splice takes: letters, digits, - and _, starting with a letter or digit, up to 64 on Claude
-// (ClaudeAccountFolders.kt:34, :195) and 48 elsewhere (OAuthAccountFiles.kt:22, OAuthAccountValidation.kt:35-41),
-// and one no other account of the command has (ClaudeAccountFolders.kt:199, OAuthAccountFiles.kt:264-266).
+// A name splice takes, and one no other account of the command has (ClaudeAccountFolders.kt:199,
+// OAuthAccountFiles.kt:264-266). On Claude: letters, digits, - and _, starting with a letter or digit, up to 64
+// (ClaudeAccountFolders.kt:34, :195). Elsewhere: lowercase letters, digits, ., - and _, up to 48
+// (AccountLabelPolicy, AccountSelection.kt:17), with primary, auto and a -quota ending reserved.
 function nameError(p, a, v) {
-  const max = p.id === "claude" ? 64 : 48;
   const reserved = p.id !== "claude" && (v === "primary" || v === "auto" || v.endsWith("-quota"));
-  if (reserved || !new RegExp(`^[A-Za-z0-9][A-Za-z0-9_-]{0,${max - 1}}$`).test(v)) return "Invalid name";
+  const shape = p.id === "claude" ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/ : /^[a-z0-9][a-z0-9._-]{0,47}$/;
+  if (reserved || !shape.test(v)) return "Invalid name";
   if (p.accounts.some((x) => x !== a && x.name === v)) return "Name taken";
   return null;
 }

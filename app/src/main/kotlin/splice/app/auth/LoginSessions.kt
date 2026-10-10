@@ -33,6 +33,7 @@ import splice.oauth.LoginAnnouncement
 import splice.oauth.LoginObserver
 import splice.oauth.OAuthAccountFiles
 import splice.oauth.OAuthAccountRefused
+import splice.oauth.OAuthPrimaryAccount
 import splice.topology.TopologyLoader
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
@@ -44,6 +45,9 @@ import java.util.concurrent.atomic.AtomicReference
 // 256 is far above any plausible burst of concurrent logins across every head, and the map is
 // access-ordered so the cap only ever evicts attempts nobody has polled in a long time.
 private const val MAX_TRACKED_LOGINS = 256
+
+// why: the label the console and the CLI name the first account by; OAuthAccountFiles reserves it for that file.
+private const val PRIMARY_LABEL = "primary"
 
 /** Off-request orchestration for one head's login attempts. A daemon-lifetime singleton (held by
  *  [ConsoleAccountsImpl]), so every login this daemon starts shares one bounded id space. */
@@ -179,6 +183,7 @@ internal fun interface ConsoleAccountsTopology {
 internal class ConsoleAccountsImpl(
     private val sessions: LoginSessions = LoginSessions(),
     private val files: OAuthAccountFiles = OAuthAccountFiles(),
+    private val first: OAuthPrimaryAccount = OAuthPrimaryAccount(files),
     private val topologies: ConsoleAccountsTopology = ConsoleAccountsTopology {
         TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
     },
@@ -197,12 +202,22 @@ internal class ConsoleAccountsImpl(
 
     override suspend fun removeAccount(headKey: String, label: String): AccountMutation =
         onOAuthHead(headKey) { target ->
-            val removed = files.remove(target.kind, target.primaryFile, label)
+            val removed = if (label == PRIMARY_LABEL) {
+                first.remove(target.kind, target.primaryFile)
+            } else {
+                files.remove(target.kind, target.primaryFile, label)
+            }
             if (!removed) throw OAuthAccountRefused("no OAuth account labeled '$label'")
         }
 
     override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation =
-        onOAuthHead(headKey) { target -> files.relabel(target.kind, target.primaryFile, label, newLabel) }
+        onOAuthHead(headKey) { target ->
+            if (label == PRIMARY_LABEL) {
+                first.rename(target.kind, target.primaryFile, newLabel)
+            } else {
+                files.relabel(target.kind, target.primaryFile, label, newLabel)
+            }
+        }
 
     /** Runs [block] on [headKey]'s OAuth account file, or names why it cannot. A head that is not configured is
      *  [AccountMutation.UnknownHead]; a head that IS configured and keeps its accounts somewhere else answers with

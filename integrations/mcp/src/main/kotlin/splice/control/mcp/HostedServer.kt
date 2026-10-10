@@ -261,6 +261,9 @@ internal class HostedServer(
         } catch (e: IOException) {
             lastError = "read failed: ${e.message}"
         }
+        // The listing this child gave is stale whoever owns the process slot now: a replacement spawned during
+        // the wait below shares this cache and must not be served the old child's tools.
+        tools.drop()
         if (process !== p) return
         // stdout EOF arrives a beat before the kernel reaps the child; wait that beat so the code is real.
         val code = if (p.waitFor(EXIT_WAIT_MS, TimeUnit.MILLISECONDS)) p.exitValue().toString() else "unknown"
@@ -270,7 +273,6 @@ internal class HostedServer(
                 if (it) {
                     process = null
                     initResult = null
-                    tools.drop()
                 }
             }
         }

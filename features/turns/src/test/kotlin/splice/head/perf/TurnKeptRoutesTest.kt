@@ -21,7 +21,7 @@ class TurnKeptRoutesTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(
             Json.parseToJsonElement(
-                """{"store":"turns","state":"on","days":0,"rows":0,"oldest":null,"ages_out":null}""",
+                """{"store":"turns","state":"on","days":0,"rows":0,"bytes":0,"oldest":null,"ages_out":null}""",
             ),
             Json.parseToJsonElement(response.body),
         )
@@ -55,6 +55,13 @@ class TurnKeptRoutesTest {
         assertEquals("null", body.getValue("ages_out").toString())
         assertEquals("on", body.getValue("state").jsonPrimitive.content)
         assertEquals("""{"ts":$first}""" + "\n", Files.readString(outside))
+        // the size the store costs on disk: the three turn files and the derived total, and NOT the file a symlink
+        // points at, which the tally does not read either
+        val rolled = live.resolveSibling("${live.fileName}.1")
+        val totals = paths.sessionTotalsFile("claudex")
+        val onDisk = listOf(live, rolled, archived, totals).sumOf(Files::size)
+        assertEquals(onDisk.toString(), body.getValue("bytes").jsonPrimitive.content)
+        assertTrue(onDisk > 0, "the fixture wrote bytes, so the size cannot be zero")
     }
 
     @Test

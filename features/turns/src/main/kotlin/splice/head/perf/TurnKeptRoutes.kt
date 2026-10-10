@@ -141,6 +141,12 @@ public class TurnKeptRoutes(
                 }
                 put("days", tally.days.size)
                 put("rows", tally.rows)
+                // What it costs on disk, which a count of rows cannot say: a turn row's length varies by an order of
+                // magnitude. Settings > Your data reports a store's size beside what it holds, so the person deciding
+                // whether to keep it can see what keeping it costs. The derived totals count too: they are kept here
+                // and deleted here. A symlink is measured as the link, never followed, which is the same rule the
+                // tally reads by.
+                put("bytes", bytes(kept.perf + kept.totals))
                 put("oldest", tally.days.minOrNull()?.toString())
                 // Neither a live generation nor an archive is swept on a clock (PerfStats.sweepArchive).
                 put("ages_out", null as String?)
@@ -180,6 +186,20 @@ public class TurnKeptRoutes(
                 archive.filter { PerfFiles.isArchived(it.fileName.toString()) },
             totals = live.filter { it.fileName.toString().endsWith(TOTALS_SUFFIX) },
         )
+    }
+
+    /** The bytes [files] occupy. A file that vanished between the listing and here contributes nothing rather than
+     *  failing the read: an inventory is a reading of a moment, and a rotation is allowed to move under it. */
+    private fun bytes(files: List<Path>): Long = files.sumOf { file ->
+        if (Files.isSymbolicLink(file)) {
+            0L
+        } else {
+            try {
+                Files.size(file)
+            } catch (_: IOException) {
+                0L
+            }
+        }
     }
 
     private fun tally(files: List<Path>): TurnTally = TurnTally().also { count ->

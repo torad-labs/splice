@@ -87,6 +87,9 @@ public class ActivityRoutes(
         state.reason(store)?.let { put("reason", it) }
         put("days", inventory.days)
         put("rows", inventory.rows)
+        // What the store costs on disk. The inventory has always measured it (DayInventory.bytes); only the payload
+        // left it out, so Settings > Your data had a count with no size beside it.
+        put("bytes", inventory.bytes)
         put("oldest", inventory.oldest?.toString())
         put("ages_out", inventory.agesOut?.toString())
     }.toString()

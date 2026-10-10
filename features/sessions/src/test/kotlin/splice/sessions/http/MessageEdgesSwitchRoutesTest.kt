@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
@@ -66,7 +67,7 @@ class MessageEdgesSwitchRoutesTest {
         val team = rig.team()
         val stores = stores(root)
         stores.edges.record(MessageEdge(LEAD, BUILDER, AT, "toolu_1"))
-        stores.activity.label(LEAD, "claude", "Reading README.md", AT)
+        stores.activity.label(LEAD, "claude", ActivityAction("Reading README.md"), AT)
         assertTrue(AsyncFileIo.drain())
         val planted = root.resolve("activity/leave-me.txt")
         Files.writeString(planted, "keep")
@@ -79,6 +80,10 @@ class MessageEdgesSwitchRoutesTest {
         val edges = ActivityRoutes(rig.registry, source, text)
         val teams = TeamReads(TeamSource { rig.store }, rig.registry, source, text, WallClock { AT })
         assertEquals("1", field(edges.kept(KeptActivity.EDGES).body, "rows"))
+        // the size the store costs on disk, beside what it holds: Settings > Your data reports both, and a row count
+        // cannot say what keeping it costs
+        val edgeBytes = field(edges.kept(KeptActivity.EDGES).body, "bytes").toLong()
+        assertTrue(edgeBytes > 0, "a store holding a row holds bytes")
         assertEquals("2026-09-18", field(edges.kept(KeptActivity.EDGES).body, "oldest"))
         assertEquals("2026-09-25", field(edges.kept(KeptActivity.EDGES).body, "ages_out"))
         assertEquals("1", field(edges.kept(KeptActivity.LABELS).body, "rows"))
@@ -90,6 +95,7 @@ class MessageEdgesSwitchRoutesTest {
         assertEquals("edges deleted", field(edges.edges(LEAD).body, "reason"))
         assertEquals("deleted", field(teams.chat(team.id, null).body, "state"))
         assertEquals("0", field(edges.kept(KeptActivity.EDGES).body, "rows"))
+        assertEquals("0", field(edges.kept(KeptActivity.EDGES).body, "bytes"), "a deleted store costs nothing")
         val deletedLabels = edges.deleteKept(KeptActivity.LABELS)
         assertEquals("1", field(deletedLabels.body, "rows"))
         assertEquals("deleted", field(teams.activity(team.id, null).body, "state"))
@@ -125,7 +131,7 @@ class MessageEdgesSwitchRoutesTest {
     fun `label delete works after all heads stop storing labels`(@TempDir root: Path) {
         val rig = TeamRig(root)
         val active = stores(root)
-        active.activity.label(LEAD, "claude", "Reading README.md", AT)
+        active.activity.label(LEAD, "claude", ActivityAction("Reading README.md"), AT)
         assertTrue(AsyncFileIo.drain())
         val off = ActivityStores(root.resolve("activity"), 7, "", WallClock { AT })
         val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }

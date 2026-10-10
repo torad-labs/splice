@@ -37,6 +37,7 @@ import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
+import { type LintVerdict, lintable, type StagedLint, stagedLinters } from "../lib/lint-staged.ts";
 import { preparePrePushTree, type PrePushTree } from "../lib/prepush-tree.ts";
 import { narrowBunTest } from "../lib/test-select.ts";
 import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
@@ -103,6 +104,8 @@ export interface HookDeps {
   readonly tree?: (repoRoot: string, sha: string) => PrePushTree;
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;
+  /** The linters pre-commit runs over the staged Kotlin. The real ones when absent. */
+  readonly lint?: StagedLint;
 }
 
 export interface Judged extends GateRun {
@@ -427,11 +430,11 @@ export async function commitLegsLeg(lay: Layout, deps: HookDeps = {}): Promise<n
 export async function commitGate(lay: Layout, deps: HookDeps = {}): Promise<number> {
   const legs = await commitLegsLeg(lay, deps);
   if (legs !== 0) return legs;
-  return preCommit(lay);
+  return preCommit(lay, deps.lint ?? stagedLinters(lay.repoRoot));
 }
 
 /** The pre-commit judgement of this commit. Returns the exit code. */
-export async function preCommit(lay: Layout): Promise<number> {
+export async function preCommit(lay: Layout, lint?: StagedLint): Promise<number> {
   const started = performance.now();
   const root = lay.repoRoot;
   const changed = changedPaths(root);
@@ -447,8 +450,11 @@ export async function preCommit(lay: Layout): Promise<number> {
   if (kotlin.length > 0) {
     const dir = mirror(root, kotlin);
     let findings: Finding[];
+    let linted: LintVerdict | undefined;
     try {
       findings = scanMirror(root, dir, kotlin);
+      const sources = kotlin.filter(lintable);
+      if (lint !== undefined && sources.length > 0) linted = await lint(dir, sources);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -459,6 +465,19 @@ export async function preCommit(lay: Layout): Promise<number> {
       return 1;
     }
     console.error("  ✓ walls");
+    if (linted !== undefined) {
+      if ("error" in linted) {
+        console.error(`  ✗ ktlint/detekt could not judge: ${linted.error}`);
+        console.error(`pre-commit: ✗ lint — ${seconds(started)}`);
+        return 1;
+      }
+      for (const f of linted.findings) console.error(`  ✗ ${f.tool}  ${f.line}`);
+      if (linted.findings.length > 0) {
+        console.error(`pre-commit: ✗ ktlint/detekt (${linted.findings.length} finding(s) in the staged files) — ${seconds(started)}`);
+        return 1;
+      }
+      console.error("  ✓ ktlint, detekt");
+    }
   }
 
   const modules = gradleModules(root);

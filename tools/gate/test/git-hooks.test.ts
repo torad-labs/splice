@@ -255,6 +255,35 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(await preCommit(lay(root))).toBe(0);
   });
 
+  test("RED: a finding from the commit's linters blocks the commit, and a clean verdict lets it through", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    const finding = { findings: [{ tool: "ktlint" as const, line: `${TARGET}:1:1: nope` }] };
+    const { result, text } = await captured(() => preCommit(lay(root), async () => finding));
+    expect(result).toBe(1);
+    expect(text).toContain(`ktlint  ${TARGET}:1:1: nope`);
+    expect(await preCommit(lay(root), async () => ({ findings: [] }))).toBe(0);
+  });
+
+  test("RED: linters that could not judge refuse the commit and say why", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    const { result, text } = await captured(() => preCommit(lay(root), async () => ({ error: "no jar" })));
+    expect(result).toBe(1);
+    expect(text).toContain("could not judge: no jar");
+  });
+
+  test("the linters are handed the staged Kotlin only, and not asked for a commit without any", async () => {
+    const root = wallsRepo();
+    writeFile(root, "README.md", "docs\n");
+    git(root, ["add", "README.md"]);
+    let asked = false;
+    expect(await preCommit(lay(root), async () => ((asked = true), { findings: [] }))).toBe(0);
+    expect(asked).toBe(false);
+  });
+
   test("a Kotlin file no check covers is refused, and gradle is never asked", async () => {
     const root = wallsRepo();
     writeFile(root, "scripts/Helper.kts", "val x = 1\n");

@@ -105,12 +105,7 @@ let state = {
   search: null,
   // when the window lists nothing: the nearest wider window that has matches, and how many (readWider)
   wider: null,
-  // what Start saving answered, per command: the word that stands beside "Not saved" once the button is pressed
-  saving: {},
 };
-// What Start saving says while the switch waits on a restart to take. fin's word is pending (asked Oct 10); until it
-// lands this is the plain fact, and it is the one line to change.
-const AFTER_RESTART = "Saves after splice restarts";
 let ui = { open: null, q: "", win: "24h", cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null,
   outcome: "all", why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true };
 const root = document.getElementById("requests");
@@ -516,7 +511,7 @@ const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui
 //   deleted    the daemon says he deleted them: "Deleted"
 //   expired    older than the command's keep-for: "Older than N days"
 //   norecords  saving was on, or the row predates the fact, and the records are not there: "No records". Never a
-//              cause, and never "Start saving", because saving was on (Marlin, Oct 10).
+//              cause, because saving was on (Marlin, Oct 10).
 // The command's capture switch NOW is never read as the cause: a request older than a toggle ran under the old setting.
 const traces = new Map(); // one read per request, held while the page is open
 function traceState(r) {
@@ -562,25 +557,11 @@ function goneHtml(r, st) {
     const days = state.capture[r.head]?.days;
     return line(`Older than ${n0(days)} ${days === 1 ? "day" : "days"}`, `<a class="act quiet" href="settings.html#data">Keep longer</a>`);
   }
-  // Not saved: while the command is still not saving, the button that starts it; once it saves, the word alone
-  const said = state.saving[r.head];
-  const act = said ? `<span class="detail">${said}</span>`
-    : state.capture[r.head]?.on === false ? `<button class="act quiet" data-act="startsave" data-h="${esc(r.head)}">Start saving</button>` : "";
-  return line("Not saved", act);
+  // Not saved, alone: the switch that would save the next one takes effect only after a restart, and a page draws only
+  // settings the daemon takes live (knobs.js), so Start saving waits until the switch applies live (fin, Marlin, Oct 10)
+  return line("Not saved");
 }
 
-/** Start saving: this command's Prompts and answers on, the same write Your data makes (PUT /capture). The daemon reads
- *  the switch at start, and says so on every write (restart_required, CaptureRoutes.kt), so "Applied" is said only when
- *  it is true; until then the word is fin's for a change waiting on a restart. */
-async function startSaving(head) {
-  state.saving[head] = "Saving";
-  render();
-  const res = await API.put(`/api/heads/${encodeURIComponent(head)}/capture`, { enabled: true });
-  if (!res.ok) { state.saving[head] = refusalOf(res, "Saving could not be started"); render(); return; }
-  state.capture[head] = { ...state.capture[head], on: true };
-  state.saving[head] = res.body?.restart_required ? AFTER_RESTART : "Applied";
-  render();
-}
 
 /** The records as the view reads them: what Claude Code sent, every send upstream on the rail, and what came back. */
 function traceFrom(records, r) {
@@ -717,7 +698,6 @@ document.addEventListener("click", (e) => {
       { const q = document.getElementById("q"); q.value = ""; ui.q = ""; } again(); break;
     case "more": ui.n += 200; render(); break;
     case "close": ui.open = null; ui.auto = false; render(); break;
-    case "startsave": startSaving(el.dataset.h); break;
     case "tab": case "node": case "frames": RV.click(el); render({ keep: true }); break; // the open request's own controls (reqview.js)
   }
 });

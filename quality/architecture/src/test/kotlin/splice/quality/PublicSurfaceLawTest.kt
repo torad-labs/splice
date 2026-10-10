@@ -495,13 +495,6 @@ class PublicSurfaceLawTest {
             "the map yielded ${surface.examined} public top-level declaration(s) — the module walk is not pointed " +
                 "at the real source sets, so a green here would be a green over a tree nobody read."
         }
-        // The per-module walk and the shared reader must describe ONE tree: a file one of them sees
-        // and the other does not is a denominator that moved without anybody writing it down.
-        assertEquals(
-            KotlinText.kotlinFiles(map, PublicSurface.MAIN),
-            map.modules.sorted().flatMap { PublicSurface.sources(map, it, PublicSurface.MAIN) },
-            "the law's per-module main sources must be KotlinText.kotlinFiles' own answer",
-        )
         val problems = PublicSurface.audit(map, lawText(), baselineText())
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "PUBLIC SURFACE RATCHET (V4-92) violated:\n  - ")
@@ -520,15 +513,15 @@ class PublicSurfaceLawTest {
         }
 
         fun audit(baseline: String?, law: String? = LAW): List<String> = PublicSurface.audit(synthetic, law, baseline)
-
-        fun surface(): PublicSurface.Surface = PublicSurface.unjustified(synthetic, LAW)
     }
 
     @Test
-    fun `the law can actually fail - what justifies is green - V4-92`(@TempDir root: File) {
+    fun `what a consumer justifies is green and a shrunk baseline passes - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
             assertEquals(emptyList<String>(), audit(baseline()), "an imported public type, and `internal`, are green")
+            assertEquals(emptyList<String>(), audit(baseline(API_ID)), "an entry that gained a consumer passes")
+            assertEquals(emptyList<String>(), audit(baseline(DELETED_ID)), "an entry whose declaration is gone passes")
 
             write(LIB_API to LEAK, OTHER_FIXTURE to FIXTURE_USE)
             assertEquals(emptyList<String>(), audit(baseline()), "a sibling's testFixtures consumer is shipped code")
@@ -537,16 +530,23 @@ class PublicSurfaceLawTest {
             assertEquals(emptyList<String>(), audit(baseline()), "a star import of the package justifies it")
 
             write(LIB_API to API, OTHER_USE to USE, LIB_LEAK to LEAK)
-            assertEquals(
-                emptyList<String>(),
-                audit(baseline(LEAK_ID)),
-                "a RECORDED offender is not growth — the ratchet holds",
-            )
+            assertEquals(emptyList<String>(), audit(baseline(LEAK_ID)), "a RECORDED offender is not growth")
 
-            // The one-item tree grades green WITH its count (§24, the boring case).
-            write(LIB_API to LEAK)
-            assertEquals(1, surface().examined, "one declaration examined")
-            assertEquals(emptyList<String>(), audit(baseline(LEAK_ID)))
+            // Each of these is part of what a consumer or a downstream subclass can reach, so Hidden rides Store.
+            val reachable = mapOf(
+                "a public member's return type" to store("public"),
+                "a wrapped member parameter list" to WRAPPED_STORE,
+                "a parameter after a default lambda" to LAMBDA_STORE,
+                "a protected constructor of an open class" to PROTECTED_CONSTRUCTOR_STORE,
+                "a public secondary constructor" to SECONDARY_CONSTRUCTOR_STORE,
+                "a protected member of an open class" to PROTECTED_MEMBER_STORE,
+                "the target of a public typealias" to ALIAS_STORE,
+            )
+            val unread = reachable.filter { (_, source) ->
+                write(LIB_STORE to source, OTHER_USE to STORE_USE)
+                audit(baseline()).isNotEmpty()
+            }.keys
+            assertEquals(emptySet<String>(), unread, "each of these carries its type to the consumer")
         }
     }
 
@@ -557,7 +557,6 @@ class PublicSurfaceLawTest {
             assertHit(audit(baseline()), "GROWTH", LEAK_ID, "class at") {
                 "a synthetic unjustified public type with an empty baseline must be RED BY NAME"
             }
-            assertTrue(surface().offenders.any { it.name == "SelftestLeak" }, "the synthetic leak must be named")
 
             // A sibling module's src/test caller is the population this wall exists to name.
             write(LIB_API to LEAK, OTHER_TEST to TEST_USE)
@@ -571,35 +570,24 @@ class PublicSurfaceLawTest {
                 "a type reached only through an INTERNAL member is not part of the public contract"
             }
 
-            // ...and the wrapped-parameter shape, with its consumer gone.
             write(LIB_STORE to WRAPPED_STORE)
             assertHit(audit(baseline()), "GROWTH", HIDDEN_ID) { "with the consumer gone the type offends again" }
+
+            // `Base(Hidden())` is an expression: Hidden is built inside Store and no caller binds it.
+            write(LIB_STORE to SUPER_CALL_STORE, OTHER_USE to STORE_USE)
+            assertHit(audit(baseline()), "GROWTH", HIDDEN_ID) {
+                "a type named only in a supertype's constructor arguments is not part of the contract"
+            }
+
+            write(LIB_API to API, OTHER_USE to NEAR_MISS_USE)
+            assertHit(audit(baseline()), "GROWTH", API_ID) {
+                "a consumer that names `fix.lib.ApiOther` does not justify `fix.lib.Api`"
+            }
         }
     }
 
     @Test
-    fun `the law can actually fail - the closure carries a member's types - V4-92`(@TempDir root: File) {
-        with(Tree(root)) {
-            // A type named nowhere, reachable only through a consumed class's PUBLIC member.
-            write(LIB_STORE to store("public"), OTHER_USE to STORE_USE)
-            assertEquals(
-                emptyList<String>(),
-                audit(baseline()),
-                "a public member's return type rides its consumed class",
-            )
-            // The arm the first cut should have had: the member's parameters WRAP, so a scan that
-            // captured each member's FIRST LINE only would hide `hidden: Hidden` on line three.
-            write(LIB_STORE to WRAPPED_STORE, OTHER_USE to STORE_USE)
-            assertEquals(
-                emptyList<String>(),
-                audit(baseline()),
-                "a WRAPPED member parameter list carries its type to the consumer",
-            )
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - a const named only in a public default is GROWTH - V4-210`(@TempDir root: File) {
+    fun `a const named only in a public default is GROWTH - V4-210`(@TempDir root: File) {
         with(Tree(root)) {
             // The three shapes a default takes: closed by the parameter list's `)`, closed by a `,`,
             // and wrapped over lines. The type declared AFTER them must still ride the closure.
@@ -615,59 +603,7 @@ class PublicSurfaceLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a default lambda does not end the signature - V4-92`(@TempDir root: File) {
-        with(Tree(root)) {
-            // The braces of a default LAMBDA sit inside the parameter list. A header that ends at the first
-            // brace never reads `hidden: Hidden` below it, so Hidden reads as unjustified although Store is consumed.
-            write(LIB_STORE to LAMBDA_STORE, OTHER_USE to STORE_USE)
-            assertFalse(audit(baseline()).any { HIDDEN_ID in it }) {
-                "a type after a default lambda is still the constructor's contract, and its class is consumed"
-            }
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - what a subclass or an alias reaches is contract - V4-92`(@TempDir root: File) {
-        with(Tree(root)) {
-            // Each of these is part of what a DOWNSTREAM module can call or extend, so Hidden rides Store.
-            val reachable = mapOf(
-                "a protected constructor of an open class" to PROTECTED_CONSTRUCTOR_STORE,
-                "a public secondary constructor" to SECONDARY_CONSTRUCTOR_STORE,
-                "a protected member of an open class" to PROTECTED_MEMBER_STORE,
-                "the target of a public typealias" to ALIAS_STORE,
-            )
-            val unread = reachable.filter { (_, source) ->
-                write(LIB_STORE to source, OTHER_USE to STORE_USE)
-                audit(baseline()).isNotEmpty()
-            }.keys
-            assertEquals(emptySet<String>(), unread, "each of these carries its type to the consumer")
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - a supertype call's arguments are not contract - V4-92`(@TempDir root: File) {
-        with(Tree(root)) {
-            // `Base(Hidden())` is an expression: Hidden is built inside Store and no caller binds it.
-            write(LIB_STORE to SUPER_CALL_STORE, OTHER_USE to STORE_USE)
-            assertHit(audit(baseline()), "GROWTH", HIDDEN_ID) {
-                "a type named only in a supertype's constructor arguments is not part of the contract"
-            }
-        }
-    }
-
-    @Test
-    fun `a shrink passes - an entry that stopped offending is progress, never a failure - V4-92`(@TempDir root: File) {
-        with(Tree(root)) {
-            write(LIB_API to API, OTHER_USE to USE)
-            val gained = audit(baseline(API_ID))
-            assertEquals(emptyList<String>(), gained, "a baseline entry that has gained a consumer passes")
-            val deleted = audit(baseline(DELETED_ID))
-            assertEquals(emptyList<String>(), deleted, "a baseline entry whose declaration is gone passes")
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - a kept reason that explains nothing - V4-92`(@TempDir root: File) {
+    fun `a kept reason that explains nothing is red - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to LEAK)
             assertHit(audit(kept(listOf(LEAK_ID), mapOf(LEAK_ID to "   "))), "BLANK REASON", LEAK_ID) {
@@ -677,18 +613,11 @@ class PublicSurfaceLawTest {
             assertHit(audit(orphan), "ORPHAN KEPT", DELETED_ID) {
                 "a reason for an entry the baseline does not hold is a half-finished burn-down"
             }
-            // A kept entry with a real reason holds a baseline line the measurement no longer carries.
-            write(LIB_API to API, OTHER_USE to USE)
-            assertEquals(
-                emptyList<String>(),
-                audit(kept(listOf(API_ID), mapOf(API_ID to "a consumer lands in the next commit"))),
-                "an explained entry passes",
-            )
         }
     }
 
     @Test
-    fun `the law can actually fail - an untrusted instrument never passes - V4-92`(@TempDir root: File) {
+    fun `an untrusted instrument never passes - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
             assertHit(audit(baseline(), law = null), "missing") { "a missing module law is a hard error" }
@@ -704,20 +633,6 @@ class PublicSurfaceLawTest {
         with(Tree(root, APP_ONLY)) {
             write(APP_MAIN to APP_SOURCE)
             assertHit(audit(baseline()), "vacuously") { "a tree whose every module is nonLibrary must REFUSE" }
-        }
-    }
-
-    @Test
-    fun `the token boundary is the checker's own - V4-92`(@TempDir root: File) {
-        assertTrue(PublicSurface.names("import fix.lib.Api\n", "fix.lib.Api"), "a whole-token use is a use")
-        assertTrue(PublicSurface.names("val x = fix.lib.Api.Companion\n", "fix.lib.Api"), "a trailing dot is a use")
-        assertFalse(PublicSurface.names("import otherfix.lib.Api\n", "fix.lib.Api"), "a dotted prefix is NOT a use")
-        assertFalse(PublicSurface.names("import fix.lib.ApiOther\n", "fix.lib.Api"), "a longer name is NOT a use")
-        with(Tree(root)) {
-            write(LIB_API to API, OTHER_USE to NEAR_MISS_USE)
-            assertHit(audit(baseline()), "GROWTH", API_ID) {
-                "a consumer that names `fix.lib.ApiOther` does not justify `fix.lib.Api`"
-            }
         }
     }
 

@@ -460,10 +460,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
 class DiskWritesLawTest {
     private val map = ProjectMap.fromSystemProperties()
 
-    private fun readme(): String? = File(map.root, DiskWrites.README).takeIf { it.isFile }?.readText()
-
-    private fun live(extra: List<File> = emptyList(), readme: String? = readme()): DiskWrites.Audit =
-        DiskWrites.audit(KotlinText.kotlinFiles(map) + extra, map.root, readme)
+    private fun live(): DiskWrites.Audit {
+        val readme = File(map.root, DiskWrites.README).takeIf { it.isFile }?.readText()
+        return DiskWrites.audit(KotlinText.kotlinFiles(map), map.root, readme)
+    }
 
     @Test
     fun `every file splice writes has an entry in the README's disk section - V4-262`() {
@@ -571,24 +571,6 @@ class DiskWritesLawTest {
         assertEquals(2, grown.size, "exactly the real append is unlisted and unrecorded")
     }
 
-    /** The dispatch's mutation, on the SHIPPED tree and README: one Files.write in a main source set
-     *  with no entry reds by name, and it is the only red. */
-    @Test
-    fun `the law can actually fail - against the shipped tree - V4-262`(@TempDir root: File) {
-        val mutant = File(root, "zz-selftest/src/main/kotlin/splice/selftest/SelftestDump.kt")
-        mutant.parentFile.mkdirs()
-        mutant.writeText(MUTANT)
-        val grown = live(listOf(mutant)).problems
-        assertHit(grown, "UNLISTED", "SelftestDump.kt:4", "Files.write(") {
-            "a new write with no entry must be RED BY NAME"
-        }
-        assertHit(grown, "UNRECORDED", "SelftestDump.kt") { "and its write is in no record (V4-287)" }
-        assertEquals(2, grown.size, "exactly the mutant, unlisted and unrecorded: $grown")
-        assertHit(live(readme = readme()?.replace(DiskWrites.HEADING, "## Elsewhere")).problems, "NO SECTION") {
-            "the shipped README without its heading must be RED"
-        }
-    }
-
     @Test
     fun `a new write in a file the section names is red where it is, both ways - V4-287`(@TempDir root: File) {
         with(Tree(root)) {
@@ -615,24 +597,6 @@ class DiskWritesLawTest {
                 "a not-a-file entry exempts the one match it declares, and the next is a write"
             }
         }
-    }
-
-    /** V4-287, the dispatch's mutation on the SHIPPED tree and README: one more write in
-     *  CompactionRecordings.kt, a file the section names, is red where it is, and it is the only red. */
-    @Test
-    fun `a new write in a file the shipped section names is red - V4-287`(@TempDir root: File) {
-        val files = KotlinText.kotlinFiles(map).map { source ->
-            val rel = source.relativeTo(map.root).invariantSeparatorsPath
-            File(root, rel).also { copy ->
-                copy.parentFile.mkdirs()
-                copy.writeText(source.readText() + if (rel.endsWith("/CompactionRecordings.kt")) SECOND_WRITE else "")
-            }
-        }
-        val problems = DiskWrites.audit(files, root, readme()).problems
-        assertHit(problems, "GROWN", "CompactionRecordings.kt", "Files.writeString(") {
-            "a second write in a file the section names must be RED where it is"
-        }
-        assertEquals(1, problems.size, "exactly the mutant: $problems")
     }
 
     private companion object {

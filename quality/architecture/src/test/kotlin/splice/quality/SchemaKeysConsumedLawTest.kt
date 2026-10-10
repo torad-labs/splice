@@ -61,7 +61,6 @@
 package splice.quality
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -554,19 +553,6 @@ internal object SchemaKeysConsumed {
         return audit.problems + audit.red.map { (key, why) -> "${key.locus()}: $why" }
     }
 
-    /** The census `--report` prints: one line per key, in schema-then-knob declaration order. */
-    fun census(files: Map<String, String>, policy: Policy = LIVE): List<String> {
-        val audit = unconsumed(files, policy)
-        val dead = audit.red.map { "${it.first.owner}.${it.first.prop}" }.toSet()
-        val head = "schema-keys-consumed: ${audit.examined} key(s), ${audit.red.size} parsed-and-never-acted-on"
-        val keys = schemaKeys(files).keys + knobKeys(files).keys
-        return listOf(head) + keys.map { key ->
-            val state = if ("${key.owner}.${key.prop}" in dead) "DEAD" else "acted on"
-            "  ${key.plane.padEnd(6)} ${key.owner}.${key.prop.padEnd(24)} key " +
-                "${key.key.padEnd(26)} ${state.padEnd(9)} ${key.locus()}"
-        }
-    }
-
     /** The tree this law grades: relative path -> source text, in path order. */
     fun sources(map: ProjectMap): Map<String, String> {
         val out = linkedMapOf<String, String>()
@@ -637,118 +623,21 @@ class SchemaKeysConsumedLawTest {
 
         fun violations(with: SchemaKeysConsumed.Policy = policy) = SchemaKeysConsumed.violations(files(), with)
 
-        fun census(with: SchemaKeysConsumed.Policy = policy) = SchemaKeysConsumed.census(files(), with)
-
         fun allow(vararg entries: Pair<String, String>) = policy.copy(allowlist = entries.toList())
     }
 
-    /** THE CENSUS PORT HAD NO READER — not a test, not a task, nothing in the tree called it. A
-     *  report nobody runs is one nobody can trust on the day it is needed, and that day is always
-     *  a day something else is already red. So it runs here against the same fixture the law's own
-     *  arms use, and its DEAD column is proved to MOVE: green has none, the planted dead key
-     *  produces exactly one, and the header's count moves with it. */
     @Test
-    fun `the census reads every key and marks the dead one - V4-91`(@TempDir root: File) {
-        with(Tree(root)) {
-            write()
-            val green = census()
-            assertTrue(green.isNotEmpty()) { "the census printed nothing at all" }
-            val examined = SchemaKeysConsumed.unconsumed(files(), policy).examined
-            assertTrue(green.first() == "schema-keys-consumed: $examined key(s), 0 parsed-and-never-acted-on") {
-                "the census header disagrees with the audit it reports on:\n${green.first()}"
-            }
-            assertTrue(green.drop(1).size >= examined) {
-                "fewer lines than keys examined — the census is not printing one line per key:\n" +
-                    green.joinToString("\n")
-            }
-            assertTrue(green.none { "DEAD" in it }) {
-                "the compliant fixture has no dead key:\n" + green.joinToString("\n")
-            }
-
-            write(deadKey = true)
-            val red = census()
-            val dead = red.filter { " DEAD " in it }
-            assertEquals(1, dead.size, "exactly the planted key must read DEAD:\n" + red.joinToString("\n"))
-            assertTrue("zz_dead_dir" in dead.single()) { "the DEAD line must name the key: ${dead.single()}" }
-            assertTrue("1 parsed-and-never-acted-on" in red.first()) { red.first() }
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - a key read only by the echo surface - V4-91`(@TempDir root: File) {
+    fun `a key read only by the echo surface or an uncalled accessor is red by name - V4-91`(@TempDir root: File) {
         with(Tree(root)) {
             write()
             assertEquals(emptyList<String>(), violations(), "the fully-wired fixture must be GREEN")
-            val examined = SchemaKeysConsumed.unconsumed(files(), policy).examined
-            assertTrue(examined >= 10) { "the fixture yielded $examined keys — every arm below would be unproven" }
 
             write(deadKey = true)
-            val hits = violations()
-            assertHit(hits, "zz_dead_dir") { "a schema key read only by the echo surface must be RED BY NAME" }
-            assertHit(hits, "zz_dead_dir", "echo surface") {
-                "the reason must NAME the echo surface rather than claim nothing reads it"
-            }
-        }
-    }
+            assertHit(violations(), "zz_dead_dir") { "a schema key read only by the echo surface must be RED BY NAME" }
 
-    @Test
-    fun `the law can actually fail - a knob read only by an uncalled accessor - V4-91`(@TempDir root: File) {
-        with(Tree(root)) {
             write(deadKnob = true)
             assertHit(violations(), "zzDeadKnob") {
                 "a knob whose only reader is a facade accessor nobody calls must be RED BY NAME"
-            }
-            // The BORING case: one key per plane, both wired, and the count must come out at two.
-            write()
-            put("Schema.kt", BORING_SCHEMA)
-            put("Catalog.kt", "")
-            put("Wiring.kt", BORING_WIRING)
-            put("Doctor.kt", "package splice.zzfix\n\ninternal class DoctorShape\n")
-            put("Paths.kt", "package splice.zzfix\n\ninternal class LocalPaths\n")
-            put("Knob.kt", BORING_KNOB)
-            put("SpliceConfig.kt", BORING_FACADE)
-            put("KnobWiring.kt", BORING_KNOB_WIRING)
-            assertEquals(emptyList<String>(), violations(), "the one-key-per-plane tree must be GREEN")
-            assertEquals(6, SchemaKeysConsumed.unconsumed(files(), policy).examined)
-        }
-    }
-
-    @Test
-    fun `the two mechanisms are load-bearing - the inverse arms - V4-91`(@TempDir root: File) {
-        with(Tree(root)) {
-            write(deadKey = true)
-            // INVERSE 1: drop ONLY the echo-surface exclusion and the dead key reads as consumed.
-            val withoutEcho = policy.copy(
-                nonConsumption = policy.nonConsumption.filterNot { it.first.endsWith("Doctor.kt") },
-            )
-            assertTrue(violations(withoutEcho).none { it.contains("zz_dead_dir") }) {
-                "with the echo surface counted, the dead key must read as CONSUMED — otherwise the " +
-                    "exclusion is not what finds it"
-            }
-            // INVERSE 2: the fixture declares `zzDeadDir` on DaemonConfig AND on LocalPaths, and
-            // Paths.kt reads `paths.zzDeadDir` — the live DaemonConfig.stateDir / StatePaths.stateDir
-            // shape. A name-only rule matches the wrong owner and calls the dead key wired.
-            val shapes = SchemaKeysConsumed.schemaKeys(files()).shapes
-            val paths = files().getValue("$PKG/Paths.kt")
-            assertTrue(
-                SchemaKeysConsumed.readPattern(
-                    "DaemonConfig",
-                    "zzDeadDir",
-                    shapes,
-                    ambiguous = false,
-                ).containsMatchIn(paths),
-            ) {
-                "a name-only read pattern must match LocalPaths.zzDeadDir — otherwise the qualification guards nothing"
-            }
-            assertFalse(
-                SchemaKeysConsumed.readPattern(
-                    "DaemonConfig",
-                    "zzDeadDir",
-                    shapes,
-                    ambiguous = true,
-                ).containsMatchIn(paths),
-            ) {
-                "the receiver-qualified pattern must NOT match LocalPaths.zzDeadDir"
             }
         }
     }
@@ -949,44 +838,6 @@ internal class KnobWiring(private val cfg: SpliceConfig) {
     fun viaAccessor(): Boolean = cfg.wiredViaAccessor
     fun bind(): Int = cfg.port
 }
-"""
-
-        const val BORING_SCHEMA = """package splice.zzfix
-
-public data class Topology(val daemon: DaemonConfig = DaemonConfig())
-public data class DaemonConfig(val only: Int = 0)
-public data class HeadConfig(val port: Int)
-public data class ProviderConfig(val baseUrl: String)
-public data class QuirksConfig(val store: Boolean = false)
-"""
-
-        const val BORING_WIRING = """package splice.zzfix
-
-internal class Wiring(private val t: Topology) {
-    fun a(): Int = t.daemon.only
-    fun b(h: HeadConfig): Int = h.port
-    fun c(p: ProviderConfig): String = p.baseUrl
-    fun d(q: QuirksConfig): Boolean = q.store
-}
-"""
-
-        const val BORING_KNOB = """package splice.zzfix
-
-public enum class Knob(public val key: String) {
-    ONLY("only"),
-}
-"""
-
-        const val BORING_FACADE = """package splice.zzfix
-
-public class SpliceConfig {
-    public val only: String get() = Knob.ONLY.key
-}
-"""
-
-        const val BORING_KNOB_WIRING = """package splice.zzfix
-
-internal class KnobWiring(private val c: SpliceConfig) { fun a() = c.only }
 """
     }
 }

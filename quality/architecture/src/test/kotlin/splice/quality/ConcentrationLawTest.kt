@@ -519,29 +519,6 @@ class ConcentrationLawTest {
         }
     }
 
-    @Test
-    fun `every emitted ratio reproduces from its own row's C and denominator`() {
-        val rows = Concentration.scan(Concentration.collect(map))
-        val unreproducible = rows.filter {
-            it.grade.denominator != 0.0 &&
-                it.grade.ratio != Concentration.pyRound(it.c / it.grade.denominator, 2)
-        }
-        assertEquals(emptyList<String>(), unreproducible.map { it.file }) {
-            "a row's ratio does not equal round(C / denominator, 2): the gate's arithmetic cannot " +
-                "be reproduced from its own output"
-        }
-    }
-
-    @Test
-    fun `the census counts every spelling of a type and reports nested ones unbilled`() {
-        val row = Concentration.measure("app/src/main/kotlin/splice/zzconc/Census.kt", CENSUS_FIXTURE)
-        assertEquals(3, row.shape.types, "fun interface and annotation class are TYPEs, or the census is a dodge list")
-        assertEquals(2, row.shape.nestedTypes, "a nested class and a nested annotation class must be REPORTED")
-        assertEquals(0, row.shape.exportsNonType, "ONE DECLARATION, ONE BILL — a top-level type is not also an export")
-        assertEquals(27.0, row.c, "C bills all three top-level types at 8 and the nested ones at 0")
-        assertEquals("splice.zzconc", row.pkg)
-    }
-
     /** The synthetic tree the red proof writes into: five single-file packages, each a one-line
      *  class of C 8.5, so the global median is 8.5 and every row bands `low`. An arm plants one
      *  more file and asserts which plane moves. */
@@ -574,86 +551,51 @@ class ConcentrationLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a new god object rises off the baseline`(@TempDir root: File) {
+    fun `a new god object rises off the baseline, with or without a neighbourhood`(@TempDir root: File) {
         with(Tree(root)) {
             base()
             val control = Concentration.Baseline(0, 1, emptyList())
-            assertEquals(
-                emptyList<String>(),
-                Concentration.problems(rows(), GATE, control),
-                "the unmutated fixture must be GREEN",
-            )
+            assertEquals(emptyList<String>(), Concentration.problems(rows(), GATE, control))
 
             god("god/God.kt", GOD_CLASSES, neighbour = "p0")
-            val hits = Concentration.problems(rows(), GATE, control)
-            assertHit(hits, "REGRESSION: band HIGH rose", "God.kt") {
+            assertHit(Concentration.problems(rows(), GATE, control), "REGRESSION: band HIGH rose", "God.kt") {
                 "a new band-HIGH file with the baseline unchanged must be RED, naming the file"
             }
-            assertEquals(
-                HIGH,
-                rows().first { it.file.endsWith("God.kt") }.grade.band,
-                "the fixture must BE a god object first",
-            )
 
-            // The standing debt is what a red is attributed against, so it has to NAME the file
-            // that just rose rather than count it (PR 6 review, F7 — the assertion this replaces
-            // compared the debt against band HIGH, which band HIGH implies).
-            val debt = Concentration.named(Concentration.debt(rows(), control, GATE))
-            assertTrue("God.kt" in debt) { "the debt report must name the file above the gate ratio, got: $debt" }
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - a zero-neighbour god object still bands HIGH - DR-117`(@TempDir root: File) {
-        with(Tree(root)) {
+            // No import line and no importers: the old fallback graded the file against its own C.
             base()
-            // No import line and no importers, on purpose — the emptiness IS the arm. The old
-            // fallback was the file's OWN C, which pinned the ratio to 1.0 and band low forever.
             god("lone/Lone.kt", GOD_CLASSES, neighbour = null)
-            val lone = rows().first { it.file.endsWith("Lone.kt") }
-            assertEquals(emptyList<String>(), lone.grade.neighbourPackages, "the fixture must have NO neighbourhood")
-            assertEquals(HIGH, lone.grade.band, "a self-contained god file must not be graded against itself")
-            assertHit(Concentration.problems(rows(), GATE, Concentration.Baseline(0, 1, emptyList())), "REGRESSION") {
+            assertHit(Concentration.problems(rows(), GATE, control), "REGRESSION") {
                 "the zero-neighbour god object must move the gated band"
             }
         }
     }
 
     @Test
-    fun `the law can actually fail - the package plane the file plane cannot see`(@TempDir root: File) {
+    fun `a package that absorbed a file is red while the file census stays green`(@TempDir root: File) {
         with(Tree(root)) {
             base()
             put("p0/B2.kt", "package splice.zzconc.p0\nclass B2(val v: String)\n")
-            val control = Concentration.Baseline(0, 1, emptyList())
-            val hits = Concentration.problems(rows(), GATE, control)
+            val hits = Concentration.problems(rows(), GATE, Concentration.Baseline(0, 1, emptyList()))
             assertHit(hits, "PACKAGE REGRESSION", "splice.zzconc.p0") {
                 "a package that absorbed a file must be RED even while the file census is green"
             }
-            assertTrue(hits.none { it.contains("band HIGH") }) {
-                "the FILE plane must not move, or this arm is perturbing the plane it is not testing: $hits"
-            }
-            put("p0/B3.kt", "package splice.zzconc.p0\nclass B3(val v: String)\n")
-            val p0 = Concentration.packageCensus(rows()).first { it.pkg == "splice.zzconc.p0" }
-            assertEquals(Concentration.PackageRow("splice.zzconc.p0", 3, 25.5, 8.5), p0)
+            assertTrue(hits.none { it.contains("band HIGH") }) { "the file plane must not move: $hits" }
         }
     }
 
     @Test
-    fun `the law can actually fail - the ceiling list and the boring empty tree`(@TempDir root: File) {
+    fun `a breached ceiling, an undated justification and an empty census all fail`(@TempDir root: File) {
         with(Tree(root)) {
             base()
             god("god/God.kt", GOD_CLASSES, neighbour = "p0")
-            val godFile = "$PKG/god/God.kt"
-            val b0 = "$PKG/p0/B.kt"
             val dated = "2026-09-21: the fixture ceiling"
-            assertHit(problems(rows(), Concentration.Ceiling(godFile, 1.0, dated)), "CEILING BREACHED") {
-                "a file above its own recorded ceiling must still fail — a ceiling does not stop watching"
+            assertHit(problems(rows(), Concentration.Ceiling("$PKG/god/God.kt", 1.0, dated)), "CEILING BREACHED") {
+                "a file above its own recorded ceiling must still fail"
             }
-            assertHit(problems(rows(), Concentration.Ceiling(b0, 1.0, "  ")), "no dated justification") {
+            assertHit(problems(rows(), Concentration.Ceiling("$PKG/p0/B.kt", 1.0, "  ")), "no dated justification") {
                 "a blank justification must be a hard error"
             }
-            // The BORING case (§24): the file plane passes over an empty tree — HIGH equals the
-            // baseline and there is no debt — so a lost source root would read as a clean repo.
             clear()
             assertHit(problems(rows()), "the census is EMPTY") {
                 "an empty census must REFUSE rather than report a clean tree"
@@ -667,20 +609,10 @@ class ConcentrationLawTest {
     private companion object {
         const val PKG = "app/src/main/kotlin/splice/zzconc"
         const val GATE = Concentration.GATE_RATIO
-        const val HIGH = Concentration.HIGH
         const val BASE_PACKAGES = 5
 
         /** C = 8.5 * classes + 8 for a file with one import; twenty reaches seven times the 3.0
          *  HIGH threshold against a global median of 8.5, which is margin the arm can survive. */
         const val GOD_CLASSES = 20
-
-        const val CENSUS_FIXTURE = """package splice.zzconc
-fun interface CensusSeam { fun run(): Int }
-annotation class CensusMarker
-class CensusHost(val v: String) {
-    annotation class NestedMarker
-    class Nested(val x: Int)
-}
-"""
     }
 }

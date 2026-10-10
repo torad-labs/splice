@@ -4,11 +4,15 @@
 // translator collects, so every translator carried a catch list that knew to rethrow them. The flow ends instead:
 // [TearAwareEvents] records the fact here and completes, the translator sees an ordinary end of stream, and
 // [SseRoundConsume] reads the fact after the translator returns. Everything the translator was handed before the end
-// has been delivered by then, so no frame is held back or written late. The one thing a translator writes on a flow
-// that ended with no terminal is closing, and [gate] keeps that off a client whose turn ends on the recorded ending.
+// has been delivered by then, so no frame is held back or written late. What a translator writes on a flow that ended
+// with no terminal is its closing: it flushes the tool calls it was holding and closes its blocks. [gate] keeps every
+// such write off a client whose turn ends on the recorded ending, so a tear before any client-visible content leaves
+// nothing shown and the attempt stays recoverable (a flushed half-built tool call is content, and blocks the reissue).
 // The websocket path takes the same shape for its re-serve (SseReserve).
 package splice.head.transport
 
+import kotlinx.serialization.json.JsonObject
+import splice.core.index.WireBlockIndex
 import splice.upstream.StreamRead
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.SseFrameTooLarge
@@ -33,7 +37,52 @@ internal class RoundEnd(val postedAtMs: Long? = null) {
     fun early(): StreamRead<Nothing>? =
         torn?.let { StreamRead.Torn(it) } ?: oversized?.let { StreamRead.Oversized(it) }
 
+    /** Writes once the attempt has ended early go nowhere: an opener answers with an index no later write can name. */
     private class GatedSink(private val inner: WireSink, private val end: RoundEnd) : WireSink by inner {
+        private val notOpened = WireBlockIndex(-1)
+
+        override suspend fun openText(): WireBlockIndex = if (end.ended) notOpened else inner.openText()
+
+        override suspend fun openThinking(): WireBlockIndex = if (end.ended) notOpened else inner.openThinking()
+
+        override suspend fun openTool(id: String, name: String): WireBlockIndex =
+            if (end.ended) notOpened else inner.openTool(id, name)
+
+        override suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex? =
+            if (end.ended) notOpened else inner.openRawBlock(contentBlock)
+
+        override suspend fun textDelta(index: WireBlockIndex, text: String) {
+            if (!end.ended) inner.textDelta(index, text)
+        }
+
+        override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+            if (!end.ended) inner.thinkingDelta(index, thinking)
+        }
+
+        override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
+            if (!end.ended) inner.signatureDelta(index, signature)
+        }
+
+        override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
+            if (!end.ended) inner.inputJsonDelta(index, partialJson)
+        }
+
+        override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {
+            if (!end.ended) inner.rawDelta(index, delta)
+        }
+
+        override suspend fun addTextBlock(text: String) {
+            if (!end.ended) inner.addTextBlock(text)
+        }
+
+        override suspend fun addRedactedThinking(data: String) {
+            if (!end.ended) inner.addRedactedThinking(data)
+        }
+
+        override suspend fun closeBlock(index: WireBlockIndex) {
+            if (!end.ended) inner.closeBlock(index)
+        }
+
         override suspend fun closeAll() {
             if (!end.ended) inner.closeAll()
         }

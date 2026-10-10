@@ -645,10 +645,11 @@ function refTipNow(root: string, ref: string): string | undefined {
  *  reports the pair as ONE push (before from the first, head from the last), which is what hid it.
  *
  *  WHY. Measured: a plain `git push origin <branch>` to a local path and to a file:// URL sends the sha the hook was
- *  handed, so those transports are not the cause. Inferred, not yet captured: over HTTPS the push is carried by
- *  remote-curl, which runs `send-pack` as a child AFTER the hook with the refspec as text, so the local side is
- *  resolved a second time inside that child, at the end of the judgement and not at its start. A refspec that names a
- *  branch therefore sends whatever the branch points at then. A refspec that names a sha has nothing left to resolve.
+ *  handed, so those transports are not the cause. Captured with GIT_TRACE on a real HTTPS push: the hook started at
+ *  10:37:44 and `git send-pack --stateless-rpc --helper-status --thin --no-progress <url> --stdin` was spawned by
+ *  git-remote-https at 10:45:39, eight minutes later, with the refs fed to it on stdin. So the send starts strictly
+ *  after the hook and takes its refspecs as text; a refspec naming a branch is resolved then, and one naming a sha has
+ *  nothing left to resolve. (The trace shows when send-pack runs, not the content of its stdin.)
  *
  *  So this guard re-reads the local ref on the green path and refuses when it moved, and every push names its sha:
  *  `git push origin $(git rev-parse HEAD):refs/heads/<branch>`, with the sha taken as the push starts. The refusal

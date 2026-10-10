@@ -20,7 +20,7 @@ internal interface FixPrompter {
 }
 
 /** The findings splice.toml's [text] has, by the same check boot makes. */
-internal fun interface ConfigCheck {
+internal fun interface ConfigFindingsOf {
     operator fun invoke(text: String): List<TopologyFinding>
 }
 
@@ -33,7 +33,7 @@ internal class ConfigFixSession(
     private val file: Path,
     private val output: TerminalOutput,
     private val prompter: FixPrompter,
-    private val check: ConfigCheck,
+    private val check: ConfigFindingsOf,
     private val backup: ConfigBackup,
 ) {
     private var backedUp = false
@@ -61,10 +61,10 @@ internal class ConfigFixSession(
     private fun fix(finding: TopologyFinding): Boolean? {
         val line = finding.line
         val editable = line?.takeIf { assignmentAt(it) != null }
-        showMenu(line, editable != null)
+        showMenu(line, editable != null, settable(finding))
         return when (prompter.ask("> ")?.trim()?.lowercase()) {
             "d" -> editable?.let(::removeLine) ?: false
-            "v" -> editable?.let(::setValue) ?: false
+            "v" -> editable?.takeIf { settable(finding) }?.let(::setValue) ?: false
             "e" -> edit(line)
             "s" -> skip(finding)
             "q", null -> null
@@ -72,13 +72,16 @@ internal class ConfigFixSession(
         }
     }
 
+    /** A value can be set on any finding but an unknown key, which has no value to set. */
+    private fun settable(finding: TopologyFinding): Boolean = !finding.message.contains("is not a splice.toml setting")
+
     private fun skip(finding: TopologyFinding): Boolean {
         skipped.add(finding.text())
         return false
     }
 
-    private fun showMenu(line: Int?, editable: Boolean) {
-        if (editable) output.line("  [d] remove the line  [v] set a new value")
+    private fun showMenu(line: Int?, editable: Boolean, settable: Boolean) {
+        if (editable) output.line("  [d] remove the line" + if (settable) "  [v] set a new value" else "")
         output.line("  [e] open your editor${line?.let { " at line $it" }.orEmpty()}")
         output.line("  [s] skip this one for now")
         output.line("  [q] quit; splice does not start")

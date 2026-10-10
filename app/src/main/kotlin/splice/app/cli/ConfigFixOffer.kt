@@ -54,6 +54,7 @@ internal class ConfigFixOffer(
     private fun backup(source: Path): Path {
         val bytes = Files.readAllBytes(source)
         val hash = TopologyLoader.sha256Hex(bytes).take(BACKUP_HASH_LENGTH)
+        val _ = SecureFile.ownerOnlyDirectory(backups)
         val copy = backups.resolve(TopologyBackupName.of(source, Instant.now(), hash))
         SecureFile.writeAtomic0600(copy, bytes.toString(Charsets.UTF_8))
         return copy

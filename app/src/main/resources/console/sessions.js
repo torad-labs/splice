@@ -146,7 +146,7 @@ function cardHtml(s) {
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   let body = "";
   if (s.state === "needs") body = askHtml(s);
-  else if (last?.text) body =last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
+  else if (last?.text) body = last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
   const failed = ui.failed.get(s.id);
   return `<article class="card s ${L.cls}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
@@ -169,7 +169,7 @@ function listHtml() {
     return ui.q ? `<div class="list"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`
       : `<div class="list"><div class="nomatch"><span class="state">No sessions</span></div></div>`;
   }
-  const fold = ended.length ? `<button class="act quiet fold" data-act="ended" aria-expanded="${ui.ended}">${ended.length} ended</button>` : "";
+  const fold = ended.length ? `<button class="act quiet fold" data-act="ended" aria-expanded="${ui.ended}">${ended.length} ended${ICON.caret}</button>` : "";
   const endedList = ui.ended ? `<div class="ended">${ended.map(cardHtml).join("")}</div>` : "";
   return `<div class="list">${list.map(cardHtml).join("")}${fold}${endedList}</div>`;
 }
@@ -189,6 +189,8 @@ function callSummary(m) {
   const first = Object.values(input).find((v) => typeof v === "string" && v.trim());
   return first ?? "";
 }
+/** A teammate's colour: the command its own session runs on, found by its name, else this session's. */
+const senderColor = (name, s) => color(state.rows.find((x) => x.name && x.name === name) ?? s);
 function logHtml(s) {
   const held = state.logs[s.id];
   if (!held) return `<div class="log"><p class="empty">Reading</p></div>`;
@@ -216,10 +218,10 @@ function logHtml(s) {
       return;
     }
     // the client's own mark where he refused a call or stopped a turn: a line in the conversation, never his words
-    if (m.role === "system" && m.kind === "interrupted") { items.push(`<p class="note">Interrupted ${at}</p>`); return; }
+    if (m.role === "system" && m.kind === "interrupted") { items.push(`<p class="cutoff">${ICON.stop}Stopped${at}</p>`); return; }
     if (!m.text) return;
     // a teammate's message reads as its sender's, beside the agent's side, with who sent it
-    if (m.role === "peer") { items.push(`<div class="msg agent peer"><p class="from">${esc(m.from || "A teammate")}</p><div class="body">${md(m.text)}</div>${at}</div>`); return; }
+    if (m.role === "peer") { items.push(`<div class="msg peer" style="--c:${senderColor(m.from, s)}"><p class="from"><i></i>${esc(m.from || "A teammate")}</p><div class="body">${md(m.text)}</div>${at}</div>`); return; }
     items.push(`<div class="msg ${m.role === "user" ? "his" : "agent"}"><div class="body">${md(m.text)}</div>${at}</div>`);
   });
   return `<div class="log">${items.join("")}</div>`;
@@ -286,21 +288,28 @@ async function readUsage(s) {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const reads = await Promise.all(state.heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
     head: h.key, since: String(+from), time_zone: zone, n: "1", local: "0", session: s.id.slice(0, 8) })}`)));
-  let seen = false; const used = { requests: 0, tin: 0, tout: 0, from: +from };
+  let seen = false; const used = { requests: 0, tin: 0, tout: 0, noIn: 0, noOut: 0, cost: 0, unpriced: 0, from: +from };
   reads.forEach((r, i) => {
     const t = (r.body?.heads || []).find((x) => x.key === state.heads[i].key)?.usage?.totals;
     if (!t) return;
     seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0;
+    used.noIn += t.missing_input_requests || 0; used.noOut += t.missing_output_requests || 0;
+    used.cost += t.cost_usd || 0; used.unpriced += (t.unpriced_requests || 0) + (t.requests && t.cost_usd == null ? 1 : 0);
   });
   state.usage[s.id] = seen ? used : null;
   if (ui.open === s.id) render({ stick: false });
 }
-/** Today's use, as one tap into its requests on Requests, filtered to this session from midnight. */
+/** Today's use, one quiet line whose whole length opens its requests on Requests from midnight (hitstop 47fa7e9).
+ *  A figure no request reported is left out, never summed to 0, and a cost is said only when every request is priced:
+ *  a cost over some of them would read as the whole session's. */
 function usageHtml(s) {
   const u = state.usage[s.id];
-  if (!u) return "";
-  const words = u.requests ? `Today ${u.requests} request${u.requests === 1 ? "" : "s"}, ${kTok(u.tin)} in, ${kTok(u.tout)} out` : "No requests today";
-  return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}">${words}</a>`;
+  if (!u?.requests) return "";
+  const num = (v) => `<span class="num">${v}</span>`;
+  const figs = [`${num(u.requests.toLocaleString("en-US"))} ${u.requests === 1 ? "request" : "requests"}`,
+    u.noIn < u.requests ? `${num(kTok(u.tin))} in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} out` : "",
+    u.unpriced === 0 ? num(`≈${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`) : ""].filter(Boolean);
+  return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}</a>`;
 }
 
 /** One session's screen, read the moment it opens, so its Message field is there without waiting for the next read. */
@@ -387,7 +396,10 @@ document.addEventListener("click", (e) => {
 // page opened on its own closes and the list comes back; one he opened stays.
 function autoOpen() {
   ui.auto = wide() && !ui.open;
-  if (ui.auto) { const top = sorted()[0]; if (top) open(top.id); }
+  if (!ui.auto) return;
+  // a search no live session matches opens its newest ended match, so the room the pane holds is never left empty
+  const top = sorted()[0] ?? (ui.q ? state.rows.filter((s) => s.state === "ended" && matches(s)).sort((x, y) => y.at - x.at)[0] : null);
+  if (top) open(top.id);
 }
 addEventListener("resize", () => {
   if (!wide() && ui.auto) { ui.open = null; ui.auto = false; render({ stick: false }); } else if (wide() && !ui.open) autoOpen();

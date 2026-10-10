@@ -109,6 +109,7 @@ const ICON = {
   close: G('<path d="M6 6l12 12M18 6L6 18"/>', 'aria-hidden="true"'),
   watch: (sec) => G(`<circle cx="12" cy="13.5" r="7.5"/><path d="M10 3h4M12 3v3"/><path class="hand" d="M12 13.5V9" style="transform: rotate(${sec * 6}deg)"/>`, 'class="watch" aria-hidden="true"'),
   caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
+  door: G('<path d="M7 17L17 7M9 7h8v8"/>', 'aria-hidden="true"'),
   lock: G('<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>', 'aria-hidden="true"'),
 };
 // AN ABSENT FIELD IS NOTHING, NOT THE WORD "undefined". The drawing's own esc was String(s), which was safe
@@ -125,7 +126,7 @@ const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "num
 // When a window comes back, as Accounts says it: a time today, else the day and the time.
 const backWord = (d) => (d.toDateString() === NOW.toDateString() ? clock(d) : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${clock(d)}`);
 const counter = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-const kTok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
+const kTok = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
 const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 function md(text) { // the agent's own text, formatted as it wrote it: paragraphs, lists, code
   const out = []; let list = null;

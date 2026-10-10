@@ -292,6 +292,7 @@ public data class ProviderConfig(
         if (roster is HeadModels.Roster.Refused) return roster.detail
         return when {
             head.contextWindow?.let { it <= 0 } == true -> "head context_window must be positive"
+            head.discoveryPrefix.isEmpty() -> "discovery prefix is the picker namespace and is never empty"
             !clientPicksModels && rowsFor(head, discovered).isEmpty() -> "a catalog needs at least one picker model"
             else -> null
         }

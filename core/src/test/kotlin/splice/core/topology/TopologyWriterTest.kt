@@ -93,6 +93,14 @@ class TopologyWriterTest {
         assertEquals(listOf("heads.ex.port", "daemon.control_port"), findings.map { it.path })
     }
 
+    @Test
+    fun `a head with an empty discovery prefix is refused and the file keeps its bytes`() {
+        val unbootable = topology(head = head(PORT).copy(discoveryPrefix = ""))
+        val findings = untouched(writer(mapOf(FILE to topology())).write(unbootable))
+        assertEquals(listOf("heads.ex.models"), findings.map { it.path })
+        assertTrue(findings.single().message.contains("discovery prefix"), findings.toString())
+    }
+
     // 2026-09-23: only a provider that lists nothing can call an unknown id a misspelling. One whose
     // endpoint could list it drops the row at boot instead (Topology.modelsFor), so the edit passes here.
     @Test

@@ -20,7 +20,7 @@ class ConfigFixSessionTest {
         auth = { kind = "api-key", env = "DEMO_KEY" }
     """.trimIndent()
 
-    private fun broken(root: Path): Path = root.resolve("splice.toml").also {
+    private fun broken(root: Path, name: String = "splice.toml"): Path = root.resolve(name).also {
         Files.writeString(
             it,
             provider + """
@@ -40,6 +40,8 @@ class ConfigFixSessionTest {
             TerminalOutput { said += it },
             object : FixPrompter {
                 override fun ask(question: String): String? = replies.removeFirstOrNull()
+
+                override fun secret(question: String): String? = replies.removeFirstOrNull()
 
                 override fun edit(file: Path, line: Int?): Boolean = false
             },
@@ -107,5 +109,18 @@ class ConfigFixSessionTest {
         val said = refusal?.message.orEmpty()
         assertTrue(said.contains("heads.one.provider") && said.contains("heads.two.port"), said)
         assertFalse(offer.offer(), "no terminal, no session: the verb exits non-zero and nothing changed")
+    }
+
+    @Test
+    fun `a linked splice toml is fixed at its target, and the link stays a link`(@TempDir root: Path) {
+        val target = broken(root.resolve("real").also(Files::createDirectories), "linked.toml")
+        val link = root.resolve("splice.toml")
+        Files.createSymbolicLink(link, target)
+
+        val fixed = session(link, root, ArrayDeque(listOf("v", "demo")), mutableListOf()).run()
+
+        assertTrue(fixed)
+        assertTrue(Files.isSymbolicLink(link), "the link is still a link")
+        assertTrue(Files.readString(target).contains("provider = \"demo\""), "the target is what was fixed")
     }
 }

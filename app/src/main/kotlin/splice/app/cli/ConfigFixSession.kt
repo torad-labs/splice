@@ -15,6 +15,10 @@ internal interface FixPrompter {
     /** The reply to [question], or null when input has ended. */
     fun ask(question: String): String?
 
+    /** A reply that is NOT echoed to the screen: a value typed to fix a header can be a bearer token, and an echoed
+     *  one stays in scrollback and in the terminal's own buffer. */
+    fun secret(question: String): String?
+
     /** Opens [file] in the person's editor at [line]; false when no editor could be run. */
     fun edit(file: Path, line: Int?): Boolean
 }
@@ -30,12 +34,20 @@ internal fun interface ConfigBackup {
 }
 
 internal class ConfigFixSession(
-    private val file: Path,
+    requested: Path,
     private val output: TerminalOutput,
     private val prompter: FixPrompter,
     private val check: ConfigFindingsOf,
     private val backup: ConfigBackup,
 ) {
+    /** The link's TARGET, never the link: a splice.toml linked into a dotfiles checkout is edited where it lives,
+     *  so an atomic write cannot replace the link with a regular file and leave the target unfixed. */
+    private val file: Path = try {
+        requested.toRealPath()
+    } catch (_: java.io.IOException) {
+        requested
+    }
+
     private var backedUp = false
     private val skipped = mutableSetOf<String>()
 
@@ -102,7 +114,8 @@ internal class ConfigFixSession(
 
     private fun setValue(line: Int): Boolean {
         val key = requireNotNull(assignmentAt(line))
-        val typed = prompter.ask("new value for $key (a bare word is quoted for you)> ")?.trim().orEmpty()
+        val typed = prompter.secret("new value for $key (not shown as you type; a bare word is quoted for you)> ")
+            ?.trim().orEmpty()
         if (typed.isEmpty()) return false
         val literal = typed.first() in "\"[{-0123456789" || typed == "true" || typed == "false"
         output.line("setting $key on line $line to your value")

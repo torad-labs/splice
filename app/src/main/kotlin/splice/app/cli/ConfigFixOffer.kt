@@ -65,6 +65,8 @@ internal class ConfigFixOffer(
 internal class TerminalFixPrompter(private val env: EnvReader) : FixPrompter {
     override fun ask(question: String): String? = System.console()?.readLine(question)
 
+    override fun secret(question: String): String? = System.console()?.readPassword(question)?.concatToString()
+
     override fun edit(file: Path, line: Int?): Boolean {
         val editor = (env("VISUAL") ?: env("EDITOR"))?.takeIf(String::isNotBlank) ?: return false
         val command = editor.split(' ').filter(String::isNotBlank) +

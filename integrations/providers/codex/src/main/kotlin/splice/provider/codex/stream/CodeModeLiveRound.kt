@@ -44,7 +44,7 @@ internal class CodeModeLiveRound(
     private val record: CodeModeRecord? get() = capture.record
     private val lifecycle = CodeModeRoundLifecycle()
     val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
-    val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
+    val switching = CodeModeSwitchingSink(sink, observer = CodeModeSourceObserver(::observe))
     val cut = CodeModeCutClaim()
     val key: String? get() = record?.key
     internal var finished: Deferred<TurnOutcome>? = null

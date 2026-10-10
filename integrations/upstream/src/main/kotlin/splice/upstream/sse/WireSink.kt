@@ -36,15 +36,22 @@ public interface NativeResponseSink {
     public suspend fun relayEvent(event: JsonObject, index: WireBlockIndex? = null) {}
 }
 
-public interface WireSink : SourceProgressSink, NativeResponseSink {
-    override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
-        action.deliver(this)
-    }
-
+/** Opens the blocks a client sees; each open returns the index every later write names. */
+public interface BlockOpening : SourceProgressSink {
     public suspend fun openText(): WireBlockIndex
 
     public suspend fun openTool(id: String, name: String): WireBlockIndex
 
+    /** DR-119 (neutral passthrough): open a block whose content_block payload is forwarded
+     *  VERBATIM as received (server_tool_use / web_search_tool_result today). Deltas ride the
+     *  typed verbs or [BlockDeltas.rawDelta]; [BlockEnding.closeBlock] ends it. Returns null when this sink cannot
+     *  forward raw blocks — the default, so existing implementors keep their pre-DR-119
+     *  behavior (callers treat the block as ignored). */
+    public suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex? = null
+}
+
+/** The content written into an opened block. */
+public interface BlockDeltas {
     public suspend fun textDelta(index: WireBlockIndex, text: String)
 
     public suspend fun thinkingDelta(index: WireBlockIndex, thinking: String)
@@ -56,6 +63,22 @@ public interface WireSink : SourceProgressSink, NativeResponseSink {
      *  keeps existing implementors (test Recs, fixtures) source-compatible. */
     public suspend fun signatureDelta(index: WireBlockIndex, signature: String) {}
 
+    /** DR-119: forward one content_block_delta payload VERBATIM (citations_delta today).
+     *  Default no-op keeps existing implementors source-compatible. */
+    public suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {}
+}
+
+/** A block written whole, in one call, with no index for the caller to carry. */
+public interface WholeBlocks {
+    /** Complete text block in one shot (promote-to-text, mirror). Empty text is a no-op. */
+    public suspend fun addTextBlock(text: String)
+
+    /** Encrypted-reasoning replay block (redacted_thinking) — data rides in content_block_start. */
+    public suspend fun addRedactedThinking(data: String)
+}
+
+/** How blocks end, and how a sink gives up what it holds. */
+public interface BlockEnding {
     public suspend fun closeBlock(index: WireBlockIndex)
 
     public suspend fun closeAll()
@@ -64,21 +87,14 @@ public interface WireSink : SourceProgressSink, NativeResponseSink {
      *  round's (a websocket round re-served over SSE) must leave nothing of its own behind. Default no-op: a sink
      *  that holds nothing has nothing to drop. */
     public fun discard() {}
+}
 
-    /** Complete text block in one shot (promote-to-text, mirror). Empty text is a no-op. */
-    public suspend fun addTextBlock(text: String)
+/** The whole content grammar, for a sink that implements it in one place. A sink that implements it in parts
+ *  delegates each part. */
+public interface ContentBlockSink : BlockOpening, BlockDeltas, WholeBlocks, BlockEnding
 
-    /** Encrypted-reasoning replay block (redacted_thinking) — data rides in content_block_start. */
-    public suspend fun addRedactedThinking(data: String)
-
-    /** DR-119 (neutral passthrough): open a block whose content_block payload is forwarded
-     *  VERBATIM as received (server_tool_use / web_search_tool_result today). Deltas ride the
-     *  typed verbs or [rawDelta]; [closeBlock] ends it. Returns null when this sink cannot
-     *  forward raw blocks — the default, so existing implementors keep their pre-DR-119
-     *  behavior (callers treat the block as ignored). */
-    public suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex? = null
-
-    /** DR-119: forward one content_block_delta payload VERBATIM (citations_delta today).
-     *  Default no-op keeps existing implementors source-compatible. */
-    public suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {}
+public interface WireSink : ContentBlockSink, NativeResponseSink {
+    override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
+        action.deliver(this)
+    }
 }

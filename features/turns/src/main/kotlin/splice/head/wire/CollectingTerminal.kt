@@ -14,6 +14,7 @@ import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.upstream.sse.ContentBlockSink
 import splice.upstream.sse.SourceFrameAction
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -25,9 +26,8 @@ internal class CollectingTerminal(
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
     private val messageId: String = MessageIds().generateMessageId(),
-) : TurnTerminal {
-
-    private val content = CollectingBlocks()
+    private val content: CollectingBlocks = CollectingBlocks(),
+) : TurnTerminal, ContentBlockSink by CollectedContent(content) {
     private val ended = AtomicBoolean(false)
 
     // The L3 terminal envelope (stop_reason derivation lives in SseEmitter.kt), held not copied.
@@ -67,51 +67,6 @@ internal class CollectingTerminal(
             if (!content.source.hasBlock(index)) return
         }
         envelope.acceptFuture(event)
-    }
-
-    override suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex = content.openRawBlock(contentBlock)
-
-    override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {
-        content.source.rawDelta(index, delta)
-    }
-
-    // ── content accumulation (WireSink) ──────────────────────────────────────
-    override suspend fun openText(): WireBlockIndex = content.openText()
-
-    override suspend fun openThinking(): WireBlockIndex = content.openThinking()
-
-    override suspend fun openTool(id: String, name: String): WireBlockIndex = content.openTool(id, name)
-
-    override suspend fun textDelta(index: WireBlockIndex, text: String) {
-        content.textDelta(index, text)
-    }
-
-    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        content.thinkingDelta(index, thinking)
-    }
-
-    override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        content.signatureDelta(index, signature)
-    }
-
-    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-        content.inputJsonDelta(index, partialJson)
-    }
-
-    override suspend fun closeBlock(index: WireBlockIndex) {
-        content.source.stop(index) // finalization stays at build time, source stop extensions survive
-    }
-
-    override suspend fun closeAll() {
-        // no-op: nothing streams here; the whole body is assembled at the terminal
-    }
-
-    override suspend fun addTextBlock(text: String) {
-        content.addTextBlock(text)
-    }
-
-    override suspend fun addRedactedThinking(data: String) {
-        content.addRedactedThinking(data)
     }
 
     // ── terminal (TurnTerminal) ──────────────────────────────────────────────
@@ -196,5 +151,53 @@ internal class CollectingTerminal(
         ErrorType.RATE_LIMIT -> HttpStatus.TOO_MANY_REQUESTS
         ErrorType.OVERLOADED -> HttpStatus.OVERLOADED
         ErrorType.API_ERROR -> HttpStatus.BAD_GATEWAY
+    }
+}
+
+/** The content verbs of the non-stream sink: each lands in [content], and closing a block only records its stop,
+ *  because the whole body is assembled at the terminal. Split out of [CollectingTerminal]. */
+private class CollectedContent(private val content: CollectingBlocks) : ContentBlockSink {
+    override suspend fun openText(): WireBlockIndex = content.openText()
+
+    override suspend fun openThinking(): WireBlockIndex = content.openThinking()
+
+    override suspend fun openTool(id: String, name: String): WireBlockIndex = content.openTool(id, name)
+
+    override suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex = content.openRawBlock(contentBlock)
+
+    override suspend fun textDelta(index: WireBlockIndex, text: String) {
+        content.textDelta(index, text)
+    }
+
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+        content.thinkingDelta(index, thinking)
+    }
+
+    override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
+        content.signatureDelta(index, signature)
+    }
+
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
+        content.inputJsonDelta(index, partialJson)
+    }
+
+    override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {
+        content.source.rawDelta(index, delta)
+    }
+
+    override suspend fun closeBlock(index: WireBlockIndex) {
+        content.source.stop(index) // finalization stays at build time, source stop extensions survive
+    }
+
+    override suspend fun closeAll() {
+        // no-op: nothing streams here; the whole body is assembled at the terminal
+    }
+
+    override suspend fun addTextBlock(text: String) {
+        content.addTextBlock(text)
+    }
+
+    override suspend fun addRedactedThinking(data: String) {
+        content.addRedactedThinking(data)
     }
 }

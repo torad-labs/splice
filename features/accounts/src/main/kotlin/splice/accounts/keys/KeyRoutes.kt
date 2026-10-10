@@ -26,6 +26,8 @@ import splice.core.config.KeyStore
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.http.JsonBody
+import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /** The daemon's ONE key store, read at CALL time: the console wiring assigns it after the server is
  *  constructed, and null answers every key route with a named 503, never an empty list. */
@@ -40,8 +42,9 @@ public class KeyRoutes(
 ) {
     private val jsonBody = JsonBody()
     private val readers = KeyReaders(heads)
+    private val ledgers = ConcurrentHashMap<Path, KeyLedger>()
 
-    /** GET /api/keys: `{path, keys: [{name, stored, heads: [{head, source}]}]}`, sorted by name. */
+    /** GET /api/keys: `{path, keys: [{name, stored, fingerprint, first_seen_epoch_seconds, replaced, heads}]}`. */
     public suspend fun list(call: ApplicationCall) {
         val keys = store() ?: return AccountReplies.respondUnwired(call, KEYS_PORT)
         val byName = readers.byName()
@@ -50,7 +53,7 @@ public class KeyRoutes(
             put("path", keys.path.toString())
             putJsonArray("keys") {
                 (stored + byName.keys).sorted().forEach { name ->
-                    add(readers.json(name, name in stored, byName[name].orEmpty()))
+                    add(entry(keys, name, name in stored, byName[name].orEmpty()))
                 }
             }
         }
@@ -79,12 +82,22 @@ public class KeyRoutes(
             is KeyOutcome.Applied -> {
                 log("[control] keys: ${LogSafe.str(outcome.verb)} ${LogSafe.str(outcome.name)}\n")
                 val name = outcome.name
-                val applied = readers.json(name, name in keys.names(), readers.byName()[name].orEmpty())
+                val applied = entry(keys, name, name in keys.names(), readers.byName()[name].orEmpty())
                 AccountReplies.respond(call, applied.toString())
             }
         }
     }
+
+    // Every answer about a key is also splice seeing it: the ledger records the fingerprint in use under [name].
+    private fun entry(keys: KeyStore, name: String, stored: Boolean, uses: List<KeyReader>) =
+        readers.json(name, stored, uses, ledgerOf(keys).observe(name, uses.firstNotNullOfOrNull { it.fingerprint }))
+
+    private fun ledgerOf(keys: KeyStore): KeyLedger =
+        ledgers.computeIfAbsent(keys.path.resolveSibling(LEDGER_FILE)) { KeyLedger(it, log) }
 }
 
 private const val KEYS_PORT = "key store"
 private const val NAME_PARAM = "name"
+
+// why: the ledger sits beside the key store it describes, so a daemon with its own store keeps its own history.
+private const val LEDGER_FILE = "key-ledger.json"

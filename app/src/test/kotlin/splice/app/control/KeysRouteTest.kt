@@ -140,6 +140,41 @@ class KeysRouteTest {
         assertNoValueBytes(secret)
     }
 
+    // Oct 10, 2026, console BUILD row "a key is its own account": a replaced key is a new account with its own date,
+    // and the old one stays listed as replaced, by a fingerprint that is not the key.
+    @Test
+    fun `a replaced key keeps its fingerprint and first date, listed after the key that replaced it`() =
+        runBlocking<Unit> {
+            awaitPort()
+            val first = "sk-test-" + UUID.randomUUID().toString().replace("-", "")
+            val second = "sk-test-" + UUID.randomUUID().toString().replace("-", "")
+            val a = obj(send("PUT", "/api/keys/$STORED", """{"value":"$first"}"""))
+            val b = obj(send("PUT", "/api/keys/$STORED", """{"value":"$second"}"""))
+            val fa = a["fingerprint"]!!.jsonPrimitive.content
+            val fb = b["fingerprint"]!!.jsonPrimitive.content
+            assertTrue(fa != fb, "two keys, two fingerprints")
+            val replaced = b.getValue("replaced").jsonArray.map { it.jsonObject }
+            assertEquals(fa, replaced.first()["fingerprint"]!!.jsonPrimitive.content, "newest replaced key first")
+            assertEquals(a["first_seen_epoch_seconds"], replaced.first()["first_seen_epoch_seconds"])
+
+            val back = obj(send("PUT", "/api/keys/$STORED", """{"value":"$first"}"""))
+            assertEquals(fa, back["fingerprint"]!!.jsonPrimitive.content)
+            val day = a["first_seen_epoch_seconds"]
+            assertEquals(day, back["first_seen_epoch_seconds"], "a key seen before keeps its day")
+            val newest = back.getValue("replaced").jsonArray.first().jsonObject
+            assertEquals(fb, newest["fingerprint"]!!.jsonPrimitive.content)
+
+            val ledger = store.path.resolveSibling("key-ledger.json")
+            bodies += Files.readString(ledger)
+            assertEquals(
+                setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+                Files.getPosixFilePermissions(ledger),
+            )
+            send("DELETE", "/api/keys/$STORED")
+            assertNoValueBytes(first)
+            assertNoValueBytes(second)
+        }
+
     @Test
     fun `a key the daemon's environment sets reads as shadowed, never as applied`() = runBlocking<Unit> {
         awaitPort()

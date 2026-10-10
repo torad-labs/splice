@@ -24,9 +24,13 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.security.MessageDigest
 
 private const val MASK_MIN = 8
 private const val MASK_KEEP = 4
+
+// why: four bytes of the digest tell one key from the next it replaced, and are far too few to say anything of the key.
+private const val FINGERPRINT_BYTES = 4
 
 /** Which link of the read chain supplies the key (V4-220 item 3: `key_source` on describe()). The
  *  console's key routes report it per head, because a key stored while the daemon's environment or a
@@ -87,10 +91,17 @@ public class ApiKeyAuthProvider(
                 key?.let {
                     val m = if (it.length > MASK_MIN) "${it.take(MASK_KEEP)}…${it.takeLast(MASK_KEEP)}" else "set"
                     put("api_key_masked", m)
+                    put("key_fingerprint", fingerprint(it))
                 }
             },
         )
     }
+
+    // A key is told apart from the one it replaced by a short digest of its value, never the value: the first four
+    // bytes of its SHA-256 (console BUILD row "a key is its own account", Marcos, Oct 8).
+    private fun fingerprint(key: String): String =
+        MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).take(FINGERPRINT_BYTES)
+            .joinToString("") { "%02x".format(it) }
 
     private fun resolveKey(): ResolvedKey? {
         envReader(envVar)?.takeIf { it.isNotEmpty() }?.let { return ResolvedKey(it, KeySource.ENVIRONMENT) }

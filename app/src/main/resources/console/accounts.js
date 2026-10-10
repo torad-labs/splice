@@ -82,7 +82,10 @@ async function load() {
         const uses = (k.heads || []).filter((x) => heads.has(x.head));
         if (!uses.length) continue;
         const from = uses[0].source;
-        p.accounts.push({ id: k.name, env: k.name, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: null });
+        const day = (s) => (s ? new Date(s * 1000) : null); // the day splice first saw the key (KeyLedger.kt)
+        p.accounts.push({ id: k.name, env: k.name, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: day(k.first_seen_epoch_seconds) });
+        // a key it replaced is its own account, with its own day, marked Replaced
+        for (const r of k.replaced || []) p.accounts.push({ id: `${k.name}#${r.fingerprint}`, env: k.name, has: true, from: "replaced", seen: day(r.first_seen_epoch_seconds) });
       }
     } else {
       for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "" });
@@ -137,7 +140,7 @@ function ordered(p, c) {
   const list = ruled(p, c), pinned = list.find((a) => a.id === c.pin);
   return pinned && room(pinned) ? [pinned, ...list.filter((a) => a !== pinned)] : list;
 }
-const serving = (p, c) => (p.kind === "plan" ? (c?.serving && p.accounts.find((a) => a.id === c.serving)) || ordered(p, c).find(room) : p.kind === "key" ? p.accounts.find((k) => k.has) : p.accounts[0]);
+const serving = (p, c) => (p.kind === "plan" ? (c?.serving && p.accounts.find((a) => a.id === c.serving)) || ordered(p, c).find(room) : p.kind === "key" ? p.accounts.find((k) => k.has && k.from !== "replaced") : p.accounts[0]);
 // Where the command goes when the account in use runs out, as splice picks it (AccountPool.followingLabel): the next
 // login with room in the same order, or, when every other one is held, the one whose reset is nearest, served at that
 // reset. A command with one account has nowhere to go.

@@ -23,7 +23,7 @@ public object LoopbackOverride {
         if (refused.add(name)) {
             log(
                 "[auth] ${LogSafe.str(name)} names a host other than this machine, so it is ignored and " +
-                    "${LogSafe.str(default)} is used\n",
+                    "${LogSafe.str(place(default))} is used\n",
             )
         }
         return default
@@ -37,5 +37,24 @@ public object LoopbackOverride {
             null
         }
         return host?.lowercase() in loopbackHosts
+    }
+
+    /** [url] as a place to name in a log: its scheme, host and port, and nothing else. A URL splice
+     *  falls back to is DERIVED from an operator-supplied issuer (CodexAuthFile.tokenUrl builds
+     *  "${issuer}/oauth/token"), and a loopback issuer may carry userinfo —
+     *  `http://user:private-token@127.0.0.1:1456` is accepted, so its password would otherwise reach the
+     *  refusal line for a sibling variable (review of adf35c39e, finding 1). The path, query and
+     *  fragment go too: none of them identifies the endpoint for a reader, and each can carry a token. A
+     *  value that does not parse is named as the variable's own default, never echoed. */
+    private fun place(url: String): String {
+        val parsed = try {
+            URI(url)
+        } catch (_: URISyntaxException) {
+            return "its default endpoint"
+        }
+        val host = parsed.host ?: return "its default endpoint"
+        val port = if (parsed.port >= 0) ":${parsed.port}" else ""
+        val scheme = parsed.scheme?.let { "$it://" }.orEmpty()
+        return "$scheme$host$port"
     }
 }

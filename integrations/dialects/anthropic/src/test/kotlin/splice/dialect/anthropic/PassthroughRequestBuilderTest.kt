@@ -50,7 +50,8 @@ class PassthroughRequestBuilderTest {
         val body = """{"model":"m","system":[{"type":"text","text":"be brief"}],
             "tools":[{"name":"run","input_schema":{"type":"object"}}],"tool_choice":{"type":"auto"},
             "thinking":{"type":"enabled","budget_tokens":40000},
-            "messages":[{"role":"user","content":"Your task is to create a detailed summary of the conversation so far."}]}"""
+            "messages":[{"role":"user",
+                "content":"Your task is to create a detailed summary of the conversation so far."}]}"""
         for (quirks in listOf(PASS, NEUTRAL)) {
             val turn = buildFull(body, quirks = quirks)
             val compaction = buildFull(body, quirks = quirks, compact = true)

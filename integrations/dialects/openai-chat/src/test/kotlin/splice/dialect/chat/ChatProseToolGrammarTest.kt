@@ -24,7 +24,8 @@ class ChatProseToolGrammarTest {
         drive(
             sink,
             """{"choices":[{"delta":{"content":"Let me look"}}]}""",
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{}"}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{""" +
+                """}"}}]}}]}""",
             toolStop,
         )
         assertEquals(
@@ -39,7 +40,8 @@ class ChatProseToolGrammarTest {
         drive(
             sink,
             """{"choices":[{"delta":{"reasoning_content":"weighing"}}]}""",
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{}"}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{""" +
+                """}"}}]}}]}""",
             toolStop,
         )
         assertEquals(
@@ -95,7 +97,8 @@ class ChatProseToolGrammarTest {
         val sink = Rec()
         val outcome = drive(
             sink,
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{"}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{""" +
+                """"}}]}}]}""",
             """{"choices":[{"delta":{"content":"late prose"}}]}""",
             """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]}}]}""",
             toolStop,
@@ -182,8 +185,10 @@ class ChatProseToolGrammarTest {
         val sink = Rec()
         drive(
             sink,
-            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{"}}]}}]}""",
-            """{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"t2","function":{"name":"Grep","arguments":"{"}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"Read","arguments":"{""" +
+                """"}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"t2","function":{"name":"Grep","arguments":"{""" +
+                """"}}]}}]}""",
             """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]}}]}""",
             """{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"}"}}]}}]}""",
             toolStop,

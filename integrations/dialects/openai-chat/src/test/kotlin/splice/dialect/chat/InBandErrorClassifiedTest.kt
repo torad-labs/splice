@@ -55,7 +55,8 @@ class InBandErrorClassifiedTest {
     fun `an in-band overflow reaches the client as the prompt-too-long it compacts on`() = runTest {
         val f = failureOf(
             """{"error":{"message":"This model's maximum context length is 128000 tokens. However, your messages """ +
-                """resulted in 131072 tokens.","type":"invalid_request_error","param":"messages","code":"context_length_exceeded"}}""",
+                """resulted in 131072 tokens.","type":"invalid_request_error","param":"messages","code":""" +
+                """"context_length_exceeded"}}""",
         )
 
         assertEquals(FailureCause.REQUEST_TOO_LARGE, f.cause)
@@ -66,7 +67,8 @@ class InBandErrorClassifiedTest {
     @Test
     fun `an in-band rate limit is a rate limit`() = runTest {
         val f = failureOf(
-            """{"error":{"message":"Rate limit reached for requests","type":"requests","code":"rate_limit_exceeded"}}""",
+            """{"error":{"message":"Rate limit reached for requests","type":"requests","code":""" +
+                """"rate_limit_exceeded"}}""",
         )
 
         assertEquals(FailureCause.VENDOR_RATE_LIMITED, f.cause)

@@ -38,7 +38,7 @@ class ResponsesFunctionNamespaceTest {
     private val namespace = ResponsesFunctionNamespace()
 
     @Test
-    fun `function and custom tools share one functions namespace where the first stood, hosted tools keep their places`() {
+    fun `function and custom tools share one namespace where the first stood, hosted tools keep their places`() {
         val grouped = namespace.group(
             tools(
                 """[{"type":"web_search"},{"type":"function","name":"Read"},{"type":"custom","name":"exec"},

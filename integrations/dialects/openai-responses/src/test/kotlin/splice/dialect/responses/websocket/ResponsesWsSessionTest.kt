@@ -86,7 +86,8 @@ private fun convo(rounds: Int, trailingUserText: String? = null, assistantText: 
         } else {
             ""
         }
-        msgs += """{"role":"assistant","content":[$text{"type":"tool_use","id":"call_$i","name":"read","input":{"p":"$i"}}]}"""
+        msgs += """{"role":"assistant","content":[$text{"type":"tool_use","id":"call_$i","name":"read","input":{""" +
+            """"p":"$i"}}]}"""
         msgs += """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_$i","content":"out$i"}]}"""
     }
     if (trailingUserText != null) msgs += """{"role":"user","content":"$trailingUserText"}"""
@@ -307,7 +308,8 @@ class ResponsesWsSessionTest {
         // A different opening message rewrites input[0] — everything after it is untrustworthy.
         val rewritten = build(
             """{"model":"m","messages":[{"role":"user","content":"DIFFERENT start"},""" +
-                """{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"read","input":{"p":"1"}}]},""" +
+                """{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"read","input":{"p":""" +
+                """"1"}}]},""" +
                 """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"out1"}]}]}""",
         )
         assertFalse(s.frameFor(KEY, rewritten, GEN).chained)

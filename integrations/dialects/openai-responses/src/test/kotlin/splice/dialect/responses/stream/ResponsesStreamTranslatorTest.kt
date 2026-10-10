@@ -1494,16 +1494,19 @@ class ResponsesStringErrorTest {
                     """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
                 ),
                 ev(
-                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","encrypted_content":"zzz","summary":[]}}""",
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning",""" +
+                        """"encrypted_content":"zzz","summary":[]}}""",
                 ),
                 ev(
                     """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""",
                 ),
                 ev(
-                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"message","content":[{"type":"output_text","text":""}]}}""",
+                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"message","content":[{""" +
+                        """"type":"output_text","text":""}]}}""",
                 ),
                 ev(
-                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":9}}}""",
+                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{""" +
+                        """"input_tokens":100,"output_tokens":9}}}""",
                 ),
             ).asFlow(),
             sink,
@@ -1522,10 +1525,12 @@ class ResponsesStringErrorTest {
                     """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
                 ),
                 ev(
-                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","encrypted_content":"zzz","summary":[]}}""",
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning",""" +
+                        """"encrypted_content":"zzz","summary":[]}}""",
                 ),
                 ev(
-                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":9}}}""",
+                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{""" +
+                        """"input_tokens":100,"output_tokens":9}}}""",
                 ),
             ).asFlow(),
             RecordingSink(),

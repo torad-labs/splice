@@ -210,7 +210,8 @@ class PassthroughGoldenTest {
                 ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
                 ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}}"""),
                 ev(
-                    """{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"real-sig"}}""",
+                    """{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""" +
+                        """"real-sig"}}""",
                 ),
                 ev("""{"type":"content_block_stop","index":0}"""),
                 ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"""),

@@ -38,7 +38,8 @@ class PassthroughClientSystemMetadataTest {
     @Test
     fun `all exact prefix billing text blocks retain their fields and order`() {
         val second = Json.parseToJsonElement(
-            """{"type":"text","text":"x-anthropic-billing-header: another-client-value;","cache_control":{"type":"ephemeral"},"client_field":{"original":true}}""",
+            """{"type":"text","text":"x-anthropic-billing-header: another-client-value;","cache_control":{"type":""" +
+                """"ephemeral"},"client_field":{"original":true}}""",
         )
         val original = request(identity, second, clientPrompt, billing)
 

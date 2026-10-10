@@ -49,7 +49,8 @@ class ChatStreamTranslatorTest {
                 ev("""{"choices":[{"delta":{"content":"Hi "}}]}"""),
                 ev("""{"choices":[{"delta":{"content":"there"}}]}"""),
                 ev(
-                    """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2}}""",
+                    """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,""" +
+                        """"completion_tokens":2}}""",
                 ),
             ).asFlow(),
             sink,
@@ -77,7 +78,8 @@ class ChatStreamTranslatorTest {
                 ev("""{"choices":[{"delta":{"reasoning":"step1 "}}]}"""),
                 ev("""{"choices":[{"delta":{"thinking":"step2"}}]}"""),
                 ev(
-                    """{"choices":[{"message":{"role":"assistant","content":"ok","reasoning_content":"final-only"},"finish_reason":"stop"}]}""",
+                    """{"choices":[{"message":{"role":"assistant","content":"ok","reasoning_content":"final-only"},""" +
+                        """"finish_reason":"stop"}]}""",
                 ),
             ).asFlow(),
             sink,
@@ -95,7 +97,8 @@ class ChatStreamTranslatorTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
-                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run","arguments":"{\"a\":"}}]}}]}""",
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run",""" +
+                        """"arguments":"{\"a\":"}}]}}]}""",
                 ),
                 ev(
                     """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}""",
@@ -121,7 +124,8 @@ class ChatStreamTranslatorTest {
                     """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"arguments":""}}]}}]}""",
                 ),
                 ev(
-                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"Read","arguments":"{\"p\":1}"}}]}}]}""",
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"Read","arguments":"{""" +
+                        """\"p\":1}"}}]}}]}""",
                 ),
                 ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
             ).asFlow(),
@@ -201,7 +205,8 @@ class ChatStreamTranslatorTest {
                 ev("""{"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}"""),
                 ev("""{"choices":[{"delta":{"content":" world"},"finish_reason":null}]}"""),
                 ev(
-                    """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}""",
+                    """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,""" +
+                        """"completion_tokens":2}}""",
                 ),
             ).asFlow(),
             sink,
@@ -237,7 +242,8 @@ class ChatStreamTranslatorTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
-                    """{"choices":[{"delta":{"role":"assistant","reasoning_content":null,"content":null},"finish_reason":null}]}""",
+                    """{"choices":[{"delta":{"role":"assistant","reasoning_content":null,"content":null},""" +
+                        """"finish_reason":null}]}""",
                 ),
                 ev("""{"choices":[{"delta":{"reasoning_content":"because"},"finish_reason":null}]}"""),
                 ev("""{"choices":[{"delta":{"content":"Answer"},"finish_reason":null}]}"""),
@@ -259,10 +265,12 @@ class ChatStreamTranslatorTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
-                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"run","arguments":null}}]},"finish_reason":null}]}""",
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":null,"function":{"name":"run",""" +
+                        """"arguments":null}}]},"finish_reason":null}]}""",
                 ),
                 ev(
-                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}""",
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},""" +
+                        """"finish_reason":null}]}""",
                 ),
                 ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
             ).asFlow(),
@@ -460,7 +468,8 @@ class ChatToolArgsValidationTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
-                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run","arguments":"{\"a\":"}}]}}]}""",
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run",""" +
+                        """"arguments":"{\"a\":"}}]}}]}""",
                 ),
                 ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
             ).asFlow(),
@@ -490,7 +499,8 @@ class ChatToolArgsValidationTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
-                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run","arguments":"{\"a\":"}}]}}]}""",
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run",""" +
+                        """"arguments":"{\"a\":"}}]}}]}""",
                 ),
                 ev("""{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}"""),
                 ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
@@ -722,7 +732,8 @@ class ChatRunawayGuardTest {
 
     private fun explicitToolFrame(index: Int, arguments: String): kotlinx.serialization.json.JsonObject =
         ev(
-            """{"choices":[{"delta":{"tool_calls":[{"index":$index,"id":"tool_$index","function":{"name":"run","arguments":"$arguments"}}]}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":$index,"id":"tool_$index","function":{"name":"run",""" +
+                """"arguments":"$arguments"}}]}}]}""",
         )
 
     @Test

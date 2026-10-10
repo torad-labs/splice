@@ -173,7 +173,8 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
             ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"t"}}"""),
             ev(
-                """{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"real-sig"}}""",
+                """{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""" +
+                    """"real-sig"}}""",
             ),
             ev("""{"type":"content_block_stop","index":0}"""),
             ev("""{"type":"message_stop"}"""),

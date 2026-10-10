@@ -437,7 +437,8 @@ class ResponsesWsRunnerTest {
         val pending = ResponsesWsIdentity.PendingCommit(request, 1, built.epoch)
         val item = responsesRequestJson.parseToJsonElement(
             """{"type":"response.output_item.done","output_index":0,"item":{
-                "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"return 1;"}}""",
+                "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec",
+                "input":"return 1;"}}""",
         ) as JsonObject
         identity.observeTerminal("source-chain", pending, item)
         val waiting = session.frameAndEpoch("source-chain", next, 1).frame.json

@@ -65,8 +65,10 @@ private fun opts(lookup: (String) -> List<String>?) = BuildOptions(
 private fun conversation(rounds: Int): String {
     val msgs = mutableListOf("""{"role":"user","content":"start the task"}""")
     for (i in 1..rounds) {
-        msgs += """{"role":"assistant","content":[{"type":"tool_use","id":"call_$i","name":"read","input":{"path":"f$i.kt"}}]}"""
-        msgs += """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_$i","content":"contents of f$i"}]}"""
+        msgs += """{"role":"assistant","content":[{"type":"tool_use","id":"call_$i","name":"read","input":{"path":""" +
+            """"f$i.kt"}}]}"""
+        msgs += """{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_$i","content":"contents of """ +
+            """f$i"}]}"""
     }
     return """{"model":"m","messages":[${msgs.joinToString(",")}]}"""
 }

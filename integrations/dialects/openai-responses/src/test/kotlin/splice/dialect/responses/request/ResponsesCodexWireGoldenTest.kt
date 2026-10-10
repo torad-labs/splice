@@ -69,8 +69,10 @@ class ResponsesCodexWireGoldenTest {
         """Searches over deferred tool metadata and exposes matching tools for the next model call.\n\n""" +
         """Some of the tools may not have been provided to you upfront, and you should use this tool """ +
         """(`tool_search`) to search for the required tools. For MCP tool discovery, always use """ +
-        """`tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`.","parameters":{ """.trimEnd() +
-        """"type":"object","properties":{"query":{"type":"string","description":"Search query for deferred tools."},""" +
+        """`tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`.","parameters":""" +
+        """{ """.trimEnd() +
+        """"type":"object","properties":{"query":{"type":"string","description":"Search query for deferred """ +
+        """tools."},""" +
         """"limit":{"type":"number","description":"Maximum number of tools to return. Defaults to 8."}},""" +
         """"required":["query"],"additionalProperties":false}}"""
 

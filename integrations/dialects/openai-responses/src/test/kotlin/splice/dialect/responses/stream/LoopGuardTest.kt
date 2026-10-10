@@ -62,11 +62,13 @@ class LoopGuardTest {
         val calls = StringBuilder()
         for (i in 1..repeats) {
             calls.append(
-                """{"role":"assistant","content":[{"type":"tool_use","id":"$idPrefix$i","name":"Edit","input":$input}]},""",
+                """{"role":"assistant","content":[{"type":"tool_use","id":"$idPrefix$i","name":"Edit","input":""" +
+                    """$input}]},""",
             )
             calls.append(
                 """{"role":"user","content":[{"type":"tool_result","tool_use_id":"$idPrefix$i",""" +
-                    """"content":"<tool_use_error>File has been modified since read. Read it again.</tool_use_error>"}]},""",
+                    """"content":"<tool_use_error>File has been modified since read. Read it """ +
+                    """again.</tool_use_error>"}]},""",
             )
         }
         return calls.toString().trimEnd(',')
@@ -103,8 +105,10 @@ class LoopGuardTest {
     @Test
     fun `a success between failures resets the streak`() {
         val tail = conversation(2) + "," +
-            """{"role":"assistant","content":[{"type":"tool_use","id":"ok1","name":"Edit","input":{"file_path":"/x"}}]},""" +
-            """{"role":"user","content":[{"type":"tool_result","tool_use_id":"ok1","content":"The file has been updated successfully."}]},""" +
+            """{"role":"assistant","content":[{"type":"tool_use","id":"ok1","name":"Edit","input":{"file_path":""" +
+            """"/x"}}]},""" +
+            """{"role":"user","content":[{"type":"tool_result","tool_use_id":"ok1","content":"The file has been """ +
+            """updated successfully."}]},""" +
             conversation(2)
         assertTrue(analyze(body(tail)).isEmpty())
     }
@@ -133,7 +137,8 @@ class LoopGuardTest {
             )
             calls.append(
                 """{"role":"user","content":[""" +
-                    """{"type":"tool_result","tool_use_id":"p$i","content":"<retrieval_status>timeout</retrieval_status>"}]},""",
+                    """{"type":"tool_result","tool_use_id":"p$i","content":""" +
+                    """"<retrieval_status>timeout</retrieval_status>"}]},""",
             )
         }
         assertTrue(analyze(body(calls.toString().trimEnd(','))).isEmpty())

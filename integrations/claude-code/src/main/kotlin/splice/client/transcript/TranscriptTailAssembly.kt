@@ -10,7 +10,7 @@ internal fun interface TranscriptLineParser {
     fun parse(bytes: ByteArray): JsonObject?
 }
 
-internal data class TailSelection(val message: TranscriptMessage?, val complete: Boolean)
+internal data class TailSelection(val message: TranscriptMessage?, val complete: Boolean, val model: String? = null)
 
 /** The first line of a non-origin window is incomplete and cannot contribute a partial message. */
 internal class TranscriptTailAssembly(
@@ -31,7 +31,9 @@ internal class TranscriptTailAssembly(
         // At file origin there are no missing leading blocks, even for a single-message transcript.
         val ready = ready(messages.take(at.coerceAtLeast(0)), last)
         val complete = origin || ready
-        return TailSelection(last, complete)
+        val written = messages.lastOrNull { it.role == TranscriptRole.ASSISTANT && it.source.model != null }
+        val model = written?.source?.model
+        return TailSelection(last, complete, model)
     }
 
     /** What the session said, was told or called: a tool result and a system note are neither. A teammate's message is

@@ -45,6 +45,8 @@ public data class TranscriptSource(
     val kind: String? = null,
     /** On a [TranscriptRole.PEER] message, the session that sent it, by the name it goes by. */
     val from: String? = null,
+    /** On an assistant message, the model that wrote it, as the client recorded it. */
+    val model: String? = null,
 )
 
 /** The tool facts a message carries; every field is null on a message that is neither a call nor a result. */
@@ -125,6 +127,10 @@ public interface SessionTranscripts {
      *  activity. [cwd] is the session's working directory when the caller knows it, which is where Claude Code files
      *  the transcript: an implementation may look there first and judge a miss against it (V4-444). */
     public fun last(sessionId: String, roots: List<Path>, cwd: String? = null): TranscriptMessage? = null
+
+    /** The model that wrote the newest assistant message in the same bounded tail, whatever the last message is: a
+     *  session waiting on its person ends on a user message and still has one. Null when none is recorded there. */
+    public fun model(sessionId: String, roots: List<Path>, cwd: String? = null): String? = null
 
     public fun page(
         sessionId: String,

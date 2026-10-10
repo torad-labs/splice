@@ -3,6 +3,7 @@ package splice.sessions.transcript
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.nio.file.Path
@@ -22,6 +23,20 @@ internal object SessionActivity {
     ): JsonElement {
         if (!viewEnabled()) return JsonNull
         return json(sessionId?.let { source.last(it, roots, cwd) })
+    }
+
+    /** The model that wrote the session's newest assistant message, or JSON null when the view is off or no model is
+     *  recorded. */
+    fun model(
+        sessionId: String?,
+        cwd: String?,
+        roots: List<Path>,
+        source: SessionTranscripts,
+        viewEnabled: SessionTranscriptViewEnabled,
+    ): JsonElement {
+        if (!viewEnabled()) return JsonNull
+        val model = sessionId?.let { source.model(it, roots, cwd) } ?: return JsonNull
+        return JsonPrimitive(model)
     }
 
     /** A call is shown as what it was for, read from its whole input before any clip, so a long command in front of its

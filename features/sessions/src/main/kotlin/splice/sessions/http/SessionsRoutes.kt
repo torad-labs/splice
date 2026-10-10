@@ -74,6 +74,7 @@ private object MessageWire {
         m.toolUse.id?.let { put("tool_use_id", it) }
         m.source.kind?.let { put("kind", it) }
         m.source.from?.let { put("from", it) }
+        m.source.model?.let { put("model", it) }
     }
 }
 
@@ -189,7 +190,9 @@ public class SessionsRoutes(
         put("pid", s.process.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
-        put("last", SessionActivity.last(s.sessionId, s.process.cwd, roots.treesFor(s.head), transcripts, viewEnabled))
+        val trees = roots.treesFor(s.head)
+        put("last", SessionActivity.last(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
+        put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("kind", s.client.kind)
         put("version", s.client.version)
         put("cwd", s.process.cwd)

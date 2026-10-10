@@ -13,6 +13,8 @@ internal data class RecordedCall(val id: String?, val name: String, val input: S
 
 /** An assistant message still being read: the client writes one message across several records. */
 internal class PendingAssistant(val id: String?, val ts: Long?, val at: Long) {
+    /** The model the client recorded on the message, the first record that names one. */
+    var model: String? = null
     val texts = mutableListOf<String>()
     val calls = mutableListOf<RecordedCall>()
 
@@ -74,9 +76,17 @@ internal class MessageLedger(
 
     /** A finished assistant message: its text as one message, then one per recorded call, all at its first record. */
     fun assistant(done: PendingAssistant) {
+        val written = TranscriptSource(model = done.model)
         if (done.texts.isNotEmpty()) {
             val text = redaction.shown(done.joined())
-            messages += TranscriptMessage(place(done.at), TranscriptRole.ASSISTANT, done.ts, text, messageId = done.id)
+            messages += TranscriptMessage(
+                place(done.at),
+                TranscriptRole.ASSISTANT,
+                done.ts,
+                text,
+                messageId = done.id,
+                source = written,
+            )
         }
         for (call in done.calls) {
             messages += TranscriptMessage(
@@ -86,6 +96,7 @@ internal class MessageLedger(
                 redaction.shown(call.input),
                 toolUse = TranscriptToolUse(call.name, result = false, id = call.id),
                 messageId = done.id,
+                source = written,
             )
         }
     }

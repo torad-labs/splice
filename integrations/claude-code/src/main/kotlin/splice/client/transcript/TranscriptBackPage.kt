@@ -17,8 +17,10 @@
 package splice.client.transcript
 
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
+import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
+import java.nio.file.Files
 import java.nio.file.Path
 
 // why: a page from the end reads the file backwards in windows this size, so a short tail never walks the whole file.
@@ -32,6 +34,13 @@ internal class TranscriptBackPage(
     private val parser: TranscriptLineParser,
     private val redaction: TranscriptRedaction,
 ) {
+    /** The newest [limit] messages before byte [end] of [file], or before its last byte when [end] is null. */
+    fun lookup(file: Path, sessionId: String, end: Long?, limit: Int): TranscriptLookup {
+        val size = Files.size(file)
+        if (end != null && end > size) return TranscriptLookup.Refused(BAD_CURSOR)
+        return TranscriptLookup.Found(read(file, sessionId, end ?: size, limit))
+    }
+
     /** The newest [limit] messages among the lines before byte [end], oldest first. */
     fun read(file: Path, sessionId: String, end: Long, limit: Int): TranscriptPage {
         val wanted = limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)

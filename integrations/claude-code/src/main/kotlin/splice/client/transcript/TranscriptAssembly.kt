@@ -83,6 +83,7 @@ internal class PageAssembly(
 
     private fun assistant(message: JsonObject, messageId: String?, ts: Long?): Boolean {
         val into = pending?.takeIf { it.id == messageId } ?: PendingAssistant(messageId, ts, at).also { pending = it }
+        if (into.model == null) into.model = records.model(message)
         for (block in records.blocks(message)) {
             when (JsonScalars.str(block, "type")) {
                 "text" -> JsonScalars.str(block, "text")
@@ -171,6 +172,10 @@ internal class TranscriptRecords {
     /** The id of the message a record belongs to, when it carries one. */
     fun messageId(record: JsonObject?): String? =
         (record?.get(MESSAGE) as? JsonObject)?.let { JsonScalars.str(it, "id") }
+
+    /** The model a message names. The client files its own local notices under a placeholder in angle brackets, which
+     *  is no model. */
+    fun model(message: JsonObject): String? = JsonScalars.str(message, "model")?.takeUnless { it.startsWith("<") }
 
     fun blocks(message: JsonObject): List<JsonObject> =
         (message[CONTENT] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()

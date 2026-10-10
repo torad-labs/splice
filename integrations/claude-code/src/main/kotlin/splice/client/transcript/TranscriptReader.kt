@@ -96,7 +96,7 @@ private const val MAX_PAGE_BYTES = 16L shl 20
 
 private const val BAD_ID = "not a session id"
 private const val SEND_MESSAGE = "SendMessage"
-private const val BAD_CURSOR = "not a cursor this daemon minted"
+internal const val BAD_CURSOR = "not a cursor this daemon minted"
 
 /** The Claude Code implementation of the sessions feature's transcript port: the feature chooses root
  *  priority, this class owns only Claude Code's on-disk format. */
@@ -116,7 +116,13 @@ public class TranscriptReader(
     private val tail = TranscriptTail(opener, TranscriptTailAssembly(TranscriptLineParser(::parse), redaction))
     private val back = TranscriptBackPage(opener, TranscriptLineParser(::parse), redaction)
 
-    override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? {
+    override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? =
+        tailOf(sessionId, roots, cwd)?.message
+
+    override fun model(sessionId: String, roots: List<Path>, cwd: String?): String? =
+        tailOf(sessionId, roots, cwd)?.model
+
+    private fun tailOf(sessionId: String, roots: List<Path>, cwd: String?): TailReading? {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId, cwd) else null
         if (file == null) return null
         // A removed or unreadable transcript has no available activity; the registry row still exists independently.
@@ -137,21 +143,19 @@ public class TranscriptReader(
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
 
-    /** Why a read from the end is refused before any file is looked for: a cursor that is no offset, or an id that is no id. */
-    private fun refusal(sessionId: String, before: String?, end: Long?): String? = when {
-        before != null && end == null -> BAD_CURSOR
-        !validSessionId.matches(sessionId) -> BAD_ID
-        else -> null
-    }
-
     override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
         val end = before?.toLongOrNull()?.takeIf { it >= 0 }
-        val refusal = refusal(sessionId, before, end)
+        // Refused before any file is looked for: a cursor that is no offset, or an id that is no id.
+        val refusal = when {
+            before != null && end == null -> BAD_CURSOR
+            !validSessionId.matches(sessionId) -> BAD_ID
+            else -> null
+        }
         val file = if (refusal == null) locate(roots, sessionId) else null
         return when {
             refusal != null -> TranscriptLookup.Refused(refusal)
             file == null -> TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
-            else -> fromEnd(file, sessionId, end, limit)
+            else -> back.lookup(file, sessionId, end, limit)
         }
     }
 
@@ -198,13 +202,6 @@ public class TranscriptReader(
             before + TranscriptReplyMerger().merge(reply),
             point.before - before.size,
         )
-    }
-
-    /** The newest [limit] messages before byte [end] of [file], or before its last byte when [end] is null. */
-    private fun fromEnd(file: Path, sessionId: String, end: Long?, limit: Int): TranscriptLookup {
-        val size = Files.size(file)
-        if (end != null && end > size) return TranscriptLookup.Refused(BAD_CURSOR)
-        return TranscriptLookup.Found(back.read(file, sessionId, end ?: size, limit))
     }
 
     /** The `message` of every SendMessage call in [sessionId]'s transcript whose tool_use id is in

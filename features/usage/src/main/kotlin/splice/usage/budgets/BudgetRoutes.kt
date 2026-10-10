@@ -29,6 +29,9 @@ import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.util.Cancellables
 import splice.http.JsonReply
+import splice.usage.UsageHeadLookup
+import splice.usage.economics.UNPRICED_REASON
+import splice.usage.perf.HeadPriceGap
 
 /** The daemon's budget store, read per request because ControlPlane assigns it after
  *  construction — the same discipline [TeamSource] and [splice.core.topology.TopologyWriterSource] keep. */
@@ -51,7 +54,12 @@ private data class BudgetWire(
 @Serializable
 private data class BudgetsWireBody(val budgets: List<BudgetWire> = emptyList())
 
-public class BudgetRoutes(private val source: BudgetSource, private val config: ConfigService) {
+public class BudgetRoutes(
+    private val source: BudgetSource,
+    private val config: ConfigService,
+    /** Where each command's billing is read, for the reason its turns with no price have none. */
+    private val lookup: UsageHeadLookup? = null,
+) {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -100,6 +108,7 @@ public class BudgetRoutes(private val source: BudgetSource, private val config: 
                     put("used_usd", spend?.usedUsd)
                     put("remaining_usd", spend?.remainingUsd)
                     put("unpriced_turns", spend?.unpricedTurns)
+                    HeadPriceGap.wire(lookup, budget.head)?.let { put(UNPRICED_REASON, it) }
                     put("spend_complete", spend?.complete)
                     put("spend_pending", spend?.pending)
                 }

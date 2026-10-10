@@ -55,6 +55,8 @@ async function load() {
   const dayStart = Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate());
   const spendToday = new Map((ec.body?.heads || []).map((h) => [h.key, (h.buckets || []).filter((b) => b.hour >= dayStart)
     .reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 })]));
+  // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
+  const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   const pinnedModel = new Map((md.body?.heads || []).map((h) => [h.head, (h.models || []).find((m) => m.pinned)?.label || h.pinned_model]));
   const keyRows = ks.body?.keys || [];
   const provs = new Map();
@@ -64,6 +66,7 @@ async function load() {
     if (!provs.has(fam.id)) provs.set(fam.id, { id: fam.id, name: fam.name, kind, cmds: [], accounts: [] });
     const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0 };
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : today.usd, unpriced: b ? b.unpriced_turns : today.unpriced,
+      onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [] });
   }
   for (const p of provs.values()) {
@@ -246,8 +249,9 @@ function meterHtml(c, pick = null) {
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
 // here the words take their own line under the figure, with no dot (fin)
-// With no figure beside them, the words stand alone; fin's words for this state are pending (Marlin, Oct 10).
-const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} with no price`;
+// A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
+// Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
+const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} ${c.onPlan ? "on your plan" : "with no price"}`;
 const unpriced = (c) => (c.unpriced ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
 function editorHtml(c, tag) {
   const ed = ui.editor;

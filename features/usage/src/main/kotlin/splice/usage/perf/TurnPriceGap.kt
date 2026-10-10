@@ -15,6 +15,7 @@ import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.usage.UsageBilling
+import splice.usage.UsageHeadLookup
 
 /** Why a request has no dollar figure. [wire] is the console's own word for it. */
 internal enum class PriceGap(val wire: String) {
@@ -66,8 +67,7 @@ internal class TurnPriceGap(private val price: TurnPrice?, private val plans: Ac
     fun of(row: PerfRow): PriceGap? = when {
         unanswered(row) -> PriceGap.UNANSWERED
         usd(row) != null -> null
-        plans.kind == UsageBilling.LOCAL_RUNTIME -> PriceGap.LOCAL
-        plans.kind == UsageBilling.SUBSCRIPTION -> PriceGap.PLAN
+        HeadPriceGap.of(plans.kind) != null -> HeadPriceGap.of(plans.kind)
         declares(row) -> PriceGap.UNCOUNTED
         plans.of(row.facts.account) != null -> PriceGap.PLAN
         else -> PriceGap.UNDECLARED
@@ -87,4 +87,24 @@ internal class TurnPriceGap(private val price: TurnPrice?, private val plans: Ac
                 .none { row.fields.getOrDefault(it, 0L) > 0L } &&
             PerfKeys.FIRST_DELTA !in row.fields &&
             ((row.fields[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) == 0L || row.fields[PerfKeys.ATTEMPTS] == 0L)
+}
+
+/** Why a command's turns with no price have none, from the command alone: a local runtime's turns cost nothing
+ *  to run, a plan's are covered by the plan, and on any other command a turn with no price is a model with no
+ *  rate card. The same two head-wide branches [TurnPriceGap.of] takes first, so the console's Day row and the
+ *  Requests page give one reason. An API-key command whose account carries a plan is the one case only a row
+ *  can tell (Oct 10, 2026, Marlin: a plan turn reads "on your plan", never "with no price"). */
+internal object HeadPriceGap {
+    fun of(kind: UsageBilling?): PriceGap? = when (kind) {
+        UsageBilling.LOCAL_RUNTIME -> PriceGap.LOCAL
+        UsageBilling.SUBSCRIPTION -> PriceGap.PLAN
+        UsageBilling.API_RATE, null -> null
+    }
+
+    /** The wire word for command [key]'s turns with no price, or null when [lookup] does not know the command. */
+    fun wire(lookup: UsageHeadLookup?, key: String): String? {
+        val heads = lookup ?: return null
+        val head = heads.byName(key).firstOrNull { it.key == key } ?: return null
+        return (of(AccountPlans(head, heads.billing(key)).kind) ?: PriceGap.UNDECLARED).wire
+    }
 }

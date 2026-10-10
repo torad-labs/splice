@@ -20,7 +20,7 @@ internal class UsageReadRoutes(
     private val io: CoroutineDispatcher,
     private val guard: ControlGuard,
 ) {
-    private val economics = EconomicsPayloads(heads)
+    private val economics = EconomicsPayloads(heads, lookup = lookup)
     private val perf = PerfRoutes(lookup)
 
     fun register(route: Route) {

@@ -58,7 +58,7 @@ internal class UsageMount(
 
     // V4-133 (FEATURES.md §5/§6): read at CALL time through the same BudgetSource/AlertSource
     // discipline every other console port keeps — see ConsolePorts.
-    private val budgetRoutes = BudgetRoutes(BudgetSource { ports.budgets }, config)
+    private val budgetRoutes = BudgetRoutes(BudgetSource { ports.budgets }, config, usageLookup)
     private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
 
     fun register(route: Route) {

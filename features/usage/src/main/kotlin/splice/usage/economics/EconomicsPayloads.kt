@@ -27,8 +27,10 @@ import splice.core.util.WallClock
 import splice.core.wire.ControlFields.HEADS
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
+import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
 import splice.usage.UsageReadPreparation
+import splice.usage.perf.HeadPriceGap
 
 // V4-122: this was 192 with a comment claiming it mirrored EconomicsStore's RETENTION_MS — an
 // equality asserted in PROSE, which nothing enforced and which :daemon-control could not import even if it
@@ -38,6 +40,8 @@ import splice.usage.UsageReadPreparation
 public class EconomicsPayloads(
     private val heads: UsageHeads,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    /** Where each command's billing is read, for the reason its turns with no price have none. */
+    private val lookup: UsageHeadLookup? = null,
 ) {
 
     public fun economicsJson(): String = economicsJson(null)
@@ -50,6 +54,7 @@ public class EconomicsPayloads(
                 addJsonObject {
                     put(KEY, m.key)
                     put(LABEL, m.label)
+                    HeadPriceGap.wire(lookup, m.key)?.let { put(UNPRICED_REASON, it) }
                     val ceiling = m.usage.snapshot().ratelimit?.limitTokens
                     if (ceiling == null) put("ceiling_tokens", JsonNull) else put("ceiling_tokens", ceiling)
                     if (preparation?.economicsReady(m) == false) {
@@ -94,3 +99,7 @@ public class EconomicsPayloads(
         }
     }
 }
+
+// why: the word, "plan", "local" or "undeclared", for why a command's turns with no price have none; the Day row
+// says "on your plan" for a plan's and "with no price" for the rest (Oct 10, 2026).
+internal const val UNPRICED_REASON = "unpriced_reason"

@@ -28,6 +28,8 @@ private const val SHIM_MODE = "rwxr-xr-x"
 /** The exit code of the candidate jar's `check-config` when its boot findings refuse the person's splice.toml: a wire contract with another process, read here and declared there. */
 private const val CANDIDATE_CONFIG_REFUSAL_EXIT = 3
 
+private const val NO_ANSWER = "no answer"
+
 /** `doctor --json` shipped in 0.4.0. */
 private const val JSON_DOCTOR_MINOR = 4
 
@@ -151,7 +153,7 @@ internal class UpgradeRelease(
             output.line("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
             null
         } else {
-            doctorRefusal(jar) ?: configRefusal(jar)
+            doctorRefusal(jar) ?: configRefusal(jar, candidate)
         }
         return refusal ?: Upgraded.Ok(candidate)
     }
@@ -164,17 +166,27 @@ internal class UpgradeRelease(
         return Upgraded.Refused("candidate jar's doctor --json did not answer with a report (exit ${doctor.code})")
     }
 
-    /** Fail-closed boot, before anything is activated or stopped: the candidate's own `check-config` reads the
-     *  person's splice.toml with the findings the candidate will boot with. Exit 3 is its refusal, with every finding on
-     *  stdout; the upgrade then ends here with the old release active and the old daemon running. Any other answer (a
-     *  candidate that has no such verb prints its usage and exits otherwise) is no verdict, and the upgrade goes on. */
-    private fun configRefusal(jar: Path): Upgraded.Refused? {
+    /** Fail-closed boot, before anything is activated or stopped: the release's own `check-config` reads the person's
+     *  splice.toml with the findings that release will boot with. ONLY exit 0 permits the replacement. Exit 3 is its
+     *  refusal, with every finding on stdout; any other answer (an older jar's unknown verb, a crash, a timeout, a java
+     *  that would not start) is no verdict, and no verdict keeps the running daemon exactly as a refusal does, because
+     *  the daemon that is serving is worth more than an unchecked swap. A release that predates the config
+     *  findings has no such verb at all; it is skipped with a line saying so, as the doctor preflight is. */
+    fun configRefusal(jar: Path, version: String): Upgraded.Refused? {
+        if (predatesJsonDoctor(version)) return null
         val check = process(listOf(java, "-jar", jar.toString(), "check-config"), false)
-        if (check.code != CANDIDATE_CONFIG_REFUSAL_EXIT) return null
-        return Upgraded.Refused(
-            "the candidate would refuse to boot on your splice.toml, so the running daemon was not touched:\n" +
-                check.stdout.trim(),
-        )
+        return when (check.code) {
+            0 -> null
+            CANDIDATE_CONFIG_REFUSAL_EXIT -> Upgraded.Refused(
+                "$version would refuse to boot on your splice.toml, so the running daemon was not touched:\n" +
+                    check.stdout.trim(),
+            )
+            else -> Upgraded.Refused(
+                "$version could not check your splice.toml (exit ${check.code}: " +
+                    "${check.stdout.trim().ifEmpty { NO_ANSWER }}), so the running daemon was not touched; " +
+                    "nothing is replaced until the check can run",
+            )
+        }
     }
 
     private fun predatesJsonDoctor(version: String): Boolean {

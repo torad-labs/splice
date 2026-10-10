@@ -143,6 +143,18 @@ internal class UpgradeCommand(
             ?: return Upgraded.Refused("no previous release to roll back to")
         val installed = layout.installedVersion()
         output.line("${BOLD}splice upgrade --rollback$RESET$DIM: $installed -> $previous$RESET")
+        return rollbackRefusal(previous) ?: rollBackTo(previous, installed, a)
+    }
+
+    /** The config may have changed since that release last booted on it, and the previous release reads it with its own
+     *  findings: ask it first, before anything is stopped, the way an upgrade asks its candidate. */
+    private fun rollbackRefusal(previous: String): Upgraded.Refused? =
+        when (val jar = layout.versionDir(previous).then { dir -> Upgraded.Ok(dir.resolve(JAR_ASSET)) }) {
+            is Upgraded.Refused -> jar
+            is Upgraded.Ok -> release.configRefusal(jar.value, previous)
+        }
+
+    private fun rollBackTo(previous: String, installed: String, a: UpgradeArgs): Upgraded<Boolean> {
         if (!daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
             return Upgraded.Ok(false)

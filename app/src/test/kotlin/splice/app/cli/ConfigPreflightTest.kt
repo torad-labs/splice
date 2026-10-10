@@ -55,6 +55,15 @@ class ConfigPreflightTest {
     }
 
     @Test
+    fun `a dangling symlink for splice toml exits 3, because boot refuses it`(@TempDir root: Path) {
+        Files.createSymbolicLink(root.resolve("splice.toml"), root.resolve("dotfiles-gone.toml"))
+        val (code, said) = run(root, null)
+
+        assertEquals(CONFIG_REFUSED_EXIT, code)
+        assertTrue(said.contains("splice.toml cannot be read"), said)
+    }
+
+    @Test
     fun `no splice toml at all exits 0, and the check writes nothing`(@TempDir root: Path) {
         val (code, said) = run(root, null)
 

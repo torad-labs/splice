@@ -12,4 +12,4 @@ internal const val TESTED_CLAUDE_CODE: String = "2.1.296"
 // Hand-paired with the SPLICE_SHIM_VERSION marker embedded in app/src/main/dist/bin/splice-launch (same
 // hand-paired pattern as GATEWAY_VERSION/wantVersion already used for head staleness in
 // ControlServer.headStatus). Bump both together whenever app/src/main/dist/bin/splice-launch's behavior changes.
-public const val SHIM_VERSION: String = "shim-16"
+public const val SHIM_VERSION: String = "shim-17"

@@ -210,6 +210,39 @@ internal class UpgradeCommandTest : UpgradeRig() {
         assertEquals(0 to 0, unitRestarts to verbRestarts, "the running daemon is not restarted")
     }
 
+    /** Only a clean answer permits the swap: a candidate whose check cannot answer (an older jar's unknown verb exits 2,
+     *  a crash, a missing java) is no verdict, and no verdict keeps the serving daemon like a refusal does. */
+    @Test
+    fun `a candidate whose config check cannot answer is not activated and nothing is restarted`(@TempDir home: Path) {
+        flatInstall(home)
+        pristine(home)
+        configCheck = UpgradeExit(2, "usage: splice <command>\n")
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--now")) }
+        assertFalse(ok, out)
+        assertTrue(out.contains("could not check your splice.toml") && out.contains("exit 2"), out)
+        assertFalse(Files.exists(home.resolve("share/releases/current")), "nothing became the live release")
+        assertEquals(0 to 0, unitRestarts to verbRestarts, "the running daemon is not restarted")
+    }
+
+    /** The config can change after a release last booted on it, and the previous release reads it with its own
+     *  findings: a rollback asks it first, and a refusal leaves the live release and the daemon exactly as they were. */
+    @Test
+    fun `a rollback to a release that refuses the config changes nothing and restarts nothing`(@TempDir home: Path) {
+        flatInstall(home)
+        pristine(home)
+        val base = release(home)
+        val (up, upOut) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9", "--now")) }
+        assertTrue(up, upOut)
+        val restartsAfterUpgrade = unitRestarts to verbRestarts
+        configCheck = UpgradeExit(3, "splice: splice.toml has 1 finding: heads.one.provider (line 9)\n")
+        val (back, out) = captured { command(home, base).upgrade(listOf("--rollback", "--now")) }
+        assertFalse(back, out)
+        assertTrue(out.contains("heads.one.provider (line 9)"), out)
+        assertEquals("9.9.9", link(home, "current"), "the live release did not move")
+        assertEquals(INSTALLED, link(home, "previous"))
+        assertEquals(restartsAfterUpgrade, unitRestarts to verbRestarts, "the running daemon is not restarted")
+    }
+
     /** A candidate older than 0.4.0 has no `doctor --json`; its text doctor is not run against the
      *  live install for nothing, and `--to` names the tag with or without its v (review 2026-09-14). */
     @Test

@@ -71,7 +71,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-16";
+const SPLICE_SHIM_VERSION = "shim-17";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -340,15 +340,20 @@ async function waitForHealth(attempts) {
 // that route fail loudly instead of silently serving an incompatible API forever.
 // Fail-closed boot, ahead of the stop: the NEW jar boots only on a splice.toml it finds no fault in, so it is asked
 // first (`check-config`, which reads and reports and writes nothing). A refusal leaves the running daemon up and
-// ends this launch with the whole list. A jar that has no such verb, or no java at all, answers some other way and
-// the launch goes on as it always did: the boot log then says what is wrong.
+// ends this launch with the whole list. Only a clean exit lets the stop go ahead: a jar that has no such verb, or
+// no java at all, gives no verdict, and no verdict keeps the serving daemon too.
 const CONFIG_REFUSED_EXIT = 3;
 function refuseUnbootableConfig(running) {
   try {
     execFileSync("java", [USER_HOME, "-jar", JAR, "check-config"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
   } catch (failure) {
-    if (failure.status !== CONFIG_REFUSED_EXIT) return;
-    fail(`${String(failure.stdout ?? "").trim()}\nsplice: the running ${running} daemon was not stopped; fix splice.toml, then launch again`);
+    if (failure.status === CONFIG_REFUSED_EXIT) {
+      fail(`${String(failure.stdout ?? "").trim()}\nsplice: the running ${running} daemon was not stopped; fix splice.toml, then launch again`);
+    }
+    // ONLY a clean exit permits the replacement. A check that could not run (no java, a crash, a timeout, a build
+    // that does not know the verb) is no verdict, and no verdict keeps the serving daemon, same as a refusal does.
+    const why = failure.status === null || failure.status === undefined ? String(failure.code ?? failure.signal ?? failure.message) : `exit ${failure.status}`;
+    fail(`splice: could not check splice.toml with ${SPLICE_GATEWAY_VERSION} (${why}), so the running ${running} daemon was not stopped; fix that, then launch again`);
   }
 }
 

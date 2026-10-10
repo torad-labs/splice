@@ -94,7 +94,9 @@ internal class HeadAdmission(
                 prepared.built.onEnd?.let(admitted.slot::onRelease)
                 // V4-319: a streaming turn is listed, and the operator can stop it, from here until
                 // the same release ends it. A collect has no open stream a stop could end with a frame.
-                if (prepared.stream) deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash)
+                if (prepared.stream) {
+                    deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash, admitted.perf)
+                }
                 serveReady(call, prepared, admitted)
             }
         }

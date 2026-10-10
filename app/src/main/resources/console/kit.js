@@ -159,7 +159,8 @@ const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<
 // (splice-builder3) and takes stallOf the same way.
 // why: half a minute with no word from the provider is a silence he would want to see and maybe stop, while shorter
 // pauses are ordinary between thoughts. A display threshold only: nothing is ended by it (Idle is a probe, never an
-// error). A provider that only pings stays silent here and keeps its round open (desk walk, Oct 10: 111 s, no end).
+// error). A ping is heard: every byte the provider sends resets idle_ms (SseReader onBytes), so a model thinking
+// with pings never reads Stalled (Marlin; desk walk, Oct 10: idle stayed under 5 s across a 36 s pinging hold).
 const STALL_SHOWN_MS = 30000;
 // why: under five seconds of quiet is ordinary streaming; a countdown that flickered on every pause would be noise.
 const RESUME_SHOWN_MS = 5000;

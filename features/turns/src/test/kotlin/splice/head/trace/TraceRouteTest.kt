@@ -242,4 +242,91 @@ class TraceRouteTest {
         assertTrue(reply.json().turns().isEmpty())
         assertEquals("0", reply.json().str("on_disk"))
     }
+
+    private fun searchWith(
+        dir: Path?,
+        query: TraceSearchQuery,
+        clock: WallClock = WallClock { DAY_ONE },
+        head: String = HEAD,
+    ) = runBlocking {
+        TraceRoute(heads, { dir }, Dispatchers.Unconfined, heap = splice.head.syntheticHeapBudget(), clock = clock)
+            .search(head, query)
+    }
+
+    private fun search(dir: Path?, q: String?, since: String? = null, limit: String? = null) =
+        searchWith(dir, TraceSearchQuery(q, since, limit))
+
+    private fun JsonObject.hits() = getValue("hits").jsonArray.map { it.jsonObject }
+
+    @Test
+    fun `a search finds the turn whose sent body holds the words, and the turn whose returned body does`(
+        @TempDir dir: Path,
+    ) {
+        writeTrace(dir)
+
+        val sent = search(dir, "\"client\":1").json().hits().single()
+        assertEquals("turn-2", sent.str("turn"))
+        assertEquals("sent", sent.str("where"))
+        assertEquals("beta-session", sent.str("session"))
+        assertEquals("ok", sent.str("outcome"), "a hit carries its turn's own ending")
+        assertEquals("m1", sent.str("model"))
+        assertTrue(sent.str("text").contains("\"client\":1"), sent.str("text"))
+        val returned = search(dir, "message_start").json().hits()
+        assertEquals(listOf("turn-2", "turn-1"), returned.map { it.str("turn") }, "newest first")
+        assertEquals(setOf("returned"), returned.map { it.str("where") }.toSet())
+        assertTrue(search(dir, "no such words anywhere").json().hits().isEmpty())
+    }
+
+    @Test
+    fun `a search is case-blind and says how far back it read`(@TempDir dir: Path) {
+        writeTrace(dir)
+
+        val reply = search(dir, "MESSAGE_START").json()
+        assertEquals(2, reply.hits().size)
+        assertEquals("2", reply.str("turns_read"))
+        assertEquals(DAY_ONE.toString(), reply.str("back_to_epoch_ms"))
+        assertEquals(JsonPrimitive(null as String?), reply.getValue("stopped_on"), "it read to the store's start")
+    }
+
+    @Test
+    fun `a search that stops on its limit says so, and one that stops on its time says so`(@TempDir dir: Path) {
+        writeTrace(dir)
+
+        val limited = search(dir, "message_start", limit = "1").json()
+        assertEquals(listOf("turn-2"), limited.hits().map { it.str("turn") })
+        assertEquals("limit", limited.str("stopped_on"))
+        var now = 0L
+        val tick = WallClock { now.also { now += TRACE_SEARCH_BUDGET_MS } }
+        val slow = searchWith(dir, TraceSearchQuery("message_start", null, null), tick).json()
+        assertEquals("time", slow.str("stopped_on"))
+        assertEquals(JsonPrimitive(null as String?), slow.getValue("back_to_epoch_ms"), "it opened no turn")
+    }
+
+    @Test
+    fun `a search reads back only as far as since`(@TempDir dir: Path) {
+        writeTrace(dir)
+
+        val reply = search(dir, "message_start", since = (DAY_ONE + 1).toString()).json()
+
+        assertTrue(reply.hits().isEmpty())
+        assertEquals("0", reply.str("turns_read"))
+    }
+
+    @Test
+    fun `a search too short, a bad bound, an unknown head and an unwired dir each answer in words`(@TempDir dir: Path) {
+        writeTrace(dir)
+
+        listOf(null, "", " ", "a").forEach { q ->
+            val refused = search(dir, q)
+            assertEquals(HttpStatusCode.BadRequest, refused.status, "$q")
+            assertTrue(refused.body.contains(SEARCH_TOO_SHORT), refused.body)
+        }
+        assertTrue(search(dir, "ab", since = "x").body.contains(SEARCH_BAD_SINCE))
+        listOf("0", "-1", "x").forEach { limit ->
+            assertTrue(search(dir, "ab", limit = limit).body.contains(SEARCH_BAD_LIMIT), limit)
+        }
+        val unknown = searchWith(dir, TraceSearchQuery("ab", null, null), head = "nope")
+        assertTrue(unknown.body.contains("unknown head: nope"), unknown.body)
+        assertEquals(HttpStatusCode.ServiceUnavailable, search(null, "ab").status)
+    }
 }

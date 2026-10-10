@@ -21,6 +21,7 @@ package splice.head.trace
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.memory.HeapBudget
@@ -29,6 +30,7 @@ import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.wire.BAD_LAST
@@ -50,6 +52,10 @@ public fun interface TraceDirPort {
  *  turn's id. Blank reads as absent. */
 public data class TraceQuery(val last: String?, val session: String?, val turn: String?)
 
+/** The words to find in what a head's turns sent and got back: [q] the text, [since] the oldest instant to read back to
+ *  (epoch ms), [limit] how many turns to answer with. Blank reads as absent. */
+public data class TraceSearchQuery(val q: String?, val since: String?, val limit: String?)
+
 /** [io] runs the file read off the server's own threads. */
 public class TraceRoute(
     private val heads: TurnsHeadLookup,
@@ -57,8 +63,40 @@ public class TraceRoute(
     private val io: CoroutineDispatcher,
     private val cause: TraceFailureCause = TraceFailureCause { _, _, _ -> null },
     heap: HeapBudget = JvmHeap.budget,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     internal val rows = TraceRows(heap = heap)
+
+    /** GET /api/heads/{head}/trace/search?q=&since=&limit=: the turns whose sent or returned body holds the words,
+     *  newest first, with how far back the search read and why it stopped. */
+    public suspend fun search(head: String, query: TraceSearchQuery): JsonReply =
+        when (val ask = TraceSearchReader().read(query)) {
+            is TraceSearchRead.Refused -> refuse(HttpStatusCode.BadRequest, ask.message)
+            is TraceSearchRead.Read -> searching(head, ask.ask)
+        }
+
+    private suspend fun searching(head: String, ask: TraceSearchAsk): JsonReply {
+        val found = heads.byName(head).firstOrNull()
+        val traceDir = dir()
+        return when {
+            found == null -> refuse(HttpStatusCode.BadRequest, "unknown head: $head")
+            traceDir == null -> refuse(HttpStatusCode.ServiceUnavailable, TRACE_UNWIRED)
+            else -> searched(found, traceDir, ask)
+        }
+    }
+
+    private suspend fun searched(head: TurnsHead, traceDir: Path, ask: TraceSearchAsk): JsonReply =
+        rows.withRead { share ->
+            val read = withContext(io) {
+                Cancellables.runCatchingCancellable {
+                    TraceSearch(ask, clock, Json { ignoreUnknownKeys = true }, share).use { search ->
+                        rows.days(traceDir, head.key).newestFirst(search)
+                        search.found()
+                    }
+                }
+            }.getOrElse { return unreadable(head.key, traceDir, it) }
+            JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).search(head, ask.needle, read))
+        }
 
     public suspend fun read(head: String, query: TraceQuery): JsonReply {
         val found = heads.byName(head).firstOrNull()

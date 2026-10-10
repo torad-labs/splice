@@ -47,6 +47,40 @@ internal class TraceReplyBodies(private val heap: HeapReservations = JvmHeap.bud
             putJsonArray("turns") { read.turns.forEach { add(TraceTurnSummary.of(it)) } }
         }.let(::encode)
 
+    fun search(head: TurnsHead, needle: String, found: TraceFound): String = buildJsonObject {
+        put("head", head.key)
+        put("q", needle)
+        put("turns_read", found.turnsRead)
+        put("back_to_epoch_ms", found.backTo)
+        put("stopped_on", found.stoppedOn?.wire)
+        val price = TurnPrice(head.catalog)
+        putJsonArray("hits") { found.hits.forEach { add(hitJson(it, price)) } }
+    }.let(::encode)
+
+    /** A hit with the turn's own ending in the names /api/perf/turns gives a row, so one page draws both. */
+    private fun hitJson(hit: TraceHit, price: TurnPrice): JsonObject = buildJsonObject {
+        val end = hit.ending
+        val known = PerfKeys.IN_TOKENS in end.counters && PerfKeys.OUT_TOKENS in end.counters
+        put("turn", hit.turn)
+        put("ts", hit.at)
+        put("session", hit.session)
+        put("where", hit.side.wire)
+        put("text", hit.text)
+        put("outcome", end.outcome)
+        put("model", end.model)
+        put("compact", end.compact)
+        put("attempts", end.attempts)
+        put("total", end.marks[PerfKeys.TOTAL])
+        put("first_byte", end.marks[PerfKeys.FIRST_BYTE])
+        put("first_delta", end.marks[PerfKeys.FIRST_DELTA])
+        put("admit_wait_ms", end.counters[PerfKeys.ADMIT_WAIT_MS])
+        put("in_tokens", end.counters[PerfKeys.IN_TOKENS])
+        put("out_tokens", end.counters[PerfKeys.OUT_TOKENS])
+        put("cached_tokens", end.counters[PerfKeys.CACHED_TOKENS])
+        put("cache_write_tokens", end.counters[PerfKeys.CACHE_WRITE_TOKENS])
+        put("cost_usd", if (known) price.usd(end.model, end.counters, hit.at) else null)
+    }
+
     fun turn(head: TurnsHead, turn: TracedTurn, cause: FailureCause? = null): String = buildJsonObject {
         put("head", head.key)
         put("turn", TraceTurnSummary.of(turn, cause))

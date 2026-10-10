@@ -20,6 +20,7 @@ import splice.head.trace.TraceDirPort
 import splice.head.trace.TraceFailureCause
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
+import splice.head.trace.TraceSearchQuery
 import splice.head.trace.TranscriptRequestRoute
 import splice.head.trace.TranscriptRoots
 import splice.head.wire.TraceDeleteRoutes
@@ -76,6 +77,13 @@ internal class TraceMount(
                 val query = call.request.queryParameters
                 val asked = TraceQuery(last = query["last"], session = query["session"], turn = query["turn"])
                 traceRoute.read(call.parameters["head"].orEmpty(), asked).send(call)
+            }
+        }
+        route.get("/api/heads/{head}/trace/search") {
+            guard.guarded(call) {
+                val query = call.request.queryParameters
+                val asked = TraceSearchQuery(q = query["q"], since = query["since"], limit = query["limit"])
+                traceRoute.search(call.parameters["head"].orEmpty(), asked).send(call)
             }
         }
         route.get("/api/heads/{head}/conversation") {

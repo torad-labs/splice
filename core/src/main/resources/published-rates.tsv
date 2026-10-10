@@ -1,4 +1,8 @@
 # Each vendor's own published API price, USD per million tokens, read Oct 10, 2026 (console-lead).
+# Re-read Oct 10, 2026 (splice-builder2) against each vendor page below, every row, every column: OpenAI, xAI, Meta, Kimi and
+#   DeepSeek all matched, so no price changed. GPT-5.6 Sol's price is a PROMOTION the OpenAI page says holds "at least through
+#   November 21, 2026": re-read it then. The listed pages also carry models with no row here (OpenAI gpt-5.5 and older, xAI
+#   the grok-4.20 variants), which a turn on them prices as unlisted until a row is added.
 # A plan turn priced here reads as what the same work would cost on the vendor's API.
 # A row in splice.toml, a head's card, or a price the provider's model list publishes always wins over these.
 # tier_over: a request whose input is MORE than this many tokens is billed at the tier for all of its tokens.

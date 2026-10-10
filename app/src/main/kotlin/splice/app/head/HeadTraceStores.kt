@@ -16,9 +16,9 @@ internal class HeadTraceStores(
     private val bodyBudget: DayBodyBudget = DayBodyBudget(),
 ) {
 
-    /** Null only for a head that opted out; the default keeps owner-only trace days. */
-    fun forHead(key: String, cfg: SpliceConfig): TraceStore? {
-        if (!cfg.trace) return null
+    /** Every head gets its store, recording or not as its config says at boot: the capture switch turns recording on
+     *  and off from there without a restart, so a head that opted out must still have a store to turn on. */
+    fun forHead(key: String, cfg: SpliceConfig): TraceStore {
         val days = ActivityDays(
             statePaths.traceDir,
             key,
@@ -27,6 +27,11 @@ internal class HeadTraceStores(
             // Read again at every use, so a change to the history window moves the cut with no restart.
             live = RetentionDays { cfg.current().traceKeptDays },
         )
-        return TraceStore(days, key, cfg.traceMaxBodyChars, bodyBudget = bodyBudget)
+        return TraceStore(
+            days,
+            key,
+            cfg.traceMaxBodyChars,
+            bodyBudget = bodyBudget,
+        ).also { it.recording.set(cfg.trace) }
     }
 }

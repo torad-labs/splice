@@ -66,6 +66,10 @@ public class TraceStore(
     public val heap: HeapReservations = JvmHeap.budget,
     private val bodyBudget: DayBodyBudget = DayBodyBudget(clock = now),
 ) {
+    /** Whether the next request is recorded; moved by the capture switch with no restart. A store records until told
+     *  not to, so a fixture that builds one gets what it always got. */
+    public val recording: TraceSwitch = TraceSwitch(true)
+
     private val bodies = TraceBodies(heap = heap, budget = bodyBudget)
 
     init {

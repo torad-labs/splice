@@ -120,6 +120,7 @@ private class FailingHead(tmp: Path, status: Int, body: String, keepsCapture: Bo
             now = WallClock { TRACE_DAY_EPOCH_MS },
         )
     }
+    val recording = trace?.recording
     private val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
@@ -160,11 +161,16 @@ private class FailingHead(tmp: Path, status: Int, body: String, keepsCapture: Bo
         )
     }.bodyAsText()
 
+    /** Every row this head's turns wrote, oldest first. */
+    fun rows(): List<JsonObject> {
+        assertTrue(AsyncFileIo.drain())
+        return Files.readString(perfFile).lineSequence().filter { it.isNotBlank() }
+            .map { Json.parseToJsonElement(it).jsonObject }.toList()
+    }
+
     /** The one row this head's turn wrote. */
     fun row(): JsonObject {
-        assertTrue(AsyncFileIo.drain())
-        val rows = Files.readString(perfFile).lineSequence().filter { it.isNotBlank() }
-            .map { Json.parseToJsonElement(it).jsonObject }.toList()
+        val rows = rows()
         assertEquals(1, rows.size, "one turn, one row: $rows")
         return rows.single()
     }
@@ -254,4 +260,29 @@ class ProviderFailureRowTest {
         )
         assertNull(notSaved["turn"], "no capture, no trace turn to open")
     }
+
+    /** The switch is read per request, so turning capture off stops the very next one and on again saves it, with no
+     *  restart of the head. */
+    @Test
+    fun `flipping the capture switch changes the very next request with no restart`(@TempDir tmp: Path) =
+        runBlocking {
+            val head = FailingHead(tmp, SERVICE_UNAVAILABLE, overloadedBody(), keepsCapture = true)
+            head.start()
+            try {
+                val switch = checkNotNull(head.recording)
+                head.turn()
+                switch.set(false)
+                head.turn()
+                switch.set(true)
+                head.turn()
+
+                assertEquals(
+                    listOf(true, false, true),
+                    head.rows().map { it.capture() },
+                    "saved, then not saved while off, then saved again",
+                )
+            } finally {
+                head.close()
+            }
+        }
 }

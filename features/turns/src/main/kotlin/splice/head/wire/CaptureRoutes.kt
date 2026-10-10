@@ -9,13 +9,11 @@
 // `[heads.<key>.overrides] trace = false`. This route is the console's read/write surface onto those three keys
 // for ONE head — it neither reads nor writes a trace file itself.
 //
-// RESTART REQUIRED, REPORTED HONESTLY. `HeadDeps.HeadStores.captures.trace` (the TraceStore a head actually
-// writes through) is built once, at head assembly (ManagedHeadFactory.assembleHead ->
-// HeadTraceStores.forHead), from the config the daemon booted with — every trace knob is
-// `restartRequired = true` (Knob.kt). Making it hot would mean constructing the store lazily
-// behind a real seam on the turn path, which touches ManagedHeadFactory/HeadServer and is outside
-// this row's fence; the honest, decoupled answer today is `restart_required: true` on every write,
-// always, so the console never tells an operator a flip took effect when it has not.
+// THE SWITCH APPLIES TO THE NEXT REQUEST, NO RESTART (V4-444). Each head's TraceStore always exists and carries a
+// TraceSwitch, seeded from the config at boot. A successful write moves that switch, the turn path reads it as each
+// request arrives, and so turning capture on saves the very next request and turning it off stops the next one. A turn
+// already in flight finishes the way it began. The retention and body-cap keys are still read when the store is built,
+// so changing THEM reports `restart_required: true`; `enabled` alone never does.
 //
 // THE WRITE GOES THROUGH THE SAME TopologyWriter GET/PUT /api/topology ALREADY USES — the ONE seam
 // that edits splice.toml (structure-preserving, backed up first, verified by re-parsing). This
@@ -38,6 +36,7 @@ import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
+import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
 
@@ -65,9 +64,11 @@ public class CaptureRoutes(
      *  that head's overrides only (a head-only knob), retention and the body cap from every layer
      *  (env/state/PATCH included) — what the daemon is actually doing right now. */
     public fun read(head: String): JsonReply {
-        val key = resolveKey(head) ?: return unknownHead(head)
-        val cfg = config.getConfig(key)
-        val body = captureJson(key, cfg.trace, cfg.traceKeptDays, cfg.traceMaxBodyChars.toLong())
+        val found = heads.byName(head).firstOrNull() ?: return unknownHead(head)
+        val cfg = config.getConfig(found.key)
+        // The switch is what the head is doing right now; the config is only what it booted with.
+        val enabled = found.trace?.on ?: cfg.trace
+        val body = captureJson(found.key, enabled, cfg.traceKeptDays, cfg.traceMaxBodyChars.toLong(), false)
         return JsonReply(HttpStatusCode.OK, body)
     }
 
@@ -83,11 +84,11 @@ public class CaptureRoutes(
     // Split out of write() (ReturnCount: max 3 per function) — the unwired-writer guard lives in
     // write() and everything past it lives here.
     private fun writeWith(writer: TopologyWriter, head: String, body: String): JsonReply {
-        val key = resolveKey(head) ?: return unknownHead(head)
+        val found = heads.byName(head).firstOrNull() ?: return unknownHead(head)
         // A body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape
         // expected, so the failure has nothing more to say.
         val parsed = decoded(body) ?: return refuse(HttpStatusCode.BadRequest, BAD_CAPTURE_BODY)
-        return applyWrite(writer, key, parsed)
+        return applyWrite(writer, found, parsed)
     }
 
     private fun decoded(body: String): CaptureWrite? = try {
@@ -96,7 +97,8 @@ public class CaptureRoutes(
         null
     }
 
-    private fun applyWrite(writer: TopologyWriter, key: String, parsed: CaptureWrite): JsonReply {
+    private fun applyWrite(writer: TopologyWriter, found: TurnsHead, parsed: CaptureWrite): JsonReply {
+        val key = found.key
         val current = Cancellables.runCatchingCancellable { decode(writer) }.getOrElse { failure ->
             val why = SafeFailureText.render(failure)
             return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
@@ -109,7 +111,11 @@ public class CaptureRoutes(
         parsed.maxBodyChars?.let { overrides[Knob.TRACE_MAX_BODY_CHARS.key] = it.toString() }
         val requested = current.copy(heads = current.heads + (key to head.copy(overrides = overrides)))
         return when (val result = writer.write(requested)) {
-            is TopologyWriteResult.Written -> JsonReply(HttpStatusCode.OK, writtenJson(key, parsed))
+            is TopologyWriteResult.Written -> {
+                // The file is saved first, so a refused write moves nothing; then the head's next request follows it.
+                found.trace?.set(parsed.enabled)
+                JsonReply(HttpStatusCode.OK, writtenJson(key, parsed))
+            }
             is TopologyWriteResult.Refused -> refuse(HttpStatusCode.BadRequest, refusalMessage(result))
         }
     }
@@ -118,7 +124,8 @@ public class CaptureRoutes(
         val effective = config.getConfig(key)
         val retentionDays = parsed.retentionDays ?: effective.traceKeptDays
         val maxBodyChars = parsed.maxBodyChars ?: effective.traceMaxBodyChars.toLong()
-        return captureJson(key, parsed.enabled, retentionDays, maxBodyChars)
+        val sizing = parsed.retentionDays != null || parsed.maxBodyChars != null
+        return captureJson(key, parsed.enabled, retentionDays, maxBodyChars, sizing)
     }
 
     private fun refusalMessage(result: TopologyWriteResult.Refused): String =
@@ -129,20 +136,23 @@ public class CaptureRoutes(
     private fun decode(writer: TopologyWriter): Topology =
         json.decodeFromJsonElement(Topology.serializer(), writer.current())
 
-    private fun resolveKey(name: String): String? = heads.byName(name).firstOrNull()?.key
-
     private fun unknownHead(name: String) = refuse(HttpStatusCode.BadRequest, "unknown head: $name")
 
-    private fun captureJson(head: String, enabled: Boolean, retentionDays: Int, maxBodyChars: Long): String =
+    private fun captureJson(
+        head: String,
+        enabled: Boolean,
+        retentionDays: Int,
+        maxBodyChars: Long,
+        restartRequired: Boolean,
+    ): String =
         JsonWire.string(
             buildJsonObject {
                 put("head", head)
                 put("enabled", enabled)
                 put("retention_days", retentionDays)
                 put("max_body_chars", maxBodyChars)
-                // Always true — see the file header. A future hot-construction seam flips this to a
-                // real computation instead of a literal; today's fence does not reach it.
-                put("restart_required", true)
+                // True only when this write changed a size the store reads at construction (the file header).
+                put("restart_required", restartRequired)
             },
         )
 

@@ -127,7 +127,8 @@ internal class TurnPreparation(
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)
         val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
-        val inbound = deps.stores.captures.trace?.let { inbound(call, body.text) }
+        // Read once as the request arrives: a switch flipped now applies to the next request, never to this one.
+        val inbound = deps.stores.captures.trace?.takeIf { it.recording.on }?.let { inbound(call, body.text) }
         refusalOf(parsed, sessionId)?.let { return it }
         messageEdges.observe(sessionId, parsed.typed)
         val action = activityLabel.labelFor(parsed.typed)

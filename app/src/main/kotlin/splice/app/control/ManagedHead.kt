@@ -12,6 +12,7 @@ import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.HeadCompactSource
+import splice.head.wire.TraceSwitch
 import splice.launch.KeyPresenceProbe
 import splice.launch.LaunchSpec
 import splice.usage.economics.HeadEconomicsSource
@@ -57,6 +58,8 @@ public data class HeadSources(
     val perfRows: PerfRowsSource? = null,
     /** Hourly quota rollup for /api/economics; null = head has no economics sink wired. */
     val economics: HeadEconomicsSource? = null,
+    /** Whether this head records a trace of its next request; the capture switch moves it. Null = no trace store. */
+    val trace: TraceSwitch? = null,
 )
 
 /** How one head authenticates, as the control plane reads it: dialect, live key state and OAuth accounts. */

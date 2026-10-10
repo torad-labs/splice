@@ -5,6 +5,7 @@ package splice.head
 
 import splice.core.model.ModelCatalog
 import splice.head.compact.HeadCompactSource
+import splice.head.wire.TraceSwitch
 
 /** One head as /api/compact, /api/compaction/instructions and the capture switch see it. */
 public data class TurnsHead(
@@ -13,6 +14,8 @@ public data class TurnsHead(
     val compact: HeadCompactSource,
     /** The head's roster, which decides which model-scoped compaction rules apply to it. */
     val catalog: ModelCatalog? = null,
+    /** Whether the head records its next request; the capture switch reads and moves it. Null = no trace store. */
+    val trace: TraceSwitch? = null,
 )
 
 /** Every configured head, in topology order, read at CALL time. */

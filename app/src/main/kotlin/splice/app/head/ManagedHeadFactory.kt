@@ -196,6 +196,7 @@ internal class ManagedHeadFactory(
             perf = PerfStatsSource(stores.telemetry.perfStats),
             perfRows = perfRows,
             economics = EconomicsStoreSource(stores.telemetry.economics, perfRows, price, kept),
+            trace = stores.trace?.recording,
         )
     }
 

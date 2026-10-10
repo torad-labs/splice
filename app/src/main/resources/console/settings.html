@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · splice</title>
+<link rel="stylesheet" href="console.css">
+<link rel="stylesheet" href="sessions.css">
+<link rel="stylesheet" href="knobs.css">
+<link rel="stylesheet" href="settings.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="mark">splice</div>
+    <div class="foot">
+      <button class="icon" data-act="theme" aria-label="Day or night">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </aside>
+  <main class="page">
+    <header class="head">
+      <h1>Settings</h1>
+      <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="q" class="field" placeholder="Search" aria-label="Search settings"></label>
+    </header>
+    <div id="st" aria-live="polite"></div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script src="api.js"></script>
+<script src="knobs.js"></script>
+<script src="settings.js"></script>
+</body>
+</html>

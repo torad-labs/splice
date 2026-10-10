@@ -151,6 +151,7 @@ const sideBySide = () => {
 const PAGES = [
   ["accounts.html", "Accounts"],
   ["teams.html", "Teams"],
+  ["settings.html", "Settings"],
 ];
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
 // selected box reads as a strip with its other tabs torn off. The column keeps its width, its wordmark and its

@@ -347,11 +347,16 @@ async function readSearch() {
 function searched() {
   if (!state.search) return state.rows;
   const byTurn = new Map(state.rows.map((r) => [r.id, r]));
-  const out = [];
+  const out = [], seen = new Set();
   for (const hit of state.search.hits) {
     const known = byTurn.get(hit.id);
     if (known) { known.said = hit.said; out.push(known); } else out.push(hit);
+    seen.add(hit.id);
   }
+  // an agent is searched for by its name too: every request of a session whose name holds the words (Marlin's walk:
+  // "infra" read No match with infra's rows in the list)
+  const q = ui.q.toLowerCase();
+  for (const r of state.rows) if (!seen.has(r.id) && state.sessions[r.sid]?.name?.toLowerCase().includes(q)) out.push(r);
   return out;
 }
 
@@ -658,6 +663,8 @@ function render({ keep = true } = {}) {
 }
 const find = (id) => filtered().find((r) => r.id === id);
 function open(id) {
+  // where he was in the list, so closing the request puts him back there (Marlin's walk, p161)
+  if (!ui.open) ui.listAt = { y: scrollY, list: root.querySelector(".list")?.scrollTop ?? 0 };
   ui.open = id; ui.auto = false; ui.tab = ui.tab || "sent";
   render({ keep: false });
   const r = find(id);
@@ -705,7 +712,12 @@ document.addEventListener("click", (e) => {
     case "clearall": Object.assign(ui, { cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null, outcome: "all", why: null, compact: false });
       { const q = document.getElementById("q"); q.value = ""; ui.q = ""; } again(); break;
     case "more": ui.n += 200; render(); break;
-    case "close": ui.open = null; ui.auto = false; render(); break;
+    case "close": {
+      ui.open = null; ui.auto = false; render();
+      const at = ui.listAt; ui.listAt = null;
+      if (at) { const list = root.querySelector(".list"); if (list) list.scrollTop = at.list; scrollTo(0, at.y); }
+      break;
+    }
     case "tab": case "node": case "frames": RV.click(el); render({ keep: true }); break; // the open request's own controls (reqview.js)
   }
 });

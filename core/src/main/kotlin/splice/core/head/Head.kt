@@ -12,6 +12,12 @@ public interface Head {
 
     public suspend fun start()
 
+    /** Stop taking new turns and let the running ones finish, WITH THE PORT STILL LISTENING. A daemon stopping
+     *  several heads drains them all before any listener closes, so a head that drains early keeps answering
+     *  its clients instead of refusing their connections while its siblings finish. [stop] does both halves, so
+     *  a head with nothing to drain needs nothing here. */
+    public suspend fun drain() {}
+
     public suspend fun stop()
 
     public suspend fun restart() {

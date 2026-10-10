@@ -124,6 +124,11 @@ public class HeadServer(
 
     private val lifecycle = Mutex()
 
+    /** What [drainLocked] left behind for [closeLocked]: whether this head was running when the drain
+     *  began, and that the drain is already spent, so a [stop] after a [drain] closes the engine at once
+     *  instead of waiting out a second drain budget on turns the first one already gave up on. */
+    private var drainedWasRunning: Boolean? = null
+
     override val key: String get() = provider.key
     override val label: String get() = provider.label
 
@@ -133,6 +138,8 @@ public class HeadServer(
     override val port: Int get() = engine.port
 
     override suspend fun start(): Unit = lifecycle.withLock { startLocked() }
+
+    override suspend fun drain(): Unit = lifecycle.withLock { drainLocked() }
 
     override suspend fun stop(): Unit = lifecycle.withLock { stopLocked() }
 
@@ -173,6 +180,8 @@ public class HeadServer(
 
     private suspend fun startLocked() {
         if (engine.isRunning) return
+        // A head that is up again has no spent drain behind it: the next stop drains afresh.
+        drainedWasRunning = null
         // G20 contract: a control-plane restart promises a fresh diagnostic baseline; the counters
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
@@ -187,6 +196,15 @@ public class HeadServer(
     }
 
     private suspend fun stopLocked() {
+        drainLocked()
+        closeLocked()
+    }
+
+    /** The half of a stop that keeps the port LISTENING: new turns are refused (529, which a client
+     *  retries) while the running ones finish, so nothing is ever answered with a refused connection
+     *  by a head that is still up. Idempotent — a stop after a drain closes without draining twice. */
+    private suspend fun drainLocked() {
+        if (drainedWasRunning != null) return
         // Refuse new turns FIRST so the drain can actually converge, then drain in-flight turns
         // so clients get honest terminals (driveSealingCancellation's cancellation seal) before
         // Netty tears the engine. Bounded wait — never block restart forever.
@@ -214,6 +232,13 @@ public class HeadServer(
         while (gate.snapshot().inflight > 0 && System.nanoTime() < sealDeadlineNs) {
             deps.seams.waiter.wait(STOP_DRAIN_POLL_MS)
         }
+        drainedWasRunning = wasRunning
+    }
+
+    /** The half that closes the port and settles this head's books. Everything here is what a client
+     *  can no longer be served through, so it runs as late as the daemon's stop can leave it. */
+    private fun closeLocked() {
+        val wasRunning = drainedWasRunning == true
         engine.stop()
         provider.onHeadStop()
         driver.flushHeldRows()
@@ -221,6 +246,9 @@ public class HeadServer(
         deps.stores.economicsStore?.flushNow()
         deps.stores.perfStats.totals?.flushNow()
         if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.STOPPED)
+        // Spent: a second stop of a head that is already down drains an engine that is no longer
+        // running, finds nothing that was running to report, and so is not a transition twice over.
+        drainedWasRunning = null
     }
 }
 

@@ -28,6 +28,11 @@ import splice.upstream.codemode.ProcessDispatchers
 // 45s to outlive a deepseek turn, so this sits at 50s. Change one, check the other.
 internal const val HEAD_STOP_BUDGET_MS = 50_000L
 
+// The close phase that follows the drain: engine stops and the stores' final flushes, no waiting on turns.
+// Netty's own stop is bounded at 2.5s per head (HeadEngine) and the flushes are local writes, so 5s covers
+// every head in parallel while keeping the whole phase inside Main's STOP_DEADLINE_MS (55s) above the drain's 50s.
+internal const val CLOSE_BUDGET_MS = 5_000L
+
 internal class HeadShutdown(
     // HD-19: where the N blocking HeadServer.stop() engine stops run. Was a hardcoded
     // Dispatchers.IO inside stopHeads; defaulted here to the same value, so shutdown is
@@ -47,19 +52,43 @@ internal class HeadShutdown(
             log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
         }
         withContext(stopDispatcher) {
+            // PHASE 1, every head at once: refuse new turns and let the running ones finish, with every
+            // port STILL LISTENING. Closing each head's listener the moment its own drain converged was
+            // measured refusing connections on an idle head for the whole 45s its busy siblings drained
+            // (2026-10-10: ports 3101/3102 refused from the stop's first second, while the control port
+            // and the busy heads stayed bound to the end). A head that is up answers; it never refuses.
             withTimeoutOrNull(budgetMs) {
-                supervisorScope {
-                    heads.forEach { head ->
-                        launch(stopFailureHandler) {
-                            Cancellables.discard(
-                                boundary.runCatchingDaemonBoundary { head.stop() },
-                                "shutdown: one head failing to stop must not block the rest",
-                            )
-                        }
-                    }
-                }
+                eachHead(heads, stopFailureHandler, "drain", HeadStopStep { it.drain() })
+            }
+            // PHASE 2: now that no head can still be serving, close the ports and settle the books. The
+            // drain above is already spent, so this converges without waiting out a second budget.
+            withTimeoutOrNull(CLOSE_BUDGET_MS) {
+                eachHead(heads, stopFailureHandler, "stop", HeadStopStep { it.stop() })
             }
         }
         stopControl()
     }
+
+    private suspend fun eachHead(
+        heads: Collection<Head>,
+        onFailure: CoroutineExceptionHandler,
+        phase: String,
+        step: HeadStopStep,
+    ) {
+        supervisorScope {
+            heads.forEach { head ->
+                launch(onFailure) {
+                    Cancellables.discard(
+                        boundary.runCatchingDaemonBoundary { step(head) },
+                        "shutdown: one head failing to $phase must not block the rest",
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One half of a head's stop, as the shutdown phase drives it over every head at once. */
+internal fun interface HeadStopStep {
+    suspend operator fun invoke(head: Head)
 }

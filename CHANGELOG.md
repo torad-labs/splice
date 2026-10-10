@@ -650,10 +650,15 @@ origin.
 - **A `splice.toml` with findings refuses boot and lists every one at once.** Each finding names its key and
   line and never a value. `splice restart` refuses before it stops a running daemon, so a bad edit no longer
   takes a healthy daemon down.
-  Run from a terminal, a `splice` command that hits the refusal offers a fix session: for each finding you can
-  remove its line, set a new value, or open your editor at that line. `splice.toml` is backed up first, the file
-  is checked again after every fix, and the command runs again only when nothing is left. Off a terminal it prints
-  the list, exits non-zero and changes nothing.
+  So do `splice upgrade` and the launcher that replaces an older daemon after an install: the new build checks your
+  `splice.toml` first, and when it would refuse, the old daemon keeps running and you see the list.
+  Run from a terminal, a `splice` command that hits the refusal offers a fix session, `splice restart` included:
+  for each finding you can remove its line, set a new value, open your editor at that line, or skip it for now.
+  `splice.toml` is backed up before the first change, the file is checked again after every fix, and the command
+  runs again only when nothing is left, so `splice restart` repairs the file and then restarts in one go. A value
+  you type is not echoed to the screen, since it can be a token. A `splice.toml` that is a link is fixed at the file
+  it points to, and stays a link. Off a terminal the command prints the list, exits non-zero and changes nothing.
+  Every finding names its key and line, says what to write instead, and never prints a value you wrote.
 - **The console reaches past Accounts.** It also has a Needs you landing page, Fleet, Usage, Turns (with a page
   per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
   Playground that sends one prompt to several models side by side.

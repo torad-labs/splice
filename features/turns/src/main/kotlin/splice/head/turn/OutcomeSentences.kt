@@ -47,6 +47,10 @@ internal object OutcomeSentences {
             "retry the compaction",
         OutcomeTag.CANCELLED to
             "the turn was cancelled before it finished; retry the request",
+        // The model went quiet, which is why this says to retry rather than to wait for a provider to recover.
+        OutcomeTag.TURN_CAP to
+            "splice gave up on this turn after the no-progress limit passed with nothing from the model; " +
+            "retry the request",
         OutcomeTag.RESTARTED to HEAD_RESTART_SENTENCE,
         OutcomeTag.UNEXPECTED to
             "splice hit an internal error on this turn; retry the request, and if it repeats read the daemon " +

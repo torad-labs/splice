@@ -144,9 +144,18 @@ internal class CancellationSeal(
                 outcome = OutcomeTag.RESTARTED.wire,
                 local = true,
             )
-            // Pre-stream and independent-source cancellation use the stream's own cap sentence.
-            fired is splice.upstream.retry.WatchdogFired.TotalCap ->
-                cancelled(renderer.spoken(ErrorType.OVERLOADED, fired.retryMessage))
+            // The no-progress limit is its OWN ending, not a cancellation: nobody cancelled this turn, splice
+            // gave up on it because the model sent nothing for the limit. Recorded apart so Requests can list the
+            // turns splice gave up on, and so a quiet model does not read as an overloaded provider (console
+            // BUILD row 46). The client keeps the overloaded error type, which is the retryable shape.
+            fired is splice.upstream.retry.WatchdogFired.TotalCap -> Ending(
+                type = ErrorType.OVERLOADED,
+                message = renderer.spoken(ErrorType.OVERLOADED, fired.retryMessage),
+                kind = "turn-cap",
+                detail = ": no upstream progress within the limit, so splice gave up on the turn",
+                outcome = OutcomeTag.TURN_CAP.wire,
+                local = true,
+            )
             fired != null -> cancelled("${provider.key}: splice idle watchdog ended the round; retry")
             else -> cancelled("${provider.key}: splice turn cancelled; retry")
         }

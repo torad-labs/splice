@@ -37,8 +37,9 @@ const OUTCOME_WORD = { client_abort: "Stopped", "error:stopped": "Stopped", "err
   "error:plan-limit": "", "error:rate-limited": "Rate limited", "error:all-accounts-exhausted": "No quota", "error:budget-blocked": "Over budget",
   "error:auth-missing": "Signed out", "error:upstream-failed": "Provider error", "failure:overloaded_error": "Overloaded",
   "error:conn-reset": "Network error", "error:upstream-frame-too-large": "Stream error", empty_model: "Empty answer", "error:unexpected": "Internal error" };
-// A turn splice gave up on after no progress from the model for the limit reads "Given up". splice writes no
-// such tag yet: it lands as an Overloaded error with "splice progress timeout expired" (CancellationSeal.kt:149).
+// A turn splice gave up on after no progress from the model for the limit reads "Given up". splice writes the tag
+// as of V4-444 (CancellationSeal's TotalCap arm, OutcomeTag.TURN_CAP): before that it landed as a plain
+// error:cancelled and a quiet model was indistinguishable from a provider under load.
 OUTCOME_WORD["error:turn-cap"] = "Given up";
 // THE `failure:` FAMILY CLOSES IN CODE: splice writes `failure:` plus one of seven ErrorType names
 // (TurnOutcome.kt:138-146, OutcomeTags.failure), so all seven are worded here and the reader below rarely fires.

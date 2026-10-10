@@ -31,6 +31,13 @@ public enum class OutcomeTag(public val wire: String) {
     EMPTY_MESSAGE("empty_message"),
     CANCELLED("error:cancelled"),
 
+    /** V4-444: splice GAVE UP on this turn after the no-progress limit passed with nothing from the model. Its own
+     *  tag, not [CANCELLED]: a turn nobody cancelled, and the one ending whose cause is the model going quiet
+     *  rather than a provider under load. The console reads it as "Given up" and lists these apart from a
+     *  provider's own overload (console BUILD row 46, hitstop). The client still sees an overloaded error type,
+     *  because that is the retryable shape, so this changes what splice RECORDS and not what it answers. */
+    TURN_CAP("error:turn-cap"),
+
     /** The head interrupted an unfinished turn during its own shutdown, not a client hang-up. */
     RESTARTED("error:restarted"),
     UNEXPECTED("error:unexpected"),

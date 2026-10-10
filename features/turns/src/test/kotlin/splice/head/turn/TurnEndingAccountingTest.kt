@@ -9,8 +9,10 @@ package splice.head.turn
 
 import io.ktor.http.URLParserException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -65,6 +67,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.Ticker
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
@@ -73,6 +76,7 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.TurnWatchdog
+import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.UpstreamAuthMissing
 import splice.upstream.transport.UpstreamEnding
@@ -429,6 +433,50 @@ class TurnEndingAccountingTest {
                 drive.slot.release()
             }
         }
+    }
+
+    /** V4-444 row 46: the no-progress limit is its OWN ending. It used to record error:cancelled, the same tag a
+     *  client cut and a head stop write, so Requests could not list the turns splice gave up on and a model that
+     *  went quiet read as an overloaded provider. The client still receives the overloaded error type, which is
+     *  the retryable shape: what changed is what splice RECORDS. Driven through the real watchdog, so the ending
+     *  is chosen by a fired sentinel rather than by a flag this test set. */
+    @Test
+    fun `a turn the no-progress limit ended records its own outcome, not a cancellation`() = runBlocking {
+        var now = 0L
+        val dog = TurnWatchdog(
+            WatchdogBudget(10.seconds, 10.seconds, 1.seconds),
+            clock = ElapsedClock { now },
+            ticker = Ticker { interval ->
+                now += interval
+                true
+            },
+        )
+        val target = Job()
+        val poller = dog.launchTotalCap(this, target)
+        withTimeout(1_000) { target.join() }
+        poller.cancel()
+        assertTrue(dog.fired is WatchdogFired.TotalCap, "setup must fire the whole-turn cap, not the idle tier")
+
+        val rig = EndingRig("no-progress")
+        val store = UsageStore(tmp.resolve("np-usage.json"), tmp.resolve("np-rl.json")).also(usageStores::add)
+        val seal = CancellationSeal(
+            accountingProvider(),
+            rig.log,
+            rig.telemetry,
+            rig.health,
+            TurnUsageStamp(store, rig.log, rig.telemetry),
+        )
+        val drive = rig.drive(ConnectedTerminal(), clientGone = false).copy(watchdog = dog)
+        try {
+            seal.stampAndSeal(drive, seal = true, original = CancellationException("synthetic progress timeout"))
+        } finally {
+            drive.slot.release()
+        }
+
+        AsyncFileIo.drain()
+        val row = Files.readAllLines(rig.perfFile).single()
+        assertTrue(row.contains(""""outcome":"error:turn-cap""""), "the ending is its own, not a cancellation: $row")
+        assertFalse(row.contains("error:cancelled"), row)
     }
 
     private data class SealCase(

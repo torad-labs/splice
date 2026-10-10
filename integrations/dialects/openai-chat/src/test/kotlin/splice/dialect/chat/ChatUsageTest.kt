@@ -56,7 +56,7 @@ class ChatUsageTest {
             ev(
                 """{"choices":[{"delta":{},"finish_reason":"stop"}],""" +
                     """"usage":{"prompt_tokens":100,"completion_tokens":5,""" +
-                        """"prompt_tokens_details":{"cached_tokens":80}}}""",
+                    """"prompt_tokens_details":{"cached_tokens":80}}}""",
             ),
         ) as TurnOutcome.Success
         assertEquals(100, s.usage.inputTokens)

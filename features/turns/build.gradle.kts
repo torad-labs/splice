@@ -26,6 +26,9 @@ dependencies {
     testImplementation(project(":integrations-dialects-openai-responses"))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(project(":integrations-dialects-anthropic"))
+    // The torn-ending gate is pinned against a REAL translator that writes on a completed-early flow: chat's
+    // pending-tool flush is that writer (RoundEndTornGateTest).
+    testImplementation(project(":integrations-dialects-openai-chat"))
     testImplementation(project(":integrations-providers-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit.platform.launcher)

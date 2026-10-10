@@ -11,11 +11,11 @@
 // quiet spell, and so can be refused at a response read, after the upstream took the whole request.
 //
 // UpstreamClientThreadRefusalTest pins the verdict and the name on the failure OkHttp hands over, through a
-// MockEngine, and the refusal at a response read through the real client. The three classes after it take a
-// refusal that stops something for the whole JVM: OkHttp's task runner made to refuse the threads it starts,
-// and okio's timeouts left off. Each is a fair test only in a JVM where that thread has never started, and
-// leaves it stopped for good, so each runs in a JVM of its own (threadRefusalTest, build.gradle.kts), and
-// `test` never runs them.
+// MockEngine, and the refusal at a response read through the real client. The classes after it take a refusal
+// that stops something for the whole JVM: OkHttp's task runner made to refuse the threads it starts. Each is a
+// fair test only in a JVM where that thread has never started, and leaves it stopped for good, so each runs in
+// a JVM of its own (threadRefusalTest, build.gradle.kts), and `test` never runs them. okio's timeouts left off is
+// not tested: arranging it needs okio's private watchdog state, and no public path leaves it that way.
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
@@ -26,9 +26,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.internal.concurrent.TaskRunner
-import okio.AsyncTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -297,32 +295,6 @@ class AfterRefusedThreadStartTest {
     }
 }
 
-// V4-307: a post while okio's timeouts are off, as a refused watchdog start leaves them. Its own JVM (see the
-// file header). What must end it is what splice bounds the turn with: the socket's own read timeout and ktor's
-// request timeout, neither of which runs on okio's watchdog.
-class OkioTimeoutsRefusedTest {
-
-    @Test
-    @Timeout(CAPS_BACKSTOP_S) // a cap that rode on okio would hang here, and must fail the suite, not wedge it
-    fun `with okio's timeouts off, the turn's caps still end a post the upstream never answers`() {
-        LoopbackUpstream(answering = false).use { upstream ->
-            leaveOkioTimeoutsOff()
-            val client = UpstreamClient(
-                totalTimeoutMs = CAP_MS,
-                maxRetries = 1,
-                client = UpstreamTransport().defaultClient(CAP_MS),
-                pacing = RetryPacing(waiter = RecordingWaiter()),
-            )
-
-            val ending = runCatching { runBlocking { client.posted(upstream.context(), "{}") { "ok" } } }
-
-            assertNotNull(ending.exceptionOrNull(), "the unanswered post ended: $ending")
-            val watchdogs = Thread.getAllStackTraces().keys.filter { it.name == "Okio Watchdog" }
-            assertEquals(emptyList<Thread>(), watchdogs, "okio's timeouts stayed off for the whole post")
-        }
-    }
-}
-
 private fun refusalClient(clock: ElapsedClock = ProcessElapsedNow()) = UpstreamClient(
     totalTimeoutMs = REFUSAL_TOTAL_MS,
     maxRetries = 2,
@@ -334,11 +306,7 @@ private fun refusalClient(clock: ElapsedClock = ProcessElapsedNow()) = UpstreamC
 /** Long enough for a loopback post, short enough that a post hung on a dead connect fails the test quickly. */
 private const val REFUSAL_TOTAL_MS = 5_000L
 
-/** The turn cap of the post nobody answers: what it waits before the caps end it. */
-private const val CAP_MS = 1_000L
-
-// why: how long a post with okio's timeouts off may take before the suite calls it hung: the cap is a second,
-// so thirty is room for a loaded host, and far short of the hang it catches.
+// why: how long a refused-start post may take before the suite calls it hung; far short of the hang it catches.
 private const val CAPS_BACKSTOP_S = 30L
 
 /**
@@ -357,24 +325,10 @@ private fun refuseTaskRunnerThreads(): () -> Unit {
     return { executor.threadFactory = factory }
 }
 
-/**
- * Leaves okio's timeouts off for this JVM, as a refused watchdog start does: the sentinel set and no watchdog
- * thread, so no later timed read or write starts one (AsyncTimeout.insertIntoQueue, okio 3.17.0, sets the
- * sentinel, then starts the thread). Fair only while no watchdog runs in this JVM, which it checks.
- */
-private fun leaveOkioTimeoutsOff() {
-    val sentinel = AsyncTimeout::class.java.getDeclaredField("idleSentinel").apply { isAccessible = true }
-    check(sentinel.get(null) == null) {
-        "okio's watchdog already runs in this JVM, so its timeouts cannot be left off; this class needs a JVM " +
-            "of its own (threadRefusalTest)"
-    }
-    sentinel.set(null, AsyncTimeout())
-}
-
-/** A loopback upstream that reads every request whole over keep-alive and, when [answering], answers it 200,
+/** A loopback upstream that reads every request whole over keep-alive and answers it 200,
  *  counting the connections it accepts. The posts are sequential, so it serves each connection on its accept
  *  thread and starts none per connection. */
-private class LoopbackUpstream(private val answering: Boolean = true) : AutoCloseable {
+private class LoopbackUpstream : AutoCloseable {
     private val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
     val accepted = AtomicInteger()
 
@@ -405,10 +359,8 @@ private class LoopbackUpstream(private val answering: Boolean = true) : AutoClos
             val length = contentLength(input) ?: return
             val _ = input.readNBytes(length)
             val _ = requests.incrementAndGet()
-            if (answering) {
-                output.write(ANSWER)
-                output.flush()
-            }
+            output.write(ANSWER)
+            output.flush()
         }
     }
 

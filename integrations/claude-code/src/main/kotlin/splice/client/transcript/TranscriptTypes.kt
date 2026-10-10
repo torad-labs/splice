@@ -7,3 +7,8 @@ package splice.client.transcript
 // copy — which is exactly what the const-single-source wall caught on 2026-09-18.
 internal const val MESSAGE = "message"
 internal const val CONTENT = "content"
+
+/** What Claude Code writes in place of an assistant message its signature recovery leaves empty, and what a move
+ *  to another model writes for a row it strips bare (resume/AssistantRowMove). It is plumbing, not something the
+ *  agent said, so a conversation leaves it out the way it leaves out thinking. */
+internal const val THINKING_STAND_IN = "[Thinking removed]"

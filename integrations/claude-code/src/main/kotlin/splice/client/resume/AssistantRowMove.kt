@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
 import splice.client.transcript.CONTENT
+import splice.client.transcript.THINKING_STAND_IN
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
@@ -61,7 +62,7 @@ internal class AssistantRowMove {
     /** Claude Code's stand-in for a message its signature recovery leaves empty: kcr() in 2.1.281,
      *  xmr() in 2.1.282 and wwr() in 2.1.283, byte for byte. */
     private val thinkingRemoved =
-        json.parseToJsonElement("""{"type":"text","text":"[Thinking removed]","citations":[]}""")
+        json.parseToJsonElement("""{"type":"text","text":"$THINKING_STAND_IN","citations":[]}""")
 
     /** The line as the move reads it. */
     fun read(line: String): LineShape =

@@ -80,7 +80,9 @@ internal class PageAssembly(
         val into = pending?.takeIf { it.id == messageId } ?: PendingAssistant(messageId, ts, at).also { pending = it }
         for (block in records.blocks(message)) {
             when (JsonScalars.str(block, "type")) {
-                "text" -> JsonScalars.str(block, "text")?.let(into.texts::add)
+                "text" -> JsonScalars.str(block, "text")
+                    ?.takeUnless { it.trim() == THINKING_STAND_IN }
+                    ?.let(into.texts::add)
                 "tool_use" -> call(block, into)
                 // Thinking is the model's working, not its output; the conversation shows what it said.
                 else -> Unit

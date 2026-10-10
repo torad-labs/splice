@@ -4,7 +4,7 @@ package splice.core.perf
 /** One WebSocket attempt on the turn clock. An early fragment cannot invent a post-accept wait. */
 public class WsAttemptTiming(private val perf: TurnPerf) {
     private val lock = Any()
-    private val attempt = perf.beginUpstreamAttempt()
+    private val attempt = perf.upstream.begin()
     private val attemptStartedAt = perf.elapsedMs()
     private var acceptedAt: Long? = null
     private var fragmentAt: Long? = null
@@ -62,7 +62,7 @@ public class WsAttemptTiming(private val perf: TurnPerf) {
     }
 
     private fun publish() {
-        perf.recordUpstreamTiming(
+        perf.upstream.record(
             attempt,
             acceptedAt,
             fragmentAt.takeUnless { earlyFragment },

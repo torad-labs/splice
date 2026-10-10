@@ -47,15 +47,17 @@ public class TurnPerf(
     private val marks = LinkedHashMap<String, Long>()
     private val counters = LinkedHashMap<String, Long>()
     private var arrivalOffsetMs = 0L
-    private var upstreamAttempt = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
+
+    /** The upstream attempts: each retry begins one, and only the current attempt publishes its timing pair. */
+    public val upstream: UpstreamAttempts = UpstreamAttempts(lock, counters)
 
     /** Paired duration and epoch observations publish into the same atomic snapshot. */
     public val intervals: PerfIntervals = PerfIntervals(
         lock,
         counters,
         startedAtEpochMs,
-        { it == upstreamAttempt },
+        upstream::isCurrent,
         ::maxCount,
     )
 
@@ -83,35 +85,6 @@ public class TurnPerf(
     public fun arrivalElapsedMs(): Long {
         val at = elapsedMs()
         return synchronized(lock) { at + arrivalOffsetMs }
-    }
-
-    /** Retain each attempt start while atomically discarding its predecessor's timing measurements. */
-    public fun beginUpstreamAttempt(): Long = synchronized(lock) {
-        for (milestones in UpstreamMilestones.entries) {
-            counters.remove(milestones.arrival)
-            counters.remove(milestones.wait)
-        }
-        ++upstreamAttempt
-        counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] = upstreamAttempt
-        upstreamAttempt
-    }
-
-    /** Publish only the current attempt's observed pair. Legacy SSE parameter names and JVM overload remain. */
-    @JvmOverloads
-    public fun recordUpstreamTiming(
-        attempt: Long,
-        writtenAt: Long?,
-        firstByteAt: Long?,
-        milestones: UpstreamMilestones = UpstreamMilestones.SSE_WRITE,
-    ) {
-        synchronized(lock) {
-            if (attempt != upstreamAttempt || writtenAt == null) return
-            counters[milestones.arrival] = writtenAt
-            counters.remove(milestones.wait)
-            if (firstByteAt != null && firstByteAt >= writtenAt) {
-                counters[milestones.wait] = firstByteAt - writtenAt
-            }
-        }
     }
 
     /** Record [stage] completion at now. Re-marking overwrites (retry loops: last attempt wins). */

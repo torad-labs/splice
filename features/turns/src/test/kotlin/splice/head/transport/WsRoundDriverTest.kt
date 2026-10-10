@@ -207,7 +207,7 @@ private class ScriptedRunner(
         perf: TurnPerf?,
     ): WsRound {
         this.perf = perf
-        perf?.beginUpstreamAttempt()
+        perf?.upstream?.begin()
         return attempt(bodyJson, meta, turnHeaders, creds)
     }
 

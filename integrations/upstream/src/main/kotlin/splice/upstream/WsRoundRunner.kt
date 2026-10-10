@@ -42,7 +42,7 @@ public interface WsRoundRunner {
         creds: Credentials,
         perf: TurnPerf?,
     ): WsRound? {
-        perf?.beginUpstreamAttempt()
+        perf?.upstream?.begin()
         return attempt(bodyJson, meta, turnHeaders, creds)
     }
 

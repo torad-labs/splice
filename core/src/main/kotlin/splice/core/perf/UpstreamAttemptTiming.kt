@@ -11,7 +11,7 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     private var headersDeliveredAt: Long? = null
     private var readCallAt: Long? = null
     private var readReturnedAt: Long? = null
-    private val attempt = perf.beginUpstreamAttempt()
+    private val attempt = perf.upstream.begin()
 
     /** Called only after the SSE request's final body bytes have flushed successfully. */
     public fun written() {
@@ -43,8 +43,8 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     }
 
     private fun publish() {
-        perf.recordUpstreamTiming(attempt, writtenAt, firstByteAt)
-        perf.recordUpstreamTiming(
+        perf.upstream.record(attempt, writtenAt, firstByteAt)
+        perf.upstream.record(
             attempt,
             headersStartedAt,
             headersDeliveredAt,

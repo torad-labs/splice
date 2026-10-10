@@ -570,7 +570,7 @@ class TurnUsageStampTest {
         val drive = rig.drive(RoundInterceptor { _, _, _ -> error("no source is executed by this fixture") })
         try {
             drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
-            drive.perf.beginUpstreamAttempt()
+            drive.perf.upstream.begin()
             rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
@@ -596,7 +596,7 @@ class TurnUsageStampTest {
             val observed = ObservedRoundPost(
                 dispatch = { body, sink ->
                     drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
-                    drive.perf.beginUpstreamAttempt()
+                    drive.perf.upstream.begin()
                     val block = sink.openText()
                     repeat(58) {
                         sink.textDelta(block, "synthetic content")

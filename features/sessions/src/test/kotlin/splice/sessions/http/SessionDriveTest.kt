@@ -58,6 +58,23 @@ class SessionDriveTest {
         assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty(), "a pane splice did not open is untouched")
     }
 
+    /** A Stop before any reply puts his message back in the prompt; a message typed after it would carry it too. */
+    @Test
+    fun `a message is never sent with words the prompt already holds, and is sent alone once he says clear`() {
+        terminal.screenText = "────────────── tax-rounding ─\n❯ take your time with it\n──────────────\n"
+
+        val held = drive.sayJson(OURS, """{"text": "Say hi."}""")
+        assertEquals(HttpStatusCode.Conflict, held.status)
+        assertEquals("draft", reason(held))
+        assertTrue(held.body.contains("take your time with it"), held.body)
+        assertTrue(terminal.sent.isEmpty(), "nothing is typed after his leftover words")
+
+        val cleared = drive.sayJson(OURS, """{"text": "Say hi.", "clear": true}""")
+        assertEquals(HttpStatusCode.OK, cleared.status, cleared.body)
+        assertEquals(listOf(SessionPane("%7") to SessionKey.CLEAR), terminal.pressed)
+        assertEquals(listOf(SessionPane("%7") to "Say hi."), terminal.sent)
+    }
+
     @Test
     fun `an empty message and a choice that is not numbered are refused in words, and nothing is pressed`() {
         assertEquals(HttpStatusCode.BadRequest, drive.sayJson(OURS, """{"text": "   "}""").status)

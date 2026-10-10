@@ -21,7 +21,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map() };
+const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {} };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
@@ -48,6 +48,8 @@ async function read() {
     for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) state.live[t.session] = { head: h.key, ...t };
   });
   state.rows = (sessions.body?.sessions || []).filter((s) => s.session_id).map(sessionOf);
+  // an answer that landed shows as going until the session stops waiting, or for half a minute at most
+  for (const [id, going] of ui.answered) if (find(id)?.state !== "needs" || Date.now() - going.at > ANSWER_HOLD_MS) ui.answered.delete(id);
   state.loading = false;
   await readScreens();
 }
@@ -60,6 +62,7 @@ async function readScreens() {
   ids.forEach((id, i) => { if (read[i].ok) next[id] = read[i].body; });
   state.screens = next;
 }
+const ANSWER_HOLD_MS = 30_000;
 const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
 
 // an ended session's process is gone, so splice can't read which command it was on, and its row says so in words
@@ -127,9 +130,14 @@ function runHtml(call, offer) {
   return `<p class="cmd"><span class="tname">${esc(call?.tool || panel[0].text)}</span>${esc(run)}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
 }
 function askHtml(s, where = "card") {
-  const a = s.ask, offer = state.screens[s.id], can = drivable(s);
-  const busy = ui.sending.has(s.id) ? " disabled" : "";
-  const pick = (choice, label, i) => `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(s.id)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
+  // from his press until the session moves on, the answer he pressed keeps its words with the wait ring and the rest
+  // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile (Marlin p165, hitstop 8a04273)
+  const going = ui.answered.get(s.id);
+  const a = s.ask, offer = going?.offer ?? state.screens[s.id], can = going ? true : drivable(s);
+  const busy = going || ui.sending.has(s.id) ? " disabled" : "";
+  const pick = (choice, label, i) => going?.choice === choice
+    ? `<button class="act answering" disabled>${ICON.wait}${esc(label)}</button>`
+    : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(s.id)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
   if (a.asked) {
     const opts = a.asked.options || [];
     const answers = !opts.length ? "" : can && !a.asked.multi ? `<div class="answers">${opts.map((o, i) => pick(i + 1, o, i)).join("")}</div>`
@@ -213,6 +221,16 @@ function callSummary(m) {
 }
 /** A teammate's colour: the command its own session runs on, found by its name, else this session's. */
 const senderColor = (name, s) => color(state.rows.find((x) => x.name && x.name === name) ?? s);
+/** What the session's prompt holds now, read off its screen; empty when nothing or unread. */
+const inPrompt = (s) => (state.screens[s.id]?.draft || "").trim();
+/** A message of his that Claude Code took back when he stopped it before any answer (hitstop 0298d62): marked so by
+ *  its transcript, or, for his newest message, by the prompt holding exactly its words. */
+function takenBack(s, m) {
+  if (m.role !== "user") return false;
+  if (m.kind === "taken_back") return true;
+  const msgs = state.logs[s.id]?.messages || [];
+  return m === msgs.at(-1) && s.state !== "working" && inPrompt(s) !== "" && inPrompt(s) === (m.text || "").trim();
+}
 function logHtml(s) {
   const held = state.logs[s.id];
   if (!held) return `<div class="log"><p class="empty">Reading</p></div>`;
@@ -244,6 +262,11 @@ function logHtml(s) {
     if (!m.text) return;
     // a teammate's message reads as its sender's, beside the agent's side, with who sent it
     if (m.role === "peer") { items.push(`<div class="msg peer" style="--c:${senderColor(m.from, s)}"><p class="from"><i></i>${esc(m.from || "A teammate")}</p><div class="body">${md(m.text)}</div>${at}</div>`); return; }
+    if (takenBack(s, m)) {
+      const back = inPrompt(s) === (m.text || "").trim();
+      items.push(`<div class="msg his takenback"><div class="body">${md(m.text)}</div><p class="taken">${ICON.stop}<span>${back ? "Stopped · Back in the prompt" : "Stopped"}</span>${at}</p></div>`);
+      return;
+    }
     items.push(`<div class="msg ${m.role === "user" ? "his" : "agent"}"><div class="body">${md(m.text)}</div>${at}</div>`);
   });
   return `<div class="log">${items.join("")}</div>`;
@@ -274,7 +297,13 @@ function composerHtml(s) {
   const dialog = s.state === "needs" && s.ask.kind === "dialog";
   if (s.state === "needs" && (!dialog || !denyOf(s))) return "";
   const busy = ui.sending.has(s.id) ? " disabled" : "";
-  return `<form class="composer" data-s="${esc(s.id)}"><input class="field" id="say" placeholder="${dialog ? "What to do instead" : "Message"}" aria-label="Message" autocomplete="off" value="${esc(ui.drafts[s.id] || "")}"${busy}>`
+  // words already in its prompt that are not his stopped message: shown over Send like a console menu, so the answer
+  // to his press appears where he pressed, and cleared only on his say-so (Marlin; hitstop 0704658, fin's words)
+  const left = ui.leftover[s.id];
+  const leftover = left == null ? "" : `<div class="inprompt" role="group" aria-label="In the prompt"><div class="inprompt-card"><p class="lbl">In the prompt</p>`
+    + `<p class="words">${esc(left)}</p><div class="acts"><button class="act" data-act="keep" data-s="${esc(s.id)}">Cancel</button>`
+    + `<button class="act primary" data-act="clear-send" data-s="${esc(s.id)}"${busy}>Clear and send</button></div></div></div>`;
+  return leftover + `<form class="composer" data-s="${esc(s.id)}"><input class="field" id="say" placeholder="${dialog ? "What to do instead" : "Message"}" aria-label="Message" autocomplete="off" value="${esc(ui.drafts[s.id] || "")}"${busy}>`
     + (dialog ? `<button class="act deny" type="submit"${busy}>Deny</button></form>` : `<button class="send" type="submit" aria-label="Send"${busy}>${ICON.send}</button></form>`);
 }
 
@@ -387,26 +416,37 @@ async function stop(s) {
 
 /** Press the numbered choice he picked, then read the session again: the card leaves Needs you once its client moves on. */
 async function answer(s, choice) {
-  ui.sending.add(s.id); ui.failed.delete(s.id); render({ stick: false });
+  ui.answered.set(s.id, { at: Date.now(), choice, offer: state.screens[s.id] }); ui.failed.delete(s.id); render({ stick: false });
   const res = await API.post(sessionPath(s, "answer"), { choice });
-  ui.sending.delete(s.id);
-  if (!res.ok) ui.failed.set(s.id, refusalOf(res, "The answer did not reach it"));
+  if (!res.ok) { ui.answered.delete(s.id); ui.failed.set(s.id, refusalOf(res, "The answer did not reach it")); }
   await reload();
 }
 
+/** His messages Claude Code took back, which the log already marks: the one leftover the console clears unasked. */
+const stoppedWords = (s) => new Set((state.logs[s.id]?.messages || []).filter((m) => m.role === "user" && (m.kind === "taken_back" || m === state.logs[s.id].messages.at(-1))).map((m) => (m.text || "").trim()));
 /** His message, whole. While a permission waits, Deny first presses its refusing choice, then gives his words as what to
  *  do instead. A draft that did not go through stays in the field. */
-async function send(s, text) {
-  ui.sending.add(s.id); ui.failed.delete(s.id); render({ stick: false });
+async function send(s, text, clear = false) {
+  ui.sending.add(s.id); ui.failed.delete(s.id); delete ui.leftover[s.id]; render({ stick: false });
   const deny = s.state === "needs" ? denyOf(s) : null;
   let res = deny ? await API.post(sessionPath(s, "answer"), { choice: deny.choice }) : { ok: true };
-  if (res.ok && text) res = await API.post(sessionPath(s, "say"), { text });
+  if (res.ok && text) res = await API.post(sessionPath(s, "say"), clear ? { text, clear: true } : { text });
+  // what is sent is exactly what he typed: his own stopped words in the prompt are cleared, anything else is shown
+  if (!res.ok && res.body?.reason === "draft") {
+    if (stoppedWords(s).has(String(res.body.draft).trim())) res = await API.post(sessionPath(s, "say"), { text, clear: true });
+    else { ui.sending.delete(s.id); ui.leftover[s.id] = res.body.draft; render({ stick: false }); return; }
+  }
   ui.sending.delete(s.id);
   if (res.ok) ui.drafts[s.id] = "";
   else ui.failed.set(s.id, refusalOf(res, deny ? "The refusal did not reach it" : "The message did not reach it"));
   ui.focusSay = true;
   await reload();
 }
+// Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
+  delete ui.leftover[ui.open]; ui.focusSay = true; render({ stick: false });
+});
 root.addEventListener("submit", (e) => {
   e.preventDefault();
   const s = find(e.target.dataset.s), text = e.target.querySelector("#say").value.trim();
@@ -437,6 +477,8 @@ document.addEventListener("click", (e) => {
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.auto = false; render(); break;
     case "stop": if (s) stop(s); break;
+    case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;
+    case "keep": if (s) { delete ui.leftover[s.id]; ui.focusSay = true; render({ stick: false }); } break;
     case "answer": if (s && !ui.sending.has(s.id)) answer(s, Number(el.dataset.i)); break;
     case "result": { const k = el.dataset.k; ui.results.has(k) ? ui.results.delete(k) : ui.results.add(k); render({ stick: false }); break; }
     case "earlier": if (s && state.logs[s.id]?.earlier) readLog(s, state.logs[s.id].earlier); break;

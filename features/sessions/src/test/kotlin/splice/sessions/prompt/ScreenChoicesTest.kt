@@ -88,6 +88,26 @@ class ScreenChoicesTest {
         assertEquals(emptyList<ScreenLine>(), choices.on(PERMISSION).panel, "no opening rule, no panel")
     }
 
+    /** Claude Code 2.1.296's input box, as captured off a real pane: a past message above it also opens with the mark. */
+    @Test
+    fun `the words in the input box come back whole, and a past message above it is not one of them`() {
+        val screen = """
+            ❯ Totals drift by a cent. Please run the tests.
+              Ran 1 shell command
+            ──────────────────────────────── tax-rounding-mutable-babbage ─
+            ❯ line one
+              line two
+            ────────────────────────────────────────────────────────────────
+              ⏸ manual mode on
+        """.trimIndent()
+
+        assertEquals("line one\nline two", choices.on(screen).draft)
+        val asDrawn = screen.replace("❯ line one", "❯ line one")
+        assertEquals("line one\nline two", choices.on(asDrawn).draft, "the pane puts a no-break space after the mark")
+        assertEquals("", choices.on(screen.replace("❯ line one\n  line two", "❯ ")).draft, "an empty box holds nothing")
+        assertEquals("", choices.on(PERMISSION).draft, "a screen offering choices has no box to read")
+    }
+
     @Test
     fun `the question above the choices comes back as the client wrote it`() {
         assertEquals("Do you want to proceed?", choices.on(PERMISSION).asked)

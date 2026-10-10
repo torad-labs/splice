@@ -32,6 +32,13 @@ private val CHOICE_LINE = Regex("""^\s*([>❯→*•]\s*)?([1-9])[.)]\s+(\S.*)$"
 private val PANEL_RULE = Regex("""^\s*─{3,}\s*$""")
 private val FRAME_RULE = Regex("""^\s*╌{3,}\s*$""")
 
+// why: the client's input box opens with a rule (its session's name may sit at its end) and its first line with the
+// prompt mark at the margin; a choice's pointer is indented, so the two never meet.
+private val INPUT_EDGE = Regex("""^─{3,}.*$""")
+
+// Claude Code 2.1.296 follows its prompt arrow with a no-break space (U+00A0); a plain space is taken too.
+private val PROMPT_LINE = Regex("""^❯[ \u00A0]?(.*)$""")
+
 // why: how a numbered choice is named in the contract, so the digit on the screen names the key that answers it.
 private const val CHOICE = "CHOICE_"
 
@@ -51,6 +58,9 @@ public data class ScreenOffer(
     val asked: String,
     val choices: List<ScreenChoice>,
     val panel: List<ScreenLine> = emptyList(),
+    /** What the prompt holds when nothing is offered: words the person typed there, or a stopped message the client
+     *  put back. Empty when the prompt is empty or could not be read. */
+    val draft: String = "",
 ) {
     /** Whether the screen is offering anything to press. Nothing offered is not "nothing pending". */
     public val offering: Boolean get() = choices.isNotEmpty()
@@ -67,7 +77,7 @@ public class ScreenChoices {
     /** What [screen] is offering. A screen splice cannot read a choice on offers nothing. */
     public fun on(screen: String): ScreenOffer {
         val lines = screen.lines()
-        val block = lastBlock(lines) ?: return ScreenOffer("", emptyList())
+        val block = lastBlock(lines) ?: return ScreenOffer("", emptyList(), draft = draft(lines))
         val choices = block.mapNotNull { at -> CHOICE_LINE.matchEntire(lines[at])?.let { drawn(it) } }
             .distinctBy { it.key }
             .sortedBy { it.key.ordinal }
@@ -96,6 +106,16 @@ public class ScreenChoices {
     private fun drawn(hit: MatchResult): ScreenChoice {
         val (marker, number, label) = hit.destructured
         return ScreenChoice(SessionKey.valueOf(CHOICE + number), label.trim(), here = marker.isNotEmpty())
+    }
+
+    /** The words in the client's input box: its prompt line and the lines under it down to the box's closing rule, with
+     *  the box's indent taken off. A prompt line that does not sit under a rule is a past message, not the box. */
+    private fun draft(lines: List<String>): String {
+        val at = lines.indexOfLast { PROMPT_LINE.matches(it) }
+        if (at < 1 || !INPUT_EDGE.matches(lines[at - 1])) return ""
+        val first = PROMPT_LINE.matchEntire(lines[at])?.groupValues?.get(1).orEmpty()
+        val more = lines.drop(at + 1).takeWhile { !INPUT_EDGE.matches(it) }.map { it.removePrefix("  ") }
+        return (listOf(first) + more).joinToString("\n").trimEnd()
     }
 
     /** The prompt's panel: every line between the last solid rule above the choices and the first choice, blank

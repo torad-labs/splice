@@ -17,7 +17,9 @@ package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -42,6 +44,7 @@ private const val SAY_NOT_OURS =
     "splice did not start this session, so it cannot write to it from here; write in the terminal it runs in"
 private const val SCREEN_NOT_OURS =
     "splice did not start this session, so it cannot read its screen; look at the terminal it runs in"
+private const val DRAFT_HELD = "its prompt already holds words, and a message would be sent with them"
 private const val TERMINAL_REFUSED = "the terminal did not take it: "
 private const val LAUNCH_PANE_GONE =
     "the terminal this session was started in is gone; open it where it runs now"
@@ -65,11 +68,26 @@ public class SessionDrive(
     private val firstChoice = SessionKey.CHOICE_1.ordinal
 
     /** Give the session [text] as the person would: whole, line breaks intact, then submitted. The client takes it at
-     *  once when idle and queues it mid-turn, which is its behaviour and not splice's to change. */
-    public fun say(session: String, text: String): JsonReply {
+     *  once when idle and queues it mid-turn, which is its behaviour and not splice's to change. What is sent is
+     *  exactly [text]: a prompt that already holds words is refused with them, and emptied first only when [clear]
+     *  says so. */
+    public fun say(session: String, text: String, clear: Boolean = false): JsonReply {
         if (text.isBlank()) return refuse(HttpStatusCode.BadRequest, "a message needs words in it")
+        if (!clear) drafted(session)?.let { return it }
         return inPane(session, SAY_NOT_OURS, "its terminal is closed, so nothing can be sent to it") { driving, pane ->
+            if (clear) driving.terminal.press(pane, SessionKey.CLEAR)
             driving.terminal.send(pane, text)
+        }
+    }
+
+    /** The refusal a message meets when the session's prompt already holds words, carrying them; null when it is empty
+     *  or splice cannot reach or read it, which the act itself then answers for. */
+    private fun drafted(session: String): JsonReply? {
+        val driving = driver() ?: return null
+        val pane = locate(driving, session, SAY_NOT_OURS, "").pane?.takeIf(driving.terminal::isOpen) ?: return null
+        val draft = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).draft }.getOrDefault("")
+        return draft.takeIf { it.isNotBlank() }?.let {
+            Refusals.reply(HttpStatusCode.Conflict, DRAFT_HELD, Refusal.DRAFT, it)
         }
     }
 
@@ -82,9 +100,13 @@ public class SessionDrive(
         }
     }
 
-    /** POST .../say's body, {"text": "..."}: a body that names no text is refused as an empty message. */
-    public fun sayJson(session: String, body: String): JsonReply =
-        say(session, JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.str(it, "text") }.orEmpty())
+    /** POST .../say's body, {"text": "...", "clear": true}: a body that names no text is refused as an empty message,
+     *  and [say]'s clear is only ever the literal true. */
+    public fun sayJson(session: String, body: String): JsonReply {
+        val obj = JsonScalars.objectOrNull(Json, body)
+        val clear = (obj?.get("clear") as? JsonPrimitive)?.booleanOrNull == true
+        return say(session, obj?.let { JsonScalars.str(it, "text") }.orEmpty(), clear)
+    }
 
     /** POST .../answer's body, {"choice": n}: a body that names none answers 0, which [answer] refuses in words. */
     public fun answerJson(session: String, body: String): JsonReply =
@@ -156,6 +178,7 @@ public class SessionDrive(
         buildJsonObject {
             put("session_id", session)
             put("asked", offer.asked)
+            put("draft", offer.draft)
             // The whole prompt above the choices: the tool, what it runs (framed) and why, read before answering.
             putJsonArray("panel") {
                 offer.panel.forEach { line ->

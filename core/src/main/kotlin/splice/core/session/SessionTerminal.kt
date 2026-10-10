@@ -81,6 +81,9 @@ public enum class SessionKey {
     CHOICE_7,
     CHOICE_8,
     CHOICE_9,
+
+    /** Empty what the prompt holds, on the person's say-so: never as part of sending a message. */
+    CLEAR,
 }
 
 /** Where splice remembers which pane belongs to which session, so the console can find a session's terminal

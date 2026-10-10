@@ -111,6 +111,22 @@ class TmuxTerminalTest {
         )
     }
 
+    /** A Stop before any reply leaves the person's message back in the prompt; cleared on his say-so, the next
+     *  message is its own. */
+    @Test
+    fun `a clear empties what the prompt held, so the message after it arrives alone`() {
+        val pane = open("sh", "-c", "while IFS= read -r line; do echo \"got:\$line\"; done")
+        val typed = listOf("send-keys", "-t", pane.id.substringBefore("@"), "-l", "leftover")
+        TmuxCommand("tmux", socket, DEADLINE_MS).run(typed)
+
+        terminal.press(pane, SessionKey.CLEAR)
+        terminal.send(pane, "hello")
+
+        val screen = screenUntil(pane) { it.contains("got:") }
+        val got = Regex("got:(.*)").findAll(screen).map { it.groupValues[1].trim() }.toList()
+        assertEquals(listOf("hello"), got, "the leftover was cleared, not sent with it: $screen")
+    }
+
     @Test
     fun `a key press reaches the session`() {
         val pane = open("sh", "-c", "read -r answer; echo \"[\$answer]\"; cat")

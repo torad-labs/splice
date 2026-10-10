@@ -240,3 +240,24 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .s.changed { animation: ring 1.1s var(--e-out) 1; }
 @keyframes ring { from { outline: .25rem solid var(--key-light); outline-offset: .15rem; } to { outline: .25rem solid transparent; outline-offset: .55rem; } }
 .result.empty { font-family: var(--font-name); color: var(--text-mute); white-space: normal; }
+.answers .act.answering, .answers .act.answering:disabled { cursor: default; opacity: 1; gap: .5rem; }
+.answers .act.answering .wait { width: 1.1rem; height: 1.1rem; --c: currentColor; }
+/* his message Claude Code took back when he stopped it before any answer: marked in place, never drawn as sent
+   (hitstop 0298d62) */
+.msg.his.takenback .body { background: transparent; border-style: dashed; border-color: var(--text-mute); box-shadow: none; color: var(--text-body); }
+.msg .taken { align-self: flex-end; display: inline-flex; align-items: center; gap: .5rem; margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.msg .taken svg { width: .85rem; height: .85rem; fill: currentColor; stroke: none; }
+.msg .taken time { margin-left: .3rem; font: 500 .85rem/1 var(--font-data); }
+/* words already in the prompt, shown before his message goes, cleared only on his say-so (Marlin). A first draft for
+   hitstop to draw. */
+/* a draft he left in the terminal hangs over Send like a menu (hitstop 0704658): a zero-height anchor on the composer's
+   top edge, so the composer never moves; right is the composer's right padding, so the card's edge lines up over Send */
+.inprompt { position: relative; height: 0; }
+.inprompt-card {
+  position: absolute; right: 2rem; bottom: .9rem; z-index: 6; width: 34rem; max-width: calc(100% - 4rem);
+  display: flex; flex-direction: column; gap: .75rem; padding: 1.1rem 1.3rem 1.25rem;
+  background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
+}
+.inprompt .lbl { margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.inprompt .words { margin: 0; min-width: 0; max-height: 14rem; overflow: auto; font: 500 1.05rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .6rem .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.inprompt .acts { display: flex; justify-content: flex-end; gap: .7rem; }

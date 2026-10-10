@@ -25,6 +25,11 @@ import java.util.concurrent.TimeUnit
 // why: a tmux client call answers in milliseconds; five seconds is a server that is wedged, not a slow one.
 private const val CALL_DEADLINE_MS = 5_000L
 
+// why: one Ctrl-U clears one line of what the prompt holds and does nothing on an empty prompt, so this many clears
+// any message a person writes. Each is its own tmux call: Claude Code 2.1.296 drops 64 Ctrl-U sent in one burst
+// (they reach it as one chunk) and honours them pressed one at a time (desk walk, Oct 10).
+private const val CLEAR_PRESSES = 64
+
 // why: how long the client gets to exit on its own after /exit before its terminal is closed under it. Claude
 // Code saves the session on the way out, and that is the one thing a close must not cut short.
 private const val EXIT_GRACE_MS = 10_000L
@@ -80,7 +85,7 @@ public class TmuxTerminal(
     override fun press(pane: SessionPane, key: SessionKey) {
         val at = paneOf(pane) ?: return
         if (!isOpen(pane)) return
-        tmux.must(listOf("send-keys", "-t", at.id, keyName(key)), at.socket)
+        keyNames(key).forEach { tmux.must(listOf("send-keys", "-t", at.id, it), at.socket) }
     }
 
     override fun screen(pane: SessionPane): String {
@@ -126,7 +131,14 @@ public class TmuxTerminal(
     /** The key tmux sends for what the console asked to do. Every case is listed and there is no `else`: the
      *  day a key is added to the contract, this is a compile error rather than a press that quietly does
      *  the wrong thing. The nine numbered choices share one arm because they are one rule, their own digit. */
+    private fun keyNames(key: SessionKey): List<String> = if (key == SessionKey.CLEAR) {
+        List(CLEAR_PRESSES) { "C-u" }
+    } else {
+        listOf(keyName(key))
+    }
+
     private fun keyName(key: SessionKey): String = when (key) {
+        SessionKey.CLEAR -> "C-u"
         SessionKey.STOP -> "Escape"
         SessionKey.ACCEPT -> "Enter"
         SessionKey.NEXT -> "Down"

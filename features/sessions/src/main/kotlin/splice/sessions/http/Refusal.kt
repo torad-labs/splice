@@ -28,17 +28,22 @@ internal enum class Refusal(val key: String) {
 
     /** The terminal did not take the keys. */
     REFUSED("refused"),
+
+    /** The prompt already holds words, which a message would be typed after: shown to the person, cleared only on
+     *  his say-so (Marlin, Oct 10). */
+    DRAFT("draft"),
 }
 
 /** A refusal's reply: its sentence, for the log, and its [Refusal] key when it has one, which is what a page names
  *  it by (fin). A page never matches the sentence. */
 internal object Refusals {
-    fun reply(status: HttpStatusCode, sentence: String, reason: Refusal? = null): JsonReply =
+    fun reply(status: HttpStatusCode, sentence: String, reason: Refusal? = null, draft: String? = null): JsonReply =
         JsonReply(
             status,
             buildJsonObject {
                 put("error", sentence)
                 reason?.let { put("reason", it.key) }
+                draft?.let { put("draft", it) }
             }.toString(),
         )
 }

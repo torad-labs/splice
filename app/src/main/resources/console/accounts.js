@@ -303,7 +303,7 @@ function meterHtml(c, pick = null) {
   const spent = c.unpriced || c.local || c.spent == null ? "" : money(c.spent);
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${unpriced(c)}</span>`
-      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}</div>`;
+      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${openingRow(c)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
   const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${noPrice(c)}` : ""}`;
@@ -317,10 +317,16 @@ function meterHtml(c, pick = null) {
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
 // Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
 const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} ${c.onPlan ? "on your plan" : "with no price"}`;
-const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "")
-  + (c.opening && !c.local ? `<span class="unpriced own">${openingNote(c.opening)}</span>` : "");
+const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
 // The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
 // the hourly totals cannot split them, so they are said once, apart from the day's figure.
+//
+// A SENTENCE, SO IT TAKES THE WHOLE TILE, never the money column beside the figure: that column is 175 px at 3394 and
+// wrapped these words into four ragged lines, doubling the tile's height for one aside (capture, Oct 10).
+//
+// Only the tile with no budget draws it: a budgeted head reads its day from the budget's own exact figure, which has
+// no half-hour it cannot place, so `opening` is null there by construction (see where the command rows are built).
+const openingRow = (c) => (c.opening && !c.local ? `<span class="unpriced opening">${openingNote(c.opening)}</span>` : "");
 const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "turn" : "turns"}`} in the hour holding midnight, not counted`;
 function editorHtml(c, tag) {
   const ed = ui.editor;

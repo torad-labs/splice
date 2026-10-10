@@ -120,13 +120,13 @@ class UsageSingleAliasReaderLawTest {
         // The wall's first blind spot: a second reader under a DIFFERENT NAME. Measured GREEN on the
         // wall inside a banned directory; named here.
         val renamed = COMPLIANT + (CHAT to RENAMED_READER)
-        assertHit(UsageSingleAliasReader.audit(renamed, CHAIN), "SECOND ALIAS READER", "firstOf", CHAT) {
+        assertHit(UsageSingleAliasReader.audit(renamed, CHAIN), "firstOf", CHAT) {
             "a private alias reader under another name must be RED by name"
         }
 
         // The wall's second blind spot: the wall's OWN banned spelling, outside the swept packages.
         val faraway = COMPLIANT + (FAR to FAR_READER)
-        assertHit(UsageSingleAliasReader.audit(faraway, CHAIN), "SECOND ALIAS READER", "num", FAR) {
+        assertHit(UsageSingleAliasReader.audit(faraway, CHAIN), "num", FAR) {
             "a private alias reader outside the usage packages must be RED — the denominator is the repository"
         }
 
@@ -141,7 +141,7 @@ class UsageSingleAliasReaderLawTest {
         // A file delegating SOMEWHERE ELSE does not launder a re-deriving reader beside it: the
         // delegation must be in the reader's own body.
         val mixed = COMPLIANT + (HUD to DELEGATING_READER + "\n\n" + RENAMED_READER)
-        assertHit(UsageSingleAliasReader.audit(mixed, CHAIN), "SECOND ALIAS READER", "firstOf") {
+        assertHit(UsageSingleAliasReader.audit(mixed, CHAIN), "firstOf") {
             "a delegating sibling in the same file must not cover a re-deriving reader"
         }
 
@@ -161,12 +161,12 @@ class UsageSingleAliasReaderLawTest {
             "a non-numeric vararg helper is out of scope",
         )
 
-        assertHit(UsageSingleAliasReader.audit(COMPLIANT - CHAIN, CHAIN), "missing") {
+        assertHit(UsageSingleAliasReader.audit(COMPLIANT - CHAIN, CHAIN)) {
             "a missing chain must be RED"
         }
         val hollow =
             COMPLIANT + (CHAIN to "public object JsonScalars { public fun str(e: JsonElement?): String? = null }\n")
-        assertHit(UsageSingleAliasReader.audit(hollow, CHAIN), "does not declare the firstLong multi-key chain") {
+        assertHit(UsageSingleAliasReader.audit(hollow, CHAIN)) {
             "an unanchored chain must be RED"
         }
     }

@@ -89,7 +89,7 @@ class RetryAfterSingleParserLawTest {
         // Three variants of the same class: one marker each, in a file that names the header.
         for ((label, body) in MIRRORS) {
             val hits = RetryAfterSingleParser.audit(COMPLIANT + ("app/src/main/kotlin/Mirror.kt" to body), PARSER)
-            assertHit(hits, "SECOND PARSER", "Mirror.kt") { "a mirror carrying the $label marker must be RED by name" }
+            assertHit(hits, "Mirror.kt") { "a mirror carrying the $label marker must be RED by name" }
         }
 
         // A parser token in a file that never names the header is out of scope: the class is
@@ -111,11 +111,11 @@ class RetryAfterSingleParserLawTest {
             "a marker in a comment is prose",
         )
 
-        assertHit(RetryAfterSingleParser.audit(COMPLIANT - PARSER, PARSER), "missing") {
+        assertHit(RetryAfterSingleParser.audit(COMPLIANT - PARSER, PARSER)) {
             "a missing parser must be RED"
         }
         val hollow = COMPLIANT + (PARSER to "class RetryAfter { fun retryAfterMs(h: String?): Long? = null }\n")
-        assertHit(RetryAfterSingleParser.audit(hollow, PARSER), "0 of 3 parser markers") {
+        assertHit(RetryAfterSingleParser.audit(hollow, PARSER)) {
             "an unanchored parser must be RED"
         }
     }

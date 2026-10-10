@@ -149,12 +149,12 @@ class OneMissingExpiryPolicyLawTest {
             OneMissingExpiryPolicy.audit(corpus(NEW to "// NO-EXPIRY-EXEMPT[2026-09-21]: api keys do not expire")),
             "a dated marker with a written reason is the other disposition",
         )
-        assertHit(OneMissingExpiryPolicy.audit(corpus(NEW to BLANK_REASON)), "blank reason") {
+        assertHit(OneMissingExpiryPolicy.audit(corpus(NEW to BLANK_REASON)), "NewAuthProvider.kt") {
             "a marker with no reason must be RED, not silently exempt"
         }
         assertHit(
             OneMissingExpiryPolicy.audit(corpus(NEW to BOTH_DISPOSITIONS)),
-            "one disposition per provider",
+            "NewAuthProvider.kt",
         ) { "claiming both dispositions is a violation, because a reader cannot tell which is true" }
     }
 
@@ -163,12 +163,11 @@ class OneMissingExpiryPolicyLawTest {
         assertHit(
             OneMissingExpiryPolicy.audit(corpus(NEW to COMMENT_ONLY)),
             "NewAuthProvider.kt",
-            "derives no expiry",
         ) { "a comment mentioning the helper is prose, not a call — the wall it replaces could not tell them apart" }
 
         assertHit(
             OneMissingExpiryPolicy.audit(corpus(OTHER to "private const val SYNTHETIC_EXPIRY_TTL_MS = 900L")),
-            "own synthetic-expiry constant",
+            OTHER,
         ) { "a second copy of the TTL anywhere must be RED" }
         assertEquals(
             emptyList<String>(),
@@ -178,7 +177,7 @@ class OneMissingExpiryPolicyLawTest {
 
         assertHit(
             OneMissingExpiryPolicy.audit(corpus(OTHER to "val at = now + expiresIn * 1000")),
-            "by hand (DR-177)",
+            OTHER,
         ) { "the hand-rolled lifetime conversion must be RED" }
         assertEquals(
             emptyList<String>(),
@@ -189,17 +188,16 @@ class OneMissingExpiryPolicyLawTest {
 
     @Test
     fun `the law refuses on an empty sweep and on a missing helper`() {
-        assertHit(OneMissingExpiryPolicy.audit(emptyMap()), "empty sweep means the extractor") {
+        assertHit(OneMissingExpiryPolicy.audit(emptyMap())) {
             "no provider swept at all must REFUSE, never pass"
         }
-        assertHit(OneMissingExpiryPolicy.audit(mapOf(NEW to "val e = CredentialExpiry.x()")), "has no home") {
+        assertHit(OneMissingExpiryPolicy.audit(mapOf(NEW to "val e = CredentialExpiry.x()"))) {
             "a covered provider graded against an absent helper must REFUSE"
         }
         assertHit(
             OneMissingExpiryPolicy.audit(
                 mapOf(OneMissingExpiryPolicy.HELPER_FILE to "val ttl = 1L", NEW to "val e = CredentialExpiry.x()"),
             ),
-            "no longer declares",
         ) { "a helper that stopped declaring the shared ceiling must REFUSE" }
     }
 

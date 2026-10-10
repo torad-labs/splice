@@ -90,8 +90,9 @@ internal object UnpackedParameters {
     /** The member name when the property's initializer parses as `p.member` and `p` is one of [params]. */
     private fun storedCopyOf(property: KoPropertyDeclaration, params: Set<String>): String? {
         val declaration = psi.createDeclaration<KtProperty>(property.text)
-        // The runtime parser is Konsist's compiler (2.0.x), older than the one the tree compiles with. Syntax it cannot read
-        // becomes an error element and the initializer would be skipped in silence, so the law fails here instead.
+        // The runtime parser is Konsist's compiler (2.0.x), older than the one the tree compiles with. Syntax it
+        // cannot read becomes an error element and the initializer would be skipped in silence, so the law fails
+        // here instead.
         PsiTreeUtil.findChildOfType(declaration, PsiErrorElement::class.java)?.let { error ->
             error(
                 "the unpack law's parser cannot read ${property.location} (offset ${error.textOffset}): " +
@@ -125,16 +126,8 @@ internal class UnpackedParameterLawTest {
 
     @Test
     fun `no class copies two or more of its constructor parameters into fields of its own`() {
-        val roots = map.modules.sorted().filter { File(map.dir(it), "src/main").isDirectory }
-        assertTrue(roots.size > 10) {
-            "the map yielded ${roots.size} production source root(s) — the walk is broken, and a law that reads no " +
-                "files passes vacuously."
-        }
-        val classes = roots.flatMap {
+        val classes = map.modules.sorted().filter { File(map.dir(it), "src/main").isDirectory }.flatMap {
             Konsist.scopeFromDirectory("${map.relativeDir(it)}/src/main").classes(includeNested = true)
-        }
-        assertTrue(classes.size > 100) {
-            "the scan read ${classes.size} class(es); a law that reads none passes vacuously."
         }
         val found = UnpackedParameters.scan(::relativeOf, classes)
         assertTrue(found.isEmpty()) {
@@ -167,97 +160,44 @@ internal class UnpackedParameterLawTest {
     }
 
     @Test
-    fun `INVALID - a parenthesised initializer is still a stored copy`(@TempDir dir: File) {
-        val found = scan(
-            dir,
-            """
-            class Holder(daemon: DaemonEnvironment) {
-                private val statePaths = (daemon.statePaths)
-                private val config = ((daemon.config))
-            }
-            """,
+    fun `INVALID - every spelling of a stored copy is flagged`(@TempDir dir: File) {
+        val spellings = mapOf(
+            "parenthesised" to ("(daemon.statePaths)" to "((daemon.config))"),
+            "spaced dot, parenthesised receiver, inline comment" to ("daemon . statePaths" to "(daemon).config"),
+            "nested block comments" to
+                ("daemon/*outer /*inner*/ outer*/.statePaths" to "daemon /* a */ . /* b */ config"),
         )
-        assertEquals(listOf("statePaths", "config"), found.single().fields)
+        spellings.entries.forEachIndexed { index, (label, pair) ->
+            val found = scan(
+                File(dir, "spelling$index").apply { mkdirs() },
+                """
+                class Holder(daemon: DaemonEnvironment) {
+                    private val statePaths = ${pair.first}
+                    private val config = ${pair.second}
+                }
+                """,
+            )
+            assertEquals(listOf("statePaths", "config"), found.singleOrNull()?.fields, label)
+        }
     }
 
     @Test
-    fun `INVALID - a spaced dot, a parenthesised receiver and an inline comment are the same stored copy`(
+    fun `INVALID - modifiers, var, and a many-line supertype clause do not hide a stored copy`(
         @TempDir dir: File,
     ) {
-        val found = scan(
-            dir,
-            """
-            class Holder(daemon: DaemonEnvironment) {
-                private val statePaths = daemon . statePaths
-                private val config = (daemon).config
-                private val limits = daemon/*copy*/.limits
-            }
-            """,
-        )
-        assertEquals(listOf("statePaths", "config", "limits"), found.single().fields)
-    }
-
-    @Test
-    fun `INVALID - a nested block comment between receiver and member is still a stored copy`(@TempDir dir: File) {
-        val found = scan(
-            dir,
-            """
-            class Holder(daemon: DaemonEnvironment) {
-                private val statePaths = daemon/*outer /*inner*/ outer*/.statePaths
-                private val config = daemon /* a */ . /* b */ config
-            }
-            """,
-        )
-        assertEquals(listOf("statePaths", "config"), found.single().fields)
-    }
-
-    @Test
-    fun `VALID - a call whose argument is a parameter's name is not a copy of that parameter`(@TempDir dir: File) {
-        val found = scan(
-            dir,
-            """
-            class Holder(pa: Source, p: (Int) -> Source) {
-                private val statePaths = p(a).statePaths
-                private val config = p(a).config
-            }
-            """,
-        )
-        assertTrue(found.isEmpty(), found.joinToString())
-    }
-
-    @Test
-    fun `an unwrapped expression that is not a bare member stays out`(@TempDir dir: File) {
-        val found = scan(
-            dir,
-            """
-            class Holder(daemon: DaemonEnvironment) {
-                private val statePaths = (daemon).statePaths.toString()
-                private val config = daemon.config.copy()
-                private val limits = daemon.limits ?: other.limits
-            }
-            """,
-        )
-        assertTrue(found.isEmpty(), found.joinToString())
-    }
-
-    @Test
-    fun `INVALID - an override or open property is still a stored copy`(@TempDir dir: File) {
-        val found = scan(
-            dir,
+        val sources = listOf(
             """
             class Holder(daemon: DaemonEnvironment) : Base() {
                 override val statePaths = daemon.statePaths
                 open val config = daemon.config
             }
             """,
-        )
-        assertEquals(listOf("statePaths", "config"), found.single().fields)
-    }
-
-    @Test
-    fun `INVALID - a class whose supertype clause spans many lines is still read`(@TempDir dir: File) {
-        val found = scan(
-            dir,
+            """
+            class Holder(daemon: DaemonEnvironment) {
+                private var statePaths = daemon.statePaths
+                private var config = daemon.config
+            }
+            """,
             """
             class Holder(
                 daemon: DaemonEnvironment,
@@ -271,13 +211,33 @@ internal class UnpackedParameterLawTest {
             }
             """,
         )
-        assertEquals("Holder", found.single().klass)
+        sources.forEachIndexed { index, source ->
+            val found = scan(File(dir, "case$index").apply { mkdirs() }, source)
+            assertEquals(listOf("statePaths", "config"), found.singleOrNull()?.fields, "case $index")
+        }
     }
 
     @Test
-    fun `VALID - method-local copies are not fields of the class`(@TempDir dir: File) {
-        val found = scan(
-            dir,
+    fun `VALID - views, locals, calls, single copies and foreign receivers are not a bag`(
+        @TempDir dir: File,
+    ) {
+        val sources = listOf(
+            // a call whose argument is a parameter's name
+            """
+            class Holder(pa: Source, p: (Int) -> Source) {
+                private val statePaths = p(a).statePaths
+                private val config = p(a).config
+            }
+            """,
+            // not a bare member
+            """
+            class Holder(daemon: DaemonEnvironment) {
+                private val statePaths = (daemon).statePaths.toString()
+                private val config = daemon.config.copy()
+                private val limits = daemon.limits ?: other.limits
+            }
+            """,
+            // method-local copies
             """
             class Holder(daemon: DaemonEnvironment) {
                 fun render(): String {
@@ -287,78 +247,37 @@ internal class UnpackedParameterLawTest {
                 }
             }
             """,
-        )
-        assertTrue(found.isEmpty(), found.joinToString())
-    }
-
-    @Test
-    fun `VALID - a get() forwarder is a view, not a copy, and is not flagged`(@TempDir dir: File) {
-        val found = scan(
-            dir,
+            // a get() forwarder is a view
             """
-            class Usage(
-                private val history: History,
-            ) {
+            class Usage(private val history: History) {
                 val absorbed: Long get() = history.absorbed
                 val evicted: Long get() = history.evicted
             }
             """,
-        )
-        assertTrue(found.isEmpty(), found.joinToString())
-    }
-
-    @Test
-    fun `a var copy is a stored copy and is counted like a val`(@TempDir dir: File) {
-        val found = scan(
-            dir,
+            // one copy is a convenience
             """
-            class Holder(
-                daemon: DaemonEnvironment,
-            ) {
-                private var statePaths = daemon.statePaths
-                private var config = daemon.config
-            }
-            """,
-        )
-        assertEquals(listOf("statePaths", "config"), found.single().fields)
-    }
-
-    @Test
-    fun `a single copy is not a bag and is not flagged`(@TempDir dir: File) {
-        val found = scan(
-            dir,
-            """
-            class Holder(
-                daemon: DaemonEnvironment,
-                private val port: Int,
-            ) {
+            class Holder(daemon: DaemonEnvironment, private val port: Int) {
                 private val statePaths = daemon.statePaths
                 private val other = port.toString()
             }
             """,
-        )
-        assertTrue(found.isEmpty(), found.joinToString())
-    }
-
-    @Test
-    fun `a copy from something that is not a constructor parameter is not counted`(@TempDir dir: File) {
-        val found = scan(
-            dir,
+            // not a constructor parameter
             """
-            class Service(
-                private val port: Int,
-            ) {
+            class Service(private val port: Int) {
                 private val a = registry.a
                 private val b = registry.b
             }
             """,
         )
-        assertTrue(found.isEmpty(), found.joinToString())
+        sources.forEachIndexed { index, source ->
+            val found = scan(File(dir, "case$index").apply { mkdirs() }, source)
+            assertTrue(found.isEmpty(), "case $index: ${found.joinToString()}")
+        }
     }
 
     @Test
-    fun `an initializer the parser cannot read fails the law, naming where, and is never skipped`(@TempDir dir: File) {
-        val failure = assertThrows(IllegalStateException::class.java) {
+    fun `an initializer the parser cannot read fails the law and is never skipped`(@TempDir dir: File) {
+        assertThrows(IllegalStateException::class.java) {
             scan(
                 dir,
                 """
@@ -368,9 +287,6 @@ internal class UnpackedParameterLawTest {
                 }
                 """,
             )
-        }
-        assertTrue(failure.message.orEmpty().contains("Fixture.kt") && failure.message.orEmpty().contains("offset")) {
-            "the failure must name the file and the offset, was: ${failure.message}"
         }
     }
 

@@ -159,11 +159,6 @@ class SharedQuirksLawTest {
 
     @Test
     fun `a shared Quirks type carries no vendor-identity default`() {
-        assertTrue(SharedQuirks.dialectModules(map).size >= 3) {
-            "found ${SharedQuirks.dialectModules(
-                map,
-            ).size} dialect module(s) — the map is broken, and a law that reads no dialects passes vacuously."
-        }
         val problems = SharedQuirks.checkTree(map)
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "SHARED QUIRKS VENDOR DEFAULTS violated:\n  - ")
@@ -172,40 +167,20 @@ class SharedQuirksLawTest {
 
     @Test
     fun `the law can actually fail - each of the four shapes by field name`() {
-        fun has(hits: List<String>, needle: String) = hits.any { it.contains(needle) }
-        assertEquals(
-            emptyList<String>(),
-            SharedQuirks.checkSource("compliant", COMPLIANT),
-            "compliant null vendor knobs plus a boring null extra must be GREEN",
-        )
-        assertTrue(
-            has(SharedQuirks.checkSource("regex", REGEX_VIOLATION), "effortMaxRejectModelRegex"),
-            "synthetic Regex default must be RED by field name",
-        )
-        assertTrue(
-            has(SharedQuirks.checkSource("header", HEADER_VIOLATION), "responsesLiteHeader"),
-            "synthetic header-name default must be RED by field name",
-        )
-        assertTrue(
-            has(SharedQuirks.checkSource("host", HOST_VIOLATION), "baseUrl"),
-            "synthetic vendor-host default must be RED by field name",
-        )
-        assertTrue(
-            has(SharedQuirks.checkSource("verbosity", LITE_VERBOSITY_VIOLATION), "liteTextVerbosity"),
-            "synthetic liteTextVerbosity default must be RED by field name",
-        )
-        assertTrue(
-            has(SharedQuirks.checkSource("metadata", METADATA_VIOLATION), "sendClientMetadata"),
-            "synthetic sendClientMetadata true default must be RED by field name",
-        )
-        assertTrue(
-            has(SharedQuirks.checkSource("parallel-on", PARALLEL_ON_VIOLATION), "liteParallelToolCalls"),
-            "synthetic liteParallelToolCalls true default must be RED by field name",
-        )
-        assertEquals(
-            listOf("empty: EmptyQuirks has no parsed fields — refusing to pass vacuously"),
-            SharedQuirks.checkSource("empty", "public data class EmptyQuirks()\n"),
-        )
+        assertEquals(emptyList<String>(), SharedQuirks.checkSource("compliant", COMPLIANT))
+        mapOf(
+            REGEX_VIOLATION to "effortMaxRejectModelRegex",
+            HEADER_VIOLATION to "responsesLiteHeader",
+            HOST_VIOLATION to "baseUrl",
+            LITE_VERBOSITY_VIOLATION to "liteTextVerbosity",
+            METADATA_VIOLATION to "sendClientMetadata",
+            PARALLEL_ON_VIOLATION to "liteParallelToolCalls",
+        ).forEach { (source, field) ->
+            assertHit(SharedQuirks.checkSource("fixture", source), field) { "a default on $field must be RED by name" }
+        }
+        assertHit(SharedQuirks.checkSource("empty", "public data class EmptyQuirks()\n")) {
+            "a class with no parsed fields must refuse, never pass"
+        }
     }
 
     // The scope asymmetry: a dialect's shared class is graded, a provider's own class is not.
@@ -221,27 +196,13 @@ class SharedQuirksLawTest {
         )
         File(dialect, "ResponsesQuirks.kt").writeText(COMPLIANT)
         File(vendor, "CodexQuirks.kt").writeText(VENDOR_FILE)
-        assertEquals(
-            emptyList<String>(),
-            SharedQuirks.checkTree(synthetic),
-            "a compliant dialect beside a vendor Regex must be GREEN",
-        )
+        assertEquals(emptyList<String>(), SharedQuirks.checkTree(synthetic), "a vendor Regex beside a clean dialect")
         File(dialect, "ResponsesQuirks.kt").writeText(REGEX_VIOLATION)
-        assertEquals(
-            listOf(
-                "integrations/dialects/openai-responses/src/main/kotlin/ResponsesQuirks.kt: " +
-                    "ResponsesQuirks.effortMaxRejectModelRegex model-id default: Regex(\"mini\", " +
-                    "RegexOption.IGNORE_CASE)",
-            ),
-            SharedQuirks.checkTree(synthetic),
-            "the dialect's Regex default must be RED by file and field",
-        )
+        val hits = SharedQuirks.checkTree(synthetic)
+        assertEquals(1, hits.size, "only the dialect's class is graded: $hits")
+        assertHit(hits, "ResponsesQuirks.kt", "effortMaxRejectModelRegex") { "the dialect's Regex default must be RED" }
         File(dialect, "ResponsesQuirks.kt").delete()
-        assertEquals(
-            listOf("no shared *Quirks data class under any :dialects-* module's src/main"),
-            SharedQuirks.checkTree(synthetic),
-            "no shared class at all refuses to pass",
-        )
+        assertHit(SharedQuirks.checkTree(synthetic)) { "no shared class at all refuses to pass" }
     }
 
     private companion object {

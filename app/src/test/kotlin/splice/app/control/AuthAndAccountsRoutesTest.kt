@@ -232,6 +232,23 @@ class AuthAndAccountsRoutesTest {
     }
 
     @Test
+    fun `a session id in the switch body pins that session alone, and the same id on DELETE drops it`() = runBlocking {
+        awaitPort()
+        pin.result = true
+
+        val pinned = post("/api/auth/$WIRED/switch", """{"label":"plus-a","session":"sess-1"}""")
+        assertEquals(HttpStatusCode.OK, pinned.status, pinned.bodyAsText())
+        assertEquals("sess-1", pin.lastSession)
+
+        val dropped = delete("/api/auth/$WIRED/switch?session=sess-1")
+        assertEquals(HttpStatusCode.OK, dropped.status, dropped.bodyAsText())
+        assertEquals("sess-1", pin.lastSession)
+
+        post("/api/auth/$WIRED/switch", """{"label":"plus-a"}""")
+        assertEquals(null, pin.lastSession, "no session in the body is the head-wide pin")
+    }
+
+    @Test
     fun `unpinAccount drops the pin and answers ok true, and again when nothing is pinned`() = runBlocking {
         awaitPort()
         val before = pin.unpinned
@@ -444,14 +461,17 @@ class AuthAndAccountsRoutesTest {
     private class FakePin : HeadAccountPinSource {
         var result: Boolean = true
         var lastLabel: String? = null
+        var lastSession: String? = null
         var unpinned = 0
 
-        override fun pin(label: String): Boolean {
+        override fun pin(label: String, sessionId: String?): Boolean {
             lastLabel = label
+            lastSession = sessionId
             return result
         }
 
-        override fun unpin() {
+        override fun unpin(sessionId: String?) {
+            lastSession = sessionId
             unpinned++
         }
     }

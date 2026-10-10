@@ -95,7 +95,7 @@ public class AccountPool(
     // both walk, so a pin changes both the same way. An unavailable pin falls through to the same
     // policy as before (NEVER-BELOW-STATUS-QUO): pinning never wedges a head that would otherwise
     // still be serving turns on its own.
-    private val pinnedLabel = AtomicReference<String?>(null)
+    private val pins = PinBook()
     private val orderedLabels = AtomicReference<List<String>>(emptyList())
 
     /** Operator priority, retained across runtime resets. Empty selects sticky, soonest-reset mode. */
@@ -111,7 +111,7 @@ public class AccountPool(
     public fun effectiveOrder(): List<String> {
         val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
-        return candidates(null, current).map(PoolAccount::label)
+        return candidates(null, current, pins.forSession(null)).map(PoolAccount::label)
     }
 
     /** Chooses before acceptance. Null sessions re-evaluate policy without becoming sticky.
@@ -155,13 +155,14 @@ public class AccountPool(
         current: AccountMembership,
         caller: CallerLogin,
     ): Pair<Selection, SessionAccount?> {
-        val chosen = choose(caller.continuesFrom(previous), at, excluded, current, caller.preferred(previous))
+        val chosen = choose(previous, at, excluded, current, caller)
             ?: return Selection.Exhausted(AccountAvailability.earliestReset(current.accounts, at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
         val prior = previous ?: SessionAccount(current.primary.label, null)
         val moved = prior.takeIf { it.label != chosen.account.label }?.let {
-            AccountSwitch(it.label, chosen.account.label, switchReason(it.label, chosen.account, at, current), at)
+            val reason = switchReason(it.label, chosen.account, at, current, pins.forSession(caller.session))
+            AccountSwitch(it.label, chosen.account.label, reason, at)
         }
         moved?.let(headLastSwitch::set)
         val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease))
@@ -187,6 +188,12 @@ public class AccountPool(
             blockedUntilEpochSecondsByLabel = accounts.mapNotNull { account ->
                 AccountAvailability.blockedUntil(account, at)?.let { account.label to it }
             }.toMap(),
+            // Where the command moves when the account it would use next runs out: the same pick over the order
+            // [nextTargetLabel] walks, with that account left out. Here, not a function: the class is at the ceiling.
+            followingLabel = AccountAvailability.upNext(
+                candidates(session?.label, current, pins.forSession(sessionId)),
+                at,
+            ).getOrNull(1)?.label,
         )
     }
 
@@ -218,7 +225,7 @@ public class AccountPool(
         synchronized(sessions) { sessions.clear() }
         synchronized(statelessLock) { statelessPrevious = null }
         headLastSwitch.set(null)
-        pinnedLabel.set(null)
+        pins.clear()
         membership.get().accounts.forEach {
             it.cooldown.clear()
             it.cooldown.clearUnavailable()
@@ -228,40 +235,39 @@ public class AccountPool(
 
     /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until
      *  [unpin] or the next [reset]. False (nothing pinned) when [label] names no account here. */
-    public fun pin(label: String): Boolean {
+    public fun pin(label: String, sessionId: String? = null): Boolean {
         val account = liveMembership.byLabel[label] ?: return false
-        pinnedLabel.set(account.label)
+        pins.pin(account.label, sessionId)
         return true
     }
 
-    public fun unpin() {
-        pinnedLabel.set(null)
+    public fun unpin(sessionId: String? = null) {
+        pins.unpin(sessionId)
     }
 
     /** The currently pinned label, or null when nothing is pinned. Safe for an operator surface —
      *  no credential material, just the label [select] already exposes elsewhere. */
-    public fun pinned(): String? = pinnedLabel.get()?.takeIf(membership.get().byLabel::containsKey)
+    public fun pinned(sessionId: String? = null): String? =
+        pins.forSession(sessionId)?.takeIf(membership.get().byLabel::containsKey)
 
     /** The label [select] would choose next for [sessionId] (null = head-wide), without acquiring
      *  a credential lease — a read-only probe for an operator surface (GET /api/accounts "the next
      *  target by the real selector order"). Walks the exact same [candidates] order [choose] does,
      *  testing only [available]: [acquireIfAvailable] takes a probe lease, which this must not. */
     public fun nextTargetLabel(sessionId: String? = null): String? {
-        val at = now()
         val previousLabel = synchronized(sessions) { sessionId?.let { sessions[it]?.label } }
         val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
-        val order = candidates(previousLabel, current)
-        val free = AccountAvailability.preferredFree(order, at).firstOrNull()
-        return (free ?: AccountAvailability.nearestHeld(order, at).firstOrNull())?.label
+        val order = candidates(previousLabel, current, pins.forSession(sessionId))
+        return AccountAvailability.upNext(order, now()).firstOrNull()?.label
     }
 
     /** One order for selection and its preview. Default sessions stay on their free login, then spend
      *  quota that resets soonest. A persisted operator order retains explicit priority, including primary. */
-    private fun candidates(previousLabel: String?, current: AccountMembership): List<PoolAccount> {
+    private fun candidates(previousLabel: String?, current: AccountMembership, pinLabel: String?): List<PoolAccount> {
         val byLabel = current.byLabel
         val primary = current.primary
-        val pin = pinnedLabel.get()?.let(byLabel::get)
+        val pin = pinLabel?.let(byLabel::get)
         val previous = previousLabel?.let(byLabel::get)
         val byReset = current.accounts.sortedWith(AccountAvailability.resetOrder(now()))
         val ordered = orderedLabels.get().mapNotNull(byLabel::get)
@@ -277,17 +283,19 @@ public class AccountPool(
      *  reset is nearest: its turn is answered with that login's own refusal while its horizon is armed, and is the
      *  probe that notices a top-up once it lifts (V4-47), exactly as a head with one login behaves. */
     private fun choose(
-        previousLabel: String?,
+        previous: SessionAccount?,
         at: Long,
         excluded: Set<String>,
         current: AccountMembership,
-        preferredLabel: String?,
+        caller: CallerLogin,
     ): ChosenAccount? {
+        val pinLabel = pins.forSession(caller.session)
         val preference = listOfNotNull(
-            pinnedLabel.get()?.let(current.byLabel::get),
-            preferredLabel?.let(current.byLabel::get),
+            pinLabel?.let(current.byLabel::get),
+            caller.preferred(previous)?.let(current.byLabel::get),
         )
-        val order = (preference + candidates(previousLabel, current)).distinctBy(PoolAccount::label)
+        val order = (preference + candidates(caller.continuesFrom(previous), current, pinLabel))
+            .distinctBy(PoolAccount::label)
             .filter { it.label !in excluded }
         val free = AccountAvailability.preferredFree(order, at)
         val eligible = if (excluded.isEmpty()) free.ifEmpty { AccountAvailability.nearestHeld(order, at) } else free
@@ -305,10 +313,11 @@ public class AccountPool(
         chosen: PoolAccount,
         at: Long,
         current: AccountMembership,
+        pinLabel: String?,
     ): String {
         val previous = current.byLabel[previousLabel] ?: return AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
         return when {
-            chosen.label == pinnedLabel.get() -> AccountSwitchReason.PINNED
+            chosen.label == pinLabel -> AccountSwitchReason.PINNED
             chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
                 AccountSwitchReason.ORDERED
             !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous)
@@ -361,7 +370,7 @@ public class AccountPool(
     /** The login the caller presented, and what it decides for one selection: which account it asks for, whether the
      *  session carries its history into the choice, and which login the session remembers afterwards. A call without
      *  a session has no history to carry and nothing to remember it by. */
-    private class CallerLogin(private val key: String?, private val session: String?, accounts: List<PoolAccount>) {
+    private class CallerLogin(private val key: String?, val session: String?, accounts: List<PoolAccount>) {
         private val label: String? = key?.let { presented ->
             accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.label
         }

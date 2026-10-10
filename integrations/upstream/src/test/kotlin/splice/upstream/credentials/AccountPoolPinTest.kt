@@ -173,6 +173,57 @@ class AccountPoolPinTest {
         assertEquals(604_800L, account.quota.sevenDay.windowSeconds)
     }
 
+    @Test
+    fun `a session pin moves that session alone while another session keeps its account`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val backup = fixture.account("plus-a")
+        val pool = fixture.pool(primary, backup)
+        assertSame(primary, pool.chosen("first").account)
+        assertSame(primary, pool.chosen("second").account)
+
+        assertTrue(pool.pin("plus-a", "first"))
+
+        val pinned = pool.chosen("first")
+        assertSame(backup, pinned.account)
+        assertEquals("operator pinned this account", pinned.switch?.reason)
+        assertSame(primary, pool.chosen("second").account, "a pin on one session never moves another")
+        assertEquals("plus-a", pool.pinned("first"))
+        assertNull(pool.pinned("second"))
+        assertNull(pool.pinned(), "the head-wide pin is untouched")
+    }
+
+    @Test
+    fun `a session pin outranks the head pin for that session alone, and dropping it returns to the head pin`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val plusA = fixture.account("plus-a")
+        val plusB = fixture.account("plus-b")
+        val pool = fixture.pool(primary, plusA, plusB)
+        pool.pin("plus-a")
+        pool.pin("plus-b", "own")
+
+        assertSame(plusB, pool.chosen("own").account)
+        assertSame(plusA, pool.chosen("other").account, "a session without its own pin follows the head's")
+
+        pool.unpin("own")
+
+        assertSame(plusA, pool.chosen("own").account)
+        assertEquals("plus-a", pool.pinned(), "dropping a session pin leaves the head pin")
+    }
+
+    @Test
+    fun `a session pin on an unavailable account falls back to policy for that session`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val held = fixture.account("plus-a")
+        held.cooldown.markUnavailable(60_000L)
+        val pool = fixture.pool(primary, held)
+        pool.pin("plus-a", "own")
+
+        assertSame(primary, pool.chosen("own").account, "a pin never wedges a session onto an exhausted login")
+    }
+
     private class Fixture {
         val now = AtomicReference(1_000_000L)
         private var elapsed = 0L

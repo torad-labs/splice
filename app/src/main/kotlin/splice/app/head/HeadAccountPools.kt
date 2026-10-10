@@ -150,17 +150,21 @@ internal class HeadAccountPools {
         override val active: Boolean get() = pool.active
 
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
-            pinnedLabel = pool.pinned(),
+            pinnedLabel = pool.pinned(sessionId),
             nextTargetLabel = pool.nextTargetLabel(),
         )
 
-        override fun pin(label: String): Boolean = pool.pin(label)
+        override fun pin(label: String, sessionId: String?): Boolean = pool.pin(label, sessionId)
 
-        override fun unpin() = pool.unpin()
+        override fun unpin(sessionId: String?) = pool.unpin(sessionId)
 
         override fun order(): List<String> = pool.order
 
         override fun effectiveOrder(): List<String> = pool.effectiveOrder()
+
+        override fun nextTarget(): String? = pool.nextTargetLabel()
+
+        override fun followingTarget(): String? = pool.view(null).followingLabel
 
         @Synchronized
         override fun setOrder(labels: List<String>): Boolean {

@@ -12,12 +12,16 @@ import splice.accounts.AccountReplies
 import splice.core.auth.REFUSAL_FIELD
 import splice.http.JsonBody
 
+private const val SESSION_FIELD = "session"
+
 public class SwitchRoute(private val resolver: AccountHeadResolver) {
     private val jsonBody = JsonBody()
 
     /** POST /api/auth/{head}/switch (FEATURES.md §4.5 "Manual switch"): a REAL pin in
      *  [splice.upstream.credentials.AccountPool] — [select] tries it FIRST, ahead of the primary preference, from
-     *  the next turn. Body: `{"label": "..."}`, required. A head with no pool (one login, or an
+     *  the next turn. Body: `{"label": "...", "session": "..."}`: the label is required, and a session id pins that
+     *  session alone while the rest of the head keeps its policy (spec section 11). Without one the pin is head-wide.
+     *  A head with no pool (one login, or an
      *  unpooled kind) answers 400 naming it, never a silent no-op.
      *
      *  V4-423: an account the daemon has no credential for (a refused link, or a file that is gone) cannot serve a
@@ -25,7 +29,9 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
      *  nothing. An account the pool does not list keeps the pin's 400. */
     public suspend fun switchAccount(call: ApplicationCall) {
         val target = pinTarget(call) ?: return
-        val label = AccountReplies.stringField(jsonBody.parse(call), AccountReplies.LABEL_FIELD)
+        val body = jsonBody.parse(call)
+        val label = AccountReplies.stringField(body, AccountReplies.LABEL_FIELD)
+        val session = AccountReplies.stringField(body, SESSION_FIELD)?.takeIf(String::isNotBlank)
         if (label.isNullOrBlank()) {
             AccountReplies.respondError(call, "body must name a 'label'", HttpStatusCode.BadRequest)
             return
@@ -42,7 +48,7 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
             )
             return
         }
-        val pinned = target.pin.pin(label)
+        val pinned = target.pin.pin(label, session)
         AccountReplies.respond(
             call,
             buildJsonObject {
@@ -55,10 +61,11 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
 
     /** DELETE /api/auth/{head}/switch: drops the pin, so [select] follows the pool's own policy from
      *  the next turn. Idempotent — `{"ok":true}` whether or not anything was pinned — and the same
-     *  named 400 as the pin for a head with no pool. */
+     *  named 400 as the pin for a head with no pool. `?session=<id>` drops that
+     *  session's pin alone and leaves the head-wide one. */
     public suspend fun unpinAccount(call: ApplicationCall) {
         val target = pinTarget(call) ?: return
-        target.pin.unpin()
+        target.pin.unpin(call.request.queryParameters[SESSION_FIELD]?.takeIf(String::isNotBlank))
         AccountReplies.respond(call, buildJsonObject { put("ok", true) }.toString(), status = HttpStatusCode.OK)
     }
 

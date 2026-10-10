@@ -47,24 +47,9 @@ public data class ClaudeLoginPlaceView(
     val management: ClaudeLoginManagement? = null,
 )
 
-/** The app owns native files and login processes; the feature owns HTTP presentation and validation. */
-public interface ClaudeLoginPlaces {
-    public fun places(): List<ClaudeLoginPlaceView>
-    public suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus
-    public suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView
-    public fun poll(id: String): LoginStatus?
-
-    /** Submit the native CLI's documented pasted-code fallback without logging or retaining the code. */
-    public suspend fun submit(id: String, code: String): Boolean
-
-    /** A native-place target can never fall through to a pooled login with the same label. */
-    public suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation =
-        AccountMutation.Refused("this native login has no stored removal target")
-
-    /** The native owner, not the pooled-login store, owns this place's display name. */
-    public suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation =
-        AccountMutation.Refused("this native login has no stored rename target")
-
+/** Which place or account carried a head's and a session's newest request: the read-only part of the roster,
+ *  split from the login actions so the app can implement it apart from them. */
+public interface ClaudeCarrying {
     /** The place whose live credential carried [head]'s newest request that matched a place since the daemon
      *  started, or null before any did. Both commands send through one head, so this, not the command's own
      *  place, is the login whose windows that head is spending. */
@@ -83,6 +68,25 @@ public interface ClaudeLoginPlaces {
 
     /** Resolve a persisted proved identity to its current roster label without changing its Requests spelling. */
     public fun accountLabel(head: String, account: String): String = account
+}
+
+/** The app owns native files and login processes; the feature owns HTTP presentation and validation. */
+public interface ClaudeLoginPlaces : ClaudeCarrying {
+    public fun places(): List<ClaudeLoginPlaceView>
+    public suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus
+    public suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView
+    public fun poll(id: String): LoginStatus?
+
+    /** Submit the native CLI's documented pasted-code fallback without logging or retaining the code. */
+    public suspend fun submit(id: String, code: String): Boolean
+
+    /** A native-place target can never fall through to a pooled login with the same label. */
+    public suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation =
+        AccountMutation.Refused("this native login has no stored removal target")
+
+    /** The native owner, not the pooled-login store, owns this place's display name. */
+    public suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation =
+        AccountMutation.Refused("this native login has no stored rename target")
 }
 
 /** Read after composition assigns the native login owner, never capture an unwired null at server construction. */

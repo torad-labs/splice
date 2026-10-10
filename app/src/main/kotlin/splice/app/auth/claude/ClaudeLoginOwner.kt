@@ -7,6 +7,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeCarrying
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
@@ -45,19 +46,21 @@ internal class ClaudeLoginOwner(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
     private val sessions: ClaudeLoginSessions,
-    private val auth: NativeClaudeAuth,
+    auth: NativeClaudeAuth,
     private val scope: CoroutineScope,
     private val changes: ClaudePoolChanges? = null,
-) : ClaudeLoginPlaces, LaunchLoginGuard {
+    private val carried: ClaudeCarryingPlaces = ClaudeCarryingPlaces(locations, reads),
+) : ClaudeLoginPlaces, LaunchLoginGuard, ClaudeCarrying by carried {
     private val lock = Any()
     private val logins = locations.associate { it.id to ClaudeLogins(it.storeDir) }
     private val active = mutableMapOf<ClaudeLoginPlaceId, NativeAttempt>()
     private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
     private val mutating = mutableSetOf<ClaudeLoginPlaceId>()
     private val edits = ClaudeLoginEdits(reads)
+    private val runner = NativeLoginRunner(auth, sessions, changes)
+    private val dirs = ConfigDirs()
 
     private val names = ClaudeLoginNames { place, key -> logins[place]?.labelForCredential(key) }
-    private val carried = ClaudeCarryingPlaces(locations, reads)
 
     override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations, names)
 
@@ -66,16 +69,6 @@ internal class ClaudeLoginOwner(
     /** The digest of a credential [head] just sent for [session], never the token: it decides which place carries
      *  that head, and which carries that session. */
     internal fun sent(head: String, session: String?, key: String) = carried.sent(head, session, key)
-
-    override fun carrying(head: String): ClaudeLoginPlaceId? = carried.carrying(head)
-
-    override fun carrying(head: String, session: String): ClaudeLoginPlaceId? = carried.carrying(head, session)
-
-    override fun carryingAccount(head: String, session: String): String? = carried.account(head, session)
-
-    override fun hasCarryingProof(head: String, session: String): Boolean = carried.hasProof(head, session)
-
-    override fun accountLabel(head: String, account: String): String = reads.accountLabel(locations, head, account)
 
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.
@@ -89,10 +82,10 @@ internal class ClaudeLoginOwner(
     override fun poll(id: String): LoginStatus? = synchronized(lock) { history[id]?.get() }
 
     override fun refusal(configDir: Path): String? = synchronized(lock) {
-        if (locations.any { it.id in mutating && sameDirectory(it.target.head.configDir, configDir) }) {
+        if (locations.any { it.id in mutating && dirs.same(it.target.head.configDir, configDir) }) {
             return@synchronized "this native login is being edited; launch after it finishes"
         }
-        active.values.firstOrNull { sameDirectory(it.location.target.head.configDir, configDir) }
+        active.values.firstOrNull { dirs.same(it.location.target.head.configDir, configDir) }
             ?.let { "native login is replacing this command's credential; launch after it finishes" }
     }
 
@@ -105,7 +98,7 @@ internal class ClaudeLoginOwner(
             remember(cell)
             prepare(place, label, cell)
         } ?: return cell.get()
-        val job = scope.launch { run(attempt) }
+        val job = scope.launch { runner.run(attempt) }
         job.invokeOnCompletion { releaseQuietly(attempt) }
         return cell.get()
     }
@@ -117,18 +110,18 @@ internal class ClaudeLoginOwner(
     ): NativeAttempt? {
         val location = locations.singleOrNull { it.id == place }
         if (location == null) {
-            failed(cell, "native login place is not configured")
+            runner.failed(cell, "native login place is not configured")
             return null
         }
         val busy = refusal(location.target.head.configDir)
         if (busy != null) {
-            failed(cell, busy)
+            runner.failed(cell, busy)
             return null
         }
         val store = logins.getValue(place)
         return when (val prepared = store.prepareNative(location.target, label, sessions.read(location))) {
             is ClaudeNativeLoginPreparation.Refused -> {
-                failed(cell, prepared.reason)
+                runner.failed(cell, prepared.reason)
                 null
             }
             is ClaudeNativeLoginPreparation.Ready -> NativeAttempt(location, store, prepared, cell)
@@ -170,7 +163,34 @@ internal class ClaudeLoginOwner(
             .getOrDefault(false)
     }
 
-    private suspend fun run(attempt: NativeAttempt) {
+    private fun remember(cell: AtomicReference<LoginStatus>) {
+        while (history.size >= NATIVE_LOGIN_HISTORY) {
+            val removable = history.entries.firstOrNull { entry -> active.values.none { it.status === entry.value } }
+                ?: break
+            history.remove(removable.key)
+        }
+        history[cell.get().id] = cell
+    }
+
+    private fun releaseQuietly(attempt: NativeAttempt) {
+        synchronized(lock) {
+            if (attempt.status.get().state == LoginState.STARTING || attempt.status.get().state == LoginState.WAITING) {
+                runner.failed(attempt.status, "native Claude login was cancelled")
+            }
+            if (active[attempt.location.id] === attempt && attempt.child?.stopped != false) {
+                active.remove(attempt.location.id)
+            }
+        }
+    }
+}
+
+/** Drives one native login attempt from the CLI's browser step to a landed account, split out of the owner. */
+private class NativeLoginRunner(
+    private val auth: NativeClaudeAuth,
+    private val sessions: ClaudeLoginSessions,
+    private val changes: ClaudePoolChanges?,
+) {
+    suspend fun run(attempt: NativeAttempt) {
         try {
             val outcome = Cancellables.runCatchingCancellable {
                 withTimeout(NATIVE_LOGIN_TIMEOUT_MS) { authenticate(attempt) }
@@ -217,30 +237,13 @@ internal class ClaudeLoginOwner(
         }
     }
 
-    private fun remember(cell: AtomicReference<LoginStatus>) {
-        while (history.size >= NATIVE_LOGIN_HISTORY) {
-            val removable = history.entries.firstOrNull { entry -> active.values.none { it.status === entry.value } }
-                ?: break
-            history.remove(removable.key)
-        }
-        history[cell.get().id] = cell
-    }
-
-    private fun failed(cell: AtomicReference<LoginStatus>, reason: String): LoginStatus =
+    fun failed(cell: AtomicReference<LoginStatus>, reason: String): LoginStatus =
         cell.updateAndGet { it.copy(state = LoginState.FAILED, failureReason = reason) }
+}
 
-    private fun releaseQuietly(attempt: NativeAttempt) {
-        synchronized(lock) {
-            if (attempt.status.get().state == LoginState.STARTING || attempt.status.get().state == LoginState.WAITING) {
-                failed(attempt.status, "native Claude login was cancelled")
-            }
-            if (active[attempt.location.id] === attempt && attempt.child?.stopped != false) {
-                active.remove(attempt.location.id)
-            }
-        }
-    }
-
-    private fun sameDirectory(first: Path, second: Path): Boolean = canonical(first) == canonical(second)
+/** Whether two config folders are one directory, following links. */
+private class ConfigDirs {
+    fun same(first: Path, second: Path): Boolean = canonical(first) == canonical(second)
 
     private fun canonical(path: Path): Path = try {
         path.toRealPath()

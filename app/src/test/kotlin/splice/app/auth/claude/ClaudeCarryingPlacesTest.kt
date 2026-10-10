@@ -126,8 +126,8 @@ class ClaudeCarryingPlacesTest {
         val credential = key("synthetic-foreign")
         carried.sent("synthetic-other-head", "shared-session", credential)
         carried.sent(HEAD, "shared-session", credential)
-        assertEquals("foreign", carried.account("synthetic-other-head", "shared-session"))
-        assertNull(carried.account(HEAD, "shared-session"))
+        assertEquals("foreign", carried.carryingAccount("synthetic-other-head", "shared-session"))
+        assertNull(carried.carryingAccount(HEAD, "shared-session"))
         assertEquals(listOf(NO_PLACE), lines)
     }
 
@@ -152,8 +152,8 @@ class ClaudeCarryingPlacesTest {
             { assertNull(carried.carrying(HEAD, "moving"), "an added account cannot inherit the last native place") },
             { assertNull(carried.carrying(HEAD), "the newest head send has no native place either") },
             { assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD, "staying")) },
-            { assertEquals("added", carried.account(HEAD, "moving")) },
-            { assertEquals("claude", carried.account(HEAD, "staying")) },
+            { assertEquals("added", carried.carryingAccount(HEAD, "moving")) },
+            { assertEquals("claude", carried.carryingAccount(HEAD, "staying")) },
             { assertEquals(emptyList<String>(), lines, "a verified added account is a known login") },
             { assertFalse(lines.joinToString("").contains(addedKey)) },
             { assertFalse(lines.joinToString("").contains("synthetic-added")) },

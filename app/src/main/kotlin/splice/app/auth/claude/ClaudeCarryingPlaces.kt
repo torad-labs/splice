@@ -3,6 +3,7 @@
 // folder, so the console showed a stale 59% beside an account at 91%.
 package splice.app.auth.claude
 
+import splice.accounts.claude.ClaudeCarrying
 import splice.accounts.claude.ClaudeLoginPlaceId
 import java.util.concurrent.ConcurrentHashMap
 
@@ -18,7 +19,7 @@ private const val REMEMBERED_CARRYING_SESSIONS = 4096
 internal class ClaudeCarryingPlaces(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
-) {
+) : ClaudeCarrying {
     private data class Carried(
         val key: String,
         val place: ClaudeLoginPlaceId?,
@@ -44,16 +45,21 @@ internal class ClaudeCarryingPlaces(
         if (match.account == null && match != previous) reads.reportUnmatchedCarrying()
     }
 
-    fun carrying(head: String): ClaudeLoginPlaceId? = carried[head]?.place
+    override fun carrying(head: String): ClaudeLoginPlaceId? = carried[head]?.place
 
     /** [session]'s own newest send on [head], or null before it sent or when its credential matches no place:
      *  never the head's, which another session on the same head may have carried. */
-    fun carrying(head: String, session: String): ClaudeLoginPlaceId? = remembered(SessionOnHead(head, session))?.place
+    override fun carrying(head: String, session: String): ClaudeLoginPlaceId? =
+        remembered(SessionOnHead(head, session))?.place
 
     /** The stable login label of this session's own newest sent credential, including added pool accounts. */
-    fun account(head: String, session: String): String? = remembered(SessionOnHead(head, session))?.account
+    override fun carryingAccount(head: String, session: String): String? =
+        remembered(SessionOnHead(head, session))?.account
 
-    fun hasProof(head: String, session: String): Boolean = remembered(SessionOnHead(head, session)) != null
+    override fun hasCarryingProof(head: String, session: String): Boolean =
+        remembered(SessionOnHead(head, session)) != null
+
+    override fun accountLabel(head: String, account: String): String = reads.accountLabel(locations, head, account)
 
     private fun resolve(head: String, key: String): Carried {
         val place = locations.firstOrNull { it.target.head.key == head && reads.credentialKey(it) == key }?.id

@@ -57,7 +57,7 @@ internal class EconomicsRows {
      * for it either.
      *
      * Two kinds. A turn the budget or the plan refused before any attempt (above). And the activity
-     * side query, which [splice.head.turn.TurnTelemetry.recordActivityAnswer] answers locally: it
+     * side query, which [splice.head.perf.LocalAnswerRows.activityAnswer] answers locally: it
      * writes a perf row marked as a local step and never calls the rollup, so the hour the rollup
      * recorded has no step for it. Counting one made every hour that answered a side query read as a
      * DIFFERENT hour from its own rows — live, Oct 10: claudex's 03:00 CT hour recorded 458 local

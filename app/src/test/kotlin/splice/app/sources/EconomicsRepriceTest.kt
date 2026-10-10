@@ -32,7 +32,7 @@ private const val WORK_ROW =
         """"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}"""
 
 /** The activity side query, answered by the head with no model: a perf row marked as a local step, and no
- *  economics turn at all — TurnTelemetry.recordActivityAnswer writes the row and never calls the rollup. */
+ *  economics turn at all — LocalAnswerRows.activityAnswer writes the row and never calls the rollup. */
 private const val ACTIVITY_ROW =
     """{"ts":3600200,"model":"synthetic","outcome":"ok","local_step":1,"activity_query":1,"req_bytes":1178082}"""
 

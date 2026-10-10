@@ -151,7 +151,7 @@ internal class TurnDriver(
     /** Claude Code's activity side query, answered by the proxy (ActivityLabel): no upstream turn. */
     suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
         localResponses.answer(call, local)
-        telemetry.recordActivityAnswer(local, provider.catalog.stripSuffixes(local.model), perf)
+        telemetry.localAnswers.activityAnswer(local.sessionId, provider.catalog.stripSuffixes(local.model), perf)
     }
 
     /** A compaction retry served from the detached first attempt's recording (CompactionReplay). */
@@ -193,7 +193,7 @@ internal class TurnDriver(
      *  health count, with no model, since none was chosen. */
     fun recordGateRefusal(tag: splice.core.perf.OutcomeTag, session: String?) {
         health.local()
-        telemetry.recordGateRefusal(tag, session)
+        telemetry.localAnswers.gateRefusal(tag, session)
     }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the

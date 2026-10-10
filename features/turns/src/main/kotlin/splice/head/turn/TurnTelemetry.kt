@@ -10,7 +10,6 @@ import kotlinx.coroutines.withContext
 import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
 import splice.core.model.TurnBill
-import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.PerfTurnIds
@@ -27,6 +26,7 @@ import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
 import splice.head.perf.HeldRows
+import splice.head.perf.LocalAnswerRows
 import splice.head.perf.PerfAccount
 import splice.head.perf.PerfFailure
 import splice.head.perf.PerfRowMeta
@@ -83,6 +83,9 @@ internal class TurnTelemetry(
 
     /** Rows waiting on a source round, so a head stop can write them ([flushHeld]). */
     private val held = HeldRows()
+
+    /** The rows splice writes for requests it answered or declined itself, with no model turn behind them. */
+    val localAnswers = LocalAnswerRows(headKey, perfStats, log, clock)
 
     /** Drain the paced tail before the sole perf snapshot; publish even if cleanup throws cancellation.
      *  [rateLimited] marks the one turn the upstream refused with a 429 — see [recordEconomics]. */
@@ -302,46 +305,6 @@ internal class TurnTelemetry(
                 "latency=${clock() - t0}ms $detail\n",
         )
         log(snap.perfLine(headKey, tag, meta.compact, meta.route.upstreamModel, session))
-    }
-
-    /** A request splice turned away at the gate (V4-444), before its body was read, so it has no model and no
-     *  compaction flag. It leaves a row so the Requests list shows what splice itself declined, and it fires neither
-     *  turn.start nor turn.end: no turn began, so announcing an end would leave the console a close with no open. */
-    fun recordGateRefusal(tag: OutcomeTag, session: String?) {
-        val perf = TurnPerf(clock = clock)
-        perf.mark(PerfKeys.TOTAL)
-        perf.setCount(PerfKeys.ATTEMPTS, 0)
-        TurnBill.counters(noRequestUsage).forEach { (key, value) -> perf.setCount(key, value) }
-        val snap = perf.snapshot()
-        perfStats.record(
-            PerfRowMeta(
-                model = null,
-                outcome = tag.wire,
-                compact = false,
-                session = session?.take(SESSION_TAG_CHARS),
-                transcript = PerfTranscriptIds(sessionId = session),
-            ),
-            snap,
-        )
-        log("[$headKey] request refused at the gate: ${tag.wire}\n")
-    }
-
-    /** Claude Code's activity side query is answered by the head with no model. It leaves a row of its own,
-     *  marked as a local step so no turn figure counts it, and as an activity query so a view can name its kind. */
-    fun recordActivityAnswer(local: Preparation.Local, wireModel: String, perf: TurnPerf) {
-        perf.mark(PerfKeys.TOTAL)
-        perf.setCount(PerfKeys.LOCAL_STEP, 1)
-        perf.setCount(PerfKeys.ACTIVITY_QUERY, 1)
-        perfStats.record(
-            PerfRowMeta(
-                wireModel,
-                OutcomeTag.OK.wire,
-                compact = false,
-                session = local.sessionId?.take(SESSION_TAG_CHARS),
-                transcript = PerfTranscriptIds(sessionId = local.sessionId),
-            ),
-            perf.snapshot(),
-        )
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

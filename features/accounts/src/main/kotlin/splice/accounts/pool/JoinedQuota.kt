@@ -51,4 +51,3 @@ internal data class JoinedQuota(
         return PlanWindow(used.toInt(), window.resetEpochSeconds, observedAtEpochSeconds).currentAt(nowSeconds) != null
     }
 }
-

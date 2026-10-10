@@ -36,6 +36,8 @@ private val PROGRAM_STACK_ERRORS = setOf(
 )
 
 // why: a warm worker answers in well under a second; the stall this replaces waited 900 s for the progress timeout.
+// The bound is on the ANSWER, so it starts after [warm]: a cold worker JVM can take longer than this alone on a host
+// busy with a whole gate, and a bound that includes the spawn fails there for a reason this test does not pin.
 private const val ANSWER_BOUND_MS = 5_000L
 
 private val DEATH_LINE = Regex(
@@ -54,6 +56,7 @@ class CodeModeWorkerTaskDeathTest {
     @Test
     fun `a program nested too deep to parse ends with its own error, as a syntax error does`() = runBlocking {
         runtime().use { runtime ->
+            warm(runtime)
             val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, "text('before');\n$deep", "text('after');") }
             val completed = step as CodeModeStep.Completed
             assertEquals("SyntaxError: program nesting too deep to parse", completed.error, completed.toString())
@@ -66,6 +69,7 @@ class CodeModeWorkerTaskDeathTest {
         runBlocking {
             runtime().use { runtime ->
                 val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
+                warm(runtime)
                 val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain, "") }
                 val completed = step as CodeModeStep.Completed
                 assertTrue(completed.error in PROGRAM_STACK_ERRORS, completed.toString())
@@ -75,6 +79,7 @@ class CodeModeWorkerTaskDeathTest {
     @Test
     fun `the worker whose parse overflowed is retired, and the next program runs on a fresh one`() = runBlocking {
         runtime().use { runtime ->
+            warm(runtime)
             withTimeout(ANSWER_BOUND_MS) { run(runtime, deep, "") }
             val overflowed = spawned.single()
             withTimeout(ANSWER_BOUND_MS) { overflowed.onExit().await() }
@@ -87,6 +92,7 @@ class CodeModeWorkerTaskDeathTest {
     @Test
     fun `a task death is logged once by its throwable and frame, with no source text`() = runBlocking {
         runtime().use { runtime ->
+            warm(runtime)
             withTimeout(ANSWER_BOUND_MS) { run(runtime, deep, "") }
             HostLifecycleAwait.ended(messages)
             val deaths = messages.filter { "worker task died" in it }
@@ -128,6 +134,11 @@ class CodeModeWorkerTaskDeathTest {
             spawn = WorkerSpawn { builder -> builder.start().also(spawned::add) },
         ),
     ).also { it.observeHostLifecycle(LogSink(messages::add)) }
+
+    /** Spawns the worker with a program that does nothing, outside any bound. */
+    private suspend fun warm(runtime: JvmCodeModeRuntime) {
+        run(runtime, "text('warm');", "")
+    }
 
     /** Streams [first] as a part of its own, then completes the source with [last], and runs to the first step. */
     private suspend fun run(runtime: JvmCodeModeRuntime, first: String, last: String): CodeModeStep {

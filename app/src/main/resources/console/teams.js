@@ -57,7 +57,7 @@ const usd = (n) => `≈$${n.toFixed(2)}`;
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
   teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {},
-  economics: {}, chat: null, activity: null,
+  economics: {}, chat: null, activity: null, today: null,
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
   screens: {},
@@ -138,8 +138,16 @@ async function readTeam() {
   state.economics[tm.id] = economics.ok ? economics.body : { error: refusalOf(economics, "The figures could not be read") };
   state.chat = chat.ok ? chat.body : { error: refusalOf(chat, "The messages could not be read") };
   state.activity = activity.ok ? activity.body : { error: refusalOf(activity, "The activity could not be read") };
+  state.today = ui.day === 0 ? state.activity : await readToday(tm);
   render();
   await readScreens(tm);
+}
+
+/** Today's activity, read on its own when the page shows another day, so a card's line is never a stepped day's. */
+async function readToday(tm) {
+  const { from, to } = dayWindow(0);
+  const today = await API.get(`/api/teams/${tm.id}/activity?from=${from}&to=${to}`);
+  return today.ok ? today.body : null;
 }
 
 /** The choices a waiting member is showing, for the asks its transcript does not carry: a permission prompt's
@@ -241,13 +249,14 @@ function memberHtml(tm, slot) {
   const lead = slot.lead ? `<span class="lead">Lead</span>` : "";
   const command = commandOf(slot.head);
   const chip = `<span class="chip">${s && liveNow(s) ? "<i></i>" : ""}${esc(command)}</span>`;
-  const model = modelLabel(slot.head, slot.model);
+  // the model its session runs, which the sessions route carries; the slot's own only until the session says
+  const model = s?.model ? modelLabel(slot.head, s.model) : modelLabel(slot.head, slot.model);
   if (!s) return vacantHtml(tm, slot, { key, ro, lead, chip, model });
   const L = stateOf(s);
   const stop = !liveNow(s) || ro ? ""
     : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
     : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
-  const now = lastActivity(slot.id);
+  const now = L.cls === "ended" ? null : lastActivity(slot.id);
   const body = L.cls === "needs" ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
   // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
   const folder = s.repo?.root || s.cwd || "";
@@ -346,7 +355,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
     if (ui.menu === key) {
       acts += `<div class="menu use">${free.map((x) =>
         `<button data-act="bind" data-s="${esc(slot.id)}" data-to="${esc(x.session_id)}"><span>${esc(x.name || x.repo?.root?.split("/").pop() || x.session_id.slice(0, 8))}</span>` +
-        `<span class="mmeta">${esc(modelLabel(x.head, null) || x.head)}${turnsOf(x)}</span></button>`).join("")}</div>`;
+        `<span class="mmeta">${esc(x.model ? modelLabel(x.head, x.model) : commandOf(x.head))}${turnsOf(x)}</span></button>`).join("")}</div>`;
     }
   }
   return `<article class="card m vacant" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
@@ -364,7 +373,9 @@ const modelLabel = (head, id) => {
 
 // ---------- what a member did: the tool's mark and its object, never splice's sentence ----------
 const activityRows = () => (state.activity?.entries || []);
-const lastActivity = (slotId) => activityRows().filter((a) => a.slot === slotId && a.tool).at(-1) || null;
+// the card's line is TODAY's latest tool work, whatever day the chat is showing (readTeam keeps today's own read)
+const todayRows = () => (state.today?.entries || []);
+const lastActivity = (slotId) => todayRows().filter((a) => a.slot === slotId && a.tool).at(-1) || null;
 const activityHtml = (a) => `${GLYPH[a.tool] || GLYPH.tool}<span class="obj">${esc(a.object || a.tool)}</span>`;
 
 // ---------- the room: members, their messages to each other, what each did ----------
@@ -387,7 +398,7 @@ function chatHtml(tm) {
   if (!panel) return `<p class="empty">Reading…</p>`;
   if (gone(panel)) return keptHtml(panel);
   const msgs = panel.messages || [];
-  if (!msgs.length) return keptHtml(panel) + `<p class="empty">No messages</p>`;
+  if (!msgs.length) return `<p class="empty">No messages</p>`;
   return keptHtml(panel) + msgs.map((m) => {
     const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
     const body = m.text == null
@@ -411,7 +422,7 @@ function feedHtml(tm) {
   if (!panel) return `<p class="empty">Reading…</p>`;
   if (gone(panel)) return keptHtml(panel);
   const rows = activityRows().filter((a) => a.slot);
-  if (!rows.length) return keptHtml(panel) + `<p class="empty">No activity</p>`;
+  if (!rows.length) return `<p class="empty">No activity</p>`;
   return keptHtml(panel) + `<ol>${rows.map((a) => {
     const s = slotOf(tm, a.slot);
     return `<li style="--c:${s ? headColor(s.head) : "var(--track-line)"}"><time>${hhmm(a.at)}</time>${party(tm, a.slot, null)}` +

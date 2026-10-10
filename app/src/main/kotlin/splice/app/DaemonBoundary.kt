@@ -15,6 +15,7 @@ import splice.core.util.FilesListing
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.core.util.TopologyRefusal
 import splice.core.util.TopologyTypeFailure
 import splice.oauth.OAuthAccountRefused
 import java.io.IOException
@@ -232,12 +233,15 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
      *  splice.toml line, already reduced to a key, a line number and an expected type by the loader, so
      *  the frames would only bury it (seven of them under one sentence, and no fix). It prints as that
      *  sentence and what to write instead, on one line; no value can be in it because the class holds
+     *  A [TopologyRefusal] is the same exception for a whole file: every finding of splice.toml as a key path, a
+     *  line and a reason, listed once and never with a value.
      *  none. Handled here rather than caught at the parse: the boot path keeps no catch clause. */
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         Thread.UncaughtExceptionHandler { thread, e ->
             val stamp = "[${logStamp.format(LocalDateTime.now())}] [daemon] "
             val line = when (e) {
                 is TopologyTypeFailure -> "$stamp${SafeFailureText.render(e)}. Fix: ${e.fix()}\n"
+                is TopologyRefusal -> "$stamp${SafeFailureText.render(e)}\n"
                 else -> "${stamp}UNCAUGHT on ${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
             }
             System.err.print(line)

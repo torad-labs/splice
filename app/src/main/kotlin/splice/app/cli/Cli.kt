@@ -42,6 +42,26 @@ public class Cli {
     internal inline fun guarded(block: () -> Int): Int = try {
         block()
     } catch (broken: java.io.IOException) {
+        if (repaired(broken)) afterFix(block) else 1
+    } catch (broken: kotlinx.serialization.SerializationException) {
+        if (repaired(broken)) afterFix(block) else 1
+    } catch (broken: IllegalArgumentException) {
+        if (repaired(broken)) afterFix(block) else 1
+    }
+
+    /** Prints why a verb failed, and for a splice.toml that cannot serve prints EVERY finding in it, then offers the
+     *  fix session on a terminal. True when the person fixed the file, so the verb may run again. */
+    internal fun repaired(broken: Throwable): Boolean {
+        val offer = ConfigFixOffer()
+        val refusal = offer.refusalOf(broken)
+        renderFailure(refusal ?: broken)
+        return refusal != null && offer.offer()
+    }
+
+    /** The verb once more after a fix session; a second failure is rendered, never offered a second session. */
+    internal inline fun afterFix(block: () -> Int): Int = try {
+        block()
+    } catch (broken: java.io.IOException) {
         renderFailure(broken)
     } catch (broken: kotlinx.serialization.SerializationException) {
         renderFailure(broken)

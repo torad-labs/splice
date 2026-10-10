@@ -1,4 +1,4 @@
-// A splice.toml value of the wrong type stops the boot with one sentence and its fix, not an UNCAUGHT report with
+// A splice.toml value of the wrong type stops the boot with every finding listed, each with its fix, not an UNCAUGHT report with
 // frames. The boot is the real one (a splice.toml on disk, DaemonProcess.prepare); unknown failures keep their frames.
 package splice.app.daemon
 
@@ -11,7 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.DaemonProcess
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
-import splice.core.util.TopologyTypeFailure
+import splice.core.util.TopologyRefusal
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -19,9 +19,9 @@ import java.nio.file.Path
 
 private const val PLANTED = "918273645"
 private const val FRAME = "    at "
-private const val TRACE_SENTENCE = "splice.toml: heads.ex.overrides.trace at line 17 expects quoted string"
-private const val TRACE_FIX = "Fix: put the value in double quotes, as in trace = \"...\""
-private const val HEADER_SENTENCE = "providers.ex.extra_headers.x-api-key at line 17 expects quoted string"
+private const val TRACE_SENTENCE = "heads.ex.overrides.trace (line 17): expects quoted string"
+private const val TRACE_FIX = "put the value in double quotes, as in trace = \"...\""
+private const val HEADER_SENTENCE = "providers.ex.extra_headers.x-api-key (line 17): expects quoted string"
 
 private val HEAD = """
     [providers.ex]
@@ -69,8 +69,8 @@ class TypedConfigBootFailureTest {
     }
 
     private fun assertOneSentence(shown: String, where: String) {
-        assertEquals(1, shown.lines().count { it.isNotBlank() }, "$where: one line, no frames: $shown")
-        assertFalse(shown.contains("UNCAUGHT"), "$where: a typed diagnostic is not an uncaught crash: $shown")
+        assertTrue(shown.contains("problem(s); splice will not start until all are fixed"), "$where: the list: $shown")
+        assertFalse(shown.contains("UNCAUGHT"), "$where: a refusal is not an uncaught crash: $shown")
         assertFalse(shown.contains(FRAME), "$where: no stack frame: $shown")
         assertFalse(shown.contains(PLANTED), "$where: the operator's value never appears: $shown")
     }
@@ -78,7 +78,7 @@ class TypedConfigBootFailureTest {
     @Test
     fun `an unquoted trace override stops the boot with the sentence and how to fix it`() {
         val failure = boot("\n[heads.ex.overrides]\ntrace = true\n")
-        assertTrue(failure is TopologyTypeFailure, "the loader's typed diagnostic reaches the handler: $failure")
+        assertTrue(failure is TopologyRefusal, "the loader's refusal reaches the handler: $failure")
         val (stderr, log) = report(failure)
         for ((where, shown) in listOf("stderr" to stderr, "daemon.log" to log)) {
             assertOneSentence(shown, where)
@@ -103,8 +103,8 @@ class TypedConfigBootFailureTest {
         val failure = boot("\n[daemon]\ncontrol_port = true\n")
         val (stderr, _) = report(failure)
         assertOneSentence(stderr, "stderr")
-        assertTrue(stderr.contains("daemon.control_port at line 17 expects integer"), stderr)
-        assertTrue(stderr.contains("Fix: write a whole number, with no quotes"), stderr)
+        assertTrue(stderr.contains("daemon.control_port (line 17): expects integer"), stderr)
+        assertTrue(stderr.contains("write a whole number, with no quotes"), stderr)
     }
 
     @Test

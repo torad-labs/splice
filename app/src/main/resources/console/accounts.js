@@ -230,18 +230,25 @@ function meterHtml(c, pick = null) {
   const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${c.cmd}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
     : `<span class="chip tag">${esc(c.cmd)}</span>`;
   if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
+  // A figure that leaves out a turn is no figure: until every turn has a price, the day shows only how many lack one
+  // (Marlin, Oct 10), never "$0.00" over turns that cost something.
+  const spent = c.unpriced ? "" : money(c.spent);
   if (!c.budget) {
-    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${money(c.spent)}${unpriced(c)}</span>`
+    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${resets(day)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
-  const spoken = `${money(c.spent)} of ${cap(c.budget.cap)}, ${mode}${c.unpriced ? `, leaves out ${c.unpriced} ${c.unpriced === 1 ? "turn" : "turns"} with no price` : ""}`;
-  return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? ICON.stop : ICON.bell}${money(c.spent)} <em>of</em> ${cap(c.budget.cap)}${unpriced(c)}</button>${resets(day)}</div>`;
+  const spoken = `${c.unpriced ? "Budget" : `${money(c.spent)} of`} ${cap(c.budget.cap)}, ${mode}${c.unpriced ? `, ${noPrice(c)}` : ""}`;
+  // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
+  const fill = c.unpriced ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
+  return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
+    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? ICON.stop : ICON.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${resets(day)}</div>`;
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
 // here the words take their own line under the figure, with no dot (fin)
-const unpriced = (c) => (c.unpriced ? `<span class="unpriced own">leaves out ${c.unpriced} ${c.unpriced === 1 ? "turn" : "turns"} with no price</span>` : "");
+// With no figure beside them, the words stand alone; fin's words for this state are pending (Marlin, Oct 10).
+const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} with no price`;
+const unpriced = (c) => (c.unpriced ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
 function editorHtml(c, tag) {
   const ed = ui.editor;
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");

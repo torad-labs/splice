@@ -112,7 +112,10 @@ class LiveTurnProviderActivityTest {
                     clientMaxTokens = 100,
                 ),
             )
-            turns.admitted(slot, meta, null)
+            // The row and the drive share ONE TurnPerf, as they do in production: the row reads its
+            // resume and retry counts off the same telemetry the drive records into.
+            val perf = TurnPerf(clock = clock)
+            turns.admitted(slot, meta, null, perf)
             return TurnDrive(
                 inputs = TurnInputs(
                     built = BuiltTurn(
@@ -123,7 +126,7 @@ class LiveTurnProviderActivityTest {
                     ),
                     slot = slot,
                     t0 = now,
-                    perf = TurnPerf(clock = clock),
+                    perf = perf,
                     trace = null,
                     markHandedOff = {},
                 ),

@@ -69,6 +69,7 @@ class LiveTurnIdleReadingTest {
                 ),
             ),
             messagesHash = null,
+            perf = TurnPerf(clock = clock),
         )
         slot
     }

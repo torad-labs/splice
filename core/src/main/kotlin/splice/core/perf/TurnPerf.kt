@@ -132,6 +132,13 @@ public class TurnPerf(
      *  reissue from the hard no-retry-after-output rule. */
     public fun hasMark(stage: String): Boolean = synchronized(lock) { stage in marks }
 
+    /** One counter's running value, 0 when it was never written. The READ COUNTERPART of [add], and
+     *  the same shape as [hasMark] is to [mark]: a LIVE surface asks for one or two keys while the
+     *  turn is still running, and [snapshot] would copy every mark and every counter to answer that.
+     *  The console's live-turn list reads two keys per turn on every poll (LiveTurns), so the copy
+     *  would be the whole telemetry of every open turn, several times a second, for two numbers. */
+    public fun count(counter: String): Long = synchronized(lock) { counters[counter] ?: 0L }
+
     public fun add(counter: String, delta: Long) {
         if (delta == 0L) return
         synchronized(lock) { counters[counter] = (counters[counter] ?: 0L) + delta }

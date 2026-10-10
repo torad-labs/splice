@@ -24,6 +24,8 @@ package splice.head.turn
 
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonWire
@@ -75,9 +77,22 @@ public data class TurnSilence(
     val idleMs: Long,
     /** Whether the provider has answered at all yet. */
     val seenOutput: Boolean = false,
-    /** How many times splice has already ended a silence on this turn by re-sending it upstream and
-     *  carrying on, invisibly to the client. Zero for a turn that has run straight through. Here
-     *  because a resume is what a silence ends in, so it is read with [idleMs] and never apart from it.
+    /** How many times splice has already ended a silence on this turn by cancelling the round and
+     *  re-POSTing it from its own salvage, carrying on invisibly to the client. Zero for a turn that
+     *  has run straight through. Here because a resume is what a silence ends in, so it is read with
+     *  [idleMs] and never apart from it.
+     *
+     *  READ OFF [splice.core.perf.PerfKeys.REANCHORS], THE COUNTER THE RE-ANCHOR ITSELF WRITES
+     *  (DriveSignals.onReanchor). THE GATE CANNOT ANSWER THIS, though it looks like it can, and the
+     *  first build of this field was wrong for exactly that reason. `InflightGate.Slot.resumedSource`
+     *  marks a borrowed handle over a source's counted permit, and `AdmittedTurn.settle` keeps such a
+     *  handle only when `roundInterceptor.resumesSource()` is true — which in production only the
+     *  codex code-mode bridge ever answers, when a LATER CLIENT REQUEST joins an upstream stream
+     *  splice still holds. That is the opposite direction of travel from a re-anchor: the client sent
+     *  it and knows about it. And the re-anchor never passes through admission at all, because it
+     *  lives inside the round loop (Watchdog, RetryMatrix, the dialects' ReanchorPolicy), so no gate
+     *  handle is ever borrowed for one. Counted off the gate, this read was 0 forever on every head
+     *  but one, and counted something else on that one.
      *
      *  IT IS A COUNT OF WHAT HAPPENED, NOT A PREDICTION OF WHAT WILL. A reader deciding whether THIS
      *  silence is about to end in another re-send needs more than this and more than the head's armed
@@ -86,6 +101,16 @@ public data class TurnSilence(
      *  see. So this says how many resumes a turn has had, which is true, and says nothing about the
      *  next one, which would not be. */
     val resumes: Int = 0,
+    /** How many times the upstream REFUSED this turn and splice re-POSTed it: a 429 with budget left,
+     *  an overload, a 5xx, a transport error before any output (UpstreamAttempt.markRetry, read off
+     *  [splice.core.perf.PerfKeys.RETRIES]).
+     *
+     *  A DIFFERENT NUMBER FROM [resumes] AND NOT INTERCHANGEABLE WITH IT, which is why both are here
+     *  rather than one sum. A retry means the provider would not take the request; a resume means it
+     *  took it, began answering, and went quiet. Different cause, different remedy: a retried turn is
+     *  waiting on capacity that is not ours, and a resumed turn is being carried by splice. A reader
+     *  shown one under the other's name would act on the wrong one. */
+    val retries: Int = 0,
 )
 
 /** One live turn as the console lists it. [session] is the client's full session id when it sent one;
@@ -116,9 +141,16 @@ public class LiveTurns(
         @Volatile var messages: String?,
         private val model: String,
         private val compact: Boolean,
-        val since: Long,
         private val clock: ElapsedClock,
+        /** This turn's own telemetry, the one admission minted and the drive records into, so the
+         *  counters below are this turn's and no other's. Held for the row's life, which ends on the
+         *  slot's release, so it is dropped with the row. */
+        private val perf: TurnPerf,
     ) : InflightGate.Slot.UpstreamBytes {
+        /** Read from [clock] here rather than taken as a parameter beside it: the two have to come
+         *  from the same clock, because [TurnSilence.idleMs] is a difference against this origin, and
+         *  a caller holding both could hand over an origin the idle is not measured against. */
+        val since: Long = clock()
         private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
         private val stopped = AtomicBoolean(false)
         private val lastByte = AtomicLong(since)
@@ -127,9 +159,6 @@ public class LiveTurns(
          *  that lands in the same millisecond as admission would read as no byte at all, and on a fast
          *  provider that is the common case rather than the rare one. */
         private val answered = AtomicBoolean(false)
-
-        /** How many times splice has re-sent this turn upstream and carried on. */
-        private val resumes = AtomicLong(0)
         override val turnId: String get() = id
 
         override fun received() {
@@ -144,10 +173,6 @@ public class LiveTurns(
         }
 
         fun isStopped(): Boolean = stopped.get()
-
-        fun resumed() {
-            resumes.incrementAndGet()
-        }
 
         /** True for the first stop only: a second stop of the same turn changes nothing. */
         fun claimStop(): Boolean = stopped.compareAndSet(false, true)
@@ -164,7 +189,12 @@ public class LiveTurns(
             compact,
             now - since,
             stopped.get(),
-            TurnSilence((now - lastByte.get()).coerceAtLeast(0L), answered.get(), resumes.get().toInt()),
+            TurnSilence(
+                idleMs = (now - lastByte.get()).coerceAtLeast(0L),
+                seenOutput = answered.get(),
+                resumes = perf.count(PerfKeys.REANCHORS).toInt(),
+                retries = perf.count(PerfKeys.RETRIES).toInt(),
+            ),
         )
     }
 
@@ -176,8 +206,10 @@ public class LiveTurns(
     private val marks = ConcurrentHashMap<Mark, Long>()
 
     /** A streaming turn admitted on [slot], listed until the slot is released. [messagesHash] is
-     *  [MessagesHash.of] the client's request, null when it sent no session (no re-send can be told). */
-    internal fun admitted(slot: InflightGate.Slot, meta: TurnMeta, messagesHash: String?) {
+     *  [MessagesHash.of] the client's request, null when it sent no session (no re-send can be told).
+     *  [perf] is the turn's own telemetry, which the row reads its resume and retry counts off: both
+     *  are written where they happen, deeper than this seam can see (see [TurnSilence.resumes]). */
+    internal fun admitted(slot: InflightGate.Slot, meta: TurnMeta, messagesHash: String?, perf: TurnPerf) {
         val counted = slot.countedSlot
         val turn = bySlot.computeIfAbsent(counted) {
             val created = Live(
@@ -186,8 +218,8 @@ public class LiveTurns(
                 messagesHash,
                 meta.route.upstreamModel,
                 meta.compact,
-                clock(),
                 clock,
+                perf,
             )
             live[created.id] = created
             counted.onReceived(created)
@@ -198,11 +230,6 @@ public class LiveTurns(
             created
         }
         turn.messages = messagesHash
-        // A BORROWED HANDLE ON A ROW THAT ALREADY EXISTS IS A RESUME. The gate hands a continuation its
-        // own Slot over the source's one counted permit (InflightGate.Slot.resumedSource), and that
-        // continuation is admitted again through here, finding the row rather than creating it. So the
-        // count of resumes is observable at this one seam, without reaching into any dialect's round.
-        if (slot.resumedSource) turn.resumed()
         if (turn.isStopped()) mark(turn)
     }
 

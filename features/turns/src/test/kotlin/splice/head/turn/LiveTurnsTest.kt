@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
@@ -61,6 +63,12 @@ class LiveTurnsTest {
 
     private fun hash(text: String): String? = MessagesHash.of(request(text, stream = true))
 
+    /** A turn admitted with its own fresh telemetry, for the tests that pin listing, stopping and the
+     *  re-send mark and do not care what the row's counters say. The tests that DO care call
+     *  [LiveTurns.admitted] directly with a perf they keep, because the counters are written on it. */
+    private fun LiveTurns.admit(slot: InflightGate.Slot, meta: TurnMeta, messagesHash: String?) =
+        admitted(slot, meta, messagesHash, TurnPerf(clock = ElapsedClock { now }))
+
     /** What [job] completed with, read through the public completion handler: a cancelled plain Job
      *  completes at once, and a handler on a completed job runs immediately. Null while it runs. */
     private fun causeOf(job: Job): Throwable? {
@@ -72,10 +80,10 @@ class LiveTurnsTest {
     @Test
     fun `a turn is listed from admission until its slot is released, oldest first, with its age`() {
         val first = slot()
-        turns.admitted(first, meta("sess-a", compact = true), hash("go"))
+        turns.admit(first, meta("sess-a", compact = true), hash("go"))
         now += 50
         val second = slot()
-        turns.admitted(second, meta(null, model = "gpt-5.6-terra"), null)
+        turns.admit(second, meta(null, model = "gpt-5.6-terra"), null)
         now += 25
 
         assertEquals(
@@ -97,8 +105,8 @@ class LiveTurnsTest {
         val first = slot()
         val second = slot()
         try {
-            turns.admitted(first, meta("shared-session"), hash("same"))
-            turns.admitted(second, meta("shared-session"), hash("same"))
+            turns.admit(first, meta("shared-session"), hash("same"))
+            turns.admit(second, meta("shared-session"), hash("same"))
             val ids = turns.list().map { it.id }
             assertEquals(2, ids.toSet().size)
             assertEquals(ids, gate.snapshot().live.map { it.turnId })
@@ -111,7 +119,7 @@ class LiveTurnsTest {
     @Test
     fun `a stop cancels the turn's own job with an OperatorStop and answers its session`() {
         val slot = slot()
-        turns.admitted(slot, meta("sess-a"), hash("go"))
+        turns.admit(slot, meta("sess-a"), hash("go"))
         val job = Job()
         val other = Job()
         turns.driving(slot, job)
@@ -129,7 +137,7 @@ class LiveTurnsTest {
     @Test
     fun `a stop that lands before the drive has a job cancels the job when it arrives`() {
         val slot = slot()
-        turns.admitted(slot, meta("sess-a"), hash("go"))
+        turns.admit(slot, meta("sess-a"), hash("go"))
         turns.stop("turn-1")
         val job = Job()
 
@@ -149,7 +157,7 @@ class LiveTurnsTest {
     @Test
     fun `a held source and its continuation share one live row and stop both jobs`() {
         val original = slot()
-        turns.admitted(original, meta("source-session"), hash("go"))
+        turns.admit(original, meta("source-session"), hash("go"))
         val first = Job()
         val raw = Job()
         turns.driving(original, first)
@@ -159,7 +167,7 @@ class LiveTurnsTest {
         original.release()
         val resumed = checkNotNull(gate.resumeSource("source-session"))
         val current = Job()
-        turns.admitted(resumed, meta("source-session"), hash("result"))
+        turns.admit(resumed, meta("source-session"), hash("result"))
         turns.driving(resumed, current)
 
         assertEquals(listOf("turn-1"), turns.list().map { it.id }, "one counted source is one listed turn")
@@ -177,7 +185,7 @@ class LiveTurnsTest {
     @Test
     fun `the stop's mark refuses that session's re-send of the same messages once, inside the window`() {
         val slot = slot()
-        turns.admitted(slot, meta("sess-a"), hash("go"))
+        turns.admit(slot, meta("sess-a"), hash("go"))
         turns.stop("turn-1")
         now += STOP_RESEND_WINDOW_MS
 
@@ -190,7 +198,7 @@ class LiveTurnsTest {
 
     @Test
     fun `a re-send after the window goes through, and the stale mark is spent`() {
-        turns.admitted(slot(), meta("sess-a"), hash("go"))
+        turns.admit(slot(), meta("sess-a"), hash("go"))
         turns.stop("turn-1")
         now += STOP_RESEND_WINDOW_MS + 1
 
@@ -199,7 +207,7 @@ class LiveTurnsTest {
 
     @Test
     fun `a second stop of the same turn answers again and leaves no second mark`() {
-        turns.admitted(slot(), meta("sess-a"), hash("go"))
+        turns.admit(slot(), meta("sess-a"), hash("go"))
         turns.stop("turn-1")
         assertTrue(turns.refusesResend("sess-a", request("go", stream = false)))
 
@@ -211,7 +219,7 @@ class LiveTurnsTest {
     @Test
     fun `a turn with no session is stopped and marks nothing`() {
         val slot = slot()
-        turns.admitted(slot, meta(null), null)
+        turns.admit(slot, meta(null), null)
         val job = Job()
         turns.driving(slot, job)
 
@@ -223,10 +231,10 @@ class LiveTurnsTest {
 
     @Test
     fun `a new stop prunes marks already past the window`() {
-        turns.admitted(slot(), meta("sess-a"), hash("go"))
+        turns.admit(slot(), meta("sess-a"), hash("go"))
         turns.stop("turn-1")
         now += STOP_RESEND_WINDOW_MS + 1
-        turns.admitted(slot(), meta("sess-b"), hash("go"))
+        turns.admit(slot(), meta("sess-b"), hash("go"))
         turns.stop("turn-2")
         now -= STOP_RESEND_WINDOW_MS + 1
 
@@ -259,9 +267,9 @@ class LiveTurnsTest {
             put("codex", turns)
             put("grok", grok)
         }
-        val codexTurn = slot().also { turns.admitted(it, meta("sess-a"), null) }
-        val grokTurn = slot().also { grok.admitted(it, meta("sess-b"), null) }
-        val anonymous = slot().also { turns.admitted(it, meta(null), null) }
+        val codexTurn = slot().also { turns.admit(it, meta("sess-a"), null) }
+        val grokTurn = slot().also { grok.admit(it, meta("sess-b"), null) }
+        val anonymous = slot().also { turns.admit(it, meta(null), null) }
         assertEquals(setOf("sess-a", "sess-b"), byHead.sessions(), "a turn with no session names none")
         codexTurn.release()
         assertEquals(setOf("sess-b"), byHead.sessions())
@@ -279,9 +287,9 @@ class LiveTurnsTest {
     @Test
     fun `two turns silent for the same time are told apart by whether the provider has answered`() {
         val waiting = slot()
-        turns.admitted(waiting, meta("sess-prefill"), hash("go"))
+        turns.admit(waiting, meta("sess-prefill"), hash("go"))
         val answering = slot()
-        turns.admitted(answering, meta("sess-streaming"), hash("go"))
+        turns.admit(answering, meta("sess-streaming"), hash("go"))
         answering.received()
         now += 120_000
 
@@ -293,34 +301,51 @@ class LiveTurnsTest {
         assertTrue(listed.getValue("sess-streaming").silence.seenOutput, "this one answered, and then went quiet")
     }
 
-    /** A RESUME IS COUNTED WHERE IT HAPPENS. The gate hands a continuation its own borrowed handle over
-     *  the source's one counted permit, and that handle is admitted again, so the one live row sees every
-     *  re-send without any dialect reporting one. The arm also pins what it is NOT: a fresh turn on a new
-     *  slot starts at zero, so the count belongs to the turn and not to the session. */
+    /** A RESUME AND A RETRY ARE READ OFF THE COUNTERS THAT RECORD THEM, AND THEY ARE TWO NUMBERS.
+     *  The re-anchor writes REANCHORS where it happens (DriveSignals.onReanchor) and the upstream's
+     *  refusal writes RETRIES where it happens (UpstreamAttempt.markRetry); both land on the turn's
+     *  own TurnPerf, which is why the row holds it. Driven here by writing those counters rather than
+     *  by running a provider, because the arm is the ROW'S READ of them, not the dialects' writes.
+     *
+     *  WHAT THIS REPLACED, AND WHY. The first build counted a resume off
+     *  `InflightGate.Slot.resumedSource` — a borrowed handle re-admitted over a held source's permit.
+     *  That reads as a resume and is not one: `AdmittedTurn.settle` keeps a borrowed handle only when
+     *  `roundInterceptor.resumesSource()` is true, which in production is only the codex code-mode
+     *  bridge, when a LATER CLIENT REQUEST joins a stream splice still holds. The client sent that and
+     *  knows about it; a re-anchor is splice re-POSTing after silence, invisibly. And a re-anchor never
+     *  reaches admission at all. So the old arm passed while the field was 0 forever on every head but
+     *  one, which is why this test now drives the counter and not the gate. */
     @Test
-    fun `each re-send of a held turn is counted on its one live row, and a new turn starts at zero`() {
-        val original = slot()
-        turns.admitted(original, meta("source-session"), hash("go"))
-        assertEquals(0, turns.list().single().silence.resumes, "a turn that has run straight through has had none")
+    fun `the row reports the turn's own re-anchors and upstream retries, and a new turn starts at zero`() {
+        val held = slot()
+        val perf = TurnPerf(clock = ElapsedClock { now })
+        turns.admitted(held, meta("source-session"), hash("go"), perf)
 
-        val lease = original.retainSource("source-session")
-        original.release()
-        val resumed = checkNotNull(gate.resumeSource("source-session"))
-        turns.admitted(resumed, meta("source-session"), hash("again"))
+        turns.list().single().silence.let {
+            assertEquals(0, it.resumes, "a turn that has run straight through has been re-anchored none")
+            assertEquals(0, it.retries, "and upstream has refused it none")
+        }
 
-        assertEquals(1, turns.list().single().silence.resumes, "the re-send splice made itself, on the same row")
+        perf.add(PerfKeys.RETRIES, 1)
+        turns.list().single().silence.let {
+            assertEquals(1, it.retries, "upstream refused it once and splice re-POSTed")
+            assertEquals(0, it.resumes, "which is not a re-anchor and must not read as one")
+        }
 
-        resumed.release()
-        val twice = checkNotNull(gate.resumeSource("source-session"))
-        turns.admitted(twice, meta("source-session"), hash("third"))
+        perf.add(PerfKeys.REANCHORS, 1)
+        perf.add(PerfKeys.REANCHORS, 1)
+        turns.list().single().silence.let {
+            assertEquals(2, it.resumes, "two silences ended by splice re-POSTing from its own salvage")
+            assertEquals(1, it.retries, "and the refusal count is untouched: different cause, different number")
+        }
 
-        assertEquals(2, turns.list().single().silence.resumes)
-
-        twice.release()
-        lease.release()
+        held.release()
         val fresh = slot()
-        turns.admitted(fresh, meta("other-session"), hash("go"))
-        assertEquals(0, turns.list().single().silence.resumes, "a different turn carries none of that history")
+        turns.admitted(fresh, meta("other-session"), hash("go"), TurnPerf(clock = ElapsedClock { now }))
+        turns.list().single().silence.let {
+            assertEquals(0, it.resumes, "a different turn carries none of that history")
+            assertEquals(0, it.retries)
+        }
         fresh.release()
     }
 
@@ -330,7 +355,7 @@ class LiveTurnsTest {
     @Test
     fun `a first byte in the same millisecond as admission still counts as answered`() {
         val fast = slot()
-        turns.admitted(fast, meta("sess-fast"), hash("go"))
+        turns.admit(fast, meta("sess-fast"), hash("go"))
         fast.received()
 
         val turn = turns.list().single()

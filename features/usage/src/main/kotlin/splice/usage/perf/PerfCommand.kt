@@ -24,8 +24,12 @@ import java.io.IOException
 import java.nio.file.Files
 import java.util.Locale
 
+// why: a fraction becomes a percentage.
 private const val PERCENT = 100.0
+
+// why: the widest model id the perf table column holds before it wraps.
 private const val MODEL_PAD = 24
+
 private const val USAGE = "usage: splice perf [--window 1h|24h|7d]"
 
 /** One head's perf rows, by key: app hands in the day-file reader the daemon's own /api/perf route uses. */

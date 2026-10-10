@@ -92,6 +92,7 @@ internal class SessionsWiring(
             )
         }
     }
+
     /** The launch records splice-launch writes: a session started from the person's own tmux names its pane there. */
     private val launchOwners = LaunchOwners(StatePaths().stateDir)
 

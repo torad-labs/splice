@@ -337,6 +337,33 @@ upgrade_noop_step() {
 }
 step "splice upgrade to the installed release changes nothing" upgrade_noop_step
 
+# ── 8b. pin a head to an account, see the pin in `splice status`, release it ────────────────
+# The topology's claudex reads the mock codex credential. A second credential in its pool directory, declaring its kind
+# and its label as splice writes them, makes a two-account pool at the next daemon start, so `work` is an account the
+# daemon holds a credential for. The pin goes through the route the console uses, with the management key the suite reads.
+pin_step() {
+  local pool url out
+  pool="$(dirname "$CODEX_AUTH_PATH")/chatgpt-oauth/$(basename "$CODEX_AUTH_PATH")"
+  url="http://127.0.0.1:$CONTROL_PORT/api/auth/claudex/switch"
+  mkdir -p "$pool" || return 1
+  bun -e 'const a = JSON.parse(await Bun.file(process.argv[1]).text()); a.splice_auth_kind = "chatgpt-oauth"; a.splice_account_label = "work"; await Bun.write(process.argv[2], JSON.stringify(a))' "$CODEX_AUTH_PATH" "$pool/work.json" || return 1
+  chmod 600 "$pool/work.json"
+  splice restart </dev/null >/dev/null 2>&1 || return 1
+  wait_health 60 >/dev/null || return 1
+  out="$(curl_mgmt -X POST -H 'Content-Type: application/json' -d '{"label":"work"}' "$url")" || return 1
+  printf 'pin: %s\n' "$out"
+  grep -q '"ok":true' <<<"$out" || { echo "the pin was refused"; return 1; }
+  out="$(splice status </dev/null 2>&1 | strip_ansi)"
+  printf '%s\n' "$out" | grep -E 'claudex|pinned' | head -4
+  grep -q 'pinned to work' <<<"$out" || { echo "splice status does not say pinned to work"; return 1; }
+  out="$(curl_mgmt -X DELETE "$url")" || return 1
+  printf 'unpin: %s\n' "$out"
+  grep -q '"ok":true' <<<"$out" || { echo "the unpin was refused"; return 1; }
+  out="$(splice status </dev/null 2>&1 | strip_ansi)"
+  ! grep -q 'pinned to' <<<"$out" || { printf '%s\n' "$out" | grep 'pinned'; echo "the pin is still shown after DELETE"; return 1; }
+}
+step "pin claudex to an account: splice status says pinned to <label>, and DELETE removes the line" pin_step
+
 # ── 9. restart, logs, status, uninstall ────────────────────────────────────────────────────────
 restart_step() {
   splice restart </dev/null || return 1

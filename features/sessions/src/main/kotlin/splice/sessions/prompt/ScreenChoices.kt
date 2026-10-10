@@ -30,11 +30,6 @@ private val CHOICE_LINE = Regex("""^\s*([>❯→*•]\s*)?([1-9])[.)]\s+(\S.*)$"
 // why: how a numbered choice is named in the contract, so the digit on the screen names the key that answers it.
 private const val CHOICE = "CHOICE_"
 
-// why: what each group of CHOICE_LINE holds, named so the parse reads as the line does.
-private const val MARKER_GROUP = 1
-private const val NUMBER_GROUP = 2
-private const val LABEL_GROUP = 3
-
 /** One choice the session is showing: the [key] that answers it and the [label] the client drew for it.
  *  [here] is true for the option the client is pointing at, which is what ACCEPT would take. */
 public data class ScreenChoice(val key: SessionKey, val label: String, val here: Boolean)
@@ -82,11 +77,11 @@ public class ScreenChoices {
         return first..last
     }
 
-    private fun drawn(hit: MatchResult): ScreenChoice = ScreenChoice(
-        key = SessionKey.valueOf(CHOICE + hit.groupValues[NUMBER_GROUP]),
-        label = hit.groupValues[LABEL_GROUP].trim(),
-        here = hit.groupValues[MARKER_GROUP].isNotEmpty(),
-    )
+    /** The line's three parts, named by CHOICE_LINE's own order: the pointer, the digit, the words. */
+    private fun drawn(hit: MatchResult): ScreenChoice {
+        val (marker, number, label) = hit.destructured
+        return ScreenChoice(SessionKey.valueOf(CHOICE + number), label.trim(), here = marker.isNotEmpty())
+    }
 
     /** The question above the choices: the last run of non-empty lines before the first one, which is how
      *  the client separates a prompt from the output it interrupted. Empty when there is nothing above it. */

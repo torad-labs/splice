@@ -413,8 +413,8 @@ function cardHtml(p, c, a, i, serves) {
   } else if (a.out) {
     body = signRow || `<div class="outbox"><button class="act primary" data-act="signin" data-p="${p.id}" data-a="${a.id}">Sign in</button></div>`;
   } else if (p.kind === "plan" && a.noUsage) {
-    // the words wait on fin (Marlin, Oct 10): a short state where the bars would be
-    body = `<div class="keysrc"><span class="state">${esc(p.name)} sends no usage</span></div>${signRow}`;
+    // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
+    body = `<div class="keysrc"><span class="state">${esc(p.name)} doesn't report limits</span></div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model"><i></i>${esc(a.model)}</div>`;
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";

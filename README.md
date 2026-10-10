@@ -554,7 +554,8 @@ or quota state. Set `local = false` on a provider to opt out of the loopback rul
 to force it elsewhere. A local head also asks its runtime for token counts, which is what makes
 Claude Code's context meter move and its auto-compaction fire; a runtime that refuses that request
 field takes `quirks = { stream_usage = false }`. See [`tools/e2e/local-models/README.md`](tools/e2e/local-models/README.md) for
-what each runtime reports and how it was tested.
+what each runtime reports and how it was tested. vLLM is documented, not tested, in 0.4.0: its tool
+calling needs `--enable-auto-tool-choice` and a `--tool-call-parser` for the model on `vllm serve`.
 
 ### Shared MCP hosting
 

@@ -57,7 +57,8 @@ probes only rows the runtime lists. Tested 2026-09-13 with the headless daemon (
 loaded 8192.
 
 **vLLM** (`base_url = "http://localhost:8000/v1"`): `vllm serve <model> --max-model-len N`; splice
-reads `GET /v1/models` and takes `max_model_len` as the served window. Documented, not tested.
+reads `GET /v1/models` and takes `max_model_len` as the served window. Tool calling needs
+`--enable-auto-tool-choice` and a `--tool-call-parser` for the model. Documented, not tested.
 
 Any other OpenAI-compatible server on a loopback address is treated as local too; it lists models
 but reports no context, so a declared window is trusted and doctor says so.

@@ -2,6 +2,7 @@
 package splice.accounts.pool
 
 import splice.core.auth.AuthDescription
+import splice.core.usage.ModelQuota
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 
@@ -100,6 +101,8 @@ public data class HeadAccountQuota(
     val fiveHour: HeadAccountWindow = HeadAccountWindow(),
     val sevenDay: HeadAccountWindow = HeadAccountWindow(),
     val observedAtEpochSeconds: Long? = null,
+    /** Each model's own weekly window, where the provider reports one (Claude). */
+    val sevenDayModels: List<ModelQuota> = emptyList(),
 )
 
 /** One quota window of a head's account as the control surface reads it: how full it is, when it resets (epoch

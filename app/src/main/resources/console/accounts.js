@@ -27,14 +27,16 @@ const CATALOG = [
   { id: "deepseek", name: "DeepSeek", kind: "key" },
 ];
 
-// A window as the page draws it, from splice's flat fields: its name from its length, how much is used, and the minutes
+// A window as the page draws it, from splice's flat fields: its name from its slot, how much is used, and the minutes
 // until it resets (null once the reading's reset has passed: the window has refilled since, and the page shows no time).
-function windowOf(pct, resetSec, lenSec) {
+// A weekly window the provider gives no length is measured from the time left to its reset
+// (QuotaSlots.weeklyWindowSeconds), so the long slot reads Week unless it is a month long.
+function windowOf(pct, resetSec, lenSec, slot) {
   if (pct == null) return null;
-  const len = lenSec ? Math.round(lenSec / 60) : null;
-  const label = len === 300 ? "5 hours" : len === 1440 ? "Day" : len === 10080 || len == null ? "Week" : len >= 40320 ? "Month" : `${Math.round(len / 1440)} days`;
+  const month = slot === "long" && lenSec >= 28 * 86400;
+  const label = slot === "short" ? "5 hours" : month ? "Month" : "Week";
   const left = resetSec ? Math.round((resetSec * 1000 - NOW.getTime()) / 60000) : null;
-  return { label, used: Math.round(pct), len: len || LEN.Week, left: left != null && left >= 0 ? left : null };
+  return { label, used: Math.round(pct), len: LEN[label], left: left != null && left >= 0 ? left : null };
 }
 const plainPlan = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : undefined);
 const acctId = (row) => row.selector_key || row.label || "primary";
@@ -65,13 +67,15 @@ async function load() {
     if (p.kind === "plan") {
       for (const row of ac.body.accounts || []) {
         if (!(row.heads || []).some((x) => heads.has(x))) continue;
-        const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds),
-          windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds)].filter(Boolean);
+        const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short"),
+          windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long")].filter(Boolean);
         const fresh = row.five_hour_current || row.seven_day_current;
         p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.account?.email || undefined, plan: plainPlan(row.plan), windows,
           staleAt: !fresh && row.observed_at_epoch_seconds && windows.length ? Math.round((row.observed_at_epoch_seconds * 1000 - NOW.getTime()) / 60000) : null,
           out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
-          canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request });
+          canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
+          // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
+          models: (row.seven_day_models || []).map((m) => [m.model, Math.round(m.used_percent)]) });
       }
     } else if (p.kind === "key") {
       for (const k of keyRows) {

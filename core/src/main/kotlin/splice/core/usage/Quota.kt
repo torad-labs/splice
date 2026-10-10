@@ -16,14 +16,30 @@ public data class QuotaWindow(
     val windowSeconds: Long?,
 )
 
+/** One model's own share of the weekly window (Claude's Opus and Sonnet weeks): the model as the provider names it
+ *  and how much of it is used. It rides the weekly window and resets with it. */
+public data class ModelQuota(val model: String, val usedPercent: Double)
+
 public data class QuotaSnapshot(
     val fiveHour: QuotaWindow? = null,
     val sevenDay: QuotaWindow? = null,
     val plan: String? = null,
     /** Epoch millis of the observation. */
     val updatedAt: Long = 0L,
+    /** The per-model weekly windows, where the provider reports them (Claude); empty everywhere else. */
+    val models: List<ModelQuota> = emptyList(),
 ) {
     public val isEmpty: Boolean get() = fiveHour == null && sevenDay == null
+
+    /** A turn's header reading names no model weeks; only the provider's usage endpoint does. So a reading without them
+     *  keeps [earlier]'s while both read the same week (the same weekly reset), and drops them once the week rolls. */
+    public fun keepingModelsOf(earlier: QuotaSnapshot?): QuotaSnapshot {
+        val reset = sevenDay?.resetsAt
+        val prior = earlier?.sevenDay?.resetsAt
+        // the endpoint rounds its reset to the second and the headers carry their own, so one week reads within a minute
+        val sameWeek = reset != null && prior != null && kotlin.math.abs(reset - prior) <= SAME_RESET_SECONDS
+        return if (models.isEmpty() && sameWeek) copy(models = earlier.models) else this
+    }
 
     /** V4-452: the window this snapshot's CURRENT reading at [nowMillis] names fully used, and its reset; the
      *  later-resetting one when both are. Null when none is, or when a full window names no reset: a reading with
@@ -51,7 +67,9 @@ public data class QuotaSnapshot(
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(nowMillis)
         val observed = observedAtEpochSeconds
         val current = { w: QuotaWindow -> w.takeIf { QuotaFreshness.current(observed, it.resetsAt, nowSeconds) } }
-        return copy(fiveHour = fiveHour?.let(current), sevenDay = sevenDay?.let(current)).takeUnless { it.isEmpty }
+        val week = sevenDay?.let(current)
+        val byModel = if (week == null) emptyList() else models
+        return copy(fiveHour = fiveHour?.let(current), sevenDay = week, models = byModel).takeUnless { it.isEmpty }
     }
 }
 
@@ -104,6 +122,10 @@ public enum class QuotaFullWindow(public val wire: String) {
 // why: the providers report a full window as exactly 100 (AccountPool's own gate reads the same line), and a
 // figure under it is not a statement that the plan is spent
 private const val FULLY_USED_PERCENT = 100.0
+
+// why: two readings of one weekly window, from the usage endpoint and from a turn's headers, name its reset within a
+// minute of each other; a week that rolled names one days later
+private const val SAME_RESET_SECONDS = 60L
 
 public const val FIVE_HOURS_SECONDS: Long = 5 * 3600L
 public const val SEVEN_DAYS_SECONDS: Long = 7 * 24 * 3600L

@@ -3,6 +3,7 @@
 package splice.upstream.credentials
 
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.usage.ModelQuota
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
@@ -171,6 +172,8 @@ public data class AccountQuotaReading(
     val fiveHour: AccountWindowReading = AccountWindowReading(),
     val sevenDay: AccountWindowReading = AccountWindowReading(),
     val observedAtEpochSeconds: Long? = null,
+    /** Each model's own weekly window, where the provider reports one (Claude). */
+    val sevenDayModels: List<ModelQuota> = emptyList(),
 )
 
 /** One quota window of an account as a status surface reads it: how full it is, when it resets (epoch SECONDS) and

@@ -21,6 +21,8 @@ import splice.accounts.claude.ClaudeLoginRows
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.topology.AuthKindRegistry
+import splice.core.usage.ModelQuota
+import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
 import splice.core.usage.QuotaWindowView as PlanWindow
@@ -149,6 +151,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
                 account.quota.sevenDay.windowSeconds,
             ),
             observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
+            sevenDayModels = account.quota.sevenDayModels,
         ),
         authExclusion = AuthExclusionView(
             account.credential.excludedUntilEpochMillis,
@@ -218,6 +221,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         into.put("seven_day_reset_epoch_seconds", row.quota.sevenDay.resetEpochSeconds)
         into.put("seven_day_window_seconds", row.quota.sevenDay.windowSeconds)
         into.put("seven_day_current", current(row.quota.sevenDay, row.quota.observedAtEpochSeconds, nowSeconds))
+        QuotaJson().putModels(into, "seven_day_models", row.quota.sevenDayModels)
         into.put("observed_at_epoch_seconds", row.quota.observedAtEpochSeconds)
         into.put("available", row.flags.available)
         into.put("credential_present", row.flags.credentialPresent)
@@ -275,6 +279,8 @@ private data class JoinedQuota(
     val sevenDay: QuotaWindowView,
     /** Epoch SECONDS the quota was read, from whichever source carried it — null when it didn't. */
     val observedAtEpochSeconds: Long?,
+    /** Each model's own weekly window, where the provider reports one (Claude). */
+    val sevenDayModels: List<ModelQuota> = emptyList(),
 )
 
 /** One joined row: an OAuth account (or a single-login head with none) plus every head riding it.

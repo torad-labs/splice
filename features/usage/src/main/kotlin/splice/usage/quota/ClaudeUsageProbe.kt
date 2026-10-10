@@ -41,6 +41,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthProvider
 import splice.core.usage.FIVE_HOURS_SECONDS
+import splice.core.usage.ModelQuota
 import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -56,9 +57,8 @@ private const val CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 // why: the OAuth beta the endpoint requires, the same value every Claude turn already carries.
 private const val CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 
-// why: the body's own field names for the two windows splice has slots for. The per-model weekly windows
-// (seven_day_opus, seven_day_sonnet) are read by nothing: Claude Code's own status line draws exactly two bars and
-// a model-scoped window has nowhere to go without inventing a third slot.
+// why: the body's own field names for the two windows splice has slots for. Claude Code's status line draws only these
+// two bars; the console's Accounts also draws each model's weekly window under the week (Oct 10, 2026).
 private const val USAGE_FIVE_HOUR = "five_hour"
 private const val USAGE_SEVEN_DAY = "seven_day"
 
@@ -103,6 +103,9 @@ internal class ClaudeUsageProbe(
 internal class ClaudeUsageParser : QuotaParse {
     private val slots = QuotaSlots()
 
+    /** The per-model weekly windows the endpoint reports beside the week, by the name a person reads for each. */
+    private val modelWeeks = listOf("seven_day_opus" to "Opus", "seven_day_sonnet" to "Sonnet")
+
     /** The endpoint names no plan, so the snapshot carries none: the plan word on an added account's card comes
      *  from its own credential (`subscriptionType`), never from a usage reading. */
     override fun parse(body: JsonObject, now: Long): QuotaSnapshot? {
@@ -110,7 +113,10 @@ internal class ClaudeUsageParser : QuotaParse {
             window(body[USAGE_FIVE_HOUR], FIVE_HOURS_SECONDS),
             window(body[USAGE_SEVEN_DAY], SEVEN_DAYS_SECONDS),
         )
-        return if (windows.isEmpty()) null else slots.snapshot(windows, null, now)
+        val models = modelWeeks.mapNotNull { (field, name) ->
+            (body[field] as? JsonObject)?.let { number(it["utilization"]) }?.let { ModelQuota(name, it) }
+        }
+        return if (windows.isEmpty()) null else slots.snapshot(windows, null, now).copy(models = models)
     }
 
     /** One `{utilization, resets_at}` object. Null for a window the body omits or reports as null, so an absent

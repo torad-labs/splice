@@ -54,8 +54,9 @@ public class QuotaTracker(
     public fun snapshot(): QuotaSnapshot? = latest.get()
 
     /** Latest wins. Persisted at once: a snapshot arrives at most once per round or per poll. */
-    public fun record(snapshot: QuotaSnapshot) {
-        if (snapshot.isEmpty) return
+    public fun record(reading: QuotaSnapshot) {
+        if (reading.isEmpty) return
+        val snapshot = reading.keepingModelsOf(latest.get())
         latest.set(snapshot)
         writes.withLock {
             if (!retired) {

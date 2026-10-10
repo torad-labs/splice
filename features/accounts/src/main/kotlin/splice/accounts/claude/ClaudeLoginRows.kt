@@ -16,6 +16,7 @@ import splice.accounts.pool.HeadAccountView
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFreshness
+import splice.core.usage.QuotaJson
 
 internal object ClaudeLoginRows {
     suspend fun list(
@@ -130,6 +131,7 @@ internal object ClaudeLoginRows {
         put("seven_day_window_seconds", seven?.windowSeconds)
         put("seven_day_limit_percent", seven?.let { 100 })
         put("seven_day_current", seven != null && QuotaFreshness.current(observed, seven.resetsAt, nowSeconds))
+        QuotaJson().putModels(into, "seven_day_models", quota?.models.orEmpty())
         put("observed_at_epoch_seconds", observed)
     }
 }

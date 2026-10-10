@@ -343,6 +343,7 @@ public class AccountPool(
                     windowSeconds = snapshot?.sevenDay?.windowSeconds,
                 ),
                 observedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
+                sevenDayModels = snapshot?.models.orEmpty(),
             ),
             credential = AccountCredentialReading(
                 present = credential.credentialPresent,

@@ -20,6 +20,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.FIVE_HOURS_SECONDS
+import splice.core.usage.ModelQuota
+import splice.core.usage.QuotaJson
 import splice.core.usage.SEVEN_DAYS_SECONDS
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
@@ -27,7 +29,7 @@ import splice.core.util.WallClock
 private const val NOW_MS = 1_788_000_000_000L
 private const val USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
-/** What the endpoint answered on a Max plan: both windows, a per-model weekly splice has no slot for, and the
+/** What the endpoint answered on a Max plan: both windows, a per-model weekly (Opus null, Sonnet read), and the
  *  extra-usage block (anthropics/claude-code#30930). `resets_at` carries fractional seconds and an offset. */
 private const val MAX_PLAN_BODY = """
 {"five_hour":{"utilization":33.0,"resets_at":"2026-04-11T07:00:00.528743+00:00"},
@@ -53,6 +55,29 @@ class ClaudeUsageProbeTest {
         assertEquals(SEVEN_DAYS_SECONDS, snapshot.sevenDay!!.windowSeconds)
         assertEquals(1_776_387_600L, snapshot.sevenDay!!.resetsAt, "2026-04-17T01:00:00Z")
         assertEquals(NOW_MS, snapshot.updatedAt)
+    }
+
+    // Oct 10, 2026: Accounts draws each model's weekly window under the week. A model the body reports null has none.
+    @Test
+    fun `each model's weekly window is read by the name a person reads, and a null one is no window`() {
+        val snapshot = parser.parse(obj(MAX_PLAN_BODY), NOW_MS)!!
+
+        assertEquals(listOf(ModelQuota("Sonnet", 1.0)), snapshot.models)
+    }
+
+    // A turn's headers name no model weeks: the reading keeps the last ones while it is the same week, and drops them
+    // once the week rolls.
+    @Test
+    fun `a reading with no model weeks keeps the last ones for the same week only`() {
+        val probed = parser.parse(obj(MAX_PLAN_BODY), NOW_MS)!!
+        val week = probed.sevenDay!!
+        val sameWeek = probed.copy(models = emptyList(), sevenDay = week.copy(resetsAt = week.resetsAt!! + 1))
+        val rolled = week.copy(resetsAt = week.resetsAt!! + SEVEN_DAYS_SECONDS)
+        val nextWeek = probed.copy(models = emptyList(), sevenDay = rolled)
+
+        assertEquals(probed.models, sameWeek.keepingModelsOf(probed).models)
+        assertEquals(emptyList<ModelQuota>(), nextWeek.keepingModelsOf(probed).models)
+        assertEquals(probed.models, QuotaJson().decode(QuotaJson().encode(probed))!!.models, "kept across a restart")
     }
 
     @Test

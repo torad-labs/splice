@@ -11,6 +11,7 @@ const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi
 // when it next rolls over (day_resets_at_epoch_ms). A browser in another zone computing its own midnight disagreed
 // with the admission that actually blocks (re-review, Oct 10). Only a daemon that answers nothing falls back here.
 let DAY_RESETS_AT = null;
+let DAY_STARTED_AT = null; // the instant the budget day now running began, from the daemon's own calendar day
 function dayReset() {
   const next = DAY_RESETS_AT ?? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
   return { left: Math.round((next - NOW.getTime()) / 60000), resetMs: next };
@@ -35,13 +36,29 @@ const CATALOG = [
 // until it resets (null once the reading's reset has passed: the window has refilled since, and the page shows no time).
 // A weekly window the provider gives no length is measured from the time left to its reset
 // (QuotaSlots.weeklyWindowSeconds), so the long slot reads Week unless it is a month long.
-function windowOf(pct, resetSec, lenSec, slot) {
+//
+// EACH WINDOW CARRIES ITS OWN STALENESS, from splice's own `*_current` field for that window
+// (QuotaFreshness): one current window never vouches for another. A 5-hour reading minutes old sits
+// beside a week whose reset has passed, and the week's figure is then the usage of a week that
+// ended; drawing it unmarked reports spent capacity on a week that starts at zero. [current]
+// undefined is a caller with no freshness to give, which is drawn as it always was.
+function windowOf(pct, resetSec, lenSec, slot, current) {
   if (pct == null) return null;
   const month = slot === "long" && lenSec >= 28 * 86400;
   const label = slot === "short" ? "5 hours" : month ? "Month" : "Week";
   const left = resetSec ? Math.round((resetSec * 1000 - NOW.getTime()) / 60000) : null;
   const due = left != null && left >= 0;
-  return { label, used: Math.round(pct), len: LEN[label], left: due ? left : null, resetMs: due ? resetSec * 1000 : null };
+  return { label, used: Math.round(pct), len: LEN[label], left: due ? left : null, resetMs: due ? resetSec * 1000 : null,
+    stale: current === false };
+}
+// A model week's own freshness, under the account week it is drawn beneath: that week's reading is the one
+// observation both came from, and the model's own reset decides whether its figure is still this week's.
+// splice drops a rolled row (QuotaSnapshot.modelsRunningAt); a daemon older than that still sends one, and the
+// page must not draw it as today's. Undefined week freshness (a daemon older than the field) leaves the row
+// drawn as it always was.
+function modelCurrent(weekCurrent, m) {
+  if (weekCurrent === false) return false;
+  return m.resets_at && m.resets_at * 1000 <= NOW.getTime() ? false : weekCurrent;
 }
 const plainPlan = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : undefined);
 // An account's name on one command, as splice knows it there: two commands can each have an account called "primary"
@@ -58,13 +75,23 @@ async function load() {
   offline = false;
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
   DAY_RESETS_AT = bg.body?.day_resets_at_epoch_ms ?? null;
-  // The day splice is counting, from the boundary it says it next crosses. Buckets are whole UTC hours, so in a zone
-  // offset by half an hour the day starts INSIDE a bucket: the hour holding local midnight is taken, or every turn in
-  // its first thirty minutes would vanish from both the spend and the count of turns with no price (re-review, Oct 10).
-  const dayEnd = DAY_RESETS_AT ?? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
-  const dayStart = Math.floor((dayEnd - 86400000) / 3600000) * 3600000;
-  const spendToday = new Map((ec.body?.heads || []).map((h) => [h.key, (h.buckets || []).filter((b) => b.hour >= dayStart)
-    .reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 })]));
+  DAY_STARTED_AT = bg.body?.day_started_at_epoch_ms ?? null;
+  // The day splice is counting begins where the daemon says it began: its own calendar day's midnight, never
+  // tomorrow's minus 24 hours, which is wrong on the two days a year the clock changes. Only a daemon that answers
+  // nothing falls back to this browser's midnight.
+  const dayStart = DAY_STARTED_AT ?? new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate()).getTime();
+  // Buckets are whole UTC hours, so where the day starts inside one (a zone offset by half an hour) that hour holds
+  // turns of both days and its buckets cannot say which is which; an exact figure there needs the per-turn rows. The
+  // figure counts the whole hours from the first boundary after the day began, and the opening hour is its own
+  // number beside it, never guessed into either day.
+  const HOUR = 3600000;
+  const wholeFrom = Math.ceil(dayStart / HOUR) * HOUR;
+  const sumOf = (rows) => rows.reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 });
+  const spendToday = new Map((ec.body?.heads || []).map((h) => {
+    const rows = h.buckets || [];
+    const opening = wholeFrom > dayStart ? sumOf(rows.filter((b) => b.hour < wholeFrom && b.hour + HOUR > dayStart)) : null;
+    return [h.key, { ...sumOf(rows.filter((b) => b.hour >= wholeFrom)), opening: opening && (opening.usd || opening.unpriced) ? opening : null }];
+  }));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   // a local runtime splice could not reach on its port (/api/heads runtimeNotAnswering): its card says so, as a signed-out one does
@@ -78,6 +105,7 @@ async function load() {
     if (!provs.has(fam.id)) provs.set(fam.id, { id: fam.id, name: fam.name, kind, cmds: [], accounts: [] });
     const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0 };
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : today.usd, unpriced: b ? b.unpriced_turns : today.unpriced,
+      opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
       local: kind === "local", // nothing bills it per token, so no figure and no line
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [] });
@@ -90,17 +118,19 @@ async function load() {
         // Claude Code's own login place that never held a sign-in is no account (Marlin, Oct 10): no credential, no
         // account, no reading. One that was signed in and expired keeps all three, and shows.
         if (row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds) continue;
-        const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short"),
-          windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long")].filter(Boolean);
-        const fresh = row.five_hour_current || row.seven_day_current;
+        const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
+          windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
+        const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
+          ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
         p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.account?.email || undefined, plan: plainPlan(row.plan), windows,
-          staleAt: !fresh && row.observed_at_epoch_seconds && windows.length ? row.observed_at_epoch_seconds * 1000 : null,
+          // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
+          staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
           canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
           // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
           noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
           // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
-          models: (row.seven_day_models || []).map((m) => ({ name: m.model, ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long") })) });
+          models });
       }
     } else if (p.kind === "key") {
       for (const k of keyRows) {
@@ -239,17 +269,18 @@ function refills(day) {
 }
 
 function windowsHtml(a, next = null) {
-  const stale = a.staleAt != null;
   let rows = "";
   for (const w of a.windows) {
     const full = w.used >= 100;
-    rows += `<span class="label">${w.label}</span>${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${stale ? "stale" : ""}`)}`
+    // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
+    // whose own reset has passed drew that week's spent figure as today's
+    rows += `<span class="label">${w.label}</span>${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${w.stale ? "stale" : ""}`)}`
       + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>${resets(w)}`;
     if (w.label === "Week" && a.models) {
-      for (const m of a.models) rows += `<span class="label sub">${m.name}</span>${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${stale ? "stale" : ""}`)}<span class="pct">${m.used}%<span class="used">used</span></span>${resets(m)}`;
+      for (const m of a.models) rows += `<span class="label sub">${m.name}</span>${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}<span class="pct">${m.used}%<span class="used">used</span></span>${resets(m)}`;
     }
   }
-  if (stale) rows += `<span class="stale-at">${ICON.eye}Read ${at(a.staleAt)}</span>`;
+  if (a.staleAt != null) rows += `<span class="stale-at">${ICON.eye}Read ${at(a.staleAt)}</span>`;
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
     const w = held(next) && next.windows.filter((x) => x.used >= 100).sort((x, y) => y.left - x.left)[0];
     rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked()}${resets(w)}` : ""}</span>`;
@@ -286,7 +317,11 @@ function meterHtml(c, pick = null) {
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
 // Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
 const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} ${c.onPlan ? "on your plan" : "with no price"}`;
-const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
+const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "")
+  + (c.opening && !c.local ? `<span class="unpriced own">${openingNote(c.opening)}</span>` : "");
+// The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
+// the hourly totals cannot split them, so they are said once, apart from the day's figure.
+const openingNote = (o) => `${o.usd ? money(o.usd) : `${o.unpriced.toLocaleString("en-US")} ${o.unpriced === 1 ? "turn" : "turns"}`} in the hour holding midnight, not counted`;
 function editorHtml(c, tag) {
   const ed = ui.editor;
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");

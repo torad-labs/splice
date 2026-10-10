@@ -412,6 +412,8 @@ describe("pre-push judges the tip", () => {
     expect(result).toBe(1);
     expect(text).toContain("the branch moved while the gate judged");
     expect(text).toContain(`not the judged ${judged.slice(0, 7)}`);
+    // The refusal carries the command that cannot carry an unjudged commit, so nobody has to remember it.
+    expect(text).toContain(`git push origin ${judged}:refs/heads/feat/x`);
   });
 });
 

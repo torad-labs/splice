@@ -477,7 +477,7 @@ export async function preCommit(lay: Layout): Promise<number> {
 
 /** The pre-push judgement of the pushed tip against the worktree. [stdin] is git's ref list:
  *  `<local ref> <local sha> <remote ref> <remote sha>`. */
-export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): Promise<number> {
+export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}, remoteName: string = "origin"): Promise<number> {
   const started = performance.now();
   const refs = pushedRefs(stdin);
   if (refs.length === 0) {
@@ -486,7 +486,7 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
   }
   // Each distinct tip is judged on its own, as a clean checkout of that commit.
   for (const tip of [...new Set(refs.map((ref) => ref.tip))]) {
-    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), deps, started);
+    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), deps, started, remoteName);
     if (code !== 0) return code;
   }
   return 0;
@@ -500,6 +500,7 @@ async function judgeTip(
   refs: readonly PushedRef[],
   deps: HookDeps,
   started: number,
+  remoteName: string,
 ): Promise<number> {
   const subject = gitText(lay.repoRoot, ["log", "-1", "--format=%s", tip]);
   console.error(`── pr title (${subject}) ──`);
@@ -518,7 +519,7 @@ async function judgeTip(
   }
   console.error(`pre-push timing: build tree ${(tree.setupMs / 1000).toFixed(1)} s to move to the sha, ${((performance.now() - waitStarted - tree.setupMs) / 1000).toFixed(1)} s waiting for it`);
   try {
-    return await judgeIn(lay, tree.path, tip, refs, deps, started);
+    return await judgeIn(lay, tree.path, tip, refs, deps, started, remoteName);
   } finally {
     tree.release();
   }
@@ -531,6 +532,7 @@ async function judgeIn(
   refs: readonly PushedRef[],
   deps: HookDeps,
   started: number,
+  remoteName: string,
 ): Promise<number> {
   const judgeLay: Layout = { repoRoot: root, buildRoot: root };
   let changed: string[];
@@ -586,7 +588,8 @@ async function judgeIn(
   const moved = gradleRed || failedLegs.length > 0 ? [] : movedRefs(lay.repoRoot, refs, head);
   if (moved.length > 0) {
     console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
-    console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")} — push again so the gate judges what git will send`);
+    console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")}`);
+    console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, refs, head)}`);
     return 1;
   }
   if (!gradleRed && failedLegs.length === 0) {
@@ -607,6 +610,8 @@ async function judgeIn(
 export interface PushedRef {
   readonly local: string;
   readonly tip: string;
+  /** The ref on the remote this one moves, which an explicit-sha refspec has to name. */
+  readonly remoteRef: string;
   readonly remote: string;
 }
 
@@ -616,8 +621,14 @@ function pushedRefs(stdin: string): PushedRef[] {
     .split("\n")
     .map((line) => line.trim().split(/\s+/))
     .filter((fields) => fields.length === 4)
-    .map((fields) => ({ local: fields[0] ?? "", tip: fields[1] ?? "", remote: fields[3] ?? "" }))
+    .map((fields) => ({ local: fields[0] ?? "", tip: fields[1] ?? "", remoteRef: fields[2] ?? "", remote: fields[3] ?? "" }))
     .filter((ref) => !ZERO_SHA.test(ref.tip));
+}
+
+/** The push that cannot carry an unjudged commit: the sha spelled out, so git has no ref left to re-read. One command
+ *  per ref the push moves. */
+function explicitPush(remoteName: string, refs: readonly PushedRef[], judged: string): string {
+  return refs.map((ref) => `git push ${remoteName} ${judged}:${ref.remoteRef || ref.local}`).join(" && ");
 }
 
 /** The sha a local ref resolves to now, or undefined when git cannot say. */
@@ -752,7 +763,7 @@ export async function hook(argv: readonly string[]): Promise<number> {
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
     if (verb === "pre-commit") return await commitGate(lay);
-    if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text());
+    if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text(), {}, rest[0] ?? "origin");
     if (verb === "install" && rest.length === 0) {
       const hooksDir = resolve(lay.repoRoot, gitText(lay.repoRoot, ["rev-parse", "--git-path", "hooks"]));
       for (const path of installShims(hooksDir, process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"))) {

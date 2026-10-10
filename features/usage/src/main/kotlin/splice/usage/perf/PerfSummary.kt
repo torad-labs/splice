@@ -154,7 +154,8 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  window are the increases between consecutive rows in FILE order (the sampling order; the
      *  wall clock may step), the first one measured against the last row before the cutoff when the
      *  source kept it. A decrease is a restart: the new process's count is taken whole. A restart
-     *  whose new count catches the old one up is invisible, so the total is a lower bound. */
+     *  whose new count catches the old one up is invisible, so the total is a lower bound. The
+     *  "telemetry dropped" count is the spec's: rows whose own cumulative counter is positive. */
     private fun ioDrops(rows: List<PerfRow>, dropsBefore: Long?): JsonObject {
         var previous: Long? = dropsBefore
         var writes = 0L
@@ -168,7 +169,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
                 else -> current - before
             }
             writes += lost
-            if (lost > 0L) droppedRows += 1
+            if (current > 0L) droppedRows += 1
             previous = current
         }
         return buildJsonObject {

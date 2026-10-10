@@ -110,7 +110,7 @@ class PerfCommandTest {
         assertTrue(text.contains("retries / refreshes     3 / 1"), text)
         assertTrue(text.contains("cache hit ratio         30.0%"), "600 of 2000 input tokens: $text")
         assertTrue(text.contains("peak inflight           5"), text)
-        assertTrue(text.contains("telemetry dropped       2 row(s)"), "two rows saw the counter rise: $text")
+        assertTrue(text.contains("telemetry dropped       3 row(s)"), "three rows carry a positive counter: $text")
         assertTrue(text.contains("kinds                   turn=2 compaction=1 activity_query=1"), text)
         assertTrue(text.contains("model fast") && text.contains("1 turn(s), failure 0.0%"), text)
         assertTrue(text.contains("model slow") && text.contains("2 turn(s), failure 50.0%"), text)

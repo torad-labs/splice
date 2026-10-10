@@ -74,9 +74,10 @@ const KNOBS = (() => {
   const KNOB = Object.fromEntries(LIST.map((k) => [k.key, k]));
 
   // What the daemon answered for GET /api/config, the menu or Custom field a click opened, and what each change did.
+  // `perCommand` stays false until a command's own value can be written (PUT /api/topology, a splice.toml write): a row never offers "One command" it cannot save.
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
-    cfg: null, cmds: [], said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    cfg: null, perCommand: false, cmds: [], said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -170,7 +171,7 @@ const KNOBS = (() => {
     }
     const owners = ownersOf(k.key), left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
     const lines = owners.map((c) => overHtml(k, c, hl)).join("");
-    const add = k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
+    const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(c)}"></span>${esc(c)}</button>`).join("")}</div>` : "") + "</span>" : "";
     const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : "";
     return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>`;

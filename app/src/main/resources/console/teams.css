@@ -43,7 +43,10 @@
 
 /* ---------- the room ---------- */
 .room { display: grid; gap: 2.4rem var(--gap-col); grid-template-columns: minmax(0, 1fr); grid-template-areas: "members" "talk" "feed"; align-items: start; }
-.members { grid-area: members; position: relative; display: grid; align-items: start; grid-template-columns: repeat(auto-fill, minmax(28rem, 1fr)); gap: var(--gap-card) 4.6rem; padding-left: 3.4rem; }
+/* the members are one column on one rail at every width, each lamp in its socket: a grid of 28rem cards at 1440 put the
+   lamps in the gutters and clipped roles and activity (builder3's Teams build, Marlin Oct 10) */
+.members { grid-area: members; position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--gap-card); padding-left: 3.4rem; }
+.members::before { content: ""; position: absolute; left: .95rem; top: 1.4rem; bottom: 1.4rem; width: .7rem; background: var(--rail); border-radius: .35rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 .talk { grid-area: talk; height: 40rem; }
 .feed { grid-area: feed; max-height: 34rem; }
 .talk, .feed {
@@ -59,12 +62,10 @@
   .room { grid-template-columns: minmax(0, 1fr) 24rem; grid-template-areas: "members members" "talk feed"; }
   .feed { height: 40rem; max-height: none; }
 }
-@container (min-width: 100rem) {
-  .room { grid-template-columns: 44rem minmax(0, 1fr); grid-template-areas: "members talk" "feed talk"; }
-  .members { display: flex; flex-direction: column; align-items: stretch; }
+/* from 88rem (1440 is 97) the members column beside the talk is 3828's own 46rem, so its card is the same card */
+@container (min-width: 88rem) {
+  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "feed talk"; }
   .talk { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); min-height: 40rem; }
-  /* one rail joins the members, their lamps in its sockets */
-  .members::before { content: ""; position: absolute; left: .95rem; top: 1.4rem; bottom: 1.4rem; width: .7rem; background: var(--rail); border-radius: .35rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 }
 @container (min-width: 128rem) {
   .room { grid-template-columns: 46rem minmax(0, 1fr) 30rem; grid-template-areas: "members talk feed"; }
@@ -143,7 +144,7 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .scrim { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding: 7vh 3rem; overflow: auto; background: color-mix(in srgb, var(--wall-low) 78%, transparent); }
 .compose > h2 { margin-bottom: 1.8rem; }
 .compose {
-  --c: var(--key-light); width: min(72rem, 100%); flex: none; padding: 2rem 2.2rem 1.6rem; background: var(--obj);
+  --c: var(--key-light); width: min(78rem, 100%); flex: none; padding: 2rem 2.2rem 1.6rem; background: var(--obj);
   border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--key-light), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
@@ -159,7 +160,7 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .card.slot-row { padding: 1rem 1.2rem; }
 /* a member row is a fixed grid: each picker owns its column, empty until chosen, so a choice never widens the row,
    wraps it or moves the row under it */
-.slot-row .top { display: grid; grid-template-columns: minmax(8rem, 1fr) 12rem 12.5rem 7.5rem auto auto auto; align-items: center; gap: .7rem; position: relative; }
+.slot-row .top { display: grid; grid-template-columns: minmax(8rem, 1fr) 14.5rem 16rem 9rem auto auto auto; align-items: center; gap: .7rem; position: relative; }
 .slot-row .top .pickbtn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-row .top .pickbtn[data-what="head"] { grid-column: 2; }
 .slot-row .top .pickbtn[data-what="model"] { grid-column: 3; }

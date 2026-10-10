@@ -59,6 +59,9 @@ const usd = (n) => `≈$${n.toFixed(2)}`;
 const state = {
   teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {},
   economics: {}, chat: null, activity: null,
+  // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
+  // its transcript, which is a permission prompt, since those choices belong to the client's own version.
+  screens: {},
   error: null, loading: true,
 };
 const ui = { team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map() };
@@ -114,6 +117,9 @@ async function read() {
 async function readTeam() {
   const tm = team();
   if (!tm) return;
+  // Cleared before the first draw, not after: slot ids repeat across teams ("lead", "builder"), so a screen
+  // left over from the team before would draw its choices on this team's card for one frame.
+  state.screens = {};
   const { from, to } = dayWindow(ui.day);
   const day = `from=${from}&to=${to}`;
   const [economics, chat, activity] = await Promise.all([
@@ -124,6 +130,24 @@ async function readTeam() {
   state.economics[tm.id] = economics.ok ? economics.body : { error: refusalOf(economics, "The figures could not be read") };
   state.chat = chat.ok ? chat.body : { error: refusalOf(chat, "The messages could not be read") };
   state.activity = activity.ok ? activity.body : { error: refusalOf(activity, "The activity could not be read") };
+  render();
+  await readScreens(tm);
+}
+
+/** The choices a waiting member is showing, for the asks its transcript does not carry: a permission prompt's
+ *  words belong to the client's version, so they are read off the screen or not drawn at all. A screen that
+ *  offers nothing leaves the card on its fallback, because "splice could not read a choice" is not "nothing is
+ *  pending", and the two must never look alike. */
+async function readScreens(tm) {
+  const waiting = tm.slots.filter((slot) => {
+    const s = sessOf(slot);
+    return s?.waiting_for && !(s.last?.asks || []).length;
+  });
+  if (!waiting.length) return;
+  const read = await Promise.all(waiting.map((slot) => API.get(`/api/teams/${tm.id}/slots/${slot.id}/screen`)));
+  waiting.forEach((slot, i) => {
+    if (read[i].ok && read[i].body?.choices?.length) state.screens[slot.id] = read[i].body;
+  });
   render();
 }
 
@@ -237,13 +261,17 @@ function askHtml(session, slotId, readOnly, key) {
   const failed = ui.failed.get(key);
   const why = failed ? `<p class="why">${esc(failed)}</p>` : "";
   if (!asked) {
-    const call = session.last;
-    const what = call?.tool
-      ? `<p class="cmd"><span class="tname">${esc(call.tool)}</span>${esc(call.text || "")}</p>`
-      : "";
-    // No labels splice may spell, so the card says where the answer is given rather than offering an act it
-    // cannot carry — the second half of the sentence the answer route itself returns for a pane it cannot drive.
-    return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in.</p>${why}</div>`;
+    const offer = state.screens[slotId];
+    const what = prompted(session.last, offer);
+    // The choices the client itself drew, each pressing the digit beside it on the screen. When splice could
+    // not read one, the card says where the answer is given rather than offering an act it cannot carry —
+    // the second half of the sentence the answer route returns for a pane it cannot drive.
+    if (!offer || readOnly) {
+      return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in.</p>${why}</div>`;
+    }
+    const acts = offer.choices.map((c, i) =>
+      `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${c.choice}">${esc(c.label)}</button>`).join("");
+    return `<div class="ask">${what}<div class="answers">${acts}</div>${why}</div>`;
   }
   const buttons = readOnly || asked.multi ? "" :
     `<div class="answers">${asked.options.map((o, i) =>
@@ -252,6 +280,18 @@ function askHtml(session, slotId, readOnly, key) {
     ? `<div class="answers">${asked.options.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`
     : "";
   return `<div class="ask"><p class="q">${esc(asked.question)}</p>${buttons}${chips}${why}</div>`;
+}
+
+/** What is being asked, in the client's own words when the screen could be read: its first line is the call, as
+ *  Bash(npm test) — the person approving a command has to see the command — and what follows is what it is for.
+ *  Without a screen it is the transcript's own line, which names the tool and what it is for but never a command. */
+function prompted(call, offer) {
+  const said = (offer?.asked || "").split("\n").filter((line) => line.trim());
+  if (!said.length) {
+    return call?.tool ? `<p class="cmd"><span class="tname">${esc(call.tool)}</span>${esc(call.text || "")}</p>` : "";
+  }
+  const why = said.slice(1).join(" ") || call?.text || "";
+  return `<p class="cmd">${esc(said[0])}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
 }
 
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */

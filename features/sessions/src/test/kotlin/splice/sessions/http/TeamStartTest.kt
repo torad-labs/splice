@@ -23,10 +23,10 @@ import splice.sessions.teams.TeamSlot
 import java.io.IOException
 import java.nio.file.Path
 
-private data class Opened(val session: String, val command: List<String>, val directory: String)
+internal data class Opened(val session: String, val command: List<String>, val directory: String)
 
 /** A terminal that records what it is asked, and shows [screenText] when read. */
-private class FakeTerminal(var openFails: Boolean = false, var screenText: String = "") : SessionTerminal {
+internal class FakeTerminal(var openFails: Boolean = false, var screenText: String = "") : SessionTerminal {
     val opened = mutableListOf<Opened>()
     val pressed = mutableListOf<Pair<SessionPane, SessionKey>>()
     val closed = mutableListOf<SessionPane>()
@@ -55,7 +55,7 @@ private class FakeTerminal(var openFails: Boolean = false, var screenText: Strin
     override fun isOpen(pane: SessionPane): Boolean = live
 }
 
-private class FakePanes : SessionPanes {
+internal class FakePanes : SessionPanes {
     val known = mutableMapOf<String, SessionPane>()
 
     override fun paneFor(sessionId: String): SessionPane? = known[sessionId]

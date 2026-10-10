@@ -415,6 +415,25 @@ describe("pre-push judges the tip", () => {
     // The refusal carries the command that cannot carry an unjudged commit, so nobody has to remember it.
     expect(text).toContain(`git push origin ${judged}:refs/heads/feat/x`);
   });
+
+  test("GREEN: the explicit-sha refspec passes through a peer's commit, because a sha has no ref left to re-read", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the tip this push names");
+    const judged = head(root);
+    const gate: GateRunner = async (...args) => {
+      writeFile(root, TARGET, CLEAN.replace("Probe", "Peer"));
+      git(root, ["add", TARGET]);
+      commit(root, "chore(test): a peer's commit, which this push does not carry");
+      return await compiler(root)(...args);
+    };
+    // What `git push origin <sha>:refs/heads/feat/x` puts on the hook's stdin: the local side is the sha itself.
+    const stdin = `${judged} ${judged} refs/heads/feat/x 0000000000000000000000000000000000000000\n`;
+    const { result, text } = await captured(() => prePush(lay(root), stdin, { gate, openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(text).toContain("PRE-PUSH: PASS");
+  });
 });
 
 describe("pre-push scopes the gate to the pushed diff", () => {

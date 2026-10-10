@@ -79,6 +79,20 @@ internal class SessionsMount(
                 guard.guarded(call) { notes.post(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
             }
         }
+        // Driving one session from the console: write to it, answer what it waits on, stop its turn, read its prompt.
+        // Only a session splice opened has a pane to act in; any other is refused in words (SessionDrive).
+        route.post("/api/sessions/{id}/say") {
+            guard.guarded(call) { wiring.drive.sayJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
+        }
+        route.post("/api/sessions/{id}/answer") {
+            guard.guarded(call) { wiring.drive.answerJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
+        }
+        route.post("/api/sessions/{id}/stop") {
+            guard.guarded(call) { wiring.drive.stop(call.parameters["id"].orEmpty()).send(call) }
+        }
+        route.get("/api/sessions/{id}/screen") {
+            guard.guarded(call) { wiring.drive.screen(call.parameters["id"].orEmpty()).send(call) }
+        }
         route.get("/api/sessions/{id}/transcript") {
             guard.guarded(call) {
                 val id = call.parameters["id"].orEmpty()

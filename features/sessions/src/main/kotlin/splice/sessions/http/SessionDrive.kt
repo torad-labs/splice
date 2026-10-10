@@ -1,0 +1,139 @@
+// NEW: Oct 10, 2026 (BUILD.md first row, Sessions: chat right there and answer what it waits on) — driving ONE
+// session from the console, by its own id.
+//
+//   POST /api/sessions/{id}/say      {"text": "..."}  give the session a message, whole, as the person would type it
+//   POST /api/sessions/{id}/answer   {"choice": n}    press the numbered choice it is waiting on, 1 to 9
+//   POST /api/sessions/{id}/stop                       stop the turn it is running, nothing else
+//   GET  /api/sessions/{id}/screen                     what its prompt asks, and the choices its client drew
+//
+// ONE PLACE FOR THE PANE. A team member is a session too: TeamStart and TeamScreen find the slot's session and hand
+// it here, so a member's card and a session's card drive the same pane with the same refusals.
+//
+// WHAT IS REFUSED, IN WORDS. A session splice did not open has no pane splice may type into (SessionPanes): it is
+// refused with where to do it instead, never typed into blind. A pane the person closed is refused as closed. With
+// no terminal wired at all, every act answers 503. The terminal is the contract's (SessionTerminal): no terminal
+// product is named here.
+package splice.sessions.http
+
+import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import splice.core.session.SessionKey
+import splice.core.session.SessionPane
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
+import splice.http.JsonReply
+import splice.sessions.prompt.ScreenChoices
+import splice.sessions.prompt.ScreenOffer
+
+internal const val NO_TERMINAL_TO_DRIVE = "splice has no terminal to drive sessions in yet"
+internal const val STOP_NOT_OURS =
+    "splice did not start this session, so it cannot stop it from here; stop it in the terminal it runs in"
+internal const val ANSWER_NOT_OURS =
+    "splice did not start this session, so it cannot answer it from here; answer it in the terminal it runs in"
+private const val SAY_NOT_OURS =
+    "splice did not start this session, so it cannot write to it from here; write in the terminal it runs in"
+private const val SCREEN_NOT_OURS =
+    "splice did not start this session, so it cannot read its screen; look at the terminal it runs in"
+private const val TERMINAL_REFUSED = "the terminal did not take it: "
+
+/** The console's hands on one session's terminal, by session id. */
+public class SessionDrive(
+    private val driver: TerminalSource,
+    private val choices: ScreenChoices = ScreenChoices(),
+) {
+    /** The numbered choices a screen lists, in the order a person reads them. */
+    private val choiceKeys = listOf(
+        SessionKey.CHOICE_1, SessionKey.CHOICE_2, SessionKey.CHOICE_3, SessionKey.CHOICE_4, SessionKey.CHOICE_5,
+        SessionKey.CHOICE_6, SessionKey.CHOICE_7, SessionKey.CHOICE_8, SessionKey.CHOICE_9,
+    )
+
+    /** Where the numbered keys begin, so a choice answers with the digit the person presses. */
+    private val firstChoice = SessionKey.CHOICE_1.ordinal
+
+    /** Give the session [text] as the person would: whole, line breaks intact, then submitted. The client takes it at
+     *  once when idle and queues it mid-turn, which is its behaviour and not splice's to change. */
+    public fun say(session: String, text: String): JsonReply {
+        if (text.isBlank()) return refuse(HttpStatusCode.BadRequest, "a message needs words in it")
+        return inPane(session, SAY_NOT_OURS, "its terminal is closed, so nothing can be sent to it") { driving, pane ->
+            driving.terminal.send(pane, text)
+        }
+    }
+
+    /** Answer what the session is waiting on by pressing its numbered choice, as the person would. */
+    public fun answer(session: String, choice: Int): JsonReply {
+        val key = choiceKeys.getOrNull(choice - 1)
+            ?: return refuse(HttpStatusCode.BadRequest, "a choice is one of the numbered options, 1 to 9")
+        return inPane(session, ANSWER_NOT_OURS, "its terminal is closed, so nothing is being asked") { driving, pane ->
+            driving.terminal.press(pane, key)
+        }
+    }
+
+    /** POST .../say's body, {"text": "..."}: a body that names no text is refused as an empty message. */
+    public fun sayJson(session: String, body: String): JsonReply =
+        say(session, JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.str(it, "text") }.orEmpty())
+
+    /** POST .../answer's body, {"choice": n}: a body that names none answers 0, which [answer] refuses in words. */
+    public fun answerJson(session: String, body: String): JsonReply =
+        answer(session, JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.long(it, "choice") }?.toInt() ?: 0)
+
+    /** Stop the turn the session is running, and nothing else. */
+    public fun stop(session: String): JsonReply =
+        inPane(session, STOP_NOT_OURS, "its terminal is closed, so no turn is running") { driving, pane ->
+            driving.terminal.press(pane, SessionKey.STOP)
+        }
+
+    /** What the session's prompt asks right now, and the numbered choices its own client drew. A screen splice cannot
+     *  read a choice on answers 200 with none, so a card keeps its fallback rather than failing over one pane. */
+    public fun screen(session: String): JsonReply {
+        val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
+        val pane = driving.panes.paneFor(session) ?: return refuse(HttpStatusCode.Conflict, SCREEN_NOT_OURS)
+        return Cancellables.runCatchingCleanup { driving.terminal.screen(pane) }.fold(
+            onSuccess = { offered(session, choices.on(it)) },
+            onFailure = { offered(session, ScreenOffer("", emptyList())) },
+        )
+    }
+
+    private inline fun inPane(
+        session: String,
+        notOurs: String,
+        closed: String,
+        act: (SessionDriver, SessionPane) -> Unit,
+    ): JsonReply {
+        val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
+        val known = driving.panes.paneFor(session)
+        val pane = known?.takeIf { driving.terminal.isOpen(it) }
+            ?: return refuse(HttpStatusCode.Conflict, if (known == null) notOurs else closed)
+        return Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
+            onSuccess = { JsonReply(HttpStatusCode.OK, buildJsonObject { put("session_id", session) }.toString()) },
+            onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it)) },
+        )
+    }
+
+    private fun offered(session: String, offer: ScreenOffer): JsonReply = JsonReply(
+        HttpStatusCode.OK,
+        buildJsonObject {
+            put("session_id", session)
+            put("asked", offer.asked)
+            putJsonArray("choices") {
+                offer.choices.forEach { choice ->
+                    add(
+                        buildJsonObject {
+                            // The digit the person presses, which is the same number POST .../answer takes.
+                            put("choice", choice.key.ordinal - firstChoice + 1)
+                            put("label", choice.label)
+                            put("here", choice.here)
+                        },
+                    )
+                }
+            }
+        }.toString(),
+    )
+
+    private fun refuse(status: HttpStatusCode, sentence: String) =
+        JsonReply(status, buildJsonObject { put("error", sentence) }.toString())
+}

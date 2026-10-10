@@ -29,6 +29,8 @@ internal data class Opened(val session: String, val command: List<String>, val d
 internal class FakeTerminal(var openFails: Boolean = false, var screenText: String = "") : SessionTerminal {
     val opened = mutableListOf<Opened>()
     val pressed = mutableListOf<Pair<SessionPane, SessionKey>>()
+    val sent = mutableListOf<Pair<SessionPane, String>>()
+    var sendFails = false
     val closed = mutableListOf<SessionPane>()
     var live = true
 
@@ -38,7 +40,10 @@ internal class FakeTerminal(var openFails: Boolean = false, var screenText: Stri
         return SessionPane("%$sessionId")
     }
 
-    override fun send(pane: SessionPane, text: String) = Unit
+    override fun send(pane: SessionPane, text: String) {
+        if (sendFails) throw IOException("can't find pane")
+        sent += pane to text
+    }
 
     override fun press(pane: SessionPane, key: SessionKey) {
         pressed += pane to key

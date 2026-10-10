@@ -19,11 +19,13 @@ import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
+import splice.sessions.http.SessionDrive
 import splice.sessions.http.SessionRowFacts
 import splice.sessions.http.SessionTurnCount
 import splice.sessions.http.SessionTurnsOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
+import splice.sessions.http.TerminalSource
 import splice.sessions.http.TranscriptRoots
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
@@ -85,6 +87,8 @@ internal class SessionsWiring(
             )
         }
     }
+    /** One session's terminal, by its id: say, answer, stop and its screen (Sessions). Read per call, the [ports] rule. */
+    val drive = SessionDrive(TerminalSource { ports.sessionDriver })
     val routes: SessionsRoutes? = sessions?.let {
         SessionsRoutes(
             it,

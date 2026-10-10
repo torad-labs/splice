@@ -29,7 +29,6 @@ package splice.sessions.http
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.core.session.SessionPanes
 import splice.core.session.SessionTerminal
@@ -83,16 +82,6 @@ private const val ARRIVAL_SECONDS = 45L
 // why: enough of the bottom of the screen to read the question a prompt asks, and not a page of scrollback.
 private const val SCREEN_TAIL_LINES = 12
 private const val NO_TERMINAL = "splice has no terminal to start sessions in yet"
-private const val STOP_NOT_OURS =
-    "splice did not start this session, so it cannot stop it from here; stop it in the terminal it runs in"
-private const val ANSWER_NOT_OURS =
-    "splice did not start this session, so it cannot answer it from here; answer it in the terminal it runs in"
-
-/** The numbered choices a screen lists, in the order a person reads them. */
-private val CHOICES = listOf(
-    SessionKey.CHOICE_1, SessionKey.CHOICE_2, SessionKey.CHOICE_3, SessionKey.CHOICE_4, SessionKey.CHOICE_5,
-    SessionKey.CHOICE_6, SessionKey.CHOICE_7, SessionKey.CHOICE_8, SessionKey.CHOICE_9,
-)
 
 /** The member a request names, or the reply that says there is none. */
 private sealed class Located {
@@ -126,42 +115,22 @@ public class TeamStart(
         }
     }
 
-    public fun stop(teamId: String, slotId: String): JsonReply =
-        pressIn(teamId, slotId, SessionKey.STOP, STOP_NOT_OURS, "its terminal is closed, so no turn is running")
+    /** The member's session drives the same pane, with the same refusals, as it does on Sessions (SessionDrive). */
+    private val drive = SessionDrive(driver)
+
+    public fun stop(teamId: String, slotId: String): JsonReply = onSession(teamId, slotId) { drive.stop(it) }
 
     /** Answer the question the member is waiting on by pressing its numbered choice, as the person would. */
-    public fun answer(teamId: String, slotId: String, choice: Int): JsonReply {
-        val key = CHOICES.getOrNull(choice - 1)
-            ?: return refuse(HttpStatusCode.BadRequest, "a choice is one of the numbered options, 1 to ${CHOICES.size}")
-        return pressIn(teamId, slotId, key, ANSWER_NOT_OURS, "its terminal is closed, so nothing is being asked")
-    }
+    public fun answer(teamId: String, slotId: String, choice: Int): JsonReply =
+        onSession(teamId, slotId) { drive.answer(it, choice) }
 
-    private fun pressIn(
-        teamId: String,
-        slotId: String,
-        key: SessionKey,
-        notOurs: String,
-        closed: String,
-    ): JsonReply {
+    /** [act] on the member's session, or the reply that says there is no such member or it holds no session. */
+    private inline fun onSession(teamId: String, slotId: String, act: (String) -> JsonReply): JsonReply {
         val store = teams() ?: return refuse(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
         return when (val member = locate(store, teamId, slotId)) {
             is Located.Missing -> member.reply
-            is Located.Member -> keyed(member.slot, key, notOurs, closed)
-        }
-    }
-
-    /** The key pressed in the member's own pane, or why splice will not press it there. */
-    private fun keyed(slot: TeamSlot, key: SessionKey, notOurs: String, closed: String): JsonReply {
-        val session = slot.session ?: return refuse(HttpStatusCode.Conflict, "${slot.id} has no session")
-        val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL)
-        val pane = driving.panes.paneFor(session)
-        return when {
-            pane == null -> refuse(HttpStatusCode.Conflict, notOurs)
-            !driving.terminal.isOpen(pane) -> refuse(HttpStatusCode.Conflict, closed)
-            else -> {
-                driving.terminal.press(pane, key)
-                JsonReply(HttpStatusCode.OK, buildJsonObject { put("session_id", session) }.toString())
-            }
+            is Located.Member ->
+                member.slot.session?.let(act) ?: refuse(HttpStatusCode.Conflict, "${member.slot.id} has no session")
         }
     }
 

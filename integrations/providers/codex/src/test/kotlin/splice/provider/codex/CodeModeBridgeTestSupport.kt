@@ -123,7 +123,8 @@ abstract class CodeModeBridgeTestSupport {
 
     protected fun built(model: String, lite: Boolean): BuiltTurn {
         val prefix = if (lite) {
-            """{"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"function","name":"Read"}]},{"role":"developer","content":""}]}"""
+            """{"input":[{"type":"additional_tools","role":"developer",""" +
+                """"tools":[{"type":"function","name":"Read"}]},{"role":"developer","content":""}]}"""
         } else {
             """{"input":[],"tools":[{"type":"function","name":"Read"}]}"""
         }
@@ -143,7 +144,8 @@ abstract class CodeModeBridgeTestSupport {
     }
 
     protected fun toolBody() = parseBody(
-        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":"hi"}]}""",
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"messages":[{"role":"user","content":"hi"}]}""",
     )
 
     protected fun toollessBody() = parseBody(
@@ -151,16 +153,24 @@ abstract class CodeModeBridgeTestSupport {
     )
 
     protected fun namedChoiceBody() = parseBody(
-        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"tool_choice":{"type":"tool","name":"Read"},"messages":[{"role":"user","content":"hi"}]}""",
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"tool_choice":{"type":"tool","name":"Read"},""" +
+            """"messages":[{"role":"user","content":"hi"}]}""",
     )
 
     protected fun nonTextResultBody() = parseBody(
-        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"messages":[{"role":"user","content":[{"type":"tool_result",""" +
+            """"tool_use_id":"toolu_splice_test","content":[{"type":"image",""" +
+            """"source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
     )
 
     /** V4-179: an image the renderer cannot map (empty payload) — omitted, with DR-164's reason. */
     protected fun unreadableResultBody() = parseBody(
-        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}]}]}]}""",
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"messages":[{"role":"user","content":[{"type":"tool_result",""" +
+            """"tool_use_id":"toolu_splice_test","content":[{"type":"image",""" +
+            """"source":{"type":"base64","media_type":"image/png","data":""}}]}]}]}""",
     )
 
     /** V4-114 / V4-178: a bridge tool result whose content is text AND then an image.
@@ -168,11 +178,18 @@ abstract class CodeModeBridgeTestSupport {
      *  `filterIsInstance<TextBlock>()` is the silent-drop shape; since V4-178 the image is kept as
      *  an announced marker in its place rather than refused (the refusal wedged a live session). */
     protected fun mixedResultBody() = parseBody(
-        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_splice_test","content":[{"type":"text","text":"ok"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"messages":[{"role":"user","content":[{"type":"tool_result",""" +
+            """"tool_use_id":"toolu_splice_test","content":[{"type":"text","text":"ok"},""" +
+            """{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]}]}""",
     )
 
     protected fun historicalImageResultBody() = parseBody(
-        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"ordinary-history-id","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]},{"role":"user","content":"continue"}]}""",
+        """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"messages":[{"role":"user","content":[{"type":"tool_result",""" +
+            """"tool_use_id":"ordinary-history-id","content":[{"type":"image",""" +
+            """"source":{"type":"base64","media_type":"image/png","data":"AA=="}}]}]},""" +
+            """{"role":"user","content":"continue"}]}""",
     )
 
     protected fun turn(
@@ -226,16 +243,26 @@ abstract class CodeModeBridgeTestSupport {
         CodeModeUpstreamPosts.of(post, CodexCodeModeWire(Json, LogSink {}))
 
     protected fun requestWithCall(id: String) =
-        """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"}]}"""
+        """{"input":[{"role":"developer","content":"s"},""" +
+            """{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"}]}"""
 
     protected fun requestWithResult(id: String, output: String) =
-        """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$id","output":"$output"}]}"""
+        """{"input":[{"role":"developer","content":"s"},""" +
+            """{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$id","output":"$output"}]}"""
 
     protected fun requestWithTwoResults(first: String, second: String) =
-        """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$first","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$first","output":"A"},{"type":"function_call","call_id":"$second","name":"Edit","arguments":"{}"},{"type":"function_call_output","call_id":"$second","output":"B"}]}"""
+        """{"input":[{"role":"developer","content":"s"},""" +
+            """{"type":"function_call","call_id":"$first","name":"Read","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$first","output":"A"},""" +
+            """{"type":"function_call","call_id":"$second","name":"Edit","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$second","output":"B"}]}"""
 
     protected fun requestWithSiblingBeforeResult(id: String, sibling: String) =
-        """{"input":[{"role":"developer","content":"s"},{"role":"user","content":"$sibling"},{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$id","output":"A"}]}"""
+        """{"input":[{"role":"developer","content":"s"},""" +
+            """{"role":"user","content":"$sibling"},""" +
+            """{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$id","output":"A"}]}"""
 
     protected fun call(id: String, name: String, arg: Pair<String, String>? = null) = CodeModeCall(
         id,

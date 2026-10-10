@@ -61,7 +61,8 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
                     """{"type":"function_call","call_id":"synthetic-unowned","name":"Read","arguments":"{}"}""",
                 ),
                 Json.parseToJsonElement(
-                    """{"type":"function_call_output","call_id":"synthetic-unowned","output":"synthetic unrelated result"}""",
+                    """{"type":"function_call_output","call_id":"synthetic-unowned",""" +
+                        """"output":"synthetic unrelated result"}""",
                 ),
             )
             var posted = ""
@@ -101,7 +102,8 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
                         0,
                         listOf(
                             Json.parseToJsonElement(
-                                """{"type":"reasoning","id":"synthetic-response","encrypted_content":"synthetic response"}""",
+                                """{"type":"reasoning","id":"synthetic-response",""" +
+                                    """"encrypted_content":"synthetic response"}""",
                             ),
                         ),
                     ),
@@ -333,7 +335,8 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         Json.parseToJsonElement(requestWithResult(readId, "A")).jsonObject.getValue("input").jsonArray.drop(1)
 
     private fun nativeResult(readId: String): List<JsonElement> =
-        Json.parseToJsonElement(baselineWithNativeSearch()).jsonObject.getValue("input").jsonArray + ownedCallbacks(readId)
+        Json.parseToJsonElement(baselineWithNativeSearch()).jsonObject.getValue("input").jsonArray +
+            ownedCallbacks(readId)
 
     private fun nativeRequest(input: List<JsonElement>): String =
         JsonObject(

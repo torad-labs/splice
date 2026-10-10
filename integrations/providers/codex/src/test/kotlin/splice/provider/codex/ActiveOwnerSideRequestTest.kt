@@ -342,31 +342,22 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val secondId: String,
     )
 
+    /** One cell per script: each reads once, then completes, so three scripts run in their own cells. */
+    private fun readThenComplete(vararg scripts: String): QueuedRuntime = QueuedRuntime(
+        ArrayDeque(
+            scripts.map { name ->
+                ArrayDeque(
+                    listOf(
+                        CodeModeStep.Calls(listOf(call("$name-read", "Read"))),
+                        CodeModeStep.Completed(name),
+                    ),
+                )
+            },
+        ),
+    )
+
     private suspend fun parkSecond(): Parked {
-        val runtime = QueuedRuntime(
-            ArrayDeque(
-                listOf(
-                    ArrayDeque(
-                        listOf(
-                            CodeModeStep.Calls(listOf(call("first-read", "Read"))),
-                            CodeModeStep.Completed("first"),
-                        ),
-                    ),
-                    ArrayDeque(
-                        listOf(
-                            CodeModeStep.Calls(listOf(call("second-read", "Read"))),
-                            CodeModeStep.Completed("second"),
-                        ),
-                    ),
-                    ArrayDeque(
-                        listOf(
-                            CodeModeStep.Calls(listOf(call("third-read", "Read"))),
-                            CodeModeStep.Completed("third"),
-                        ),
-                    ),
-                ),
-            ),
-        )
+        val runtime = readThenComplete("first", "second", "third")
         val manager = bridge(runtime)
         val firstSink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)

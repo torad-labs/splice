@@ -103,7 +103,8 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 val registry = field.get(manager) as CodexCodeModeRegistry
                 val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
                 val record = registry.recordsFor(key).single()
-                // The mock post's finally precedes capture.finish; only stored terminal usage certifies this precondition.
+                // The mock post's finally precedes capture.finish; only stored terminal usage
+                // certifies this precondition.
                 withTimeout(1_500) {
                     while (registry.recordsFor(key).single().sourceState?.usage == null) yield()
                 }
@@ -218,12 +219,14 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         }
 
         fun finish(text: String) {
-            capture.finish(TurnOutcome.Success(
-                false,
-                false,
-                Usage(),
-                handoffs = RoundHandoffs(customCalls = listOf(call.copy(input = text))),
-            ))
+            capture.finish(
+                TurnOutcome.Success(
+                    false,
+                    false,
+                    Usage(),
+                    handoffs = RoundHandoffs(customCalls = listOf(call.copy(input = text))),
+                ),
+            )
         }
 
         fun clientBoundary() {

@@ -68,7 +68,10 @@ internal class CodeModeNativeCopiesTest : CodeModeBridgeTestSupport() {
         conversationId = "conversation"
         nativeBaseId = "alpha-s2"
         issued += CodeModeIssuedStep("request", emptyList())
-        replayAnchors = CodeModeReplayAnchors(CodeModeHistoryAnchor("base", 1), mapOf(1 to CodeModeHistoryAnchor("rs", 1)))
+        replayAnchors = CodeModeReplayAnchors(
+            CodeModeHistoryAnchor("base", 1),
+            mapOf(1 to CodeModeHistoryAnchor("rs", 1)),
+        )
         sourceState = CodeModeSourceState(complete = true, consumed = true)
     }
 

@@ -69,7 +69,8 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         var posted = ""
         restored.interceptor(turn(), null, disableParallel = false)
             .intercept(
-                """{"input":[{"role":"developer","content":"s"},{"role":"user","content":"start"},{"role":"user","content":"next"}]}""",
+                """{"input":[{"role":"developer","content":"s"},""" +
+                    """{"role":"user","content":"start"},{"role":"user","content":"next"}]}""",
                 RecordingSink(),
             ) {
                 posted = it

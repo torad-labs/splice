@@ -120,7 +120,9 @@ internal class CodeModeLegacyNativeParentTest {
             val firstNative = fresh.client.indexOf(native.first())
             val secondNative = fresh.client.indexOf(native.first(), firstNative + 1)
             val edited = fresh.client.toMutableList().apply {
-                this[firstNative] = JsonObject(native.first().jsonObject + ("encrypted_content" to JsonPrimitive("changed")))
+                this[firstNative] = JsonObject(
+                    native.first().jsonObject + ("encrypted_content" to JsonPrimitive("changed")),
+                )
             }
             val reordered = fresh.client.take(firstNative) + listOf(native[1], native[2], native[0]) +
                 fresh.client.drop(firstNative + native.size)
@@ -129,7 +131,8 @@ internal class CodeModeLegacyNativeParentTest {
             for (client in listOf(edited, reordered, missing, extra)) {
                 val rejected = history.restoreBaseline(body(client), fresh.record)
                 assertTrue(
-                    rejected.nativeRejection?.branch in setOf(CodeModeNativeBranch.PAYLOAD, CodeModeNativeBranch.NATIVE_ORDER),
+                    rejected.nativeRejection?.branch in
+                        setOf(CodeModeNativeBranch.PAYLOAD, CodeModeNativeBranch.NATIVE_ORDER),
                 )
                 assertEquals(checkNotNull(rejected.nativeRejection).branch.reason(), rejected.error)
             }
@@ -166,7 +169,8 @@ internal class CodeModeLegacyNativeParentTest {
         child.nativeParent = capture.parent
         child.nativeBaseId = parent.id
         child.replayAnchors = child.replayAnchors?.copy(nativeFollowing = emptyMap())
-        val client = listOf(first) + native + middle + native + latest + native + callbacks(parent) + next + callbacks(child)
+        val client = listOf(first) + native + middle + native + latest + native + callbacks(parent) +
+            next + callbacks(child)
         val codec = CodexCodeModeHistoryCodec(Json)
         val projection = codec.conversation(codec.projection.project(JsonArray(client))).body
         val index = CodeModeHistoryIndex(projection.logicalItems, codec)
@@ -372,6 +376,11 @@ internal class CodeModeLegacyNativeParentTest {
     private fun List<JsonElement>.indexOf(item: JsonElement, start: Int): Int =
         (start until size).first { this[it] == item }
 
-    private data class Fixture(val retired: List<CodeModeRecord>, val root: CodeModeRecord, val prefix: List<JsonElement>)
+    private data class Fixture(
+        val retired: List<CodeModeRecord>,
+        val root: CodeModeRecord,
+        val prefix: List<JsonElement>,
+    )
+
     private data class Fresh(val record: CodeModeRecord, val client: List<JsonElement>)
 }

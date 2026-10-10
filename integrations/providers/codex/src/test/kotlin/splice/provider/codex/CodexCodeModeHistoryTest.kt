@@ -237,7 +237,8 @@ class CodeModeHistoryAllocationTest {
     @Test
     fun `borrowed wire items retain member order numeric lexemes and string escaping`() {
         val root = Json.parseToJsonElement(
-            """{"input":[{"role":"user","content":"café 🧪\\n\\t\\\"\\\\","literal":1e2,"negative":-0}],"ratio":1.00}""",
+            """{"input":[{"role":"user","content":"café 🧪\\n\\t\\\"\\\\",""" +
+                """"literal":1e2,"negative":-0}],"ratio":1.00}""",
         ).jsonObject
         val codec = CodexCodeModeHistoryCodec(Json)
         val input = root.getValue("input").jsonArray

@@ -44,7 +44,10 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
         val legacy = tempDir.resolve("expired-startup.json")
         Files.writeString(
             legacy,
-            """{"records":[{"id":"r1","key":"conversation-1","outer":{"startup_payload":"owned"},"outerCallId":"o1","source":"1","phase":"COMPLETED","pending":[],"results":{},"output":"out","error":null,"totalCalls":0,"rounds":0,"updatedAt":1000,"lastDigest":"d"}],"expired":[]}""",
+            """{"records":[{"id":"r1","key":"conversation-1","outer":{"startup_payload":"owned"},""" +
+                """"outerCallId":"o1","source":"1","phase":"COMPLETED","pending":[],"results":{},""" +
+                """"output":"out","error":null,"totalCalls":0,"rounds":0,""" +
+                """"updatedAt":1000,"lastDigest":"d"}],"expired":[]}""",
         )
         val registry = CodexCodeModeRegistry(
             CodeModeBridgeConfig(

@@ -121,12 +121,9 @@ private class BufferedPost(
                 }
             }
         }
-        return RoundResult.Outcome(TurnOutcome.Success(
-            false,
-            stopper == null,
-            Usage(),
-            handoffs = RoundHandoffs(customCalls = calls),
-        ))
+        return RoundResult.Outcome(
+            TurnOutcome.Success(false, stopper == null, Usage(), handoffs = RoundHandoffs(customCalls = calls)),
+        )
     }
 }
 

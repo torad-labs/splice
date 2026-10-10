@@ -14,9 +14,8 @@ import splice.core.turn.UsageOrigin
 import splice.provider.codex.stream.CodeModeClientContexts
 
 internal class CodeModeClientContextsTest {
-    private val step = TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(
-        origin = UsageOrigin(localStep = true),
-    ))
+    private val localStep = Usage(origin = UsageOrigin(localStep = true))
+    private val step = TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = localStep)
 
     private val contextFields = UsageField.entries.toSet() - UsageField.OUTPUT
 
@@ -31,9 +30,8 @@ internal class CodeModeClientContextsTest {
         val reported = contexts.report("a", step) as TurnOutcome.Success
         val expected = Usage(inputTokens = 1_200, cachedTokens = 700, reported = contextFields)
         assertEquals(expected, reported.usage.origin.clientContext)
-        assertEquals(Usage(
-            origin = UsageOrigin(localStep = true),
-        ), reported.usage.run { copy(origin = origin.copy(clientContext = null)) }, "accounting stays raw")
+        val raw = reported.usage.run { copy(origin = origin.copy(clientContext = null)) }
+        assertEquals(localStep, raw, "accounting stays raw")
     }
 
     @Test

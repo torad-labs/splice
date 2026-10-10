@@ -52,9 +52,11 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
             val opening = listOf(DEVELOPER, user("Find the reader and use it."), reasoning("rs_a"), SEARCH, FOUND)
             val first = RecordingSink()
             manager.interceptor(turn(), disableParallel = false).intercept(body(opening), first) {
-                RoundResult.Outcome(outerOutcome("outer-1").run {
-                    copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(envelope("rs_b"))))
-                })
+                RoundResult.Outcome(
+                    outerOutcome("outer-1").run {
+                        copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(envelope("rs_b"))))
+                    },
+                )
             }
             val read1 = first.tools.single().id
 

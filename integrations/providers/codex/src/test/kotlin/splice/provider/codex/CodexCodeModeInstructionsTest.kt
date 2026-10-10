@@ -260,6 +260,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
 
     private companion object {
         const val INITIAL_MESSAGES = """{"role":"user","content":"start"}"""
-        const val TOOLS = """[{"name":"Read","input_schema":{"type":"object"}},{"name":"Edit","input_schema":{"type":"object"}}]"""
+        const val TOOLS = """[{"name":"Read","input_schema":{"type":"object"}},""" +
+            """{"name":"Edit","input_schema":{"type":"object"}}]"""
     }
 }

@@ -87,14 +87,10 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val outcome = bridge.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 upstreamCalls++
+                val scriptCall = RoundHandoffs(customCalls = listOf(outer()))
                 RoundResult.Outcome(
                     if (upstreamCalls == 1) {
-                        TurnOutcome.Success(
-                            false,
-                            false,
-                            Usage(10, 2, 3, 1),
-                            handoffs = RoundHandoffs(customCalls = listOf(outer())),
-                        )
+                        TurnOutcome.Success(false, false, Usage(10, 2, 3, 1), handoffs = scriptCall)
                     } else {
                         rewritten = body
                         TurnOutcome.Success(
@@ -177,14 +173,8 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         var upstreamCalls = 0
         val firstOutcome = first.intercept(BASE_REQUEST, sink1) {
             upstreamCalls++
-            RoundResult.Outcome(
-                TurnOutcome.Success(
-                    false,
-                    false,
-                    Usage(inputTokens = 100),
-                    handoffs = RoundHandoffs(customCalls = listOf(outer())),
-                ),
-            )
+            val call = RoundHandoffs(customCalls = listOf(outer()))
+            RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(inputTokens = 100), handoffs = call))
         }.turn()
         assertTrue((firstOutcome as TurnOutcome.Success).hasToolUse)
         assertEquals(100, firstOutcome.usage.inputTokens)
@@ -271,6 +261,15 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         assertTrue("two" in finalPost)
     }
 
+    /** One callback exchange as the client replays it: the call and its output, as JSON items. */
+    private fun readExchange(id: String, tool: String, output: String) =
+        """{"type":"function_call","call_id":"$id","name":"$tool","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$id","output":"$output"}"""
+
+    /** A client request body: the developer item, then the given JSON items in order. */
+    private fun clientBody(vararg items: String) =
+        """{"input":[{"role":"developer","content":"s"},""" + items.joinToString(",") + "]}"
+
     @Test
     fun `callback history keeps its position across a user turn and later cell`() = runTest {
         val runtime = crossTurnRuntime()
@@ -283,8 +282,9 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             .intercept(requestWithResult(aReadId, "A"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
 
         val userMessage = "start the second cell"
-        val startBBody =
-            """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$aReadId","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$aReadId","output":"A"},{"role":"user","content":"$userMessage"}]}"""
+        val aRead = readExchange(aReadId, "Read", "A")
+        val user = """{"role":"user","content":"$userMessage"}"""
+        val startBBody = clientBody(aRead, user)
         val aResult = CodeModeResult(aReadId, "A")
         val bReadSink = RecordingSink()
         manager.interceptor(turn(results = listOf(aResult)), null, disableParallel = false)
@@ -295,8 +295,8 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             }
         val bReadId = bReadSink.tools.single().id
 
-        val resumeBBody =
-            """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$aReadId","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$aReadId","output":"A"},{"role":"user","content":"$userMessage"},{"type":"function_call","call_id":"$bReadId","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$bReadId","output":"B"}]}"""
+        val bRead = readExchange(bReadId, "Read", "B")
+        val resumeBBody = clientBody(aRead, user, bRead)
         val bReadResult = CodeModeResult(bReadId, "B")
         val bEditSink = RecordingSink()
         val resumed = manager.interceptor(
@@ -308,8 +308,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         assertEquals(listOf("Edit"), bEditSink.tools.map { it.name })
 
         val bEditId = bEditSink.tools.single().id
-        val finalBody =
-            """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$aReadId","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$aReadId","output":"A"},{"role":"user","content":"$userMessage"},{"type":"function_call","call_id":"$bReadId","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$bReadId","output":"B"},{"type":"function_call","call_id":"$bEditId","name":"Edit","arguments":"{}"},{"type":"function_call_output","call_id":"$bEditId","output":"C"}]}"""
+        val finalBody = clientBody(aRead, user, bRead, readExchange(bEditId, "Edit", "C"))
         val finalTurn = turn(
             results = listOf(aResult, bReadResult, CodeModeResult(bEditId, "C")),
         )

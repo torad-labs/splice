@@ -352,7 +352,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         vararg results: Pair<String, String?>,
     ): CodexCodeModeBridge.Turn = turnWithBlocks(
         manager,
-        *results.map { (id, image) -> id to (TEXT_ONLY + image?.let { "," + imageBlock(it) }.orEmpty()) }.toTypedArray(),
+        *results.map { (id, image) -> id to (TEXT_ONLY + image?.let { "," + imageBlock(it) }.orEmpty()) }
+            .toTypedArray(),
     )
 
     /** [blocks]: each result id to the raw Anthropic content parts of its tool_result. */
@@ -455,7 +456,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
 private const val IMAGE_A = "AAAA"
 private const val IMAGE_B = "AQID"
 private const val TEXT_ONLY = """{"type":"text","text":"t"}"""
-private const val DOCUMENT = """{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"AAAA"}}"""
+private const val DOCUMENT = """{"type":"document","source":{"type":"base64",""" +
+    """"media_type":"application/pdf","data":"AAAA"}}"""
 private fun roleText(role: String, text: String): JsonObject = buildJsonObject {
     put("role", role)
     put("content", text)

@@ -67,7 +67,9 @@ class CodeModeStoreDurabilityTest {
             CodeModePersistedState(expired = listOf(CodeModeExpiredSnapshot("alpha", "gone", setOf(record.id), 40))) to
                 CodeModePersistedState(records = listOf(record.copy(source = "new jar", updatedAt = 30))),
             CodeModePersistedState(records = listOf(record.copy(source = "older jar", updatedAt = 30))) to
-                CodeModePersistedState(expired = listOf(CodeModeExpiredSnapshot("alpha", "gone", setOf(record.id), 40))),
+                CodeModePersistedState(
+                    expired = listOf(CodeModeExpiredSnapshot("alpha", "gone", setOf(record.id), 40)),
+                ),
         )
         val expected = listOf("older jar", "new jar", "new jar", null, null)
         scenarios.forEachIndexed { index, (old, new) ->

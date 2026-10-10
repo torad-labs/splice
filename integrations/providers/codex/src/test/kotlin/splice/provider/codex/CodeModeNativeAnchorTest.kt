@@ -278,7 +278,7 @@ internal class CodeModeNativeAnchorTest {
             progress.output = "done"
         }
         retired.accepted.accept(
-            (0 until 2).associate { at -> "callback-retired-$at" to CodeModeResult("callback-retired-$at", "synthetic result") },
+            (0 until 2).associate { "callback-retired-$it".let { id -> id to CodeModeResult(id, "synthetic result") } },
             emptyMap(),
         )
         val oldBaseline = history.canonicalize(body(listOf(first) + callbacks("retired", 2)), listOf(retired))

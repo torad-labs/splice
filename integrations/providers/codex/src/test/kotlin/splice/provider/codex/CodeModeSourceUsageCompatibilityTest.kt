@@ -9,7 +9,8 @@ import splice.provider.codex.stream.CodeModeSourceUsage
 class CodeModeSourceUsageCompatibilityTest {
     @Test
     fun `legacy source usage retains its old complete numeric shape`() {
-        val stored = """{"inputTokens":100,"outputTokens":7,"cachedTokens":20,"reasoningTokens":3,"cacheWriteTokens":0}"""
+        val stored = """{"inputTokens":100,"outputTokens":7,"cachedTokens":20,""" +
+            """"reasoningTokens":3,"cacheWriteTokens":0}"""
         val usage = Json.decodeFromString(CodeModeSourceUsage.serializer(), stored).value()
         assertEquals(UsageField.entries.toSet(), usage.reported)
         assertEquals(100L, usage.inputTokens)

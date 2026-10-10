@@ -451,7 +451,10 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
                 source.gates[1].complete(Unit)
                 source.gates[2].complete(Unit)
                 source.complete.complete(Unit)
-                assertTrue(staged.await(1_500, TimeUnit.MILLISECONDS), "the real terminal must be staged before its claim")
+                assertTrue(
+                    staged.await(1_500, TimeUnit.MILLISECONDS),
+                    "the real terminal must be staged before its claim",
+                )
                 round.billing.prepare(completedOutcome())
                 val usage = checkNotNull(round.billing.claim(record, completedOutcome()))
                 assertEquals(100L, usage.inputTokens)
@@ -459,7 +462,10 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
                 assertEquals(0L, usage.cutRounds)
                 settle.countDown()
                 withTimeout(1_500) { round.outcome() }
-                assertNull(withTimeout(1_500) { posting.released.await() }, "claimed successful usage cannot invent a cut")
+                assertNull(
+                    withTimeout(1_500) { posting.released.await() },
+                    "claimed successful usage cannot invent a cut",
+                )
                 assertEquals(1, posting.held.get(), "an early terminal cannot register the same posting row twice")
                 assertEquals(1, posting.releases.get())
             } finally {

@@ -178,9 +178,11 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         defaultLabel: OAuthAccountLabel? = null,
         identity: OAuthAccountIdentity? = null,
     ): OAuthLoginAccount {
-        if (requestedLabel == null) return OAuthLoginAccount(kind, primary = true, label = null)
+        // Signing the primary account in again is allowed under its own label; a NEW account never takes it.
+        val primaryAgain = requestedLabel == PRIMARY && Files.isRegularFile(primaryFile)
+        if (requestedLabel == null || primaryAgain) return OAuthLoginAccount(kind, primary = true, label = null)
         if (requestedLabel == PRIMARY) {
-            refuse("the primary account keeps its reserved label; omit --label to sign in again")
+            refuse("the primary account keeps its reserved label; sign in without --label to create it")
         }
         if (requestedLabel != AUTO) validation.requireLabel(requestedLabel)
         val primaryExists = Files.isRegularFile(primaryFile)

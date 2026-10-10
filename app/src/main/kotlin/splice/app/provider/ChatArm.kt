@@ -102,10 +102,14 @@ internal class ChatArm(
             }
             is LocalRowsCheck.Checked -> {
                 val runtime = found.runtime
-                check(found.refused.isEmpty()) {
-                    "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
+                if (found.refused.isNotEmpty()) {
+                    val refusal = "local runtime ${runtime.kind.label} at ${providerCfg.baseUrl} refuses " +
                         found.refused.joinToString("; ") { "'${it.id}': ${it.reason}" } +
                         " (fix the row, or set local = false on the provider to skip this check)"
+                    // The boot reports a failed build by its fixed text (SafeFailureText withholds an
+                    // IllegalStateException's message), so the runtime's own words go to the log here.
+                    log("[$key] $refusal\n")
+                    error(refusal)
                 }
                 val version = runtime.version?.let { " $it" }.orEmpty()
                 log("[$key] local runtime ${runtime.kind.label}$version: ${found.rows.size} row(s) validated\n")

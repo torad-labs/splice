@@ -163,6 +163,39 @@ class TestDiscoveryTest {
         assertTrue(audit(declared, expanded).isEmpty(), "any number of cases passes")
     }
 
+    // JUnit names a method that takes injected parameters (a @TempDir Path, a TestInfo) "name(Path)" in the XML. The
+    // reader stripped only an empty "()", so every such test read as never run: 423 classes went red together.
+    @Test
+    fun `a test with an injected parameter is discovered under its parameter-typed XML name`() {
+        val source = """
+            package head
+
+            import org.junit.jupiter.api.Test
+            import org.junit.jupiter.api.io.TempDir
+
+            class InjectedTest {
+                @Test
+                fun `writes into a temp dir`(@TempDir dir: Path) {}
+
+                @Test
+                fun `reads the test info`(info: TestInfo, @TempDir dir: Path) {}
+
+                @Test
+                fun `an argument-free name (with parentheses)`() {}
+            }
+        """.trimIndent()
+        val xml = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="InjectedTest" tests="3" skipped="0" failures="0" errors="0">
+  <testcase name="writes into a temp dir(Path)" classname="head.InjectedTest"/>
+  <testcase name="reads the test info(TestInfo, Path)" classname="head.InjectedTest"/>
+  <testcase name="an argument-free name (with parentheses)()" classname="head.InjectedTest"/>
+</testsuite>
+"""
+        val declared = classes(source)
+        assertEquals(3, declared.single().methods.size, declared.toString())
+        assertEquals(emptyList<String>(), audit(declared, mapOf(MODULE to row(xml))))
+    }
+
     @Test
     fun `fully qualified factories retain their expanding method marker`() {
         val source = SOURCE_FACTORY.replace("@TestFactory", "@org.junit.jupiter.api.TestFactory")

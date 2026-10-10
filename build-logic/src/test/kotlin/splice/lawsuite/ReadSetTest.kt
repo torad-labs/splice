@@ -49,6 +49,23 @@ class ReadSetTest {
         assertEquals(listOf("tools/new-untracked.sh", "tools/tracked.sh"), ReadSet.git(dir.toFile(), listOf("tools")))
     }
 
+    // The pre-push and gate trees link node_modules to the checkout's. A trailing-slash ignore rule matches a directory only, so
+    // the link read as an untracked file and every law task failed on it. The repository's own first ignore line is the rule under test.
+    @Test
+    fun `the repository's node_modules ignore rule covers a node_modules that is a symlink`() {
+        repo()
+        val rule = File("../.gitignore").takeIf { it.exists() } ?: File(".gitignore")
+        file(".gitignore", rule.readLines().first { it.contains("node_modules") } + "\n")
+        file("tools/tracked.sh")
+        git("add", "--", ".gitignore", "tools/tracked.sh")
+        val modules = Files.createDirectory(dir.resolve("real-modules"))
+        Files.createSymbolicLink(dir.resolve("node_modules"), modules)
+
+        val set = ReadSet.git(dir.toFile(), listOf("."))
+
+        assertEquals(listOf(".gitignore", "tools/tracked.sh"), set, "the symlink is ignored, not an untracked file")
+    }
+
     @Test
     fun `RED a tracked file inside an ignored directory is still in the set`() {
         repo()

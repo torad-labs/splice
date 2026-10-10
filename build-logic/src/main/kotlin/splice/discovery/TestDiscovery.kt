@@ -441,6 +441,11 @@ object JUnitXml {
     /** The root element's `name` and `tests`, and the `name` of every `<testcase>` descendant. */
     data class ParsedJUnitXml(val rootName: String, val rootTests: Int, val testcaseNames: List<String>)
 
+    // JUnit's display name for a method is "name(ParamTypes)": "()" with none, "(Path)" or "(TestInfo, Path)" when the
+    // method takes injected parameters. Exactly that one trailing group is the signature; a backtick name that itself
+    // holds parentheses keeps them.
+    private val SIGNATURE_SUFFIX: Regex = Regex("""\([^()]*\)$""")
+
     // Configured once: DOCTYPE declarations are refused so a JUnit XML report — build output this
     // same module just wrote — is never parsed with external entity resolution on by default, a bad
     // habit not worth forming even for a trusted file. Each call below asks the factory for its own
@@ -474,7 +479,7 @@ object JUnitXml {
             // unchecked assertion of what the API already guarantees, and an absent `name` reads
             // as the same empty string either way.
             val caseName = nodes.item(idx).attributes?.getNamedItem("name")?.nodeValue.orEmpty()
-            testcaseNames.add(caseName.replace("()", ""))
+            testcaseNames.add(caseName.replace(SIGNATURE_SUFFIX, ""))
         }
         return ParsedJUnitXml(name, tests, testcaseNames)
     }

@@ -34,6 +34,7 @@ private const val FG = "\u001B[38;5;"
 // The extended tones are DESATURATED on purpose. A terminal's own red/green/yellow are tuned for
 // alarm, and a status table that is mostly fine must not read as an alarm panel: 114 and 180 sit
 // close enough to the foreground to scan as text, far enough to find in a column.
+
 /** 141 violet — splice's own voice: the wordmark, and any command the operator is meant to type. */
 private const val SIGNAL_X = "${FG}141m"
 

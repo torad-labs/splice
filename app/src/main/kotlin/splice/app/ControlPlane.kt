@@ -304,6 +304,7 @@ internal class ControlPlane(
      *  V4-131: the SAME stores/team store the heads already write through. V4-133:
      *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
+
     /** The /health body: the head set's verdict, the per-head readings, and the booted config's identity. */
     private fun healthReport(
         heads: Map<String, ManagedHead>,

@@ -605,6 +605,7 @@ class ResponsesWsRunnerTest {
     /** DR-7: the abort kills THIS round's socket and its events end as an IOException — the shape
      *  the head depends on, because a torn read is what the translator folds into an honest
      *  terminal. A cancellation instead would take the collector down and lose the salvage. */
+
     /** 2026-09-06: the accepted round carries its OWN socket's ping pulse for the idle watchdog —
      *  never pinged reads as never, a server ping read by the listener reads as its age. */
     @Test

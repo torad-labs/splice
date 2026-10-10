@@ -78,7 +78,9 @@ class LiveRosterReadersTest {
             val spec = LaunchSpecFactory(topology, signIn, MgmtKey(paths), inputs).launchSpecFor(live, 3098, false)
             assertFalse(catalog.contains(NEW_MODEL))
             models = models + DiscoveredModel(
-                NEW_MODEL, "New synthetic", 256_000,
+                NEW_MODEL,
+                "New synthetic",
+                256_000,
                 rates = ModelRates(input = 2.0, cacheRead = 0.5, output = 8.0),
             )
 

@@ -92,6 +92,7 @@ data class XmlRow(val count: Int, val names: Set<String>)
 val silentModules: Map<String, String> = emptyMap()
 
 // ── the scanner: mask, bodyRange, memberItems, classesIn — ported faithfully from the original ──
+
 /** The DENOMINATOR: what the Kotlin test sources DECLARE. A string- and comment-aware
  *  scan, and the I/O boundary that walks a module's test sources into it. */
 object SourceScan {
@@ -433,6 +434,7 @@ object SourceScan {
 }
 
 // ── the observation: JUnit XML via the JDK's own DOM parser ──
+
 /** The OBSERVATION: what JUnit's own XML reports RAN, read with the JDK's parser. */
 object JUnitXml {
 
@@ -526,6 +528,7 @@ private const val MODULE_WIDTH = 26
 private const val CLASS_WIDTH = 44
 
 // ── the comparison ──
+
 /** The COMPARISON: the denominator against the observation, as problems, as a census, and
  *  as the one line the task prints when it is green. */
 object TestDiscovery {

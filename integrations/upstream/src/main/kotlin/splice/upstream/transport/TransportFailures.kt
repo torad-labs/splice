@@ -166,6 +166,7 @@ internal const val MAX_CAUSE_DEPTH = 8
 // How a client paces its retries (default-parameter width flip, 2026-10-09): the curve its deadline check
 // budgets against and the two sleeps that follow it. It sits with the transport failures it paces, and
 // it answers the two questions the client asks: how long may this wait run, and sleep it.
+
 /** The generic retry curve: a doubling delay from [baseMs] capped at [capMs], widened by [jitterPct]. The defaults READ
  *  UpstreamTransport's public curve constants, so the ceiling a client budgets against and the schedule
  *  [UpstreamTransport.defaultBackoff] sleeps cannot drift. */

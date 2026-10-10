@@ -89,7 +89,11 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             lookup.start()
             waiting(lookup)
             state.record.progress.pending += CodeModePending(
-                "runtime-pending", "client-pending", "Read", JsonObject(emptyMap()), true,
+                "runtime-pending",
+                "client-pending",
+                "Read",
+                JsonObject(emptyMap()),
+                true,
             )
         }
         lookup.join(WAIT_MILLIS)

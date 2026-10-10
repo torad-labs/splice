@@ -1303,6 +1303,7 @@ class WsRoundDriverTest {
      *  object under `response`, the flat event, and a plain-string `error` (DR-109) — because the
      *  refusal it exists to attribute ("No tool output found for function call …") arrives in
      *  whichever the backend picks, and a multi-line message must stay one log line. */
+
     /** DR-7, THE WS HALF. The idle watchdog used to target the TURN job on this path, so a stalled
      *  WebSocket round killed the translator along with the round and the salvage died with it —
      *  the SSE path earned salvage-and-continue and this one was left behind. The watchdog now

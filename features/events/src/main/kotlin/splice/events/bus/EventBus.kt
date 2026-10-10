@@ -161,6 +161,7 @@ internal class EventSubscription internal constructor(private val capacity: Int)
 /** Fan-out with a replay ring. Every method that touches [subscribers], the ring or the seq holds
  *  [lock]; publishing never suspends, so the lock is only ever held for one event's construction
  *  and a trySend loop. */
+
 /** Names the seam [EventBus.publish] takes: a raw `(Long) -> ConsoleEvent` said how many arguments
  *  arrive and nothing about what the thing is for, which is the unnamed transposable shape
  *  kt-no-lambda-seam forbids. The sequence number is the bus's, minted per publish, so a builder is

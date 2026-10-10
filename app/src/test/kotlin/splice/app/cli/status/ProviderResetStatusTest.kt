@@ -65,7 +65,10 @@ class ProviderResetStatusTest {
         ),
         heads = mapOf(
             "claude-muse" to HeadConfig(
-                provider = "muse", port = 3103, discoveryPrefix = "muse--", pinnedModel = "m",
+                provider = "muse",
+                port = 3103,
+                discoveryPrefix = "muse--",
+                pinnedModel = "m",
                 claude = ClaudeWrapperConfig(command = "claude-muse"),
             ),
         ),

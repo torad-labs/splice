@@ -165,7 +165,13 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
         text: String,
     ) {
         posted[record.id] = PostedHistory(
-            boundary, native, continuity, continuityPrefix, prefix, generated, text,
+            boundary,
+            native,
+            continuity,
+            continuityPrefix,
+            prefix,
+            generated,
+            text,
         )
         continuityPrefix = Prefix()
     }

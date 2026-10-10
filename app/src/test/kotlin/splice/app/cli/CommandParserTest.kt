@@ -73,9 +73,14 @@ class CommandParserTest {
     fun `a verb refuses a word it does not name, help flags included`() {
         val noArg = listOf("version", "shim-version", "init", "setup", "status", "sessions", "restart", "add-model")
         val refused = listOf(
-            listOf("restart", "--help"), listOf("restart", "--now", "--help"), listOf("restart", "--now", "--now"),
-            listOf("status", "x"), listOf("install", "a", "b"), listOf("install", "--help"),
-            listOf("uninstall", "-h"), listOf("uninstall", "a", "b"),
+            listOf("restart", "--help"),
+            listOf("restart", "--now", "--help"),
+            listOf("restart", "--now", "--now"),
+            listOf("status", "x"),
+            listOf("install", "a", "b"),
+            listOf("install", "--help"),
+            listOf("uninstall", "-h"),
+            listOf("uninstall", "a", "b"),
         ) + noArg.flatMap { verb -> listOf("--help", "-h", "x").map { listOf(verb, it) } }
         val ran = refused.associateWith { parser.parse(it.toTypedArray()) }.filterValues { it != null }
         assertEquals(emptyMap<List<String>, Command?>(), ran, "argv that parsed despite a word the verb does not name")

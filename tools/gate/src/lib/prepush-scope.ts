@@ -120,7 +120,7 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   // lawSuites runs :app:lawTest, not :app:test. A --tests filter on :app:test would narrow the module's unit run too: gradle
   // keeps one instance of a task however many tasks depend on it, so the public-source test rides in lawSuites instead.
   if (!docsOnly) gradle.push(LAW_SUITES_TASK);
-  if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test", "build-logic:detekt");
+  if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test", "build-logic:detekt", "build-logic:ktlintCheck");
   for (const leg of gradleLegs) gradle.push(`:${leg.task}`);
 
   const check = `check of ${modules.length === 0 ? "no module" : modules.join(", ")}`;

@@ -135,38 +135,6 @@ style:
   VarCouldBeVal:
     active: true
 
-# === FORMATTING (ktlint rules) ===
-# Requires detekt-formatting plugin.
-formatting:
-  active: true
-  android: false
-  autoCorrect: false
-  Indentation:
-    active: true
-  MaximumLineLength:
-    active: true
-    maxLineLength: 120
-  NoWildcardImports:
-    active: true
-  TrailingCommaOnCallSite:
-    active: true
-    useTrailingCommaOnCallSite: true
-  TrailingCommaOnDeclarationSite:
-    active: true
-    useTrailingCommaOnDeclarationSite: true
-  SpacingAroundColon:
-    active: true
-  SpacingAroundComma:
-    active: true
-  SpacingAroundCurly:
-    active: true
-  SpacingAroundKeyword:
-    active: true
-  SpacingAroundOperators:
-    active: true
-  SpacingAroundParens:
-    active: true
-
 # === NAMING ===
 # Consistent naming conventions.
 naming:

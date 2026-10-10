@@ -283,7 +283,11 @@ internal object ConstSingleSource {
                     buf.append(body, i, end)
                     i = end
                 } else {
-                    if (ch in "([{") depth += 1 else if (ch in ")]}") depth -= 1
+                    if (ch in "([{") {
+                        depth += 1
+                    } else if (ch in ")]}") {
+                        depth -= 1
+                    }
                     val separates = ch == ',' && depth == 0
                     if (separates) {
                         parts += buf.toString()

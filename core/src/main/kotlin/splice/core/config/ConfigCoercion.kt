@@ -206,6 +206,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     // One dispatch line per KnobKind. The three arms share nothing — not a value, not a helper, not
     // a failure mode — so they are three functions rather than three inlined blocks (HD-25).
+
     /** [raw] is the spelling a source gave: its text, or null when the source had no value. Each arm reads only the text. */
     fun coerce(knob: Knob, raw: String?): Any? = if (knob == Knob.MIRROR_REASONING) {
         false

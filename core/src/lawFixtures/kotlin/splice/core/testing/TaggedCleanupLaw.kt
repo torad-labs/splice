@@ -10,7 +10,8 @@ import java.nio.file.Path
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TaggedCleanupLaw {
 
-    private val set = LawReadSet(Path.of("/nonexistent-root"), Path.of(System.getProperty("splice.lawReadGuardFixtureList")))
+    private val set =
+        LawReadSet(Path.of("/nonexistent-root"), Path.of(System.getProperty("splice.lawReadGuardFixtureList")))
 
     @Test
     fun `passes`() {
@@ -19,7 +20,11 @@ class TaggedCleanupLaw {
 
     @AfterAll
     fun `reads undeclared in cleanup and swallows the refusal`() {
-        val refusal = runCatching { set.readText(Path.of("/nonexistent-root/tools/cleanup-undeclared.sh")) }.exceptionOrNull()
+        val refusal = runCatching {
+            set.readText(
+                Path.of("/nonexistent-root/tools/cleanup-undeclared.sh"),
+            )
+        }.exceptionOrNull()
         check(refusal != null) { "the undeclared read was not refused" }
     }
 }

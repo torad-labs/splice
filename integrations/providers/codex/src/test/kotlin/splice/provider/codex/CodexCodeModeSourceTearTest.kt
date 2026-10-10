@@ -287,6 +287,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         }
 
     /** A client step's sink that holds the first progress write the round's buffer replays into it. */
+
     /** The ledger's later followup: the reader's [CodeModeLiveRound] failed() on a non-IO error loses the record and
      *  closes the cell under the step that posted the round, as an uncertified source does. */
     @Test

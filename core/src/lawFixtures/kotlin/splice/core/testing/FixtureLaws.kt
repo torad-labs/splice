@@ -8,7 +8,8 @@ import java.nio.file.Path
 
 class FixtureLaws {
 
-    private val set = LawReadSet(Path.of("/nonexistent-root"), Path.of(System.getProperty("splice.lawReadGuardFixtureList")))
+    private val set =
+        LawReadSet(Path.of("/nonexistent-root"), Path.of(System.getProperty("splice.lawReadGuardFixtureList")))
 
     /** A law that catches the refusal and then passes every assertion it makes. */
     @Test

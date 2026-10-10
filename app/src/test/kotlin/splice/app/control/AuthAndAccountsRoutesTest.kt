@@ -335,8 +335,12 @@ class AuthAndAccountsRoutesTest {
         control.ports.claudeLogins = object : ClaudeLoginPlaces {
             override fun places(): List<ClaudeLoginPlaceView> = listOf(
                 ClaudeLoginPlaceView(
-                    ClaudeLoginPlaceId.NATIVE, WIRED, ClaudeLoginCredential("/synthetic/native", true),
-                    ClaudeLoginIdentity(null), null, ClaudeLoginStanding(null, null),
+                    ClaudeLoginPlaceId.NATIVE,
+                    WIRED,
+                    ClaudeLoginCredential("/synthetic/native", true),
+                    ClaudeLoginIdentity(null),
+                    null,
+                    ClaudeLoginStanding(null, null),
                 ),
             )
             override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")

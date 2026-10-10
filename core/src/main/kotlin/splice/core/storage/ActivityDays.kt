@@ -81,6 +81,7 @@ public const val DAY_BODY_V2_SUFFIX: String = ".bodies2"
 private const val DAY_MAX_BYTES = 512L shl 20
 
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
+
 /** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
 private const val ROLLED_SUFFIX = ".1"
 private val DAY_SIBLINGS = listOf(

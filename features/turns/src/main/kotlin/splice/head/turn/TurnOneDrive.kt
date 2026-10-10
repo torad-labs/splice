@@ -53,6 +53,7 @@ internal class TurnOneDrive(
     // the PARENT call and propagates DOWN into the turn — a parentless Job() severed that, so
     // Esc'd turns kept streaming upstream and pinning gate slots until the watchdog cap
     // (the audit's top concurrency finding, 2026-07-18).
+
     /** Null when the turn ran to its own terminal; otherwise the ending its last round had, for the caller to write
      *  once the pinger, the pacer and the cap poller below have stopped (the order an exception took before). */
     suspend fun driveOneTurn(drive: TurnDrive, pingClient: Boolean = true): UpstreamEnding? {

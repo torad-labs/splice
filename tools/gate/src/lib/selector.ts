@@ -12,7 +12,7 @@
 //     tests and typecheck, and a rule file selects the rule tests and the ast-grep scan.
 
 /** Paths every module's build or analysis reads, so a change to one selects the whole suite. */
-const BUILD_WIDE = /^(settings\.gradle\.kts$|build\.gradle\.kts$|gradle\.properties$|gradle\/|build-logic\/|quality\/(detekt|rules|compiler-plugin)\/|package\.json$|bun\.lock$|bun\.lockb$)/;
+const BUILD_WIDE = /^(settings\.gradle\.kts$|build\.gradle\.kts$|gradle\.properties$|gradle\/|build-logic\/|quality\/(detekt|rules|compiler-plugin)\/|\.editorconfig$|package\.json$|bun\.lock$|bun\.lockb$)/;
 
 /** Prose no law reads: a change confined to it leaves every gradle check and jar leg as it was. The files laws do read
  *  (the README, CHANGELOG, THIRD_PARTY_NOTICES, docs/PROVENANCE.md, the release runbook) are not in this set. */

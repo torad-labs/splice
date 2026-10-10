@@ -206,6 +206,7 @@ class HeadServerFoldTest {
     }
 
     /** A dedicated head whose totalCap (1s) is far tighter than its idle budgets — the NF-03 rig. */
+
     /** [log] is captured rather than discarded so a FAILING run carries its own evidence: the three
      *  CancellationSeal branches that write zero bytes — clientGone → abandon, emitError IOException
      *  → abandon, and already-sealed → nothing — are indistinguishable from the wire alone, and a CI

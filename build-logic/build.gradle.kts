@@ -2,6 +2,7 @@
 plugins {
     `kotlin-dsl`
     alias(libs.plugins.detekt)
+    alias(libs.plugins.ktlint)
 }
 
 // build-logic is held to the rules every module is: the same detekt.yml, no baseline and no exclusions. It is a separate
@@ -11,10 +12,19 @@ detekt {
     buildUponDefaultConfig = true
 }
 
+ktlint {
+    version.set(libs.versions.ktlint.asProvider())
+    // generated sources (kotlin-dsl accessors) live under build/ and are not ours to format
+    filter {
+        exclude { it.file.path.contains("/build/") }
+    }
+}
+
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:${libs.versions.kotlin.get()}")
     implementation("org.jetbrains.kotlin:kotlin-serialization:${libs.versions.kotlin.get()}")
     implementation("io.gitlab.arturbosch.detekt:detekt-gradle-plugin:${libs.versions.detekt.get()}")
+    implementation("org.jlleitschuh.gradle:ktlint-gradle:${libs.versions.ktlint.gradle.get()}")
 
     // TRANSITIVE CVE FLOOR — jackson (2026-07-29). detekt-gradle-plugin pulls
     // jackson-dataformat-xml for its XML report writer, which drags jackson-core/databind onto the
@@ -36,9 +46,6 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:${libs.versions.junit.get()}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-
-    // the detekt.yml carries a `formatting:` section (ktlint rules), which needs this plugin
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:${libs.versions.detekt.get()}")
 }
 
 tasks.test {

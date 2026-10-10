@@ -114,6 +114,7 @@ val gateOfRecord = tasks.register("gateOfRecord") {
     dependsOn("catalogMetadataSync")
     dependsOn(gradle.includedBuild("build-logic").task(":test"))
     dependsOn(gradle.includedBuild("build-logic").task(":detekt"))
+    dependsOn(gradle.includedBuild("build-logic").task(":ktlintCheck"))
 }
 
 // THE PROOF IS TAKEN WHEN THE BUILD IS CONFIGURED, NEVER DURING EXECUTION. Reading a task's dependencies during execution wants the

@@ -91,7 +91,13 @@ val trackedPathsDigest = providers.exec {
 val declaredReadRoots: List<String> = moduleDirectories.values.map { "$it/src/main" } + "build-logic/src/main/kotlin"
 
 tasks.withType<Test>().configureEach {
-    jvmArgumentProviders.add(splice.testing.MachineLocalProperties(provider { mapOf("splice.root" to repoRoot.asFile.absolutePath) }))
+    jvmArgumentProviders.add(
+        splice.testing.MachineLocalProperties(
+            provider {
+                mapOf("splice.root" to repoRoot.asFile.absolutePath)
+            },
+        ),
+    )
     systemProperty("splice.declaredReadRoots", declaredReadRoots.joinToString(";"))
     inputs.files(declaredReadRoots.map { root -> repoRoot.dir(root).asFileTree.matching { include("**/*.kt") } })
         .withPropertyName("declaredReadRoots")
@@ -152,7 +158,9 @@ tasks.withType<Test>().configureEach {
     // surfaces against the source — the example config is an input for the same reason the
     // sources are, or a key documented late comes back UP-TO-DATE-red and a key retired late
     // UP-TO-DATE-green.
-    inputs.files(repoRoot.file("app/src/main/resources/splice.example.toml")).withPropertyName("scannedDocumentationSurfaces")
+    inputs.files(
+        repoRoot.file("app/src/main/resources/splice.example.toml"),
+    ).withPropertyName("scannedDocumentationSurfaces")
     // Restructure PR 6: a law's own DECLARATION FILE — role-registry.toml's written dispositions —
     // is an input for the same reason the sources are. It arrives on the test classpath through
     // processTestResources, but naming it here is what makes the dependency legible beside the

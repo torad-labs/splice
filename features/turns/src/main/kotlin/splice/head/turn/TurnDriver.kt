@@ -171,6 +171,7 @@ internal class TurnDriver(
      *
      *  `internal`, not `private` (named widening, HD-24): [CollectTurn] calls this too, so the L3
      *  seal contract stays the one copy stream and collect both share, across the file split. */
+
     /** Non-stream sibling of [stream]: Claude Code sends stream:false on some internal calls (the
      *  Node predecessor served them by collecting the terminal object). See [CollectTurn]. */
     suspend fun collect(call: ApplicationCall, inputs: TurnInputs): Boolean =

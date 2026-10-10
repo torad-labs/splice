@@ -54,7 +54,13 @@ tasks.named("compileJava") { dependsOn(workerIdentity) }
 // The worker is a child JVM started from a classpath string; the tests hand it this module's own
 // runtime classpath. :app's codeModePackagedTest hands the same property the shipped fat jar.
 tasks.test {
-    jvmArgumentProviders.add(splice.testing.MachineLocalProperties(provider { mapOf("codeMode.testClasspath" to sourceSets.test.get().runtimeClasspath.asPath) }))
+    jvmArgumentProviders.add(
+        splice.testing.MachineLocalProperties(
+            provider {
+                mapOf("codeMode.testClasspath" to sourceSets.test.get().runtimeClasspath.asPath)
+            },
+        ),
+    )
 }
 
 // The compiled runtime suite, for :app's codeModePackagedTest to rerun with the shipped fat jar as the

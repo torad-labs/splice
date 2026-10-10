@@ -75,6 +75,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
 
     /** V4-77: a client deadline is a HOLD FROM NOW — positive, and inside V4-61's clamp — never the
      *  provider's window. Shared by the two exhaustion arms so the law is stated once. */
+
     /** V4-84 (7): the CEILING is measured from [receivedAtSeconds], the FLOOR from [sentAtSeconds].
      *
      *  The server stamps its deadline at refusal time, somewhere inside the round trip, so measuring
@@ -215,6 +216,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
     // unchanged and still asserted: the refusal is local, it is an IMF-fixdate — the format is
     // still pinned, by shape — and it names the provider's real reset. What moved is WHICH instant
     // the header carries: a bounded hold from now instead of the window.
+
     /** V4-84 (4): the refusal's quota family comes from the SELECTED account's tracker, not the
      *  primary's. deps.quota is ONE tracker per label — the primary's — so a pooled head whose
      *  session is sticky to backup shipped primary's bars on the 429, and the client's utilization

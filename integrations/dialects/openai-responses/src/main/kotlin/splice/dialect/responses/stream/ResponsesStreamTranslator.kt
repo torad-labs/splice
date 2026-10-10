@@ -224,6 +224,7 @@ internal class ResponsesStreamTranslator(
      *
      *  Two guard clauses rather than one joined condition: each names a single way the sentence must
      *  be left alone, which is also what keeps the condition under the complexity wall. */
+
     /** V4-116: has the client already been shown content this round? The generic catch is
      *  mid-stream-only, so this is the gate that decides whether a failure is OURS to
      *  salvage or the upper layers' to retry. Mirrors what the partial carries. */

@@ -62,6 +62,7 @@ public data class Topology(
     /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
      *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
      *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
+
     /** V4-109: the CONTROL PLANE is a listener too, and it was invisible to this check — a head
      *  declaring the daemon's own port was reported as clean, then the two fought over the bind at
      *  start. [DaemonConfig.controlPort] is folded in under a name that cannot be mistaken for a

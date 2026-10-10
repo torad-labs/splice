@@ -182,9 +182,12 @@ class PerfTurnsProjectionTest {
     fun `all selectors price presence and encounter order match the original full window`(@TempDir dir: Path) {
         val file = dir.resolve("synthetic.jsonl")
         val billing = tokens + mapOf(
-            PerfKeys.CACHE_WRITE_TOKENS to 7L, PerfKeys.ABSORBED_ROUNDS to 2L,
-            PerfKeys.ABSORBED_IN_TOKENS to 500_000L, PerfKeys.ABSORBED_CACHED_TOKENS to 1_000L,
-            PerfKeys.ABSORBED_CACHE_WRITE_TOKENS to 2_000L, PerfKeys.ABSORBED_OUT_TOKENS to 50L,
+            PerfKeys.CACHE_WRITE_TOKENS to 7L,
+            PerfKeys.ABSORBED_ROUNDS to 2L,
+            PerfKeys.ABSORBED_IN_TOKENS to 500_000L,
+            PerfKeys.ABSORBED_CACHED_TOKENS to 1_000L,
+            PerfKeys.ABSORBED_CACHE_WRITE_TOKENS to 2_000L,
+            PerfKeys.ABSORBED_OUT_TOKENS to 50L,
         )
         Files.writeString(
             file,

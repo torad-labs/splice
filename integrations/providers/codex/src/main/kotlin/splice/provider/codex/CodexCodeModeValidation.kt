@@ -76,6 +76,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
      *  always was, and its text was rendered by the previous daemon with the previous markers: the
      *  same client blocks rendered that way ([CodeModeResultRendering.legacy]) are the same
      *  result, so an upgrade under a parked script does not turn every replay into a conflict. */
+
     /** A fork altered an already accepted callback; it is not the running cell's next result. */
     fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn): Boolean =
         turn.toolResults.any { conflicts(record, turn, it) }

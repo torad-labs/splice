@@ -216,6 +216,7 @@ class InstallCommandTest {
 }
 
 /** The verbs as app wires them — stdout for progress, stderr for refusals — so capture() reads both. */
+
 /** The sentence of a refused install; fails the test when the install was anything else. */
 private fun refusal(result: InstallResult): String = (result as InstallResult.Refused).sentence
 

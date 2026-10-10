@@ -505,7 +505,11 @@ internal object SafeFailureRender {
             for (ch in text) {
                 val opens = ch == '(' || ch == '<'
                 val closes = ch == ')' || ch == '>'
-                if (opens) depth += 1 else if (closes) depth = maxOf(0, depth - 1)
+                if (opens) {
+                    depth += 1
+                } else if (closes) {
+                    depth = maxOf(0, depth - 1)
+                }
                 val separates = ch == sep && depth == 0
                 if (separates) {
                     parts += item.toString()

@@ -4,10 +4,10 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.cyclonedx.model.Component
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
-import org.gradle.api.tasks.PathSensitivity
-import org.gradle.api.tasks.ClasspathNormalizer
 import org.gradle.api.artifacts.result.ResolvedComponentResult
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
+import org.gradle.api.tasks.ClasspathNormalizer
+import org.gradle.api.tasks.PathSensitivity
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
@@ -113,7 +113,13 @@ tasks.test {
         "junit.jupiter.tempdir.deletion.strategy.default",
         "splice.head.HeadFileWriteCleanup",
     )
-    jvmArgumentProviders.add(splice.testing.MachineLocalProperties(provider { mapOf("codeMode.testClasspath" to sourceSets.test.get().runtimeClasspath.asPath) }))
+    jvmArgumentProviders.add(
+        splice.testing.MachineLocalProperties(
+            provider {
+                mapOf("codeMode.testClasspath" to sourceSets.test.get().runtimeClasspath.asPath)
+            },
+        ),
+    )
 
     // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect
     // `user.home` to a @TempDir, but TopologyLoader.configPath() consults SPLICE_CONFIG and
@@ -148,8 +154,8 @@ splice.lawsuite.ReadSet.declare(
     tasks.named<Test>("lawTest"),
     listOf(
         "app", "core", "features", "integrations", "quality/architecture", "quality/compiler-plugin", "build-logic",
-        "quality/detekt", "gradle", "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
-        "install.sh", ".gitignore",
+        "quality/detekt", "gradle", "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew",
+        "gradlew.bat", "install.sh", ".gitignore",
     ),
 )
 
@@ -236,7 +242,6 @@ tasks.cyclonedxDirectBom {
     jsonOutput.set(rawBom)
     xmlOutput.unsetConvention()
 }
-
 
 val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
     val rawBom = rawBom
@@ -325,17 +330,19 @@ val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
     doLast {
         val output = notices.get().asFile
         output.parentFile.mkdirs()
-        output.writeText(buildString {
-            append(noticesSource.asFile.readText())
-            legalTexts.get().filter { (_, name, _) -> "NOTICE" in name.uppercase() }
-                .forEach { (coordinate, name, text) ->
-                    appendLine()
-                    appendLine("## $coordinate / $name")
-                    appendLine()
-                    append(text)
-                    appendLine()
-                }
-        })
+        output.writeText(
+            buildString {
+                append(noticesSource.asFile.readText())
+                legalTexts.get().filter { (_, name, _) -> "NOTICE" in name.uppercase() }
+                    .forEach { (coordinate, name, text) ->
+                        appendLine()
+                        appendLine("## $coordinate / $name")
+                        appendLine()
+                        append(text)
+                        appendLine()
+                    }
+            },
+        )
     }
 }
 
@@ -413,7 +420,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             component.dependencies.filterIsInstance<ResolvedDependencyResult>().forEach { pending.addLast(it.selected) }
         }
         seen.mapNotNull { component -> component.moduleVersion?.let { "${it.group}:${it.name}:${it.version}" } }
-            .filterNot { it.startsWith("${releaseGroup}:") }
+            .filterNot { it.startsWith("$releaseGroup:") }
             .toSet()
     }
     dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses, generateThirdPartyNotices)
@@ -543,7 +550,8 @@ tasks.register("stageRelease") {
     val provenance = provenance
     val releaseAssets = releaseAssets
     group = "release"
-    description = "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
+    description =
+        "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
     inputs.file(releaseJar).withPropertyName("fatJar")
     inputs.files(bom, licenses, thirdPartyLicenses).withPropertyName("complianceReports")
     inputs.files(licenseFile, thirdPartyNotices, provenance, launchShim, installScript)

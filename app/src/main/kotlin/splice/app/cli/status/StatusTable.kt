@@ -224,6 +224,7 @@ private data class Row(val glyph: String, val cells: List<String>, val action: S
  *  the instant its provider stops refusing turns, epoch seconds (V4-398), the endpoint of its
  *  local runtime when that does not answer (V4-415), and the provider's reading when it names a window
  *  fully used (V4-452). All null for a head that is fine. */
+
 /** What the daemon reports about each head beyond its topology row, keyed by head: the boot failure, the instant
  *  its quota refusal lifts, the endpoint of a silent runtime, and a spent plan window. */
 internal class StatusReadings(

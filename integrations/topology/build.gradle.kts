@@ -21,7 +21,12 @@ tasks.named<Test>("lawTest") {
     )
     jvmArgumentProviders.add(
         splice.testing.MachineLocalProperties(
-            provider { mapOf("splice.releaseDocs" to rootProject.projectDir.absolutePath, "splice.featuresDoc" to featuresDoc.asFile.absolutePath) },
+            provider {
+                mapOf(
+                    "splice.releaseDocs" to rootProject.projectDir.absolutePath,
+                    "splice.featuresDoc" to featuresDoc.asFile.absolutePath,
+                )
+            },
         ),
     )
 }

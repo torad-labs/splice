@@ -241,7 +241,10 @@ internal class TurnPreparation(
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
         return replayed ?: Preparation.Ready(
-            built, parsed.typed.stream, arrival.inbound, marked(parsed, sessionId),
+            built,
+            parsed.typed.stream,
+            arrival.inbound,
+            marked(parsed, sessionId),
             hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
         )
     }

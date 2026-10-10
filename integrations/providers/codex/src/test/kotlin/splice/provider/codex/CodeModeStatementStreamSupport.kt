@@ -84,13 +84,16 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         calls.forEachIndexed { index, call ->
             input += JsonObject(
                 mapOf(
-                    "type" to JsonPrimitive("function_call"), "call_id" to JsonPrimitive(call.id),
-                    "name" to JsonPrimitive(call.name), "arguments" to JsonPrimitive("{}"),
+                    "type" to JsonPrimitive("function_call"),
+                    "call_id" to JsonPrimitive(call.id),
+                    "name" to JsonPrimitive(call.name),
+                    "arguments" to JsonPrimitive("{}"),
                 ),
             )
             input += JsonObject(
                 mapOf(
-                    "type" to JsonPrimitive("function_call_output"), "call_id" to JsonPrimitive(call.id),
+                    "type" to JsonPrimitive("function_call_output"),
+                    "call_id" to JsonPrimitive(call.id),
                     "output" to JsonPrimitive("result-$index"),
                 ),
             )

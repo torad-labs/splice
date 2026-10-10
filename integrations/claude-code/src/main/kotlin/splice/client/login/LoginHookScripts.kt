@@ -86,6 +86,7 @@ internal object LoginHookScripts {
     // pipe-instead hint into /dev/null and exited — the promised prompt could never appear and
     // the user was left waiting on nothing. Verified by running it. An api-key head that CAN
     // capture a paste is therefore told the path that actually works, and nothing is spawned.
+
     /** V4-13: the browser branch used to be one sentence whatever happened. A second /login while a
      *  sign-in was still waiting on its loopback callback (up to 300 s) spawned a login that died on
      *  the bind, unseen, while the hook kept promising a browser. Now the pending one is cancelled

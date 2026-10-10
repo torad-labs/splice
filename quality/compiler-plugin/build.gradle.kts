@@ -15,6 +15,7 @@ plugins {
     // plugin an ancestor already carries ("already on the classpath with an unknown version"). One
     // version, in build-logic/build.gradle.kts, from libs.versions.toml.
     id("io.gitlab.arturbosch.detekt")
+    id("org.jlleitschuh.gradle.ktlint")
     id("splice.module-law")
 }
 
@@ -27,15 +28,16 @@ kotlin {
     }
 }
 
+ktlint {
+    version.set(libs.versions.ktlint.asProvider())
+    // generated sources (kotlin-dsl accessors) live under build/ and are not ours to format
+    filter {
+        exclude { it.file.path.contains("/build/") }
+    }
+}
+
 detekt {
-    // The shared law, plus a module-scoped overlay for the two ktlint rules that a Kotlin
-    // context-parameter clause defeats in ktlint 0.50: one crashes, one misreads a colon that is
-    // there. Both are measured in detekt-context-parameters.yml, which also records the two rules
-    // the checkers' own shape earned back.
-    config.setFrom(
-        rootProject.layout.projectDirectory.file("quality/detekt/detekt.yml"),
-        layout.projectDirectory.file("detekt-context-parameters.yml"),
-    )
+    config.setFrom(rootProject.layout.projectDirectory.file("quality/detekt/detekt.yml"))
     buildUponDefaultConfig = true
 }
 
@@ -56,7 +58,6 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
 }
 
 // The root build wires this unpublished compiler plugin into every Kotlin compile via a stable

@@ -61,7 +61,9 @@ class RosterWindowJoinTest {
             assertEquals(400_000L, catalog.clientLaunchWindow)
             assertFalse(windows.stale(), "the window edit was accepted before discovery")
             models += DiscoveredModel(
-                "synthetic-small", "Small new", 256_000,
+                "synthetic-small",
+                "Small new",
+                256_000,
                 rates = ModelRates(input = 2.0, cacheRead = 0.5, output = 8.0),
             )
             assertEquals(256_000L, catalog.contextWindowFor("synthetic-small"))

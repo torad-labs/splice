@@ -167,7 +167,10 @@ class SpentReadingSurfacesTest {
         ),
         heads = mapOf(
             KEY to HeadConfig(
-                provider = "codex", port = 3099, discoveryPrefix = "claude-codex--", pinnedModel = "m",
+                provider = "codex",
+                port = 3099,
+                discoveryPrefix = "claude-codex--",
+                pinnedModel = "m",
                 claude = ClaudeWrapperConfig(command = "claudex"),
             ),
         ),

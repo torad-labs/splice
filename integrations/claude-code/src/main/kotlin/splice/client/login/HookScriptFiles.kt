@@ -95,6 +95,7 @@ internal object HookScriptFiles {
      * ignores modes but mounts exec (the LNC-005 case this used to tolerate wholesale) and fails on
      * one that leaves the script unrunnable, whatever the chmod itself reported.
      */
+
     /** Stage-and-swap (DR-31): Claude Code parses these scripts on every prompt, so the LIVE hook
      *  must never be observable truncated, torn, or mode-broken. Content and mode land on a staged
      *  same-dir copy FIRST; the atomic move publishes it whole (rename keeps the inode, so the

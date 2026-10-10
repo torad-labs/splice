@@ -112,7 +112,9 @@ internal class JvmCodeModeCell(
             val input = checkNotNull(source) { "Ordinary cell cannot wait for source input" }
             val part = nextInput(input)
             reply = CodeModeFrames.parseReply(
-                exchange(StreamingCodeModeWire.inputFrame(part)), tools, nextId,
+                exchange(StreamingCodeModeWire.inputFrame(part)),
+                tools,
+                nextId,
             )
         }
         pendingCalls = reply.calls.orEmpty()

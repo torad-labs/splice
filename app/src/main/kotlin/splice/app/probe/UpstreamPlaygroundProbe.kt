@@ -111,6 +111,7 @@ internal class UpstreamPlaygroundProbe(
 
     // Each step below is its own function (ReturnCount: max 3 per function) rather than one long
     // chain of guards — the same split CaptureRoutes.write/PlaygroundRoute.run use for the same wall.
+
     /** [model] null runs the head's pinned model. A named one is sent as written, and an id its provider
      *  does not serve comes back as the provider's own answer, shown like any other. */
     override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {

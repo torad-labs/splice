@@ -6,6 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("io.gitlab.arturbosch.detekt")
+    id("org.jlleitschuh.gradle.ktlint")
 }
 
 kotlin {
@@ -52,12 +53,21 @@ detekt {
 private val catalog =
     CatalogReader(extensions.getByType<org.gradle.api.artifacts.VersionCatalogsExtension>().named("libs"))
 
+// FORMATTING IS STANDALONE KTLINT, not detekt-formatting (2026-10-09). detekt 1.23.8 bundles ktlint 0.50, which cannot
+// parse a Kotlin context-parameter clause: one rule crashes on it and another misreads its colon. The ktlint Gradle plugin
+// runs the current ktlint on the same sources in the same `check`, with the rule list pinned in the root .editorconfig.
+ktlint {
+    version.set(catalog.version("ktlint"))
+    // generated sources live under build/ and are not ours to format
+    filter {
+        exclude { it.file.path.contains("/build/") }
+    }
+}
+
 dependencies {
     "testImplementation"(platform("org.junit:junit-bom:${catalog.version("junit")}"))
     "testImplementation"("org.junit.jupiter:junit-jupiter")
     "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
-    // the kit detekt.yml carries a `formatting:` section (ktlint rules) — needs this plugin
-    "detektPlugins"("io.gitlab.arturbosch.detekt:detekt-formatting:${catalog.version("detekt")}")
 }
 
 tasks.withType<Test>().configureEach {

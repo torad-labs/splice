@@ -103,7 +103,13 @@ internal object RepoOrigin {
     private fun sanitized(raw: String): String? {
         if (raw.isBlank() || raw.any { it.isISOControl() }) return null
         // git's scp-like ssh syntax has a public user, not URL credentials.
-        return if ("://" in raw) uriRemote(raw) else if (raw.startsWith("git@")) raw else raw.substringAfterLast('@')
+        return if ("://" in raw) {
+            uriRemote(raw)
+        } else if (raw.startsWith("git@")) {
+            raw
+        } else {
+            raw.substringAfterLast('@')
+        }
     }
 
     private fun uriRemote(raw: String): String {

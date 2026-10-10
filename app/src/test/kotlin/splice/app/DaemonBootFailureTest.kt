@@ -32,6 +32,7 @@ class DaemonBootFailureTest {
     // Two arms rather than one, because the row makes two claims that fail independently: withhold
     // the message, and STILL diagnose. A single arm holding both reds identically for either
     // regression, so nothing downstream could tell a leak from a silent net.
+
     /** Drives the handler over a ktoml-shaped failure and returns what daemon.log received.
      *  Synchronous by contract: readable IMMEDIATELY, there is no async lane to drain. */
     private fun bootLog(tmp: Path): String {

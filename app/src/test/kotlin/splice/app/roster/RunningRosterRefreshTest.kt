@@ -37,7 +37,9 @@ class RunningRosterRefreshTest {
                 assertTrue("synthetic-joined" in fixture.statusline(JOINED).body())
                 val port = fixture.managed.head.port
                 fixture.models += DiscoveredModel(
-                    JOINED, "Joined synthetic", 256_000,
+                    JOINED,
+                    "Joined synthetic",
+                    256_000,
                     rates = ModelRates(input = 2.0, cacheRead = 0.5, output = 8.0),
                 )
                 fixture.refresh()

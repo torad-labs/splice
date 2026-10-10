@@ -56,6 +56,7 @@ public enum class DoctorFix(public val wire: String) {
 /** Resolved control port + the version the listener there reports (null = nothing answering).
  *  Computed ONCE in doctor() and threaded into both the daemon and auth sections so the port is
  *  resolved a single time and /health is probed a single time (was: twice each). */
+
 /** JW-02 payload shape now lives on DaemonProbe (concentration, 2026-08-19). The CLI
  *  name stays so same-package FQCN and the one test import do not churn. */
 internal typealias HealthView = DaemonProbe.HealthView

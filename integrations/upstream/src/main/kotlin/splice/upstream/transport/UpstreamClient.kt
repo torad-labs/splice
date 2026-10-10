@@ -203,6 +203,7 @@ public class UpstreamClient(
          *  400 lands on the last permitted attempt (review 2026-07-24: an `attempt += 1` here made
          *  the loop guard eat the resend at the budget boundary — the amend computed a valid body
          *  and then gave up on the stale pre-amendment error). */
+
         /** V4-174: one send's recorder, built only when the context carries an observer; [sent]
          *  counts every send whatever budget paid for it. Here, with [report], because both are
          *  bookkeeping on this state and [runAttempt] has no complexity to spare. */

@@ -222,7 +222,7 @@ export function moduleOf(modules: readonly GradleModule[], file: string): string
 /** The gradle tasks that check one Kotlin file, or undefined when no check covers it. */
 export function checksFor(modules: readonly GradleModule[], file: string): string[] | undefined {
   const module = moduleOf(modules, file);
-  if (module !== undefined) return [`${module}:compileKotlin`, `${module}:compileTestKotlin`, `${module}:detekt`];
+  if (module !== undefined) return [`${module}:compileKotlin`, `${module}:compileTestKotlin`, `${module}:detekt`, `${module}:ktlintCheck`];
   if (BUILD_LOGIC_MAIN.test(file)) return ["build-logic:compileKotlin"];
   if (BUILD_LOGIC_TEST.test(file)) return ["build-logic:compileTestKotlin"];
   if (BUILD_LOGIC_SCRIPT.test(file)) return ["build-logic:help"];

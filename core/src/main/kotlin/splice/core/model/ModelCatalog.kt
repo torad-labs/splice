@@ -249,6 +249,7 @@ public data class ModelCatalog(
      *  client/declared-window ratio. A calibrated Codex row uses the client's actual threshold T(C)
      *  divided by its real input target W-R: input and both disjoint cache buckets must agree.
      *  Raw upstream usage and output accounting never pass through this factor. */
+
     /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */

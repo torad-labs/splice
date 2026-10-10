@@ -163,6 +163,7 @@ public class PassthroughStreamTranslator(
      *  reading a lie, which is the same defect the responses twin already fixed for its own two
      *  tiers. [WatchdogFired.TotalCap] is the whole-turn wall and names its own elapsed figure —
      *  it reaches here only when no round-level verdict won the precedence. */
+
     /** V4-116: has the client already been shown content this round? The generic catch is
      *  mid-stream-only, so this is the gate that decides whether a failure is OURS to
      *  salvage or the upper layers' to retry. Mirrors what the partial carries. */

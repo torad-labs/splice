@@ -68,7 +68,8 @@ private class CommandRegistration(val usage: String, private val factory: Comman
 
 private val verbs: Map<String, CommandRegistration> = mapOf(
     "doctor" to CommandRegistration(
-        "[--json [--with-logs] [--out FILE]]", CommandFactory { a -> Command.Doctor(a.drop(1)) },
+        "[--json [--with-logs] [--out FILE]]",
+        CommandFactory { a -> Command.Doctor(a.drop(1)) },
     ),
     "version" to CommandRegistration("", CommandFactory.Alone(Command.Version)),
     "record-launch" to CommandRegistration(
@@ -91,7 +92,8 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     "init" to CommandRegistration("", CommandFactory.Alone(Command.Init)),
     "install" to CommandRegistration("[<head>|--all]", CommandFactory.OneHead { a -> Command.Install(a.getOrNull(1)) }),
     "uninstall" to CommandRegistration(
-        "[<head>|--all]", CommandFactory.OneHead { a -> Command.Uninstall(a.getOrNull(1)) },
+        "[<head>|--all]",
+        CommandFactory.OneHead { a -> Command.Uninstall(a.getOrNull(1)) },
     ),
     // `login <head> [--label <name>] [--discard]` (v0.4.0, FEATURES.md §11): the value after the flag,
     // wherever it sits. --discard (V4-276) takes no value and only means something with --label.
@@ -124,7 +126,8 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     // 2026-09-22: `splice models [provider]` — the endpoint's own roster beside the declared one.
     "models" to CommandRegistration("[provider] [--all]", CommandFactory { a -> Command.Models(a.drop(1)) }),
     "upgrade" to CommandRegistration(
-        "[--to vX.Y.Z] [--now] [--rollback]", CommandFactory { a -> Command.Upgrade(a.drop(1)) },
+        "[--to vX.Y.Z] [--now] [--rollback]",
+        CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
     "restart" to CommandRegistration(
@@ -142,12 +145,14 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory { a -> Command.Key(a.drop(1)) },
     ),
     "logs" to CommandRegistration(
-        "[--head <key>] [--tail N] [--follow]", CommandFactory { a -> Command.Logs(a.drop(1)) },
+        "[--head <key>] [--tail N] [--follow]",
+        CommandFactory { a -> Command.Logs(a.drop(1)) },
     ),
     "sessions" to CommandRegistration("", CommandFactory.Alone(Command.Sessions)),
     "perf" to CommandRegistration("[--window 1h|24h|7d]", CommandFactory { a -> Command.Perf(a.drop(1)) }),
     "wire" to CommandRegistration(
-        "<head> [--last N] [--json]", CommandFactory { a -> Command.Wire(a.drop(1)) },
+        "<head> [--last N] [--json]",
+        CommandFactory { a -> Command.Wire(a.drop(1)) },
     ),
     "trace" to CommandRegistration(
         "<head> [--last N] [--session S] [--turn ID] [--json] [--purge]",

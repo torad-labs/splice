@@ -18,6 +18,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
+import splice.core.perf.OutcomeTag
 import splice.core.process.LaunchOwners
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
@@ -27,6 +28,8 @@ import splice.sessions.http.LaunchedTerminals
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionDrive
+import splice.sessions.http.SessionEnding
+import splice.sessions.http.SessionEndingOf
 import splice.sessions.http.SessionRowFacts
 import splice.sessions.http.SessionTurnCount
 import splice.sessions.http.SessionTurnsOf
@@ -41,6 +44,7 @@ import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
+import java.util.concurrent.TimeUnit
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -99,6 +103,24 @@ internal class SessionsWiring(
         }
     }
 
+    /** How the session's newest request ended, newest across every head, and only when that ending holds the session
+     *  back until something changes: a plan window or every account spent (At limit), or no credential (Signed
+     *  out). A burst 429 passes on its own, so it is not one. */
+    private val holdingEndings =
+        setOf(OutcomeTag.PLAN_LIMIT, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.AUTH_MISSING)
+            .mapTo(HashSet()) { it.wire }
+
+    private val sessionEnding = SessionEndingOf { id ->
+        heads.values
+            .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id) }
+            .maxByOrNull { it.ts }
+            ?.takeIf { it.outcome in holdingEndings }
+            ?.let { ended ->
+                val resetMs = ended.resetEpochSeconds?.let(TimeUnit.SECONDS::toMillis)
+                SessionEnding(ended.outcome, ended.account, resetMs, ended.ts)
+            }
+    }
+
     /** The launch records splice-launch writes: a session started from the person's own tmux names its pane there. */
     private val launchOwners = LaunchOwners(StatePaths().stateDir)
 
@@ -132,7 +154,7 @@ internal class SessionsWiring(
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
-            facts = SessionRowFacts(accountOf = sessionAccounts, turnsOf = sessionTurns),
+            facts = SessionRowFacts(accountOf = sessionAccounts, turnsOf = sessionTurns, endingOf = sessionEnding),
         )
     }
 

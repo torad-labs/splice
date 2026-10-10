@@ -202,6 +202,10 @@ public class PerfStats(
      *  detekt's 15 functions, which a wrapper for each would. */
     public val totals: SessionTotals? = null,
 ) {
+    /** Each session's newest ending, noted by [record] as the row is appended (SessionEndings): how Sessions
+     *  and Teams learn a request was turned away at a limit or for want of a credential. Memory only. */
+    public val endings: SessionEndings = SessionEndings()
+
     private val archiveName = PerfArchiveName(file.fileName.toString())
 
     private val archive: RotationArchive =
@@ -263,6 +267,8 @@ public class PerfStats(
             },
         )
         meta.session?.let { session ->
+            val reset = snap.counters[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS]
+            endings.note(session, meta.outcome, meta.account.label, reset, ts)
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { meta.model?.let { totals?.add(session, it, snap.counters, ts) } },
                 "telemetry is best-effort; a turn must never fail on its session's running total",

@@ -22,6 +22,7 @@ import splice.head.compact.CompactStats
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.perf.PerfStats
+import splice.head.perf.SessionEndings
 import splice.head.perf.SessionTotals
 import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsStore
@@ -155,6 +156,9 @@ public class PerfStatsSource(private val stats: PerfStats) :
     HeadPerfSkipSource {
     /** The same live totals instance the head's PerfStats feeds, never a second file reader. */
     internal val sessionTotals: SessionTotals? get() = stats.totals
+
+    /** Each session's newest ending, the one record PerfStats keeps as it appends (SessionEndings). */
+    internal val sessionEndings: SessionEndings get() = stats.endings
 
     override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
 

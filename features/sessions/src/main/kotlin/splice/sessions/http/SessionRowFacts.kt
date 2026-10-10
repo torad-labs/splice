@@ -25,11 +25,13 @@ public data class SessionRowFacts(
     val accountOf: SessionAccountOf = SessionAccountOf { _, _ -> null },
     /** How many turns it has run, and from when (SessionTurnsOf): `turns`, `turns_from_ms`. */
     val turnsOf: SessionTurnsOf = NoSessionTurns,
+    /** How its newest request ended, when that holds it back (SessionEndingOf): `ended_by`. */
+    val endingOf: SessionEndingOf = NoSessionEnding,
 ) {
     /** One snapshot of every source, taken once per request before the first row is written. A source
      *  without a bounded lookup returns itself, so this is free for the ones that do not need it. */
     public fun forRecords(records: List<SessionRecord>): SessionRowFacts =
-        SessionRowFacts(accountOf.forRecords(records), turnsOf.forRecords(records))
+        SessionRowFacts(accountOf.forRecords(records), turnsOf.forRecords(records), endingOf)
 
     /** Each source writes its own keys. The order is the order they are declared in, and nothing here
      *  reads or overwrites another's key: two sources that wanted the same key would be a conflict to
@@ -37,5 +39,6 @@ public data class SessionRowFacts(
     public fun write(record: SessionRecord, target: JsonObjectBuilder) {
         accountOf.write(record, target)
         turnsOf.write(record, target)
+        endingOf.write(record, target)
     }
 }

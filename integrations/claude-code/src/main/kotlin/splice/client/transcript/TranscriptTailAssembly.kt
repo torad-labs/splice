@@ -2,6 +2,7 @@
 package splice.client.transcript
 
 import kotlinx.serialization.json.JsonObject
+import splice.sessions.transcript.KIND_TAKEN_BACK
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
 
@@ -37,10 +38,14 @@ internal class TranscriptTailAssembly(
     }
 
     /** What the session said, was told or called: a tool result and a system note are neither. A teammate's message is
-     *  something it was told. */
+     *  something it was told. A message Claude Code took back into the prompt was never told to it: its words are back
+     *  in the person's prompt, so the card keeps the reply before it. */
     private fun activity(message: TranscriptMessage): Boolean =
-        message.role == TranscriptRole.USER || message.role == TranscriptRole.ASSISTANT ||
-            message.role == TranscriptRole.PEER
+        message.source.kind != KIND_TAKEN_BACK &&
+            (
+                message.role == TranscriptRole.USER || message.role == TranscriptRole.ASSISTANT ||
+                    message.role == TranscriptRole.PEER
+                )
 
     private fun ready(before: List<TranscriptMessage>, last: TranscriptMessage?): Boolean {
         if (last == null) return false

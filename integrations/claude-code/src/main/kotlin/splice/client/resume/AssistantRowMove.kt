@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
+import splice.client.transcript.ASSISTANT_TYPE
 import splice.client.transcript.CONTENT
 import splice.client.transcript.THINKING_STAND_IN
 import splice.core.util.Cancellables
@@ -18,7 +19,6 @@ import splice.core.util.JsonScalars
 
 private const val TRANSCRIPT_TYPE = "type"
 private const val TRANSCRIPT_MESSAGE = "message"
-private const val ASSISTANT_TYPE = "assistant"
 
 /** Whether a row on this model stays where it is. */
 internal fun interface KeptModel {

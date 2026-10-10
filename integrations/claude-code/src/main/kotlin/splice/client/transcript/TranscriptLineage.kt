@@ -16,7 +16,9 @@ import splice.core.util.JsonScalars
 
 private const val UUID = "uuid"
 private const val PARENT = "parentUuid"
-private const val ASSISTANT_TYPE = "assistant"
+
+/** The `type` of a transcript record an assistant wrote. */
+internal const val ASSISTANT_TYPE = "assistant"
 
 // why: a chain longer than this is a loop in a damaged file, not a conversation.
 private const val MAX_CHAIN = 100_000

@@ -86,4 +86,27 @@ class TranscriptTakenBackTest {
         val messages = (back as TranscriptLookup.Found).page.messages
         assertEquals(listOf(null, KIND_TAKEN_BACK, null, null), messages.map { it.source.kind })
     }
+
+    @Test
+    fun `a card's last line keeps the reply before a message that was taken back`(@TempDir tmp: Path) {
+        val fixture = ActivityTranscript(tmp)
+        fixture.write(
+            listOf(
+                reply("a0", "root", "the previous reply"),
+                person("u1", "a0", "take your time with it"),
+                attachment("t1", "u1"),
+                person("u2", "a0", "Please run the tests again."),
+            ),
+        )
+        assertEquals("Please run the tests again.", fixture.reader.last(ACTIVITY_ID, listOf(tmp))?.text)
+        fixture.write(
+            listOf(
+                reply("a0", "root", "the previous reply"),
+                person("u1", "a0", "take your time with it"),
+                person("u2", "a0", "second try"),
+                reply("a1", "u2", "answered"),
+            ),
+        )
+        assertEquals("answered", fixture.reader.last(ACTIVITY_ID, listOf(tmp))?.text)
+    }
 }

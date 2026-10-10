@@ -65,6 +65,7 @@ internal class SessionsWiring(
 
         override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
     }
+
     /** Every head's per-session accumulator, summed, because a session that moved heads has rows on
      *  both and one head's count would read as the whole of it. The combined start is the LATEST of
      *  the heads that contributed (SessionTurnCount): the sum covers the session only where every one

@@ -32,6 +32,13 @@ class ProviderFamilyRuleTest {
     }
 
     @Test
+    fun `a known provider on a proxy on this machine keeps its family, unless the operator marked it local`() {
+        val proxied = provider(API_KEY_WIRE, "http://127.0.0.1:31990/api/v1")
+        assertEquals("openrouter", rule.of("openrouter", proxied))
+        assertEquals("local", rule.of("openrouter", proxied.copy(local = true)))
+    }
+
+    @Test
     fun `runtimes on the operator's own machine are one family, whatever each is called`() {
         for (key in listOf("bonsai", "bonsai-vast", "bonsai-second")) {
             assertEquals("local", rule.of(key, provider(API_KEY_WIRE, "http://127.0.0.1:8099/v1")), key)

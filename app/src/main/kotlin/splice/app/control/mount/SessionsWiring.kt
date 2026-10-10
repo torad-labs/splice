@@ -58,6 +58,8 @@ internal class SessionsWiring(
 
         override fun label(head: String?, sessionId: String): String? =
             head?.let { account(it, sessionId, null) }
+
+        override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
     }
     val routes: SessionsRoutes? = sessions?.let {
         SessionsRoutes(
@@ -80,6 +82,8 @@ internal class SessionsWiring(
             override fun label(head: String?, sessionId: String): String? =
                 head?.let { account(it, sessionId, saved[it]) }
 
+            override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
+
             override fun state(head: String?, sessionId: String): SessionAccountState = when {
                 ports.claudeLogins?.hasCarryingProof(head.orEmpty(), sessionId) == true -> SessionAccountState.NONE
                 saved[head]?.let { !it.complete || sessionId !in it.indexed } == true ->
@@ -89,6 +93,10 @@ internal class SessionsWiring(
                 else -> SessionAccountState.NONE
             }
         }
+
+    /** The label this session is pinned to on its head's pool (its own pin, else the head's), or null. */
+    private fun pinOf(head: String?, session: String): String? =
+        head?.let { heads[it]?.authSurface?.accountPool?.view(session)?.pinnedLabel }
 
     private fun account(head: String, session: String, saved: PerfSessionAccountIndex.Snapshot?): String? {
         val managed = heads[head] ?: return null

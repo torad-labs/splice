@@ -218,6 +218,37 @@ class SessionsCommandTest {
     }
 
     /** The verb as app wires it — stdout and stderr — so capture() reads what an operator sees. */
+    @Test
+    fun `a session row names the account it is on and the pin it is under`(@TempDir dir: Path) {
+        Files.writeString(
+            dir.resolve("11.json"),
+            """{"pid":11,"sessionId":"s-1","name":"alpha","status":"busy","updatedAt":$now,"cwd":"/w/a"}""",
+        )
+        Files.writeString(
+            dir.resolve("12.json"),
+            """{"pid":12,"sessionId":"s-2","name":"beta","status":"busy","updatedAt":$now,"cwd":"/w/b"}""",
+        )
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Head("claudex") },
+            pidAlive = { true },
+            clock = { now },
+        )
+        val command = SessionsCommand(
+            TerminalOutput(::println),
+            TerminalOutput(System.err::println),
+            SessionAccounts { mapOf("s-1" to SessionAccountLine("primary", "work")) },
+        )
+
+        val lines = capture { command.sessions({ null }, registry) { now } }.lines()
+
+        val alpha = lines.first { it.contains("alpha") }
+        assertTrue(alpha.contains("claudex on primary (pinned to work)"), alpha)
+        val beta = lines.first { it.contains("beta") }
+        assertFalse(beta.contains("pinned"), beta)
+        assertFalse(beta.contains(" on "), beta)
+    }
+
     private fun sessionsCommand() = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
 
     private fun capture(block: () -> Boolean): String {

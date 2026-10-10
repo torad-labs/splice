@@ -358,7 +358,7 @@ curl -X DELETE -H "Authorization: Bearer $KEY" \
 A session's pin outranks the head's pin for that session only. `DELETE` without `session` drops the
 head's pin and always answers `{"ok":true}`. A label the head does not hold, or an account with no
 credential file, is refused and nothing is pinned. A pin on an account that is out of quota falls
-back to the automatic rule and stays set. The pin takes effect on the next turn, and a daemon
+back to the automatic rule and stays set. To see a pin: `splice status` adds "pinned to <label>" to the head's accounts line, and `splice sessions` and `GET /api/sessions` show each session's account and, when it has one, its pin (`account` and `account_pin`). The pin takes effect on the next turn, and a daemon
 restart clears every pin. Without any pin, a session keeps its account until a limit, then moves to
 the account whose weekly window resets soonest.
 

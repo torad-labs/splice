@@ -47,7 +47,11 @@ private val UNPRINTABLE: Set<Int> = setOf(
 )
 
 /** `splice sessions`. [output] is the listing, [errors] the one diagnostic: an unreadable topology. */
-public class SessionsCommand(private val output: TerminalOutput, private val errors: TerminalOutput) {
+public class SessionsCommand(
+    private val output: TerminalOutput,
+    private val errors: TerminalOutput,
+    private val accounts: SessionAccounts = SessionAccounts { emptyMap() },
+) {
 
     public fun sessions(
         envReader: EnvReader,
@@ -61,16 +65,17 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         val rows = listing.sessions
         listing.error?.let { output.line("  $RED✗$RESET the registry could not be listed: ${clean(it)}") }
         if (rows.isEmpty() && listing.error == null) output.line("  $DIM–  no registered sessions$RESET")
-        rows.forEach { s -> printRow(s, home, now()) }
+        val byId = if (rows.isEmpty()) emptyMap() else accounts.read(envReader)
+        rows.forEach { s -> printRow(s, home, now(), s.sessionId?.let(byId::get)) }
         output.line("")
         output.line("  ${DIM}gone = the process exited · stale = alive, no registry update for 30 min · $RESET")
         output.line("  ${DIM}headless `claude -p` runs never register here$RESET")
         return listing.error == null
     }
 
-    private fun printRow(s: SessionRecord, home: String, now: Long) {
+    private fun printRow(s: SessionRecord, home: String, now: Long, account: SessionAccountLine?) {
         val name = shownName(s) ?: s.process.pid?.let { "pid $it" } ?: "?"
-        val head = headLabel(s.route)
+        val head = headLabel(s.route) + accountText(account)
         val cwd = shortCwd(clean(s.process.cwd.orEmpty()).replaceFirst(home, "~"))
         val age = s.process.updatedAt?.let { ago(now - it) } ?: "never"
         val availability = s.availability.name.lowercase()
@@ -79,6 +84,14 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
                 "$availability  $DIM$age · $cwd$RESET",
         )
         sendLine(s)?.let { output.line(it) }
+    }
+
+    /** " on work" for the account a session is on, then " (pinned to work)" when it is under a pin. The pin
+     *  is named apart because a pin can name an account the session is not on yet. */
+    private fun accountText(line: SessionAccountLine?): String {
+        val on = line?.account?.let { " on ${clean(it)}" }.orEmpty()
+        val pin = line?.pin?.let { " (pinned to ${clean(it)})" }.orEmpty()
+        return on + pin
     }
 
     /** V4-293: a session that never went through splice is "direct", not a routing fault. */

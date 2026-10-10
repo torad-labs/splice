@@ -132,7 +132,11 @@ public sealed class Command {
     }
     public data object Sessions : Command() {
         override suspend fun run(): Int {
-            val verb = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+            val verb = SessionsCommand(
+                TerminalOutput(::println),
+                TerminalOutput(System.err::println),
+                DaemonSessionAccounts(),
+            )
             return outcomeExitCode(verb.sessions(EnvReader(System::getenv)))
         }
     }

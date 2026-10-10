@@ -3,6 +3,7 @@
 package splice.sessions.http
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -86,6 +87,36 @@ class SessionsRoutesTest {
             .associateBy { it.getValue("session_id").jsonPrimitive.content }
         assertEquals("work", rows.getValue("first").getValue("account").jsonPrimitive.content)
         assertEquals("spare", rows.getValue("second").getValue("account").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a session reports the account it is pinned to, and null when it is under no pin`(@TempDir dir: Path) {
+        listOf("first", "second").forEachIndexed { index, id ->
+            Files.writeString(
+                dir.resolve("${index + 1}.json"),
+                """{"pid":${index + 1},"sessionId":"$id","updatedAt":$now}""",
+            )
+        }
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Head("claudex") },
+            pidAlive = { true },
+            clock = { now },
+        )
+        val route = SessionsRoutes(
+            registry,
+            TestTranscripts(),
+            accountOf = object : SessionAccountOf {
+                override fun label(head: String?, sessionId: String): String? = "primary"
+
+                override fun pin(head: String?, sessionId: String): String? = if (sessionId == "first") "work" else null
+            },
+        )
+        val rows = Json.parseToJsonElement(route.sessionsJson()).jsonObject.getValue("sessions").jsonArray
+            .map { it.jsonObject }
+            .associateBy { it.getValue("session_id").jsonPrimitive.content }
+        assertEquals("work", rows.getValue("first").getValue("account_pin").jsonPrimitive.content)
+        assertEquals(JsonNull, rows.getValue("second").getValue("account_pin"))
     }
 
     // `route` tells apart the two facts `head` folds into "unknown head": a session that never went

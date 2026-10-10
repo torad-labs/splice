@@ -76,6 +76,20 @@ class AccountStatusTest {
         assertEquals(CheckStatus.OK, text.check("claudex", view).status)
     }
 
+    private fun withPin(label: String): String =
+        body.replace("\"selected_label\":\"work\"", "\"selected_label\":\"work\",\"pinned_label\":\"$label\"")
+
+    @Test
+    fun `status names the pin the daemon reports and a pin that is no label never reaches the text`() {
+        val text = AccountPoolText { 1_000_000L + 3 * 60_000L }
+        assertTrue(
+            text.summary(AccountPoolProjection().parse(withPin("work")).getValue("claudex"))
+                .startsWith("on work (1 of 2 open) · pinned to work · 5h 12%"),
+        )
+        val hostile = AccountPoolProjection().parse(withPin("a b;rm")).getValue("claudex")
+        assertFalse(text.summary(hostile).contains("pinned"))
+    }
+
     @Test
     fun `status names the selected native login and counts its real roster`() {
         val view = nativeView()

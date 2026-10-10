@@ -61,6 +61,29 @@ class StatusAccountsLineTest {
         assertEquals(1, printed.lines().count { it.contains("accounts") }, "one line per pooled head")
     }
 
+    @Test
+    fun `status names the pin on a pinned head`(@TempDir home: Path) {
+        val view = HeadAccountPoolView(
+            selectedLabel = "work",
+            accounts = listOf(
+                HeadAccountView("primary", primary = true, selected = false, available = true, plan = "plus"),
+                HeadAccountView("work", primary = false, selected = true, available = true, plan = "pro"),
+            ),
+            lastSwitch = null,
+            pinnedLabel = "work",
+        )
+        val status = StatusCommand(
+            healthProbe = HealthProbe { DaemonProbe.HealthView(GATEWAY_VERSION, heads = noHeads) },
+            accountPools = AccountPoolRead { _, _ -> AccountPoolsRead.Read(mapOf("claudex" to view)) },
+            localRuntimes = LocalRuntimeReach(LocalHttp { _, _, _ -> null }),
+        )
+
+        val printed = UserHome.within(home) { printedBy { status.status(EnvReader { null }) } }
+
+        val line = printed.lines().single { it.contains("accounts") && it.contains("claudex") }
+        assertTrue(line.contains("on work (2 of 2 open) · pinned to work"), line)
+    }
+
     private fun printedBy(block: () -> Unit): String {
         val saved = System.out
         val captured = ByteArrayOutputStream()

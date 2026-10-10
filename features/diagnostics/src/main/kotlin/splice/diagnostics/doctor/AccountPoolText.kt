@@ -17,7 +17,7 @@ import kotlin.time.Duration.Companion.seconds
 
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
 
-    /** `on work (1 of 2 open) · 5h 12% · 7d 40%; switched from primary to work 3m ago: 7d window exhausted` */
+    /** `on work (1 of 2 open) · pinned to work · 5h 12% · 7d 40%; switched from primary to work 3m ago: 7d window exhausted` */
     public fun summary(view: HeadAccountPoolView): String {
         val safe = safeView(view)
         val selected = if (safe.selectionUnknown) null else safe.selectedAccount()
@@ -25,6 +25,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val choice = selected?.label?.let(::name) ?: "no account"
         val selection = if (safe.selectionUnknown) "selection unknown" else "on $choice"
         val head = "$selection ($open of ${safe.accounts.size} open)"
+        val pin = safe.pinnedLabel?.let { "pinned to ${name(it)}" }
         val missing = if (safe.accounts.any { it.primary && !it.credential.present }) {
             "primary credential missing"
         } else {
@@ -33,7 +34,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val switch = safe.lastSwitch?.let {
             "; switched from ${name(it.from)} to ${name(it.to)} ${ago(it.atEpochMillis)}: ${it.reason}"
         }
-        return listOfNotNull(head, missing, selected?.let(::windows)).joinToString(" · ") + switch.orEmpty()
+        return listOfNotNull(head, pin, missing, selected?.let(::windows)).joinToString(" · ") + switch.orEmpty()
     }
 
     /** Missing primary requires unlabeled login even while a backup is open; exhaustion names a reset. */
@@ -71,6 +72,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val droppedSelected = view.accounts.any { it.selected && !AccountLabelPolicy.isSelector(it.label) }
         return view.copy(
             selectedLabel = view.selectedLabel?.takeIf(AccountLabelPolicy::isSelector),
+            pinnedLabel = view.pinnedLabel?.takeIf(AccountLabelPolicy::isSelector),
             accounts = accounts,
             lastSwitch = view.lastSwitch?.takeIf {
                 AccountLabelPolicy.isSelector(it.from) && AccountLabelPolicy.isSelector(it.to) &&

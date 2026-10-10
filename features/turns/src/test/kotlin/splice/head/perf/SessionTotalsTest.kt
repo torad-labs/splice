@@ -171,6 +171,46 @@ class SessionTotalsTest {
     }
 
     @Test
+    fun `the save on Your data drops a session finished before the moment and keeps one still working`(
+        @TempDir tmp: Path,
+    ) {
+        // Marlin, Oct 10, 2026: the cut is the session's LAST ACTIVITY against the moment, not
+        // whether it could be resumed. Both sessions here are well inside the 30-day idle window, so
+        // this arm only passes if the window's own cut is doing the work.
+        val totals = store(tmp.resolve("t.json"))
+        val yesterday = 2_000L
+        val today = yesterday + 2 * 60 * 60 * 1000
+        totals.add(TAG, OPUS, COLD, yesterday)
+        totals.add("11111111", OPUS, COLD, today)
+        now = today + 1_000
+        assertNotNull(totals.totalFor(SESSION), "the finished session has a total before the cut")
+
+        val dropped = totals.trimBefore(today)
+
+        assertEquals(1, dropped, "only the session whose last turn is before the moment went")
+        assertNull(totals.totalFor(SESSION), "and what it cost is gone")
+        assertEquals(1L, totals.totalFor("11111111-x")!!.models.getValue(OPUS).turns, "live work is kept")
+
+        // A session whose total went counts again from the resume, never from the rows that were
+        // deleted: the figure after a deletion must not re-claim what the person asked to remove.
+        totals.add(TAG, OPUS, COLD, now)
+        assertTrue(
+            totals.totalFor(SESSION)!!.fromMs > yesterday,
+            "from=${totals.totalFor(SESSION)!!.fromMs} must be past the deleted row at $yesterday",
+        )
+    }
+
+    @Test
+    fun `a save whose moment reaches nothing drops nothing and leaves the file alone`(@TempDir tmp: Path) {
+        val totals = store(tmp.resolve("t.json"))
+        totals.add(TAG, OPUS, COLD, 5_000L)
+        now = 6_000L
+
+        assertEquals(0, totals.trimBefore(4_000L), "the moment is older than every session's last turn")
+        assertNotNull(totals.totalFor(SESSION))
+    }
+
+    @Test
     fun `past the session cap the least recently active total goes, and the same rule holds`(@TempDir tmp: Path) {
         val totals = store(tmp.resolve("t.json"))
         for (i in 0..MAX_SESSION_TOTALS) totals.add("s%07d".format(i), OPUS, COLD, 2_000L + i)

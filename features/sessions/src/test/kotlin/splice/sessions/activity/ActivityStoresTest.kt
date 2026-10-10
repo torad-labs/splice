@@ -136,4 +136,42 @@ class ActivityStoresTest {
         assertFalse(Files.exists(dir.resolve("activity-2026-09-18.jsonl.lock")), "and its lock sidecar")
         assertTrue(Files.exists(dir.resolve("edges-2026-09-18.jsonl")), "the edges' day file stays")
     }
+
+    @Test
+    fun `the save on Your data cuts the edges at its moment, and spares a team that is still going`() {
+        // Marlin, Oct 10, 2026: when a person says yes to a deletion, everything the history covers
+        // is gone at that moment, and an edge is the record of who they messaged. The moment falls
+        // INSIDE a UTC day on purpose: a whole-day delete would leave the morning's edges behind.
+        val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { DAY_ONE })
+        stores.edges.record(MessageEdge("s-1", "beta", DAY_ONE, "toolu_1"))
+        stores.edges.record(MessageEdge("s-2", "gamma", DAY_ONE + 1_000, "toolu_2", "s-3"))
+        stores.edges.record(MessageEdge("s-1", "beta", DAY_ONE + 3_000, "toolu_3"))
+        await({ stores.edges.edges() }, 3)
+
+        // s-2 is bound to a live team slot, so its edge stays even though it is before the moment.
+        val gone = stores.edges.trimBefore(DAY_ONE + 2_000) { edge -> edge.from == "s-2" }
+
+        assertEquals(1, gone, "only the unspared edge before the moment went")
+        assertEquals(
+            listOf(
+                MessageEdge("s-2", "gamma", DAY_ONE + 1_000, "toolu_2", "s-3"),
+                MessageEdge("s-1", "beta", DAY_ONE + 3_000, "toolu_3"),
+            ),
+            stores.edges.edges(),
+            "the reader answers from what the cut left, with no restart",
+        )
+    }
+
+    @Test
+    fun `a cut that reaches every edge empties the store without a restart`() {
+        val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { DAY_ONE })
+        stores.edges.record(MessageEdge("s-1", "beta", DAY_ONE - DAY_MS, "toolu_1"))
+        stores.edges.record(MessageEdge("s-1", "beta", DAY_ONE, "toolu_2"))
+        await({ stores.edges.edges() }, 2)
+
+        assertEquals(2, stores.edges.trimBefore(DAY_ONE + 1))
+
+        assertEquals(emptyList<MessageEdge>(), stores.edges.edges(), "the same store, reading what is left")
+        assertFalse(Files.exists(dir.resolve("edges-2026-09-18.jsonl")), "the emptied day is deleted")
+    }
 }

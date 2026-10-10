@@ -203,6 +203,11 @@ public class ActivityDays(
     @Throws(IOException::class)
     public fun retainedFiles(): List<Path> = files.files(oldestKept(day(clock()))).asReversed()
 
+    /** The row-exact cut over this store's days (Oct 10, 2026): the same family as [sweep], which
+     *  drops whole days the window has passed, for a save that has to delete exactly what a person
+     *  was shown. Handed out here because this store's directory and prefix live here. */
+    public fun cut(): DayLinesKept = DayLinesKept(dir, prefix)
+
     /** Deletes day files older than the retention window, relative to [today]. */
     private fun sweep(today: LocalDate) = Cancellables.discard(
         Cancellables.runCatchingCancellable { files.deleteBefore(oldestKept(today)) },

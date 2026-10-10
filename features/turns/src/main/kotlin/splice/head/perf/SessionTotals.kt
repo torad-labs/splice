@@ -162,6 +162,33 @@ public class SessionTotals(
         }
     }
 
+    /**
+     * Drop every session whose last row is older than [momentMs], and say how many went.
+     *
+     * The save on Settings > Your data reaches these too (Marlin, Oct 10, 2026): a session whose
+     * last activity is before the cut loses its totals, and one active inside the window keeps them,
+     * because that is live work. Resumability is deliberately NOT the test: nearly every session is
+     * resumable for as long as its transcript exists, so that exception would keep months of spend
+     * for someone who chose "Today only". An old session resumed later starts its total again from
+     * the resume, which is what [since] is for. [dropIdleUnderLock]'s thirty days still applies on
+     * every append, so the SHORTER of the two cuts wins and nothing is left behind either way.
+     */
+    public fun trimBefore(momentMs: Long): Int {
+        val dropped = synchronized(lock) {
+            loadUnderLock()
+            val going = sessions.filterValues { it.lastMs < momentMs }.keys.toList()
+            going.forEach(::dropUnderLock)
+            if (going.isNotEmpty()) version += 1
+            going.size
+        }
+        // persist(clean = false), never flushNow: `clean` is the mark a head STOP leaves, and writing
+        // it from a running daemon would tell the next boot this file was closed properly when it
+        // was not. The write is immediate because a page reading straight after the yes must not be
+        // served the old file.
+        if (dropped > 0) persist(clean = false)
+        return dropped
+    }
+
     private fun folded(prev: PerfModelTotal?, counters: Map<String, Long>, usd: Double?): PerfModelTotal {
         val p = prev ?: PerfModelTotal(0, 0, 0, 0, 0, usd = 0.0, gaps = PerfModelGaps())
         val buckets = TurnBill.total(counters)

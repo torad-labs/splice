@@ -336,6 +336,13 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
     // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into
     // it, then one atomic move over the original. Three calls, one rewrite.
+    // Oct 10, 2026: the row-exact cut over a day store. createNew0600 makes the `.cut` sibling,
+    // newBufferedWriter appends the lines that stay, and move puts it over the day in one step.
+    "core/src/main/kotlin/splice/core/storage/DayLinesKept.kt" to mapOf(
+        "Files.move(" to 1,
+        "Files.newBufferedWriter(" to 1,
+        "createNew0600(" to 1,
+    ),
     "features/turns/src/main/kotlin/splice/head/perf/HistoryPrune.kt" to mapOf(
         "createNew0600(" to 1,
         "Files.newBufferedWriter(" to 1,

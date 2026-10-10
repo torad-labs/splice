@@ -85,12 +85,18 @@ public class NameHolders(private val sessions: SessionSource) {
         Regex("^(.+) \\[[^\\[\\]]+\\]$").matchEntire(name)?.groupValues?.get(1) ?: name
 }
 
+/** Which edges a cut spares, asked once per dated row. Marlin, Oct 10, 2026: an active team keeps
+ *  its edges, because its board is the record of a conversation still happening. */
+public fun interface SparedEdges {
+    public fun spares(edge: MessageEdge): Boolean
+}
+
 public class MessageEdgeStore(
     private val days: ActivityDays,
     private val files: DayFiles,
     private val retentionDays: Int,
     public val storing: Boolean,
-    decode: MessageEdgeDecode = MessageEdgeCodec(),
+    private val decode: MessageEdgeDecode = MessageEdgeCodec(),
     heap: HeapReservations? = null,
     maxCacheBytes: Long = EDGE_CACHE_BYTES,
 ) {
@@ -98,6 +104,27 @@ public class MessageEdgeStore(
 
     public fun inventory(): DayInventory = files.inventory(retentionDays)
     public fun deleteKept(): DayInventory = files.deleteKept(retentionDays)
+
+    /**
+     * Drop every edge observed before [momentMs], and say how many went. The save on Settings >
+     * Your data reaches these too (Marlin, Oct 10, 2026): when a person says yes to a deletion,
+     * everything the history covers is gone at that moment, and an edge is a record of who they
+     * messaged. [spared] keeps the ones an active team still needs.
+     *
+     * A row this store cannot decode is KEPT, as the records side keeps an undated row: its moment
+     * is unknown, so it cannot be shown to be one of the rows the person was counted and asked
+     * about. Call from an I/O dispatcher; throws when the cut could not be made, so a caller never
+     * reports a deletion that did not happen.
+     */
+    public fun trimBefore(momentMs: Long, spared: SparedEdges = SparedEdges { false }): Int {
+        // The cache keys each day by its inode and mtime, so the atomic move the cut makes is a new
+        // identity it drops and re-reads on the next call: there is nothing to invalidate by hand.
+        return days.cut().keepOnly { line ->
+            val edge = decode.parse(line)
+            edge == null || edge.at >= momentMs || spared.spares(edge)
+        }.lines.toInt()
+    }
+
     public fun deleted(): Boolean = files.deleted()
 
     public fun record(edge: MessageEdge) {

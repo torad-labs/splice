@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.sources.EconomicsStoreSource
+import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.util.Cancellables
@@ -27,6 +28,7 @@ import splice.head.perf.HistoryRoutes
 import splice.head.perf.HistoryStores
 import splice.head.perf.HistoryWindowStore
 import splice.head.usage.EconomicsStore
+import splice.sessions.activity.SparedEdges
 
 /** Settings > Your data's history row: what is held, what a shorter window would delete, and the
  *  save that deletes exactly that. */
@@ -50,18 +52,49 @@ internal class HistoryWiring(
         written.rejected.values.firstOrNull() ?: written.notPersisted
     }
 
-    // Every head's totals are trimmed, and the FIRST store that could not be is named: a save that
-    // did not do all of what it said has to say so rather than report a clean "Applied".
-    private val stores = HistoryStores { moment ->
-        economics().firstNotNullOfOrNull { store ->
-            Cancellables.runCatchingCancellable { store.trimBefore(moment) }.exceptionOrNull()?.let {
-                "the spending totals: ${SafeFailureText.render(it)}"
-            }
-        }
-    }
+    // Everything else the window covers, cut at the same moment as the records, and the FIRST store
+    // that could not be is named: a save that did not do all of what it said has to say so rather
+    // than report a clean "Applied".
+    private val stores = HistoryStores { moment -> hours(moment) ?: sessions(moment) ?: edges(moment) }
 
     private fun economics(): List<EconomicsStore> =
         heads.values.mapNotNull { (it.sources.economics as? EconomicsStoreSource)?.store }
+
+    /** Every head's hourly spending totals, or the first one that could not be trimmed. */
+    private fun hours(momentMs: Long): String? = economics().firstNotNullOfOrNull { store ->
+        Cancellables.runCatchingCancellable { store.trimBefore(momentMs) }.exceptionOrNull()?.let {
+            "the spending totals: ${SafeFailureText.render(it)}"
+        }
+    }
+
+    /** What each finished session cost. Marlin, Oct 10, 2026: a session whose last activity is
+     *  before the cut loses its total, and one working inside the window keeps it, because that is
+     *  live work. Resumability is not the test: nearly every session is resumable while its
+     *  transcript exists, so that exception would keep months of spend after "Today only". */
+    private fun sessions(momentMs: Long): String? = heads.values
+        .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionTotals }
+        .firstNotNullOfOrNull { store ->
+            Cancellables.runCatchingCancellable { store.trimBefore(momentMs) }.exceptionOrNull()?.let {
+                "what each session cost: ${SafeFailureText.render(it)}"
+            }
+        }
+
+    /** The message edges, which are the record of who a person messaged, minus the ones an active
+     *  team still needs (Marlin, Oct 10, 2026). An install with no activity stores has none. */
+    private fun edges(momentMs: Long): String? {
+        val store = ports.activity?.edges ?: return null
+        return Cancellables.runCatchingCancellable { store.trimBefore(momentMs, spared()) }
+            .exceptionOrNull()?.let { "the message edges: ${SafeFailureText.render(it)}" }
+    }
+
+    /** The sessions bound to a team that is still going: their edges are the record of a
+     *  conversation still happening, so a cut leaves them where they are. */
+    private fun spared(): SparedEdges {
+        val live = ports.teams?.teams().orEmpty()
+            .filterNot { it.archived }
+            .flatMapTo(HashSet()) { team -> team.slots.mapNotNull { it.session } }
+        return SparedEdges { edge -> edge.from in live || edge.toSession in live }
+    }
 
     fun register(route: Route) {
         route.get("/api/history") {

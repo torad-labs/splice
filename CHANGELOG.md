@@ -653,7 +653,8 @@ origin.
   with its time. Claude's per-model weekly windows (Opus, Sonnet) appear under the weekly window, each with its own reset,
   and a model week past its own reset is not drawn as a current reading. Each bar is marked stale from its own
   reading, so a fresh five-hour window beside a week that has ended no longer shows that week's spent figure as
-  today's. When two heads share one login and only one of them pins it, the pin shows on that head alone, so Unpin acts
+  today's. A window whose reported reset has gone by says "Reset" and that time, with no ring, instead of an empty
+  cell beside the ended week's figure; a window that reported no reset keeps the empty cell. When two heads share one login and only one of them pins it, the pin shows on that head alone, so Unpin acts
   on the head that holds it.
 - **A provider can say whose machine runs it.** `discovery = { family = "vast" }` on a provider groups a
   rented GPU reached through an SSH tunnel as vast.ai in the console, where its loopback address would say This computer.
@@ -685,7 +686,8 @@ origin.
 - **API keys are managed through the control API and the console.** `GET /api/keys` names the keys (never a
   value), and `PUT` and `DELETE /api/keys/{ENV}` set and remove one, as `splice key` does.
 - **One setting says how far back splice keeps your history.** `historyRetentionDays` covers both
-  the hourly spend totals and the request records: days, or `forever`. A fresh install's
+  the hourly spend totals and the request records: days, or `forever`. A change to it applies at once, with no
+  restart. A fresh install's
   `splice.toml` carries 35 days, which is a month of plan billing plus the days it is read over.
   An install made before this setting keeps the widest window it already had (`perfArchiveRetentionDays`,
   90 unless you set it, or the 35 days the hourly totals always kept), because an upgrade never shortens your
@@ -698,8 +700,12 @@ origin.
   never replaced. A window of `0` still keeps today, because a daily budget reads today's records; they go
   at the local midnight. `GET /api/history` answers the saved window, what is held (turns, bytes, the oldest
   moment) and the pace in MB a month; `?days=N` adds what choosing N would delete, counted to the minute, and
-  `PUT /api/history` saves N and deletes exactly that. It refuses a moment newer than the window now warrants and a
-  save made while any record file could not be read whole, so nothing is deleted that was not shown.
+  `PUT /api/history` saves N and deletes exactly that, the hourly spending totals included, so a person who chooses
+  "Today only" no longer reads last week's spend on Usage. A head whose totals could not be trimmed is named in
+  the answer. It refuses a moment newer than the window now warrants, a window that is neither a count of days nor
+  `forever` (the refusal quotes what it received), and a save made while any record file could not be read whole;
+  that one reads "Not saved", because nothing was saved and nothing was deleted. Live session totals are not trimmed
+  by the save, since they already drop after 30 idle days.
 - **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
   totals, separate from the trace deletion capture-off already does.
 - **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries

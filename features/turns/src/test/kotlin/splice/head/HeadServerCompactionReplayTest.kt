@@ -17,6 +17,7 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -45,7 +46,11 @@ import splice.upstream.transport.UpstreamClient
 import java.net.Socket
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+
+private val HANG_BACKSTOP = 5.minutes
+private const val POLL_MS = 25L
 
 private class CompactionReplayAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-cr", "acct-cr")
@@ -134,17 +139,16 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         return socket
     }
 
-    // A deadline poll, the rule's sanctioned shape: log lines, gate and mock state change server-side
-    // (a detached drive outlives its call), and none of them offers a signal to await.
-    private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
-        val pollMs = 50L
-        val deadline = System.currentTimeMillis() + capMs
-        while (System.currentTimeMillis() < deadline) {
-            if (cond()) return true
-            delay(pollMs)
-        }
-        return cond()
-    }
+    // Waits for the work itself: the log lines, the gate and the mock change server-side (a detached drive
+    // outlives its call) and none of them offers a signal to await, so this polls the CONDITION and takes as long
+    // as the work takes. The only clock is a hang backstop, five minutes against a wait that is normally
+    // milliseconds: a 20 s bound per step failed once under a 17-minute loaded gate with the behavior correct.
+    // A behavior that is wrong never makes the condition true, and fails at the backstop with its assertion message.
+    private suspend fun waitFor(cond: () -> Boolean): Boolean =
+        withTimeoutOrNull(HANG_BACKSTOP) {
+            while (!cond()) delay(POLL_MS)
+            true
+        } ?: cond()
 
     /** [since]: lines are shared across the class's tests; a fragment one test also logs is only
      *  evidence when it appears after the mark the caller took. */
@@ -168,7 +172,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         )
         assertTrue(!sse.contains("event: error"), "no error frame after the restart: $sse")
         assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "the compaction went upstream")
-        assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 }, "the slot must come back: ${gate.snapshot()}")
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the slot must come back: ${gate.snapshot()}")
     }
 
     @Test
@@ -178,9 +182,9 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         val before = mock.upstreamBodies.size
         openCompaction().use { socket ->
             try {
-                assertTrue(waitFor(15_000) { mock.upstreamBodies.size > before })
+                assertTrue(waitFor { mock.upstreamBodies.size > before })
                 socket.close()
-                assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) })
+                assertTrue(waitFor { logged("compaction continues detached", mark) })
                 val recording = runningRecording()
                 val framesBefore = recording.size
                 val held = checkNotNull(heap.reserve(heap.available.value))
@@ -194,13 +198,13 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
                 mock.releaseHold()
             }
         }
-        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry", mark) })
-        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 })
+        assertTrue(waitFor { logged("held for a byte-identical retry", mark) })
+        assertTrue(waitFor { gate.snapshot().inflight == 0 })
         val sse = post(body)
         assertTrue(sse.contains("held") && sse.contains("event: message_stop"))
         assertEquals(before + 1, mock.upstreamBodies.size, "the ledger refusal never reruns the source")
         // The replay spends its entry after the response is written; the next test must not begin under a consumption in flight.
-        assertTrue(waitFor(5_000) { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
     }
 
     private fun runningRecording(): FrameRecording = head.compactionReplay.held().single()
@@ -222,19 +226,19 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         val mark = lines.size
         val upstreamBefore = mock.upstreamBodies.size
         val socket = openCompaction()
-        assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
-        assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        assertTrue(waitFor { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
         socket.close()
         // Either detach path may notice the FIN first (Ktor cancelling the call, or the keepalive
         // pinger's failed write, a real race in this run: review of PR 137); both log the shared
         // DETACHED_NOTE, which is the fact under test. The slot assertion below holds for both.
-        assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
         assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: nothing here has finished")
         assertEquals(1, gate.snapshot().inflight, "the slot travels with the detached drive, not the dead call")
 
         mock.releaseHold()
-        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
-        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
+        assertTrue(waitFor { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
         val upstreamAfterFirst = mock.upstreamBodies.size
 
         val sse = post(body)
@@ -258,13 +262,13 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         val mark = lines.size
         val upstreamBefore = mock.upstreamBodies.size
         val socket = openCompaction()
-        assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
-        assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        assertTrue(waitFor { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
         socket.close()
-        assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
         mock.releaseHold()
-        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
-        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
+        assertTrue(waitFor { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
 
         head.stop()
         head = buildHead()
@@ -292,14 +296,14 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         val mark = lines.size
         val upstreamBefore = mock.upstreamBodies.size
         val socket = openCompaction()
-        assertTrue(waitFor(15_000) { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
-        assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        assertTrue(waitFor { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
         socket.close()
-        assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
 
         val retry = async { post(body) }
-        assertTrue(waitFor(10_000) { logged("still running", mark) }, lines.drop(mark).joinToString())
-        assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "one compaction, one slot: ${gate.snapshot()}")
+        assertTrue(waitFor { logged("still running", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "one compaction, one slot: ${gate.snapshot()}")
         assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: the retry is following it")
         assertEquals(1, gate.snapshot().inflight, "the follower rides the drive's slot, it does not hold its own")
 
@@ -308,10 +312,10 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         assertTrue(sse.contains("held"), "the follower gets the recorded answer: $sse")
         assertTrue(sse.contains("event: message_stop"), "the follower gets the whole answer: $sse")
         assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "one upstream turn served both attempts")
-        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 }, "every slot comes back: ${gate.snapshot()}")
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "every slot comes back: ${gate.snapshot()}")
         // Logged after the response is written: the client can be back before the server gets there.
-        assertTrue(waitFor(5_000) { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
-        assertTrue(waitFor(5_000) { logged("compaction answer replayed") }, lines.joinToString())
-        assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 }, "the replay releases its own slot")
+        assertTrue(waitFor { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { logged("compaction answer replayed") }, lines.joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the replay releases its own slot")
     }
 }

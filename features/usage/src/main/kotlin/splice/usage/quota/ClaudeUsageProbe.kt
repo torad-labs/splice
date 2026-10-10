@@ -35,6 +35,7 @@ import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -61,6 +62,12 @@ private const val CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 // two bars; the console's Accounts also draws each model's weekly window under the week (Oct 10, 2026).
 private const val USAGE_FIVE_HOUR = "five_hour"
 private const val USAGE_SEVEN_DAY = "seven_day"
+
+// why: the endpoint's own list of limits, where each model's weekly share lives since Oct 2026.
+private const val USAGE_LIMITS = "limits"
+
+// why: the one kind of limit row that names a model; the unscoped weekly row is the plan's own week.
+private const val LIMIT_WEEKLY_SCOPED = "weekly_scoped"
 
 // why: a half-second bias rounds fractional endpoint resets instead of flooring them to the prior minute.
 private const val RESET_ROUNDING_HALF_SECOND_NANOS = 500_000_000L
@@ -103,7 +110,8 @@ internal class ClaudeUsageProbe(
 internal class ClaudeUsageParser : QuotaParse {
     private val slots = QuotaSlots()
 
-    /** The per-model weekly windows the endpoint reports beside the week, by the name a person reads for each. */
+    /** The per-model weekly windows the endpoint once reported beside the week, kept for an account still answered
+     *  the old way. Read Oct 10, 2026: both are null now and each model's week arrives in `limits` instead. */
     private val modelWeeks = listOf("seven_day_opus" to "Opus", "seven_day_sonnet" to "Sonnet")
 
     /** The endpoint names no plan, so the snapshot carries none: the plan word on an added account's card comes
@@ -113,11 +121,27 @@ internal class ClaudeUsageParser : QuotaParse {
             window(body[USAGE_FIVE_HOUR], FIVE_HOURS_SECONDS),
             window(body[USAGE_SEVEN_DAY], SEVEN_DAYS_SECONDS),
         )
-        val models = modelWeeks.mapNotNull { (field, name) ->
+        val named = modelWeeks.mapNotNull { (field, name) ->
             (body[field] as? JsonObject)?.let { number(it["utilization"]) }?.let { ModelQuota(name, it) }
         }
+        val models = named.ifEmpty { scopedWeeks(body) }
         return if (windows.isEmpty()) null else slots.snapshot(windows, null, now).copy(models = models)
     }
+
+    /** Each model's own share of the week, as the endpoint reports it today: a `limits` row of kind `weekly_scoped`
+     *  whose scope names the model. Read from Anthropic on Oct 10, 2026, after `seven_day_opus` and
+     *  `seven_day_sonnet` went null for every account. A row naming no model is the plan's own week, already read
+     *  from `seven_day`, so it is not a model row and is skipped. */
+    private fun scopedWeeks(body: JsonObject): List<ModelQuota> =
+        (body[USAGE_LIMITS] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .filter { text(it["kind"]) == LIMIT_WEEKLY_SCOPED }
+            .mapNotNull { row ->
+                val model = (row["scope"] as? JsonObject)?.get("model") as? JsonObject
+                val name = text(model?.get("display_name"))?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                number(row["percent"])?.let { ModelQuota(name, it) }
+            }
+
+    private fun text(element: JsonElement?): String? = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     /** One `{utilization, resets_at}` object. Null for a window the body omits or reports as null, so an absent
      *  window reads as absent rather than as a bar at zero. */

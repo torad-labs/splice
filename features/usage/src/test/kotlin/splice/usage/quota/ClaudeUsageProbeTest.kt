@@ -65,6 +65,28 @@ class ClaudeUsageProbeTest {
         assertEquals(listOf(ModelQuota("Sonnet", 1.0)), snapshot.models)
     }
 
+    // Read from Anthropic on Oct 10, 2026 with Marcos's own account: seven_day_opus and seven_day_sonnet both answer
+    // null now, and each model's week arrives as a `limits` row of kind weekly_scoped whose scope names the model.
+    // The unscoped weekly row is the plan's own week, already read from seven_day, so it names no model here.
+    @Test
+    fun `each model's week is read from the limits rows that name a model, once the old fields go null`() {
+        val body = """
+        {"five_hour":{"utilization":61.0,"resets_at":"2026-10-10T10:40:00.421533+00:00"},
+         "seven_day":{"utilization":41.0,"resets_at":"2026-10-11T18:00:00.421554+00:00"},
+         "seven_day_opus":null,"seven_day_sonnet":null,
+         "limits":[
+           {"kind":"session","group":"session","percent":61,"scope":null},
+           {"kind":"weekly_all","group":"weekly","percent":41,"scope":null},
+           {"kind":"weekly_scoped","group":"weekly","percent":12,
+            "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}},
+           {"kind":"weekly_scoped","group":"weekly","percent":0,"scope":{"model":{"display_name":""}}}]}
+        """
+        val snapshot = parser.parse(obj(body), NOW_MS)!!
+
+        assertEquals(listOf(ModelQuota("Fable", 12.0)), snapshot.models)
+        assertEquals(41.0, snapshot.sevenDay!!.usedPercent, 1e-9, "the plan's own week is still the unscoped one")
+    }
+
     // A turn's headers name no model weeks: the reading keeps the last ones while it is the same week, and drops them
     // once the week rolls.
     @Test

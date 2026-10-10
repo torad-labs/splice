@@ -20,7 +20,7 @@
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
-const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, error: null, loading: true };
+const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
 const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set() };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
@@ -146,7 +146,7 @@ function cardHtml(s) {
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   let body = "";
   if (s.state === "needs") body = askHtml(s);
-  else if (s.state !== "ended" && last?.text) body = last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
+  else if (last?.text) body =last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
   const failed = ui.failed.get(s.id);
   return `<article class="card s ${L.cls}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
@@ -215,7 +215,11 @@ function logHtml(s) {
         + `${open && !none ? `<pre class="result">${esc(result)}</pre>` : ""}</div>`);
       return;
     }
+    // the client's own mark where he refused a call or stopped a turn: a line in the conversation, never his words
+    if (m.role === "system" && m.kind === "interrupted") { items.push(`<p class="note">Interrupted ${at}</p>`); return; }
     if (!m.text) return;
+    // a teammate's message reads as its sender's, beside the agent's side, with who sent it
+    if (m.role === "peer") { items.push(`<div class="msg agent peer"><p class="from">${esc(m.from || "A teammate")}</p><div class="body">${md(m.text)}</div>${at}</div>`); return; }
     items.push(`<div class="msg ${m.role === "user" ? "his" : "agent"}"><div class="body">${md(m.text)}</div>${at}</div>`);
   });
   return `<div class="log">${items.join("")}</div>`;
@@ -231,7 +235,7 @@ function paneHtml() {
   const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s, "pane")}</div>` : "";
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
-    + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}</div>`
+    + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
     + `<div class="acts">${stop}${close}</div></header>${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
 }
 
@@ -273,7 +277,32 @@ function open(id) {
   const s = find(id);
   if (s && !state.logs[id]) readLog(s);
   if (s && s.state !== "ended" && !state.screens[id]) readScreen(s);
+  if (s && !(id in state.usage)) readUsage(s);
 }
+/** What the session used today, on every command it ran on: the same per-session totals Requests sums
+ *  (GET /api/perf/turns?session=), from local midnight. Null until read, and kept null when no command answered. */
+async function readUsage(s) {
+  const from = new Date(); from.setHours(0, 0, 0, 0);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const reads = await Promise.all(state.heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
+    head: h.key, since: String(+from), time_zone: zone, n: "1", local: "0", session: s.id.slice(0, 8) })}`)));
+  let seen = false; const used = { requests: 0, tin: 0, tout: 0, from: +from };
+  reads.forEach((r, i) => {
+    const t = (r.body?.heads || []).find((x) => x.key === state.heads[i].key)?.usage?.totals;
+    if (!t) return;
+    seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0;
+  });
+  state.usage[s.id] = seen ? used : null;
+  if (ui.open === s.id) render({ stick: false });
+}
+/** Today's use, as one tap into its requests on Requests, filtered to this session from midnight. */
+function usageHtml(s) {
+  const u = state.usage[s.id];
+  if (!u) return "";
+  const words = u.requests ? `Today ${u.requests} request${u.requests === 1 ? "" : "s"}, ${kTok(u.tin)} in, ${kTok(u.tout)} out` : "No requests today";
+  return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}">${words}</a>`;
+}
+
 /** One session's screen, read the moment it opens, so its Message field is there without waiting for the next read. */
 async function readScreen(s) {
   const res = await API.get(sessionPath(s, "screen"));
@@ -329,6 +358,8 @@ root.addEventListener("input", (e) => { if (e.target.id === "say") ui.drafts[e.t
 
 document.getElementById("q").addEventListener("input", (e) => {
   ui.q = e.target.value.trim().toLowerCase();
+  // a search opens the ended sessions it matched: a match folded away reads as no match. The fold still closes them.
+  if (ui.q && state.rows.some((s) => s.state === "ended" && matches(s))) ui.ended = true;
   if (ui.auto) { ui.open = null; autoOpen(); }
   render();
 });
@@ -371,6 +402,7 @@ async function reload() {
   render({ stick: false });
   const s = ui.open && find(ui.open);
   if (s && s.state !== "ended" && !state.logs[s.id]?.extended) readLog(s);
+  if (s && s.state !== "ended") readUsage(s);
 }
 
 // the door's session is taken before the first draw, which writes the address from what is open (nothing yet)

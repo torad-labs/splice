@@ -33,8 +33,6 @@ const FAMILY = PROVIDER_FAMILY; // kit.js: the provider /api/models names, as th
 const { clockS, dayOf, n0, secs, GLYPH } = REQVIEW;
 const RV = REQVIEW.view(() => ui);
 const RV_KEPT = REQVIEW.kept; // whether a state has records to draw, as the shared view decides it
-const kTok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
-const money = (usd) => `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`; // priced at the model's card
 
 // ---------- what an outcome tag says: fin's words, none of splice's sentences ----------
 // Clean: ok and empty_message, no word. Stopped: client_abort and error:stopped. Every other tag is a failure, with its glyph.
@@ -90,6 +88,7 @@ const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
 // ---------- the filters, as /api/perf/turns takes them (TurnsFilter.kt), plus the search over bodies ----------
 const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h": ["24 hours", 24 * 3600e3], "7d": ["7 days", 7 * 24 * 3600e3] };
+const money = (usd) => `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`; // priced at the model's card
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
 const MAX_HELD = 2000; // the most rows one read of a head can carry (PerfRoutes.kt MAX_TURNS); asking for more is clamped
 const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the rest are reached from Sessions

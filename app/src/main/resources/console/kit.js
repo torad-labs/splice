@@ -125,6 +125,7 @@ const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "num
 // When a window comes back, as Accounts says it: a time today, else the day and the time.
 const backWord = (d) => (d.toDateString() === NOW.toDateString() ? clock(d) : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${clock(d)}`);
 const counter = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const kTok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
 const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 function md(text) { // the agent's own text, formatted as it wrote it: paragraphs, lists, code
   const out = []; let list = null;

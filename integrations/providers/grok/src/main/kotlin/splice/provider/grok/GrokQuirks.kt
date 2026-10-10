@@ -7,6 +7,7 @@ package splice.provider.grok
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
@@ -16,6 +17,7 @@ import splice.dialect.responses.ResponsesToolQuirks
 public class GrokQuirks {
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "claude-grok",
+        lite = ResponsesLiteQuirks(),
         backend = ResponsesBackendQuirks(
             store = false,
             promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),

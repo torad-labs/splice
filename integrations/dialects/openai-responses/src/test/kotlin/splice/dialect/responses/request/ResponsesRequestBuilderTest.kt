@@ -42,8 +42,9 @@ private val CODEX = ResponsesQuirks(
         effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
     ),
 )
-private val OPENAI = ResponsesQuirks(providerTag = "openai")
+private val OPENAI = ResponsesQuirks(providerTag = "openai", lite = ResponsesLiteQuirks())
 private val GROK = ResponsesQuirks(
+    lite = ResponsesLiteQuirks(),
     providerTag = "claude-grok",
     backend = ResponsesBackendQuirks(
         promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),

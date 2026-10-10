@@ -35,7 +35,8 @@ class KimiAuthPrefetchFailureTest {
         val file = dir.resolve("auth.json")
         Files.writeString(
             file,
-            """{"access_token":"synthetic-current","refresh_token":"synthetic-refresh","expires_at":1120,"expires_in":3600}""",
+            """{"access_token":"synthetic-current","refresh_token":"synthetic-refresh",""" +
+                """"expires_at":1120,"expires_in":3600}""",
         )
         val auth = KimiAuthProvider(
             authPath = file,

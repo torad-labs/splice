@@ -23,6 +23,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -34,7 +35,7 @@ import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.request.responsesRequestJson
 import splice.dialect.responses.websocket.ResponsesWsIdentity.PendingCommit
 
-private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val CODEX = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
 private const val KEY = "conv-1"
 private const val GEN = 7L
 

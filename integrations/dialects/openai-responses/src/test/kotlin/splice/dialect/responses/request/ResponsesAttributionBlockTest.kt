@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -39,7 +40,7 @@ class ResponsesAttributionBlockTest {
                 decode = { null },
             ),
         )
-        val builder = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
+        val builder = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
         return builder.build(parsed.typed, parsed.raw, options).req.getValue("instructions").jsonPrimitive.content
     }
 

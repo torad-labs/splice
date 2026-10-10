@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SpliceNotice
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 
@@ -39,7 +40,7 @@ class ResponsesNoticeReplayTest {
                 decode = { null },
             ),
         )
-        val request = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
+        val request = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
             .build(parsed.typed, parsed.raw, options).req
         val input = request["input"]!!.jsonArray
         assertEquals(1, input.size, request.toString())

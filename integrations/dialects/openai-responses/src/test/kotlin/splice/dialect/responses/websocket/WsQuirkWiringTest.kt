@@ -13,6 +13,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderLocations
@@ -53,12 +54,12 @@ class WsQuirkWiringTest {
     /** With the quirk absent no runner exists: the transport ships default off. */
     @Test
     fun `absent quirk means NO ws runner is constructed`() {
-        assertNull(ProbeProvider(ResponsesQuirks(providerTag = "claudex")).wsRunner)
+        assertNull(ProbeProvider(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())).wsRunner)
     }
 
     @Test
     fun `quirk on constructs a ws runner`() {
-        val on = ResponsesQuirks(providerTag = "claudex").withWebSocketToml(true)
+        val on = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()).withWebSocketToml(true)
         assertNotNull(
             ProbeProvider(on).wsRunner,
             "websocket = true must produce a runner",
@@ -67,7 +68,7 @@ class WsQuirkWiringTest {
 
     @Test
     fun `quirk explicitly false constructs no runner`() {
-        val off = ResponsesQuirks(providerTag = "claudex").withWebSocketToml(false)
+        val off = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()).withWebSocketToml(false)
         assertNull(ProbeProvider(off).wsRunner)
     }
 
@@ -76,7 +77,7 @@ class WsQuirkWiringTest {
      *  proven the protocol against its own upstream gets no runner, quirk or not. */
     @Test
     fun `a provider that does not support the protocol gets no runner even with the quirk on`() {
-        val on = ResponsesQuirks(providerTag = "claude-grok").withWebSocketToml(true)
+        val on = ResponsesQuirks(providerTag = "claude-grok", lite = ResponsesLiteQuirks()).withWebSocketToml(true)
         assertNull(
             ProbeProvider(on, supports = false).wsRunner,
             "the shared quirk must not arm the overlay on a provider whose upstream was never probed",

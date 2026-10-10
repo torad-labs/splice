@@ -10,6 +10,7 @@ import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
@@ -32,6 +33,7 @@ public class OpenAiQuirks {
     /** The openai-platform quirk profile — injectable so TOML [providers.*.quirks] is REAL. */
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "openai",
+        lite = ResponsesLiteQuirks(),
         backend = ResponsesBackendQuirks(
             store = false,
             promptCache = PromptCachePolicy(key = CacheKeyStrategy.FIRST_MESSAGE_HASH),

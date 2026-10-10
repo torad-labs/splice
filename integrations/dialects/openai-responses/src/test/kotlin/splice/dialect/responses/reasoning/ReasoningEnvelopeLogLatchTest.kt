@@ -20,6 +20,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderLocations
@@ -49,7 +50,7 @@ private class LatchProbeProvider(logs: MutableList<String>) : ResponsesProvider(
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, true, null, null),
-    quirks = ResponsesQuirks(providerTag = "claudex"),
+    quirks = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()),
     log = { logs.add(it) },
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()

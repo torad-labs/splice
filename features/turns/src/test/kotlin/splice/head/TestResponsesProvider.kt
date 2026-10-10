@@ -36,7 +36,7 @@ internal class TestResponsesQuirks {
 internal class TestResponsesProvider(
     tuning: ProviderTuning,
     reasoning: ReasoningSettings,
-    quirks: ResponsesQuirks = TestResponsesQuirks().profile(),
+    quirks: ResponsesQuirks = TestResponsesQuirks(lite = ResponsesLiteQuirks()).profile(),
     foldConfig: FoldConfig? = null,
     log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(

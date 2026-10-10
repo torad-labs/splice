@@ -21,6 +21,7 @@ import splice.core.wire.AnthropicMessage
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -30,7 +31,7 @@ import splice.dialect.responses.request.ReasoningHandoff
 import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
 
-private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val CODEX = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
 
 private fun opts() = BuildOptions(
     compact = false,

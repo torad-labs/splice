@@ -29,6 +29,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
@@ -75,6 +76,7 @@ private class RestartProbe(
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
     quirks = ResponsesQuirks(
+        lite = ResponsesLiteQuirks(),
         providerTag = "claudex",
         roundTrip = ResponsesRoundTripQuirks(
             reasoningCache = cacheOn,

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.wire.ToolResultBlock
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import java.util.Base64
 
@@ -71,8 +72,9 @@ class ResponsesToolResultMediaTest {
     }
 }
 
-private val FLOORED = ResponsesQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR)
-private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val FLOORED =
+    ResponsesQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR, lite = ResponsesLiteQuirks())
+private val CODEX = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
 
 private fun png(w: Int, h: Int): String {
     val bytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) +

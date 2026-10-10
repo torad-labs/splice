@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -27,7 +28,7 @@ class ResponsesUnknownBlockTest {
             """{"type":"text","text":"look at this"},""" +
             """{"type":"web_search_result","title":"SECRET-RESULT-TITLE","url":"https://example.invalid"}]}]}"""
         val parsed = AnthropicParse.parseAnthropicBody(body)
-        val built = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
+        val built = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
             .build(parsed.typed, parsed.raw, options()).req
 
         val texts = built.getValue("input").jsonArray.map { it.jsonObject.toString() }

@@ -22,6 +22,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
@@ -321,7 +322,7 @@ class ResponsesCustomCallTest {
                 decode = { null },
             ),
         )
-        return ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
+        return ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
             .build(parsed.typed, parsed.raw, options).req
     }
 

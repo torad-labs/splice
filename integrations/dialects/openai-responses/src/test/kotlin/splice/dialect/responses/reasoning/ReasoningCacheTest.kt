@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRoundTripQuirks
 
@@ -296,6 +297,7 @@ class ReasoningCacheTest {
 class ReasoningCacheActiveTest {
 
     private val quirksOn = ResponsesQuirks(
+        lite = ResponsesLiteQuirks(),
         providerTag = "t",
         roundTrip = ResponsesRoundTripQuirks(
             reasoningCache = true,

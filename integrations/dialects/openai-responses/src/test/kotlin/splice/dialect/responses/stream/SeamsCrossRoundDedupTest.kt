@@ -23,6 +23,7 @@ import splice.core.turn.TurnScope
 import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningContinuity
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesToolQuirks
@@ -80,6 +81,7 @@ private fun round(id: String, vararg parts: String): List<JsonObject> = buildLis
 
 private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
     val quirks = ResponsesQuirks(
+        lite = ResponsesLiteQuirks(),
         providerTag = "claudex",
         reasoning = ResponsesReasoningQuirks(
             summaryDelivery = "sequential_cutoff",

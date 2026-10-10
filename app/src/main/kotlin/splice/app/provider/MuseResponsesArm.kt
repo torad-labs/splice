@@ -9,6 +9,7 @@ import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.ResponsesToolQuirks
@@ -74,6 +75,7 @@ internal class MuseResponsesArm(
         ctx.providerCfg,
         ResponsesQuirks(
             providerTag = "muse",
+            lite = ResponsesLiteQuirks(),
             backend = ResponsesBackendQuirks(
                 store = false,
                 promptCache = PromptCachePolicy(CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, "24h"),

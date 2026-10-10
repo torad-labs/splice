@@ -20,6 +20,7 @@ import splice.core.turn.TurnRoute
 import splice.core.turn.TurnScope
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderLocations
@@ -41,7 +42,7 @@ private class CompactProbeProvider : ResponsesProvider(
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
-    quirks = ResponsesQuirks(providerTag = "claudex"),
+    quirks = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()),
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }

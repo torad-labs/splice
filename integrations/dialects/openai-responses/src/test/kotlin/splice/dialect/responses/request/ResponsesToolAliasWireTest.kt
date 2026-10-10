@@ -14,6 +14,7 @@ import splice.core.wire.ToolDefinition
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
@@ -47,6 +48,7 @@ class ResponsesToolAliasWireTest {
     fun `session cache identity survives a changed opening message and falls back when unkeyed`() {
         val builder = ResponsesRequestBuilder(
             ResponsesQuirks(
+                lite = ResponsesLiteQuirks(),
                 providerTag = "muse",
                 backend = ResponsesBackendQuirks(
                     promptCache = PromptCachePolicy(
@@ -93,6 +95,7 @@ class ResponsesToolAliasWireTest {
         val opts = museOptions()
         val names = ToolNameShortener(MUSE_CAP) { }
         val quirks = ResponsesQuirks(
+            lite = ResponsesLiteQuirks(),
             providerTag = "muse",
             backend = ResponsesBackendQuirks(
                 promptCache = PromptCachePolicy(
@@ -120,7 +123,7 @@ class ResponsesToolAliasWireTest {
         assertEquals("24h", req.getValue("prompt_cache_retention").jsonPrimitive.content)
         assertEquals("detailed", req.getValue("reasoning").jsonObject.getValue("summary").jsonPrimitive.content)
         assertTrue(req.getValue("include").jsonArray.any { it.jsonPrimitive.content == "reasoning.encrypted_content" })
-        val other = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "openai"))
+        val other = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "openai", lite = ResponsesLiteQuirks()))
             .build(parsed.typed, parsed.raw, opts).req
         assertEquals(
             LONG_NAME,

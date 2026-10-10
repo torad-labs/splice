@@ -45,7 +45,7 @@ class LiteHeaderEveryProviderTest {
 
     @Test
     fun `a grok-shaped quirk profile does not emit the lite header`() {
-        val built = provider(ResponsesQuirks(providerTag = "claude-grok"))
+        val built = provider(ResponsesQuirks(providerTag = "claude-grok", lite = ResponsesLiteQuirks()))
             .buildTurn(body("grok-4.6"), compact = false, sessionId = "s")
         assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
     }

@@ -88,20 +88,21 @@ class OpenAiResponsesTest {
     }
 
     @Test
-    fun `openai-platform serves a real turn via the shared Responses dialect - api-key, no account header`() = runBlocking {
-        val sse = client.post("http://127.0.0.1:$port/v1/messages") {
-            header("Content-Type", "application/json")
-            setBody(
-                """{"model":"claude-openai--gpt-5-pro","stream":true,
+    fun `openai-platform serves a real turn via the shared Responses dialect - api-key, no account header`() =
+        runBlocking {
+            val sse = client.post("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody(
+                    """{"model":"claude-openai--gpt-5-pro","stream":true,
                     "system":"You are a test. SCENARIO:basic","messages":[{"role":"user","content":"go"}]}""",
-            )
-        }.bodyAsText()
-        assertTrue(sse.contains("ok after auth"))
-        assertTrue(sse.contains("event: message_stop"))
-        // api key rode as the bearer; NO ChatGPT-Account-ID header (openai platform, not ChatGPT)
-        assertTrue(mock.upstreamAuths.any { it.second == "Bearer sk-openai-key-abcdef" })
-        assertEquals("basic" to null, mock.upstreamAccountIds.last())
-    }
+                )
+            }.bodyAsText()
+            assertTrue(sse.contains("ok after auth"))
+            assertTrue(sse.contains("event: message_stop"))
+            // api key rode as the bearer; NO ChatGPT-Account-ID header (openai platform, not ChatGPT)
+            assertTrue(mock.upstreamAuths.any { it.second == "Bearer sk-openai-key-abcdef" })
+            assertEquals("basic" to null, mock.upstreamAccountIds.last())
+        }
 }
 
 /** A LOCAL mirror of the :daemon-head fixture (campaign/v4105/HeadDepsFixture.kt), because that is in

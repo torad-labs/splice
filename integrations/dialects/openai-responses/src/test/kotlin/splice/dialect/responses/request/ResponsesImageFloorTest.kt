@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -179,8 +180,9 @@ class ResponsesImageFloorTest {
     }
 }
 
-private val FLOORED = ResponsesQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR)
-private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val FLOORED =
+    ResponsesQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR, lite = ResponsesLiteQuirks())
+private val CODEX = ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks())
 
 private fun opts(compact: Boolean = false) = BuildOptions(
     compact = compact,

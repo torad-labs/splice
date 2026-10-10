@@ -117,7 +117,8 @@ public data class ResponsesRoundTripQuirks(
 public data class ResponsesQuirks(
     val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
     val backend: ResponsesBackendQuirks = ResponsesBackendQuirks(),
-    val lite: ResponsesLiteQuirks = ResponsesLiteQuirks(),
+    /** No default: the lite wire marker is one vendor's fact, so each provider states its own where it builds quirks. */
+    val lite: ResponsesLiteQuirks,
     val reasoning: ResponsesReasoningQuirks = ResponsesReasoningQuirks(),
     val tools: ResponsesToolQuirks = ResponsesToolQuirks(),
     val roundTrip: ResponsesRoundTripQuirks = ResponsesRoundTripQuirks(),

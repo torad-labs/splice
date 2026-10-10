@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
@@ -30,6 +31,7 @@ class ResponsesHostedToolRecoveryTest {
         )
         val built = ResponsesRequestBuilder(
             ResponsesQuirks(
+                lite = ResponsesLiteQuirks(),
                 providerTag = "muse",
                 tools = ResponsesToolQuirks(
                     toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED, minDeferred = 1),

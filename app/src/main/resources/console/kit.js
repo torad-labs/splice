@@ -27,6 +27,11 @@ const tick = () => (NOW = new Date());
 // ---------- the providers, as the stylesheet names their colours ----------
 const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local", vast: "--local" };
 const PROVIDER_NAME = { claude: "Claude", gpt: "ChatGPT", grok: "Grok", kimi: "Kimi", muse: "Muse", router: "OpenRouter", deepseek: "DeepSeek", local: "This computer" };
+// /api/models names a head's provider in the provider module's own words, which are not always the colour's. A family
+// with no colour of its own draws in none, rather than borrowing another's.
+const PROVIDER_FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai: "grok", grok: "grok", moonshot: "kimi",
+  kimi: "kimi", meta: "muse", muse: "muse", openrouter: "router", router: "router", deepseek: "deepseek",
+  local: "local", vast: "vast" };
 // A provider splice has no colour for draws in the muted text colour rather than in another provider's.
 const colorOf = (provider) => `var(${COLORS[provider] || "--text-mute"})`;
 
@@ -184,6 +189,7 @@ const sideBySide = () => {
 // 404 this list exists to prevent: the jar carries what the commit carries, not what a working tree has.
 const PAGES = [
   ["accounts.html", "Accounts"],
+  ["sessions.html", "Sessions"],
   ["teams.html", "Teams"],
   ["requests.html", "Requests"],
   ["settings.html", "Settings"],

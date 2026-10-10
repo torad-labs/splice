@@ -27,12 +27,7 @@
 // kit.js carries the console's shared language: NOW and tick(), esc, G, ICON, COLORS, colorOf, clock, dayWord, md,
 // OUTCOME_WORD, STOPPED, isClean, WHY and sideBySide. Only what Requests alone needs is here.
 //
-// The colour a command draws in is its PROVIDER's (kit.js COLORS). /api/models names the provider in its own words,
-// which are not always the colour's: a head's family is what the provider module calls itself. A family with no
-// colour of its own draws in none, rather than borrowing another's.
-const FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai: "grok", grok: "grok", moonshot: "kimi",
-  kimi: "kimi", meta: "muse", muse: "muse", openrouter: "router", router: "router", deepseek: "deepseek",
-  local: "local", vast: "vast" };
+const FAMILY = PROVIDER_FAMILY; // kit.js: the provider /api/models names, as the colour it draws in
 
 // the open request is reqview.js, shared with Compare models, and so are its clock and count words
 const { clockS, dayOf, n0, secs, GLYPH } = REQVIEW;

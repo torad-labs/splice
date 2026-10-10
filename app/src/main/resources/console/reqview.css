@@ -1,0 +1,134 @@
+/* The open request (reqview.js), shared by Requests and Compare models: the header, its sends on one time rail, the
+   figures, the tabs and the bodies both ways. Loaded after sessions.css (.pane, .lamp, .meta) and before a page's own sheet. */
+.word.fail { color: var(--limit); }
+.detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+.detail svg { width: 1rem; height: 1rem; }
+mark { background: var(--key-light); color: #241d14; border-radius: .2rem; padding: 0 .12rem; }
+/* the outcome as an element: clean a still dot, a failure in the limit's colour with what stopped it, stopped a square,
+   a compaction its own mark, and a step splice answered itself an outline */
+.lamp.clean i { width: .6rem; height: .6rem; background: var(--text-mute); }
+.lamp.fail { color: var(--limit); }
+.lamp.fail svg { width: 1.3rem; height: 1.3rem; }
+.lamp.stopped i { border-radius: .15rem; background: var(--text-body); width: .7rem; height: .7rem; }
+.lamp.compact { color: var(--key-light); }
+.lamp.compact svg { width: 1.35rem; height: 1.35rem; }
+.lamp.step i { width: .7rem; height: .7rem; background: transparent; box-shadow: inset 0 0 0 .13rem var(--text-mute); }
+
+/* ---------- the open request ---------- */
+.rqpane > header .top { gap: 1.1rem; }
+.rqpane > header time { font: 500 1.05rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.rqpane > header .meta { margin-top: .5rem; }
+.rqpane .acts a.act { text-decoration: none; }
+.rqpane .scroll { flex: 1; overflow-y: auto; padding: 1.8rem 2.2rem 2.6rem; display: flex; flex-direction: column; gap: 1.8rem; }
+
+/* the sends on one time rail: each send a bar from its start to its end, the waits the bare rail between them */
+.trail { padding-top: 1.9rem; }
+.rail-t { position: relative; height: 1.6rem; background: var(--track); border-radius: .3rem; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.rail-t .sbar { position: absolute; top: 0; bottom: 0; min-width: .3rem; background: var(--c); border: .12rem solid var(--ink); border-radius: .3rem; }
+.rail-t .sbar.bad { background: var(--limit); }
+/* the wait before the first byte, inside the send that answered: the same colour, hatched */
+.rail-t .sbar .pre { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(-45deg, transparent 0 .35rem, rgba(7, 5, 10, .42) .35rem .7rem); border-right: .12rem solid var(--ink); }
+.rail-t .sbar b { position: absolute; bottom: calc(100% + .45rem); left: 50%; transform: translateX(-50%); font: 600 .95rem/1 var(--font-data); color: var(--limit); }
+.rail-t .mk { position: absolute; top: -.4rem; bottom: -.4rem; width: .18rem; margin-left: -.09rem; background: var(--text); border-radius: .1rem; }
+.rail-t .mk > span { position: absolute; top: calc(100% + .45rem); left: -.09rem; white-space: nowrap; font: 500 .92rem/1 var(--font-data); color: var(--text-body); padding-left: .55rem; border-left: .12rem solid var(--text); }
+.rail-t .mk.ft > span { top: calc(100% + 1.95rem); }
+.rail-t .mk.late > span { left: auto; right: -.09rem; padding: 0 .55rem 0 0; border-left: 0; border-right: .12rem solid var(--text); }
+/* a silence splice waited out: the stretch it lasted, outlined in the key light, named above the rail */
+.rail-t .quiet { position: absolute; top: -.45rem; bottom: -.45rem; min-width: .5rem; border: .14rem dashed var(--key-light); border-radius: .35rem; background: color-mix(in oklab, var(--key-light) 14%, transparent); }
+.rail-t .quiet > span, .rail-t .resume > span { position: absolute; bottom: calc(100% + .5rem); left: 0; white-space: nowrap; font: 500 .95rem/1 var(--font-name); color: var(--key-light); }
+.rail-t .quiet.late > span, .rail-t .resume.late > span { left: auto; right: 0; }
+/* a resume: where splice re-sent the turn from its partial answer */
+.rail-t .resume { position: absolute; top: -.45rem; bottom: -.45rem; width: .22rem; margin-left: -.11rem; background: var(--key-light); border-radius: .1rem; }
+.rail-t .resume > span { left: -.11rem; padding-left: .55rem; border-left: .14rem solid var(--key-light); }
+.rail-t .resume.late > span { right: -.11rem; padding: 0 .55rem 0 0; border-left: 0; border-right: .14rem solid var(--key-light); }
+.ends { display: flex; justify-content: space-between; align-items: baseline; margin-top: 3.9rem; font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
+.ends .tot { font: 600 1.2rem/1 var(--font-data); color: var(--text); }
+
+.figs { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 1rem; }
+.fig { display: flex; flex-direction: column; gap: .5rem; padding: .9rem 1.05rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); min-width: 0; }
+.fig .v { font: 600 1.4rem/1 var(--font-data); color: var(--text); white-space: nowrap; }
+.fig .v .nr { font: 500 1.1rem/1.27 var(--font-name); color: var(--text-mute); }  /* the provider never sent it */
+.fig .fsub { font: 500 .88rem/1.25 var(--font-data); color: var(--text-mute); }
+
+.tabs { align-self: flex-start; }
+.tabs b { font: 600 .95rem/1 var(--font-data); margin-left: .35rem; }
+.bodies { display: flex; flex-direction: column; gap: 1.5rem; }
+.block h3, .attempt h3 { margin: 0 0 .6rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.hdrs {
+  display: grid; grid-template-columns: fit-content(50%) minmax(0, 1fr); gap: .4rem 1.3rem; margin: 0; padding: .85rem 1.05rem;
+  font: 500 .95rem/1.4 var(--font-data); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in);
+}
+.hdrs dt { color: var(--text-mute); overflow-wrap: anywhere; }
+.hdrs dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.hdrs dd.redacted { display: inline-flex; align-items: center; gap: .4rem; font-family: var(--font-name); color: var(--text-body); }
+.hdrs dd.redacted svg { width: .95rem; height: .95rem; }
+
+/* a body as a tree: everything folds to one line and opens where he clicks */
+.json {
+  font: 500 .95rem/1.55 var(--font-data); color: var(--text-body); padding: .85rem 1.05rem; overflow-x: auto;
+  background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in);
+}
+.tree { list-style: none; margin: 0; padding-left: 1.6rem; border-left: .12rem solid var(--track); }
+.tree li { white-space: pre-wrap; overflow-wrap: anywhere; }
+.json .key { color: var(--text); }
+.json .idx { color: var(--text-mute); margin-right: .6rem; }
+.json .str { color: #a9cf8e; }
+.json .num { color: var(--kimi); }
+.json .bool { color: var(--grok); }
+.json .pv { color: var(--text-mute); }
+[data-theme="day"] .json .str { color: #2c6555; }
+[data-theme="day"] .json .num { color: #8a5a12; }
+[data-theme="day"] .json .bool { color: #2c5aa0; }
+.node { width: 1.25rem; height: 1.25rem; padding: 0; margin-right: .25rem; display: inline-grid; place-items: center; vertical-align: -.2rem; border: 0; background: none; color: var(--text-mute); cursor: pointer; border-radius: .25rem; }
+.node:hover { background: var(--track); color: var(--text); }
+.node svg { width: .8rem; height: .8rem; transition: transform var(--t-snap) var(--e-out); }
+.node[aria-expanded="true"] svg { transform: rotate(90deg); }
+.cut, .unavail, .same { margin: .6rem 0 0; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.unavail { margin: 0; padding: 1.2rem 1.3rem; border: .12rem dashed var(--track-line); border-radius: var(--r-in); }  /* the same box as .gone: a part splice didn't keep */
+.cut { color: var(--limit); }
+
+/* what came back: the reply put back together, then its frames */
+.reply { display: flex; flex-direction: column; gap: .8rem; padding: 1rem 1.2rem; background: var(--obj-high); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+.reply .stopr { margin: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.reply .stopr code { font: 500 .92rem/1 var(--font-data); color: var(--text-body); }
+.reply .stopr.err { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
+.reply .stopr.err .state { white-space: normal; }
+.reply .tool { cursor: default; }
+.framefold { margin-top: .8rem; display: inline-flex; align-items: center; gap: .5rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); background: none; border: 0; padding: .35rem .2rem; cursor: pointer; border-radius: .3rem; }
+.framefold:hover { color: var(--text); background: var(--track); }
+.framefold svg { width: .8rem; height: .8rem; transition: transform var(--t-snap) var(--e-out); }
+.framefold[aria-expanded="true"] svg { transform: rotate(90deg); }
+.frames { list-style: none; margin: .5rem 0 0; padding: .8rem 1.05rem; display: flex; flex-direction: column; gap: .3rem; font: 500 .92rem/1.4 var(--font-data); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+.frames li { display: flex; align-items: baseline; gap: .9rem; min-width: 0; }
+.frames .ev { color: var(--text); flex: none; }
+.frames .times { color: var(--key-light); flex: none; }
+.frames .fd { color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.status { margin: 0; font: 600 1.25rem/1 var(--font-data); color: var(--text); }
+.status.s2 { color: var(--live); }
+.status.s4, .status.s5 { color: var(--limit); }
+.status.sx { color: var(--text-body); } /* a 200 that ended on an error event */
+
+/* one send upstream: where it went, what it carried, what came back */
+.attempt { padding: 1.1rem 1.2rem 1.25rem; border: .12rem solid var(--ink); border-radius: var(--r-obj); background: var(--obj-high); }
+.attempt.fail { box-shadow: inset .3rem 0 0 var(--limit); }
+.attempt > h3 { display: flex; align-items: center; gap: 1rem; margin-bottom: .9rem; }
+.attempt .an { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .95rem/1 var(--font-data); color: var(--text); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }
+.attempt .url { font: 500 1rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
+.attempt .status { font-size: 1.05rem; margin-left: auto; }
+.attempt .ams { font: 500 1rem/1 var(--font-data); color: var(--text-body); }
+.attempt .why { margin: -.3rem 0 .9rem 3rem; font: 500 1rem/1 var(--font-data); color: var(--limit); display: flex; align-items: center; gap: .4rem; }
+.attempt .why svg { width: 1rem; height: 1rem; flex: none; }  /* a spent window: the lock, then when it comes back */
+.attempt .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.2rem; }
+.attempt .two > div { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.attempt .two .framefold { margin-top: 0; align-self: flex-start; }
+.attempt .same { margin: 0; }
+
+/* no records: the row still has its time, sends, tokens and cost; the bodies say why they're not here */
+.gone { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 1.3rem; border: .12rem dashed var(--track-line); border-radius: var(--r-in); }
+.gone .state svg { width: 1.1rem; height: 1.1rem; }
+.gone .sub { font: 500 .98rem/1 var(--font-data); color: var(--text-mute); }
+
+.attempt .two.one { grid-template-columns: minmax(0, 1fr); }
+@container (max-width: 70rem) { .attempt .two { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 56rem) { .figs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tree.root { padding-left: 0; border-left: 0; }

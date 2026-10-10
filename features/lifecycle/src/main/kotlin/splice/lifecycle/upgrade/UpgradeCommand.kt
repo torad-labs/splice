@@ -52,7 +52,9 @@ internal class UpgradeCommand(
     private val output: TerminalOutput,
     private val env: EnvReader,
     private val daemon: UpgradeDaemon,
-    private val java: String = ProcessHandle.current().info().command().orElse("java"),
+    // The JVM that runs the candidate's `version` and `doctor`: this one, unless SPLICE_UPGRADE_JAVA names another
+    // (a test points it at a script, so the upgrade can be driven as a process without a second real release).
+    private val java: String = env("SPLICE_UPGRADE_JAVA") ?: ProcessHandle.current().info().command().orElse("java"),
     private val release: UpgradeRelease = UpgradeRelease(output, JdkUpgradeFetch(), JdkUpgradeProcess(), java),
     private val wrapper: UpgradeWrapper = UpgradeWrapper(output, JdkUpgradeProcess()),
     private val layout: UpgradeLayout = UpgradeLayout(env),

@@ -87,9 +87,11 @@ internal class ReanchorRunner(
                 acc = acc.plusRound(p.usage)
             }
             // A clean-slate restart returns the request verbatim; log it as what it is rather
-            // than claiming a partial that does not exist.
+            // than claiming a partial that does not exist. ONE expression, read by the line and by
+            // the counter below (V4-444), so the journal and the row can never say different things.
+            val fromScratch = cont.body == body
             val restarted =
-                if (cont.body == body) "restarting the round from scratch" else "continuing from partial output"
+                if (fromScratch) "restarting the round from scratch" else "continuing from partial output"
             // V4-242: with the round's own words, which name what ended it (a peer's close code and
             // reason, a stall's cap); the wire type alone read "overloaded_error" for all of them.
             val why = "${failure.type.wireName} mid-stream (${failure.message})"
@@ -98,7 +100,7 @@ internal class ReanchorRunner(
             // POST and the counter that names it moves. Stamped at the same point as [attempt] on
             // purpose: a number that could disagree with the loop's own count is worse than no
             // number, and the ending message (gaveUp) quotes this one.
-            signals.onReanchor()
+            signals.onReanchor(fromScratch)
             TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(attempt, 0) }
             body = cont.body
             attempt++

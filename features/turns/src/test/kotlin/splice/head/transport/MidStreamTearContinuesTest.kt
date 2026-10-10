@@ -25,7 +25,8 @@
 //      in it and a torn chunk stream is none of them) — the case that had no retry at all, and the
 //      one the operator measured. See SseRoundDriver.tearOutcome.
 //   6. the same refused tear on the head without the quirk: it recovers by a VERBATIM restart, so
-//      a vendor that rejects assistant prefill can never be handed one by this path.
+//      a vendor that rejects assistant prefill can never be handed one by this path -- and the ROW
+//      counts that restart as one (V4-444), where ARM 11's continuation from a partial does not.
 //
 // ARMS 1-4 PASSED BEFORE SseRoundDriver.tearOutcome EXISTED, and that is a finding, not an
 // accident: the row that opened this work said a post-content tear escapes the re-anchor loop,
@@ -128,6 +129,7 @@ private const val QUOTE = "\""
 // V4-116 (5): the two evidence fields, asserted by their rendered name so a renamed key cannot
 // pass this arm while leaving the operator grepping for a key that no longer exists.
 private const val REANCHORS_FIELD = "\"reanchors\":"
+private const val FROM_SCRATCH_FIELD = "\"reanchors_from_scratch\":"
 private val STALL_MS_RE = Regex("\"stall_ms\":(\\d+)")
 
 /** An Anthropic-shaped upstream that can die mid-response. [acts] is consumed by request index, the
@@ -596,6 +598,7 @@ class MidStreamTearContinuesTest {
     @Test
     fun `the refused tear restarts verbatim on a head that rejects prefill`() {
         reset(Act.TRUNCATE_BEFORE_CONTENT, Act.FULL)
+        val before = perfRowsBefore(honestPort)
         val received = drainTurn(honestPort)
 
         assertTrue(received.contains(SECOND_HALF), "the turn must come back with an answer" + diagnostics(received))
@@ -605,6 +608,15 @@ class MidStreamTearContinuesTest {
             upstream.requestBodies[0],
             upstream.requestBodies[1],
             "an unmeasured vendor gets its OWN request back, never a prefill" + diagnostics(received),
+        )
+        // V4-444: and the ROW says which kind of re-POST that was. A surface reading the row (the
+        // console's Requests list) draws "Started over" for this turn and "Resumed" for ARM 11's,
+        // and before this counter existed the two rows were identical.
+        val row = perfRow(honestPort, before)
+        assertTrue(row.contains(REANCHORS_FIELD + "1"), "the restart is a spent re-anchor, got: " + row)
+        assertTrue(
+            row.contains(FROM_SCRATCH_FIELD + "1"),
+            "a round the upstream received VERBATIM is a round started over, got: " + row,
         )
     }
 
@@ -785,6 +797,10 @@ class MidStreamTearContinuesTest {
         assertTrue(
             row.contains(REANCHORS_FIELD + "1"),
             "the spent continuation must be countable from the row, got: " + row,
+        )
+        assertFalse(
+            row.contains(FROM_SCRATCH_FIELD),
+            "this continuation carried the partial answer, so nothing started over, got: " + row,
         )
         val stallMs = STALL_MS_RE.find(row)?.groupValues?.get(1)?.toLong()
         assertNotNull(

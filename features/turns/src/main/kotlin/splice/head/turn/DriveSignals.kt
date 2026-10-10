@@ -36,7 +36,7 @@ internal class DriveSignals(
                 if (f.traits.providerReported) health.provider() else health.local()
             },
             onSearchRound = { perf.setCount(PerfKeys.SEARCH_ROUNDS, it.toLong()) },
-            onReanchor = {
+            onReanchor = { fromScratch ->
                 // V4-116 (5), THE EVIDENCE ROW. Two numbers, because neither is interpretable
                 // alone: one POST after nine silent minutes and five POSTs after twenty seconds
                 // each are opposite diagnoses, and only the pair tells them apart.
@@ -45,6 +45,10 @@ internal class DriveSignals(
                 // that holds the watchdog — see ReanchorSpentHook for why the runner must not be
                 // taught a fact it cannot see.
                 perf.add(PerfKeys.REANCHORS, 1)
+                // V4-444: and WHICH of the two it was. A person reading the row asks a different
+                // question of an answer that resumed than of a round that started over, and the
+                // runner is the one place that can tell them apart (ReanchorSpentHook).
+                if (fromScratch) perf.add(PerfKeys.REANCHORS_FROM_SCRATCH, 1)
                 // `as?` on purpose: a re-anchor that was NOT triggered by the watchdog (a tear
                 // converted by SseRoundDriver.tearOutcome, or a provider-reported failure) has no
                 // silence to report, and stamping 0 would claim a stall that never happened.

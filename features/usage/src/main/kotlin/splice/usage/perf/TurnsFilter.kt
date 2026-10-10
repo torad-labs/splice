@@ -19,9 +19,11 @@ internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("ac
  *  silences waited out and the answers resumed", "the requests that waited in line"). Each is a floor in milliseconds
  *  or a flag, and each reads the counter the turn already recorded:
  *
- *   [silenceMs]  the longest upstream silence this request sat through (UP_GAP_MAX_MS), at or over this
- *   [queuedMs]   how long it waited for a free slot at its command's limit (ADMIT_WAIT_MS), at or over this
- *   [resumed]    whether splice re-anchored it at all (REANCHORS), true for the ones it did and false for the rest
+ *   [silenceMs]   the longest upstream silence this request sat through (UP_GAP_MAX_MS), at or over this
+ *   [queuedMs]    how long it waited for a free slot at its command's limit (ADMIT_WAIT_MS), at or over this
+ *   [resumed]     whether splice re-anchored it at all (REANCHORS), true for the ones it did and false for the rest
+ *   [startedOver] whether any of those re-anchors re-posted the request verbatim (REANCHORS_FROM_SCRATCH), which is
+ *                 a round STARTED OVER rather than an answer resumed from its partial
  *
  *  A row that never carried the counter waited through nothing, so it reads as zero and a floor above zero leaves it
  *  out — which is the question "show me the ones that waited" asking for exactly the ones that did. */
@@ -29,11 +31,13 @@ internal data class TurnsWaits(
     val silenceMs: Long? = null,
     val queuedMs: Long? = null,
     val resumed: Boolean? = null,
+    val startedOver: Boolean? = null,
 ) {
     fun matches(row: PerfRow): Boolean = listOf(
         silenceMs == null || counted(row, PerfKeys.UP_GAP_MAX_MS) >= silenceMs,
         queuedMs == null || counted(row, PerfKeys.ADMIT_WAIT_MS) >= queuedMs,
         resumed == null || (counted(row, PerfKeys.REANCHORS) > 0) == resumed,
+        startedOver == null || (counted(row, PerfKeys.REANCHORS_FROM_SCRATCH) > 0) == startedOver,
     ).all { it }
 
     private fun counted(row: PerfRow, key: String): Long = row.fields[key] ?: 0L
@@ -125,24 +129,31 @@ internal class TurnsFilterReader {
                 silenceMs = floor(params["silence_ms"]),
                 queuedMs = floor(params["queued_ms"]),
                 resumed = switch(params["resumed"]),
+                startedOver = switch(params["started_over"]),
             ),
         )
         return if (problem == null) TurnsFilterRead.Read(filter) else TurnsFilterRead.Refused(problem)
     }
 
-    /** The first wait parameter spelled wrong, named, or null when all three read. Its own function so the reader's
+    /** The first wait parameter spelled wrong, named, or null when they all read. Its own function so the reader's
      *  one entry point stays the list of refusals it already is. */
-    private fun waitProblem(params: Parameters): String? {
-        val silence = params["silence_ms"]
-        val queued = params["queued_ms"]
-        val resumed = params["resumed"]
-        return listOfNotNull(
-            "silence_ms must be a non-negative whole number of milliseconds, got '$silence'"
-                .takeIf { silence != null && floor(silence) == null },
-            "queued_ms must be a non-negative whole number of milliseconds, got '$queued'"
-                .takeIf { queued != null && floor(queued) == null },
-            "resumed must be 0 or 1, got '$resumed'".takeIf { resumed != null && switch(resumed) == null },
-        ).firstOrNull()
+    private fun waitProblem(params: Parameters): String? = listOfNotNull(
+        floorProblem(params, "silence_ms"),
+        floorProblem(params, "queued_ms"),
+        switchProblem(params, "resumed"),
+        switchProblem(params, "started_over"),
+    ).firstOrNull()
+
+    /** The sentence naming [name] when it is given as something other than a floor in milliseconds. */
+    private fun floorProblem(params: Parameters, name: String): String? {
+        val text = params[name] ?: return null
+        return "$name must be a non-negative whole number of milliseconds, got '$text'".takeIf { floor(text) == null }
+    }
+
+    /** The sentence naming [name] when it is given as something other than a 0-or-1 switch. */
+    private fun switchProblem(params: Parameters, name: String): String? {
+        val text = params[name] ?: return null
+        return "$name must be 0 or 1, got '$text'".takeIf { switch(text) == null }
     }
 
     /** A floor in milliseconds, or null when it is absent or is not a whole number at or above zero. */

@@ -64,7 +64,11 @@ class PerfTurnsFilterTest {
         ts = 9_300L,
         outcome = OutcomeTag.CANCELLED.wire,
         session = "watchdog",
-        fields = mapOf(PerfKeys.UP_GAP_MAX_MS to 90_000L, PerfKeys.REANCHORS to 1L),
+        fields = mapOf(
+            PerfKeys.UP_GAP_MAX_MS to 90_000L,
+            PerfKeys.REANCHORS to 2L,
+            PerfKeys.REANCHORS_FROM_SCRATCH to 1L,
+        ),
     )
 
     // why: a model that closed an empty message ended the turn clean for the client. Its own model and a time past
@@ -218,6 +222,10 @@ class PerfTurnsFilterTest {
         assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1")), "the one request splice re-anchored")
         assertEquals(2_008L, count(ask(client, "resumed=0")), "every other request, a row with no counter included")
         assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1&silence_ms=1&queued_ms=0")), "the floors stack")
+        val over = ask(client, "started_over=1")
+        assertEquals(listOf(9_300L), stamps(over), "the one round splice re-posted verbatim")
+        assertEquals(2_008L, count(ask(client, "started_over=0")), "every request that started over nothing")
+        assertEquals(emptyList<Long>(), stamps(ask(client, "resumed=1&started_over=0")), "resumed is asked apart")
     }
 
     @Test
@@ -231,6 +239,7 @@ class PerfTurnsFilterTest {
             "silence_ms=soon" to "soon",
             "queued_ms=-1" to "-1",
             "resumed=maybe" to "maybe",
+            "started_over=sometimes" to "sometimes",
         )
         for ((query, named) in spelled) {
             val response = client.get("/api/perf/turns?head=kimi&since=0&$query")

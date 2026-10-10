@@ -111,17 +111,21 @@ internal fun interface SearchRoundCounter {
 }
 
 /**
- * Records one SPENT re-anchor — the round was re-POSTed from its own salvage (V4-116).
+ * Records one SPENT re-anchor — the round was re-POSTed from its own salvage (V4-116) — and says
+ * whether that re-POST was the request VERBATIM ([fromScratch], nothing visible had been salvaged)
+ * or a continuation from the partial answer.
  *
- * No parameter, and the absence is deliberate: the number the perf row wants is the SILENCE that
- * triggered it, and the only thing that knows that is the watchdog, which the wiring site already
- * holds. Carrying it through the runner would mean teaching every caller of this hook a fact none
- * of them can see, and the runner's own answer (or lack of one) would then be the thing that drifts.
+ * ONE PARAMETER, and it is the runner's own fact: the runner is the only place that holds both the
+ * body it posted and the body coming back, so the comparison cannot be made anywhere else. The
+ * SILENCE that triggered the re-anchor is still not here, for the same reason read the other way —
+ * only the watchdog knows it, and the wiring site already holds the watchdog. Each side reports what
+ * it alone can see, and neither is taught a fact it would have to guess at.
+ *
  * Called once per continuation the loop actually spends, so the count cannot exceed the controller's
  * budget and cannot count an attempt that was never made.
  */
 internal fun interface ReanchorSpentHook {
-    operator fun invoke()
+    operator fun invoke(fromScratch: Boolean)
 }
 
 /** Shared per-loop collaborators for the round runners: liveness gates + the health hook for

@@ -239,6 +239,14 @@ public object PerfKeys {
      *  instrument: a deploy where this stays 0 on a head that stalls is a false landing. */
     public const val REANCHORS: String = "reanchors"
 
+    /** V4-444: how many of those [REANCHORS] re-POSTed the request VERBATIM, because nothing the client could see
+     *  had been salvaged (thinking only, or a tear before the first text delta). The two are different things to the
+     *  person reading the row and splice has always known which it did -- the runner compares the continuation
+     *  against the body it just posted, one line before the counter moves -- but only the journal said so, so a
+     *  surface reading the row could not tell an answer RESUMED from a round STARTED OVER. Absent on a turn whose
+     *  every continuation carried a partial, which is the common case. */
+    public const val REANCHORS_FROM_SCRATCH: String = "reanchors_from_scratch"
+
     /** V4-116: the upstream SILENCE that triggered each re-anchor, summed in ms — the watchdog's own
      *  `idleMs` at the moment it fired, so the row answers "silent how long" without archaeology
      *  through the journal. Paired with [REANCHORS] on purpose: neither number is interpretable

@@ -229,9 +229,14 @@ function ring(w) {
 }
 const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
 const resets = (w) => (w.left == null ? "<span></span>" : `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`); // a reading whose reset has passed shows no time
-// The budget day always refills at this computer's midnight, so its strip says that one word: a day name and "12:00 AM"
-// read as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move.
-const refills = (day) => `<span class="when">${ring(day)}Resets midnight</span>`;
+// The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
+// as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
+// browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.
+function refills(day) {
+  const at0 = new Date(day.resetMs);
+  const midnightHere = at0.getHours() === 0 && at0.getMinutes() === 0;
+  return `<span class="when">${ring(day)}Resets ${midnightHere ? "midnight" : at(day.resetMs)}</span>`;
+}
 
 function windowsHtml(a, next = null) {
   const stale = a.staleAt != null;

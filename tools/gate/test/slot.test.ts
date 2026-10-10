@@ -441,6 +441,45 @@ try {
     }
   }, 15_000);
 
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // gradle's client is not the first process of the build: buildgate and hostshield's subreaper stand above it, and bash
+  // stands above a child it did not exec. A signal that reached only the first left the rest running under a freed slot.
+  for (const [signal, status] of [["SIGTERM", 143], ["SIGINT", 130]] as const) {
+    test(`a ${signal} to the wrapper takes the build's whole process group with it, and the slot is not freed before`, async () => {
+      // perl resets the SIGINT that a non-interactive bash gives every background child to ignore, so the child hears both signals
+      const fake = fakeBuildRoot('perl -e \'$SIG{INT}="DEFAULT"; exec "sleep", "30"\' &\necho $! >"$(dirname "$0")/child-pid"\nwait\n');
+      const lock = join(fake.dir, ".gradle-slot.lock");
+      const wrapper = wrapperProcess(fake, `group-${signal}`);
+      await waitForFile(join(fake.dir, "child-pid"), "started its background child");
+      const child = Number.parseInt(readFileSync(join(fake.dir, "child-pid"), "utf8"), 10);
+      expect(alive(child)).toBe(true);
+      process.kill(wrapper.pid, signal);
+      expect(await wrapper.exited).toBe(status);
+      expect(alive(child), "the build's background child outlived the wrapper").toBe(false);
+      const free = takeExclusive(lock, 50, 5);
+      expect(free, "the slot is released after the build is gone").toBeDefined();
+      free?.release();
+    });
+  }
+
+  test("a build that ignores the signal is killed once its grace is spent, and the slot stays held until it is", async () => {
+    const fake = fakeBuildRoot('trap "" TERM\nsleep 30 &\necho $! >"$(dirname "$0")/child-pid"\nwait\n');
+    const wrapper = wrapperProcess(fake, "stubborn", {}, { groupGraceMs: 300 });
+    await waitForFile(join(fake.dir, "child-pid"), "started its background child");
+    const child = Number.parseInt(readFileSync(join(fake.dir, "child-pid"), "utf8"), 10);
+    process.kill(wrapper.pid, "SIGTERM");
+    expect(await wrapper.exited).toBe(143);
+    expect(alive(child), "a build that ignores SIGTERM is killed when the grace ends").toBe(false);
+  });
+
   test("a signalled joint build keeps its host lock until Gradle actually exits (V4-426)", async () => {
     const fake = fakeBuildRoot(
       'trap \'touch "$(dirname "$0")/stopping"; while [[ ! -e "$(dirname "$0")/release-stop" ]]; do sleep 0.01; done; exit 143\' TERM\n' +
@@ -541,9 +580,10 @@ try {
     fake: ReturnType<typeof fakeBuildRoot>,
     label: string,
     env: Record<string, string | undefined> = {},
+    extra: Record<string, unknown> = {},
   ): Bun.Subprocess {
     const runner = join(fake.dir, "runner.ts");
-    const options = { layout: fake.layout, label, args: ["check"], env: { CI: "1", PATH: fake.path, ...env } };
+    const options = { layout: fake.layout, label, args: ["check"], env: { CI: "1", PATH: fake.path, ...env }, ...extra };
     writeFileSync(
       runner,
       `import { runUnderSlot } from ${JSON.stringify(join(import.meta.dir, "..", "src", "lib", "slot.ts"))};\n` +

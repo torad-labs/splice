@@ -41,6 +41,10 @@ function localDaemon(label: string): string[] {
 }
 export const NO_TASKS_EXIT = 2;
 const FAST_PATH_MS = 1000;
+/** A signalled build gets this long to leave on its own before its whole group is killed. gradle's client ends in a second or two. */
+const GROUP_GRACE_MS = 15_000;
+/** After SIGKILL the group is waited for this long more; a member that survives it is a kernel matter, not a reason to hang. */
+const GROUP_KILL_WAIT_MS = 5_000;
 /** The three the shell script traps. A forwarded signal is the only way the JVM ever hears one. */
 const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
@@ -55,6 +59,8 @@ export interface SlotOptions {
   readonly env?: Record<string, string | undefined>;
   /** overridable so the tests can wait milliseconds instead of an hour */
   readonly pollMs?: number;
+  /** How long a signalled build's process group has to leave before it is killed outright. */
+  readonly groupGraceMs?: number;
 }
 
 export function lockPath(layout: Layout, env: Record<string, string | undefined> = Bun.env): string {
@@ -145,6 +151,40 @@ function supportsJoint(buildgate: string, buildRoot: string, env: Record<string,
   return probe.exitCode === 2 && usage?.split(/\s+/).includes("[--joint]") === true;
 }
 
+/** Signals the build's WHOLE process group. The build runs in a group of its own (spawnGradle), so this reaches what buildgate,
+ *  hostshield's subreaper and the gradle client are, not only the first of them: buildgate dies of a signal and leaves the
+ *  rest running, which freed the slot under a live gradle. A gradle DAEMON is not in the group (it detaches), so it stays warm. */
+function signalGroup(child: Bun.Subprocess, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    child.kill(signal);
+  }
+}
+
+function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Until nothing of the build's group is left: the slot is not free while any of it runs. A member still there after the
+ *  grace is killed, and waited for a little more. */
+async function groupDrained(pid: number, graceMs: number): Promise<void> {
+  const until = (ms: number) => Date.now() + ms;
+  for (let deadline = until(graceMs); groupAlive(pid) && Date.now() < deadline; ) await Bun.sleep(25);
+  if (!groupAlive(pid)) return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    /* gone in the meantime */
+  }
+  for (let deadline = until(GROUP_KILL_WAIT_MS); groupAlive(pid) && Date.now() < deadline; ) await Bun.sleep(25);
+}
+
 /** Run gradle under the slot. Returns the exit code to propagate — it never calls process.exit. */
 export async function runUnderSlot(options: SlotOptions): Promise<number> {
   const env: Record<string, string | undefined> = { ...Bun.env, ...(options.env ?? {}) };
@@ -203,13 +243,20 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
   // the first JVM instruction is not the default disposition killing us with the holder on disk.
   let child: Bun.Subprocess | undefined;
   let received: NodeJS.Signals | undefined;
+  let escalation: ReturnType<typeof setTimeout> | undefined;
+  const graceMs = options.groupGraceMs ?? GROUP_GRACE_MS;
+  // A build that ignores the signal must not hold the slot for ever: when the grace is spent its group is killed outright.
+  const escalate = () => {
+    escalation ??= setTimeout(() => child && signalGroup(child, "SIGKILL"), graceMs);
+  };
   const handlers = FORWARDED.map(
     (signal) =>
       [
         signal,
         () => {
           received ??= signal;
-          child?.kill(signal);
+          if (child) signalGroup(child, signal);
+          escalate();
         },
       ] as const,
   );
@@ -219,12 +266,15 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
     if (joint) console.error(`gradle-slot: ${label} waits for buildgate admission`);
     else console.error(`gradle-slot: ${label} holds the slot — gradle busy`);
     child = spawnGradle(options.layout.buildRoot, args, env, buildgate, label, joint ? { lock, label } : undefined);
-    if (received) child.kill(received);
+    if (received) signalGroup(child, received);
     await child.exited;
+    // The first process ending is not the build ending. After a signal, hold the slot until the group is empty.
+    if (received) await groupDrained(child.pid, graceMs);
     const rc = received ? exitForSignal(received) : exitStatusOf(child);
     console.error(`gradle-slot: ${label} released — gradle free (exit ${rc})`);
     return rc;
   } finally {
+    clearTimeout(escalation);
     for (const [signal, forward] of handlers) process.off(signal, forward);
     process.off("exit", drop);
     drop();
@@ -269,5 +319,6 @@ function spawnGradle(
     childEnv.SPLICE_GRADLE_LABEL = admission.label;
     argv = [buildgate, "--exclusive", "--joint", join(import.meta.dir, "../../bin/gradlew"), ...gradleArgs];
   }
-  return Bun.spawn(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv });
+  // detached: its own session and process group, so a signal can reach every process of the build and never this one.
+  return Bun.spawn(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv, detached: true });
 }

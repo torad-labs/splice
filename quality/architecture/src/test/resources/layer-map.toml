@@ -39,6 +39,7 @@ modules = [
     ":integrations-providers-openai",
     ":integrations-terminal",
     ":integrations-topology",
+    ":integrations-tmux",
     ":integrations-upstream",
 ]
 

@@ -3,9 +3,7 @@
 // splice's own answers: every name, number and state below is read from the control API, and every act calls it.
 "use strict";
 
-let NOW = new Date(); // read again at every load, so a reset reads in the viewer's own clock
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
-const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local", vast: "--local" };
 
 // splice's budget day runs midnight to midnight on the DAEMON's clock (BudgetEnforcement.kt:10), and the daemon says
 // when it next rolls over (day_resets_at_epoch_ms). A browser in another zone computing its own midnight disagreed
@@ -72,7 +70,7 @@ const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 
 // One read of everything the page shows. Each provider: its commands (with their order, pin and day) and its accounts.
 async function load() {
-  NOW = new Date();
+  tick();
   const [st, ac, ks, bg, ec, md, hd] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/economics", "/api/models", "/api/heads"].map((p) => API.get(p)));
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
@@ -171,10 +169,6 @@ const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, men
 const ui = { probing: false, grow: null, ...FRESH_UI() };
 const board = document.getElementById("board");
 // ---------- time: what a person reads ----------
-const clock = (d) => {
-  const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
-  return `${h}:${String(m).padStart(2, "0")} ${ap}`; // as every page writes a time (kit.js clock): "9:00 AM", never "9 AM"
-};
 // A time from the instant splice gave, rounded once to the minute, so every view of one reset prints the same minute (the
 // walkers saw 5:38 and 5:39 for one reset when it was rebuilt from minutes left at each load).
 function at(ms) {
@@ -247,7 +241,7 @@ function nameError(p, a, v) {
 }
 
 // ---------- drawing ----------
-const ICON = {
+const GLYPH = {
   grip: '<svg viewBox="0 0 10 18" fill="currentColor"><circle cx="2.5" cy="3" r="1.6"/><circle cx="7.5" cy="3" r="1.6"/><circle cx="2.5" cy="9" r="1.6"/><circle cx="7.5" cy="9" r="1.6"/><circle cx="2.5" cy="15" r="1.6"/><circle cx="7.5" cy="15" r="1.6"/></svg>',
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
   bell: '<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
@@ -257,12 +251,10 @@ const ICON = {
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
 };
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const colorOf = (id) => `var(${COLORS[id] || "--text-mute"})`;
 const money = (v) => `≈$${v.toFixed(2)}`; // priced from the rate card, so an estimate on every command
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
-const waiting = () => `<span class="waitbox" role="status">${ICON.wait}<span class="sr">Signing in</span></span>`;
-const locked = (pop = false) => `<span class="state limit" role="img" aria-label="At limit"><span class="lockico${pop ? " lock-pop" : ""}">${ICON.lock}</span></span>`;
+const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
+const locked = (pop = false) => `<span class="state limit" role="img" aria-label="At limit"><span class="lockico${pop ? " lock-pop" : ""}">${GLYPH.lock}</span></span>`;
 
 function ring(w) {
   const C = 2 * Math.PI * 15, f = Math.max(0, Math.min(1, w.left / w.len));
@@ -310,7 +302,7 @@ function windowsHtml(a, next = null) {
         + resets(m);
     }
   }
-  if (a.staleAt != null) rows += `<span class="stale-at">${ICON.eye}Read ${at(a.staleAt)}</span>`;
+  if (a.staleAt != null) rows += `<span class="stale-at">${GLYPH.eye}Read ${at(a.staleAt)}</span>`;
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
     const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
     rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked()}${resets(w)}` : ""}</span>`;
@@ -340,7 +332,7 @@ function meterHtml(c, pick = null) {
   // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
   const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? ICON.stop : ICON.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${refills(day)}</div>`;
+    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${refills(day)}</div>`;
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
 // here the words take their own line under the figure, with no dot (fin)
@@ -363,7 +355,7 @@ function editorHtml(c, tag) {
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");
   return `${tag}<div class="editor"><span class="money-in">$<input class="field" id="cap-in" inputmode="decimal" value="${ed.cap}" aria-label="Budget cap"></span>`
     + `<span class="presets">${presets}</span>`
-    + `<span class="mode"><button data-act="bmode" data-v="warn" aria-pressed="${!ed.block}">${ICON.bell}Warn</button><button data-act="bmode" data-v="block" aria-pressed="${ed.block}">${ICON.stop}Block</button></span>`
+    + `<span class="mode"><button data-act="bmode" data-v="warn" aria-pressed="${!ed.block}">${GLYPH.bell}Warn</button><button data-act="bmode" data-v="block" aria-pressed="${ed.block}">${GLYPH.stop}Block</button></span>`
     + `<button class="act primary" data-act="save-budget" data-c="${c.cmd}">Set budget</button><button class="act quiet" data-act="cancel-budget">Cancel</button></div>`;
 }
 
@@ -475,7 +467,7 @@ function howFor(p, a, c) {
 // serves: every command this account serves now, each riding it as a chip. Use now pins it on the rail's command.
 function slotHtml(p, c, a, serves) {
   // the pin says what pressing it does, at rest and on touch: both walkers clicked a bare pin on a guess (p153, p154)
-  const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}">${ICON.pin}Unpin</button>` : "";
+  const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}">${GLYPH.pin}Unpin</button>` : "";
   const chips = serves.map((x) => `<span class="chip" data-key="chip:${x.cmd}"><i></i>${esc(x.cmd)}</span>`).join("");
   // "Not answering" is the word (fin, Oct 10): it is what the watch measures, no reply at the
   // address in time (LocalRuntimeReach.kt), and it is what splice status already prints.
@@ -518,11 +510,11 @@ function nameHtml(p, a, spot) {
 function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
   const cls = ["card", serves.length ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
-  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}">${ICON.grip}</button>` : "";
+  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}">${GLYPH.grip}</button>` : "";
   const sub = a.plan && ui.rename !== spot ? `<span class="plan">${esc(a.plan)}</span>` : "";
   const email = a.email && ui.rename !== spot ? `<div class="email">${esc(a.email)}</div>` : "";
   const more = menuItems(p, a).length
-    ? `<button class="icon more" data-act="menu" data-p="${p.id}" data-a="${a.id}" data-s="${spot}" aria-label="More" aria-haspopup="menu" aria-expanded="${ui.menu === spot}">${ICON.more}</button>` : "";
+    ? `<button class="icon more" data-act="menu" data-p="${p.id}" data-a="${a.id}" data-s="${spot}" aria-label="More" aria-haspopup="menu" aria-expanded="${ui.menu === spot}">${GLYPH.more}</button>` : "";
   const mine = (t) => ui.signin[t] && (ui.signin[t].spot == null || ui.signin[t].spot === spot);
   const signT = mine(`out:${a.id}`) ? `out:${a.id}` : mine(`re:${a.id}`) ? `re:${a.id}` : null;
   const signRow = signT ? `<div class="outbox${ui.signin[signT].state === "fail" ? " failed" : ""}">${signingHtml(signT)}</div>` : "";

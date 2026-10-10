@@ -1,0 +1,216 @@
+/* Sessions, in the Accounts language (console.css): every agent on every model as a cel card, its state as the lamp
+   in the socket at its left, and the open session beside the list. Built for 3828 first: the list and the open session
+   side by side. Where both don't fit, the open session takes the page and Close brings the list back. */
+
+.page { container-type: inline-size; }
+.search { display: flex; align-items: center; gap: .7rem; width: 26rem; position: relative; }
+.search svg { position: absolute; left: .85rem; width: 1.2rem; height: 1.2rem; color: var(--text-mute); pointer-events: none; }
+.search .field { padding-left: 2.6rem; font-family: var(--font-name); font-size: 1.1rem; }
+
+.sessions { display: block; }
+.list { display: flex; flex-direction: column; gap: var(--gap-card); padding-left: 3.4rem; min-width: 0; }
+.pane { display: none; }
+.sessions.open .list { display: none; }
+.sessions.open .pane { display: flex; }
+@container (min-width: 104rem) {
+  .sessions, .sessions.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
+  .sessions .list, .sessions.open .list { display: flex; flex: 0 0 50rem; }
+  .sessions .pane, .sessions.open .pane { display: flex; flex: 1 1 0; max-width: 136rem; position: sticky; top: 1.6rem; height: calc(100vh - 12.4rem); }  /* the head's height: the Message field stays on screen */
+  .pane .close { display: none; }
+}
+
+/* ---------- the lamp: the session's state as an element, in the socket at the card's left ---------- */
+.lamp {
+  position: absolute; left: -3.4rem; top: 1.25rem; width: 2.6rem; height: 2.6rem; border-radius: 50%;
+  display: grid; place-items: center; color: var(--text-mute);
+  background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail);
+}
+.lamp svg { width: 1.55rem; height: 1.55rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.lamp i { width: .8rem; height: .8rem; border-radius: 50%; background: currentColor; }
+/* Working: a trace that runs, small and slow, because it repeats on every working card */
+.lamp.working { color: var(--live); }
+.lamp svg.wave { width: 1.95rem; height: 1.95rem; stroke-width: 3.6; }
+.lamp.working .base { opacity: .32; }
+.lamp.working .beat { stroke-dasharray: 16 64; animation: trace 2.2s linear infinite; }
+@keyframes trace { from { stroke-dashoffset: 80; } to { stroke-dashoffset: 0; } }
+/* Needs you: the amber ring, the key light of the film, around a glyph for what it asks */
+.lamp.needs { color: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .22rem var(--key-light), 0 0 1.4rem .15rem rgba(255, 215, 154, .4); }
+.lamp.needs svg { width: 1.35rem; height: 1.35rem; }
+/* Stalled: the element names the signal, in the limit's colour; a silent model is the trace gone flat */
+.lamp.stalled { color: var(--limit); }
+.lamp.idle i { background: var(--text-mute); }
+.lamp.stopped i { border-radius: .15rem; background: var(--text-body); width: .75rem; height: .75rem; }
+.lamp.seen { box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail); }
+.lamp.seen i { background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }  /* the stale bars' outline */
+.lamp.ended i { background: transparent; box-shadow: inset 0 0 0 .12rem var(--track-line); }
+
+/* ---------- a session: one card ---------- */
+.s { cursor: pointer; }
+.s:hover { background: var(--obj-high); }
+.s.needs { background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
+.s[aria-current="true"] { border-color: var(--key-light); }
+.s .top { display: flex; align-items: center; gap: .8rem; min-height: 2.6rem; }
+.s .name { font: 500 1.35rem/1.15 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.wt { display: inline-flex; align-items: center; gap: .35rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.wt svg, .team svg { width: 1rem; height: 1rem; flex: none; }
+.s .top .chip { margin-left: auto; }
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem 1.1rem; margin-top: .45rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+.meta .word.stalled, .meta .word.limit { color: var(--limit); }
+.meta .word.needs { color: var(--key-light); }
+[data-theme="day"] .meta .word.needs { color: #8a5a12; }
+.meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; }
+.meta .detail svg { width: 1rem; height: 1rem; }
+.watch .hand { transform-origin: 12px 13.5px; transform-box: view-box; }  /* a duration: the hand runs with its seconds */
+.meta .team { display: inline-flex; align-items: center; gap: .35rem; }
+.meta .when { margin-left: auto; min-width: 0; font-size: .95rem; color: var(--text-mute); }
+.last { margin: .75rem 0 0; font: 400 1.05rem/1.45 var(--font-name); color: var(--text-body); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* the last line is its last tool call: the transcript's chip, still, because on the card it opens the session, not the result */
+.last.tool { display: block; width: fit-content; max-width: 100%; cursor: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.last.tool b, .ask .tname { font-weight: 600; color: var(--text); margin-right: .55rem; }
+
+/* what it waits on, verbatim, with an act for every answer it takes */
+.ask { margin-top: .85rem; }
+.ask .q { margin: 0; font: 500 1.2rem/1.4 var(--font-name); color: var(--text); }
+.ask .cmd { margin: 0; font: 500 1.05rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .6rem .8rem; overflow-wrap: anywhere; }
+.ask .why { margin: .5rem 0 0; font: 400 1.02rem/1.4 var(--font-name); color: var(--text-body); }
+.answers { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .95rem; }
+.answers .act[aria-pressed="true"] { background: var(--limit); color: #fff7ea; }
+.scope { font: 500 .9rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .3rem .45rem; }
+.act.primary .scope { background: rgba(36, 29, 20, .14); color: #241d14; }
+
+/* ---------- ended: folded at the bottom ---------- */
+.fold { align-self: flex-start; font: 500 1.05rem/1 var(--font-name); }
+div.ended { display: flex; flex-direction: column; gap: .9rem; }
+.ended .s { padding: .8rem 1.3rem; box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.ended .lamp { top: .55rem; }
+.ended .meta { margin-top: .3rem; }
+
+/* ---------- the open session ---------- */
+.pane {
+  --c: var(--text-mute); flex-direction: column; min-width: 0; height: calc(100vh - 12rem); overflow: hidden;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: var(--cast) var(--cast) 0 var(--c), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
+}
+.pane > header { display: flex; align-items: flex-start; gap: 1.1rem; padding: 1.3rem 1.6rem 1.2rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
+.pane > header .lamp { position: static; flex: none; }
+.pane > header .who { min-width: 0; flex: 1; }
+.pane > header .top { display: flex; align-items: center; gap: .8rem; min-height: 2.6rem; }
+.pane > header .name { font: 400 1.9rem/1.1 var(--font-lead); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane > header .acts { display: flex; align-items: center; gap: .7rem; position: relative; padding-top: .1rem; }
+.act svg { width: 1rem; height: 1rem; }
+
+.log { flex: 1; overflow-y: auto; padding: 1.6rem 2.2rem 2rem; display: flex; flex-direction: column; gap: 1.15rem; scroll-behavior: auto; }
+.log > * { max-width: 66rem; width: 100%; }
+.log .note { align-self: center; width: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+.log .earlier { align-self: center; width: auto; }
+.log .empty { margin: auto; width: auto; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }
+/* his messages are objects he put on the table; the agent's words are the page */
+.msg { display: flex; flex-direction: column; gap: .35rem; }
+.msg .body { font: 400 1.12rem/1.55 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.msg .body p { margin: 0 0 .55rem; }
+.msg .body p:last-child { margin-bottom: 0; }
+.msg .body ul { margin: .2rem 0 .55rem; padding-left: 1.3rem; }
+.msg .body code { font: 500 .95em/1 var(--font-data); background: var(--obj-sunk); border-radius: .25rem; padding: .12rem .3rem; }
+.msg time { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
+.msg.his { align-self: flex-end; align-items: flex-end; max-width: 46rem; width: auto; }
+.msg.his .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .8rem 1.1rem; box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.msg.his.landing .body { animation: land var(--t-snap) var(--e-out) 1; }
+@keyframes land { from { transform: translateY(.8rem); opacity: 0; } }
+.msg.his .unsent { display: flex; align-items: center; gap: .8rem; }
+.msg.his.failed .body { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.msg.agent { align-self: flex-start; max-width: 60rem; }
+/* another session's message, a teammate's: an object on the table like his, from the other side, in the sender's colour */
+.msg.mate { align-self: flex-start; align-items: flex-start; max-width: 46rem; width: auto; }
+.msg.mate .from { display: inline-flex; align-items: center; gap: .45rem; margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.msg.mate .from i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+.msg.mate .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .8rem 1.1rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
+
+/* a tool call: its name and a line, and the result folded under it */
+.tool {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: .65rem; max-width: 100%; cursor: pointer;
+  font: 500 1rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk);
+  border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .5rem .8rem; box-shadow: .16rem .16rem 0 var(--c);
+}
+.tool .tname { font-weight: 600; color: var(--text); }
+.tool .tsum { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tool i { width: .65rem; height: .65rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .45rem var(--live); flex: none; }
+.tool .caret { width: .8rem; height: .8rem; flex: none; transition: transform var(--t-snap) var(--e-out); }
+.tool:disabled { cursor: default; }
+.tool[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.call { display: flex; flex-direction: column; align-items: flex-start; gap: .5rem; }
+.result {
+  margin: 0; width: 100%; max-height: 18rem; overflow: auto; white-space: pre-wrap; font: 400 .95rem/1.45 var(--font-data);
+  color: var(--text-body); background: var(--obj-sunk); border-left: .22rem solid var(--track-line); border-radius: 0 .35rem .35rem 0; padding: .7rem .95rem;
+}
+
+/* the joint where a conversation moved to another model: the rail, crossing, with the new command on it */
+.joint { position: relative; display: flex; align-items: center; justify-content: center; gap: .8rem; min-height: 2.6rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); }
+.joint::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: .55rem; transform: translateY(-50%); background: var(--rail); border-radius: .3rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.joint > * { position: relative; }
+.joint .model { background: var(--obj); padding: .3rem .55rem; border-radius: .3rem; }
+
+/* what it waits on, at the foot of the conversation */
+.pane .askbox { padding: 1.2rem 1.6rem 1.3rem; border-top: var(--ink-w) solid var(--ink); background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
+.pane .askbox .ask { margin-top: 0; max-width: 66rem; }
+
+.composer { display: flex; align-items: center; gap: .8rem; padding: 1rem 1.6rem 1.25rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
+.composer .field { font: 400 1.12rem/1.3 var(--font-name); padding: .85rem 1rem; }
+.send { width: 3.1rem; height: 3.1rem; padding: 0; flex: none; display: grid; place-items: center; cursor: pointer; border-radius: var(--r-obj); background: var(--key-light); color: #241d14; border: var(--ink-w) solid var(--ink); box-shadow: .22rem .22rem 0 var(--ink); }
+.send svg { width: 1.35rem; height: 1.35rem; }
+.composer .act.deny { background: var(--limit); color: #fff7ea; padding: .8rem 1.2rem; flex: none; }  /* while a permission waits, sending denies it */
+.nomatch { display: flex; align-items: center; gap: 1.1rem; min-height: 4.6rem; padding: 1rem 1.5rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
+.list:has(> .nomatch)::before { content: none; }  /* nothing to dock: no rail beside an empty search */
+.send:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); }
+
+/* Continue on: the model names he has, a row per provider */
+/* Continue on: model, the plan it runs on, that plan's room; one column each, so the lines read down as a table */
+.menu.models { right: 0; top: calc(100% + .6rem); min-width: 0; padding: .7rem; width: max-content; max-width: 76rem; max-height: calc(100vh - 22rem); overflow-y: auto;
+  display: grid; grid-template-columns: auto auto auto auto; }
+.menu.models .line { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; column-gap: 1.2rem; padding: .65rem .8rem; font-size: 1.05rem; }
+.menu.models .line.plan { margin-top: .35rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
+.menu.models .blot { width: .9rem; height: .9rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .12rem var(--ink); margin-left: .2rem; }
+.menu.models .acct { display: inline-flex; align-items: baseline; gap: .45rem; font: 500 1.05rem/1.15 var(--font-name); color: var(--text); }
+.menu.models .acct .var { font: 500 1rem/1.15 var(--font-data); letter-spacing: .01em; }
+.menu.models .acct .pv { font-size: 1rem; color: var(--text-mute); }
+.menu.models .room { display: inline-flex; align-items: center; gap: .6rem; justify-self: end; }
+.menu.models .room .bar { display: block; width: 5.6rem; }  /* Accounts' small bar (.bar.sub) */
+.menu.models .room .pct { min-width: 3.2rem; font-size: 1rem; }
+.menu.models .room.out { font: 500 1rem/1 var(--font-data); color: var(--limit); gap: .35rem; }
+.menu.models .room.out svg { width: 1rem; height: 1rem; }
+.menu.models .line:disabled { cursor: default; color: var(--text-mute); }
+.menu.models .line:disabled .acct { color: var(--text-mute); }
+.menu.models .line:disabled:hover { background: none; }
+
+.pane .close { flex: none; }
+
+/* ---------- room (Marcos, Oct 8: "it feels busy"): more air in the cards and the transcript, every element kept.
+   Scoped to the Sessions page, since Teams, Models and Requests load this sheet too. ---------- */
+.sessions .list { gap: 2.2rem; }
+.sessions .s { padding: 1.45rem 1.75rem 1.6rem; }
+.sessions .s .lamp { top: 1.55rem; }
+.sessions .s .meta { margin-top: .75rem; }
+.sessions .last { margin-top: 1.05rem; line-height: 1.6; }
+.sessions .s .ask { margin-top: 1.15rem; }
+.sessions .ask .why { margin-top: .7rem; }
+.sessions .answers { margin-top: 1.2rem; gap: .8rem; }
+.sessions .ended { gap: 1.2rem; }
+.sessions .ended .s { padding: 1rem 1.6rem; }
+.sessions .ended .lamp { top: .75rem; }
+.sessions .pane > header { padding: 1.6rem 2rem 1.5rem; }
+.sessions .log { padding: 2.4rem 3rem 2.8rem; gap: 1.9rem; }
+.sessions .msg { gap: .55rem; }
+.sessions .msg .body { line-height: 1.68; }
+.sessions .msg .body p { margin-bottom: .8rem; }
+.sessions .msg .body p:last-child { margin-bottom: 0; }
+.sessions .msg .body ul { margin: .35rem 0 .8rem; }
+.sessions .msg.his .body, .sessions .msg.mate .body { padding: 1rem 1.35rem; }
+.sessions .call { gap: .7rem; }
+.sessions .result { line-height: 1.6; padding: .95rem 1.2rem; }
+.sessions .pane .askbox { padding: 1.5rem 2rem 1.6rem; }
+.sessions .composer { padding: 1.25rem 2rem 1.5rem; }
+.sessions .log > .call + .call { margin-top: -.8rem; }  /* a run of tool calls stays one group; the turns get the air */
+/* At limit names the plan that ran out as Compare and Accounts head it: the account, then its provider and plan dimmed */
+.meta .word svg { width: 1rem; height: 1rem; flex: none; }  /* .word's own gap sets it off */
+.meta .acct { display: inline-flex; align-items: baseline; gap: .45rem; color: var(--text); white-space: nowrap; }
+.meta .acct .pv { color: var(--text-mute); }
+.joint .model .left { margin-left: .8rem; color: var(--text-mute); }  /* what didn't come along, dimmed after the move */

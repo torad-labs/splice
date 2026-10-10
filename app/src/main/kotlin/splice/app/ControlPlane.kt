@@ -67,10 +67,13 @@ import splice.lifecycle.restart.DetachedDaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.restart.SuccessorInstall
 import splice.oauth.codex.CodexRefresh
+import splice.sessions.http.SessionDriver
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.ProcessEnvironment
+import splice.sessions.registry.RememberedPanes
 import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
+import splice.tmux.TmuxTerminal
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.memory.JvmHeap
@@ -341,6 +344,13 @@ internal class ControlPlane(
         srv.ports.events = console.bus
         srv.ports.activity = console.stores
         srv.ports.teams = teams
+        // Oct 10, 2026: the one session driver, so a member's start and stop reach a real terminal instead of
+        // the named 503 an unwired port answers. The terminal is tmux TODAY and the port names no terminal, so
+        // the day seatd carries the six acts this line is the only one that changes. The pane record is on
+        // disk under the state dir, because a session outlives the daemon that started it: splice restarts on
+        // every install and the person's session carries on, so a record held only in memory would take the
+        // console's ability to drive exactly the sessions it had started.
+        srv.ports.sessionDriver = SessionDriver(TmuxTerminal(), RememberedPanes(statePaths.stateDir))
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
         // A Claude head's add and remove go through folders splice owns, which the generic accounts port refuses

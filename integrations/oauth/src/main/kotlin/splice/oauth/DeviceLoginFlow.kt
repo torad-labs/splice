@@ -26,7 +26,7 @@ import splice.upstream.codemode.ProcessWaiter
 
 private const val MAX_EXPIRED_RESTARTS = 2
 private const val SLOW_DOWN_INCREMENT_S = 5L
-private const val MS_PER_S = 1000L
+internal const val MS_PER_S = 1000L
 
 // DR-190 (DR-177's unenumerated fifth site): expires_in and interval come off the wire. A value that
 // does not fit in milliseconds wrapped `now + expiresInS * MS_PER_S` negative — EXPIRED before the

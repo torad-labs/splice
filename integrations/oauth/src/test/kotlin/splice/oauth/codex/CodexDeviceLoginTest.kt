@@ -12,14 +12,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
-import splice.oauth.BrowserOpener
 import splice.oauth.LoginAnnouncement
 import splice.oauth.LoginObserver
 import splice.upstream.Waiter
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -63,14 +61,6 @@ class CodexDeviceLoginTest {
         }
     }
 
-    private class RecordingBrowser : BrowserOpener {
-        val urls = CopyOnWriteArrayList<String>()
-        override fun open(url: String): Boolean {
-            urls += url
-            return false
-        }
-    }
-
     @Test
     fun `an observed ChatGPT device login announces the code, waits out the pending polls, and writes the credential`(
         @TempDir tmp: Path,
@@ -78,7 +68,6 @@ class CodexDeviceLoginTest {
         val fake = FakeIssuer()
         val authPath = tmp.resolve("auth.json")
         val announced = AtomicReference<LoginAnnouncement?>()
-        val browser = RecordingBrowser()
         val out = StringBuilder()
         val spec = CodexDeviceSpec(
             head = "codex",
@@ -95,7 +84,7 @@ class CodexDeviceLoginTest {
 
         val ok = try {
             runBlocking {
-                CodexDeviceLogin(TerminalOutput { out.appendLine(it) }, browser)
+                CodexDeviceLogin(TerminalOutput { out.appendLine(it) })
                     .run(spec, Waiter {}, LoginObserver { announced.set(it) })
             }
         } finally {
@@ -105,7 +94,6 @@ class CodexDeviceLoginTest {
         assertTrue(ok, out.toString())
         assertEquals("ABCD-1234", announced.get()?.userCode)
         assertEquals("${fake.issuer}/codex/device", announced.get()?.verificationUri)
-        assertTrue(browser.urls.isEmpty(), "an observed login never opens a browser on the daemon's desktop")
         assertFalse(out.toString().contains("enter this code"), "an observed login prints nothing to a terminal: $out")
         assertEquals(3, fake.polls.get(), "two pending answers, then the grant")
         assertTrue(fake.usercodeBody.get().contains("\"client_id\":\"cid\""), fake.usercodeBody.get())

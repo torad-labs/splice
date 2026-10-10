@@ -133,7 +133,9 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         // tool block — inserting user(images) between parallel tools 400s strict validators.
         val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
         toolResults.forEach { tr ->
-            val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+            // A nested block kind splice does not enumerate leaves its marker in the output, never an empty result.
+            val out = (tr.content.filterIsInstance<TextBlock>().map { it.text } + unknownBlockMarkers(tr.content))
+                .joinToString("\n")
             // DR-155: the same pre-split as the message path. A tool_result carrying a screenshot
             // AND a favicon-sized image is the realistic case, and it must say both things.
             val (undersized, mappable) = tr.content.filterIsInstance<ImageBlock>()

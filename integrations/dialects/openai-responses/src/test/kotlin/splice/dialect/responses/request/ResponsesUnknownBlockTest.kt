@@ -40,6 +40,22 @@ class ResponsesUnknownBlockTest {
         assertEquals("user", built.getValue("input").jsonArray.last().jsonObject["role"]?.jsonPrimitive?.content)
     }
 
+    @Test
+    fun `a tool_result holding only an unknown block leaves a marker in the function output`() {
+        val body = """{"model":"m","max_tokens":1,"messages":[
+            {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"search","input":{}}]},
+            {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[
+                {"type":"web_search_result","title":"SECRET-RESULT-TITLE","url":"https://example.invalid"}]}]}]}"""
+        val parsed = AnthropicParse.parseAnthropicBody(body)
+        val built = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex", lite = ResponsesLiteQuirks()))
+            .build(parsed.typed, parsed.raw, options()).req
+
+        val output = built.getValue("input").jsonArray.map { it.jsonObject }
+            .single { it["type"]?.jsonPrimitive?.content == "function_call_output" }["output"]?.jsonPrimitive?.content
+        assertTrue(output.orEmpty().contains("web_search_result block omitted by claudex proxy")) { output.orEmpty() }
+        assertFalse(output.orEmpty().contains("SECRET-RESULT-TITLE"))
+    }
+
     private fun options() = BuildOptions(
         compact = false,
         models = ModelIds(original = "claude-codex--gpt-5.6-sol", upstream = "gpt-5.6-sol"),

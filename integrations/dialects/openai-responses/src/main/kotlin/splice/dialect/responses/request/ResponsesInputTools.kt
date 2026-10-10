@@ -14,6 +14,7 @@ import splice.core.wire.TextBlock
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
 import splice.dialect.responses.tools.ToolSearchOutput
@@ -94,7 +95,9 @@ internal class ResponsesInputTools(
     }
 
     internal fun appendToolResult(sink: JsonArrayBuilder, block: ToolResultBlock) {
-        val text = block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }
+        val omitted = block.content.filterIsInstance<UnknownBlock>().map { it.omissionMarker(quirks.providerTag) }
+        val text = (listOf(block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }) + omitted)
+            .filter { it.isNotEmpty() }.joinToString("\n")
         sink.add(
             buildJsonObject {
                 put("type", "function_call_output")

@@ -314,6 +314,39 @@ class ChatRequestBuilderTest {
     }
 
     @Test
+    fun `a gap beside an image message still leaves one user message of parts`() {
+        val msgs = build(
+            """{"model":"m","messages":[
+                {"role":"user","content":"first"},
+                {"role":"assistant","content":[{"type":"thinking","thinking":"hm","signature":"s"}]},
+                {"role":"user","content":[
+                    {"type":"text","text":"second"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
+                ]}
+            ]}""",
+        ).messages()
+        assertEquals(listOf("user"), msgs.map { it["role"]?.jsonPrimitive?.content })
+        val parts = msgs.single()["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "text", "image_url"), parts.map { it["type"]?.jsonPrimitive?.content })
+        assertEquals("first", parts[0]["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a tool_result holding only an unknown block leaves a marker in the tool output`() {
+        val msgs = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"search","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[
+                    {"type":"web_search_result","title":"SECRET-TITLE","url":"https://example.invalid"}
+                ]}]}
+            ]}""",
+        ).messages()
+        val output = msgs.first { it["role"]?.jsonPrimitive?.content == "tool" }["content"]?.jsonPrimitive?.content
+        assertTrue(output.orEmpty().contains("web_search_result block omitted by kimi proxy")) { output.orEmpty() }
+        assertFalse(output.orEmpty().contains("SECRET-TITLE"))
+    }
+
+    @Test
     fun `a block kind splice does not enumerate leaves a marker, not a silent drop`() {
         val msgs = build(
             """{"model":"m","messages":[{"role":"user","content":[

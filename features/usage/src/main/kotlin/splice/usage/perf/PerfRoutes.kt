@@ -237,6 +237,10 @@ public class PerfRoutes(
         put("account", row.facts.account)
         put("cache_cold", row.facts.cacheCold)
         put("compact", row.facts.compact)
+        // V4-444: whether prompts and answers were saved for this turn, and what the upstream itself said when the
+        // upstream is what failed. Both pass through as the writer set them, null where the row carries neither.
+        put("capture", row.facts.captured)
+        put("provider_message", row.facts.providerMessage)
         // V4-345: the trace turn the console opens this row's request by; null where none was kept.
         put("turn", row.turn)
         put("turn_id", row.turnId)

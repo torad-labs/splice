@@ -11,9 +11,11 @@ import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
+import splice.head.perf.PerfFailure
 
 internal class TurnFinish(
     private val clock: ElapsedClock,
@@ -84,8 +86,15 @@ internal class TurnFinish(
         telemetry.recordPerf(
             drive,
             outcomeTag,
-            cause = failure?.cause?.name,
-            layers = failure?.layers ?: 0,
+            failure = PerfFailure(
+                cause = failure?.cause?.name,
+                layers = failure?.layers ?: 0,
+                // V4-444: the upstream's own words, under G20's own flag: providerReported is set ONLY where a
+                // translator parsed an error the upstream actually sent, which is exactly the question the row's
+                // label asks. A gateway-authored downgrade (the Success-with-error-terminal arm above) carries no
+                // flag and so writes nothing here, which is right — those sentences are splice's.
+                providerMessage = failure?.takeIf { it.traits.providerReported }?.message?.take(ERR_SNIPPET),
+            ),
         )
     }
 

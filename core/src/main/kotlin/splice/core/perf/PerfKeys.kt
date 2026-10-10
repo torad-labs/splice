@@ -105,6 +105,17 @@ public object PerfKeys {
      *  exhausted-account reset when admission turned the request away, and the plan window's own reset on every other
      *  turn that ended error:plan-limit (V4-444). */
     public const val EARLIEST_RESET_EPOCH_SECONDS: String = "earliest_reset_epoch_seconds"
+
+    /** V4-444: the HTTP status the provider's own answer carried, for a turn whose failure came back as a response.
+     *  ABSENT when no answer came back at all — a transport failure, or a local hold that refused the turn before it
+     *  was sent — because 0 there reads as a status the provider returned. The outcome tag says what splice made of
+     *  it; this says what the provider replied, which is the fact the console's Requests list could not show. */
+    public const val PROVIDER_STATUS: String = "provider_status"
+
+    /** V4-444: how long the spent plan window is, in SECONDS, beside [EARLIEST_RESET_EPOCH_SECONDS]'s instant when it
+     *  comes back. Converted at the provider that reads it (codex writes `limit_window_minutes`), so no vendor unit
+     *  reaches this file. Absent when the provider did not say, which is every provider but codex today. */
+    public const val LIMIT_WINDOW_SECONDS: String = "limit_window_seconds"
     public const val REQ_BYTES: String = "req_bytes"
     public const val UPSTREAM_REQ_BYTES: String = "upstream_req_bytes"
     public const val SSE_BYTES_IN: String = "sse_bytes_in"

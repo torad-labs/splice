@@ -58,6 +58,7 @@ import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
+import splice.head.perf.PerfFailure
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.PostRound
@@ -225,7 +226,7 @@ class TurnPerfRowTest {
         val drive = rig.drive(terminal).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         try {
             drive.collectPerf.defer()
-            rig.telemetry.recordPerf(drive, "overloaded", true, "synthetic-cause", 3)
+            rig.telemetry.recordPerf(drive, "overloaded", true, PerfFailure(cause = "synthetic-cause", layers = 3))
             assertTrue(!Files.exists(rig.perfFile), "collect must not save an early immutable snapshot")
             now = 60L
             val sink = ByteChannel()
@@ -261,7 +262,11 @@ class TurnPerfRowTest {
         }
         try {
             drive.collectPerf.defer()
-            rig.telemetry.recordPerf(drive, "upstream-error", cause = "synthetic-cause", layers = 2)
+            rig.telemetry.recordPerf(
+                drive,
+                "upstream-error",
+                failure = PerfFailure(cause = "synthetic-cause", layers = 2),
+            )
             val failure = try {
                 CollectedReply("synthetic reply", HttpStatusCode.BadGateway, drive.perf).writeTo(sink)
                 null

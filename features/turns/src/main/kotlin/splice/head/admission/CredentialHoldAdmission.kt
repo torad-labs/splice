@@ -94,6 +94,15 @@ internal class CredentialHoldAdmission(
         return key?.let(deps.quotaBundle.credentialAccountNames::forCredential) ?: chosen?.label
     }
 
+    /** V4-444: the held turn speaks the spent window on the trace and counts both facts of it on its row, the instant
+     *  it comes back and how long it is, so a refused turn's row names the window the way a turn the upstream itself
+     *  refused does. One fact, one spelling, on every ending that has it. */
+    private fun countSpentWindow(plan: PlanLimit, admitted: AdmittedTurn, trace: TurnTrace?) {
+        trace?.failureSentence(OutcomeSentences.planLimit(plan))
+        admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, plan.resetEpochSeconds)
+        plan.windowSeconds?.let { admitted.perf.setCount(PerfKeys.LIMIT_WINDOW_SECONDS, it) }
+    }
+
     private suspend fun respond(
         call: ApplicationCall,
         prepared: Preparation.Ready,
@@ -111,10 +120,7 @@ internal class CredentialHoldAdmission(
         val reset = cooldown.providerUnavailableForMs().takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
         // V4-444: the held turn speaks the window on the trace AND counts its reset, so the row says when the window
         // comes back to a surface that reads only the perf file.
-        plan?.let {
-            trace?.failureSentence(OutcomeSentences.planLimit(it))
-            admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, it.resetEpochSeconds)
-        }
+        plan?.let { countSpentWindow(it, admitted, trace) }
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,

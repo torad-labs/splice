@@ -11,6 +11,7 @@ import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
+import splice.head.perf.PerfFailure
 import splice.upstream.Provider
 import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
@@ -117,7 +118,7 @@ internal class TurnConnEnd(
         drive.trace?.failureSentence("$boundedDetail$RETRY_HINT")
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
         val cause = if (drive.perfCounter(PerfKeys.REFUSED_RUNTIME_PORT) > 0) "CONNECT_REFUSED" else null
-        telemetry.recordPerf(drive, CONN_RESET_OUTCOME, cause = cause)
+        telemetry.recordPerf(drive, CONN_RESET_OUTCOME, failure = PerfFailure(cause = cause))
         health.local()
         drive.emitter.emitError(
             ErrorType.OVERLOADED,

@@ -18,13 +18,26 @@ public object ForeignCredential {
      *  that names none, and a credential splice does not hold ([Credentials.ClientForwarded]), say
      *  nothing either way: false, so the failure is read as it always was. */
     public fun named(body: String?, sent: Credentials?): Boolean {
-        val secret = when (sent) {
-            is Credentials.Bearer -> sent.token
-            is Credentials.ApiKey -> sent.key
-            Credentials.ClientForwarded, null -> return false
-        }
+        val secret = secretOf(sent) ?: return false
         val masked = MASKED.findAll(body.orEmpty()).map { it.groupValues[1] to it.groupValues[2] }.toList()
         return masked.isNotEmpty() && masked.none { (head, tail) -> secret.startsWith(head) && secret.endsWith(tail) }
+    }
+
+    /** V4-444: [text] with the credential that was SENT replaced by a mask, for a surface that shows the
+     *  upstream's own words (the console's Requests list). A provider that echoes a request header back into its
+     *  error body would otherwise carry our key onto that surface. EXACT, never a pattern: only the one secret in
+     *  hand is removed, so the provider's sentence survives whole and no key-shaped text of its own is eaten. */
+    public fun withoutSentSecret(text: String, sent: Credentials?): String {
+        val secret = secretOf(sent)?.takeIf { it.isNotBlank() } ?: return text
+        return text.replace(secret, SHORT_STARS)
+    }
+
+    /** The secret splice sent, for comparing a body against it. Null when there is none to compare: a forwarded
+     *  client login is one splice never reads. */
+    private fun secretOf(sent: Credentials?): String? = when (sent) {
+        is Credentials.Bearer -> sent.token
+        is Credentials.ApiKey -> sent.key
+        Credentials.ClientForwarded, null -> null
     }
 
     /** [read] as the upstream's own when it is an authentication failure whose [body] names a

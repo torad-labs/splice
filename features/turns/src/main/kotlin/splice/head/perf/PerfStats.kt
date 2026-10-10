@@ -71,6 +71,10 @@ public data class PerfRowMeta(
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
         transcript.turns.trace?.let { into.put("turn", it) }
         transcript.turns.request?.let { into.put("turn_id", it) }
+        // V4-444: whether a capture was kept for this turn, said OUTRIGHT on every row. A null `turn` already
+        // implied it, but a reader cannot tell "no capture was kept" from "the id is missing" out of an absence,
+        // and the console has to choose between an open-the-request control and a reason there is none.
+        into.put("capture", transcript.turns.trace != null)
     }
 }
 
@@ -91,6 +95,11 @@ public data class PerfFailure(
      *  Written only when it is non-zero, so a row without retries looks exactly as it did before
      *  this field existed — the alternative would put layers=0 on every success in the file. */
     val layers: Int = 0,
+    /** V4-444: what the PROVIDER said, in its own words, when the provider is the one that reported the failure.
+     *  Null everywhere else, and splice's own sentence is never written here: the console shows this as the
+     *  upstream speaking, so a gateway-authored line under that label would be a misattribution. The caller
+     *  bounds it the way the client-facing failure text is bounded. */
+    val providerMessage: String? = null,
 )
 
 /** The ids that join a perf row to the rest of the record: the trace turn and request turn, the full client
@@ -232,6 +241,8 @@ public class PerfStats(
                 meta.putTranscriptFacts(this)
                 meta.failure.cause?.let { put("cause", it) }
                 if (meta.failure.layers > 0) put("layers", meta.failure.layers)
+                // V4-444: the upstream's own words, only where the upstream is what failed.
+                meta.failure.providerMessage?.let { put("provider_message", it) }
                 meta.account.label?.let { account ->
                     put("account", account)
                     put("cache_cold", meta.account.cacheCold)

@@ -30,6 +30,11 @@ private const val COMPACT_KEY = "compact"
 private const val TURN_KEY = "turn"
 private const val REQUEST_TURN_KEY = "turn_id"
 
+// V4-444: the writer's own word on whether a capture was kept, and the upstream's own words about a failure it
+// reported. Read by name like every other fact, so a torn or absent one stays absent rather than inventing a value.
+private const val CAPTURE_KEY = "capture"
+private const val PROVIDER_MESSAGE_KEY = "provider_message"
+
 /** What one parsed perf JSON object says about its turn, read by name. Split out of Scan. */
 internal class PerfRowShape {
     fun row(ts: Long, obj: JsonObject, fields: Map<String, Long>): PerfRow {
@@ -48,6 +53,8 @@ internal class PerfRowShape {
                 account = text(obj, ACCOUNT_KEY),
                 cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
                 compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
+                captured = (obj[CAPTURE_KEY] as? JsonPrimitive)?.booleanOrNull,
+                providerMessage = text(obj, PROVIDER_MESSAGE_KEY),
             ),
             transcript = PerfTranscriptLink(
                 sessionId = text(obj, SESSION_ID_KEY),

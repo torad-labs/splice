@@ -90,15 +90,14 @@ internal class TurnTelemetry(
         drive: TurnDrive,
         outcomeTag: String,
         rateLimited: Boolean = false,
-        cause: String? = null,
-        layers: Int = 0,
+        failure: PerfFailure = PerfFailure(),
     ) = withContext(NonCancellable) {
         // Cancellation still owes its row, even if a paced socket write itself throws cancellation.
         try {
             drive.channel.finishPacing(clock = clock)
         } finally {
-            if (!drive.collectPerf.hold(this@TurnTelemetry, outcomeTag, rateLimited, cause, layers)) {
-                recordSnapshot(drive, outcomeTag, rateLimited, cause, layers)
+            if (!drive.collectPerf.hold(this@TurnTelemetry, outcomeTag, rateLimited, failure)) {
+                recordSnapshot(drive, outcomeTag, rateLimited, failure)
             }
         }
     }
@@ -107,12 +106,11 @@ internal class TurnTelemetry(
         drive: TurnDrive,
         outcomeTag: String,
         rateLimited: Boolean,
-        cause: String?,
-        layers: Int,
+        failure: PerfFailure,
     ) {
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
-        val ending = RowEnding(outcomeTag, rateLimited, cause, layers, perfStats.clock())
+        val ending = RowEnding(outcomeTag, rateLimited, failure, perfStats.clock())
         held.write(drive.sourceRow) { usage -> writeRow(drive, ending, usage) }
     }
 
@@ -124,8 +122,8 @@ internal class TurnTelemetry(
     private data class RowEnding(
         val outcomeTag: String,
         val rateLimited: Boolean,
-        val cause: String?,
-        val layers: Int,
+        /** The failure as its recorder knew it: cause, the loop's attempt count, and the provider's own words. */
+        val failure: PerfFailure,
         val at: Long,
     )
 
@@ -157,7 +155,7 @@ internal class TurnTelemetry(
                 // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
                 // outcome TAG is not replaced — it is what the operator already greps — so this is an
                 // addition to the row, never a change to the string that identifies it.
-                PerfFailure(cause = ending.cause, layers = ending.layers),
+                ending.failure,
                 PerfTranscriptIds(
                     // V4-345: the trace turn that recorded the request and answer; absent when capture is off.
                     turns = PerfTurnIds(trace = drive.trace?.turnId, request = drive.turnId),

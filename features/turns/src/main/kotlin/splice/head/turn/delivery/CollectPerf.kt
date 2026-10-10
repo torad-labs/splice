@@ -9,6 +9,7 @@ import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeStringUtf8
 import splice.core.perf.TurnPerf
 import splice.core.util.JsonWire
+import splice.head.perf.PerfFailure
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
 
@@ -18,10 +19,9 @@ internal class CollectPerf {
         private val telemetry: TurnTelemetry,
         private val outcome: String,
         private val rateLimited: Boolean,
-        private val cause: String?,
-        private val layers: Int,
+        private val failure: PerfFailure,
     ) {
-        fun publish(drive: TurnDrive) = telemetry.recordSnapshot(drive, outcome, rateLimited, cause, layers)
+        fun publish(drive: TurnDrive) = telemetry.recordSnapshot(drive, outcome, rateLimited, failure)
     }
 
     private val lock = Any()
@@ -34,12 +34,12 @@ internal class CollectPerf {
     }
 
     /** Streaming remains immediate. A deferred ending is claimed once, including cancellation cleanup. */
-    fun hold(telemetry: TurnTelemetry, outcome: String, rateLimited: Boolean, cause: String?, layers: Int): Boolean =
+    fun hold(telemetry: TurnTelemetry, outcome: String, rateLimited: Boolean, failure: PerfFailure): Boolean =
         synchronized(lock) {
             if (!deferred) {
                 false
             } else {
-                if (!published && pending == null) pending = Publication(telemetry, outcome, rateLimited, cause, layers)
+                if (!published && pending == null) pending = Publication(telemetry, outcome, rateLimited, failure)
                 true
             }
         }

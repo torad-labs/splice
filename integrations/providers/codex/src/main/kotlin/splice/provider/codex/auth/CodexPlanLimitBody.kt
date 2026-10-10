@@ -29,8 +29,11 @@ internal class CodexPlanLimitBody {
         if (!USAGE_LIMIT_RE.containsMatchIn(body)) return null
         val reset = namedReset(body, nowEpochSeconds)?.takeIf { it > nowEpochSeconds } ?: return null
         val minutes = number(WINDOW_MINUTES_RE, body)?.takeIf { it > 0L }
-        val bounded = minutes?.let { minOf(reset, nowEpochSeconds + TimeUnit.MINUTES.toSeconds(it)) } ?: reset
-        return PlanLimit(windowClaim(minutes), bounded)
+        val seconds = minutes?.let(TimeUnit.MINUTES::toSeconds)
+        val bounded = seconds?.let { minOf(reset, nowEpochSeconds + it) } ?: reset
+        // V4-444: the window's LENGTH crosses in seconds, the unit every splice surface counts in; the minutes are
+        // this body's spelling and stop here.
+        return PlanLimit(windowClaim(minutes), bounded, windowSeconds = seconds)
     }
 
     /** The reset the body names: an absolute instant first, else a duration from [nowEpochSeconds]. */

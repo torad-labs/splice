@@ -59,6 +59,9 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val TOO_MANY_REQUESTS = 429
 private const val SIX_DAYS_S = 6L * 24 * 3_600
+
+// The weekly window's own length, as a provider that read it passes it: seconds (V4-444).
+private const val SEVEN_DAYS_S = 7L * 24 * 3_600
 private const val TRACE_DAY_EPOCH_MS = 1_789_725_600_000L
 private const val TRACE_FILE = "codex-2026-09-18.jsonl"
 private const val TOKYO = "Asia/Tokyo"
@@ -78,7 +81,8 @@ private class SpentPlanAuth : RefreshableAuthProvider {
     override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
         Regex(""""resets_at":(\d+)""").find(body)?.groupValues?.get(1)?.toLong()
             ?.takeIf { body.contains("usage_limit_reached") && it > nowEpochSeconds }
-            ?.let { PlanLimit("seven_day", it) }
+            // V4-444: a provider that read the window's LENGTH passes it in seconds, as codex does.
+            ?.let { PlanLimit("seven_day", it, windowSeconds = SEVEN_DAYS_S) }
 }
 
 /** A real head over a local upstream that answers every request 429 with [upstreamBody]. maxRetries = 1, so the
@@ -163,6 +167,12 @@ private fun JsonObject.resetCounted(): Long? = get("perf")?.jsonObject
     ?.get("counters")?.jsonObject
     ?.get(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS)?.jsonPrimitive?.content?.toLong()
 
+/** How long this row says the spent window is, null when it says nothing. The console names the window from it
+ *  ("Week") instead of showing a bare "At limit" (V4-444). */
+private fun JsonObject.windowCounted(): Long? = get("perf")?.jsonObject
+    ?.get("counters")?.jsonObject
+    ?.get(PerfKeys.LIMIT_WINDOW_SECONDS)?.jsonPrimitive?.content?.toLong()
+
 /** Runs [block] with the machine's zone set to [zone], and puts the old one back. */
 private fun <T> inZone(zone: String, block: () -> T): T {
     val saved = TimeZone.getDefault()
@@ -210,6 +220,13 @@ class PlanLimitTurnEndingTest {
         assertEquals(said[0], said[1], "the held turn names the same instant, in the same words")
         endings.forEach { ending ->
             assertEquals(reset, ending.resetCounted(), "the row counts when the window comes back: $ending")
+            // V4-444: and how long the window is, on BOTH endings — the turn the upstream refused and the one
+            // admission turned away behind the hold. The console names the window from this alone.
+            assertEquals(
+                SEVEN_DAYS_S,
+                ending.windowCounted(),
+                "the row counts the window's length, so a surface reading it says 'Week' and not 'At limit': $ending",
+            )
         }
     }
 
@@ -232,6 +249,7 @@ class PlanLimitTurnEndingTest {
         assertEquals(OutcomeSentences.of("error:rate-limited"), endings[1].sentence())
         endings.forEach { ending ->
             assertNull(ending.resetCounted(), "a burst with no reset counts none, so no surface can invent one")
+            assertNull(ending.windowCounted(), "and no window either: a burst spends none")
         }
     }
 }

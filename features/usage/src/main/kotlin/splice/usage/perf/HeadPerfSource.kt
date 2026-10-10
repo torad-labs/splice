@@ -90,7 +90,7 @@ public data class PerfRow(
     public val turnId: String? get() = turns.request
 }
 
-/** The writer's five string-and-flag facts about one turn, as the row carries them (V4-127).
+/** The writer's string-and-flag facts about one turn, as the row carries them (V4-127).
  *
  *  NULL MEANS THE ROW DOES NOT CARRY THE FIELD, deliberately distinguished from a false or empty
  *  value. [cacheCold] is written ONLY alongside an account (PerfStats.record), so a row with no
@@ -107,6 +107,13 @@ public data class PerfTurnFacts(
     val account: String? = null,
     val cacheCold: Boolean? = null,
     val compact: Boolean? = null,
+    /** V4-444: whether a capture was kept for this turn, as the writer says it OUTRIGHT. Null is a row from before
+     *  the writer said it, which is the one case a reader still has to infer from the trace id's absence. */
+    val captured: Boolean? = null,
+    /** V4-444: what the PROVIDER said about the failure, in its own words, where the provider is what reported it.
+     *  Null on every other row, including a failure splice itself authored: a surface shows this as the upstream
+     *  speaking, so it must never hold a gateway sentence. */
+    val providerMessage: String? = null,
 )
 
 /** V4-354: what joins a perf row to the client's local transcript. */

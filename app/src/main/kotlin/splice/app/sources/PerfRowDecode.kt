@@ -79,6 +79,8 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var turnId: String? = null
         private var cacheCold: Boolean? = null
         private var compact: Boolean? = null
+        private var captured: Boolean? = null
+        private var providerMessage: String? = null
         var drops: Long? = null
             private set
 
@@ -101,6 +103,9 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 "turn_id" -> turnId = text(parser)
                 "cache_cold" -> cacheCold = text(parser)?.toBooleanStrictOrNull()
                 "compact" -> compact = text(parser)?.toBooleanStrictOrNull()
+                // V4-444: the capture flag and the upstream's own failure words, read like the facts above them.
+                "capture" -> captured = text(parser)?.toBooleanStrictOrNull()
+                "provider_message" -> providerMessage = text(parser)
                 PerfKeys.ASYNC_IO_DROPS -> drops = text(parser)?.toLongOrNull()
             }
         }
@@ -119,6 +124,8 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     account = account,
                     cacheCold = cacheCold,
                     compact = compact,
+                    captured = captured,
+                    providerMessage = providerMessage,
                 ),
                 transcript = PerfTranscriptLink(sessionId = sessionId, responseMessageId = response),
                 turns = PerfTurnIds(trace = turn, request = turnId),

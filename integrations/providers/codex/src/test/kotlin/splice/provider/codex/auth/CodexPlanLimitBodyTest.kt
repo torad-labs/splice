@@ -15,6 +15,10 @@ import java.nio.file.Path
 private const val NOW_S = 1_790_584_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
 
+// The two windows ChatGPT names, as the row counts them: seconds.
+private const val SEVEN_DAYS_S = 7L * 24 * 3_600
+private const val FIVE_HOURS_S = 5L * 3_600
+
 /** ChatGPT names a spent plan window in the 429 BODY. The provider reads it into the same
  *  [PlanLimit] the transport already holds a turn on; a burst 429 and any other body read null. */
 class CodexPlanLimitBodyTest {
@@ -38,7 +42,24 @@ class CodexPlanLimitBodyTest {
         val reset = NOW_S + SIX_DAYS_S
         val text = body("\"resets_at\":$reset", "\"resets_in_seconds\":$SIX_DAYS_S", "\"limit_window_minutes\":10080")
 
-        assertEquals(PlanLimit("seven_day", reset), auth(dir).planLimitFromBody(text, NOW_S))
+        // V4-444: the window's LENGTH crosses in seconds, so a surface can name the window ("Week") and not only
+        // the instant it comes back. The body's minutes stop at this reader.
+        assertEquals(
+            PlanLimit("seven_day", reset, windowSeconds = SEVEN_DAYS_S),
+            auth(dir).planLimitFromBody(text, NOW_S),
+        )
+    }
+
+    @Test
+    fun `a window the body does not name has no length, rather than a length of nothing`(@TempDir dir: Path) {
+        val named = body("\"resets_at\":${NOW_S + 3_600}", "\"limit_window_minutes\":300")
+        val unnamed = body("\"resets_at\":${NOW_S + 3_600}")
+
+        assertEquals(FIVE_HOURS_S, auth(dir).planLimitFromBody(named, NOW_S)?.windowSeconds)
+        assertNull(
+            auth(dir).planLimitFromBody(unnamed, NOW_S)?.windowSeconds,
+            "no window named is no length: a zero would read as a window of no length",
+        )
     }
 
     @Test
@@ -57,7 +78,10 @@ class CodexPlanLimitBodyTest {
     fun `only a duration is enough, measured from now`(@TempDir dir: Path) {
         val text = body("\"resets_in_seconds\":7200", "\"limit_window_minutes\":300")
 
-        assertEquals(PlanLimit("five_hour", NOW_S + 7_200), auth(dir).planLimitFromBody(text, NOW_S))
+        assertEquals(
+            PlanLimit("five_hour", NOW_S + 7_200, windowSeconds = FIVE_HOURS_S),
+            auth(dir).planLimitFromBody(text, NOW_S),
+        )
     }
 
     @Test

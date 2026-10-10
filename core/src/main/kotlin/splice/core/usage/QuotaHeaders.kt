@@ -83,7 +83,14 @@ public class QuotaHeaders(private val clock: WallClock) {
 }
 
 /** V4-233: the upstream's own statement that a PLAN window is spent until a named instant. */
-public data class PlanLimit(val claim: String, val resetEpochSeconds: Long) {
+public data class PlanLimit(
+    val claim: String,
+    val resetEpochSeconds: Long,
+    /** V4-444: how long the window is, in seconds, when the upstream said so. The provider that reads the body does
+     *  the conversion (codex names minutes), so no vendor unit crosses this boundary. Null where it said nothing,
+     *  and then the row carries no window length — never a zero, which reads as a window of no length. */
+    val windowSeconds: Long? = null,
+) {
     /** The claim in words: `five_hour` is "5-hour", `seven_day` "7-day", and a model-scoped
      *  seven-day claim names its model (`seven_day_opus` is "7-day Opus"). */
     public val windowWords: String

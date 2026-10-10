@@ -149,6 +149,18 @@ const refusalOf = (res, subject) => (res.status === 0 ? `${subject}: splice is n
   : `${subject}: ${res.body?.error || `splice answered ${res.status}`}`);
 
 /** One head's window: the rows the filters asked for, and the window's own menus from an unfiltered read. */
+// What a door's "what happened" asks the daemon for (TurnsFilter.kt), so it narrows over the WHOLE window and not
+// over the newest 2,000 the route already cut: the doors that name a wait open requests that are mostly old, which is
+// exactly where a browser filter finds nothing. What the daemon reads is a SUPERSET of what the word means -- a
+// silence must also have begun after the first byte, and only this page compares that -- so WHY's own check still
+// runs over the answer and the two together are exact. `tier` is this command's own silence setting, not a figure
+// this page chose. "Started over" asks for NOTHING: splice records no key yet that tells a round run from scratch
+// from one resumed from its partial answer, and a filter drawn around an absent key would promise what no row holds.
+const WHY_ASKS = {
+  gaveup: { outcome: "error:turn-cap" }, overloaded: { outcome: "failure:overloaded_error" },
+  restarted: { outcome: "error:restarted" }, queued: { queued_ms: "1" }, waited: { silence_ms: "tier" },
+  resumed: { resumed: "1" }, silentresume: { resumed: "1" }, startedover: {}, silentover: {},
+};
 function turnsPath(head, filtered) {
   const p = new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: filtered ? String(MAX_HELD) : "1" });
   if (filtered) {
@@ -162,6 +174,15 @@ function turnsPath(head, filtered) {
     if (ui.compact) p.set("compact", "1");
     if (!ui.steps) p.set("local", "0");
     if (ui.to) p.set("until", String(ui.to));
+    for (const [key, value] of Object.entries(WHY_ASKS[ui.why] || {})) {
+      const tier = value === "tier" ? idleTier(head) : null;
+      // an exact tag is narrower than the switch's family and agrees with it, except when the switch says Stopped
+      // and the door names a failure: then they disagree and the switch holds, which lists nothing, honestly
+      if (key === "outcome" && ui.outcome === "stopped") continue;
+      // no answered tier is no floor to ask for: the page's own check decides alone, as it does today
+      if (tier != null && !Number.isFinite(tier)) continue;
+      p.set(key, tier != null ? String(Math.round(tier)) : value);
+    }
   }
   return `/api/perf/turns?${p}`;
 }

@@ -2,6 +2,8 @@
 // slice the route already cut finds nothing older than the slice: the header counted 3 failed requests in
 // the last hour while "Failed" showed none, because 2,000 ok rows filled the list. Every filter here narrows
 // the WINDOW before the clamp, and `count` is the rows the filters match, so the list and its header agree.
+// That holds for WHAT A REQUEST WAITED THROUGH too (silence_ms, queued_ms, resumed): the doors that name a wait
+// open requests that are mostly old, which is exactly where a browser-side filter over the slice finds nothing.
 package splice.usage.perf
 
 import io.ktor.client.HttpClient
@@ -36,14 +38,34 @@ class PerfTurnsFilterTest {
     // why: one more ok row than the route's ceiling of 2,000, all NEWER than the one failure, so the
     // newest-n slice holds none of it.
     private val oks = (1..2_001).map { i -> row(ts = 10_000L + i, outcome = "ok", session = "s1") }
-    private val failure = row(ts = 5_000L, outcome = "error:rate-limited", session = "s2")
-    private val unknown = row(ts = 6_000L, outcome = "?", session = "s1", compact = true)
+
+    // why: what these three WAITED THROUGH, on rows the other filters already count, so a wait filter is tested
+    // without moving any other count. The queued one is the OLDEST row of the window, older than all 2,001 oks:
+    // reachable only because the daemon narrows before the clamp.
+    private val failure = row(
+        ts = 5_000L,
+        outcome = "error:rate-limited",
+        session = "s2",
+        fields = mapOf(PerfKeys.ADMIT_WAIT_MS to 1_200L),
+    )
+    private val unknown = row(
+        ts = 6_000L,
+        outcome = "?",
+        session = "s1",
+        fields = mapOf(PerfKeys.UP_GAP_MAX_MS to 5_000L),
+        compact = true,
+    )
     private val bare = PerfRow(ts = 7_000L, outcome = "ok", fields = emptyMap())
     private val local = row(ts = 8_000L, outcome = "ok", session = "s1", fields = mapOf(PerfKeys.LOCAL_STEP to 1L))
     private val stops = listOf(OutcomeTag.CLIENT_ABORT.wire, OutcomeTags.error("stopped")).mapIndexed { index, tag ->
         row(ts = 9_100L + index * 100L, outcome = tag, session = "stops")
     }
-    private val cancelled = row(ts = 9_300L, outcome = OutcomeTag.CANCELLED.wire, session = "watchdog")
+    private val cancelled = row(
+        ts = 9_300L,
+        outcome = OutcomeTag.CANCELLED.wire,
+        session = "watchdog",
+        fields = mapOf(PerfKeys.UP_GAP_MAX_MS to 90_000L, PerfKeys.REANCHORS to 1L),
+    )
 
     // why: a model that closed an empty message ended the turn clean for the client. Its own model and a time past
     // every until=10000 window keep it out of the other filters' counts.
@@ -183,6 +205,22 @@ class PerfTurnsFilterTest {
         }
 
     @Test
+    fun `a silence floor, a queue floor and a resume each find what a request waited through`() = testApplication {
+        mount()
+        val queued = ask(client, "n=1&queued_ms=1")
+        assertEquals(listOf(5_000L), stamps(queued), "the oldest row of the window, under 2,001 newer ones")
+        assertEquals(1L, count(queued), "one request waited in line")
+        assertEquals(listOf(6_000L, 9_300L), stamps(ask(client, "silence_ms=1")), "both silences, oldest first")
+        val longest = ask(client, "silence_ms=90000")
+        assertEquals(listOf(9_300L), stamps(longest), "the floor is inclusive, and leaves the shorter silence out")
+        val above = ask(client, "silence_ms=90001")
+        assertEquals(emptyList<Long>(), stamps(above), "a floor over every silence finds none")
+        assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1")), "the one request splice re-anchored")
+        assertEquals(2_008L, count(ask(client, "resumed=0")), "every other request, a row with no counter included")
+        assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1&silence_ms=1&queued_ms=0")), "the floors stack")
+    }
+
+    @Test
     fun `a filter spelled wrong is refused by name, never ignored`() = testApplication {
         mount()
         val spelled = listOf(
@@ -190,6 +228,9 @@ class PerfTurnsFilterTest {
             "unattributed=session" to "session",
             "local=maybe" to "maybe",
             "compact=yes" to "yes",
+            "silence_ms=soon" to "soon",
+            "queued_ms=-1" to "-1",
+            "resumed=maybe" to "maybe",
         )
         for ((query, named) in spelled) {
             val response = client.get("/api/perf/turns?head=kimi&since=0&$query")

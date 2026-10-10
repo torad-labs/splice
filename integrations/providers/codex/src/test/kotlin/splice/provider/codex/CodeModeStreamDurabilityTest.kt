@@ -99,8 +99,7 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 post.gates.drop(1).forEach { it.complete(Unit) }
                 post.complete.complete(Unit)
                 withTimeout(1_500) { post.stopped.await() }
-                val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-                val registry = field.get(manager) as CodexCodeModeRegistry
+                val registry = manager.registry
                 val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
                 val record = registry.recordsFor(key).single()
                 // The mock post's finally precedes capture.finish; only stored terminal usage

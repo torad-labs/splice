@@ -9,6 +9,8 @@ import splice.provider.codex.CodeModeInputBoundary
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeNativeChain
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 
 /** Owned by one prepared turn, never shared by sessions or persisted. */
@@ -72,6 +74,17 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
 
         fun appendText(target: StringBuilder) = visit { target.append(it.text) }
 
+        /** Characters this chain adds beyond segments already counted in [seen]; shared segments count once. */
+        internal fun retainedChars(seen: MutableSet<Prefix>): Long {
+            var chars = 0L
+            var cursor: Prefix? = this
+            while (cursor != null && seen.add(cursor)) {
+                chars += cursor.text.length + cursor.envelopes.sumOf { it.length }
+                cursor = cursor.before
+            }
+            return chars
+        }
+
         private fun text(): String = buildString { appendText(this) }
 
         private fun reasoning(): List<String> = buildList { visit { addAll(it.envelopes) } }
@@ -106,6 +119,14 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
                 append(current)
             }.takeIf(String::isNotEmpty)
         }
+    }
+
+    /** Characters of emitted text and reasoning this history keeps alive, counting shared segments once. */
+    internal fun retainedChars(): Long {
+        val seen = Collections.newSetFromMap(IdentityHashMap<Prefix, Boolean>())
+        val live = listOf(prefix, generated, continuityPrefix)
+        val kept = posted.values.flatMap { listOf(it.prefix, it.before, it.generated) }
+        return (live + kept).sumOf { it.retainedChars(seen) } + posted.values.sumOf { it.text.length }
     }
 
     fun extend(partial: TurnOutcome.PartialRound) {

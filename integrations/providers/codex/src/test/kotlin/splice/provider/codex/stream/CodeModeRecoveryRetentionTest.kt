@@ -3,7 +3,6 @@ package splice.provider.codex.stream
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertArrayEquals
@@ -18,9 +17,6 @@ import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.RoundBody
-import java.lang.reflect.Modifier
-import java.util.Collections
-import java.util.IdentityHashMap
 
 private const val RECOVERY_SEGMENT_CHARS = 1024
 
@@ -46,7 +42,7 @@ class CodeModeRecoveryRetentionTest {
                 assertEquals(echo, checkNotNull(history.delivery(record)).text(null))
                 history.generated(outcome)
             }
-            val retained = retainedText(history)
+            val retained = history.retainedChars()
             println("RECOVERY_RETAINED scripts=$scripts emitted_chars=${echo.length} retained_chars=$retained")
             Triple(scripts, echo.length, retained)
         }
@@ -106,33 +102,4 @@ class CodeModeRecoveryRetentionTest {
             emittedText = true,
         ),
     )
-
-    /** Follow actual retained entry fields, not a hand-authored list of the strings the implementation should keep. */
-    private fun retainedText(history: CodeModeRecoveryHistory): Long {
-        val posted = history.javaClass.getDeclaredField("posted").also { it.isAccessible = true }.get(history)
-        val visited = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
-        val pending = ArrayDeque<Any>().also { it.addLast(posted) }
-        var chars = 0L
-        while (pending.isNotEmpty()) {
-            val value = pending.removeLast()
-            if (!visited.add(value)) continue
-            if (value is String) chars += value.length else pending.addAll(retainedChildren(value))
-        }
-        return chars
-    }
-
-    private fun <V : Any> retainedChildren(value: V): List<Any> = when (value) {
-        is JsonPrimitive -> listOf(value.content)
-        is Map<*, *> -> (value.keys + value.values).filterNotNull()
-        is Iterable<*> -> value.filterNotNull()
-        else -> retainedFields(value)
-    }
-
-    private fun <V : Any> retainedFields(value: V): List<Any> {
-        if (!value.javaClass.name.startsWith("splice.provider.codex.")) return emptyList()
-        return value.javaClass.declaredFields.filterNot { Modifier.isStatic(it.modifiers) }.mapNotNull {
-            it.isAccessible = true
-            it.get(value)
-        }
-    }
 }

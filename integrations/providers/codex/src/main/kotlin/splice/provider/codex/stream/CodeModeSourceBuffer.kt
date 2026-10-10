@@ -39,6 +39,7 @@ internal class CodeModeSourceBuffer(
     private val beforeRead: CodeModeSourceCommit = CodeModeSourceCommit {},
 ) {
     private val state = MutableStateFlow(SourceSnapshot(""))
+    internal val waiters: Int get() = state.subscriptionCount.value
     val text: String get() = state.value.text
 
     @Volatile var startupRejected: Boolean = false

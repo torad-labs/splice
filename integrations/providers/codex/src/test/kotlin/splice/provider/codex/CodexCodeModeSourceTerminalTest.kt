@@ -247,9 +247,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         }
 
     private fun registryOf(manager: CodexCodeModeBridge): CodexCodeModeRegistry =
-        CodexCodeModeBridge::class.java.getDeclaredField("registry").apply {
-            isAccessible = true
-        }.get(manager) as CodexCodeModeRegistry
+        manager.registry
 
     @ParameterizedTest
     @ValueSource(strings = ["blank-id", "oversized-start", "changed-id"])

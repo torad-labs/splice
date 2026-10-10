@@ -230,8 +230,7 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     }
 
     private fun retained(manager: CodexCodeModeBridge): List<CodeModeRecord> {
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-        return (field.get(manager) as CodexCodeModeRegistry).recordsFor("synthetic")
+        return manager.registry.recordsFor("synthetic")
     }
 
     private fun scripted(vararg steps: CodeModeStep) = ScriptedRuntime(ArrayDeque(steps.toList()))

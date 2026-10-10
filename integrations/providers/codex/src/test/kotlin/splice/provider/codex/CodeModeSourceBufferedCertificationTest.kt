@@ -3,7 +3,6 @@ package splice.provider.codex
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
@@ -76,18 +75,14 @@ class CodeModeSourceBufferedCertificationTest : CodeModeStatementStreamSupport()
     }
 
     private fun buffer(manager: CodexCodeModeBridge): CodeModeSourceBuffer {
-        val registry = manager.javaClass.getDeclaredField("registry").apply { isAccessible = true }
-            .get(manager) as CodexCodeModeRegistry
-        val driver = manager.javaClass.getDeclaredField("driver").apply { isAccessible = true }
-            .get(manager) as CodexCodeModeDriver
+        val registry = manager.registry
+        val driver = manager.driver
         val key = checkNotNull(JsonScalars.str(stateFiles.records().single()["key"]))
         return checkNotNull(driver.streams.find(registry.recordsFor(key).single())).source
     }
 
     private fun hasWaiter(buffer: CodeModeSourceBuffer): Boolean {
-        val state = buffer.javaClass.getDeclaredField("state").apply { isAccessible = true }
-            .get(buffer) as MutableStateFlow<*>
-        return state.subscriptionCount.value > 0
+        return buffer.waiters > 0
     }
 }
 

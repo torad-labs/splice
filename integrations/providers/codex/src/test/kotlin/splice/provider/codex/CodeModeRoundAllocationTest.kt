@@ -227,8 +227,7 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
 
     /** The conversation's completed records, as CodexCodeModeTurn reads them at the start of a round. */
     private fun completed(manager: CodexCodeModeBridge): List<CodeModeRecord> {
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
         val key = stateFiles.records().first().getValue("key").jsonPrimitive.content
-        return (field.get(manager) as CodexCodeModeRegistry).completed(key)
+        return manager.registry.completed(key)
     }
 }

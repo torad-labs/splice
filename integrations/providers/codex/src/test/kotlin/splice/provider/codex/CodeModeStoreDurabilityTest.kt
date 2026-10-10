@@ -258,8 +258,7 @@ class CodeModeStoreDurabilityTest {
             50.milliseconds,
         )
         monitor.withLock { timed.arm() }
-        val future = CodeModeTimedSweep::class.java.getDeclaredField("running")
-            .apply { isAccessible = true }.get(timed) as ScheduledFuture<*>
+        val future = checkNotNull(timed.running)
         timed.finish {}
         return future
     }

@@ -91,6 +91,15 @@ val trackedPathsDigest = providers.exec {
 val declaredReadRoots: List<String> = moduleDirectories.values.map { "$it/src/main" } + "build-logic/src/main/kotlin"
 
 tasks.withType<Test>().configureEach {
+    // MEASURED FROM A GC LOG, not picked (2026-10-10, after :quality-architecture:test died of heap twice for one
+    // seat while finishing for two others — load-dependent, and pre-push runs this suite too). At the 2g default
+    // from splice.kotlin-common a Full GC pair reads 2045M->2043M(2048M) and the JVM then throws OutOfMemoryError:
+    // the LIVE SET alone passes 2 GB, held by the laws that read the whole tracked tree into memory at once
+    // (ConventionalTypeLawTest through ReadSet, and the two ratchet censuses). Runs at 3g and at 4g both complete
+    // with ZERO Full GCs, so 3g already clears the live set; 4g is chosen as about twice it, which is the headroom
+    // G1 wants plus room for the census to grow. Occupancy is not the input and tracks whatever heap it is given
+    // (2910M peak at 3g, 3784M at 4g, both collected concurrently). Re-measure with -Xlog:gc* before changing it.
+    maxHeapSize = "4g"
     jvmArgumentProviders.add(
         splice.testing.MachineLocalProperties(
             provider {

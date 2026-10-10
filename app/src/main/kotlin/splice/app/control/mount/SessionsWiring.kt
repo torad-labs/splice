@@ -9,6 +9,8 @@ import splice.app.control.SessionHeadAdapter
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
 import splice.app.sources.PerfStatsSource
+import splice.client.resume.ModelMoves
+import splice.client.transcript.MovedTranscripts
 import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
 import splice.core.auth.CLIENT_AUTH_KIND
@@ -113,7 +115,7 @@ internal class SessionsWiring(
     val routes: SessionsRoutes? = sessions?.let {
         SessionsRoutes(
             it,
-            TranscriptReader(),
+            MovedTranscripts(TranscriptReader(), ModelMoves(StatePaths().modelMovesDir)),
             TranscriptRoots(sessionHeads),
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },

@@ -22,6 +22,7 @@ import splice.sessions.activity.MessageEdge
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
+import splice.sessions.transcript.ModelMove
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
@@ -285,7 +286,7 @@ class SessionsConsoleRoutesTest {
             json(
                 """{"session_id":"$ALPHA","path":"$file","messages":[""" +
                     """{"index":0,"role":"user","text":"the head's copy"}],"next":null,""" +
-                    """"unparseable_lines":1,"sidechain_records":1,"skipped_records":{"attachment":1}}""",
+                    """"moves":[],"unparseable_lines":1,"sidechain_records":1,"skipped_records":{"attachment":1}}""",
             ),
             json(reply.body),
         )
@@ -331,6 +332,31 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             listOf("first", "second", "first", "second"),
             rows.map { it.getValue("tool_use_id").jsonPrimitive.content },
+        )
+    }
+
+    @Test
+    fun `the transcript page names each assistant message and where the session moved to another model`() {
+        val reply = TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "hi", messageId = "m1")
+        val transcripts = object : SessionTranscripts {
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+                TranscriptLookup.Found(TranscriptPage(sessionId, "/x/$ALPHA.jsonl", listOf(reply), null, emptyMap()))
+
+            override fun moves(sessionId: String): List<ModelMove> =
+                if (sessionId == ALPHA) listOf(ModelMove("m1", "gpt-6.1", "gpt", 5L)) else emptyList()
+
+            override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
+                SentTexts(null, emptyMap(), ids)
+        }
+        val routes = SessionsRoutes(registry(), transcripts, roots = TranscriptRoots(vanilla = tmp.resolve(".claude")))
+        val body = json(routes.transcript(ALPHA, null, null).body)
+        val message = body.getValue("messages").jsonArray.single().jsonObject
+        assertEquals("m1", message.getValue("message_id").jsonPrimitive.content)
+        assertEquals(
+            kotlinx.serialization.json.Json.parseToJsonElement(
+                """[{"message_id":"m1","model":"gpt-6.1","command":"gpt","moved_at":5}]""",
+            ),
+            body.getValue("moves"),
         )
     }
 

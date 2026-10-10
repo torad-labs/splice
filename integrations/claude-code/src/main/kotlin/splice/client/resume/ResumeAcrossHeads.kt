@@ -143,7 +143,12 @@ public sealed class SessionAdoption {
  *  thinking, onto the newest Claude model its transcript used. With no Claude row there is nothing to move onto: the
  *  row still loses its thinking (another vendor's signature fails upstream) and keeps its model, which the picker
  *  replaces. */
-public class CallingRoster(internal val pinned: String, private val served: Collection<String>?) {
+public class CallingRoster(
+    internal val pinned: String,
+    private val served: Collection<String>?,
+    /** The head's key, the command whose launch moves a session: recorded with each move. */
+    internal val command: String? = null,
+) {
     /** Whether a row on a model stays where it is: a served model (the pinned one included), else a Claude one. */
     internal fun kept(): KeptModel = served?.let { roster ->
         val names = roster.toSet() + pinned

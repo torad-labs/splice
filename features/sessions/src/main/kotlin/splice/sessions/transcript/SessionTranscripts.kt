@@ -40,6 +40,10 @@ public data class TranscriptMessage(
     val source: TranscriptSource = TranscriptSource(),
 )
 
+/** A session's move onto another model: the message it moved at (the first moved assistant message), the model its rows
+ *  moved to, the command (the head's key) that moved them when known, and when, in epoch milliseconds. */
+public data class ModelMove(val messageId: String, val model: String, val command: String?, val movedAt: Long)
+
 public data class TranscriptSource(
     /** What a system line is, when the page draws it apart from other notes: [KIND_INTERRUPTED]. */
     val kind: String? = null,
@@ -131,6 +135,9 @@ public interface SessionTranscripts {
     /** The model that wrote the newest assistant message in the same bounded tail, whatever the last message is: a
      *  session waiting on its person ends on a user message and still has one. Null when none is recorded there. */
     public fun model(sessionId: String, roots: List<Path>, cwd: String? = null): String? = null
+
+    /** Where [sessionId] changed model, oldest first; none for a session that was never moved. */
+    public fun moves(sessionId: String): List<ModelMove> = emptyList()
 
     public fun page(
         sessionId: String,

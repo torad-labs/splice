@@ -26,6 +26,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.client.resume.CallingRoster
 import splice.client.resume.RESUME_SOURCE
 import splice.client.resume.STARTUP_SOURCE
 import splice.client.resume.SessionOwnership
@@ -133,7 +134,7 @@ public class ResumeHookRoute(
         val pinnedModel = spec.models.pinnedModel
         val rewritten = Cancellables.runCatchingCancellable {
             val offered = spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth }
-            rewriter.rewrite(transcript, pinnedModel, offered)
+            rewriter.rewrite(transcript, CallingRoster(pinnedModel, offered, managed.head.key))
         }
             .getOrElse { cause ->
                 return "session $sessionId could not be moved onto $pinnedModel (${SafeFailureText.render(cause)})"

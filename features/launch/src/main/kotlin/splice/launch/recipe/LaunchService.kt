@@ -175,6 +175,7 @@ public class LaunchService(
             CallingRoster(
                 spec.models.pinnedModel,
                 spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth },
+                spec.signIn.headKey.ifBlank { null },
             ),
         )
     }

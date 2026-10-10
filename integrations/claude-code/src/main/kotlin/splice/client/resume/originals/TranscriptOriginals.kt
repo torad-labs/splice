@@ -3,6 +3,7 @@ package splice.client.resume.originals
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import splice.client.resume.ModelMoves
 import splice.client.resume.TRANSCRIPT_SUFFIX
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
@@ -39,6 +40,9 @@ public class TranscriptOriginals(
     private val copier: TranscriptOriginalCopy = ForcedTranscriptOriginalCopy,
 ) {
     private val root = paths.transcriptOriginalsDir
+
+    /** Where each session moved to another model, kept beside the originals it moved from. */
+    public val moves: ModelMoves = ModelMoves(paths.modelMovesDir)
 
     /** [files] is the rewrite's frozen source census; a failed copy prevents every live rewrite. */
     public fun preserve(transcript: Path, files: List<Path>): Unit = OriginalOperations.mutex.withLock {

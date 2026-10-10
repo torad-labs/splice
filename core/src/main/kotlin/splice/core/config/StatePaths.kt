@@ -251,6 +251,9 @@ public class StatePaths(
     /** Byte-exact session originals kept before cross-head rewrites, outside Claude Code's projects tree. */
     public val transcriptOriginalsDir: Path = stateDir.resolve("transcript-originals")
 
+    /** Where each session changed model: one owner-only file per session, written when a move gives rows a model. */
+    public val modelMovesDir: Path = stateDir.resolve("model-moves")
+
     /** Per-head stat files. The codex/grok names are a frozen legacy contract kept for CONTINUITY,
      *  not for an external reader (the header's own words — the HUD that justified them is gone, and
      *  renaming them now would strand usage history for no measured gain); new heads derive

@@ -40,6 +40,7 @@ import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.sessions.transcript.ModelMove
 import java.io.BufferedOutputStream
 import java.io.IOException
 import java.io.OutputStream
@@ -57,6 +58,9 @@ import java.security.MessageDigest
 internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
 
 /** Anthropic's model namespace: a row there is a model a client on its own login can restore. */
+
+/** The key of an assistant message's id inside its `message` object. */
+private const val MESSAGE_ID = "id"
 
 /** Buffer between a rewrite's rows and its staged file. */
 private const val WRITE_BUFFER_BYTES = 1 shl 20
@@ -110,7 +114,7 @@ public class TranscriptModelRewrite(
         rewrite(transcript, CallingRoster(pinnedModel, served))
 
     /** [rewrite] with the calling head's [roster] deciding which rows stay and which model a moved row takes. */
-    internal fun rewrite(transcript: Path, roster: CallingRoster): Int {
+    public fun rewrite(transcript: Path, roster: CallingRoster): Int {
         val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
         val children = if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) jsonlUnder(subdir) else emptyList()
         val files = listOf(transcript) + children
@@ -126,6 +130,7 @@ public class TranscriptModelRewrite(
         val preservedChanged = "Transcript changed while preserving its original; nothing was rewritten"
         surveys.forEach { ensureUnchanged(it, preservedChanged) }
         surveys.forEach { publish(it, policy) }
+        recordMove(transcript, surveys.first(), policy, roster)
         return rewritten
     }
 
@@ -135,6 +140,8 @@ public class TranscriptModelRewrite(
      *  [path] is what the rewrite was given; [file] is the file it names now, which every check and the
      *  replacement use. */
     private class Survey(val path: Path, val file: Path) {
+        /** The id of the first moved assistant message that has one: where the session changed model. */
+        var movedAt: String? = null
         var moves = 0
         var strips = 0
         var newestClaude: String? = null
@@ -143,6 +150,16 @@ public class TranscriptModelRewrite(
         /** The rows a rewrite under [policy] changes: a moving row changes when it takes a model, or, with
          *  none to take, when it loses its thinking. */
         fun changed(policy: RowPolicy): Int = if (policy.target != null) moves else strips
+    }
+
+    /** A move that gave rows a model is recorded for the Sessions page, so the joint can be drawn where the session
+     *  changed model. A move that only stripped thinking changed no model and records nothing. */
+    private fun recordMove(transcript: Path, main: Survey, policy: RowPolicy, roster: CallingRoster) {
+        val model = policy.target
+        val at = main.movedAt
+        if (model == null || at == null) return
+        val session = transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX)
+        originals.moves.record(session, ModelMove(at, model, roster.command, System.currentTimeMillis()))
     }
 
     private fun survey(path: Path, kept: KeptModel): Survey {
@@ -157,6 +174,7 @@ public class TranscriptModelRewrite(
                 val move = rows.moveOf(shape, kept)
                 if (move != null) {
                     survey.moves++
+                    if (survey.movedAt == null) survey.movedAt = JsonScalars.str(move.assistant.message, MESSAGE_ID)
                     if (move.strips) survey.strips++
                 }
             }

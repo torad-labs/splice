@@ -49,6 +49,7 @@ import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.TrustedRoot
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
+import splice.sessions.transcript.ModelMove
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.SentTexts
@@ -66,6 +67,7 @@ internal const val UNKNOWN_HEAD = "unknown head"
 private object MessageWire {
     fun json(m: TranscriptMessage): JsonObject = buildJsonObject {
         put("index", m.index)
+        m.messageId?.let { put("message_id", it) }
         put("role", m.role.name.lowercase())
         m.ts?.let { put("ts", it) }
         put("text", m.text)
@@ -75,6 +77,15 @@ private object MessageWire {
         m.source.kind?.let { put("kind", it) }
         m.source.from?.let { put("from", it) }
         m.source.model?.let { put("model", it) }
+    }
+}
+
+private object MoveWire {
+    fun json(move: ModelMove): JsonObject = buildJsonObject {
+        put("message_id", move.messageId)
+        put("model", move.model)
+        move.command?.let { put("command", it) }
+        put("moved_at", move.movedAt)
     }
 }
 
@@ -258,6 +269,7 @@ public class SessionsRoutes(
         put("messages", buildJsonArray { page.messages.forEach { add(MessageWire.json(it)) } })
         put("next", page.next)
         if (fromEnd) put("earlier", page.earlier)
+        put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
         // Declared additions (V4-130, routed to splice-design): the page's denominator. What it read
         // past, by kind, with the two kinds the orchestrator asked for named on their own.
         put("unparseable_lines", page.skipped[SKIPPED_UNPARSEABLE] ?: 0)

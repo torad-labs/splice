@@ -36,7 +36,7 @@ async function read() {
   tick();
   const [sessions, heads, models] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models")]);
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null }));
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = PROVIDER_FAMILY[row.provider] ?? row.provider;
     for (const m of row.models || []) if (m.id) state.modelLabel[m.id] = m.label || m.id;
@@ -70,6 +70,10 @@ const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
 const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? null;
 const folderOf = (row) => (row.repo?.root || row.cwd || "").split("/").filter(Boolean).pop() || "";
 
+/** A signed-out session's way back: Accounts on its command, in Accounts' own word for that kind of credential. */
+const fixOf = (stall, head) => (stall?.kind !== "signout" || !head ? stall
+  : { ...stall, fix: { href: `accounts.html?head=${encodeURIComponent(head)}`, word: state.heads.find((h) => h.key === head)?.authKind === "api-key" ? "Add key" : "Sign in" } });
+
 /** One /api/sessions row in the drawing's session shape: the state the kit's look() reads, and what the card shows. */
 function sessionOf(row) {
   const turn = state.live[row.session_id] ?? null;
@@ -81,7 +85,7 @@ function sessionOf(row) {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
     model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model), // a running turn's model is the one in use now
-    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by) : null,
+    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
   };

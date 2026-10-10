@@ -207,7 +207,9 @@ function look(s) {
     // a plan's limit ended the turn; nothing stalled, so the word is Accounts' own (fin): lock, At limit, the plan, its reset
     if (k === "limit") return { cls: "stalled", lamp, word: `${ICON.lock}At limit`, detail };
     // no credential ended it, so nothing stalled either: the word is the state itself, as Accounts says it (fin)
-    if (k === "signout") return { cls: "stalled", lamp, word: "Signed out", detail: "" };
+    // its act is the way back: Accounts opened on that command's sign-in or key, when the page knows the command (fix)
+    const fix = s.stall.fix ? `<a class="detail fix" href="${esc(s.stall.fix.href)}">${esc(s.stall.fix.word)}</a>` : "";
+    if (k === "signout") return { cls: "stalled", lamp, word: "Signed out", detail: fix };
     return { cls: "stalled", lamp, word: "Stalled", detail };
   }
   if (s.state === "working") return { cls: "working", lamp: ICON.trace, word: "Working" };

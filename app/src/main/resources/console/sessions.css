@@ -61,6 +61,7 @@
 .meta .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; }
 .meta .detail svg { width: 1rem; height: 1rem; }
 .meta .detail.resumes { color: var(--live); }  /* splice has it: the working colour, not the stalled one (fin) */
+.meta a.detail.fix { text-decoration: underline; text-underline-offset: .2em; }  /* Signed out's way back: a link to Accounts */
 .watch .hand { transform-origin: 12px 13.5px; transform-box: view-box; }  /* a duration: the hand runs with its seconds */
 .meta .team { display: inline-flex; align-items: center; gap: .35rem; }
 .meta .when { margin-left: auto; min-width: 0; font-size: .95rem; color: var(--text-mute); }

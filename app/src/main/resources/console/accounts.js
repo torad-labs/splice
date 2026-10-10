@@ -923,10 +923,18 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-// a door from another page lands on one account: accounts.html?card=<provider>/<account>
+// a door from another page lands on one account: accounts.html?card=<provider>/<account>, or ?head=<command's head>,
+// which lands on what that command needs fixed (a signed-out login, a missing key) and else its first account: the
+// way back from a session Sessions or Teams shows as Signed out (Marlin, Oct 10)
 const ADDR = new URLSearchParams(location.search);
+const doorOf = (head) => {
+  const p = data.find((x) => x.cmds.some((c) => c.head === head));
+  const a = p && (p.accounts.find((x) => x.out || x.has === false) || p.accounts[0]);
+  return a ? `${p.id}/${a.id}` : null;
+};
 probe().then(() => {
-  if (!ADDR.get("card")) return;
-  const el = board.querySelector(`[data-key^="card:${CSS.escape(ADDR.get("card"))}"]`);
+  const card = ADDR.get("card") || (ADDR.get("head") && doorOf(ADDR.get("head")));
+  if (!card) return;
+  const el = board.querySelector(`[data-key^="card:${CSS.escape(card)}"]`);
   if (el) { el.scrollIntoView({ block: "center", behavior: "instant" }); el.classList.add("pulse-once"); }
 });

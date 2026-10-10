@@ -236,7 +236,7 @@ function logHtml(s) {
       const running = none && s.live && m === lastCall && m === held.messages.at(-1);
       items.push(`<div class="call"><button class="tool" style="--c:${color(s)}" data-act="result" data-k="${esc(key)}" aria-expanded="${open}"${none ? " disabled" : ""}>`
         + `${running ? "<i></i>" : none ? "" : ICON.caret}<span class="tname">${esc(m.tool)}</span><span class="tsum">${esc(callSummary(m))}</span></button>`
-        + `${open && !none ? `<pre class="result">${esc(result)}</pre>` : ""}</div>`);
+        + `${open && !none ? (result.trim() ? `<pre class="result">${esc(result)}</pre>` : `<p class="result empty">No output</p>`) : ""}</div>`); // a call that printed nothing opens to say so (Marlin p164)
       return;
     }
     // the client's own mark where he refused a call or stopped a turn: a line in the conversation, never his words

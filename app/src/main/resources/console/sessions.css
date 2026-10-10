@@ -239,3 +239,4 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 /* a card whose state changed rings once in the key light, where it stands (hitstop 9e95ae4) */
 .s.changed { animation: ring 1.1s var(--e-out) 1; }
 @keyframes ring { from { outline: .25rem solid var(--key-light); outline-offset: .15rem; } to { outline: .25rem solid transparent; outline-offset: .55rem; } }
+.result.empty { font-family: var(--font-name); color: var(--text-mute); white-space: normal; }

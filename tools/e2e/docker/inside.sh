@@ -273,6 +273,70 @@ example_topology() {
 }
 step "shipped example topology: every head installs, boots and launches to the example's model and window" example_topology
 
+# ── 8b. the 0.4.0 verbs a user runs on a clean machine, against the mocks already up ───────────────
+doctor_json_step() {
+  local out file="$OUT/doctor-report.json" mode
+  out="$(splice doctor --json </dev/null 2>/dev/null)"; local rc=$?
+  printf '%s\n' "$out" | head -c 600
+  printf '%s' "$out" | bun -e 'JSON.parse(await Bun.stdin.text())' || { echo "doctor --json is not JSON"; return 1; }
+  rm -f "$file"
+  splice doctor --json --out "$file" </dev/null >/dev/null 2>&1
+  [ -s "$file" ] || { echo "doctor --out wrote nothing"; return 1; }
+  bun -e "JSON.parse(await Bun.file('$file').text())" || { echo "the report file is not JSON"; return 1; }
+  mode="$(stat -c %a "$file")"
+  [ "$mode" = 600 ] || { echo "report file mode $mode, want 600"; return 1; }
+  [ $rc -eq 0 ] || { echo "doctor --json exit $rc on a healthy machine"; return 1; }
+}
+step "splice doctor --json prints JSON, and --out writes the same report 0600" doctor_json_step
+
+sessions_verb_step() {
+  local out
+  out="$(splice sessions </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out" | head -20
+  [ -n "$out" ] || { echo "splice sessions printed nothing"; return 1; }
+}
+step "splice sessions lists what the earlier launches created" sessions_verb_step
+
+add_second_step() {
+  local out
+  export MOCKCHAT3_API_KEY="k3"
+  out="$(splice add api-key --name mockchat3 --base-url "http://127.0.0.1:$CHAT_MOCK_PORT" --model mock-chat:128000 --yes </dev/null 2>&1 | strip_ansi)" || {
+    printf '%s\n' "$out" | tail -20; return 1; }
+  printf '%s\n' "$out" | tail -12
+  grep -q '^\[heads\.mockchat3\]' "$HOME/.config/splice/splice.toml" || { echo "no mockchat3 head saved"; return 1; }
+  grep -q '^\[heads\.mockchat\]' "$HOME/.config/splice/splice.toml" || { echo "the first mockchat head was lost"; return 1; }
+  [ -x "$HOME/.local/bin/claude-mockchat3" ] || { echo "claude-mockchat3 wrapper not linked"; return 1; }
+}
+step "splice add api-key --name <second> on a provider that already has a head" add_second_step
+
+key_list_step() {
+  local out
+  out="$(splice key list </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out"
+  grep -q 'MOCK_CHAT_API_KEY' <<<"$out" || { echo "key list does not name the stored key"; return 1; }
+  grep -q 'mock-chat-key' <<<"$out" && { echo "key list printed a key value"; return 1; }
+  return 0
+}
+step "splice key list names the stored key and never its value" key_list_step
+
+upgrade_noop_step() {
+  local rel="$OUT/release" ver out before after
+  ver="$(splice --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
+  [ -n "$ver" ] || ver="$(splice status </dev/null 2>&1 | strip_ansi | grep -oE 'splice [0-9][^ ]*' | head -1 | cut -d' ' -f2)"
+  rm -rf "$rel"; mkdir -p "$rel"
+  cp "$ARTIFACTS/splice.jar" "$ARTIFACTS/splice-launch" "$rel/"
+  (cd "$rel" && sha256sum splice.jar splice-launch > sha256sums.txt)
+  before="$(sha256sum "$HOME/.local/share/splice/splice.jar" 2>/dev/null | cut -d' ' -f1)"
+  out="$(SPLICE_RELEASE_BASE_URL="file://$rel" splice upgrade --to "v$ver" --now </dev/null 2>&1 | strip_ansi)"; local rc=$?
+  printf '%s\n' "$out" | tail -12
+  [ $rc -eq 0 ] || { echo "upgrade to the installed release exited $rc"; return 1; }
+  grep -q 'already installed' <<<"$out" || { echo "upgrade did not say the release is already installed"; return 1; }
+  after="$(sha256sum "$HOME/.local/share/splice/splice.jar" 2>/dev/null | cut -d' ' -f1)"
+  [ "$before" = "$after" ] || { echo "the installed jar changed"; return 1; }
+  curl -fsS "http://127.0.0.1:$CONTROL_PORT/health" >/dev/null || { echo "daemon not healthy after the no-op upgrade"; return 1; }
+}
+step "splice upgrade to the installed release changes nothing" upgrade_noop_step
+
 # ── 9. restart, logs, status, uninstall ────────────────────────────────────────────────────────
 restart_step() {
   splice restart </dev/null || return 1

@@ -129,7 +129,9 @@ internal class ClaudeUsageParser : QuotaParse {
             window(body[USAGE_SEVEN_DAY], SEVEN_DAYS_SECONDS),
         )
         val named = modelWeeks.mapNotNull { (field, name) ->
-            (body[field] as? JsonObject)?.let { number(it["utilization"]) }?.let { ModelQuota(name, it) }
+            (body[field] as? JsonObject)?.let { week ->
+                number(week["utilization"])?.let { ModelQuota(name, it, instant(week["resets_at"])) }
+            }
         }
         val models = named.ifEmpty { scopedWeeks(body) }
         return if (windows.isEmpty()) null else slots.snapshot(windows, null, now).copy(models = models)
@@ -145,7 +147,7 @@ internal class ClaudeUsageParser : QuotaParse {
             .mapNotNull { row ->
                 val model = (row["scope"] as? JsonObject)?.get("model") as? JsonObject
                 val name = text(model?.get("display_name"))?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                number(row["percent"])?.let { ModelQuota(name, it) }
+                number(row["percent"])?.let { ModelQuota(name, it, instant(row["resets_at"])) }
             }
 
     private fun text(element: JsonElement?): String? = (element as? JsonPrimitive)?.takeIf { it.isString }?.content

@@ -21,6 +21,9 @@ import splice.core.util.JsonWire
 // why: the one spelling of a window's used share on disk and on the wire, for whole windows and per-model ones alike.
 private const val USED = "used_percent"
 
+// why: the one spelling of the epoch second a window refills, for whole windows and per-model ones alike.
+private const val RESETS_AT = "resets_at"
+
 public class QuotaJson {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -46,13 +49,15 @@ public class QuotaJson {
         ).takeIf { !it.isEmpty || it.answeredEmpty }
     }
 
-    /** The per-model weekly windows as every surface writes them: `[{"model": "Opus", "used_percent": 41.0}]`. */
+    /** The per-model weekly windows as every surface writes them:
+     *  `[{"model": "Opus", "used_percent": 41.0, "resets_at": 1791741600}]`, the reset only when it is known. */
     public fun putModels(into: JsonObjectBuilder, key: String, models: List<ModelQuota>) {
         into.putJsonArray(key) {
             models.forEach { m ->
                 addJsonObject {
                     put("model", m.model)
                     put(USED, m.usedPercent)
+                    m.resetsAt?.let { put(RESETS_AT, it) }
                 }
             }
         }
@@ -61,12 +66,13 @@ public class QuotaJson {
     private fun model(element: JsonElement): ModelQuota? {
         val obj = element as? JsonObject ?: return null
         val name = (obj["model"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
-        return (obj[USED] as? JsonPrimitive)?.doubleOrNull?.let { ModelQuota(name, it) }
+        val resets = (obj[RESETS_AT] as? JsonPrimitive)?.longOrNull
+        return (obj[USED] as? JsonPrimitive)?.doubleOrNull?.let { ModelQuota(name, it, resets) }
     }
 
     private fun window(into: JsonObjectBuilder, w: QuotaWindow) {
         into.put(USED, w.usedPercent)
-        w.resetsAt?.let { into.put("resets_at", it) }
+        w.resetsAt?.let { into.put(RESETS_AT, it) }
         w.windowSeconds?.let { into.put("window_seconds", it) }
     }
 
@@ -74,7 +80,7 @@ public class QuotaJson {
         val used = (obj[USED] as? JsonPrimitive)?.doubleOrNull ?: return null
         return QuotaWindow(
             usedPercent = used,
-            resetsAt = (obj["resets_at"] as? JsonPrimitive)?.longOrNull,
+            resetsAt = (obj[RESETS_AT] as? JsonPrimitive)?.longOrNull,
             windowSeconds = (obj["window_seconds"] as? JsonPrimitive)?.longOrNull,
         )
     }

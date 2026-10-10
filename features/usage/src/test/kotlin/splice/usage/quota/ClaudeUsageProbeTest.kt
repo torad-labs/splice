@@ -29,6 +29,9 @@ import splice.core.util.WallClock
 private const val NOW_MS = 1_788_000_000_000L
 private const val USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
+// 2026-10-11T18:00:00+00:00, the Fable row's own resets_at in the Oct 10 answer.
+private const val FABLE_WEEK_RESETS = 1_791_741_600L
+
 /** What the endpoint answered on a Max plan: both windows, a per-model weekly (Opus null, Sonnet read), and the
  *  extra-usage block (anthropics/claude-code#30930). `resets_at` carries fractional seconds and an offset. */
 private const val MAX_PLAN_BODY = """
@@ -62,7 +65,8 @@ class ClaudeUsageProbeTest {
     fun `each model's weekly window is read by the name a person reads, and a null one is no window`() {
         val snapshot = parser.parse(obj(MAX_PLAN_BODY), NOW_MS)!!
 
-        assertEquals(listOf(ModelQuota("Sonnet", 1.0)), snapshot.models)
+        // 2026-04-16T03:00:00.951719+00:00 to the nearest second: the model's own reset rides with its share (Oct 10, 2026)
+        assertEquals(listOf(ModelQuota("Sonnet", 1.0, 1_776_308_401L)), snapshot.models)
     }
 
     // Read from Anthropic on Oct 10, 2026 with Marcos's own account: seven_day_opus and seven_day_sonnet both answer
@@ -77,13 +81,13 @@ class ClaudeUsageProbeTest {
          "limits":[
            {"kind":"session","group":"session","percent":61,"scope":null},
            {"kind":"weekly_all","group":"weekly","percent":41,"scope":null},
-           {"kind":"weekly_scoped","group":"weekly","percent":12,
+           {"kind":"weekly_scoped","group":"weekly","percent":12,"resets_at":"2026-10-11T18:00:00+00:00",
             "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}},
            {"kind":"weekly_scoped","group":"weekly","percent":0,"scope":{"model":{"display_name":""}}}]}
         """
         val snapshot = parser.parse(obj(body), NOW_MS)!!
 
-        assertEquals(listOf(ModelQuota("Fable", 12.0)), snapshot.models)
+        assertEquals(listOf(ModelQuota("Fable", 12.0, FABLE_WEEK_RESETS)), snapshot.models, "with its own reset")
         assertEquals(41.0, snapshot.sevenDay!!.usedPercent, 1e-9, "the plan's own week is still the unscoped one")
     }
 

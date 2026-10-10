@@ -17,8 +17,9 @@ public data class QuotaWindow(
 )
 
 /** One model's own share of the weekly window (Claude's Opus and Sonnet weeks): the model as the provider names it
- *  and how much of it is used. It rides the weekly window and resets with it. */
-public data class ModelQuota(val model: String, val usedPercent: Double)
+ *  and how much of it is used. [resetsAt] is the epoch second the provider says this model's week refills, null when
+ *  it names none (Oct 10, 2026: Anthropic's weekly_scoped rows carry their own resets_at). */
+public data class ModelQuota(val model: String, val usedPercent: Double, val resetsAt: Long? = null)
 
 public data class QuotaSnapshot(
     val fiveHour: QuotaWindow? = null,

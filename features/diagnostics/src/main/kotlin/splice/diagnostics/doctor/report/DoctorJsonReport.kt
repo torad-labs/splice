@@ -22,8 +22,8 @@ import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.core.util.SecureFile
 import splice.diagnostics.doctor.CheckStatus
-import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 
@@ -65,7 +65,7 @@ internal class DoctorJsonReport(
                 output.line("daemon log lines leaving the machine in $out (after redaction):")
                 (report["logs"] as? JsonArray)?.forEach { output.line("  " + JsonScalars.strOrEmpty(it)) }
             }
-            Files.writeString(out, text + "\n")
+            SecureFile.writeAtomic0600(out, text + "\n")
             output.line("doctor report written to $out")
         }
         return run.sections.flatMap { it.second }.none { it.status == CheckStatus.FAIL }

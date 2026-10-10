@@ -27,6 +27,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 
 class DoctorReportTest {
 
@@ -213,6 +214,11 @@ class DoctorReportTest {
         assertEquals(4, logs.size)
         // The launch line's cwd is a free-form suffix: the real home's project never leaves.
         assertTrue(logs[3].endsWith("[codex] launch"), logs[3])
+        assertEquals(
+            setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+            Files.getPosixFilePermissions(out),
+            "the report holds topology and log lines, so only its owner may read it",
+        )
         assertFalse(Files.readString(out).contains("real-private"), "a private project name leaked into --out")
         secrets.filterNot { it.startsWith("/home/operator") }
             .forEach { assertFalse(Files.readString(out).contains(it), "$it leaked into --out") }

@@ -484,8 +484,10 @@ function render({ flip = false } = {}) {
   if (flip) for (const el of document.querySelectorAll("[data-key]")) before.set(el.dataset.key, el.getBoundingClientRect());
   const L = columns();
   drawing = true;
+  // Add provider sits under the shortest column while a provider is left to add; with all of them here it has none to offer
+  const addable = ui.addProv || CATALOG.some((c) => !data.some((p) => p.id === c.id));
   board.innerHTML = L.cols.map((ids, i) => `<div class="col">${ids.map((id) => providerHtml(findProv(id))).join("")}`
-    + "</div>").join("");
+    + `${addable && i === L.addAt ? addProviderHtml() : ""}</div>`).join("");
   drawing = false;
   for (const b of board.querySelectorAll(".bar > b")) {
     const host = b.closest("[data-a], [data-meter]"), v = b.dataset.v;

@@ -923,6 +923,7 @@ command = "claude-splice"
 #   SPLICE_ACTIVITY_RETENTION_DAYS activityRetentionDays  SPLICE_ACTIVITY_STORE_HEADS activityStoreHeads
 #   SPLICE_MESSAGE_EDGES messageEdges
 #   SPLICE_BUDGET_DEFAULT_ACTION budgetDefaultAction      SPLICE_PERF_ARCHIVE_RETENTION_DAYS perfArchiveRetentionDays
+#   VISUAL / EDITOR: no TOML key; the editor the `splice` fix session opens on a finding's line (VISUAL first)
 #   SPLICE_SUPERVISOR_UNIT supervisorUnit                 SPLICE_MCP_SLICE mcpSlice
 #   SPLICE_HISTORY_RETENTION_DAYS historyRetentionDays
 #

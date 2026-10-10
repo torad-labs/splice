@@ -6,13 +6,13 @@ import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.TopologyBackupName
 import splice.core.util.EnvReader
+import splice.core.util.SecureFile
 import splice.core.util.TopologyRefusal
 import splice.topology.ConfigFindings
 import splice.topology.ConfigRead
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.time.Instant
 
 // why: the same twelve hex characters the console writer names its backups with (TopologyBackupName).
@@ -54,9 +54,8 @@ internal class ConfigFixOffer(
     private fun backup(source: Path): Path {
         val bytes = Files.readAllBytes(source)
         val hash = TopologyLoader.sha256Hex(bytes).take(BACKUP_HASH_LENGTH)
-        Files.createDirectories(backups)
         val copy = backups.resolve(TopologyBackupName.of(source, Instant.now(), hash))
-        Files.copy(source, copy, StandardCopyOption.REPLACE_EXISTING)
+        SecureFile.writeAtomic0600(copy, bytes.toString(Charsets.UTF_8))
         return copy
     }
 }

@@ -293,6 +293,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "core/src/main/kotlin/splice/core/model/ClientWindows.kt" to mapOf("Files.move(" to 1, "Files.writeString(" to 1),
     // The non-secret launcher declaration documented in the launch-owners README row.
     "core/src/main/kotlin/splice/core/process/LaunchOwners.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/cli/ConfigFixOffer.kt" to mapOf("writeAtomic0600(" to 1),
+    "app/src/main/kotlin/splice/app/cli/ConfigFixSession.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/topology/TopologyWriter.kt" to mapOf("writeAtomic0600(" to 2),
     "features/configuration/src/main/kotlin/splice/configuration/add/AddWrite.kt" to mapOf("writeAtomic0600(" to 1),
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorProbeWrite.kt" to mapOf(

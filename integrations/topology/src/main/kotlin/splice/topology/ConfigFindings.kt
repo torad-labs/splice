@@ -60,7 +60,7 @@ public object ConfigFindings {
         return if (broken is TopologyTypeFailure) {
             TopologyFinding(broken.key, "expects ${broken.expected.label}: ${broken.fix()}", broken.line)
         } else {
-            TopologyFinding(FILE, SafeFailureText.render(broken))
+            TopologyFinding(FINDING_FILE, SafeFailureText.render(broken))
         }
     }
 
@@ -88,5 +88,5 @@ public object ConfigFindings {
     /** The key a `key = value` line assigns, or null when the line assigns nothing. */
     private fun keyOf(line: String): String? = line.takeIf { it.contains('=') }?.substringBefore("=")?.trim()
 
-    private const val FILE = "splice.toml"
+    private const val FINDING_FILE = "splice.toml"
 }

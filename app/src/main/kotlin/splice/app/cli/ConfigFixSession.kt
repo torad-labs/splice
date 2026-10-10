@@ -6,6 +6,7 @@ package splice.app.cli
 
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.TopologyFinding
+import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -103,7 +104,7 @@ internal class ConfigFixSession(
 
     private fun write(lines: List<String>) {
         backupOnce()
-        Files.writeString(file, lines.joinToString("\n", postfix = "\n"))
+        SecureFile.writeAtomic0600(file, lines.joinToString("\n", postfix = "\n"))
     }
 
     private fun backupOnce() {

@@ -29,6 +29,7 @@ internal class CredentialHoldAdmission(
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
     private val wallClock: WallClock,
+    private val keyAccounts: KeyAccount,
 ) {
     sealed class Outcome {
         class Allowed(val account: AccountSelection?) : Outcome()
@@ -54,7 +55,9 @@ internal class CredentialHoldAdmission(
             account?.releaseCredentialProbe()
             return Outcome.Allowed(next)
         }
-        respond(call, prepared, admitted, trace, HeldCredential(cooldown, accountName(prepared, account)))
+        // A held key head has no pooled login to name, so the refusal records the key that would have sent it.
+        val named = accountName(prepared, account) ?: keyAccounts.label()
+        respond(call, prepared, admitted, trace, HeldCredential(cooldown, named))
         return Outcome.Refused
     }
 

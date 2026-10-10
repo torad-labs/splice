@@ -133,6 +133,7 @@ class CredentialHoldAdmissionPoolTest {
             AdmissionResponses(),
             TurnDriver(provider, deps, CompactionReplay()),
             WallClock(System::currentTimeMillis),
+            KeyAccount(provider.auth, deps.quotaBundle),
         )
 
         suspend fun respond(call: ApplicationCall) {

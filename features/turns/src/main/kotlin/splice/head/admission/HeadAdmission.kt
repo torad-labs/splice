@@ -34,7 +34,9 @@ internal class HeadAdmission(
     // seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. The two admissions below take
     // the clock as their own parameter, which is where a test injects one to refuse without sleeping.
     private val wallClock = WallClock(System::currentTimeMillis)
-    private val credentialHolds = CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock)
+    private val keyAccounts = KeyAccount(preparation.provider.auth, deps.quotaBundle)
+    private val credentialHolds =
+        CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock, keyAccounts)
     private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
@@ -141,13 +143,14 @@ internal class HeadAdmission(
         prepared: Preparation.Ready,
         admitted: AdmittedTurn,
         trace: TurnTrace?,
+        keyAccount: String?,
     ): Boolean {
         val block = deps.quotaBundle.budget.admit() ?: return false
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace),
+            LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace, keyAccount),
         )
         admitted.close()
         responses.respondBudgetBlocked(call, block.message)
@@ -164,7 +167,10 @@ internal class HeadAdmission(
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
-        if (refuseIfOverBudget(call, prepared, admitted, trace)) return
+        // The key is the account: a head with no login pool records WHICH key sent the request, and a pooled one
+        // answers null without a resolve.
+        val keyAccount = keyAccounts.label()
+        if (refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = deps.quotaBundle.activePool?.select(
@@ -184,7 +190,7 @@ internal class HeadAdmission(
             when (val hold = credentialHolds.admit(call, prepared, admitted, trace, account)) {
                 is CredentialHoldAdmission.Outcome.Allowed -> {
                     account = hold.account
-                    driveReady(call, prepared, admitted, trace, account)
+                    driveReady(call, prepared, admitted, trace, running(prepared, account, keyAccount))
                 }
                 CredentialHoldAdmission.Outcome.Refused -> Unit
             }
@@ -193,12 +199,24 @@ internal class HeadAdmission(
         }
     }
 
+    /** The login this turn runs on: the account admission chose, its quota, and the key to record when no account
+     *  was proved. Assembled here so the drive is handed one value rather than three. */
+    private fun running(
+        prepared: Preparation.Ready,
+        account: splice.upstream.credentials.AccountSelection?,
+        keyAccount: String?,
+    ) = TurnAccountQuota(
+        account = account,
+        quota = deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, account),
+        keyLabel = keyAccount,
+    )
+
     private suspend fun driveReady(
         call: ApplicationCall,
         prepared: Preparation.Ready,
         admitted: AdmittedTurn,
         trace: TurnTrace?,
-        account: splice.upstream.credentials.AccountSelection?,
+        running: TurnAccountQuota,
     ) {
         if (refuseIfOversized(call, prepared, admitted, trace)) return
         admitted.retainRequest()
@@ -209,10 +227,7 @@ internal class HeadAdmission(
             admitted.perf,
             markHandedOff = { admitted.markHandedOff() },
             trace = trace,
-            accountQuota = TurnAccountQuota(
-                account = account,
-                quota = deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, account),
-            ),
+            accountQuota = running,
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

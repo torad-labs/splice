@@ -63,8 +63,17 @@ const besideOf = (r) => r.reset ? `<span class="detail">${ICON.lock}Resets ${day
   : r.retries ? `<span class="detail">${r.retries} ${r.retries === 1 ? "retry" : "retries"}</span>` : "";
 // why a request has no dollar figure (TurnPriceGap.kt), in fin's words; one that was never answered says nothing
 const REASON = { plan: "Plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
-// a key is an account: its variable and the day splice first saw it, "OPENROUTER_API_KEY · Sep 14" (fin's words)
-const acctHtml = (r) => { const seen = state.keySeen[r.account]; return seen ? `<span class="var">${esc(r.account)}</span> · ${dayWord(seen)}` : esc(r.account); };
+// A key is an account: its variable and the day splice first saw THAT key, "OPENROUTER_API_KEY · Sep 14" (fin's
+// words). A row names the key it was sent with as `VARIABLE:fingerprint` (KeyAccount.kt), so a rotated key reads as
+// its own account and the one it replaced keeps its own history, marked Replaced — on Requests as on Accounts
+// (Marcos, Oct 8). A plan's label has no colon and no key behind it, and prints as it stands.
+const keyNameOf = (account) => String(account ?? "").slice(0, String(account ?? "").lastIndexOf(":"));
+const acctHtml = (r) => {
+  const key = state.keySeen[r.account];
+  if (!key) return esc(keyNameOf(r.account) || r.account);
+  const was = key.replaced ? `<span class="detail">Replaced</span>` : "";
+  return `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${was}`;
+};
 const costText = (r) => (r.local ? "" : r.cost != null ? money(r.cost) : REASON[r.reason] ?? "");
 const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
@@ -117,7 +126,18 @@ async function readStanding() {
     state.sessions[s.session_id] = s;
     state.sessions[String(s.session_id).slice(0, 8)] = s; // a perf row names its session by its first eight characters
   }
-  for (const k of keys.body?.keys || []) if (k.name && k.first_seen_epoch_seconds) state.keySeen[k.name] = new Date(k.first_seen_epoch_seconds * 1000);
+  // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
+  // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
+  // the row with its variable alone, which is what the row itself proves.
+  state.keySeen = {};
+  for (const k of keys.body?.keys || []) {
+    if (!k.name) continue;
+    const seen = (print, at, replaced) => {
+      if (print && at) state.keySeen[`${k.name}:${print}`] = { name: k.name, seen: new Date(at * 1000), replaced };
+    };
+    seen(k.fingerprint, k.first_seen_epoch_seconds, false);
+    for (const old of k.replaced || []) seen(old.fingerprint, old.first_seen_epoch_seconds, true);
+  }
   // Whether each command is saving prompts and answers NOW, and for how long it keeps them: the setting's own figure,
   // per command, never a cut this page made up. The files outlive the knob, so a command switched off still has the
   // days it recorded, and this says which state a request with no records is in.

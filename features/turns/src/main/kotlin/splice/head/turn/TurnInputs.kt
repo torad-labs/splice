@@ -62,4 +62,7 @@ internal data class TurnInputs(
 internal data class TurnAccountQuota(
     val account: AccountSelection? = null,
     val quota: QuotaTracker? = null,
+    /** The key this head reads, as the account a row records when no login was proved (KeyAccount). Null when
+     *  there is no key to name, and then the row falls back to the head's own kind of login. */
+    val keyLabel: String? = null,
 )

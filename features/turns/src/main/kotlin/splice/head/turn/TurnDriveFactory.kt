@@ -58,7 +58,10 @@ internal class TurnDriveFactory(
             channel = channel,
             remainingTurnWait = remainingTurnWait,
         ).also { drive ->
-            drive.fallbackAccountLabel = if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
+            // A key head names the key that sent the request; "primary" is left for a head that holds a login
+            // splice cannot name, so a row never reads as a bare word while a key sat behind it.
+            drive.fallbackAccountLabel = inputs.accountQuota.keyLabel
+                ?: if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
             drive.credentialAccountNames = deps.quotaBundle.credentialAccountNames
             drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.sourceRoundStarted =

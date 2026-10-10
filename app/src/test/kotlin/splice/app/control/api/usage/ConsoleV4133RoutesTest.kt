@@ -35,6 +35,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -250,7 +251,7 @@ class ConsoleV4133RoutesTest {
             assertEquals(HttpStatusCode.OK, known.status, known.bodyAsText())
             val body = json.parseToJsonElement(known.bodyAsText()).jsonObject
             assertTrue(body["enabled"]!!.jsonPrimitive.boolean, "trace is on by default")
-            assertTrue(body["restart_required"]!!.jsonPrimitive.boolean, "the switch is restart-required today")
+            assertFalse(body["restart_required"]!!.jsonPrimitive.boolean, "the switch applies to the next request")
 
             val unknown = req { get("$url/api/heads/no-such-head/capture") { auth() } }
             assertEquals(HttpStatusCode.BadRequest, unknown.status, "unknown head is 400, never 404")

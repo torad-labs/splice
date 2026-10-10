@@ -36,7 +36,7 @@ public class CredentialQuotaFiles(private val base: Path, private val log: LogSi
      *  head's own tracker does: before Oct 10, 2026 each turn erased Fable's week from the account's reading. */
     @Synchronized
     override fun observed(key: String, snapshot: QuotaSnapshot) {
-        if (snapshot.isEmpty) return
+        if (snapshot.isEmpty && !snapshot.answeredEmpty) return
         val file = file(key)
         val previous = read(key)
         if (previous != null && previous.updatedAt > snapshot.updatedAt) return

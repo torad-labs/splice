@@ -34,7 +34,7 @@ internal class ClaudeNativeQuota(
     }
 
     override fun observed(key: String, snapshot: QuotaSnapshot) {
-        if (snapshot.isEmpty) return
+        if (snapshot.isEmpty && !snapshot.answeredEmpty) return
         latest.updateAndGet { previous ->
             if (previous?.key == key && previous.snapshot.updatedAt > snapshot.updatedAt) {
                 previous

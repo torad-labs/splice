@@ -4,6 +4,7 @@ package splice.head.usage
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
@@ -62,6 +63,19 @@ class CredentialQuotaFilesTest {
         files.observed(first, snapshot(20.0, 3_000L))
         assertEquals(snapshot(20.0, 3_000L), files.read(first))
         assertThrows<IllegalArgumentException> { files.read("../other") }
+    }
+
+    @Test
+    fun `a provider's empty answer replaces the stored reading, and a reading with no time does not`() {
+        val files = CredentialQuotaFiles(directory.resolve("native-quota.json"), LogSink {})
+        files.observed(first, snapshot(10.0, 1_000L))
+
+        files.observed(first, QuotaSnapshot())
+        assertEquals(snapshot(10.0, 1_000L), files.read(first), "no windows and no time says nothing")
+
+        files.observed(first, QuotaSnapshot(updatedAt = 2_000L))
+        assertEquals(QuotaSnapshot(updatedAt = 2_000L), files.read(first))
+        assertTrue(requireNotNull(files.read(first)).answeredEmpty)
     }
 
     @Test

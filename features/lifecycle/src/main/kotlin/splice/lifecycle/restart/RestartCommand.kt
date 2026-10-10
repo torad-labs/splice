@@ -11,6 +11,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.core.util.TopologyRefusal
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
@@ -51,10 +52,15 @@ public class RestartCommand(
         // range closed. Say it out loud, and name the failure; the live enumeration below usually
         // covers for it anyway.
         val topology = Cancellables
-            .runCatchingCancellable { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env)) }
+            .runCatchingCancellable { TopologyLoader.loadForBoot(TopologyLoader.configPath(env)).topology }
             .onFailure { failure ->
                 val path = TopologyLoader.configPath(env)
                 val reason = SafeFailureText.render(failure)
+                if (failure is TopologyRefusal) {
+                    output.line("splice: $reason")
+                    output.line("splice: nothing was stopped and $path is unchanged; fix it, then restart")
+                    return false
+                }
                 if (DaemonProbe.healthVersion(settings.controlPort(null, env)) == null) {
                     output.line("splice: cannot start the daemon until $path is fixed ($reason)")
                     return false

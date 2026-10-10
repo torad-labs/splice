@@ -64,6 +64,18 @@ public class TopologySlotsFailure(public val problem: Problem) : IllegalArgument
  *  alone. The header comes from the masked text, where strings and comments are blanked, so it quotes no value. */
 public class TopologyStructureFailure(detail: String) : IllegalArgumentException(detail)
 
+/** Every reason splice.toml cannot serve, listed at once: boot refuses on the whole list, not on the first of it. Each
+ *  finding names a key path and a line and never a value, so the message is safe to print and to log whole. */
+public class TopologyRefusal(public val findings: List<splice.core.topology.TopologyFinding>) :
+    IllegalArgumentException(
+        "splice.toml has ${findings.size} problem(s); splice will not start until all are fixed:" +
+            findings.joinToString("") { "\n  - ${it.text()}" },
+    ) {
+    init {
+        require(findings.isNotEmpty())
+    }
+}
+
 public object SafeFailureText {
 
     /** Filesystem and network failures keep their full text — their messages are paths, hosts
@@ -75,6 +87,7 @@ public object SafeFailureText {
     public fun render(failure: Throwable): String = when (failure) {
         is TopologySlotsFailure -> failure.problem.detail
         is TopologyStructureFailure -> failure.message.orEmpty()
+        is TopologyRefusal -> failure.message.orEmpty()
         is TopologyTypeFailure ->
             "splice.toml: ${failure.key} at line ${failure.line} expects ${failure.expected.label}"
         // These exact filesystem/network classes carry paths, hosts or timeouts, never parsed file values.

@@ -108,7 +108,10 @@ public object TopologyBackupName {
 }
 
 /** One reason a write was refused: the dotted path of the key it concerns and what is wrong. */
-public data class TopologyFinding(val path: String, val message: String)
+public data class TopologyFinding(val path: String, val message: String, val line: Int? = null) {
+    /** The finding as one line for a person: the key path, the line it sits on when known, and the reason. */
+    public fun text(): String = "$path${line?.let { " (line $it)" }.orEmpty()}: $message"
+}
 
 /** What a write did. A refusal is a value, never a throw: the route answers it as findings. */
 public sealed class TopologyWriteResult {
@@ -142,7 +145,7 @@ public class TopologyWriter(
         keys.canonical(json.encodeToJsonElement(Topology.serializer(), topology)).jsonObject
 
     public fun write(requested: Topology): TopologyWriteResult {
-        val findings = TopologyChecks(requested, discovered, backups).findings()
+        val findings = TopologyChecks(requested, discovered, backups, withRosters = true).findings()
         if (findings.isNotEmpty()) return TopologyWriteResult.Refused(findings)
         val existing = Files.readString(path)
         val held = Cancellables.runCatchingCancellable { tree(parse(existing)) }.getOrElse { failure ->
@@ -224,14 +227,31 @@ public class TopologyWriter(
         TopologyWriteResult.Refused(listOf(TopologyFinding(TOPOLOGY_FILE, message)))
 }
 
+/** The checks the decode does not make but the daemon would trip on at boot: an undeclared provider, a
+ *  bad or shared port, a roster that builds no catalog, an override the daemon would ignore. One list,
+ *  shared by the console writer (which refuses an edit with it) and fail-closed boot (which refuses to
+ *  serve with it), so neither can drift from the other. Each finding names a key path and never a value.
+ *
+ *  [stateBase] only satisfies the knob check; nothing here reads state. */
+public object TopologyFindings {
+    public fun of(
+        topology: Topology,
+        discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
+        stateBase: Path,
+        rosters: Boolean = true,
+    ): List<TopologyFinding> = TopologyChecks(topology, discovered, stateBase, rosters).findings()
+}
+
 /** The checks the loader does not make at decode time but the daemon would trip on at boot. */
 private class TopologyChecks(
     private val topology: Topology,
     private val discovered: HeadDiscoveredModels,
     private val stateBase: Path,
+    private val withRosters: Boolean,
 ) {
 
-    fun findings(): List<TopologyFinding> = references() + ports() + rosters() + knobs()
+    fun findings(): List<TopologyFinding> =
+        references() + ports() + (if (withRosters) rosters() else emptyList()) + knobs()
 
     private fun references(): List<TopologyFinding> = topology.heads
         .filter { (_, head) -> head.provider !in topology.providers }

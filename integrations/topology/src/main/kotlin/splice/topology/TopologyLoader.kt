@@ -19,6 +19,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SecureFile
+import splice.core.util.TopologyRefusal
 import splice.core.util.TopologyTypeFailure
 import java.io.IOException
 import java.nio.file.Files
@@ -185,17 +186,31 @@ replay_reasoning = false
         loadOrMaterializeWithDigest(path, ExclusiveStarterWrite)
 
     internal fun loadOrMaterializeWithDigest(path: Path, write: StarterWrite): LoadedTopology {
+        val bytes = readOrMaterialize(path, write)
+        return LoadedTopology(parse(bytes.toString(Charsets.UTF_8)), sha256Hex(bytes))
+    }
+
+    /** Boot and restart: the topology, or a [TopologyRefusal] listing EVERY problem in the file at once. */
+    public fun loadForBoot(path: Path): LoadedTopology {
+        val bytes = readOrMaterialize(path, ExclusiveStarterWrite)
+        val stateBase = path.toAbsolutePath().parent ?: path
+        return when (val read = ConfigFindings.read(bytes.toString(Charsets.UTF_8), stateBase)) {
+            is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes))
+            is ConfigRead.Refused -> throw TopologyRefusal(read.findings)
+        }
+    }
+
+    private fun readOrMaterialize(path: Path, write: StarterWrite): ByteArray {
         // DR-66: the read is the probe. Only proven absence (NoSuch + no NOFOLLOW entry) is a
         // first run; an unreadable existing file — or a dangling dotfiles symlink — aborts loud
         // instead of being clobbered with (or written through by) the starter.
-        val bytes = Cancellables.runCatchingCancellable { Files.readAllBytes(path) }
+        return Cancellables.runCatchingCancellable { Files.readAllBytes(path) }
             .getOrElse { failure ->
                 val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                     !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
                 if (!genuinelyAbsent) throw failure
                 materializeStarter(path, write)
             }
-        return LoadedTopology(parse(bytes.toString(Charsets.UTF_8)), sha256Hex(bytes))
     }
 
     /** First-run creation NEVER truncates an unobserved path: the exclusive claim loses to any
@@ -228,6 +243,11 @@ replay_reasoning = false
         // Structural guards ktoml lacks (duplicate models keys, reopened tables, string rosters)
         // live in TomlStructurePreflight — extracted with its masker, 2026-08-31 concentration.
         TomlStructurePreflight.check(text)
+        return decode(text)
+    }
+
+    /** The decode alone, without the structural guards: ktoml's type failure becomes the safe one-key diagnosis. */
+    internal fun decode(text: String): Topology {
         return try {
             Toml.decodeFromString(text)
         } catch (failure: TomlDecodingException) {

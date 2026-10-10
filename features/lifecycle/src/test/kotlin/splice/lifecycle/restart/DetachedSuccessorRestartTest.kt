@@ -98,7 +98,8 @@ class DetachedSuccessorRestartTest {
         }
         val command = RestartCommand(output, output, env, RunningJar { null })
         assertEquals(false, command.restart(waitForCompactions = false))
-        assertTrue(lines.any { it.contains("cannot start the daemon until $config is fixed") }, lines.toString())
+        assertTrue(lines.any { it.contains("splice.toml has") && it.contains("problem(s)") }, lines.toString())
+        assertTrue(lines.any { it.contains("nothing was stopped") }, lines.toString())
         assertTrue(lines.none { it.contains("falling back to the running daemon") }, lines.toString())
     }
 

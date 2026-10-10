@@ -21,10 +21,14 @@ internal object TomlStructurePreflight {
     private val TABLE_HEADER = Regex("(?m)^[ \\t]*\\[")
 
     fun check(text: String) {
+        failures(text).firstOrNull()?.let { throw it }
+    }
+
+    /** EVERY structural problem in [text], in the order [check] reports the first of them. Each carries the
+     *  table and line it concerns and never a value, so a refusal can list them all at once. */
+    fun failures(text: String): List<IllegalArgumentException> {
         val structure = TomlStructureMasker(text).mask()
-        validateInlineModelArrays(structure)
-        rejectDuplicateModelKeys(structure)
-        rejectDuplicateSlots(structure)
+        return inlineModelArrayFailures(structure) + duplicateKeyFailures(structure) + duplicateSlotFailures(structure)
     }
 
     /** DR-44b: TOML forbids a duplicated key, but ktoml accepts it silently (proven by the red
@@ -39,7 +43,8 @@ internal object TomlStructurePreflight {
      *  quoted (`[heads."claude-grok"]`) and whitespace (`[ heads . claude-grok ]`) variants
      *  already fail loudly inside ktoml before any union (probed), and array-of-tables
      *  (`[[providers.xai.models]]`) legitimately repeats and stays out of the check. */
-    private fun rejectDuplicateModelKeys(structure: String) {
+    private fun duplicateKeyFailures(structure: String): List<IllegalArgumentException> {
+        val found = mutableListOf<IllegalArgumentException>()
         val bounds = TABLE_HEADER.findAll(structure).map { it.range.first }.toList() + structure.length
         val seenHeaders = HashSet<String>()
         var sectionStart = 0
@@ -57,7 +62,7 @@ internal object TomlStructurePreflight {
             // is exactly the old preamble exclusion plus the missing first-table registration.
             if (header.startsWith("[") && !header.startsWith("[[")) {
                 if (!seenHeaders.add(header)) {
-                    throw TopologyStructureFailure(
+                    found += TopologyStructureFailure(
                         "table ${tableName(header)} (line ${lineOf(structure, sectionStart)}) " +
                             "is defined twice: TOML forbids redefining a table and ktoml silently merges both " +
                             "bodies (a stale roster would ride the union); keep one section per table",
@@ -65,7 +70,7 @@ internal object TomlStructurePreflight {
                 }
             }
             if (MODELS_LINE_ASSIGNMENT.findAll(section).count() > 1) {
-                throw TopologyStructureFailure(
+                found += TopologyStructureFailure(
                     "duplicate models key in ${tableName(header)} (line ${lineOf(structure, sectionStart)}): " +
                         "TOML forbids it " +
                         "and ktoml silently merges; keep exactly one models = [...] line per head",
@@ -73,6 +78,7 @@ internal object TomlStructurePreflight {
             }
             sectionStart = end
         }
+        return found
     }
 
     /** The table a finding names: the bracketed header and nothing after it. A section that opens with a bare
@@ -89,7 +95,8 @@ internal object TomlStructurePreflight {
     private fun lineOf(structure: String, offset: Int): Int = structure.take(offset).count { it == '\n' } + 1
 
     /** ktoml collapses repeated map keys before HeadConfig can see them. Read only masked keys. */
-    private fun rejectDuplicateSlots(structure: String) {
+    private fun duplicateSlotFailures(structure: String): List<IllegalArgumentException> {
+        val found = mutableListOf<IllegalArgumentException>()
         val map = Regex("(?<![A-Za-z0-9_-])model_slots[ \\t]*=[ \\t]*\\{([^}]*)}")
         val keys = Regex("(?m)(?:^|[,\\n])[ \\t]*([A-Za-z0-9_-]+)[ \\t]*=")
         val assignments = Regex("(?m)^[ \\t]*model_slots[ \\t]*=")
@@ -108,22 +115,24 @@ internal object TomlStructurePreflight {
                 val names = keys.findAll(body).map { it.groupValues[1].lowercase() }.toList()
                 names.distinct().size != names.size
             }
-            if (repeated) throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
+            if (repeated) found += TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
             start = end
         }
+        return found
     }
 
-    private fun validateInlineModelArrays(structure: String) {
-        MODEL_ARRAY_ASSIGNMENT.findAll(structure).forEach { assignment ->
+    private fun inlineModelArrayFailures(structure: String): List<IllegalArgumentException> =
+        MODEL_ARRAY_ASSIGNMENT.findAll(structure).mapNotNull { assignment ->
             val valueStart = assignment.range.last + 1
             val firstElement = structure.asSequence()
                 .drop(valueStart)
                 .firstOrNull { !it.isWhitespace() }
-            require(firstElement == '{' || firstElement == ']') {
-                "models must be an array of inline tables; write models = [{ id = \"...\" }]"
+            if (firstElement == '{' || firstElement == ']') {
+                null
+            } else {
+                IllegalArgumentException("models must be an array of inline tables; write models = [{ id = \"...\" }]")
             }
-        }
-    }
+        }.toList()
 }
 
 /** V4-83: `public`, not `private` — `splice add-model` (in :app) edits the head roster by offset and must

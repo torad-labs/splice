@@ -296,6 +296,14 @@ function spawnGradle(
   for (const [key, value] of Object.entries(env)) {
     if (typeof value === "string") childEnv[key] = value;
   }
+  // THE ENVELOPE THE ROOT WRAPPER LOOKS FOR. `./gradlew` re-executes itself through `gate slot` unless it
+  // finds this, which is what makes the slot the only way to start gradle here instead of a convention a
+  // seat can forget — and one forgot, three times, on 2026-10-10. Set for both the direct and the joint
+  // spawn: the joint shim (bin/gradlew) execs the real wrapper with its own environment, minus only the
+  // two joint variables, so the marker crosses it. It carries THIS process's pid because a value left
+  // exported in a seat's shell outlives the run that set it, and a marker naming a dead process is
+  // ignored by the wrapper (see its own note), so the stale case routes instead of slipping through.
+  childEnv.SPLICE_GRADLE_SLOT = `${label}:${process.pid}`;
   // `-n "${CI:-}"` in the script: an empty CI is not CI.
   const offline = childEnv.CI ? [] : ["--offline"];
   // Projects build in parallel on CI only. The runner is the job's alone; on this box the slot's JVMs

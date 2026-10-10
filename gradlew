@@ -102,6 +102,75 @@ die () {
     exit 1
 } >&2
 
+##############################################################################
+#
+#   splice: gradle starts in the gradle slot, or it does not start.
+#
+#   ONE GRADLE AT A TIME IS A LOCK, NOT A CONVENTION. tools/gate's slot serialises every gradle in
+#   this checkout and all its worktrees, but it only serialises the runs that TAKE it. On
+#   2026-10-10 a seat ran three one-task checks straight through this wrapper beside a run inside
+#   the slot. Two writers then shared one test-results directory, and gradle's reporter closed onto
+#   a file the other had already moved: SerializableTestResultStore$Writer.close does
+#   `Files.move(in-progress-results-generic.bin, results-generic.bin, REPLACE_EXISTING)`, so an
+#   existing target is fine and a MISSING SOURCE is the NoSuchFileException that ended the run. The
+#   rule both seats already agreed on did not stop it, so the wrapper now sends itself back through
+#   the slot and running outside it is no longer something to remember.
+#
+#   WHAT IS EXEMPT, AND WHY. Client-only commands build nothing and take no slot: --version,
+#   --status, --stop and the help flags. Queueing `./gradlew --stop` behind a running build would
+#   hang the seat trying to stop that build, which is the opposite of the point. A run with no
+#   arguments is gradle's own help, and the slot refuses an empty task list by design rather than
+#   report a pass for a run that did nothing. CI is one build per runner with no second writer to
+#   collide with, and its workflow steps call this wrapper directly, so routing them through the
+#   slot would add a bun dependency to every step and serialise nothing.
+#
+#   THE MARKER IS BELIEVED ONLY WHILE ITS RUN IS ALIVE. SPLICE_GRADLE_SLOT is `<label>:<pid>`,
+#   written by the slot (tools/gate/src/lib/slot.ts, spawnGradle). A copy left behind in a seat's
+#   exported environment names a process that has exited, and this wrapper then routes as if the
+#   marker were absent. Where there is no /proc to ask, the marker is taken at its word.
+#
+##############################################################################
+
+# Whether a live slot already admitted this run.
+splice_in_slot () {
+    case ${SPLICE_GRADLE_SLOT:-} in
+      '') return 1 ;;
+    esac
+    splice_holder=${SPLICE_GRADLE_SLOT##*:}
+    case $splice_holder in
+      '' | *[!0-9]*) return 0 ;;        # nothing to judge the marker by; take it at its word
+    esac
+    if [ -d /proc ] ; then
+        [ -d "/proc/$splice_holder" ] && return 0
+        return 1
+    fi
+    return 0
+}
+
+# Whether these arguments would actually build something.
+splice_builds () {
+    [ "$#" -eq 0 ] && return 1
+    for splice_arg do
+        case $splice_arg in
+          --version|-v|--stop|--status|--help|-h|'-?') return 1 ;;
+        esac
+    done
+    return 0
+}
+
+if [ -z "${CI:-}" ] && [ -f "$APP_HOME/tools/gate/index.ts" ] && splice_builds "$@" && ! splice_in_slot ; then
+    if command -v bun > /dev/null 2>&1 ; then
+        # The slot runs this same wrapper with the marker set, so there is no second trip through here.
+        exec bun "$APP_HOME/tools/gate" slot "${GRADLE_SLOT_LABEL:-gradlew-pid$$}" -- "$@"
+    fi
+    die "ERROR: gradle runs inside the gradle slot in this repository, and bun is not on PATH to take it.
+
+Two gradle runs in one project directory corrupt each other's test results, so the slot is the
+only way in. Either put bun on PATH and run this again, or name the slot yourself:
+
+    bun tools/gate slot <your-seat> -- $*"
+fi
+
 # OS specific support (must be 'true' or 'false').
 cygwin=false
 msys=false

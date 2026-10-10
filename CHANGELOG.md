@@ -97,8 +97,8 @@ config writes and daemon shutdown. In 0.3.x it left that boundary through:
 - **A client-auth head never forwards splice's own keys upstream.** A turn that carries the turn
   key or the management key in `Authorization` or `x-api-key` is refused with a 401 that names
   the header and the variable that set it. This includes a key behind a blank first header line.
-- **`splice dashboard` is removed, and the control plane serves no page.** No command prints the
-  management key.
+- **`splice dashboard` is removed, and no command prints the management key.** `splice console` opens
+  the console through an owner-only redirect page that carries the key in the address fragment, never on a command line or in output.
 
 splice is single-user, and its boundary is your Unix account. A process running as you can read
 `mgmt-key`, as it can read your other credentials. What 0.4.0 closes is every place the key left
@@ -117,7 +117,7 @@ origin.
   compaction and is still streaming after that is cut, and Claude Code does not retry a turn cut
   after its text began. A compaction is let finish first (see Changed). `splice upgrade` waits up to 30 minutes for
   every head to go idle, then leaves the release staged unless you rerun with `--now`.
-- **splice is tested against Claude Code 2.1.289.** When a session runs a newer one, doctor and
+- **splice is tested against Claude Code 2.1.296.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any
@@ -579,6 +579,58 @@ origin.
   and the weekly window come from a poll on the quota poller's own cadence, never from the
   request path, and a rate-limited mint is held rather than retried.
 
+- **A ChatGPT account signs in from the console by device code.** The Accounts page starts the flow on
+  the daemon and shows a verification address and a code; open the address on any machine, enter the
+  code and approve. The code lives 15 minutes, and a refused or expired one says so on the page.
+  `splice login codex [--label <name>]` in a terminal keeps the browser flow; Kimi and Muse use the
+  device code in both places. A log line for a refused response carries the status and the OAuth error
+  code, never the body. Signing the first account in again under its own label replaces it in place.
+- **Two ChatGPT accounts are told apart by who they are.** The account's user id and email, read from its
+  sign-in, appear on its row, masked: neither is ever shown whole.
+- **The first ChatGPT, Grok, Kimi or Muse account can be renamed and removed like the rest.** A rename
+  is stored beside the command's pool and never written into the credential, which can be the vendor
+  CLI's own file; Remove is offered only on splice's own file, and a file shared with the vendor's CLI keeps its refusal.
+- **A pin can name one session.** `POST /api/auth/<head>/switch` takes `"session"` beside `"label"`: that
+  session uses the account and the head's pin stays for every other session. `DELETE` with `?session=`
+  drops that session's pin; without it, the head's. A session's pin outranks the head's for that session
+  only, a pin on an account that is out of quota falls back to the automatic rule and stays set, and a
+  restart clears every pin. Without a pin a session keeps its account until a limit, then moves to the
+  account whose weekly window resets soonest. `splice status`, `splice sessions` and `/api/sessions`
+  show the pin: `pinned to <label>` on a head, and `account` plus `account_pin` per session.
+- **A key is its own account.** An API-key head's key appears on Accounts with its variable name, a
+  fingerprint (the first four bytes of its SHA-256, never the key), the day splice first saw it, and
+  the keys it replaced with their own first-seen days. `key-ledger.json`, 0600 beside the key store,
+  holds the fingerprints; if it cannot be written the list still answers and the daemon log says so once.
+- **`GET /api/config` answers every knob inline.** Each entry in `knobs` carries its `value`, the `scope`
+  that set it (default, toml, head, file, env or runtime), its `disposition` (`live` or `restart`) and
+  `editable`; a knob that cannot be changed carries a `read_only_reason`. `mirror_reasoning` reads
+  `restart`, is not editable and says it is pinned false by project rule.
+- **A second head can use the same provider.** `splice add <profile> --name <key>` adds another
+  provider-and-head pair for a profile you already use. The key takes lowercase letters, digits and
+  dashes and must be new; splice picks a free port and names the command `claude-<key>` unless you pass
+  `--command`; an API-key head reads its own `<KEY>_API_KEY`. A key, command or table that already
+  exists is refused with a sentence naming it. A saved head ends with the doctor run, not a hint to run it.
+- **splice ships each vendor's published list price.** A fresh install prices its turns at the vendor's own
+  API rates for Anthropic, OpenAI, xAI, Meta, Kimi and DeepSeek (DeepSeek's peak hours at their own factor), so a plan turn reads
+  as what the same work would cost on the API. A card in `splice.toml`, a head's card or a price the
+  provider's model list publishes always wins. The data is `published-rates.tsv`, with each vendor's source and the day it was read.
+- **The shared MCP host caches `tools/list`.** Every session sharing a hosted server gets the listing from one
+  cache, dropped when the child changes its tools or exits, whoever owns the process slot at that moment.
+  `/api/mcp` reports each hosted server's resident memory.
+- **The perf view says what it dropped and splits turns.** It reports how many rows telemetry dropped
+  (rows whose cumulative `async_io_drops` is positive) and splits turns by model and by kind. Claude Code's
+  activity side query leaves a perf row of its own kind, counted as no turn. A turn whose session cwd
+  cannot be resolved while `[projects]` is configured carries `system_prompt_cwd_unresolved=1`, and doctor
+  fails a project prompt table that sets both `system_prompt` and `system_prompt_file`, as the daemon refuses it at load.
+- **A budget day runs midnight to midnight where the daemon runs.** Under the UTC day a Chicago budget lifted
+  at 7 PM. The refusal says it lifts at midnight, local time, and Accounts draws the same day.
+- **Accounts reports what a provider says about usage.** A provider that answers with no usage clears the
+  account's bars and the card says "<Provider> doesn't report limits"; a failed probe keeps the last reading
+  with its time. Claude's per-model weekly windows (Opus, Sonnet) appear under the weekly window, each with its own reset.
+- **A provider can say whose machine runs it.** `discovery = { family = "vast" }` on a provider groups a
+  rented GPU reached through an SSH tunnel as vast.ai in the console, where its loopback address would say This computer.
+- **A launch inside tmux records its pane** with the launch, so a tool that drives sessions finds the pane of a session it started.
+
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
   when the socket opened, not from its last use. Retirement replaces an idle connection before
@@ -633,9 +685,12 @@ origin.
   reasoning. Script text held between client steps has a separate byte budget from model output.
   Completed source usage is counted once. Source replies stopped before completion are counted,
   while their token usage stays unreported when no usage arrived.
-- **The dashboard is removed.** 0.3.x served a dashboard at `/` and `/dashboard`, and
-  `splice dashboard` opened it. 0.4.0 serves no page: both paths answer 404 and `splice dashboard`
-  is gone. The control API under `/api/*` stays.
+- **The dashboard is replaced by the console.** 0.3.x served a dashboard at `/` and `/dashboard`, and
+  `splice dashboard` opened it. 0.4.0 removes both. The control plane serves the console's pages at `/`
+  with no key, because a page carries no data and reads every number from the keyed `/api/*` routes;
+  nothing else opens without the key. `splice console` opens it. Accounts is the first page: sign-in,
+  Use now and the pin, Soonest reset and My order, rename and remove, key replace and remove, the daily
+  budget, and Add provider. `splice dashboard` is gone.
 - **A screenshot-heavy session on a large-window model keeps its images.** Claude Code keeps at
   most 100 images in a request, or 600 when it counts the session as 1M-context, and strips the
   oldest past that. splice now hands Claude Code the 1M form of a non-Claude model whose id has no window suffix and whose configured window
@@ -711,6 +766,13 @@ origin.
 - **The shipped code compiles warning-free, and a new warning fails the build.** Every main
   source set compiles with `allWarningsAsErrors`, and a discarded result the compiler flags
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
+
+- **An endpoint override that carries your token is honoured only on loopback.** The sign-in and usage
+  endpoints can be pointed at a stand-in for tests (`CODEX_OAUTH_ISSUER`, `CODEX_OAUTH_TOKEN_URL`,
+  `CODEX_OAUTH_AUTHORIZE_URL`, `GROK_OAUTH_ISSUER`, `GROK_OAUTH_AUTHORIZE_URL`, `GROK_OAUTH_TOKEN_URL`,
+  `KIMI_OAUTH_HOST`, `CLAUDE_OAUTH_USAGE_URL`). Those endpoints receive your token, so splice accepts one only
+  when its host is `localhost`, `127.0.0.1` or `::1`; any other host is ignored, the vendor's address is
+  used, and the daemon log names the variable once.
 
 ### Fixed
 - **Every registered command can show help without running.** `splice <verb> --help` and

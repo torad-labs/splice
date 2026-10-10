@@ -32,26 +32,28 @@ val everyTestTask = provider { subprojects.flatMap { it.tasks.withType<Test>() }
 /** module (Gradle project path) -> its src/test/kotlin directory — the DENOMINATOR the original
  *  covered with a MODULE_HOMES glob; a subproject's own conventional test source directory
  *  replaces it. Absent for a module that ships no Kotlin tests (:console) or none yet —
- *  TestDiscovery.scanModuleSources reads a missing directory as empty, never an error. */
-val testSourceDirsByModule = provider {
-    subprojects.associate { it.path to it.projectDir.resolve("src/test/kotlin") }
-}
+ *  TestDiscovery.scanModuleSources reads a missing directory as empty, never an error.
+ *
+ *  A PROPERTY filled once every project is evaluated, not a script-level provider or lambda: the task below runs
+ *  with the configuration cache on, which cannot store a reference to this script object, and a task that held one
+ *  failed the whole gate at the cache-store step with every check green (2026-10-10). */
+val testSourceDirsByModule = objects.mapProperty<String, File>()
 
 /** module -> every one of its Test tasks' own DECLARED junitXml output directory — read from each
  *  producer, never a shared glob (see the file header). Most subprojects have exactly one Test
  *  task ("test"); :app also has codeModePackagedTest, which reruns two classes against the
  *  packaged shadow jar into its own results directory — scanModuleXml merges every producer's
  *  rows for a module, keeping the LOWER count on a class both report. */
-val xmlDirsByModule = provider {
-    subprojects.associate { subproject ->
-        subproject.path to subproject.tasks.withType<Test>().map { it.reports.junitXml.outputLocation.get().asFile }
-    }
-}
+val xmlDirsByModule = objects.mapProperty<String, List<File>>()
 
-private val scannedClasses = {
-    testSourceDirsByModule.get().flatMap { (module, dir) -> scanModuleSources(dir, module) }
+gradle.projectsEvaluated {
+    testSourceDirsByModule.set(subprojects.associate { it.path to it.projectDir.resolve("src/test/kotlin") })
+    xmlDirsByModule.set(
+        subprojects.associate { subproject ->
+            subproject.path to subproject.tasks.withType<Test>().map { it.reports.junitXml.outputLocation.get().asFile }
+        },
+    )
 }
-private val observedXml = { xmlDirsByModule.get().mapValues { (_, dirs) -> scanModuleXml(dirs) } }
 
 tasks.register("verifyTestDiscovery") {
     group = "gate"
@@ -65,9 +67,11 @@ tasks.register("verifyTestDiscovery") {
     // for up-to-date checking: the line above already refuses to be up-to-date regardless.
     inputs.files(testSourceDirsByModule.map { it.values }).withPropertyName("testSourceDirectories").optional()
     inputs.files(xmlDirsByModule.map { it.values.flatten() }).withPropertyName("junitXmlDirectories").optional()
+    val sourceDirs = testSourceDirsByModule
+    val xmlDirs = xmlDirsByModule
     doLast {
-        val classes = scannedClasses()
-        val xmlByModule = observedXml()
+        val classes = sourceDirs.get().flatMap { (module, dir) -> scanModuleSources(dir, module) }
+        val xmlByModule = xmlDirs.get().mapValues { (_, dirs) -> scanModuleXml(dirs) }
         val problems = audit(classes, xmlByModule)
         check(problems.isEmpty()) { "tests-are-discovered RED:\n  " + problems.joinToString("\n  ") }
         logger.lifecycle(summaryLine(classes, xmlByModule))
@@ -89,7 +93,10 @@ tasks.register("testDiscoveryReport") {
     outputs.upToDateWhen { false }
     inputs.files(testSourceDirsByModule.map { it.values }).withPropertyName("testSourceDirectories").optional()
     inputs.files(xmlDirsByModule.map { it.values.flatten() }).withPropertyName("junitXmlDirectories").optional()
+    val sourceDirs = testSourceDirsByModule
+    val xmlDirs = xmlDirsByModule
     doLast {
-        logger.lifecycle(census(scannedClasses(), observedXml()))
+        val classes = sourceDirs.get().flatMap { (module, dir) -> scanModuleSources(dir, module) }
+        logger.lifecycle(census(classes, xmlDirs.get().mapValues { (_, dirs) -> scanModuleXml(dirs) }))
     }
 }

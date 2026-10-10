@@ -104,11 +104,13 @@ internal class CodeModeSourceCapture(
     } else {
         when (outcome) {
             is TurnOutcome.Failure ->
-                "failure cause=${outcome.cause} permanent=${outcome.traits.permanent} provider=${outcome.traits.providerReported}"
+                "failure cause=${outcome.cause} permanent=${outcome.traits.permanent} " +
+                    "provider=${outcome.traits.providerReported}"
             is TurnOutcome.ClientAbandoned -> "client abandoned"
             is TurnOutcome.Success -> when {
                 outcome.incomplete -> "incomplete ${outcome.shape.outputShape}"
-                outcome.handoffs.customCalls.size != 1 -> "calls=${outcome.handoffs.customCalls.size} ${outcome.shape.outputShape}"
+                outcome.handoffs.customCalls.size != 1 ->
+                    "calls=${outcome.handoffs.customCalls.size} ${outcome.shape.outputShape}"
                 else -> null
             }
         }

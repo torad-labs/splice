@@ -34,7 +34,6 @@ const GLYPH = {
   caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
   trace: '<svg class="wave" viewBox="0 0 40 40" aria-hidden="true"><polyline class="base" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/><polyline class="beat" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/></svg>',
   ask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M12 13.2h0"/><path d="M10 9.2a2 2 0 1 1 2.6 1.9"/></svg>',
-  wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="14"/></svg>',
 };
 // Write and the notebook editor draw the same mark as their neighbours; a tool with no mark of its own gets the wrench.
 GLYPH.Write = GLYPH.Edit;
@@ -174,7 +173,9 @@ function stateOf(session) {
   // No detail beside the word: the card's own ask, right below it, says what is wanted better than
   // Claude Code's "input needed" does, and the drawing has nothing there for the same reason.
   if (session.waiting_for) {
-    return { cls: "needs", lamp: GLYPH.ask, word: WAITING[session.waiting_for] || "Needs you", detail: "" };
+    // the two asks keep their own glyphs, as Sessions draws them: a permission is the shield, a question the bubble
+    const lamp = session.waiting_for === "permission prompt" ? ICON.dialog : ICON.input;
+    return { cls: "needs", lamp, word: WAITING[session.waiting_for] || "Needs you", detail: "" };
   }
   if (session.status === "working" || session.status === "busy") return { cls: "working", lamp: GLYPH.trace, word: "Working", detail: "" };
   const word = session.status ? session.status[0].toUpperCase() + session.status.slice(1) : "Idle";
@@ -253,7 +254,8 @@ function memberHtml(tm, slot) {
   const where = s.name || folder.split("/").pop();
   const heard = s.updated_at || s.status_updated_at;
   const also = alsoOn(tm, slot.session).join(", ");
-  return `<article class="card m ${L.cls}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
+  const opens = slot.session ? ` go" tabindex="0" role="link" data-go="${esc(slot.session)}` : "";
+  return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}${stop}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail}<span>${esc(model)}</span>` +
@@ -331,7 +333,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
   let acts = "";
   let why = "";
   if (ui.starting.has(key)) {
-    word = `<span class="word starting">${GLYPH.wait}Starting</span>`;
+    word = `<span class="word starting">${ICON.wait}Starting</span>`;
   } else if (failed) {
     word = `<span class="word limit">Not started</span>`;
     why = `<p class="why limit">${esc(failed)}</p>`;
@@ -644,8 +646,19 @@ document.addEventListener("keydown", (e) => {
   else if (ui.compose) { ui.compose = null; ui.pick = null; render(); }
 });
 
+/** A member card bound to a session opens it in Sessions, which reads its door from the hash. */
+function openSession(card) {
+  location.href = `sessions.html#${encodeURIComponent(card.dataset.go)}`;
+}
+document.addEventListener("keydown", (e) => {
+  const card = e.target.closest?.(".card[data-go]");
+  if (card && e.target === card && e.key === "Enter") openSession(card);
+});
+
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
+  const card = e.target.closest(".card[data-go]");
+  if (!b && card && !e.target.closest("a, button, input, textarea, select")) { openSession(card); return; }
   if (!b) {
     if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
     return;

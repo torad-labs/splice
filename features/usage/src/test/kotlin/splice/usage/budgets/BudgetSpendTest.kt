@@ -24,6 +24,7 @@ import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
+import java.time.ZoneOffset
 
 private const val SPEND_DAY_MS = 86_400_000L
 private const val SPEND_BOOT_MS = 20_000L * SPEND_DAY_MS + 3_600_000L
@@ -58,7 +59,15 @@ class BudgetSpendTest {
         var now = SPEND_BOOT_MS
         val before = PerfRow(SPEND_BOOT_MS - 1, "ok", tokens(1), facts = PerfTurnFacts(model = "priced"))
         val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(listOf(before)) } }
-        val owner = BudgetEnforcement(store, BudgetAlert { _, _ -> }, history, {}, WallClock { now }, immediateSeed())
+        val owner = BudgetEnforcement(
+            store,
+            BudgetAlert { _, _ -> },
+            history,
+            {},
+            WallClock { now },
+            immediateSeed(),
+            ZoneOffset.UTC,
+        )
         val head = owner.forHead("native", catalog)
         head.spent(now, "priced", tokens(2))
         assertSame(head, owner.forHead("native", catalog))
@@ -85,6 +94,7 @@ class BudgetSpendTest {
             {},
             WallClock { SPEND_BOOT_MS },
             immediateSeed(),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", catalog)
         head.spent(SPEND_BOOT_MS, "unpriced", emptyMap())
@@ -121,6 +131,7 @@ class BudgetSpendTest {
                 {},
                 WallClock { SPEND_BOOT_MS },
                 immediateSeed(),
+                ZoneOffset.UTC,
             )
             owner.forHead("head", catalog)
             val spend = owner.spending("head")!!
@@ -144,6 +155,7 @@ class BudgetSpendTest {
             {},
             WallClock { SPEND_BOOT_MS },
             immediateSeed(),
+            ZoneOffset.UTC,
         )
         owner.forHead("native", catalog).spent(SPEND_BOOT_MS, "priced", tokens(2))
         val route = BudgetRoutes(BudgetSource { store }, ConfigService(paths))

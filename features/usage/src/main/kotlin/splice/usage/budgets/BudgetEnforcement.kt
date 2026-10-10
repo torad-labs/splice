@@ -1,4 +1,4 @@
-// NEW: V4-133 review — the budgets GET/PUT /api/budgets stores, ENFORCED per head and per UTC day.
+// NEW: V4-133 review — the budgets GET/PUT /api/budgets stores, ENFORCED per head and per day.
 //
 // THE PROMISE, and all of it: "`warn` tells the operator, `block` refuses the turn"
 // (console/src/entities/budget/model/types.ts). Before this file a PUT with `block` answered 200 and
@@ -7,10 +7,11 @@
 // turn, spent() after its perf row. `block` refuses the turn once today's spend has reached the limit;
 // `warn` tells the operator once, through the saved alert webhook and the head's log, and serves it.
 //
-// TODAY IS THE UTC DAY, the boundary /api/projects' cost_today_usd already draws, so the console's
-// figure and the budget weigh the same turns (TurnPrice prices them the same way too). A new day
-// starts from nothing. A turn on a model with NO rate card has no price: it is not counted, and never
-// silently — the head's log names the model once a day, and a refusal says how many it could not count.
+// TODAY IS THE OPERATOR'S DAY, midnight to midnight where the daemon runs (Marlin, Oct 10, 2026). On
+// the UTC day a Chicago budget lifted at 7 PM. Accounts draws the same boundary in the browser, and
+// /api/projects' cost_today_usd still draws the UTC day. A new day starts from nothing. A turn on a
+// model with NO rate card has no price: it is not counted, and never silently — the head's log names
+// the model once a day, and a refusal says how many it could not count.
 //
 // THE FILES: this one holds the two ports and the entry point; BudgetLedger.kt one head's ledger,
 // BudgetDay.kt its day, core's TurnPrice the price of a turn and BudgetText.kt every sentence it says.
@@ -22,6 +23,7 @@ import splice.core.model.TurnPrice
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.usage.perf.PerfRowsSource
+import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 
 /** Where one head's perf rows are read back from: the files its PerfStats writes and archives. */
@@ -41,8 +43,10 @@ public class BudgetEnforcement(
     log: LogSink,
     clock: WallClock = WallClock(System::currentTimeMillis),
     seed: BudgetSeedRuntime,
+    zone: ZoneId = ZoneId.systemDefault(),
 ) {
-    private val context = LedgerContext(BudgetPolicy(budgets, seed), alert, log, clock, bootMs = clock(), seed = seed)
+    private val context =
+        LedgerContext(BudgetPolicy(budgets, seed), alert, log, clock, zone, bootMs = clock(), seed = seed)
     private val ledgers = ConcurrentHashMap<String, BudgetLedger>()
 
     /** [head]'s ledger, pricing its turns against [catalog]'s rate cards. One per head: the key is

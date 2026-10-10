@@ -2,7 +2,7 @@
 //
 // THE LEDGER IS IN MEMORY, because the perf files it would otherwise re-read are up to 64 MiB a
 // generation and admission runs on every turn. What memory cannot know is the spend a PREVIOUS daemon
-// recorded earlier today, so a budgeted head reads its perf history ONCE: the rows from the UTC day
+// recorded earlier today, so a budgeted head reads its perf history ONCE: the rows from the local day
 // start up to this daemon's boot. Every row at or after boot was written by this daemon and reached
 // the ledger through spent(), so the cut at boot counts each turn exactly once. An unbudgeted head
 // never reads anything, and a day that began after boot was seen whole, so it reads nothing either.
@@ -25,7 +25,7 @@ import splice.core.util.WallClock
 import splice.usage.perf.PerfRowsSource
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 /** What every head's ledger shares, built once by [BudgetEnforcement]. */
 internal data class LedgerContext(
@@ -33,10 +33,18 @@ internal data class LedgerContext(
     val alert: BudgetAlert,
     val log: LogSink,
     val clock: WallClock,
+    /** Where a budget day begins and ends: the operator's own midnight, never UTC's (Marlin, Oct 10, 2026). */
+    val zone: ZoneId,
     /** Every perf row at or after this instant was written by this daemon. */
     val bootMs: Long,
     val seed: BudgetSeedRuntime,
-)
+) {
+    /** The day [atMs] falls on in [zone], as an epoch day. */
+    fun localDay(atMs: Long): Long = Instant.ofEpochMilli(atMs).atZone(zone).toLocalDate().toEpochDay()
+
+    /** The instant [day] begins in [zone]. */
+    fun dayStart(day: Long): Long = LocalDate.ofEpochDay(day).atStartOfDay(zone).toInstant().toEpochMilli()
+}
 
 internal class BudgetLedger(
     private val head: String,
@@ -45,7 +53,7 @@ internal class BudgetLedger(
     private val context: LedgerContext,
 ) : HeadBudget {
     private val lock = Any()
-    private var today = DayTally(utcDay(context.clock()))
+    private var today = DayTally(context.localDay(context.clock()))
 
     override fun admit(): BudgetBlock? {
         val limit = limit() ?: return null
@@ -94,14 +102,11 @@ internal class BudgetLedger(
 
     private fun reached(atMs: Long, limit: Double): Boolean = (seededTally(atMs)?.usd ?: 0.0) >= limit
 
-    /** The UTC day [atMs] falls on, as an epoch day: the boundary /api/projects draws for cost_today_usd. */
-    private fun utcDay(atMs: Long): Long = Instant.ofEpochMilli(atMs).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()
-
-    /** Today's tally for [atMs], rolled forward on a new UTC day, or null for a row stamped on a day
+    /** Today's tally for [atMs], rolled forward on a new local day, or null for a row stamped on a day
      *  already gone (a turn that ended across midnight belongs to the day it was stamped). Called
      *  under [lock] only. */
     private fun tallyAt(atMs: Long): DayTally? {
-        val day = utcDay(atMs)
+        val day = context.localDay(atMs)
         if (day > today.day) today = DayTally(day)
         return today.takeIf { it.day == day }
     }
@@ -110,7 +115,7 @@ internal class BudgetLedger(
     private fun seededTally(atMs: Long): DayTally? {
         val unseeded = synchronized(lock) {
             val tally = tallyAt(atMs) ?: return@synchronized null
-            val dayStart = LocalDate.ofEpochDay(tally.day).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            val dayStart = context.dayStart(tally.day)
             if (!tally.seeded && context.bootMs <= dayStart) tally.seed(DayTally(tally.day))
             tally.takeIf { !it.seeded && !it.seeding }?.also { it.seeding = true }
         }
@@ -130,7 +135,7 @@ internal class BudgetLedger(
     /** The spend recorded on [day] before this daemon's boot. */
     private fun beforeBoot(day: Long): DayTally {
         val before = DayTally(day)
-        val dayStart = LocalDate.ofEpochDay(day).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val dayStart = context.dayStart(day)
         if (context.bootMs <= dayStart) return before
         val window = Cancellables.runCatchingCancellable { rows.window(dayStart) }
             .onFailure {
@@ -166,7 +171,7 @@ internal class BudgetLedger(
         )
     }
 
-    /** Tells the operator the budget is reached, once per UTC day per limit: a raised or lowered limit
+    /** Tells the operator the budget is reached, once per local day per limit: a raised or lowered limit
      *  that is reached again is a new fact, a second turn over the same one is not. */
     private fun warnOnce(atMs: Long, limit: Double) {
         val spentToday = synchronized(lock) {

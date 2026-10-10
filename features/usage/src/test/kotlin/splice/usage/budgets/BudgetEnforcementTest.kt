@@ -1,4 +1,4 @@
-// NEW: V4-133 review — the budgets the console saves are ENFORCED, per head and per UTC day.
+// NEW: V4-133 review — the budgets the console saves are ENFORCED, per head and per local day.
 //
 // The console's own contract (console/src/entities/budget/model/types.ts): "`warn` tells the
 // operator, `block` refuses the turn". Before this row a PUT /api/budgets with `block` answered 200
@@ -32,6 +32,8 @@ import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.concurrent.CopyOnWriteArrayList
 
 private const val DAY_MS = 86_400_000L
@@ -67,7 +69,12 @@ private class FakeHistory(private val rows: List<PerfRow> = emptyList()) : HeadP
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-private class Rig(tmp: Path, history: FakeHistory = FakeHistory(), startMs: Long = DAY_START + 10 * HOUR_MS) {
+private class Rig(
+    tmp: Path,
+    history: FakeHistory = FakeHistory(),
+    startMs: Long = DAY_START + 10 * HOUR_MS,
+    zone: ZoneId = ZoneOffset.UTC,
+) {
     var now: Long = startMs
     val store = BudgetStore(tmp.resolve("budgets.json"))
     val alerts = CopyOnWriteArrayList<Pair<String, String>>()
@@ -80,6 +87,7 @@ private class Rig(tmp: Path, history: FakeHistory = FakeHistory(), startMs: Long
         { logs.add(it) },
         WallClock { now },
         BudgetSeedRuntime(scope, UnconfinedTestDispatcher(scope.testScheduler), Ticker { false }),
+        zone,
     )
 
     fun budget(head: String, dailyUsd: Double?, action: String) {
@@ -107,7 +115,7 @@ class BudgetEnforcementTest {
     }
 
     @Test
-    fun `the refusal names the head, the spend, the limit and when it lifts, and a new UTC day lifts it`(
+    fun `the refusal names the head, the spend, the limit and when it lifts, and a new day lifts it`(
         @TempDir tmp: Path,
     ) {
         val rig = Rig(tmp)
@@ -121,11 +129,25 @@ class BudgetEnforcementTest {
         assertTrue(message.contains("'h'"), message)
         assertTrue(message.contains("an estimated $2.50 in API cost today"), message)
         assertTrue(message.contains("$2.00 daily budget"), message)
-        assertTrue(message.contains("00:00 UTC"), message)
+        assertTrue(message.contains("until midnight, local time"), message)
         assertEquals("spent_usd=2.50 limit_usd=2.00 unpriced_turns=0", block.detail)
 
         rig.now = DAY_START + DAY_MS + 1
-        assertNull(head.admit(), "the budget is per UTC day: the next day starts from nothing")
+        assertNull(head.admit(), "the next day starts from nothing")
+    }
+
+    @Test
+    fun `the budget day runs midnight to midnight where the daemon runs, not UTC's`(@TempDir tmp: Path) {
+        // 05:00 in Chicago on Oct 4, 2024, when Chicago is five hours behind UTC.
+        val rig = Rig(tmp, zone = ZoneId.of("America/Chicago"))
+        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", CATALOG)
+        head.spent(rig.now, MODEL, turnOf(2.5))
+
+        rig.now = DAY_START + DAY_MS + HOUR_MS
+        assertNotNull(head.admit(), "8 PM in Chicago is still the day the budget was spent, though UTC has rolled")
+        rig.now = DAY_START + DAY_MS + 5 * HOUR_MS
+        assertNull(head.admit(), "Chicago's midnight lifts it")
     }
 
     @Test

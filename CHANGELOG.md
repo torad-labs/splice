@@ -982,7 +982,7 @@ origin.
   Earlier spend loads in the background after restart, so admission can
   miss it until that read finishes. `block` refuses a turn once the available tally reaches the
   limit: a 403 `permission_error` naming the head, the spend,
-  the limit and the 00:00 UTC reset, with an `error:budget-blocked` perf row. `warn` tells the
+  the limit and the reset at local midnight, with an `error:budget-blocked` perf row. `warn` tells the
   operator once per day and per limit through the saved webhook (the test send's `{"text"}` body)
   and a `[head][budget]` log line, and serves the turn. A turn on a model with no rate card is not
   counted and is named in the log. The `desktop` alert flag still delivers nothing: the daemon has

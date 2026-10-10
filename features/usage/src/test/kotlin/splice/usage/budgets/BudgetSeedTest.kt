@@ -27,6 +27,7 @@ import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.time.ZoneOffset
 
 private const val SEED_DAY_MS = 86_400_000L
 private const val SEED_BOOT_MS = 20_000L * SEED_DAY_MS + 3_600_000L
@@ -62,6 +63,7 @@ class BudgetSeedTest {
             {},
             WallClock { SEED_BOOT_MS },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", seedCatalog)
         head.spent(SEED_BOOT_MS, "priced", tokens(2))
@@ -94,6 +96,7 @@ class BudgetSeedTest {
             {},
             WallClock { SEED_BOOT_MS },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         owner.forHead("head", seedCatalog)
         val routes = BudgetRoutes(BudgetSource { store }, ConfigService(paths))
@@ -121,6 +124,7 @@ class BudgetSeedTest {
             {},
             WallClock { SEED_BOOT_MS },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", null)
         assertNotNull(head.admit(), "not yet refreshed cannot masquerade as no cap at startup")
@@ -140,6 +144,7 @@ class BudgetSeedTest {
             {},
             WallClock { SEED_BOOT_MS },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", null)
         assertNull(head.admit())
@@ -163,6 +168,7 @@ class BudgetSeedTest {
             {},
             WallClock { SEED_BOOT_MS },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", null)
         assertNotNull(head.admit())
@@ -197,6 +203,7 @@ class BudgetSeedTest {
             {},
             WallClock { SEED_BOOT_MS },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", seedCatalog)
         head.spent(SEED_BOOT_MS, "priced", tokens(0))
@@ -228,6 +235,7 @@ class BudgetSeedTest {
             {},
             WallClock { now },
             BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+            ZoneOffset.UTC,
         )
         val head = owner.forHead("head", seedCatalog)
         assertNull(head.admit())

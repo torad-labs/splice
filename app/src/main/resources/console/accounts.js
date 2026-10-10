@@ -7,9 +7,9 @@ let NOW = new Date(); // read again at every load, so a reset reads in the viewe
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
 const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local", vast: "--local" };
 
-// splice's budget day is the UTC day (BudgetEnforcement.kt:10), so it refills at UTC midnight, read in the viewer's clock.
+// splice's budget day runs midnight to midnight on this computer's clock (BudgetEnforcement.kt:10), so it refills at local midnight.
 function dayReset() {
-  const next = Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate() + 1);
+  const next = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + 1).getTime();
   return { left: Math.round((next - NOW.getTime()) / 60000), resetMs: next };
 }
 
@@ -54,7 +54,7 @@ async function load() {
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
-  const dayStart = Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate());
+  const dayStart = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate()).getTime();
   const spendToday = new Map((ec.body?.heads || []).map((h) => [h.key, (h.buckets || []).filter((b) => b.hour >= dayStart)
     .reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 })]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
@@ -241,7 +241,7 @@ function windowsHtml(a, next = null) {
   return `<div class="windows">${rows}</div>`;
 }
 
-// A command's day: what it has spent since the UTC day began, against the budget he set, and when it refills. The
+// A command's day: what it has spent since local midnight, against the budget he set, and when it refills. The
 // command's tab names the row, because one provider can serve several commands. Where a plan provider's commands share
 // one rail, the tab is pressed to show that command's order: pick is { p, on } there, and null everywhere else.
 function meterHtml(c, pick = null) {

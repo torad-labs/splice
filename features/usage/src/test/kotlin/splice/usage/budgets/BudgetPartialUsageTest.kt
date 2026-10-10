@@ -24,6 +24,7 @@ import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
+import java.time.ZoneOffset
 
 private const val PARTIAL_BOOT = 20_000L * 86_400_000L + 3_600_000L
 
@@ -52,6 +53,7 @@ class BudgetPartialUsageTest {
             {},
             WallClock { PARTIAL_BOOT },
             BudgetSeedRuntime(scope, UnconfinedTestDispatcher(scope.testScheduler), Ticker { false }),
+            ZoneOffset.UTC,
         )
     }
 

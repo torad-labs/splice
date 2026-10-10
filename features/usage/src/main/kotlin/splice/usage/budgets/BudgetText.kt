@@ -26,9 +26,10 @@ internal object BudgetText {
         }
         return BudgetBlock(
             message = "splice refused this turn: head '$head' has run up ${ApiCostText.sentence(tally.usd)} " +
-                "today (UTC) against its ${ApiCostText.limit(limit)} daily budget, and the budget's action is " +
-                "block. New turns on this head are refused until 00:00 UTC; to continue sooner, raise or remove its " +
-                "limit in budgets.json in the splice state directory (an edit takes effect without a restart)." +
+                "today against its ${ApiCostText.limit(limit)} daily budget, and the budget's action is " +
+                "block. New turns on this head are refused until midnight, local time; to continue sooner, " +
+                "raise or remove its limit in budgets.json in the splice state directory (an edit takes effect " +
+                "without a restart)." +
                 "$uncounted$partial",
             detail = "${amounts(tally.usd, limit)} unpriced_turns=${tally.unpriced}" +
                 if (partial.isEmpty()) "" else " spend_complete=false",
@@ -43,7 +44,7 @@ internal object BudgetText {
     /** The warn alert: the budget is reached and the head's turns continue. */
     fun warning(head: String, spent: Double, limit: Double): String =
         "splice: head '$head' reached its ${ApiCostText.limit(limit)} daily budget with " +
-            "${ApiCostText.sentence(spent)} today (UTC). Its action is warn, so its turns continue."
+            "${ApiCostText.sentence(spent)} today. Its action is warn, so its turns continue."
 
     /** The machine-readable pair the log line and the perf-row detail carry: keys, not a figure a
      *  person reads as a charge, so no basis rides beside them. */

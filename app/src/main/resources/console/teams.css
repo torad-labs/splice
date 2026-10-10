@@ -88,7 +88,9 @@
 .meta .word.starting .wait { width: 1.2rem; height: 1.2rem; }
 /* a member bound to a session opens it: the whole card is the control, its own buttons keep their own acts */
 .card.m.go { cursor: pointer; }
-.card.m.go:hover { background: color-mix(in oklab, var(--obj) 94%, var(--key-light)); }
+.card.m.go:hover { background: var(--obj-high); }
+/* a waiting card keeps its glow under the pointer: the hover rule above is more specific than .needs, so say it again */
+.card.m.needs.go:hover { background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
 .card.m.go:focus-visible { outline: .22rem solid var(--key-light); outline-offset: .2rem; }
 .card.m .now { margin: .8rem 0 0; display: flex; align-items: center; gap: .5rem; min-width: 0; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .card.m .now svg, .what svg { width: 1.1rem; height: 1.1rem; flex: none; }

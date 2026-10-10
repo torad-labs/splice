@@ -283,7 +283,7 @@ function memberHtml(tm, slot) {
   const where = s.name || folder.split("/").pop();
   const heard = s.updated_at || s.status_updated_at;
   const also = alsoOn(tm, slot.session).join(", ");
-  const opens = slot.session ? ` go" tabindex="0" role="link" data-go="${esc(slot.session)}` : "";
+  const opens = slot.session ? ` go" tabindex="0" data-go="${esc(slot.session)}` : "";
   return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +

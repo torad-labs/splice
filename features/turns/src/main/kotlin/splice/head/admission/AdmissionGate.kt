@@ -12,6 +12,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import splice.core.memory.HeapLease
+import splice.core.perf.OutcomeTag
 import splice.head.CompactionPreflight
 import splice.head.HeadDeps
 import splice.head.turn.Materialized
@@ -31,6 +32,7 @@ internal class AdmissionGate(
         provider.catalog,
         deps.stores.perfStats,
     ),
+    private val refusals: GateRefusals = GateRefusals { _, _ -> },
 ) {
     private val gate get() = deps.traffic.gate
     private val log get() = deps.log
@@ -38,6 +40,7 @@ internal class AdmissionGate(
     /** False (with a 529 on the wire) while stopLocked drains — clients retry and land post-restart. */
     suspend fun acceptingOrRespond(call: ApplicationCall): Boolean {
         if (window.isOpen) return true
+        refusals.refused(OutcomeTag.RESTARTED, call.request.headers[SESSION_HEADER])
         responses.respondAtCapacity(call, "head is stopping; retry")
         return false
     }
@@ -61,6 +64,7 @@ internal class AdmissionGate(
             InflightGate.Admission.AtCapacity -> {
                 log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
                 beforeRefusal?.ended()
+                refusals.refused(OutcomeTag.AT_CAPACITY, session)
                 responses.respondAtCapacity(call, "gateway at capacity")
                 return null
             }
@@ -72,6 +76,7 @@ internal class AdmissionGate(
         if (!window.isOpen) {
             withContext(NonCancellable) { slot.release() }
             beforeRefusal?.ended()
+            refusals.refused(OutcomeTag.RESTARTED, session)
             responses.respondAtCapacity(call, "head is stopping; retry")
             return null
         }

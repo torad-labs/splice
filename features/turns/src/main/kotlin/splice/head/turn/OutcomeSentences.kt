@@ -52,6 +52,8 @@ internal object OutcomeSentences {
             "splice gave up on this turn after the no-progress limit passed with nothing from the model; " +
             "retry the request",
         OutcomeTag.RESTARTED to HEAD_RESTART_SENTENCE,
+        OutcomeTag.AT_CAPACITY to
+            "splice's gate was full, so it turned this request away before sending it; retry the request",
         OutcomeTag.UNEXPECTED to
             "splice hit an internal error on this turn; retry the request, and if it repeats read the daemon " +
             "log around this turn's time",

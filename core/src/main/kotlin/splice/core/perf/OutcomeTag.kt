@@ -38,8 +38,14 @@ public enum class OutcomeTag(public val wire: String) {
      *  because that is the retryable shape, so this changes what splice RECORDS and not what it answers. */
     TURN_CAP("error:turn-cap"),
 
-    /** The head interrupted an unfinished turn during its own shutdown, not a client hang-up. */
+    /** The head interrupted an unfinished turn during its own shutdown, not a client hang-up. A request that ARRIVED
+     *  while the head was stopping is recorded under this tag too (V4-444): splice turned it away for the same reason
+     *  and the operator reads one word for both. */
     RESTARTED("error:restarted"),
+
+    /** V4-444: splice turned a request away because its inflight gate and queue were full. Its own tag, so the
+     *  console can list splice's own refusals beside the requests it served instead of the client alone knowing. */
+    AT_CAPACITY("error:at-capacity"),
     UNEXPECTED("error:unexpected"),
     RATE_LIMITED("error:rate-limited"),
 

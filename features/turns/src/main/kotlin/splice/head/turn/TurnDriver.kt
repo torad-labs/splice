@@ -189,6 +189,13 @@ internal class TurnDriver(
         telemetry.recordLocalRefusal(meta, perf, t0, refusal)
     }
 
+    /** A request splice turned away at the gate, before its body was read (V4-444): a row of its own and the local
+     *  health count, with no model, since none was chosen. */
+    fun recordGateRefusal(tag: splice.core.perf.OutcomeTag, session: String?) {
+        health.local()
+        telemetry.recordGateRefusal(tag, session)
+    }
+
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */
     internal fun resetHealth() {

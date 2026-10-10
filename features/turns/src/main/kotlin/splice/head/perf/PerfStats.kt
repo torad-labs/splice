@@ -54,7 +54,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** The string facts a perf row carries beside the numeric snapshot. */
 public data class PerfRowMeta(
-    val model: String,
+    /** Null for a request splice refused at the gate before its body was read: no model was chosen, and the row
+     *  then carries none rather than a stand-in. */
+    val model: String?,
     val outcome: String,
     val compact: Boolean,
     /** The client's session tag (first 8 of x-claude-code-session-id), so an abort or a stall in
@@ -65,6 +67,14 @@ public data class PerfRowMeta(
     val failure: PerfFailure = PerfFailure(),
     val transcript: PerfTranscriptIds = PerfTranscriptIds(),
 ) {
+    /** Why the turn failed, beside its outcome tag: the cause, the retry loop's own attempt count (only when non-zero,
+     *  so a row without retries is unchanged) and, V4-444, the upstream's own words where the upstream is what failed. */
+    internal fun putFailureFacts(into: JsonObjectBuilder) {
+        failure.cause?.let { into.put("cause", it) }
+        if (failure.layers > 0) into.put("layers", failure.layers)
+        failure.providerMessage?.let { into.put("provider_message", it) }
+    }
+
     /** These optional string facts never enter the row's numeric snapshot. */
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
         transcript.sessionId?.let { into.put("session_id", it) }
@@ -137,7 +147,9 @@ internal class MeasuredInputs {
 
     fun remember(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject?) {
         val key = meta.transcript.sessionId?.let { session ->
-            meta.transcript.conversationKey?.let { conversation -> Key(session, conversation, meta.model) }
+            meta.transcript.conversationKey?.let { conversation ->
+                meta.model?.let { model -> Key(session, conversation, model) }
+            }
         }
         val sample = snap.counters[PerfKeys.IN_TOKENS]?.takeIf { it > 0 }?.let { input ->
             request?.let(InputDigest::capture)?.let { prefix -> Sample(input, prefix) }
@@ -234,15 +246,12 @@ public class PerfStats(
         val row = JsonWire.string(
             buildJsonObject {
                 put("ts", ts)
-                put("model", meta.model)
+                meta.model?.let { put("model", it) }
                 put("outcome", meta.outcome)
                 put("compact", meta.compact)
                 meta.session?.let { put("session", it) }
                 meta.putTranscriptFacts(this)
-                meta.failure.cause?.let { put("cause", it) }
-                if (meta.failure.layers > 0) put("layers", meta.failure.layers)
-                // V4-444: the upstream's own words, only where the upstream is what failed.
-                meta.failure.providerMessage?.let { put("provider_message", it) }
+                meta.putFailureFacts(this)
                 meta.account.label?.let { account ->
                     put("account", account)
                     put("cache_cold", meta.account.cacheCold)
@@ -255,7 +264,7 @@ public class PerfStats(
         )
         meta.session?.let { session ->
             Cancellables.discard(
-                Cancellables.runCatchingCancellable { totals?.add(session, meta.model, snap.counters, ts) },
+                Cancellables.runCatchingCancellable { meta.model?.let { totals?.add(session, it, snap.counters, ts) } },
                 "telemetry is best-effort; a turn must never fail on its session's running total",
             )
         }

@@ -304,6 +304,28 @@ internal class TurnTelemetry(
         log(snap.perfLine(headKey, tag, meta.compact, meta.route.upstreamModel, session))
     }
 
+    /** A request splice turned away at the gate (V4-444), before its body was read, so it has no model and no
+     *  compaction flag. It leaves a row so the Requests list shows what splice itself declined, and it fires neither
+     *  turn.start nor turn.end: no turn began, so announcing an end would leave the console a close with no open. */
+    fun recordGateRefusal(tag: OutcomeTag, session: String?) {
+        val perf = TurnPerf(clock = clock)
+        perf.mark(PerfKeys.TOTAL)
+        perf.setCount(PerfKeys.ATTEMPTS, 0)
+        TurnBill.counters(noRequestUsage).forEach { (key, value) -> perf.setCount(key, value) }
+        val snap = perf.snapshot()
+        perfStats.record(
+            PerfRowMeta(
+                model = null,
+                outcome = tag.wire,
+                compact = false,
+                session = session?.take(SESSION_TAG_CHARS),
+                transcript = PerfTranscriptIds(sessionId = session),
+            ),
+            snap,
+        )
+        log("[$headKey] request refused at the gate: ${tag.wire}\n")
+    }
+
     /** Claude Code's activity side query is answered by the head with no model. It leaves a row of its own,
      *  marked as a local step so no turn figure counts it, and as an activity query so a view can name its kind. */
     fun recordActivityAnswer(local: Preparation.Local, wireModel: String, perf: TurnPerf) {

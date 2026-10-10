@@ -250,7 +250,8 @@ internal class ControlServer(
                 host = "127.0.0.1"
                 port = this@ControlServer.listen.port
             }
-            // An inherited socket brings its own event loops, channel and parent handler (AdoptedBootstrap).
+            // An inherited socket brings its own channel and parent handler (AdoptedBootstrap); the event loops are
+            // the ones this engine builds for itself either way.
             listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
             channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }

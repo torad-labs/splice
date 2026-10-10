@@ -119,8 +119,9 @@ internal class HeadEngine(
             // the 33rd concurrent agent turn behind in-flight ones — a fleet of subagents feels
             // like the gateway "can barely hold a few". HeadServerLoadTest pins the ceiling at
             // >= 1000 concurrently-held streams.
-            // An inherited socket brings its own event loops, channel and parent handler (AdoptedBootstrap): the
-            // engine serves on a listener the socket manager holds instead of binding the connector above.
+            // An inherited socket brings its own channel and parent handler (AdoptedBootstrap): the engine serves
+            // on the listener the socket manager holds instead of binding the connector above, on the event loops it
+            // builds for itself either way.
             listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
             runningLimit = RUNNING_LIMIT
             callThreads?.let { callGroupSize = it }

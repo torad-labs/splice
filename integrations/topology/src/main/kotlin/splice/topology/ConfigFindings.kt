@@ -43,9 +43,18 @@ public object ConfigFindings {
         val topology = decoded.getOrNull()
             ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())))
         val checks = TopologyFindings.of(topology, HeadDiscoveredModels { emptyList() }, stateBase, rosters = false)
-            .map { it.copy(line = lineOf(text, it.path)) }
+            .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
         return refused(checks, topology)
     }
+
+    /** A knob finding keeps boot's own reason as written (the console writer pins it word for word); the boot
+     *  refusal adds what to do about it. */
+    private fun withFix(finding: TopologyFinding): String =
+        if (finding.path.startsWith("defaults.") || finding.path.contains(".overrides.")) {
+            "${finding.message}; fix the value or remove the line"
+        } else {
+            finding.message
+        }
 
     /** The decode as a value: its failure is a finding, never a throw out of a read. */
     private fun decode(text: String): Result<Topology> = try {

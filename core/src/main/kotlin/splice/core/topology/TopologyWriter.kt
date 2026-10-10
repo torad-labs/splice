@@ -306,13 +306,11 @@ private class TopologyChecks(
             log = LogSink {},
         ).coerceRejects()
         val global = topology.defaults.keys.mapNotNull { key ->
-            ignored[key]?.let { TopologyFinding("defaults.$key", "$it; fix the value or remove the line") }
+            ignored[key]?.let { TopologyFinding("defaults.$key", it) }
         }
         val perHead = topology.heads.flatMap { (head, config) ->
             config.overrides.keys.mapNotNull { key ->
-                ignored["heads.$head.$key"]?.let {
-                    TopologyFinding("heads.$head.overrides.$key", "$it; fix the value or remove the line")
-                }
+                ignored["heads.$head.$key"]?.let { TopologyFinding("heads.$head.overrides.$key", it) }
             }
         }
         return global + perHead

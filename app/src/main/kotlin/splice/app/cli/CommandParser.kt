@@ -49,8 +49,11 @@ private const val OWNER_ARG_COUNT = 6
 // Kind follows the verb, PID, head and base URL.
 private const val OWNER_KIND_INDEX = 4
 
-// Origin is the last word of the six-word declaration.
+// Origin follows the kind.
 private const val OWNER_ORIGIN_INDEX = 5
+
+// A launch inside tmux adds its pane and the tmux server's socket after the origin (console TMUX.md).
+private const val OWNER_TERMINAL_ARG_COUNT = 8
 
 // pending-login requires its verb, a jar path and at least one head word.
 private const val PENDING_MIN_ARGS = 3
@@ -73,9 +76,10 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     ),
     "version" to CommandRegistration("", CommandFactory.Alone(Command.Version)),
     "record-launch" to CommandRegistration(
-        "<pid> <head> <base-url> <session|login> <hook|other>",
+        "<pid> <head> <base-url> <session|login> <hook|other> [<tmux-pane> <tmux-socket>]",
         CommandFactory { a ->
-            val valid = a.size == OWNER_ARG_COUNT && (a[1].toLongOrNull() ?: 0) > 0 &&
+            val valid = a.size in setOf(OWNER_ARG_COUNT, OWNER_TERMINAL_ARG_COUNT) &&
+                (a[1].toLongOrNull() ?: 0) > 0 &&
                 a[2].isNotBlank() && a[OWNER_KIND_INDEX] in setOf("session", "login") &&
                 a[OWNER_ORIGIN_INDEX] in setOf("hook", "other")
             if (valid) LaunchOwnerCommand(a.drop(1)) else null

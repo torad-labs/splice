@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,6 +35,25 @@ class LaunchOwnersTest(@param:TempDir private val state: Path) {
         assertFalse(Files.exists(file))
         Files.writeString(file, "{broken")
         assertNull(owners.read(43))
+    }
+
+    // Oct 10, 2026, console TMUX.md: a launch inside tmux records its pane, so the console finds the pane a session
+    // runs in from the session's own process; a record names a tmux pane or no terminal at all.
+    @Test
+    fun `a launch in tmux keeps its pane and socket, and nothing else passes for one`() {
+        val owners = LaunchOwners(state, live)
+        val pane = LaunchTerminal("%12", "/tmp/tmux-1000/default")
+        owners.write(44, LaunchDeclaration("fixture", "http://127.0.0.1:3101", "session", "other", pane))
+        assertEquals(pane, owners.read(44)?.terminal)
+        owners.write(45, "fixture", "http://127.0.0.1:3101", "session", "other")
+        assertNull(owners.read(45)?.terminal, "a launch outside tmux has no terminal")
+        assertThrows<IllegalArgumentException> {
+            owners.write(46, LaunchDeclaration("fixture", "", "session", "other", LaunchTerminal("12; rm", "/s")))
+        }
+        val forged = """{"pid":47,"startedAt":"$birth","head":"fixture","baseUrl":"","kind":"session",""" +
+            """"origin":"other","terminal":{"pane":"main","socket":"relative"}}"""
+        Files.writeString(state.resolve("launch-owners/47.json"), forged)
+        assertNull(owners.read(47), "a record naming no tmux pane is no evidence of a launch")
     }
 
     @Test

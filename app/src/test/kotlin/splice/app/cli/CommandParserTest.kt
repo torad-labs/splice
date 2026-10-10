@@ -13,8 +13,12 @@ class CommandParserTest {
     fun `internal ownership protocols reject incomplete or malformed declarations`() {
         val valid = arrayOf("record-launch", "42", "fixture", "http://127.0.0.1:3101", "session", "other")
         org.junit.jupiter.api.Assertions.assertTrue(parser.parse(valid) is LaunchOwnerCommand)
+        // a launch inside tmux adds its pane and socket (console TMUX.md); one word of the pair is no declaration
+        val inTmux = valid + arrayOf("%12", "/tmp/tmux-1000/default")
+        org.junit.jupiter.api.Assertions.assertTrue(parser.parse(inTmux) is LaunchOwnerCommand)
         for (args in listOf(
             valid.dropLast(1).toTypedArray(),
+            valid + arrayOf("%12"),
             arrayOf("record-launch", "0", "fixture", "", "login", "hook"),
             arrayOf("record-launch", "42", "fixture", "", "wrong", "hook"),
             arrayOf("record-launch", "42", "fixture", "", "login", "wrong"),

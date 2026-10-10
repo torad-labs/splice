@@ -71,7 +71,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-14";
+const SPLICE_SHIM_VERSION = "shim-15";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -202,11 +202,20 @@ function resolveExecutable(name, environment) {
 
 /** Replaces this process, as the bash `exec` did — the launched program is the terminal's
  *  foreground job, not a child of the shim. */
+// A launch inside tmux records its pane and the tmux server's socket with it, so the console can drive the session
+// it runs (console TMUX.md, Oct 8). $TMUX is "<socket>,<server pid>,<session>"; a socket path with a comma in it is
+// not one splice can name, and the launch is recorded without a terminal.
+function terminalWords(environment) {
+  const pane = environment.TMUX_PANE, parts = (environment.TMUX || "").split(",");
+  return pane && parts.length === 3 && parts[0].startsWith("/") ? [pane, parts[0]] : [];
+}
+
 function recordLaunch(head, baseUrl, kind, environment) {
   try {
     execFileSync("java", [
       CLI_CONSOLE, USER_HOME, "-jar", JAR, "record-launch", String(process.pid),
       head, baseUrl || "", kind, environment.SPLICE_LOGIN_ORIGIN === "hook" ? "hook" : "other",
+      ...(kind === "session" ? terminalWords(environment) : []),
     ], { env: { ...environment, SPLICE_STATE_DIR: STATE_DIR }, stdio: "ignore" });
   } catch {
     warn("splice: launch ownership could not be recorded; this session may have an unknown head on macOS");

@@ -12,7 +12,7 @@
 //   POST /api/sessions/{id}/say · answer · stop   the Message field, an answer's button, and Stop, in the pane splice
 //                                           opened for it (SessionDrive.kt); a session it did not open draws none of them
 //
-// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): Continue on, the reason a turn stalled, a session's
+// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): Continue on, a limit or sign-out that ended a turn, a session's
 // model when no turn is running, a teammate's message as its sender's, and the joint where a session moved. None is
 // explained on screen: each appears with the read or the act that makes it true.
 "use strict";
@@ -36,7 +36,7 @@ async function read() {
   tick();
   const [sessions, heads, models] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models")]);
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = PROVIDER_FAMILY[row.provider] ?? row.provider;
     for (const m of row.models || []) if (m.id) state.modelLabel[m.id] = m.label || m.id;
@@ -81,7 +81,7 @@ function sessionOf(row) {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
     model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model), // a running turn's model is the one in use now
-    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn,
+    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" ? stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
   };
@@ -114,7 +114,7 @@ function metaHtml(s, L, inPane) {
   const repo = s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
   const past = s.at.toDateString() !== NOW.toDateString();
   const when = `<span class="when">${past ? `${s.at.toLocaleDateString("en-US", { weekday: "short" })} ` : ""}${clock(s.at)}</span>`;
-  return `<div class="meta">${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${team}${model}${repo}${inPane ? "" : when}</div>`;
+  return `<div class="meta">${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}${inPane ? "" : when}</div>`;
 }
 
 // What a waiting session asks, and answering it where it waits. A question's words and options come off its transcript
@@ -521,3 +521,13 @@ read().then(() => {
 });
 // what a session is doing changes on its own clock: the list is read again while the page is open
 setInterval(() => { if (!document.hidden) reload(); }, 5000);
+// the silence counter and the resume countdown move each second between reads, from when the turn was read
+setInterval(() => {
+  for (const el of root.querySelectorAll("[data-silent], [data-resume]")) {
+    const st = find(el.dataset.silent || el.dataset.resume)?.stall;
+    if (!st) continue;
+    const gone = Date.now() - st.at, ms = el.dataset.silent ? st.ms + gone : Math.max(0, st.resumeMs - gone);
+    el.lastElementChild.textContent = el.dataset.silent ? counter(ms) : `Resumes in ${counter(ms)}`;
+    el.querySelector(".hand")?.style.setProperty("transform", `rotate(${Math.floor(ms / 1000) * 6}deg)`);
+  }
+}, 1000);

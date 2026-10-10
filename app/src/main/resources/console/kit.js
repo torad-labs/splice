@@ -153,16 +153,40 @@ const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<
 
 // ---------- what a page says about a session: fin's states, element first and the word small ----------
 //
-// THESE TWO READ THE DRAWING'S SESSION SHAPE, NOT THE DAEMON'S ROW, and that is a gap rather than a choice.
-// They expect `s.state`, `s.ask` and `s.stall`, which is what the mock handed them; /api/sessions answers
-// `status`, `waiting_for` and `availability`, and the stall reason is not on that route at all yet (Marlin
-// ruled on Oct 10 that it ships in 0.4.0, as a turns-side read serving Sessions and Teams both). So a page
-// that wires `look` straight to /api/sessions today gets Idle for every row. Teams reads the daemon's row
-// through its own `stateOf` for exactly this reason (splice-builder3). Sessions owns the translation and
-// lands it here with the stall read, at which point both pages draw from one function again.
-const stalled = (s) => s.state === "working" && s.stall;
+// THESE READ THE DRAWING'S SESSION SHAPE, NOT THE DAEMON'S ROW: `s.state`, `s.ask` and `s.stall`. Sessions builds that
+// shape in its sessionOf, with `stall` from stallOf over the live turn (/api/heads/{head}/turns/live), the turns-side
+// read Marlin ruled into 0.4.0 for Sessions and Teams both. Teams reads the daemon's row through its own `stateOf`
+// (splice-builder3) and takes stallOf the same way.
+// why: half a minute with no word from the provider is a silence he would want to see and maybe stop, while shorter
+// pauses are ordinary between thoughts. A display threshold only: nothing is ended by it (Idle is a probe, never an
+// error). A provider that only pings stays silent here and keeps its round open (desk walk, Oct 10: 111 s, no end).
+const STALL_SHOWN_MS = 30000;
+// why: under five seconds of quiet is ordinary streaming; a countdown that flickered on every pause would be noise.
+const RESUME_SHOWN_MS = 5000;
+// why: the continuations a round may spend on re-anchors (DEFAULT_MAX_CONTINUATIONS, Turn.kt:266); past them nothing resumes.
+const MAX_CONTINUATIONS = 5;
+/** What the session's request in flight is waiting on, from the live turn splice holds (LiveTurnsRoutes): refused and
+ *  re-sent before any answer, quiet with a re-send coming (the head's stall_reanchor_ms, /api/heads gate), or quiet with none.
+ *  Sessions and Teams both read it (Marlin, Oct 10). `at` is when it was read, so the
+ *  counters move each second between reads. */
+function stallOf(turn, reanchorMs) {
+  if (!turn) return null;
+  const at = Date.now(), idle = turn.idle_ms ?? 0;
+  if (turn.retries > 0 && !turn.seen_output) return { kind: "retries", n: turn.retries, at };
+  if (reanchorMs && (turn.resumes ?? 0) < MAX_CONTINUATIONS && idle >= RESUME_SHOWN_MS) return { kind: "silent", ms: idle, resumeMs: Math.max(0, reanchorMs - idle), at };
+  if (idle >= STALL_SHOWN_MS) return { kind: "silent", ms: idle, at };
+  return null;
+}
+
+// A silence splice will end itself (the head's re-anchor tier, continuations left) is still Working on the card: nothing
+// for him to do. Opened, its line counts down to the re-send in the working colour (fin, console-lead's stall states,
+// Oct 10). Only a silence nothing will resume is Stalled.
+const resuming = (s) => s.state === "working" && s.stall?.resumeMs != null;
+const stalled = (s) => s.state === "working" && s.stall && !resuming(s);
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
+  if (resuming(s)) return { cls: "working", lamp: ICON.trace, word: "Working",
+    paneDetail: `<span class="detail resumes" data-resume="${s.id}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>` };
   if (stalled(s)) {
     const k = s.stall.kind, lamp = k === "silent" ? ICON.flat : ICON[k];
     const detail = k === "silent" ? `<span class="detail" data-silent="${s.id}">${ICON.watch(Math.floor(s.stall.ms / 1000))}<span>${counter(s.stall.ms)}</span></span>`

@@ -178,7 +178,9 @@ internal object Concentration {
     // 2026-10-09: UpstreamClient.kt (3.65) and RetryPolicy.kt (3.56) enter HIGH by neighbourhood, both files
     // unchanged in logic and imports: the new small RoundResult, StreamRead and RetryBudget files lowered their
     // packages' medians, measured with this law's own scan on the tree. 9 -> 11.
-    const val RATCHET_MAX_HIGH = 11
+    // 2026-10-09: the LongParameterList data-class flip added grouped types beside their owners (CodexCodeModeState,
+    // AccountsRoute, HeadAdmission); AddProfileCatalog and UpstreamPlaygroundProbe moved by neighbourhood. 11 -> 15.
+    const val RATCHET_MAX_HIGH = 15
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

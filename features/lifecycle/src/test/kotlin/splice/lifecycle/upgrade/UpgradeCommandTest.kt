@@ -9,161 +9,13 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.GATEWAY_VERSION
-import splice.core.terminal.TerminalOutput
-import splice.core.util.EnvReader
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermissions
-import java.security.MessageDigest
 
-private const val STOCK = "#!/bin/sh\necho stock\n"
-private const val PATCHED = "#!/bin/sh\necho patched\n"
-private const val NEWER = "#!/bin/sh\necho newer\n"
-
-// A flat install has no `current` pointer, so upgrade records it under the running binary's version
-// (UpgradeLayout.installedVersion). Spelled as a literal, this file went red at the 0.4.0 bump.
-private const val INSTALLED = GATEWAY_VERSION
-
-class UpgradeCommandTest {
-
-    private val calls = mutableListOf<List<String>>()
-    private var unitRestarts = 0
-    private var verbRestarts = 0
-
-    // Each line through println, so `captured` reads the verb's output off System.out as before.
-    private val out = TerminalOutput(::println)
-    private var inflightAnswers = ArrayDeque<InflightRead>()
-    private var inflightAfter: InflightRead = InflightRead.NoDaemon
-    private var reportedVersion = "9.9.9"
-    private var unitActive = true
-
-    /** How long the daemon wait may spend on an in-flight count before it gives up. */
-    private var maxWaitMs = 60_000L
-
-    /** What /health reports after a restart: the release `current` points at, unless a test pins it. */
-    private var servingVersion: ((Path) -> String?)? = null
-
-    /** The `gh` CLI as the upgrade sees it: [auth] is `gh auth status`'s exit (127 = gh not installed),
-     *  [verify] `gh attestation verify`'s. */
-    private class FakeGh(private val auth: Int = 0, private val verify: Int = 0) {
-        fun exit(cmd: List<String>) = UpgradeExit(if (cmd[1] == "auth") auth else verify, "")
-    }
-
-    /** [unitJar] is what the fake user unit's ExecStart names; null = no unit supervises this install. */
-    private fun process(gh: FakeGh = FakeGh(), unitJar: Path? = null) = UpgradeProcess { cmd, _ ->
-        calls += cmd
-        when (cmd[0]) {
-            "gh" -> gh.exit(cmd)
-            "diff" -> UpgradeExit(1, "--- release\n+++ live\n-echo stock\n+echo patched\n")
-            "systemctl" -> systemctl(cmd, unitJar)
-            else -> java(cmd)
-        }
-    }
-
-    private fun systemctl(cmd: List<String>, unitJar: Path?): UpgradeExit = when (cmd[2]) {
-        "show" -> UpgradeExit(0, unitJar?.let { "java -jar $it daemon" } ?: "")
-        "is-active" -> UpgradeExit(0, if (unitJar != null && unitActive) "active\n" else "inactive\n")
-        else -> UpgradeExit(0, "").also { unitRestarts++ }
-    }
-
-    private fun java(cmd: List<String>) = when {
-        cmd.last() == "version" -> UpgradeExit(0, "splice $reportedVersion\n")
-        cmd.contains("doctor") -> UpgradeExit(0, "{}")
-        else -> UpgradeExit(0, "")
-    }
-
-    private fun env(home: Path, base: String) = EnvReader { name ->
-        when (name) {
-            "SPLICE_SHARE_DIR" -> home.resolve("share").toString()
-            "SPLICE_BIN_DIR" -> home.resolve("bin").toString()
-            "SPLICE_RELEASE_BASE_URL" -> base
-            "HOME" -> home.toString()
-            else -> null
-        }
-    }
-
-    private fun command(
-        home: Path,
-        base: String,
-        fetch: UpgradeFetch = JdkUpgradeFetch(),
-        gh: FakeGh = FakeGh(),
-        supervised: Boolean = false,
-    ): UpgradeCommand {
-        val env = env(home, base)
-        val unitJar = home.resolve("share/splice.jar").takeIf { supervised }
-        val daemon = UpgradeDaemon(
-            out,
-            process(unitJar = unitJar),
-            { inflightAnswers.removeFirstOrNull() ?: inflightAfter },
-            restartVerb = {
-                verbRestarts++
-                true
-            },
-            healthVersion = { servingVersion?.invoke(home) ?: link(home, "current") },
-            pacing = UpgradePacing(pollMs = 1, maxWaitMs = maxWaitMs, confirmPollMs = 1),
-            userUnit = "splice.service",
-        )
-        return UpgradeCommand(
-            output = out,
-            env = env,
-            java = "java",
-            release = UpgradeRelease(out, fetch, process(gh), "java"),
-            wrapper = UpgradeWrapper(out, process()),
-            daemon = daemon,
-            layout = UpgradeLayout(env),
-        )
-    }
-
-    private fun sha(bytes: ByteArray) =
-        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-
-    /** A flat install as install.sh wrote it before 0.4.0, plus config and a credential elsewhere. */
-    private fun flatInstall(home: Path, shim: String = STOCK): Map<Path, ByteArray> {
-        val share = Files.createDirectories(home.resolve("share"))
-        Files.writeString(share.resolve("splice.jar"), "old-jar")
-        Files.writeString(share.resolve("splice-launch"), shim)
-        val config = Files.createDirectories(home.resolve(".config/splice"))
-        Files.writeString(config.resolve("splice.toml"), "[daemon]\ncontrol_port = 1\n")
-        Files.writeString(config.resolve("codex.json"), "{\"token\":\"secret\"}")
-        return listOf(config.resolve("splice.toml"), config.resolve("codex.json"))
-            .associateWith { Files.readAllBytes(it) }
-    }
-
-    /** install.sh 0.4.0 keeps a pristine copy of the installed release's shim. */
-    private fun pristine(home: Path, shim: String = STOCK) {
-        val dir = Files.createDirectories(home.resolve("share/releases/$INSTALLED"))
-        Files.writeString(dir.resolve("splice-launch"), shim)
-    }
-
-    /** A release directory served over file://; [sums] overrides the published checksums. */
-    private fun release(home: Path, shim: String = NEWER, sums: Map<String, ByteArray>? = null): String {
-        val dir = Files.createDirectories(home.resolve("release"))
-        val assets = mapOf("splice.jar" to "new-jar".toByteArray(), "splice-launch" to shim.toByteArray())
-        assets.forEach { (name, bytes) -> Files.write(dir.resolve(name), bytes) }
-        val lines = (sums ?: assets).entries.joinToString("") { (name, bytes) -> "${sha(bytes)}  $name\n" }
-        Files.writeString(dir.resolve("sha256sums.txt"), lines)
-        return dir.toUri().toString().trimEnd('/')
-    }
-
-    private fun captured(block: () -> Boolean): Pair<Boolean, String> {
-        val buffer = ByteArrayOutputStream()
-        val prev = System.out
-        System.setOut(PrintStream(buffer, true))
-        val ok = try {
-            block()
-        } finally {
-            System.setOut(prev)
-        }
-        return ok to buffer.toString()
-    }
-
-    private fun assertIntact(files: Map<Path, ByteArray>) =
-        files.forEach { (path, bytes) -> assertTrue(bytes.contentEquals(Files.readAllBytes(path)), "$path changed") }
+internal class UpgradeCommandTest : UpgradeRig() {
 
     @Test
     fun `a version that is not a normalized SemVer segment never becomes a path`(@TempDir home: Path) {
@@ -177,15 +29,6 @@ class UpgradeCommandTest {
         assertFalse(Files.exists(home.resolve("share/x")), "--to never escaped releases/")
         assertEquals(0, stagingDirs(home), "a refused --to never fetched anything")
     }
-
-    private fun releaseDirs(home: Path): Set<String> = Files.list(home.resolve("share/releases")).use { entries ->
-        entries.filter { Files.isDirectory(it) }.map { it.fileName.toString() }.toList().toSet()
-    }
-
-    private fun read(home: Path, name: String): String = Files.readString(home.resolve("share").resolve(name))
-
-    private fun link(home: Path, name: String): String =
-        Files.readSymbolicLink(home.resolve("share/releases").resolve(name)).toString()
 
     @Test
     fun `a verified release lands in its own directory, the live jar repoints, a pristine wrapper is refreshed`(
@@ -439,10 +282,6 @@ class UpgradeCommandTest {
         assertEquals(STOCK, read(home, "splice-launch"))
         assertEquals(0, unitRestarts + verbRestarts)
         assertIntact(intact)
-    }
-
-    private fun stagingDirs(home: Path): Long = Files.list(home.resolve("share/releases")).use { entries ->
-        entries.filter { it.fileName.toString().startsWith(".staging") }.count()
     }
 
     @Test

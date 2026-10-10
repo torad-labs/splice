@@ -38,7 +38,7 @@ internal data class JoinedQuota(
         into.put("seven_day_reset_epoch_seconds", sevenDay.resetEpochSeconds)
         into.put("seven_day_window_seconds", sevenDay.windowSeconds)
         into.put("seven_day_current", current(sevenDay, nowSeconds))
-        QuotaJson().putModels(into, "seven_day_models", sevenDayModels)
+        QuotaJson().putModels(into, "seven_day_models", sevenDayModels.filter { it.runsAt(nowSeconds) })
         into.put("observed_at_epoch_seconds", observedAtEpochSeconds)
         into.put("no_usage_at_epoch_seconds", noUsageAt)
     }

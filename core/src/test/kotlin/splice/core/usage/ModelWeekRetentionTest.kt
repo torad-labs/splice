@@ -64,4 +64,15 @@ class ModelWeekRetentionTest {
 
         assertEquals(emptyList<ModelQuota>(), kept.models, "the week rolled: the model rows belong to the old one")
     }
+
+    @Test
+    fun `a surface that draws model weeks drops the one whose own week has passed, with the account week current`() {
+        val rolled = ModelQuota("Sonnet", 90.0, resetsAt = NOW_S - 60L)
+        val running = ModelQuota("Fable", 40.0, resetsAt = NOW_S + 3_600L)
+        val ridesAccountWeek = ModelQuota("Opus", 70.0)
+        val snapshot = reading(NOW_MS - 60_000L, listOf(rolled, running, ridesAccountWeek))
+
+        assertEquals(listOf(running, ridesAccountWeek), snapshot.modelsRunningAt(NOW_S))
+        assertEquals(true, snapshot.sevenDay?.resetsAt!! > NOW_S, "the account's own week is still running")
+    }
 }

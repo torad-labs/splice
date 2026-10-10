@@ -131,7 +131,7 @@ internal object ClaudeLoginRows {
         put("seven_day_window_seconds", seven?.windowSeconds)
         put("seven_day_limit_percent", seven?.let { 100 })
         put("seven_day_current", seven != null && QuotaFreshness.current(observed, seven.resetsAt, nowSeconds))
-        QuotaJson().putModels(into, "seven_day_models", quota?.models.orEmpty())
+        QuotaJson().putModels(into, "seven_day_models", quota?.modelsRunningAt(nowSeconds).orEmpty())
         put("observed_at_epoch_seconds", observed)
     }
 }

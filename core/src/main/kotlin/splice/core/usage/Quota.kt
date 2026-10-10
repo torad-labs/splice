@@ -19,7 +19,11 @@ public data class QuotaWindow(
 /** One model's own share of the weekly window (Claude's Opus and Sonnet weeks): the model as the provider names it
  *  and how much of it is used. [resetsAt] is the epoch second the provider says this model's week refills, null when
  *  it names none (Oct 10, 2026: Anthropic's weekly_scoped rows carry their own resets_at). */
-public data class ModelQuota(val model: String, val usedPercent: Double, val resetsAt: Long? = null)
+public data class ModelQuota(val model: String, val usedPercent: Double, val resetsAt: Long? = null) {
+    /** Whether this model's week is still running at [nowSeconds]. A week past its own reset is the usage of a week
+     *  that ended, whatever the account's week is doing; a row with no reset of its own rides the account's. */
+    public fun runsAt(nowSeconds: Long): Boolean = resetsAt == null || resetsAt > nowSeconds
+}
 
 public data class QuotaSnapshot(
     val fiveHour: QuotaWindow? = null,
@@ -54,6 +58,12 @@ public data class QuotaSnapshot(
         val running = earlier.models.filter { it.resetsAt == null || observed == null || it.resetsAt > observed }
         return copy(models = running)
     }
+
+    /** The model weeks still running at [nowSeconds]: a row whose own reset has passed is the usage of a week that
+     *  ended, so a surface that draws model weeks must not draw it, whatever the account's own week is doing. A row
+     *  with no reset of its own rides the account week. Age is not judged here: an old reading is drawn with its age. */
+    public fun modelsRunningAt(nowSeconds: Long): List<ModelQuota> =
+        models.filter { it.runsAt(nowSeconds) }
 
     /** V4-452: the window this snapshot's CURRENT reading at [nowMillis] names fully used, and its reset; the
      *  later-resetting one when both are. Null when none is, or when a full window names no reset: a reading with

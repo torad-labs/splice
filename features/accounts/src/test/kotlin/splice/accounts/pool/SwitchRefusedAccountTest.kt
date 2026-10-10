@@ -37,9 +37,10 @@ private class RecordingPool(private val accounts: List<HeadAccountView>) : HeadA
     override fun view(sessionId: String?) =
         HeadAccountPoolView(selectedLabel = "primary", accounts = accounts, lastSwitch = null)
 
-    override fun pin(label: String): Boolean = (label in accounts.map { it.label }).also { if (it) pins += label }
+    override fun pin(label: String, sessionId: String?): Boolean =
+        (label in accounts.map { it.label }).also { if (it) pins += label }
 
-    override fun unpin() = Unit
+    override fun unpin(sessionId: String?) = Unit
 }
 
 class SwitchRefusedAccountTest {

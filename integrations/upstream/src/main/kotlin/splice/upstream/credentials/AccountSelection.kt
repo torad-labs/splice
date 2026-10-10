@@ -165,6 +165,30 @@ public data class AccountView(
     val credential: AccountCredentialReading = AccountCredentialReading(),
 )
 
+/** An account's quota as a status surface reads it: its two windows and when they were observed, epoch SECONDS (the
+ *  reset fields' unit), or null when its tracker names no observation. */
+public data class AccountQuotaReading(
+    val fiveHour: AccountWindowReading = AccountWindowReading(),
+    val sevenDay: AccountWindowReading = AccountWindowReading(),
+    val observedAtEpochSeconds: Long? = null,
+)
+
+/** One quota window of an account as a status surface reads it: how full it is, when it resets (epoch SECONDS) and
+ *  its own reported length in seconds. Every field is null when the account's tracker names no such window. */
+public data class AccountWindowReading(
+    val usedPercent: Double? = null,
+    val resetEpochSeconds: Long? = null,
+    val windowSeconds: Long? = null,
+)
+
+/** An account's credential standing as a status surface reads it: whether splice can load it, and the timed
+ *  authentication hold, if any, that keeps it out of selection, with the reason. */
+public data class AccountCredentialReading(
+    val present: Boolean = true,
+    val excludedUntilEpochMillis: Long? = null,
+    val exclusionReason: String? = null,
+)
+
 /** One session's safe pool projection. */
 public data class AccountPoolView(
     val selectedLabel: String?,

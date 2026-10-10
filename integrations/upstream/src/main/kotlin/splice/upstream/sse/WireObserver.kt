@@ -27,6 +27,23 @@ public data class WireAttempt(
     val durationMs: Long,
 )
 
+/** One send as it left: the [url], the [headers] redacted, and the [body] EXACT, which is the JSON before any
+ *  content-encoding. [encoding] names the content-encoding the body rode under, when any. */
+public data class WireRequest(
+    val url: String,
+    val headers: Map<String, String>,
+    val body: String,
+    val encoding: String?,
+)
+
+/** One send as it came back: the [status] with its [headers], and [errorText] when it was not 2xx (the 2xx body is
+ *  the stream the caller consumed). A send the transport lost has a null [status], no headers and no text. */
+public data class WireResponse(
+    val status: Int?,
+    val headers: Map<String, String>,
+    val errorText: String?,
+)
+
 /** Hears every send of a post, after it ends. Null on a [PostContext] means nothing is recorded and
  *  nothing is allocated — the hot path for every head that did not opt in. */
 public fun interface WireObserver {

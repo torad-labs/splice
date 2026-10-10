@@ -16,14 +16,18 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
+import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
+import splice.upstream.BodyAmendment
+import splice.upstream.ClientFrameEmitted
 import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
 import splice.upstream.retry.RateLimitCooldown
+import splice.upstream.sse.WireObserver
 
 /** Remaining whole-turn wait budget at the instant retry policy asks. */
 public fun interface RemainingTurnWait {
@@ -100,6 +104,30 @@ public data class PostContext(
     /** The credentials to send, or null when there are none locally: the call ends with [UpstreamAuthMissing]. */
     internal suspend fun requireAuth(): Credentials? = timedAuth { auth.credentials() }
 }
+
+/** What a failed send of a post may do next: whether the client has already been shown a frame, which forbids a
+ *  reissue, and how the request body is amended before a retry. The defaults reissue freely and amend nothing. */
+public data class PostRecovery(
+    val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
+    val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
+)
+
+/** What bounds a post beyond its own retry rules: the selected account's cooldown and the outer turn's wait. */
+public data class PostLimits(
+    /** Selected account's cooldown; null preserves the client's legacy single-account cooldown. */
+    val rateLimitCooldown: RateLimitCooldown? = null,
+    /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
+    val remainingTurnWait: RemainingTurnWait? = null,
+)
+
+/** What listens to a post without changing it: the turn's timing row, the wire recorder and the refresh observer. */
+public data class PostObservers(
+    val perf: TurnPerf? = null,
+    /** V4-174: hears every send of this post after it ends (headers redacted, body exact). Null —
+     *  the default and every head that did not opt in — records nothing and allocates nothing. */
+    val wire: WireObserver? = null,
+    val authRefreshObserver: AuthRefreshObserver = AuthRefreshObserver {},
+)
 
 /** Credentials and their resolved headers are captured together once, before selecting their hold. */
 internal data class AttemptCredentials(

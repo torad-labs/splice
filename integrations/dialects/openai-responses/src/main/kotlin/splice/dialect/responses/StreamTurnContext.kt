@@ -86,3 +86,9 @@ internal data class StreamTurnContext(
     val summary: SummaryHandling,
     val reasoningCapture: ReasoningCapture = ReasoningCapture(),
 )
+
+/** The watchdog's stream-idle cap and total upstream cap, in milliseconds, as the failure text states them. */
+internal data class WatchdogCaps(
+    val streamIdleMs: Long,
+    val upstreamTimeoutMs: Long,
+)

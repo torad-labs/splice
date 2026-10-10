@@ -16,6 +16,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamResponse
+import java.nio.file.Path
 
 /** A per-turn stream state machine: drives the WireSink from upstream events, returns an outcome
  *  AFTER the loop (cross-event state + harvest). Imperative, not a Flow operator (see the dialect). */
@@ -61,6 +62,15 @@ public data class ProviderTuning(
     override val key: String get() = name.key
     override val label: String get() = name.label
 }
+
+/** What a head is called: the [key] it is addressed by and the [label] an operator reads. */
+public data class ProviderName(val key: String, val label: String)
+
+/** Where a provider reaches and where it keeps state: the [baseUrl] each provider turns into its own
+ *  [Provider.upstreamUrl], and V4-334's [stateDir], this head's own directory for what must outlive the daemon
+ *  process (`heads/<key>/` under StatePaths.headsDir), named by the provider inside it. A null [stateDir] keeps
+ *  nothing on disk: every unwired build and test. */
+public data class ProviderLocations(val baseUrl: String, val stateDir: Path? = null)
 
 /** Everything the generic head needs to serve one provider. */
 public interface Provider : ProviderIdentity {

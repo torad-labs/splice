@@ -66,6 +66,10 @@ public const val SYSTEM_PROMPT_LAYERS: String = "system_prompt_layers"
 /** How many of those layers changed the request body on this turn. */
 public const val SYSTEM_PROMPT_APPLIED: String = "system_prompt_applied"
 
+/** Set to 1 on a turn when [projects] is configured but the session's working directory could not be
+ *  resolved, so the turn got the head layer only (spec section 13). */
+public const val SYSTEM_PROMPT_CWD_UNRESOLVED: String = "system_prompt_cwd_unresolved"
+
 /** Reads one prompt file named by `system_prompt_file`. */
 public fun interface SystemPromptFileRead {
     public operator fun invoke(path: Path): String

@@ -270,6 +270,31 @@ class TurnPreparationSystemPromptTest {
     }
 
     @Test
+    fun `a session with no resolvable cwd gets the head layer only and the perf row says so`(
+        @TempDir tmp: Path,
+    ) {
+        val root = tmp.resolve("bot")
+        val layers = SystemPromptLayers(
+            HeadSystemPrompt(text = "Be terse.", source = "head:kimi"),
+            projects = mapOf("\"$root\"" to ProjectConfig(systemPrompt = "Project rules.")),
+        )
+
+        val (lost, lostPerf) = preparedWithPerf(
+            preparation(tmp, passthroughProvider(), layers, cwd = null),
+            PASSTHROUGH_REQUEST,
+        )
+        val (found, foundPerf) = preparedWithPerf(
+            preparation(tmp, passthroughProvider(), layers, cwd = root),
+            PASSTHROUGH_REQUEST,
+        )
+
+        assertEquals("head:kimi append", lost.meta.standingPrompt.source)
+        assertEquals(1L, lostPerf.counters["system_prompt_cwd_unresolved"])
+        assertEquals("head:kimi append+project:$root append", found.meta.standingPrompt.source)
+        assertNull(foundPerf.counters["system_prompt_cwd_unresolved"])
+    }
+
+    @Test
     fun `the prompt sits in the same position with the same bytes on a later turn`(
         @TempDir tmp: Path,
     ) {

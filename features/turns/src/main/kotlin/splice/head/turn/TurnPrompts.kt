@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.TurnPerf
 import splice.core.prompt.EffectiveSystemPrompt
 import splice.core.prompt.SYSTEM_PROMPT_APPLIED
+import splice.core.prompt.SYSTEM_PROMPT_CWD_UNRESOLVED
 import splice.core.prompt.SYSTEM_PROMPT_LAYERS
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.TurnSystemPrompt
@@ -56,6 +57,7 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
     fun applySystemPrompt(turn: BuiltTurn, sessionId: String?, perf: TurnPerf): BuiltTurn {
         val layers = deps.policy.systemPrompt
         val cwd = if (layers.hasProjects) deps.seams.session.sessionProject(sessionId) else null
+        if (layers.hasProjects && cwd == null) perf.setCount(SYSTEM_PROMPT_CWD_UNRESOLVED, 1L)
         val resolved = layers.resolve(cwd)
         if (resolved.isEmpty()) return turn
         val placed = BooleanArray(resolved.size)

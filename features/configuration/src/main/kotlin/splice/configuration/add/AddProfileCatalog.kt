@@ -216,7 +216,7 @@ internal class AddProfileCatalog {
                 dialect = ANTHROPIC_PASSTHROUGH,
                 authKind = API_KEY,
                 extra = listOf(
-                    "[providers.deepseek.quirks]",
+                    "[providers.$KEY_SLOT.quirks]",
                     "# Only the blocks DeepSeek's compatibility table marks Supported. redacted_thinking",
                     "# is the one that matters: DR-118 forwards it VERBATIM because Anthropic demands it",
                     "# back unchanged, so without this allowlist every replayed signed-thinking turn",

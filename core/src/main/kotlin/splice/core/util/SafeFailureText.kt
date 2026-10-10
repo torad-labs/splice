@@ -60,6 +60,10 @@ public class TopologySlotsFailure(public val problem: Problem) : IllegalArgument
     public fun fix(): String = problem.detail
 }
 
+/** A structural finding about splice.toml (a table defined twice, a models line repeated), named by its table header
+ *  alone. The header comes from the masked text, where strings and comments are blanked, so it quotes no value. */
+public class TopologyStructureFailure(detail: String) : IllegalArgumentException(detail)
+
 public object SafeFailureText {
 
     /** Filesystem and network failures keep their full text — their messages are paths, hosts
@@ -70,6 +74,7 @@ public object SafeFailureText {
      *  verbatim (codex probe, 2026-08-31). No virtual call happens outside the allowlist. */
     public fun render(failure: Throwable): String = when (failure) {
         is TopologySlotsFailure -> failure.problem.detail
+        is TopologyStructureFailure -> failure.message.orEmpty()
         is TopologyTypeFailure ->
             "splice.toml: ${failure.key} at line ${failure.line} expects ${failure.expected.label}"
         // These exact filesystem/network classes carry paths, hosts or timeouts, never parsed file values.

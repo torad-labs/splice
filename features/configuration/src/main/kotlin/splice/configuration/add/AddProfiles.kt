@@ -16,6 +16,10 @@ import splice.core.model.ModelRates
 // read out of its deserializer by POSTing an unknown variant: it answers `unknown variant X,
 // expected one of ...` and names all nine. Re-probe rather than edit from docs.
 
+/** In a profile's extra provider lines, where the head's key goes: a second head on the same provider is
+ *  named by the operator, so a table header cannot spell the catalogue's own key. */
+internal const val KEY_SLOT = "{key}"
+
 /** One model row; [slots] are the Claude model slots a passthrough head maps it to (fable/opus/...). */
 internal data class AddModel(
     val id: String,
@@ -137,7 +141,7 @@ public class AddProfiles {
             "dialect = \"${profile.provider.dialect}\"",
             "base_url = \"${profile.baseUrl.orEmpty()}\"",
             auth,
-        ) + profile.provider.extra + models.flatMap { m ->
+        ) + profile.provider.extra.map { it.replace(KEY_SLOT, key) } + models.flatMap { m ->
             listOf(
                 "[[providers.$key.models]]",
                 "id = \"${m.id}\"",

@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,6 +36,35 @@ class DeepSeekProfileTest {
         val catalog = provider.catalogFor(head)
         assertEquals(2, catalog.models.size, "both declared rows must resolve")
         assertEquals("deepseek-flash", catalog.pinnedModel)
+    }
+
+    @Test
+    fun `a second deepseek head under another name loads with its own quirks`(@TempDir dir: Path) {
+        val path = dir.resolve("splice.toml")
+        Files.writeString(
+            path,
+            DAEMON_BLOCK + AddProfiles().toml(profile, "deepseek", PORT) +
+                AddProfiles().toml(profile, "second", PORT + 1),
+        )
+
+        val topology = TopologyLoader.loadOrMaterialize(path)
+
+        assertEquals(setOf("deepseek", "second"), topology.heads.keys)
+        assertEquals(
+            topology.providers.getValue("deepseek").quirks,
+            topology.providers.getValue("second").quirks,
+            "the second provider carries the same allowlist, not the first one's table twice",
+        )
+    }
+
+    @Test
+    fun `a refused parse names the table it found twice`() {
+        val twice = DAEMON_BLOCK + AddProfiles().toml(profile, "deepseek", PORT) +
+            AddProfiles().toml(profile, "deepseek", PORT + 1)
+
+        val finding = SafeFailureText.render(assertThrows<IllegalArgumentException> { TopologyLoader.parse(twice) })
+
+        assertTrue("is defined twice" in finding && "[providers.deepseek]" in finding, finding)
     }
 
     @Test

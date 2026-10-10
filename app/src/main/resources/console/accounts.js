@@ -8,9 +8,9 @@ const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
 const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local" };
 
 // splice's budget day is the UTC day (BudgetEnforcement.kt:10), so it refills at UTC midnight, read in the viewer's clock.
-function dayLeft() {
+function dayReset() {
   const next = Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate() + 1);
-  return Math.round((next - NOW.getTime()) / 60000);
+  return { left: Math.round((next - NOW.getTime()) / 60000), resetMs: next };
 }
 
 // The provider a command belongs to, by the family splice gives its head (/api/status registry, ProviderFamilyRule.kt).
@@ -36,7 +36,8 @@ function windowOf(pct, resetSec, lenSec, slot) {
   const month = slot === "long" && lenSec >= 28 * 86400;
   const label = slot === "short" ? "5 hours" : month ? "Month" : "Week";
   const left = resetSec ? Math.round((resetSec * 1000 - NOW.getTime()) / 60000) : null;
-  return { label, used: Math.round(pct), len: LEN[label], left: left != null && left >= 0 ? left : null };
+  const due = left != null && left >= 0;
+  return { label, used: Math.round(pct), len: LEN[label], left: due ? left : null, resetMs: due ? resetSec * 1000 : null };
 }
 const plainPlan = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : undefined);
 // An account's name on one command, as splice knows it there: two commands can each have an account called "primary"
@@ -74,17 +75,20 @@ async function load() {
     if (p.kind === "plan") {
       for (const row of ac.body.accounts || []) {
         if (!(row.heads || []).some((x) => heads.has(x))) continue;
+        // Claude Code's own login place that never held a sign-in is no account (Marlin, Oct 10): no credential, no
+        // account, no reading. One that was signed in and expired keeps all three, and shows.
+        if (row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds) continue;
         const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short"),
           windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long")].filter(Boolean);
         const fresh = row.five_hour_current || row.seven_day_current;
         p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.account?.email || undefined, plan: plainPlan(row.plan), windows,
-          staleAt: !fresh && row.observed_at_epoch_seconds && windows.length ? Math.round((row.observed_at_epoch_seconds * 1000 - NOW.getTime()) / 60000) : null,
+          staleAt: !fresh && row.observed_at_epoch_seconds && windows.length ? row.observed_at_epoch_seconds * 1000 : null,
           out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
           canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
           // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
           noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
           // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
-          models: (row.seven_day_models || []).map((m) => [m.model, Math.round(m.used_percent)]) });
+          models: (row.seven_day_models || []).map((m) => ({ name: m.model, ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long") })) });
       }
     } else if (p.kind === "key") {
       for (const k of keyRows) {
@@ -108,6 +112,7 @@ async function load() {
     const ids = [...new Set((o.body?.effective_order || []).map(byLabel).filter(Boolean))];
     c.order = [...ids, ...mine.map((a) => a.id).filter((id) => !ids.includes(id))];
     c.mode = o.body?.order?.length ? "mine" : "soonest";
+    c.orderable = new Set(o.body?.effective_order || []); // the labels splice will take in an order
     c.pin = mine.find((a) => a.row.pinned)?.id || null;
     // the pool's own picks, named by label on this command
     c.serving = byLabel(o.body?.next_target) ?? null; c.following = byLabel(o.body?.following_target) ?? null;
@@ -125,8 +130,10 @@ const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
   return `${h}:${String(m).padStart(2, "0")} ${ap}`; // as every page writes a time (kit.js clock): "9:00 AM", never "9 AM"
 };
-function at(left) {
-  const d = new Date(NOW.getTime() + left * 60000);
+// A time from the instant splice gave, rounded once to the minute, so every view of one reset prints the same minute (the
+// walkers saw 5:38 and 5:39 for one reset when it was rebuilt from minutes left at each load).
+function at(ms) {
+  const d = new Date(Math.round(ms / 60000) * 60000);
   const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date(NOW).setHours(0, 0, 0, 0)) / 864e5);
   if (days === 0) return clock(d);
   if (Math.abs(days) < 7) return `${d.toLocaleDateString("en-US", { weekday: "short" })} ${clock(d)}`;
@@ -142,8 +149,13 @@ function ruled(p, c) { // the rule alone: his order, or the soonest reset among 
   const list = laneAccts(p, c);
   if (c.mode === "mine") return list;
   const rank = (a) => (room(a) ? 0 : a.out ? 2 : 1);
-  const key = (a) => (room(a) ? a.windows[0]?.left ?? Infinity : held(a) ? backAt(a) : 0);
-  return list.sort((a, b) => rank(a) - rank(b) || key(a) - key(b));
+  // splice's own order (AccountAvailability.resetOrder): the sooner of the two resets, then the week's, then the five
+  // hours'; a full tie keeps splice's order, which ends on the primary account and then the name
+  const left = (a, label) => a.windows.find((w) => w.label === label)?.left ?? Infinity;
+  const keys = (a) => (room(a) ? [Math.min(left(a, "5 hours"), left(a, "Week")), left(a, "Week"), left(a, "5 hours")]
+    : [held(a) ? backAt(a) : 0, 0, 0]);
+  const byKeys = (a, b) => keys(a).reduce((d, k, i) => d || (k === keys(b)[i] ? 0 : k < keys(b)[i] ? -1 : 1), 0);
+  return list.sort((a, b) => rank(a) - rank(b) || byKeys(a, b));
 }
 // A pin is tried first; a pinned account with no room falls through to the rule and keeps its pin (AccountPool.kt:84-85).
 function ordered(p, c) {
@@ -204,7 +216,7 @@ function ring(w) {
   return `<svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="15"/><circle class="arc" cx="20" cy="20" r="15" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}"/></svg>`;
 }
 const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
-const resets = (w) => (w.left == null ? "<span></span>" : `<span class="when">${ring(w)}Resets ${at(w.left)}</span>`); // a reading whose reset has passed shows no time
+const resets = (w) => (w.left == null ? "<span></span>" : `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`); // a reading whose reset has passed shows no time
 
 function windowsHtml(a, next = null) {
   const stale = a.staleAt != null;
@@ -214,7 +226,7 @@ function windowsHtml(a, next = null) {
     rows += `<span class="label">${w.label}</span>${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${stale ? "stale" : ""}`)}`
       + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>${resets(w)}`;
     if (w.label === "Week" && a.models) {
-      for (const [m, used] of a.models) rows += `<span class="label sub">${m}</span>${bar(used, `sub ${used >= 100 ? "full" : ""} ${stale ? "stale" : ""}`)}<span class="pct">${used}%<span class="used">used</span></span><span></span>`;
+      for (const m of a.models) rows += `<span class="label sub">${m.name}</span>${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${stale ? "stale" : ""}`)}<span class="pct">${m.used}%<span class="used">used</span></span>${resets(m)}`;
     }
   }
   if (stale) rows += `<span class="stale-at">${ICON.eye}Read ${at(a.staleAt)}</span>`;
@@ -229,7 +241,7 @@ function windowsHtml(a, next = null) {
 // command's tab names the row, because one provider can serve several commands. Where a plan provider's commands share
 // one rail, the tab is pressed to show that command's order: pick is { p, on } there, and null everywhere else.
 function meterHtml(c, pick = null) {
-  const day = { left: dayLeft(), len: LEN.Day };
+  const day = { ...dayReset(), len: LEN.Day };
   const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${c.cmd}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
     : `<span class="chip tag">${esc(c.cmd)}</span>`;
   if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
@@ -591,7 +603,10 @@ async function pickProvider(c) {
   }
   const again = () => { dropAdd(); pickProvider(c); }; // Try again opens the add afresh: there is no sign-in to restart
   ui.signin.prov = { how: { done, again }, state: "wait" }; render(); // nothing to sign in to (Claude's login is forwarded)
-  if (add) finishSignin("prov"); else failSignin("prov", res.body);
+  // splice refuses a provider whose name or command is taken with a 409 naming that field and no failure kind
+  // (AddRefusal.field): that reads Already added, not Not completed
+  const taken = res.status === 409 && ["name", "command"].includes(res.body?.field);
+  if (add) finishSignin("prov"); else failSignin("prov", taken ? { failure_kind: "already_added" } : res.body);
 }
 // The save, then splice's restart: true once the provider is back on the board. A refused save, or a splice that does
 // not come back in a minute and a half, shows on the tile it was added from.
@@ -632,6 +647,9 @@ function keyState(field, word) {
   el.textContent = word; field.setAttribute("aria-invalid", "true"); field.setAttribute("aria-describedby", "key-err");
   const box = field.parentElement; box.classList.remove("failed"); void box.offsetWidth; box.classList.add("failed");
 }
+// An order names only the accounts splice holds in this command's order (its effective_order): it refuses a whole order
+// naming one it doesn't, such as a login place that never held a sign-in, and My order then fell back to Soonest reset.
+const orderLabels = (c, list) => list.map((x) => labelOn(x, c.head)).filter((l) => c.orderable?.has(l));
 // ---------- reorder: drag by the grip, or arrows on it ----------
 // The new order is the command's own (PUT /api/auth/{head}/order); a refused one reads the order splice still holds.
 async function moveTo(p, c, aid, index) {
@@ -640,7 +658,7 @@ async function moveTo(p, c, aid, index) {
   const unpin = c.pin === aid; // moving the pinned account by hand is placing it: the pin gives way
   c.order = list.map((x) => x.id); c.mode = "mine"; if (unpin) c.pin = null; render({ flip: true });
   if (unpin) await API.del(`/api/auth/${encodeURIComponent(c.head)}/switch`);
-  await API.put(`/api/auth/${encodeURIComponent(c.head)}/order`, { order: list.map((x) => labelOn(x, c.head)) });
+  await API.put(`/api/auth/${encodeURIComponent(c.head)}/order`, { order: orderLabels(c, list) });
   await refresh();
 }
 // ---------- keys: arrows on a grip, Enter and Escape in the fields ----------
@@ -714,7 +732,7 @@ document.addEventListener("click", async (e) => {
     case "mode": {
       const order = t.dataset.v === "mine" ? ruled(p, k) : [];
       k.mode = t.dataset.v; if (order.length) k.order = order.map((x) => x.id); render({ flip: true });
-      await API.put(headPath(k, "order"), { order: order.map((x) => labelOn(x, k.head)) }); await refresh(); break;
+      await API.put(headPath(k, "order"), { order: orderLabels(k, order) }); await refresh(); break;
     }
     // Use now pins the account on that command: it serves from the next request, the rule stays, and the pin undoes it
     // (SwitchRoute.kt).

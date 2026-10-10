@@ -25,7 +25,7 @@ private const val CHILD_SECONDS = 120L
 
 class DoctorProcessTest {
 
-    private class Ran(val exit: Int, val stdout: String)
+    private data class Ran(val exit: Int, val stdout: String)
 
     private fun doctor(tmp: Path, vararg args: String): Ran {
         val home = Files.createDirectories(tmp.resolve("home"))

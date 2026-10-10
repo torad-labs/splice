@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.GATEWAY_VERSION
-import splice.core.testing.TestPorts
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,7 +23,7 @@ private const val SHIM = "#!/bin/sh\necho stock\n"
 
 class UpgradeProcessTest {
 
-    private class Ran(val exit: Int, val stdout: String)
+    private data class Ran(val exit: Int, val stdout: String)
 
     private fun sha(bytes: ByteArray) =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -53,27 +52,41 @@ class UpgradeProcessTest {
         return release
     }
 
-    private fun upgrade(tmp: Path, reports: String, doctorExit: Int, vararg args: String): Ran {
-        val home = Files.createDirectories(tmp.resolve("home"))
-        val release = install(home)
+    /** Fake systemctl (a unit running this install's jar) and java (the candidate reports [reports]) in one dir. */
+    private fun fakeBin(tmp: Path, home: Path, reports: String, doctorExit: Int): Path {
         val bin = Files.createDirectories(tmp.resolve("fake-bin"))
         script(
             bin.resolve("systemctl"),
             "case \"\$3\" in show) echo \"java -jar ${home.resolve("share/splice.jar")} daemon\";; " +
                 "is-active) echo active;; esac",
         )
-        val java = script(
+        script(
             bin.resolve("java"),
             "for a; do last=\$a; done\n" +
-                "case \"\$last\" in version) echo \"splice $reports\";; --json) echo '{}';; doctor) exit $doctorExit;; esac",
+                "case \"\$last\" in version) echo \"splice $reports\";; --json) echo '{}';; " +
+                "doctor) exit $doctorExit;; esac",
         )
+        return bin
+    }
+
+    /** What the restarted daemon answers on /health: the new release's version. */
+    private fun healthServer(): HttpServer {
         val health = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         health.createContext("/health") { exchange ->
-            val body = """{"version":"$NEW_VERSION","ok":true,"heads":1,"readyHeads":1,"failedHeads":0}""".toByteArray()
+            val body = """{"version":"$NEW_VERSION","ok":true,"heads":1,"readyHeads":1,"failedHeads":0}"""
+                .toByteArray()
             exchange.sendResponseHeaders(200, body.size.toLong())
             exchange.responseBody.use { it.write(body) }
         }
         health.start()
+        return health
+    }
+
+    private fun upgrade(tmp: Path, reports: String, doctorExit: Int, vararg args: String): Ran {
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val release = install(home)
+        val java = fakeBin(tmp, home, reports, doctorExit).resolve("java")
+        val health = healthServer()
         val output = tmp.resolve("upgrade.out")
         val builder = ProcessBuilder(
             ProcessHandle.current().info().command().orElse("java"),
@@ -87,7 +100,7 @@ class UpgradeProcessTest {
         builder.environment().apply {
             keys.removeIf { key -> SELECTOR_PREFIXES.any(key::startsWith) }
             put("HOME", home.toString())
-            put("PATH", "$bin:${System.getenv("PATH")}")
+            put("PATH", "${java.parent}:${System.getenv("PATH")}")
             put("SPLICE_SHARE_DIR", home.resolve("share").toString())
             put("SPLICE_BIN_DIR", home.resolve("bin").toString())
             put("SPLICE_RELEASE_BASE_URL", release.toUri().toString().trimEnd('/'))

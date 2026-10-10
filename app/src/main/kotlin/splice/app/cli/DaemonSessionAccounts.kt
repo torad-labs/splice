@@ -21,16 +21,19 @@ internal class DaemonSessionAccounts : SessionAccounts {
         val port = AdminSupport.controlPort(envReader)
         val reply = ControlPlaneClient.send("http://127.0.0.1:$port/api/sessions", "GET", key)
             ?.takeIf { it.status in ControlPlaneClient.OK_RANGE } ?: return emptyMap()
-        val sessions = try {
-            (Json.parseToJsonElement(reply.body) as? JsonObject)?.get("sessions")
-        } catch (_: SerializationException) {
-            return emptyMap()
-        }
-        val rows = (sessions as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
-        return rows.mapNotNull { row ->
+        return rows(reply.body).mapNotNull { row ->
             val id = text(row, "session_id") ?: return@mapNotNull null
             id to SessionAccountLine(text(row, "account"), text(row, "account_pin"))
         }.toMap()
+    }
+
+    private fun rows(body: String): List<JsonObject> {
+        val sessions = try {
+            (Json.parseToJsonElement(body) as? JsonObject)?.get("sessions")
+        } catch (_: SerializationException) {
+            null
+        }
+        return (sessions as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
     }
 
     private fun text(row: JsonObject, field: String): String? =

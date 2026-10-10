@@ -73,6 +73,24 @@ public data class Usage(
     )
 }
 
+/** Where a [Usage] came from beyond its token buckets: whether it is a local code-mode step, the
+ *  requests folded into it, and the output and context that ride beside the bill. */
+public data class UsageOrigin(
+    /** A client-facing code-mode step synthesized locally; retained through round usage folding. */
+    val localStep: Boolean = false,
+    /** A code-mode branch changed a result already accepted on this conversation key. */
+    val codeModeDiverged: Boolean = false,
+    /** Output already recorded by an independently owned raw round, not a client-turn stamp. */
+    val recordedOutputTokens: Long = 0,
+    /** The context the client is told about when this usage measured no input of its own: a code-mode
+     *  step with no upstream round carries its conversation's last measured round here, because Claude
+     *  Code reads every assistant message's usage as the context total. Only the client payload reads
+     *  it, and only while the usage's inputTokens is zero; splice's own accounting keeps the raw buckets. */
+    val clientContext: Usage? = null,
+    /** Requests billed before the final one, missing bills, and whether this value owns a final request. */
+    val history: UsageHistory = UsageHistory(request = if (localStep) UsageRequest.NONE else UsageRequest.POSTED),
+)
+
 /** Suppressed on an actual upstream I/O tear so connection-reset telemetry retains the
  * branch-divergence fact even when no [TurnOutcome] can return from the post. */
 public class CodeModeDivergenceMarker : Exception("divergent code-mode result sent upstream")
@@ -202,3 +220,93 @@ public sealed class TurnOutcome {
      *  accumulator alone, and finishTurn stamps it exactly like a Failure's salvage. */
     public data class ClientAbandoned(val salvagedUsage: Usage = Usage(reported = emptySet())) : TurnOutcome()
 }
+
+/** What kind of failure a [TurnOutcome.Failure] is, for health attribution and for the retry rule. */
+public data class FailureTraits(
+    /** True when a genuine upstream-reported error produced this failure (an error event/body
+     *  the provider actually sent); false for locally-synthesized verdicts (watchdog stall,
+     *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
+     *  local heuristic misattributed passthrough overloaded_error (review 2026-07-19). */
+    val providerReported: Boolean = false,
+    /** True when the SAME request produces the SAME failure — a verdict the gateway reached on
+     *  its own (a code-mode record it cannot resume, a script the runtime cannot admit), which
+     *  no retry can change. Rendered as a readable ending the client shows verbatim rather than
+     *  an SSE error event: Claude Code 2.1.x re-sends an `api_error` identically until it gives
+     *  up when it arrives before content, and after content replaces the message with a fixed
+     *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07). */
+    val deterministic: Boolean = false,
+    /** V4-81: NO retry can change this verdict — an identical re-send reproduces it exactly.
+     *
+     *  Distinct from [deterministic], which is about the ENDING'S SHAPE (words the client
+     *  renders vs an error event); this is about whether the failure is RE-ATTEMPTABLE, and it
+     *  is what the pre-content wire-type rule reads. Advertising such a failure as transient is
+     *  the expensive lie: RetryPolicy arms a cooldown only for RATE_LIMITED, so with
+     *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure makes the client re-send the
+     *  identical bytes up to 300 times, six upstream attempts each, for a verdict that cannot
+     *  move. Set from the classifier's `transient = false` (UpstreamFailureClassifier), from a
+     *  deterministic refusal (ResponsesTerminalDecision), and from the local base_url parse —
+     *  the operator law "always a retry armed" is about failures a retry can HEAL.
+     *
+     *  Defaulted false: every construction that does not know stays exactly as it was, and the
+     *  rule treats "unknown" as retryable, which is today's behavior. */
+    val permanent: Boolean = false,
+    /** V4-67: a connection tear the GATEWAY synthesized into an outcome (SseRoundDriver
+     *  .tearOutcome) rather than letting it escape to the conn-reset surface. Carried so the
+     *  ending keeps the [CONN_RESET_OUTCOME] tag whatever path it finishes through: a
+     *  converted tear that no controller continues is finished by the pipeline, and without
+     *  this it recorded `failure:overloaded_error` — leaving the one string that names this
+     *  failure class absent from the perf row it is grepped in. Defaulted false, so every
+     *  other construction of this type is byte-unchanged. */
+    val connReset: Boolean = false,
+)
+
+/** What the completed upstream response held. */
+public data class ResponseShape(
+    /** A `message` output item COMPLETED this round, whether or not it carried text.
+     *
+     *  An empty message is the model's finished answer, not an absence: given nothing to add
+     *  (Astra after a Stop hook echoes an end-of-turn report back at it, 2026-09-05) it closes
+     *  a message with no text, exactly as codex renders — codex ends the turn there, since
+     *  only a tool call sets `needs_follow_up`. Grading that turn `empty_model` handed Claude
+     *  Code an API error it retried a dozen times per incident, so the empty-turn gate reads
+     *  this first: a closed message ends clean; a round with NO message item stays the honest
+     *  error it always was. */
+    val messageClosed: Boolean = false,
+    /** What the completed upstream response actually held, item by item, in one short line
+     *  (`status=completed items=[reasoning(summary=0,enc=1842) message(output_text:0)]`).
+     *  Evidence only: read by the empty-turn line so a "no content" verdict names the shape
+     *  the backend sent instead of asserting an absence nobody can grep. */
+    val outputShape: String = "",
+)
+
+/** What a round hands on to the gateway's controllers, which forward it without reading it. */
+public data class RoundHandoffs(
+    /** splice-reasoning envelopes (base64) of THIS round's encrypted reasoning items, for
+     *  reasoning-continuation replay. Populated only when the turn is fold-eligible; empty
+     *  otherwise (opaque handles — the gateway forwards them to the provider's fold controller,
+     *  never reads them). */
+    val reasoningEnvelopes: List<String> = emptyList(),
+    /** tool_search_call items THIS round emitted. Non-empty only on a responses turn with
+     *  deferral active; the gateway never reads their contents — it hands them to the turn's
+     *  ToolSearchPolicy (the same opaque-forwarding rule as reasoningEnvelopes). */
+    val toolSearches: List<ToolSearchCall> = emptyList(),
+    /** Gateway-local custom calls. Empty keeps every non-bridge outcome byte-identical. */
+    val customCalls: List<GatewayCustomCall> = emptyList(),
+)
+
+/** The text a round produced, and what of it reached the client. */
+public data class RoundText(
+    val thinkingText: String = "",
+    val bodyText: String = "",
+    val emittedText: Boolean = false,
+    /** True when a THINKING block actually reached the sink this round (CX-09).
+     *
+     *  Distinct from [thinkingText] being non-empty: the harvest fallback fills the buffer from
+     *  the completed response object WITHOUT touching the sink, so the buffer is a statement
+     *  about what the model produced and this is a statement about what the CLIENT received.
+     *  Only the latter can answer "did this turn put anything on the wire", which is the
+     *  question the empty-turn honesty gate has to ask before calling a turn empty. On a partial
+     *  round it survives the buffered-round strip, because BufferingWireSink forwards openThinking /
+     *  thinkingDelta straight to the real sink — only text and tool ops are held back. */
+    val emittedThinking: Boolean = false,
+)

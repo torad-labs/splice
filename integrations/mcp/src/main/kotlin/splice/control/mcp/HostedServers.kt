@@ -24,6 +24,9 @@ internal class HostedServers(
     private val log: LogSink,
     private val sessions: McpSessions,
 ) {
+    /** How a child's exit is reaped. Production waits on the process; a test holds one exit open. */
+    internal var reaped: ChildReaped = waitForReap
+
     private val servers = HashMap<McpIdentity, HostedServer>()
     private val bindings = HashMap<String, McpIdentity>()
 
@@ -94,7 +97,9 @@ internal class HostedServers(
                 namesOf(id).forEach { alias -> sessions.deliver(alias, sessionId, codec.encode(msg)) }
             }
         }
-        return McpResult.Served(HostedServer(spec, config, launcher, codec, log, sink).also { servers[id] = it })
+        val server = HostedServer(spec, config, launcher, codec, log, sink, reaped)
+        servers[id] = server
+        return McpResult.Served(server)
     }
 
     /** Ends the reservation [acquire] took; true when [server] is still bound to [name] and alive. */

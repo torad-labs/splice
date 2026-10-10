@@ -98,6 +98,9 @@ internal object ClaudeLoginRows {
         put("available", available)
         put("selected", selected?.selected)
         put("pinned", pool?.let { it.pinnedLabel == key })
+        // The console reads WHICH head pins a row, because a row shared by two heads can be pinned on one. A native login
+        // belongs to one head, so the answer is that head when the pin names this login.
+        putJsonArray("pinned_heads") { if (pool?.pinnedLabel == key) add(JsonPrimitive(view.head)) }
         put("next_target", pool?.let { it.nextTargetLabel == key })
         put("auth_excluded_until_epoch_millis", selected?.credential?.excludedUntilEpochMillis)
         put("auth_exclusion_reason", selected?.credential?.exclusionReason)

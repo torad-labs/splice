@@ -120,6 +120,44 @@ class ClaudeAccountRowsTest {
     }
 
     @Test
+    fun `a pinned native login names its head in pinned_heads, so the console shows its Unpin`() = runBlocking {
+        val native = ClaudeLoginPlaceView(
+            ClaudeLoginPlaceId.NATIVE,
+            "claude-splice",
+            ClaudeLoginCredential("/synthetic/native/.credentials.json", true),
+            ClaudeLoginIdentity(ClaudeAccountIdentity("native-account", "native@synthetic.test")),
+            null,
+            ClaudeLoginStanding(null, null),
+        )
+        val key = "native:${ClaudeLoginPlaceId.NATIVE.wire}"
+        suspend fun rowWith(pinned: String?): JsonObject {
+            val head = AccountHead(
+                key = "claude-splice",
+                auth = forwardedAuth(),
+                pool = HeadAccountPoolSource { HeadAccountPoolView(null, emptyList(), null, pinnedLabel = pinned) },
+                accountAuth = HeadAccountAuthSource { emptyMap() },
+                restart = HeadRestart { },
+            )
+            val body = AccountsRoute(mapOf(head.key to head)).accountsJson(
+                mapOf(head.key to "anthropic"),
+                listOf(native),
+                mapOf(head.key to null),
+                nowSeconds = 100,
+            )
+            return Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
+                .map { it.jsonObject }.single { it["label"]?.jsonPrimitive?.content == "claude" }
+        }
+
+        val pinned = rowWith(key)
+        assertEquals("true", pinned.getValue("pinned").jsonPrimitive.content)
+        val heads = pinned.getValue("pinned_heads").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("claude-splice"), heads)
+        val free = rowWith(null)
+        assertEquals("false", free.getValue("pinned").jsonPrimitive.content)
+        assertTrue(free.getValue("pinned_heads").jsonArray.isEmpty(), "nothing pinned, no head named")
+    }
+
+    @Test
     fun `two commands on one head remain distinct rows and unknown windows never become zero or full limits`() =
         runBlocking {
             val first = ClaudeLoginPlaceView(

@@ -24,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
@@ -183,6 +184,30 @@ class KeysRouteTest {
         assertEquals(listOf("shadowed" to "environment"), readers(obj(put)), "the environment wins over the store")
         send("DELETE", "/api/keys/$SHADOWED")
     }
+
+    // Review of b274f3dd2..a0583a85a, finding 10: a ledger splice cannot write threw out of the list route.
+    @Test
+    fun `a read-only config folder still lists its keys, with the day a key was first seen unknown`() =
+        runBlocking<Unit> {
+            awaitPort()
+            val folder = store.path.parent
+            Files.createDirectories(folder)
+            Files.deleteIfExists(folder.resolve("key-ledger.json"))
+            val open = Files.getPosixFilePermissions(folder)
+            val readOnly = setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE)
+            Files.setPosixFilePermissions(folder, readOnly)
+            try {
+                val list = send("GET", "/api/keys")
+                assertEquals(HttpStatusCode.OK, list.status, list.bodyAsText())
+                val shadowed = obj(list).getValue("keys").jsonArray.map { it.jsonObject }
+                    .single { it["name"]!!.jsonPrimitive.content == SHADOWED }
+                assertTrue(shadowed["fingerprint"]!!.jsonPrimitive.content.isNotEmpty(), "the key in use still reads")
+                assertEquals(JsonNull, shadowed["first_seen_epoch_seconds"], "no day splice could not record")
+                assertTrue(logged.any { "could not be written" in it }, "and the log says why")
+            } finally {
+                Files.setPosixFilePermissions(folder, open)
+            }
+        }
 
     @Test
     fun `refusals carry their reason and the status that matches`() = runBlocking<Unit> {

@@ -149,6 +149,6 @@ class TurnStopWiringTest {
                 override fun path(): String = ""
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
     )
 }

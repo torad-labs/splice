@@ -238,7 +238,7 @@ class NativeUsageTruthTest {
                 )
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
         authSurface = HeadAuthSurface(authKind = kind),
     )
 

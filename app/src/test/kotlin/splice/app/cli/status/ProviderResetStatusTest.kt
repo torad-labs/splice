@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.UsageWarning
+import splice.app.control.UsageWarningSource
 import splice.app.control.healthFor
 import splice.app.control.readinessFor
 import splice.core.auth.AuthDescription
@@ -118,7 +119,7 @@ class ProviderResetStatusTest {
                     override fun path() = "/synthetic/daemon.log"
                 },
             ),
-            usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+            usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
         )
         val heads = mapOf(head.key to source)
         val payloads = healthFor(heads, readinessFor(heads, configuredHeads = 1))

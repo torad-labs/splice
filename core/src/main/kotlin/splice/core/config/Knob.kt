@@ -358,14 +358,12 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_USAGE_WARN_PCT"),
         KnobDefault.Count(80L),
-        restartRequired = true,
     ),
     USAGE_WARN_TOKENS_5H(
         "usageWarnTokens5h",
         KnobKind.NUMBER,
         listOf("SPLICE_USAGE_WARN_TOKENS_5H"),
         KnobDefault.Count(0L),
-        restartRequired = true,
     ),
 
     // ── shared MCP hosting (v0.4.0, FEATURES.md §8) ────────────────────────────────────────────

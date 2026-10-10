@@ -57,8 +57,8 @@ internal object UsageHeadAdapter {
         label = head.head.label,
         usage = head.sources.usage,
         warn = UsageHeadWarn(
-            warnPct = head.usageWarning.warnPct,
-            warnTokens5h = head.usageWarning.warnTokens5h,
+            warnPct = head.usageWarning.read().warnPct,
+            warnTokens5h = head.usageWarning.read().warnTokens5h,
         ),
         sinks = UsageHeadSinks(
             perf = head.sources.perf,

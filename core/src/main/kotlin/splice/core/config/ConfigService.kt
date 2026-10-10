@@ -89,7 +89,7 @@ public class ConfigService(
      *  TOML layer — an unknown/absent key is simply the global view, so callers never branch. */
     @JvmOverloads
     public fun getConfig(headKey: String? = null): SpliceConfig =
-        SpliceConfig(coercion.normalize(mergedRaw(headKey)))
+        SpliceConfig(coercion.normalize(mergedRaw(headKey)), FreshConfig { getConfig(headKey) })
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },

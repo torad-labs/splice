@@ -18,7 +18,14 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayParser
 
 /** Typed view over the merged+normalized map. */
-public class SpliceConfig internal constructor(private val m: Map<String, Any?>) {
+public class SpliceConfig internal constructor(
+    private val m: Map<String, Any?>,
+    private val fresh: FreshConfig,
+) {
+    /** This view's own effective config read again now: a value a change must reach without a restart is read
+     *  through it, where the view held at boot keeps the answer it had. */
+    public fun current(): SpliceConfig = fresh.read()
+
     public val port: Int get() = long(Knob.PORT).toInt()
     public val chatgptApiBase: String get() = string(Knob.CHATGPT_API_BASE).orEmpty()
     public val codexAuthPath: String get() = string(Knob.CODEX_AUTH_PATH).orEmpty()
@@ -116,4 +123,9 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     private fun long(k: Knob): Long = (m[k.key] as? Long) ?: m[k.key]?.toString()?.toLongOrNull() ?: 0L
 
     private fun bool(k: Knob): Boolean = m[k.key] == true
+}
+
+/** What a [SpliceConfig] reads itself again through: the one service that minted it. */
+internal fun interface FreshConfig {
+    fun read(): SpliceConfig
 }

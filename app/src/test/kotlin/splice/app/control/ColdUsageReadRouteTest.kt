@@ -239,7 +239,7 @@ class ColdUsageReadRouteTest {
                 economics = economicsSource(),
                 perfRows = perfSource(),
             ),
-            usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+            usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
         )
 
         private fun economicsSource(): HeadEconomicsSource = HeadEconomicsSource {

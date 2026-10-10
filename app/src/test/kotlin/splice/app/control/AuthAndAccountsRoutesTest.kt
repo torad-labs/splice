@@ -445,7 +445,7 @@ class AuthAndAccountsRoutesTest {
                 override fun path(): String = ""
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
         authSurface = HeadAuthSurface(accountPool = pinSource?.let { source -> PinnedPoolSource(source) }),
     )
 

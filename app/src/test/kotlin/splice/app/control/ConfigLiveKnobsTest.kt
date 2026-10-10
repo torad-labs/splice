@@ -117,6 +117,18 @@ class ConfigLiveKnobsTest {
     }
 
     @Test
+    fun `the usage warning thresholds are live, so no restart is named and a head reads them`() = runBlocking<Unit> {
+        val answer = json.parseToJsonElement(patch("""{"usageWarnPct":90,"usageWarnTokens5h":5000}""")).jsonObject
+
+        assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+        val view = json.parseToJsonElement(read()).jsonObject
+        assertEquals("90", view.getValue("effective").jsonObject.getValue("usageWarnPct").jsonPrimitive.content)
+        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        assertFalse("usageWarnPct" in restartOnly || "usageWarnTokens5h" in restartOnly)
+        assertEquals(90, config.getConfig("h").usageWarnPct, "a head reads it live, the way its usage view does")
+    }
+
+    @Test
     fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {
         patch("""{"maxInflight":9,"effort":"low"}""")
 

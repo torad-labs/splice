@@ -210,6 +210,6 @@ class ControlServerGateTest {
                 override fun path() = "/tmp/$key.log"
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
     )
 }

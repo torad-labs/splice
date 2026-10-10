@@ -23,6 +23,7 @@ import splice.app.control.ControlAuth
 import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.UsageWarning
+import splice.app.control.UsageWarningSource
 import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.SyntheticPerfHistory
@@ -169,7 +170,7 @@ internal class PlaygroundContentionFixture(
                 }
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
     )
 
     override fun close() {

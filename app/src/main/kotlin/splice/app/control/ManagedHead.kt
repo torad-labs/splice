@@ -26,7 +26,8 @@ public data class ManagedHead(
     val head: Head,
     val auth: AuthProvider,
     val sources: HeadSources,
-    val usageWarning: UsageWarning,
+    /** Read when a usage view is drawn, so a threshold changed while splice runs governs the next view. */
+    val usageWarning: UsageWarningSource,
     /** Present when this head can be launched as a Claude Code wrapper (P4-LAUNCH). */
     val launchSpec: LaunchSpec? = null,
     val authSurface: HeadAuthSurface = HeadAuthSurface(),
@@ -91,3 +92,8 @@ public data class UsageWarning(
     val warnPct: Int,
     val warnTokens5h: Long,
 )
+
+/** The warning thresholds as they are now: a usage view reads them when it is drawn. */
+public fun interface UsageWarningSource {
+    public fun read(): UsageWarning
+}

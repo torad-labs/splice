@@ -34,6 +34,7 @@ import splice.app.control.ControlServer
 import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.UsageWarning
+import splice.app.control.UsageWarningSource
 import splice.app.control.controlServerFor
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -215,7 +216,7 @@ class CompactionRestartTest {
                 override fun path(): String = ""
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
     )
 
     private suspend fun awaitPort() {

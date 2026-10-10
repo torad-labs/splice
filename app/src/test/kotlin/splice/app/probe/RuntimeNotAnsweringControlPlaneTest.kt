@@ -25,6 +25,7 @@ import splice.app.control.FailedHeads
 import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.UsageWarning
+import splice.app.control.UsageWarningSource
 import splice.app.head.HeadProbeReadings
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -124,6 +125,6 @@ class RuntimeNotAnsweringControlPlaneTest {
                 override fun path() = "/tmp/runtime-watch-wiring.log"
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
     )
 }

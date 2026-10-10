@@ -115,6 +115,6 @@ class ClientVersionSurfaceTest {
                 override fun path() = "/tmp/client-version-surface.log"
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
     )
 }

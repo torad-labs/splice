@@ -12,6 +12,7 @@ import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.StatuslineContext
 import splice.app.control.UsageWarning
+import splice.app.control.UsageWarningSource
 import splice.app.probe.PlaygroundProviders
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -160,7 +161,9 @@ internal class ManagedHeadFactory(
             head = server,
             auth = wired.auth,
             sources = sourcesFor(key, stores, quotaPollers, TurnPrice(ctx.catalog), perfSources.kept),
-            usageWarning = UsageWarning(warnPct = cfg.usageWarnPct, warnTokens5h = cfg.usageWarnTokens5h),
+            usageWarning = UsageWarningSource {
+                ctx.cfg.current().let { UsageWarning(warnPct = it.usageWarnPct, warnTokens5h = it.usageWarnTokens5h) }
+            },
             authSurface = HeadAuthSurface(
                 authKind = ctx.providerCfg.auth.kind,
                 keyPresence = keyPresence,

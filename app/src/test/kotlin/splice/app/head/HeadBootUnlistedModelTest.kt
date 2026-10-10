@@ -12,6 +12,7 @@ import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.StatuslineContext
 import splice.app.control.UsageWarning
+import splice.app.control.UsageWarningSource
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
@@ -115,7 +116,7 @@ class HeadBootUnlistedModelTest {
                 override fun path(): String = ""
             },
         ),
-        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
         statusline = StatuslineContext(catalog = catalog),
     )
 }

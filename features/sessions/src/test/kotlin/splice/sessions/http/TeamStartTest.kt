@@ -58,6 +58,13 @@ internal class FakeTerminal(var openFails: Boolean = false, var screenText: Stri
     override fun howToOpen(pane: SessionPane): String = "attach ${pane.id}"
 
     override fun isOpen(pane: SessionPane): Boolean = live
+
+    /** The pids each pane has in front, as the person's terminal would show them. */
+    val inFront = mutableMapOf<SessionPane, Long>()
+
+    override fun recorded(pane: String, server: String): SessionPane = SessionPane("$pane@$server")
+
+    override fun hosts(pane: SessionPane, pid: Long): Boolean = inFront[pane] == pid
 }
 
 internal class FakePanes : SessionPanes {

@@ -177,4 +177,15 @@ class TmuxTerminalTest {
             killServer(other)
         }
     }
+
+    @Test
+    fun `a pane a launch recorded is driven only while that launch's process is the one in front of it`() {
+        val pane = open("sh", "-c", "echo pid=\$\$; exec cat")
+        val pid = screenUntil(pane) { "pid=" in it }.substringAfter("pid=").lines().first().trim().toLong()
+
+        assertEquals(pane, terminal.recorded(pane.id.substringBefore("@"), socket.toString()))
+        assertTrue(terminal.hosts(pane, pid), "the process the pane was started with is in front of it")
+        assertFalse(terminal.hosts(pane, ProcessHandle.current().pid()), "a process the pane never held is not")
+        assertEquals(null, terminal.recorded("not-a-pane", socket.toString()))
+    }
 }

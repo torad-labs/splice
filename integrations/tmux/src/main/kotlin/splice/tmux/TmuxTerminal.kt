@@ -111,6 +111,18 @@ public class TmuxTerminal(
         return reply.ok && reply.out.trim() == "0"
     }
 
+    override fun recorded(pane: String, server: String): SessionPane? =
+        TmuxPane(pane, server).pane.takeIf { paneOf(it) != null }
+
+    /** [pid] is the pane's own process or runs under it, and, where the system shows it, is in the foreground of
+     *  the pane's terminal: a session suspended to its shell is still under the pane but no longer the one typed to. */
+    override fun hosts(pane: SessionPane, pid: Long): Boolean {
+        val at = paneOf(pane) ?: return false
+        val reply = tmux.run(listOf("display-message", "-p", "-t", at.id, "#{pane_pid}"), at.socket)
+        val root = reply.out.trim().toLongOrNull()?.takeIf { reply.ok } ?: return false
+        return ForegroundProcess.under(pid, root) && ForegroundProcess.inFront(pid) != false
+    }
+
     /** The key tmux sends for what the console asked to do. Every case is listed and there is no `else`: the
      *  day a key is added to the contract, this is a compile error rather than a press that quietly does
      *  the wrong thing. The nine numbered choices share one arm because they are one rule, their own digit. */

@@ -48,6 +48,15 @@ public interface SessionTerminal {
 
     /** Whether [pane] is still live. A pane the person closed is gone, and acting on it is a no-op. */
     public fun isOpen(pane: SessionPane): Boolean
+
+    /** The pane a session's own launch recorded ([LaunchTerminal][splice.core.process.LaunchTerminal]: the pane it
+     *  ran in and the server holding it), as this terminal's pane, or null when it names none this terminal has. */
+    public fun recorded(pane: String, server: String): SessionPane?
+
+    /** Whether the client in front of [pane] right now is process [pid]: the pane still holds it and nothing else
+     *  has taken the foreground. A pane whose session exited, or was put in the background, holds another client,
+     *  and nothing is typed into it on that session's behalf. */
+    public fun hosts(pane: SessionPane, pid: Long): Boolean
 }
 
 /** The keys the console sends, named for what they DO. A terminal's actual bytes are the implementation's. */

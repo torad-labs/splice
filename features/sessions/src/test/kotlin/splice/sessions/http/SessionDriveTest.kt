@@ -16,6 +16,12 @@ class SessionDriveTest {
     private val panes = FakePanes().apply { remember(OURS, SessionPane("%7")) }
     private var wired = true
     private val drive = SessionDrive(TerminalSource { SessionDriver(terminal, panes).takeIf { wired } })
+    private val launchedDrive = SessionDrive(
+        TerminalSource { SessionDriver(terminal, panes) },
+        launched = LaunchedTerminals { id ->
+            LaunchedTerminal(LAUNCHED_PID, "%3", "/tmp/tmux-1000/default").takeIf { id == LAUNCHED }
+        },
+    )
 
     @Test
     fun `a message reaches the session's own pane whole, line breaks and all`() {
@@ -73,6 +79,30 @@ class SessionDriveTest {
     }
 
     @Test
+    fun `a session started in his own terminal is driven through the pane its launch recorded`() {
+        val pane = SessionPane("%3@/tmp/tmux-1000/default")
+        terminal.inFront[pane] = LAUNCHED_PID
+        val reply = launchedDrive.sayJson(LAUNCHED, """{"text": "Add a test."}""")
+
+        assertEquals(HttpStatusCode.OK, reply.status, reply.body)
+        assertEquals(listOf(pane to "Add a test."), terminal.sent)
+    }
+
+    @Test
+    fun `a recorded pane that now runs something else, or is closed, is refused by name and nothing is typed`() {
+        terminal.inFront[SessionPane("%3@/tmp/tmux-1000/default")] = LAUNCHED_PID + 1
+        val taken = launchedDrive.answerJson(LAUNCHED, """{"choice": 1}""")
+        assertEquals(HttpStatusCode.Conflict, taken.status)
+        assertTrue(taken.body.contains("running something else"), taken.body)
+
+        terminal.live = false
+        val gone = launchedDrive.stop(LAUNCHED)
+        assertEquals(HttpStatusCode.Conflict, gone.status)
+        assertTrue(gone.body.contains("is gone"), gone.body)
+        assertTrue(terminal.sent.isEmpty() && terminal.pressed.isEmpty())
+    }
+
+    @Test
     fun `the screen offers the choices the client drew, numbered as answer takes them`() {
         terminal.screenText = SCREEN
         val reply = drive.screen(OURS)
@@ -85,6 +115,8 @@ class SessionDriveTest {
     private companion object {
         const val OURS = "11111111-1111-4111-8111-111111111111"
         const val THEIRS = "22222222-2222-4222-8222-222222222222"
+        const val LAUNCHED = "33333333-3333-4333-8333-333333333333"
+        const val LAUNCHED_PID = 4242L
         val SCREEN = """
             Bash command
 

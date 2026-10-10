@@ -13,10 +13,14 @@ import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.process.LaunchOwners
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
+import splice.sessions.http.LaunchedTerminal
+import splice.sessions.http.LaunchedTerminals
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionDrive
@@ -27,6 +31,7 @@ import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
 import splice.sessions.http.TranscriptRoots
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
@@ -87,8 +92,23 @@ internal class SessionsWiring(
             )
         }
     }
-    /** One session's terminal, by its id: say, answer, stop and its screen (Sessions). Read per call, the [ports] rule. */
-    val drive = SessionDrive(TerminalSource { ports.sessionDriver })
+    /** The launch records splice-launch writes: a session started from the person's own tmux names its pane there. */
+    private val launchOwners = LaunchOwners(StatePaths().stateDir)
+
+    /** One session's terminal, by its id: say, answer, stop and its screen (Sessions). Read per call, the [ports] rule.
+     *  A session splice did not open is reached through the pane its own launch recorded, while its process runs. */
+    val drive = SessionDrive(
+        TerminalSource { ports.sessionDriver },
+        launched = LaunchedTerminals { id ->
+            sessions?.read()
+                ?.firstOrNull { it.sessionId == id && it.availability == SessionAvailability.LIVE }
+                ?.process?.pid
+                ?.let { pid ->
+                    launchOwners.read(pid)?.takeIf { it.kind == "session" }?.terminal
+                        ?.let { LaunchedTerminal(pid, it.pane, it.socket) }
+                }
+        },
+    )
     val routes: SessionsRoutes? = sessions?.let {
         SessionsRoutes(
             it,

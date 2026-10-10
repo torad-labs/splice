@@ -23,6 +23,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
+import splice.core.session.SessionTerminal
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -40,11 +41,26 @@ private const val SAY_NOT_OURS =
 private const val SCREEN_NOT_OURS =
     "splice did not start this session, so it cannot read its screen; look at the terminal it runs in"
 private const val TERMINAL_REFUSED = "the terminal did not take it: "
+private const val LAUNCH_PANE_GONE =
+    "the terminal this session was started in is gone; open it where it runs now"
+private const val LAUNCH_PANE_TAKEN =
+    "the terminal this session was started in is running something else now, so nothing is typed into it"
 
-/** The console's hands on one session's terminal, by session id. */
+/** The terminal a live session's own launch recorded, and the process that launch became. */
+public data class LaunchedTerminal(val pid: Long, val pane: String, val server: String)
+
+/** Where a session started from the person's own terminal runs: null for a session no launch recorded a terminal for,
+ *  or one that is no longer running. Read on every act, because the person can close or reuse that terminal. */
+public fun interface LaunchedTerminals {
+    public fun of(sessionId: String): LaunchedTerminal?
+}
+
+/** The console's hands on one session's terminal, by session id. A session has one when splice opened it (the pane
+ *  memory) or when its own launch recorded the terminal it ran in, and only while that terminal still has it in front. */
 public class SessionDrive(
     private val driver: TerminalSource,
     private val choices: ScreenChoices = ScreenChoices(),
+    private val launched: LaunchedTerminals = LaunchedTerminals { null },
 ) {
     /** The numbered choices a screen lists, in the order a person reads them. */
     private val choiceKeys = listOf(
@@ -91,7 +107,8 @@ public class SessionDrive(
      *  read a choice on answers 200 with none, so a card keeps its fallback rather than failing over one pane. */
     public fun screen(session: String): JsonReply {
         val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
-        val pane = driving.panes.paneFor(session) ?: return refuse(HttpStatusCode.Conflict, SCREEN_NOT_OURS)
+        val at = locate(driving, session, SCREEN_NOT_OURS, "its terminal is closed, so nothing is being asked")
+        val pane = at.pane ?: return requireNotNull(at.refusal)
         return Cancellables.runCatchingCleanup { driving.terminal.screen(pane) }.fold(
             onSuccess = { offered(session, choices.on(it)) },
             onFailure = { offered(session, ScreenOffer("", emptyList())) },
@@ -105,14 +122,38 @@ public class SessionDrive(
         act: (SessionDriver, SessionPane) -> Unit,
     ): JsonReply {
         val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL_TO_DRIVE)
-        val known = driving.panes.paneFor(session)
-        val pane = known?.takeIf { driving.terminal.isOpen(it) }
-            ?: return refuse(HttpStatusCode.Conflict, if (known == null) notOurs else closed)
+        val at = locate(driving, session, notOurs, closed)
+        val pane = at.pane ?: return requireNotNull(at.refusal)
         return Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, buildJsonObject { put("session_id", session) }.toString()) },
             onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it)) },
         )
     }
+
+    /** The pane to act in for [session], or the refusal that says why there is none. A pane splice opened is used
+     *  while it is open. Otherwise the terminal the session's own launch recorded is used only while that pane is
+     *  open AND still has the session's process in front, so a closed or reused terminal is refused by name. */
+    private fun locate(driving: SessionDriver, session: String, notOurs: String, closed: String): Located {
+        val mine = driving.panes.paneFor(session)
+        if (mine != null) return if (driving.terminal.isOpen(mine)) Located(pane = mine) else refused(closed)
+        val launch = launched.of(session) ?: return refused(notOurs)
+        return launchedPane(driving.terminal, launch)
+    }
+
+    /** The pane a launch recorded, while it is open and still has that launch's process in front. */
+    private fun launchedPane(terminal: SessionTerminal, launch: LaunchedTerminal): Located {
+        val pane = terminal.recorded(launch.pane, launch.server)?.takeIf(terminal::isOpen)
+        return when {
+            pane == null -> refused(LAUNCH_PANE_GONE)
+            !terminal.hosts(pane, launch.pid) -> refused(LAUNCH_PANE_TAKEN)
+            else -> Located(pane = pane)
+        }
+    }
+
+    private fun refused(sentence: String) = Located(refusal = refuse(HttpStatusCode.Conflict, sentence))
+
+    /** Either the pane to act in or the refusal, never both. */
+    private data class Located(val pane: SessionPane? = null, val refusal: JsonReply? = null)
 
     private fun offered(session: String, offer: ScreenOffer): JsonReply = JsonReply(
         HttpStatusCode.OK,

@@ -132,7 +132,8 @@ class TraceDeleteRoutesTest {
         assertEquals("1", field(before.body, "records"))
         assertEquals((Files.size(own) + Files.size(ownPack)).toString(), field(before.body, "bytes"))
         assertEquals("2026-09-18", field(before.body, "oldest"))
-        assertEquals("2026-09-25", field(before.body, "ages_out"))
+        // The window is the history window now (90 days on an install with no setting), not a fixed week.
+        assertEquals("2026-12-17", field(before.body, "ages_out"))
         assertEquals("1", field(reader.read("alpha", TraceQuery(null, null, null)).body, "on_disk"))
 
         val deleted = routes.delete("alpha")

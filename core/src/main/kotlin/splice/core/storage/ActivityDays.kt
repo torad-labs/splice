@@ -131,6 +131,11 @@ public fun interface DayRecord {
     public fun encode(file: Path): ByteArray
 }
 
+/** How many UTC days a store keeps, asked at every use so a window that changes takes effect on the next read. */
+public fun interface RetentionDays {
+    public fun days(): Int
+}
+
 public class ActivityDays(
     private val dir: Path,
     private val prefix: String,
@@ -143,6 +148,8 @@ public class ActivityDays(
     private val ownerOnly: Boolean = false,
     /** The longest one wait for the midnight sweep: MAX_SWEEP_WAIT_MS, shorter only in a test. */
     private val maxSweepWaitMs: Long = MAX_SWEEP_WAIT_MS,
+    /** When given, the window is asked at every use and [retentionDays] is only what a store without it keeps. */
+    private val live: RetentionDays? = null,
 ) {
     private val files = DayFiles(dir, prefix)
     private val deleted = DayDeleteMarker(dir, prefix, ownerOnly)
@@ -236,7 +243,7 @@ public class ActivityDays(
     }
 
     /** Today counts as one of the retained days, so a window of N keeps today and the N-1 before. */
-    private fun oldestKept(today: LocalDate): LocalDate = today.minusDays(retentionDays.toLong() - 1)
+    private fun oldestKept(today: LocalDate): LocalDate = today.minusDays((live?.days() ?: retentionDays).toLong() - 1)
 
     private fun day(epochMs: Long): LocalDate = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate()
 }

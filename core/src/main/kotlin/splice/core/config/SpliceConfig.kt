@@ -101,6 +101,21 @@ public class SpliceConfig internal constructor(
         get() = string(Knob.HISTORY_RETENTION_DAYS)?.let(HistoryWindowWords::of)
             ?: HistoryWindow(maxOf(long(Knob.PERF_ARCHIVE_RETENTION_DAYS).toInt(), HISTORY_DEFAULT_DAYS))
 
+    /**
+     * How many UTC days of saved prompts and answers this head keeps NOW, read through [current] by whoever
+     * must follow a change without a restart. They follow the one history window (Marlin, Oct 10, 2026), so
+     * Requests cannot read "Older than 7 days" while Settings says forever. An upgrade never shortens what
+     * someone has: a trace window longer than the default was chosen on purpose, and the longer of it and the
+     * history window is kept. Forever keeps every day; a window of zero keeps the day that is running.
+     */
+    public val traceKeptDays: Int
+        get() {
+            val window = historyWindow.days ?: return Int.MAX_VALUE
+            val chosen = traceRetentionDays
+            val kept = if (chosen > Knob.TRACE_RETENTION_DAYS.count()) maxOf(chosen, window) else window
+            return kept.coerceAtLeast(1)
+        }
+
     /** V4-174: the longest body a trace record keeps whole, in characters; at least one. */
     public val traceMaxBodyChars: Int
         get() = long(Knob.TRACE_MAX_BODY_CHARS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()

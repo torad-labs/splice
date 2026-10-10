@@ -56,7 +56,7 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
 
     private fun read(key: String, traceDir: Path, delete: Boolean): String {
         val files = removal?.let { DayFiles(traceDir, key, true, it) } ?: DayFiles(traceDir, key, ownerOnly = true)
-        val retention = config.getConfig(key).traceRetentionDays
+        val retention = config.getConfig(key).traceKeptDays
         val inventory = if (delete) files.deleteKept(retention) else files.inventory(retention)
         return inventoryJson(key, inventory, files.deleted())
     }

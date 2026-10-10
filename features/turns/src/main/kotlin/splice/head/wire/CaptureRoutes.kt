@@ -67,7 +67,7 @@ public class CaptureRoutes(
     public fun read(head: String): JsonReply {
         val key = resolveKey(head) ?: return unknownHead(head)
         val cfg = config.getConfig(key)
-        val body = captureJson(key, cfg.trace, cfg.traceRetentionDays, cfg.traceMaxBodyChars.toLong())
+        val body = captureJson(key, cfg.trace, cfg.traceKeptDays, cfg.traceMaxBodyChars.toLong())
         return JsonReply(HttpStatusCode.OK, body)
     }
 
@@ -116,7 +116,7 @@ public class CaptureRoutes(
 
     private fun writtenJson(key: String, parsed: CaptureWrite): String {
         val effective = config.getConfig(key)
-        val retentionDays = parsed.retentionDays ?: effective.traceRetentionDays
+        val retentionDays = parsed.retentionDays ?: effective.traceKeptDays
         val maxBodyChars = parsed.maxBodyChars ?: effective.traceMaxBodyChars.toLong()
         return captureJson(key, parsed.enabled, retentionDays, maxBodyChars)
     }

@@ -123,7 +123,20 @@ val gateOfRecord = tasks.register("gateOfRecord") {
 // task is registered, and the task only reports it. A leg a command line excludes with `-x` is not seen here.
 val ladderProblems = provider {
     val root = gateOfRecord.get()
-    val direct = root.taskDependencies.getDependencies(root)
+
+    // The dependencies gateOfRecord was DECLARED with, read as names. Resolving them to tasks (taskDependencies.getDependencies) walks
+    // the included build's tasks and the state of every project, which no phase of the build allows from here.
+    val direct = buildSet {
+        val pending = ArrayDeque<Any?>(root.dependsOn)
+        while (pending.isNotEmpty()) {
+            when (val entry = pending.removeFirst()) {
+                is String -> add(entry)
+                is Iterable<*> -> pending.addAll(entry)
+                is TaskProvider<*> -> add(entry.name)
+                is Task -> add(entry.name)
+            }
+        }
+    }
     legs.mapNotNull { leg ->
         val name = leg.task
         val task = tasks.findByName(name)
@@ -131,17 +144,24 @@ val ladderProblems = provider {
             task == null -> "$name: named in $ladderPath and registered by nothing"
             task !is Exec -> "$name: is not an Exec task"
             task.commandLine != leg.command -> "$name: runs ${task.commandLine} where $ladderPath says ${leg.command}"
-            task !in direct -> "$name: gateOfRecord does not depend on it, so nothing runs this leg"
+            name !in direct -> "$name: gateOfRecord does not depend on it, so nothing runs this leg"
             else -> null
         }
     }
 }
 
+// A provider handed to the task as an input is calculated when Gradle validates that task, during execution, and resolving
+// gateOfRecord's dependencies there waits for the very lock the execution phase holds: the full gate stood at "> Task :verifyLadder"
+// for 50 minutes on 2026-10-10 with every worker in configureProjects (jstack of the daemon). The value is therefore taken here,
+// once every project is evaluated and before any task runs, into a property the task only reads.
+val ladderProblemList = objects.listProperty<String>()
+gradle.projectsEvaluated { ladderProblemList.set(ladderProblems.get()) }
+
 tasks.register("verifyLadder") {
     group = "gate"
     description =
         "Proves $ladderPath against the build: every row is an Exec task with that argv that gateOfRecord depends on."
-    val problems = ladderProblems
+    val problems = ladderProblemList
     val legCount = legs.size
     val table = ladderPath
     inputs.property("ladderProblems", problems)

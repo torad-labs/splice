@@ -65,14 +65,17 @@ ktlint {
     }
 }
 
-// THE LINT STEP IS NEVER RESTORED FROM THE BUILD CACHE (2026-10-10). Its results (build/intermediates/ktLint/*_errors.bin)
-// name every file by ABSOLUTE path, and the task is cacheable and incremental. A pre-push run whose sources matched an entry
-// another tree had stored was handed that tree's findings: the push was judged right but reported files under /tmp/b3-tree2
-// and under the shared checkout, and errors a restore had carried in kept being reported after the sources moved on. The
-// verdict has to name the files of the tree it judged and nothing else, so each tree lints its own sources every time; the
-// step reads source files and is fast beside the compile that precedes it.
+// THE LINT STEP IS NEVER RESTORED FROM THE BUILD CACHE (2026-10-10). Its results
+// (build/intermediates/ktLint/*_errors.bin) name every file by ABSOLUTE path, and the task is cacheable and
+// incremental. A pre-push run whose sources matched an entry another tree had stored was handed that tree's
+// findings: the push was judged right but reported files under /tmp/b3-tree2 and under the shared checkout, and
+// errors a restore had carried in kept being reported after the sources moved on. The verdict has to name the
+// files of the tree it judged and nothing else, so each tree lints its own sources every time; the step reads
+// source files and is fast beside the compile that precedes it.
 tasks.withType<BaseKtLintCheckTask>().configureEach {
-    outputs.doNotCacheIf("its results name files by absolute path, so a restore would report another tree's files") { true }
+    outputs.doNotCacheIf("its results name files by absolute path, so a restore names another tree's files") {
+        true
+    }
 }
 
 dependencies {

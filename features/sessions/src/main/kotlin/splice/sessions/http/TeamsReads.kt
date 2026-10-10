@@ -79,7 +79,7 @@ public class TeamReads internal constructor(
     public fun chat(id: String, day: String?, from: String? = null, to: String? = null): JsonReply =
         daily(id, day, from, to) { team, stores, window ->
             val members = Members(team, registry?.read().orEmpty(), registry?.let(::NameHolders))
-            val today = members.edges(stores.edges.edges()).filter { it.edge.at in window }
+            val today = members.edges(stores.edges.edges(window.first)).filter { it.edge.at in window }
             val found = today.groupBy { it.edge.from }.mapValues { (sender, sent) ->
                 texts.read(sender, members.headOf(sender), sent.map { it.edge.id }.toSet())
             }

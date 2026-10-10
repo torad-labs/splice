@@ -145,8 +145,8 @@ public class MessageEdgeStore(
         )
     }
 
-    /** Every retained edge, oldest first, one per tool_use id (the earliest observation wins). */
-    public fun edges(): List<MessageEdge> = cache.edges()
+    /** Every retained edge, oldest first, one per tool_use id (the earliest observation wins). With [since], only the days written at or after that instant are read and kept. */
+    public fun edges(since: Long? = null): List<MessageEdge> = cache.edges(since)
 
     /** What each session sent and was sent, over every retained day, as one snapshot. Holds a count per distinct
      *  sender and recipient, never the edges, so it does not grow with the window (MessageEdgeTotals). */

@@ -40,12 +40,17 @@ internal class MessageEdgeCache(
 ) {
     private val kept = linkedMapOf<Any, Kept>()
     private var answer: List<MessageEdge> = emptyList()
+    private var lastKeys: Set<Any> = emptySet()
 
     @Synchronized
-    fun edges(): List<MessageEdge> {
+    fun edges(since: Long? = null): List<MessageEdge> {
+        // A day file last written before [since] holds no edge at or after it, so a caller that asks for a span
+        // neither reads nor keeps the days before it.
         val opened = days.retainedFiles().mapNotNull { path -> attributes(path)?.let { path to it } }
+            .filter { (_, attrs) -> writtenSince(attrs, since) }
         val keys = opened.mapTo(HashSet()) { (path, attrs) -> identity(path, attrs) }
-        var changed = kept.keys.retainAll(keys)
+        var changed = kept.keys.retainAll(keys) || keys != lastKeys
+        lastKeys = keys
         val states = opened.mapNotNull { (path, attrs) ->
             files.open(path) { file ->
                 val key = identity(path, attrs)
@@ -66,6 +71,11 @@ internal class MessageEdgeCache(
         }
         if (changed) answer = collect(states)
         return answer
+    }
+
+    private fun writtenSince(attrs: Map<String, Any>, since: Long?): Boolean {
+        val written = (attrs["lastModifiedTime"] as? FileTime)?.toMillis()
+        return since == null || written == null || written >= since
     }
 
     private fun attributes(path: Path): Map<String, Any>? = try {

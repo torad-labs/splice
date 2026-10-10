@@ -101,6 +101,21 @@ class MessageEdgeStoreCacheTest {
         assertEquals(5, codec.parses)
     }
 
+    @Test
+    fun `a span reads and keeps only the days written inside it, and the whole window comes back whole`() {
+        val store = store(CountingCodec(), clock = WallClock { CACHE_DAY + 86_400_000L })
+        assertTrue(AsyncFileIo.drain())
+        val older = dir.resolve("edges-2026-09-18.jsonl")
+        val newer = dir.resolve("edges-2026-09-19.jsonl")
+        Files.writeString(older, row("old"))
+        Files.writeString(newer, row("new"))
+        Files.setLastModifiedTime(older, java.nio.file.attribute.FileTime.fromMillis(CACHE_DAY))
+        Files.setLastModifiedTime(newer, java.nio.file.attribute.FileTime.fromMillis(CACHE_DAY + 86_400_000L))
+        assertEquals(listOf("new"), store.edges(CACHE_DAY + 1).map { it.id })
+        assertEquals(listOf("old", "new"), store.edges().map { it.id })
+        assertEquals(listOf("new"), store.edges(CACHE_DAY + 1).map { it.id }, "narrowing again drops the older day")
+    }
+
     private fun row(id: String, to: String = "recipient"): String =
         """{"from":"sender","to":"$to","at":$CACHE_DAY,"id":"$id"}""" + "\n"
 

@@ -111,7 +111,10 @@ public class ActivityRoutes(
 
     /** GET /api/sessions/{id}/edges: `{session_id, edges}` in the SessionEdgesPayload shape, each edge
      *  with the text its sender handed off (V4-314), read once per sender from that sender's transcript. */
-    public fun edges(sessionId: String): JsonReply {
+    public fun edges(sessionId: String): JsonReply =
+        Cancellables.runCatchingCancellable { sessionEdges(sessionId) }.getOrElse(::storageFailure)
+
+    private fun sessionEdges(sessionId: String): JsonReply {
         val records = registry.read()
         val index = index(records) ?: return unwired()
         val record = records.firstOrNull { it.sessionId == sessionId }
@@ -126,7 +129,10 @@ public class ActivityRoutes(
     }
 
     /** GET /api/sessions/edges: `{sessions: {<session id>: SessionEdge[]}}` for every registry session. */
-    public fun boardEdges(): JsonReply {
+    public fun boardEdges(): JsonReply =
+        Cancellables.runCatchingCancellable { boardEdgesReply() }.getOrElse(::storageFailure)
+
+    private fun boardEdgesReply(): JsonReply {
         val index = index() ?: return unwired()
         val body = buildJsonObject {
             val status = state()

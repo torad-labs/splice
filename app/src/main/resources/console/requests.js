@@ -56,6 +56,8 @@ const OUTCOME = Object.fromEntries(Object.keys(OUTCOME_WORD).concat(["ok", "empt
 // NO ROW READS "Failed": a tag fin has worded gets fin's word, and anything else shows the provider's own type made
 // readable (kit.js tagWord), because a person can act on "Context window error" and can act on nothing at all with
 // "Failed". "Failed" is the Outcome switch's label, which counts every failure, and belongs nowhere else on this page.
+// The endings splice decides itself, whose outcome word already says who and why: no provider line is drawn for them
+const SPLICE_ENDED = new Set(["error:restarted", "error:budget-blocked", "error:all-accounts-exhausted", "error:turn-cap", "error:cancelled"]);
 const outcomeOf = (r) => OUTCOME[r.outcome] || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
 // DECIDES, not the tag: splice writes the reset when it turned a request away because every account was spent
@@ -626,9 +628,17 @@ function paneHtml() {
   // (Marlin item 2; hitstop 442e831). The provider by Accounts' name, its status, its own words. A status of 200 is left
   // out, because the failure came inside the stream and a 200 beside it misleads. Nothing answered, no line.
   const code = r.providerStatus != null && r.providerStatus !== 200 ? r.providerStatus : null;
+  const who = PROVIDER_NAME[r.provider] ?? r.cmd;
+  // A send that got NO answer is splice's side to tell, because "was it splice or the provider?" is the first question
+  // (Marlin; hitstop 56e1fe4). provider_status is absent both for a dropped connection and for a request splice held
+  // before sending (PerfKeys.PROVIDER_STATUS), so the line also needs a send (an attempt) and no first byte. An ending
+  // splice decided itself draws no line: its outcome word already says who and why (fin).
+  const unanswered = o.cls === "fail" && !SPLICE_ENDED.has(r.outcome) && r.providerStatus == null && !r.providerMessage
+    && r.attempts > 0 && r.ttfb == null;
   const said = r.providerMessage || code != null
-    ? `<p class="upmsg"><span class="who">${esc(PROVIDER_NAME[r.provider] ?? r.cmd)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
-      + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>` : "";
+    ? `<p class="upmsg"><span class="who">${esc(who)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
+      + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>`
+    : unanswered ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">No answer</span></p>` : ""; // fin's words, hitstop f4581a6
   return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st), said,

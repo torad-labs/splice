@@ -38,7 +38,7 @@ internal object UsageRounds {
             outputTokens = prior.outputTokens + latest.outputTokens,
             cachedTokens = latest.cachedTokens,
             reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
-            cacheWriteTokens = latest.cacheWriteTokens,
+            cacheWrite = latest.cacheWrite,
             origin = UsageOrigin(
                 localStep = prior.origin.localStep || latest.origin.localStep,
                 codeModeDiverged = prior.origin.codeModeDiverged || latest.origin.codeModeDiverged,

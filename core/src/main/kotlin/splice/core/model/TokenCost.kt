@@ -13,6 +13,13 @@
 // cache-WRITE bucket is carried where the dialect reports one — Anthropic-shaped wires do, and those
 // tokens bill at a premium rather than at the cache-miss rate.
 //
+// A WRITE BILLS BY ITS TTL (Oct 10, 2026 review). Anthropic and Moonshot each publish two write prices,
+// one for a cache held five minutes and a higher one for an hour, and the wire reports which TTL the
+// tokens were written at (cache_creation.ephemeral_1h_input_tokens). Collapsing the two charged every
+// hourly write at the five-minute rate: 100k hourly writes on Opus 5.5 billed 0.50 instead of 0.80, so a
+// 0.60 budget stayed open on a turn that had already passed it. The card carries both prices and the
+// bucket carries the hourly share, so each write bills at the rate its own duration earns.
+//
 // PEAK vs OFF-PEAK. DeepSeek publishes two cards for the same model: peak is exactly 2x off-peak in the
 // hours it names. Averaging them would invent a third price DeepSeek does not charge, so since Oct 10,
 // 2026 the shipped card is the off-peak one with its [PeakHours], and each turn is priced at the card
@@ -42,6 +49,9 @@ import kotlinx.serialization.encoding.Encoder
  *
  *  [cacheWrite] null means the vendor reports no separate cache-write bucket, so those tokens bill
  *  at [input] — the conservative side, since a cache write never costs less than a cache miss.
+ *  [cacheWriteHourly] is the price of a write held for an HOUR, which Anthropic and Moonshot both
+ *  publish above their five-minute one (Anthropic: 2x input against 1.25x; Moonshot K3: 6 against
+ *  3). Null is a vendor that publishes one write price, and then every write bills at [cacheWrite].
  *  [longContext] null means one card at every request size, and [peak] null one card at every
  *  hour. The TOML spelling is [ModelRatesToml]'s, and it has no peak hours. */
 @Serializable(with = ModelRatesToml::class)
@@ -52,6 +62,10 @@ public data class ModelRates(
     val cacheWrite: Double? = null,
     val longContext: LongContextRates? = null,
     val peak: PeakHours? = null,
+    /** APPENDED LAST, for the reason [splice.core.turn.Usage.cacheWriteTokens] is: a card is written
+     *  positionally in the pins and in AddProfileCatalog, so a field beside [cacheWrite] would
+     *  re-read those literals as a different price. */
+    val cacheWriteHourly: Double? = null,
 ) {
     /** The card a turn that ran at [atMs] is billed at: [peak]'s multiple of this one inside its hours, else this
      *  one. A turn with no known time is billed at this card. */
@@ -70,8 +84,10 @@ public data class ModelRates(
                     cacheRead = it.cacheRead * f,
                     output = it.output * f,
                     cacheWrite = it.cacheWrite?.times(f),
+                    cacheWriteHourly = it.cacheWriteHourly?.times(f),
                 )
             },
+            cacheWriteHourly = cacheWriteHourly?.times(f),
         )
     }
 }
@@ -86,6 +102,9 @@ public data class LongContextRates(
     val cacheRead: Double,
     val output: Double,
     val cacheWrite: Double? = null,
+    /** The tier's own 1-hour write, read like [ModelRates.cacheWriteHourly]: null is one write price
+     *  at this tier, so an hourly write bills at [cacheWrite]. */
+    val cacheWriteHourly: Double? = null,
 )
 
 /** A rate card as TOML spells it: `rates = { input = 2.0, cache_read = 0.2, output = 10.0 }` on the
@@ -108,11 +127,13 @@ internal object ModelRatesToml : KSerializer<ModelRates> {
                 cacheRead = value.cacheRead,
                 output = value.output,
                 cacheWrite = value.cacheWrite,
+                cacheWriteHourly = value.cacheWriteHourly,
                 tierOver = tier?.overInputTokens,
                 tierInput = tier?.input,
                 tierCacheRead = tier?.cacheRead,
                 tierOutput = tier?.output,
                 tierCacheWrite = tier?.cacheWrite,
+                tierCacheWriteHourly = tier?.cacheWriteHourly,
             ),
         )
     }
@@ -124,32 +145,42 @@ internal data class TomlRates(
     @SerialName("cache_read") val cacheRead: Double,
     val output: Double,
     @SerialName("cache_write") val cacheWrite: Double? = null,
+    @SerialName("cache_write_1h") val cacheWriteHourly: Double? = null,
     @SerialName("long_context_over_input_tokens") val tierOver: Long? = null,
     @SerialName("long_context_input") val tierInput: Double? = null,
     @SerialName("long_context_cache_read") val tierCacheRead: Double? = null,
     @SerialName("long_context_output") val tierOutput: Double? = null,
     @SerialName("long_context_cache_write") val tierCacheWrite: Double? = null,
+    @SerialName("long_context_cache_write_1h") val tierCacheWriteHourly: Double? = null,
 ) {
-    fun rates(): ModelRates =
-        ModelRates(input = input, cacheRead = cacheRead, output = output, cacheWrite = cacheWrite, longContext = tier())
+    fun rates(): ModelRates = ModelRates(
+        input = input,
+        cacheRead = cacheRead,
+        output = output,
+        cacheWrite = cacheWrite,
+        longContext = tier(),
+        cacheWriteHourly = cacheWriteHourly,
+    )
 
     /** None of the tier's keys is no tier. Some of them is a card that would price a long request at a
      *  half-declared tier, so it is refused here, where the config is read, naming what is missing. */
     private fun tier(): LongContextRates? {
-        if (listOf(tierOver, tierInput, tierCacheRead, tierOutput, tierCacheWrite).all { it == null }) return null
+        val keys = listOf(tierOver, tierInput, tierCacheRead, tierOutput, tierCacheWrite, tierCacheWriteHourly)
+        if (keys.all { it == null }) return null
         return LongContextRates(
             overInputTokens = requireNotNull(tierOver) { INCOMPLETE_TIER },
             input = requireNotNull(tierInput) { INCOMPLETE_TIER },
             cacheRead = requireNotNull(tierCacheRead) { INCOMPLETE_TIER },
             output = requireNotNull(tierOutput) { INCOMPLETE_TIER },
             cacheWrite = tierCacheWrite,
+            cacheWriteHourly = tierCacheWriteHourly,
         )
     }
 }
 
 private const val INCOMPLETE_TIER = "a rate card's long-context tier needs long_context_over_input_tokens, " +
     "long_context_input, long_context_cache_read and long_context_output together " +
-    "(long_context_cache_write is optional)"
+    "(long_context_cache_write and long_context_cache_write_1h are optional)"
 
 /** The token buckets one cost covers, in the names the head's perf rows already carry. */
 public data class TokenBuckets(
@@ -157,6 +188,11 @@ public data class TokenBuckets(
     val cacheRead: Long = 0,
     val cacheWrite: Long = 0,
     val output: Long = 0,
+    /** The SHARE of [cacheWrite] the request held for an hour, never an addition to it: the wire reports one
+     *  cache-creation total and its per-TTL parts, so the hourly part is read off the total the same way
+     *  [cacheWrite] is read off the input. The rest of [cacheWrite] is the five-minute write. Zero on every
+     *  dialect whose wire reports no TTL split, which bills exactly as it did before. */
+    val cacheWriteHourly: Long = 0,
 ) {
     public val isEmpty: Boolean get() = input == 0L && cacheRead == 0L && cacheWrite == 0L && output == 0L
 
@@ -192,12 +228,21 @@ public class TokenCost {
                 cacheRead = tier.cacheRead,
                 output = tier.output,
                 cacheWrite = tier.cacheWrite,
+                cacheWriteHourly = tier.cacheWriteHourly,
             )
         } ?: rates
+        // Each write bills at the rate for the TTL the usage reported it at. The hourly share is a part of
+        // the write bucket, so the five-minute write is the remainder; a card with one write price charges
+        // both at it, and a bucket with no reported split charges all of it at the five-minute price, which
+        // is what every row written before the split means.
         val perWrite = card.cacheWrite ?: card.input
+        // minOf, not coerceIn: a malformed row with a negative write bucket must not throw inside the
+        // budget's admission path, and a share wider than its bucket cannot bill tokens the bucket lacks.
+        val hourly = minOf(buckets.cacheWriteHourly, buckets.cacheWrite).coerceAtLeast(0L)
         val weighted = buckets.input * card.input +
             buckets.cacheRead * card.cacheRead +
-            buckets.cacheWrite * perWrite +
+            (buckets.cacheWrite - hourly) * perWrite +
+            hourly * (card.cacheWriteHourly ?: perWrite) +
             buckets.output * card.output
         return weighted / TOKENS_PER_MILLION
     }

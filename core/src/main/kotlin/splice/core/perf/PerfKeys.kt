@@ -169,6 +169,15 @@ public object PerfKeys {
      *  dialects whose wire reports no such bucket), the same way [CACHED_TOKENS] is. */
     public const val CACHE_WRITE_TOKENS: String = "cache_write_tokens"
 
+    /** Oct 10, 2026 review: the share of [CACHE_WRITE_TOKENS] written at the 1-hour TTL, never an
+     *  addition to it. Both vendors that report the split price an hourly write above a five-minute
+     *  one (Anthropic 2x input against 1.25x, Moonshot K3 6 against 3), so pricing the whole bucket at
+     *  the five-minute rate undercharged every turn that held a cache for an hour. Written only when
+     *  positive, like [REASONING_TOKENS]: an absent key is a turn that wrote no hourly cache, or a row
+     *  from before the counter, and both mean the write bucket bills at the five-minute rate. NOT a
+     *  billing key: a row's completeness still turns on the four buckets alone. */
+    public const val CACHE_WRITE_1H_TOKENS: String = "cache_write_1h_tokens"
+
     /** The rounds a turn billed before its final one ([splice.core.turn.AbsorbedRounds]). [IN_TOKENS] is
      *  the final round's input, the context; each absorbed round was a request of its own, billed and
      *  metered, so its buckets ride beside it. Written only when the turn absorbed a round, so an absent
@@ -177,6 +186,10 @@ public object PerfKeys {
     public const val ABSORBED_IN_TOKENS: String = "absorbed_in_tokens"
     public const val ABSORBED_CACHED_TOKENS: String = "absorbed_cached_tokens"
     public const val ABSORBED_CACHE_WRITE_TOKENS: String = "absorbed_cache_write_tokens"
+
+    /** The absorbed rounds' share of [ABSORBED_CACHE_WRITE_TOKENS] at the 1-hour TTL, read like
+     *  [CACHE_WRITE_1H_TOKENS] and written only when positive. */
+    public const val ABSORBED_CACHE_WRITE_1H_TOKENS: String = "absorbed_cache_write_1h_tokens"
 
     /** The part of [OUT_TOKENS] the absorbed rounds produced; [OUT_TOKENS] stays the turn's whole output. */
     public const val ABSORBED_OUT_TOKENS: String = "absorbed_out_tokens"

@@ -2,6 +2,7 @@
 package splice.provider.codex.stream
 
 import kotlinx.serialization.Serializable
+import splice.core.turn.CacheWrite
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageOrigin
@@ -22,13 +23,17 @@ internal data class CodeModeSourceUsage(
     val cacheWriteTokens: Long,
     val recordedOutputTokens: Long = 0,
     val reported: Set<UsageField> = UsageField.entries.toSet(),
+    /** The share of [cacheWriteTokens] held for an hour, which bills above a five-minute write. Last and
+     *  defaulted so a state file written before it reads as a round with no hourly write, which is how
+     *  every such round was already billed. */
+    val cacheWriteHourlyTokens: Long = 0,
 ) {
     fun value(): Usage = Usage(
         inputTokens,
         outputTokens,
         cachedTokens,
         reasoningTokens,
-        cacheWriteTokens,
+        CacheWrite(cacheWriteTokens, cacheWriteHourlyTokens),
         origin = UsageOrigin(recordedOutputTokens = recordedOutputTokens),
         reported = reported,
     )

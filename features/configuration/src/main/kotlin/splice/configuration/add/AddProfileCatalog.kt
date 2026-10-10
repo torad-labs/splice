@@ -415,14 +415,18 @@ internal class AddProfileCatalog {
             // V4-240 RATES: Opus 5.5's API card, platform.claude.com/docs/en/about-claude/pricing (read
             // 2026-09-25): input $4, cache hits $0.20, output $20 per 1M tokens, 5-minute cache writes $5
             // and 1-hour writes $8, and Claude 4.6 and later carry "the full 1M token context window at
-            // standard pricing", so no tier. Writes are declared at the 1-hour rate: Claude Code asks for
-            // the 1-hour cache on a subscriber's login (the pinned 2.1.285's bundle, as 2.1.284's, 2.1.283's
-            // and 2.1.282's: ttl "1h", reason "subscriber"), and this profile forwards that login.
+            // standard pricing", so no tier. BOTH write prices are declared (Oct 10, 2026 review): Claude
+            // Code asks for the 1-hour cache on a subscriber's login (the pinned 2.1.285's bundle, as
+            // 2.1.284's, 2.1.283's and 2.1.282's: ttl "1h", reason "subscriber") and this profile forwards
+            // that login, so most writes are hourly — but the wire reports the TTL of each
+            // (cache_creation.ephemeral_1h_input_tokens), so a card with one price had to be wrong in one
+            // direction for every write it did not describe. Each write now bills at its own duration's rate.
             //
             // V4-270 RATES: the other three rows' cards from the same page (read 2026-09-25), per 1M tokens as
             // input / cache hits / 1-hour writes / output: Fable 5.1 $10 / $0.25 / $20 / $50, Sonnet 5
             // $2 / $0.20 / $4 / $10 (its launch price, which the page says "is now the standard price"), and
-            // Haiku 4.5 $1 / $0.10 / $2 / $5. Writes at the 1-hour rate, as for Opus 5.5. No tier: Fable 5.1
+            // Haiku 4.5 $1 / $0.10 / $2 / $5. Their 5-minute writes are the page's 1.25x input, as Opus 5.5's
+            // $5 is: $12.50, $2.50 and $1.25. Both prices are declared on each. No tier: Fable 5.1
             // and Sonnet 5 are Claude 4.6 and later, and Haiku 4.5's window is 200K. Claude Code takes its
             // small-fast turns on Haiku 4.5, so without these a default install counted them unpriced.
             models = listOf(
@@ -431,28 +435,52 @@ internal class AddProfileCatalog {
                     "Claude Fable 5.1",
                     WINDOW_1M,
                     listOf("fable"),
-                    rates = ModelRates(input = 10.0, cacheRead = 0.25, output = 50.0, cacheWrite = 20.0),
+                    rates = ModelRates(
+                        input = 10.0,
+                        cacheRead = 0.25,
+                        output = 50.0,
+                        cacheWrite = 12.5,
+                        cacheWriteHourly = 20.0,
+                    ),
                 ),
                 AddModel(
                     "claude-opus-5-5",
                     "Claude Opus 5.5",
                     WINDOW_1M,
                     listOf("opus"),
-                    rates = ModelRates(input = 4.0, cacheRead = 0.2, output = 20.0, cacheWrite = 8.0),
+                    rates = ModelRates(
+                        input = 4.0,
+                        cacheRead = 0.2,
+                        output = 20.0,
+                        cacheWrite = 5.0,
+                        cacheWriteHourly = 8.0,
+                    ),
                 ),
                 AddModel(
                     "claude-sonnet-5",
                     "Claude Sonnet 5",
                     WINDOW_1M,
                     listOf("sonnet"),
-                    rates = ModelRates(input = 2.0, cacheRead = 0.2, output = 10.0, cacheWrite = 4.0),
+                    rates = ModelRates(
+                        input = 2.0,
+                        cacheRead = 0.2,
+                        output = 10.0,
+                        cacheWrite = 2.5,
+                        cacheWriteHourly = 4.0,
+                    ),
                 ),
                 AddModel(
                     "claude-haiku-4-5",
                     "Claude Haiku 4.5",
                     WINDOW_200K,
                     listOf("haiku"),
-                    rates = ModelRates(input = 1.0, cacheRead = 0.1, output = 5.0, cacheWrite = 2.0),
+                    rates = ModelRates(
+                        input = 1.0,
+                        cacheRead = 0.1,
+                        output = 5.0,
+                        cacheWrite = 1.25,
+                        cacheWriteHourly = 2.0,
+                    ),
                 ),
             ),
         ),

@@ -13,12 +13,19 @@ public data class AbsorbedRounds(
     val cachedTokens: Long = 0,
     val cacheWriteTokens: Long = 0,
     val outputTokens: Long = 0,
+    /** The share of [cacheWriteTokens] these rounds held for an hour, read like
+     *  [Usage.cacheWriteHourlyTokens]: a part of that bucket, never an addition to it. */
+    val cacheWriteHourlyTokens: Long = 0,
 ) {
+    /** These rounds' write bucket as one value, the shape [Usage.cacheWrite] carries. */
+    public val cacheWrite: CacheWrite get() = CacheWrite(cacheWriteTokens, cacheWriteHourlyTokens)
+
     public operator fun plus(other: AbsorbedRounds): AbsorbedRounds = AbsorbedRounds(
         rounds = rounds + other.rounds,
         inputTokens = inputTokens + other.inputTokens,
         cachedTokens = cachedTokens + other.cachedTokens,
         cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
         outputTokens = outputTokens + other.outputTokens,
+        cacheWriteHourlyTokens = cacheWriteHourlyTokens + other.cacheWriteHourlyTokens,
     )
 }

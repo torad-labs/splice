@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
+import splice.core.turn.CacheWrite
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -24,8 +25,8 @@ internal class CodeModeClientContextsTest {
     @Test
     fun `a step that measured nothing carries the newest measured context, and its own usage stays zero`() {
         val contexts = CodeModeClientContexts { null }
-        contexts.report("a", TurnOutcome.Success(true, false, Usage(1_000, 40, 600, 9, 50)))
-        contexts.report("a", TurnOutcome.Success(true, false, Usage(1_200, 30, 700, 0, 0)))
+        contexts.report("a", TurnOutcome.Success(true, false, Usage(1_000, 40, 600, 9, CacheWrite(50))))
+        contexts.report("a", TurnOutcome.Success(true, false, Usage(1_200, 30, 700, 0, CacheWrite())))
 
         val reported = contexts.report("a", step) as TurnOutcome.Success
         val expected = Usage(inputTokens = 1_200, cachedTokens = 700, reported = contextFields)
@@ -65,9 +66,9 @@ internal class CodeModeClientContextsTest {
         val failedContext = Usage(inputTokens = 900, cachedTokens = 300, reported = contextFields)
         assertEquals(failedContext, contextOf(contexts.report("a", step)))
 
-        contexts.note("a", Usage(1_500, 80, 1_000, 0, 20))
+        contexts.note("a", Usage(1_500, 80, 1_000, 0, CacheWrite(20)))
         assertEquals(
-            Usage(inputTokens = 1_500, cachedTokens = 1_000, cacheWriteTokens = 20, reported = contextFields),
+            Usage(inputTokens = 1_500, cachedTokens = 1_000, cacheWrite = CacheWrite(20), reported = contextFields),
             contextOf(contexts.report("a", step)),
         )
     }

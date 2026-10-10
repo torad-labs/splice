@@ -626,6 +626,11 @@ origin.
   API rates for Anthropic, OpenAI, xAI, Meta, Kimi and DeepSeek (DeepSeek's peak hours at their own factor), so a plan turn reads
   as what the same work would cost on the API. A card in `splice.toml`, a head's card or a price the
   provider's model list publishes always wins. The data is `published-rates.tsv`, with each vendor's source and the day it was read.
+  A prompt-cache write is priced by how long it was held: Anthropic and Kimi publish a higher rate for a
+  cache kept an hour than for one kept five minutes, and splice charges each write at the rate for the
+  duration the usage reports (`cache_write` and `cache_write_1h`, with `long_context_cache_write_1h` for a
+  long-context tier). A turn on a model the roster does not name takes its published card too, so a Claude
+  head whose client picks the model no longer leaves those turns unpriced and out of a budget's sight.
 - **The shared MCP host caches `tools/list`.** Every session sharing a hosted server gets the listing from one
   cache, dropped when the child changes its tools or exits, whoever owns the process slot at that moment.
   `/api/mcp` reports each hosted server's resident memory.

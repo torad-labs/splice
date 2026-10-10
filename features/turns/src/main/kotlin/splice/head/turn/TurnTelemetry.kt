@@ -51,10 +51,12 @@ private val UNREPORTED_TOKEN_FIELDS = setOf(
     PerfKeys.OUT_TOKENS,
     PerfKeys.CACHED_TOKENS,
     PerfKeys.CACHE_WRITE_TOKENS,
+    PerfKeys.CACHE_WRITE_1H_TOKENS,
     PerfKeys.ABSORBED_IN_TOKENS,
     PerfKeys.ABSORBED_OUT_TOKENS,
     PerfKeys.ABSORBED_CACHED_TOKENS,
     PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
+    PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS,
 )
 
 /** Renders the per-turn observability: the turn line, error lines, the perf row+line, and the
@@ -232,6 +234,7 @@ internal class TurnTelemetry(
                             cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS],
                             cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS],
                             outTokens = snap.counters[PerfKeys.OUT_TOKENS],
+                            cacheWriteHourlyTokens = snap.counters[PerfKeys.CACHE_WRITE_1H_TOKENS],
                         ),
                         bytes = TurnBytes(
                             reqBytes = snap.counters[PerfKeys.REQ_BYTES],

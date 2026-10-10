@@ -46,7 +46,7 @@ internal class CodeModeClientContexts(private val persisted: CodeModePersistedCo
         Usage(
             inputTokens = it.inputTokens,
             cachedTokens = it.cachedTokens,
-            cacheWriteTokens = it.cacheWriteTokens,
+            cacheWrite = it.cacheWrite,
             reported = it.reported - UsageField.OUTPUT,
         )
     }

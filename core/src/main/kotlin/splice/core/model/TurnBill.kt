@@ -37,13 +37,22 @@ public object TurnBill {
         if (UsageField.INPUT in usage.reported) put(PerfKeys.IN_TOKENS, usage.inputTokens)
         if (UsageField.OUTPUT in usage.reported) put(PerfKeys.OUT_TOKENS, usage.outputTokens)
         if (UsageField.CACHED in usage.reported) put(PerfKeys.CACHED_TOKENS, usage.cachedTokens)
-        if (UsageField.CACHE_WRITE in usage.reported) put(PerfKeys.CACHE_WRITE_TOKENS, usage.cacheWriteTokens)
+        // The write bucket spells its own two counters ([CacheWrite.counters]): the total always, and the
+        // 1-hour share only when the turn wrote one.
+        if (UsageField.CACHE_WRITE in usage.reported) {
+            putAll(usage.cacheWrite.counters(PerfKeys.CACHE_WRITE_TOKENS, PerfKeys.CACHE_WRITE_1H_TOKENS))
+        }
         val absorbed = usage.absorbed
         if (absorbed.rounds > 0) {
             put(PerfKeys.ABSORBED_ROUNDS, absorbed.rounds)
             put(PerfKeys.ABSORBED_IN_TOKENS, absorbed.inputTokens)
             put(PerfKeys.ABSORBED_CACHED_TOKENS, absorbed.cachedTokens)
-            put(PerfKeys.ABSORBED_CACHE_WRITE_TOKENS, absorbed.cacheWriteTokens)
+            putAll(
+                absorbed.cacheWrite.counters(
+                    PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
+                    PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS,
+                ),
+            )
             put(PerfKeys.ABSORBED_OUT_TOKENS, absorbed.outputTokens)
         }
         // The reasoning tokens a Responses model reports are already inside outputTokens, so this counter
@@ -60,6 +69,7 @@ public object TurnBill {
         cachedTokens = row[PerfKeys.ABSORBED_CACHED_TOKENS] ?: 0L,
         cacheWriteTokens = row[PerfKeys.ABSORBED_CACHE_WRITE_TOKENS] ?: 0L,
         outputTokens = row[PerfKeys.ABSORBED_OUT_TOKENS] ?: 0L,
+        cacheWriteHourlyTokens = row[PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS] ?: 0L,
     )
 
     /** Decode request ownership and retained earlier requests from the same row the stamp wrote. */
@@ -77,6 +87,7 @@ public object TurnBill {
             cached = row[PerfKeys.CACHED_TOKENS] ?: 0L,
             written = row[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L,
             output = ((row[PerfKeys.OUT_TOKENS] ?: 0L) - absorbedOut).coerceAtLeast(0L),
+            writtenHourly = row[PerfKeys.CACHE_WRITE_1H_TOKENS] ?: 0L,
         )
     }
 
@@ -89,6 +100,7 @@ public object TurnBill {
             cacheRead = last.cacheRead + absorbed.cacheRead,
             cacheWrite = last.cacheWrite + absorbed.cacheWrite,
             output = last.output + absorbed.output,
+            cacheWriteHourly = last.cacheWriteHourly + absorbed.cacheWriteHourly,
         )
     }
 
@@ -143,6 +155,13 @@ public object TurnBill {
             cacheRead = minOf(rates.cacheRead, tier.cacheRead),
             output = minOf(rates.output, tier.output),
             cacheWrite = minOf(rates.cacheWrite ?: rates.input, tier.cacheWrite ?: tier.input),
+            // Each side falls back the way the charge itself falls back (TokenCost.of): a card with no
+            // hourly price bills an hourly write at its five-minute one, so that is the figure to take
+            // the minimum of — never the input price, which would invent a cheaper bound than exists.
+            cacheWriteHourly = minOf(
+                rates.cacheWriteHourly ?: rates.cacheWrite ?: rates.input,
+                tier.cacheWriteHourly ?: tier.cacheWrite ?: tier.input,
+            ),
         )
     }
 
@@ -151,12 +170,20 @@ public object TurnBill {
         cached = absorbed.cachedTokens,
         written = absorbed.cacheWriteTokens,
         output = absorbed.outputTokens,
+        writtenHourly = absorbed.cacheWriteHourlyTokens,
     )
 
-    private fun buckets(input: Long, cached: Long, written: Long, output: Long): TokenBuckets = TokenBuckets(
+    private fun buckets(
+        input: Long,
+        cached: Long,
+        written: Long,
+        output: Long,
+        writtenHourly: Long = 0L,
+    ): TokenBuckets = TokenBuckets(
         input = (input - cached - written).coerceAtLeast(0L),
         cacheRead = cached,
         cacheWrite = written,
         output = output,
+        cacheWriteHourly = writtenHourly,
     )
 }

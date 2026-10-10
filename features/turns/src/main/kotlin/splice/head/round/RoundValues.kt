@@ -6,6 +6,7 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.CacheWrite
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageHistory
@@ -23,8 +24,11 @@ internal data class CumulativeInput(
     val total: Long = 0,
     val cached: Long = 0,
     /** V4-85: the cache-WRITE half of [total], under the same cumulative law — a continuation
-     *  re-sends the whole conversation, so round N's cache_creation already contains round N-1's. */
-    val cacheWrite: Long = 0,
+     *  re-sends the whole conversation, so round N's cache_creation already contains round N-1's. The
+     *  TTL share rides WITH it (Oct 10, 2026 review): reduced to a Long here, a round's hourly writes
+     *  would be billed at the five-minute rate the moment a turn ran more than one round, which is the
+     *  seam the write bucket itself died at in V4-85. */
+    val cacheWrite: CacheWrite = CacheWrite(),
 )
 
 /** The round-usage law, ONE implementation for both runners (2026-07-20, unified in the
@@ -48,7 +52,7 @@ internal data class RoundUsage(
     fun plusRound(u: Usage): RoundUsage {
         val total = toUsage().followedBy(u)
         return RoundUsage(
-            input = CumulativeInput(total.inputTokens, total.cachedTokens, total.cacheWriteTokens),
+            input = CumulativeInput(total.inputTokens, total.cachedTokens, total.cacheWrite),
             outputTokens = total.outputTokens,
             reasoningTokens = total.reasoningTokens,
             origin = total.origin,
@@ -64,7 +68,7 @@ internal data class RoundUsage(
         outputTokens = outputTokens,
         cachedTokens = input.cached,
         reasoningTokens = reasoningTokens,
-        cacheWriteTokens = input.cacheWrite,
+        cacheWrite = input.cacheWrite,
         origin = origin,
         reported = reported,
     )

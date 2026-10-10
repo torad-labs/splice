@@ -41,6 +41,7 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.WsAttemptTiming
+import splice.core.turn.CacheWrite
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
@@ -750,7 +751,7 @@ class TurnUsageStampTest {
                         inputTokens = 60_000,
                         outputTokens = 500,
                         cachedTokens = 40_000,
-                        cacheWriteTokens = 12_000,
+                        cacheWrite = CacheWrite(12_000),
                     ),
                 ),
             )
@@ -798,7 +799,10 @@ class TurnUsageStampTest {
             // Salvaged usage from absorbed rounds of an ultimately-failed turn is REAL billed spend —
             // that is why stampSalvaged exists — and a cache write inside it is the most expensive
             // bucket on the row. It goes through the same setKnownCounters, and this pins that.
-            rig.stamp.stampSalvaged(drive, Usage(inputTokens = 30_000, outputTokens = 0, cacheWriteTokens = 30_000))
+            rig.stamp.stampSalvaged(
+                drive,
+                Usage(inputTokens = 30_000, outputTokens = 0, cacheWrite = CacheWrite(30_000)),
+            )
 
             assertEquals(30_000L, drive.perf.snapshot().counters[PerfKeys.CACHE_WRITE_TOKENS])
         } finally {
@@ -839,7 +843,7 @@ class TurnUsageStampTest {
                             inputTokens = 40_000,
                             outputTokens = 3,
                             cachedTokens = 20_000,
-                            cacheWriteTokens = 12_000,
+                            cacheWrite = CacheWrite(12_000),
                         ),
                     ),
                 )
@@ -849,7 +853,7 @@ class TurnUsageStampTest {
                             inputTokens = 70_000,
                             outputTokens = 5,
                             cachedTokens = 40_000,
-                            cacheWriteTokens = 18_000,
+                            cacheWrite = CacheWrite(18_000),
                         ),
                     ),
                 )

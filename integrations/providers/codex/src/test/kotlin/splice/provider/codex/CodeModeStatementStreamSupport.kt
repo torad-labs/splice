@@ -16,6 +16,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.CacheWrite
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.SpliceNotice
@@ -68,7 +69,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         )
         val continuation = requireNotNull(
             TurnBill.usd(
-                TurnBill.counters(Usage(inputTokens = 150, outputTokens = 5, cacheWriteTokens = 4)),
+                TurnBill.counters(Usage(inputTokens = 150, outputTokens = 5, cacheWrite = CacheWrite(4))),
                 BILLING_RATES,
             ),
         )
@@ -128,7 +129,12 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
                 if (repeatOuter) return RoundResult.Outcome(generate(sink))
                 return RoundResult.Outcome(
                     completedOutcome().copy(
-                        usage = Usage(inputTokens = 150, outputTokens = 5, reasoningTokens = 2, cacheWriteTokens = 4),
+                        usage = Usage(
+                            inputTokens = 150,
+                            outputTokens = 5,
+                            reasoningTokens = 2,
+                            cacheWrite = CacheWrite(4),
+                        ),
                     ),
                 )
             }

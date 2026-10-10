@@ -287,6 +287,10 @@ class PassthroughStreamTranslatorTest {
         // inputTokens above (the context-window numerator needs it there); this is the read-off the
         // perf counter and SessionCost price. Zero here meant a cache write billed as a cache MISS.
         assertEquals(37, s.usage.cacheWriteTokens) // the nested 30 + 7, not folded away
+        // Oct 10, 2026 review: WHICH TTL the tokens were written at decides their price — Anthropic
+        // charges an hourly write 2x input against the five-minute write's 1.25x — so the hourly part
+        // leaves as its own share of the write bucket above, never as an addition to it.
+        assertEquals(7, s.usage.cacheWriteHourlyTokens)
     }
 
     @Test

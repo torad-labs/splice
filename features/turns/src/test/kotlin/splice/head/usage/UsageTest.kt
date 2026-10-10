@@ -24,6 +24,7 @@ import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.CacheWrite
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
@@ -276,7 +277,7 @@ class UsageTest {
     // as an absorbed round instead of vanishing.
     @Test
     fun `a superseded round stays billed as a request of its own`() {
-        val first = Usage(inputTokens = 1000, outputTokens = 50, cachedTokens = 800, cacheWriteTokens = 100)
+        val first = Usage(inputTokens = 1000, outputTokens = 50, cachedTokens = 800, cacheWrite = CacheWrite(100))
         val second = Usage(inputTokens = 1500, outputTokens = 30, cachedTokens = 1200)
         val third = Usage(outputTokens = 5, reported = setOf(UsageField.OUTPUT))
         val usage = RoundUsage().plusRound(first).plusRound(second).plusTerminal(third).toUsage()
@@ -522,7 +523,7 @@ class UsageScalingTest {
         // p99 31791 leaves 232379: 20000*T/232379 truncates to 13168, not the old 13192.
         val factor = 153_000.0 / (272_000 - 39_621)
         val p = wiring.usagePayloadBuilder(codex, meta("gpt-5.6-luna"), sessionWindow = 200_000)(
-            Usage(inputTokens = 100_000, outputTokens = 7, cachedTokens = 60_000, cacheWriteTokens = 20_000),
+            Usage(inputTokens = 100_000, outputTokens = 7, cachedTokens = 60_000, cacheWrite = CacheWrite(20_000)),
         )
         assertEquals((20_000 * factor).toLong(), p["input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals((20_000 * factor).toLong(), p["cache_creation_input_tokens"]?.jsonPrimitive?.content?.toLong())
@@ -816,7 +817,7 @@ class ClientCacheWriteTest {
         val p = payload(
             claude,
             "claude-opus-5-5",
-            Usage(inputTokens = 16_584, outputTokens = 7, cacheWriteTokens = 16_580),
+            Usage(inputTokens = 16_584, outputTokens = 7, cacheWrite = CacheWrite(16_580)),
         )
         assertEquals(4, p.long("input_tokens"), "16,584 minus the 16,580 written")
         assertEquals(16_580, p.long("cache_creation_input_tokens"), "the upstream's write, as a write")
@@ -829,7 +830,7 @@ class ClientCacheWriteTest {
         val p = payload(
             claude,
             "claude-opus-5-5",
-            Usage(inputTokens = 16_632, outputTokens = 7, cachedTokens = 16_580, cacheWriteTokens = 48),
+            Usage(inputTokens = 16_632, outputTokens = 7, cachedTokens = 16_580, cacheWrite = CacheWrite(48)),
         )
         assertEquals(4, p.long("input_tokens"), "16,632 minus 16,580 read minus 48 written")
         assertEquals(48, p.long("cache_creation_input_tokens"))
@@ -843,7 +844,7 @@ class ClientCacheWriteTest {
         val p = payload(
             grok,
             "grok-4.6[500k]",
-            Usage(inputTokens = 300_000, outputTokens = 7, cachedTokens = 200_000, cacheWriteTokens = 60_000),
+            Usage(inputTokens = 300_000, outputTokens = 7, cachedTokens = 200_000, cacheWrite = CacheWrite(60_000)),
         )
         assertEquals(20_480, p.long("input_tokens"), "(300k - 200k - 60k) x 256k/500k")
         assertEquals(30_720, p.long("cache_creation_input_tokens"), "60k x 256k/500k")

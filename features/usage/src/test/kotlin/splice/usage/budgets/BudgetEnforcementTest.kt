@@ -286,4 +286,40 @@ class BudgetEnforcementTest {
         assertNotNull(block, "a turn on the listed model counts at the price its provider lists")
         assertTrue(block!!.message.contains("1 turn today ran on a model with no rate card"), block.message)
     }
+
+    // Oct 10, 2026 review: a cache written for an HOUR bills above a five-minute one, and the shipped list
+    // carried only the five-minute price. Opus 5.5 charges $5 per million five-minute write tokens and $8
+    // hourly, so 100k hourly writes cost $0.80 — but the budget was shown $0.50 and admitted the next turn.
+    @Test
+    fun `a budget blocks on an hourly cache write, which bills above a five-minute one`(@TempDir tmp: Path) {
+        val forwarded = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("client"),
+            models = listOf(ModelEntry("claude-opus-5-5", label = "Claude Opus 5.5", contextWindow = 1_000_000)),
+        )
+        val catalog = forwarded.catalogFor(HeadConfig("claude-splice", 3098, "claude-splice--", "claude-opus-5-5"))
+        val rig = Rig(tmp)
+        rig.budget("h", 0.6, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", catalog)
+
+        head.spent(rig.now, "claude-opus-5-5", writeTurn(tokens = 100_000, hourly = 100_000))
+        assertNotNull(head.admit(), "$0.80 of hourly writes reaches a $0.60 budget: the next turn is refused")
+
+        val fiveMinute = Rig(tmp.resolve("5m").also { it.toFile().mkdirs() })
+        fiveMinute.budget("h", 0.6, BudgetActions.BLOCK)
+        val cheaper = fiveMinute.enforcement.forHead("h", catalog)
+        cheaper.spent(fiveMinute.now, "claude-opus-5-5", writeTurn(tokens = 100_000, hourly = 0))
+        assertNull(cheaper.admit(), "the same tokens written for five minutes are $0.50, which is under it")
+    }
+}
+
+/** One turn that wrote [tokens] tokens to the prompt cache, [hourly] of them at the 1-hour TTL. The write is
+ *  a disjoint part of in_tokens, so a turn that wrote only cache reports no fresh input of its own. */
+private fun writeTurn(tokens: Long, hourly: Long): Map<String, Long> = buildMap {
+    put(PerfKeys.IN_TOKENS, tokens)
+    put(PerfKeys.OUT_TOKENS, 0L)
+    put(PerfKeys.CACHED_TOKENS, 0L)
+    put(PerfKeys.CACHE_WRITE_TOKENS, tokens)
+    if (hourly > 0) put(PerfKeys.CACHE_WRITE_1H_TOKENS, hourly)
 }

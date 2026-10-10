@@ -43,6 +43,7 @@ internal object PublishedRates {
         cacheRead = row.price("cache_read"),
         output = row.price("output"),
         cacheWrite = row.optional("cache_write"),
+        cacheWriteHourly = row.optional("cache_write_1h"),
         longContext = row.optional("tier_over")?.let { over ->
             LongContextRates(
                 overInputTokens = over.toLong(),
@@ -50,6 +51,7 @@ internal object PublishedRates {
                 cacheRead = row.price("tier_cache_read"),
                 output = row.price("tier_output"),
                 cacheWrite = row.optional("tier_cache_write"),
+                cacheWriteHourly = row.optional("tier_cache_write_1h"),
             )
         },
         peak = row.optional("peak_factor")?.let { factor ->
@@ -81,8 +83,9 @@ internal object PublishedRates {
     private const val RESOURCE = "/published-rates.tsv"
 
     // why: the header names every column a row is read by, so a renamed or reordered column fails loudly.
-    private const val HEADER = "host\tmodel\tinput\tcache_read\toutput\tcache_write\t" +
-        "tier_over\ttier_input\ttier_cache_read\ttier_output\ttier_cache_write\tpeak_factor\tpeak_hours_utc\tpeak_days"
+    private const val HEADER = "host\tmodel\tinput\tcache_read\toutput\tcache_write\tcache_write_1h\t" +
+        "tier_over\ttier_input\ttier_cache_read\ttier_output\ttier_cache_write\ttier_cache_write_1h\t" +
+        "peak_factor\tpeak_hours_utc\tpeak_days"
 
     // why: one sentence for a row with a missing cell or a price that is missing where one is required.
     private const val INVALID = "invalid $RESOURCE row"

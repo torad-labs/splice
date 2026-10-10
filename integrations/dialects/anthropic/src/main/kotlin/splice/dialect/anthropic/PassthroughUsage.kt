@@ -5,6 +5,7 @@ package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.turn.CacheWrite
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.util.JsonScalars
@@ -16,6 +17,7 @@ internal class PassthroughUsage {
     private var inputTokens = 0L
     private var cacheRead = 0L
     private var cacheCreation = 0L
+    private var cacheCreationHourly = 0L
     private var outputTokens = 0L
     private val reported = mutableSetOf<UsageField>()
 
@@ -32,14 +34,18 @@ internal class PassthroughUsage {
         inputTokens = inputTokens + cacheRead + cacheCreation,
         outputTokens = outputTokens,
         cachedTokens = cacheRead,
-        cacheWriteTokens = cacheCreation,
+        cacheWrite = CacheWrite(cacheCreation, cacheCreationHourly),
         reported = reported.toSet(),
     )
 
-    /** The backend's disjoint counts, before the outcome's inclusive input normalization. */
+    /** The backend's disjoint counts, before the outcome's inclusive input normalization. The 1-hour
+     *  write appears only on a turn that wrote one, so the usual line is unchanged and the TTL split is
+     *  readable on exactly the turns whose price depends on it. */
     internal fun describe(): String =
         "input_tokens=$inputTokens cache_read_input_tokens=$cacheRead " +
-            "cache_creation_input_tokens=$cacheCreation output_tokens=$outputTokens"
+            "cache_creation_input_tokens=$cacheCreation " +
+            (if (cacheCreationHourly > 0) "ephemeral_1h_input_tokens=$cacheCreationHourly " else "") +
+            "output_tokens=$outputTokens"
 
     internal fun harvestUsage(u: JsonObject?) {
         u ?: return
@@ -53,6 +59,7 @@ internal class PassthroughUsage {
         }
         cacheCreationTokens(u)?.let {
             cacheCreation = it
+            cacheCreationHourly = hourlyCacheCreationTokens(u).coerceAtMost(it)
             reported += UsageField.CACHE_WRITE
         }
         JsonScalars.firstLong(u, "output_tokens")?.let {
@@ -78,4 +85,24 @@ internal class PassthroughUsage {
                     .values.mapNotNull { (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() }
                 parts.sum().takeIf { parts.isNotEmpty() }
             }
+
+    /** Oct 10, 2026 review: the part of the write the backend held for an HOUR, which bills above a
+     *  five-minute write at both vendors that report the split (Anthropic 2x input against 1.25x,
+     *  Moonshot K3 6 against 3). Read from the nested breakdown even when the flat total is present,
+     *  since Anthropic sends both and only the breakdown says which TTL the tokens were written at;
+     *  0 when there is no breakdown, which bills the write exactly as it did before.
+     *
+     *  The known key is NAMED here rather than matched by suffix, the opposite of the total above, and
+     *  for the same reason: every TTL carries its own published price, so a future
+     *  ephemeral_1d_input_tokens bucket must earn its own column and rate before it can be charged.
+     *  Folding it in here would bill a day-long write at the hourly price, which is a guess. It still
+     *  reaches the write total above, so it bills at the five-minute rate until its column lands —
+     *  understated, never invented. */
+    private fun hourlyCacheCreationTokens(u: JsonObject): Long {
+        val nested = u["cache_creation"] as? JsonObject ?: return 0L
+        return (nested[HOURLY_WRITE_KEY] as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() ?: 0L
+    }
 }
+
+// why: Anthropic's own name for the 1-hour cache-creation bucket, the one TTL splice carries a price for.
+private const val HOURLY_WRITE_KEY = "ephemeral_1h_input_tokens"

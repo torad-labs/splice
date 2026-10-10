@@ -58,6 +58,7 @@ internal class CodeModeSourceRecords(
                     usage.cacheWriteTokens,
                     usage.origin.recordedOutputTokens,
                     reported = usage.reported,
+                    cacheWriteHourlyTokens = usage.cacheWriteHourlyTokens,
                 ),
             )
             // A round that finishes after its client turn ended is still the conversation's newest context.

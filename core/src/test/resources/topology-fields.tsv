@@ -55,9 +55,11 @@ heads.*.provider
 heads.*.rates	
 heads.*.rates.*.cache_read	
 heads.*.rates.*.cache_write	
+heads.*.rates.*.cache_write_1h	
 heads.*.rates.*.input	
 heads.*.rates.*.long_context_cache_read	
 heads.*.rates.*.long_context_cache_write	
+heads.*.rates.*.long_context_cache_write_1h	
 heads.*.rates.*.long_context_input	
 heads.*.rates.*.long_context_output	
 heads.*.rates.*.long_context_over_input_tokens	
@@ -102,9 +104,11 @@ providers.*.models[].label
 providers.*.models[].rates	
 providers.*.models[].rates.cache_read	
 providers.*.models[].rates.cache_write	
+providers.*.models[].rates.cache_write_1h	
 providers.*.models[].rates.input	
 providers.*.models[].rates.long_context_cache_read	
 providers.*.models[].rates.long_context_cache_write	
+providers.*.models[].rates.long_context_cache_write_1h	
 providers.*.models[].rates.long_context_input	
 providers.*.models[].rates.long_context_output	
 providers.*.models[].rates.long_context_over_input_tokens	

@@ -208,6 +208,7 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
         put("output", rates.output)
         put("cache_read", rates.cacheRead)
         rates.cacheWrite?.let { put("cache_write", it) }
+        rates.cacheWriteHourly?.let { put("cache_write_1h", it) }
         rates.longContext?.let { tier ->
             put(
                 "long_context",
@@ -217,6 +218,7 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("output", tier.output)
                     put("cache_read", tier.cacheRead)
                     tier.cacheWrite?.let { put("cache_write", it) }
+                    tier.cacheWriteHourly?.let { put("cache_write_1h", it) }
                 },
             )
         }

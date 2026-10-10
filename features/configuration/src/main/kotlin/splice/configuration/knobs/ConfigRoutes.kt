@@ -49,6 +49,7 @@ public class ConfigRoutes(
                 put("env", mapToJson(layers.env))
                 put("runtime", mapToJson(layers.runtime))
             }
+            put("knobs", KnobViews().of(mapToJson(effective), layers, headKey))
             putJsonArray("restart_required_keys") { restartRequiredKnobKeys.forEach { add(it) } }
             put("source", "control")
         }.toString()

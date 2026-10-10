@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -27,8 +28,10 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.knobsByKey
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
 
@@ -111,6 +114,29 @@ class ConfigLiveKnobsTest {
         assertEquals("low", effective.getValue("effort").jsonPrimitive.content)
         assertEquals("low", runtime.getValue("effort").jsonPrimitive.content)
         assertTrue("effort" in restartOnly, "a restart-only knob is listed as such")
+    }
+
+    @Test
+    fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {
+        patch("""{"maxInflight":9,"effort":"low"}""")
+
+        val knobs = json.parseToJsonElement(read()).jsonObject.getValue("knobs").jsonObject
+
+        val missing = Knob.entries.map { it.key }.filter { it !in knobs }
+        assertEquals(emptyList<String>(), missing, "a knob the answer does not represent")
+        knobs.forEach { (name, view) ->
+            val entry = view.jsonObject
+            val knob = knobsByKey.getValue(name)
+            val disposition = if (knob.restartRequired) "restart" else "live"
+            assertEquals(disposition, entry.getValue("disposition").jsonPrimitive.content, name)
+            assertTrue(entry.containsKey("value") && entry.containsKey("scope"), "$name: $entry")
+            val editable = entry.getValue("editable").jsonPrimitive.boolean
+            assertTrue(editable || "read_only_reason" in entry, "$name is read-only with no reason")
+        }
+        assertEquals("runtime", knobs.getValue("maxInflight").jsonObject.getValue("scope").jsonPrimitive.content)
+        assertEquals("9", knobs.getValue("maxInflight").jsonObject.getValue("value").jsonPrimitive.content)
+        assertEquals("default", knobs.getValue("transcriptView").jsonObject.getValue("scope").jsonPrimitive.content)
+        assertEquals("restart", knobs.getValue("effort").jsonObject.getValue("disposition").jsonPrimitive.content)
     }
 
     @Test

@@ -21,6 +21,11 @@ import splice.client.mcp.McpInventory
 import splice.client.mcp.McpKindCensus
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+
+private const val BYTES_PER_KB = 1024L
 
 /** The live hosted process for a server name, or null when none is running. */
 internal fun interface HostedServerLookup {
@@ -81,11 +86,26 @@ internal class McpStatus(
         McpSourceKind.PLUGIN_INLINE -> "plugin_inline"
     }
 
+    /** The process's resident set from `/proc/<pid>/status` VmRSS (kB there); null where /proc has none
+     *  or the process exited between the liveness check and the read. */
+    private fun residentBytes(pid: Long): Long? {
+        val status = Path.of("/proc/$pid/status")
+        if (!Files.isReadable(status)) return null
+        val lines = try {
+            Files.readAllLines(status)
+        } catch (_: IOException) {
+            return null
+        }
+        val kb = lines.firstOrNull { it.startsWith("VmRSS:") }?.filter(Char::isDigit)?.toLongOrNull()
+        return kb?.times(BYTES_PER_KB)
+    }
+
     private fun hosted(out: JsonObjectBuilder, name: String) {
         out.put("eligible", true)
         val server = server(name)
         out.put("hosted", server?.alive == true)
         server?.pid?.let { out.put("pid", it) }
+        server?.pid?.let(::residentBytes)?.let { out.put("rss_bytes", it) }
         val live = sessions.forServer(name)
         out.put("sessions", live.size)
         out.putJsonArray("session_ids") { live.forEach { add(JsonPrimitive(it.id)) } }

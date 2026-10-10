@@ -221,6 +221,9 @@ function ring(w) {
 }
 const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
 const resets = (w) => (w.left == null ? "<span></span>" : `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`); // a reading whose reset has passed shows no time
+// The budget day always refills at this computer's midnight, so its strip says that one word: a day name and "12:00 AM"
+// read as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move.
+const refills = (day) => `<span class="when">${ring(day)}Resets midnight</span>`;
 
 function windowsHtml(a, next = null) {
   const stale = a.staleAt != null;
@@ -256,14 +259,14 @@ function meterHtml(c, pick = null) {
   const spent = c.unpriced || c.local || c.spent == null ? "" : money(c.spent);
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${unpriced(c)}</span>`
-      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${resets(day)}</div>`;
+      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
   const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${noPrice(c)}` : ""}`;
   // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
   const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? ICON.stop : ICON.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${resets(day)}</div>`;
+    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? ICON.stop : ICON.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${refills(day)}</div>`;
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
 // here the words take their own line under the figure, with no dot (fin)
@@ -699,7 +702,15 @@ board.addEventListener("paste", (e) => {
   f.value = bad ? "" : v;
   keyState(f, bad ? "Invalid key" : null);
 });
-board.addEventListener("input", (e) => { if (e.target.matches("#key-in")) keyState(e.target, null); });
+board.addEventListener("input", (e) => {
+  if (e.target.matches("#key-in")) keyState(e.target, null);
+  // a typed amount is the choice now, so a preset it no longer matches loses its outline at once (Marlin's walk, Oct 10)
+  if (e.target.matches("#cap-in")) {
+    const v = Number(e.target.value);
+    if (v > 0) ui.editor.cap = v;
+    e.target.closest(".editor").querySelectorAll('[data-act="preset"]').forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.v) === v)));
+  }
+});
 // Save takes the press without taking focus, so the field's blur can't save and redraw before Save's click lands. Tab
 // between the field and Save keeps the rename open; leaving both saves, as leaving the field always did.
 const inRename = (el) => !!el?.matches?.(".rename, [data-act=finish-rename]");

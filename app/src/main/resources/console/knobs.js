@@ -187,7 +187,7 @@ const KNOBS = (() => {
     return `<div class="over">${cmdChip(c, hl)}${ctlHtml(k, ownValue(k.key, c), c)}${backHtml(k, c)}${saidHtml(`${k.key}@${c}`)}</div>`;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
-  function rowHtml(k, { hl = esc, lit = "", label = k.label } = {}) {
+  function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false } = {}) {
     const s = valueOf(k);
     if (s.src === "env") { // set in the person's shell: read here, changed there
       return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">Set in your shell, <code>${esc(k.key)}</code></span></div>`;
@@ -196,7 +196,7 @@ const KNOBS = (() => {
     const lines = owners.map((c) => overHtml(k, c, hl)).join("");
     const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(c)}</button>`).join("")}</div>` : "") + "</span>" : "";
-    const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : "";
+    const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>`;
   }
   const formHtml = (keys, opts) => `<div class="form">${keys.map((key) => rowHtml(KNOB[key], opts)).join("")}</div>`;

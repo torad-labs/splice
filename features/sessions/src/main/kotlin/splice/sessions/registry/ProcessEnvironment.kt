@@ -1,14 +1,12 @@
-// NEW: v0.4.0 FEATURES.md §4 — the facts that tie a registered Claude Code session to the splice head
-// it talks to: splice's launcher marks every process it starts with SPLICE=1 and points it at a local
-// head through ANTHROPIC_BASE_URL. Both are read from /proc/<pid>/environ, which only this user's own
-// processes expose. The file is STREAMED entry by entry: bytes are kept only while the entry can
-// still be one of those two keys, so a foreign entry (a credential) is skipped to its NUL byte by
-// byte and is never buffered and never decoded. The reading is a SessionRoute, decided here because
-// only here is "the environment was read" known apart from "it could not be": a readable environment
-// without SPLICE=1 is DIRECT whatever its base URL says, a splice launch whose local port a head owns
-// is that HEAD, and everything else — unreadable, empty, or a splice launch no head can be found for —
-// is UNKNOWN. On macOS, the launcher declares the head and URL in an owner-only record; ProcessHandle
-// validates its PID and exact process birth. External launches have no declaration and stay UNKNOWN.
+// NEW: v0.4.0 FEATURES.md §4 — how a registered Claude Code session joins the splice head it talks to: by
+// the LAUNCH splice made. The launcher declares every session it starts (pid, process birth, head, base URL)
+// in the owner-only launch roster (LaunchOwners), and a pid joins a head only when its record is there, its birth
+// matches the live process, and the head owning the declared port is the head declared. Nothing is inferred
+// from a process environment any more. The environment is read for ONE fact, and only when there is no launch
+// record: a readable environment without SPLICE=1 is a session splice never launched (DIRECT, V4-293). The
+// file is STREAMED entry by entry: bytes are kept only while the entry can still be one of the two keys, so a
+// foreign entry (a credential) is skipped to its NUL byte by byte and is never buffered and never decoded.
+// Everything else — unreadable, empty, a splice launch with no record — is UNKNOWN ("unknown head").
 package splice.sessions.registry
 
 import splice.core.config.StatePaths
@@ -21,40 +19,31 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 private const val SPLICE_MARKER = "SPLICE"
-private const val BASE_URL = "ANTHROPIC_BASE_URL"
 private const val CHUNK = 8192
 private const val NUL: Byte = 0
 
 public class ProcessEnvironment(
     private val procRoot: Path = Paths.get("/proc"),
-    private val owners: LaunchOwners? = if (
-        System.getProperty("os.name").startsWith("Mac") && procRoot == Paths.get("/proc")
-    ) {
-        LaunchOwners(StatePaths().stateDir)
-    } else {
-        null
-    },
+    private val owners: LaunchOwners = LaunchOwners(StatePaths().stateDir),
 ) {
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
-    private val wanted = listOf("$SPLICE_MARKER=", "$BASE_URL=").map { it.toByteArray() }
+    private val wanted = listOf("$SPLICE_MARKER=").map { it.toByteArray() }
 
-    /** How [pid] reaches its provider; [headOf] names the head listening on the local port it read. */
-    public fun route(pid: Long, headOf: HeadOfPort): SessionRoute =
-        if (owners != null) declaredRoute(pid, headOf, owners) else environRoute(pid, headOf)
-
-    private fun declaredRoute(pid: Long, headOf: HeadOfPort, source: LaunchOwners): SessionRoute {
-        val owner = source.read(pid) ?: return SessionRoute.Unknown
-        if (owner.kind != "session") return SessionRoute.Unknown
-        val port = localHead.find(owner.baseUrl)?.groupValues?.get(1)?.toIntOrNull()
+    /** How [pid] reaches its provider: the head its launch declared, when [headOf] still names that head on the
+     *  declared port; DIRECT for a readable environment of a process splice never launched; else UNKNOWN. */
+    public fun route(pid: Long, headOf: HeadOfPort): SessionRoute {
+        val launch = owners.read(pid) ?: return unlaunched(pid)
+        if (launch.kind != "session") return SessionRoute.Unknown
+        val port = localHead.find(launch.baseUrl)?.groupValues?.get(1)?.toIntOrNull()
         val head = port?.let(headOf::invoke)
-        return if (head == owner.head) SessionRoute.Head(head) else SessionRoute.Unknown
+        return if (head == launch.head) SessionRoute.Head(head) else SessionRoute.Unknown
     }
 
-    private fun environRoute(pid: Long, headOf: HeadOfPort): SessionRoute {
-        val markers = markers(pid) ?: return SessionRoute.Unknown
-        if (markers[SPLICE_MARKER] != "1") return SessionRoute.Direct
-        val port = markers[BASE_URL]?.let { localHead.find(it)?.groupValues?.get(1)?.toIntOrNull() }
-        return port?.let(headOf::invoke)?.let(SessionRoute::Head) ?: SessionRoute.Unknown
+    /** No launch record: a session whose environment was read and carries no SPLICE=1 is Direct, and a splice
+     *  launch nothing recorded (or one whose environment could not be read) is Unknown. */
+    private fun unlaunched(pid: Long): SessionRoute {
+        val read = markers(pid) ?: return SessionRoute.Unknown
+        return if (read[SPLICE_MARKER] == "1") SessionRoute.Unknown else SessionRoute.Direct
     }
 
     /** The wanted entries, or null when the environment was not READ: the file could not be opened or

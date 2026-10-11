@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeLogins
 import splice.core.config.UserHome
+import splice.core.process.LaunchOwners
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -154,7 +155,7 @@ class LoginCommandTest {
     )
 
     /** A running Claude Code session named [name], registered the way Claude Code registers one, whose
-     *  environment (read through a fake /proc) points it at the head on [port]. The pid is this test's
+     *  launch record (the roster under tmp/state) points it at the head on [port]. The pid is this test's
      *  own, so the registry finds it alive. */
     private fun session(tmp: Path, name: String, port: Int) {
         val pid = ProcessHandle.current().pid()
@@ -164,15 +165,15 @@ class LoginCommandTest {
             sessions.resolve("$pid.json"),
             """{"pid":$pid,"sessionId":"s-1","name":"$name","kind":"interactive"}""",
         )
-        val proc = Files.createDirectories(tmp.resolve("proc").resolve(pid.toString()))
-        Files.writeString(proc.resolve("environ"), "SPLICE=1\u0000ANTHROPIC_BASE_URL=http://127.0.0.1:$port\u0000")
+        val head = mapOf(3104 to "claude-splice", 3105 to "claudex").getValue(port)
+        LaunchOwners(tmp.resolve("state")).write(pid, head, "http://127.0.0.1:$port", "session", "other")
     }
 
     private fun claudeLabel(tmp: Path, lines: MutableList<String>) = ClaudeLoginLabel(
         output = { lines += it },
         logins = ClaudeLogins(storeDir = tmp.resolve("store")),
         sessionsDir = tmp.resolve("sessions"),
-        processes = ProcessEnvironment(procRoot = tmp.resolve("proc")),
+        processes = ProcessEnvironment(procRoot = tmp.resolve("proc"), owners = LaunchOwners(tmp.resolve("state"))),
     )
 
     private fun signedIn(tmp: Path): Path {

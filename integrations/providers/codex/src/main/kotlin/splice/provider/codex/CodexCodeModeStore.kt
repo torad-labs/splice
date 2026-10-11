@@ -144,6 +144,7 @@ internal class CodexCodeModeStore(
         dirtyKeys: Set<String>? = null,
         changedRecord: CodeModeRecord? = null,
     ) {
+        if (!location.journaling.now()) return
         if (retryOnly && !needsSave) return
         needsSave = true
         // The registry lock protects mutable records. Snapshot only changed conversations there;

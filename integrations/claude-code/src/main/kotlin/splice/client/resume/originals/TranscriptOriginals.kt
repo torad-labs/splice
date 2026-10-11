@@ -34,10 +34,16 @@ private object OriginalOperations {
     val mutex = ReentrantLock()
 }
 
+/** Whether a move copies the original first, asked at each move so the console switch acts on the next one. */
+public fun interface CopyingOriginals {
+    public fun now(): Boolean
+}
+
 /** Immutable originals plus their live source locations, all under the selected state root. */
 public class TranscriptOriginals(
     paths: StatePaths,
     private val copier: TranscriptOriginalCopy = ForcedTranscriptOriginalCopy,
+    private val keeping: CopyingOriginals = CopyingOriginals { true },
 ) {
     private val root = paths.transcriptOriginalsDir
 
@@ -46,6 +52,7 @@ public class TranscriptOriginals(
 
     /** [files] is the rewrite's frozen source census; a failed copy prevents every live rewrite. */
     public fun preserve(transcript: Path, files: List<Path>): Unit = OriginalOperations.mutex.withLock {
+        if (!keeping.now()) return@withLock
         openLock().use { channel ->
             channel.lock().use {
                 val project = transcript.toAbsolutePath().normalize().parent
@@ -74,6 +81,7 @@ public class TranscriptOriginals(
 
     /** An unchanged head copy still owns the existing original's lifetime; a new session stores nothing. */
     public fun rememberIfKept(transcript: Path) {
+        if (!keeping.now()) return
         try {
             if (Files.readAttributes(root, "basic:isDirectory", NOFOLLOW_LINKS)["isDirectory"] != true) {
                 throw IOException("Transcript originals root is not a directory")

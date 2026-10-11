@@ -55,7 +55,14 @@ internal class CodexCodeModeRegistry(
     private val store = if (writer == null) {
         CodexCodeModeStore(config.state, json, config.log, access = access, heap = heap)
     } else {
-        CodexCodeModeStore(config.state, json, config.log, writer = writer, access = access, heap = heap)
+        CodexCodeModeStore(
+            config.state,
+            json,
+            config.log,
+            writer = writer,
+            access = access,
+            heap = heap,
+        )
     }
     internal val records: MutableList<CodeModeRecord>
     private val history: CodeModeExpiredHistory

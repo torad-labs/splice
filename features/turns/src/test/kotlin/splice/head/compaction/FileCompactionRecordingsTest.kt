@@ -37,6 +37,24 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
     }
 
     @Test
+    fun `with keeping switched off no answer is parked, and the next retry finds none`() = runTest {
+        var on = false
+        val key = checkNotNull(CompactionReplay().key("sess-off", "{}"))
+        val parked = FileCompactionRecordings(
+            dir,
+            log = { lines += it },
+            now = WallClock { wallMs },
+            ttlMs = 60_000,
+            keeping = KeepingRecordings { on },
+        )
+        kept(CompactionReplay(parked), key)
+        assertTrue(!Files.exists(dir) || Files.list(dir).use { it.toList().isEmpty() }, "off keeps nothing new")
+        on = true
+        kept(CompactionReplay(parked), key)
+        assertEquals(1, Files.list(dir).use { it.toList().size }, "switched back on, the next answer is kept")
+    }
+
+    @Test
     fun `an answer kept by one replay is served whole by a new replay over the same directory, once`() = runTest {
         val key = checkNotNull(CompactionReplay().key("sess-1", "{}"))
         kept(CompactionReplay(store()), key)

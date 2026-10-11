@@ -81,6 +81,16 @@ public class SpliceConfig internal constructor(
 
     /** Live console switch for reading Claude Code's already-written redacted transcript (V4-354). */
     public val transcriptView: Boolean get() = bool(Knob.TRANSCRIPT_VIEW)
+
+    /** Whether a transcript's original is copied before a move to another model rewrites it. Read LIVE, per move. */
+    public val keepTranscriptCopies: Boolean get() = bool(Knob.KEEP_TRANSCRIPT_COPIES)
+
+    /** Whether a compaction's answer is parked for Claude Code's retry. Read LIVE, per save. */
+    public val keepCompactionSummaries: Boolean get() = bool(Knob.KEEP_COMPACTION_SUMMARIES)
+
+    /** Whether code mode's journal reaches the disk. Off keeps it in memory only. Read LIVE, per save. */
+    public val keepCodeModeWork: Boolean get() = bool(Knob.KEEP_CODE_MODE_WORK)
+
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()
     public val upstreamTimeoutMs: Long get() = long(Knob.UPSTREAM_TIMEOUT_MS)
     public val firstByteTimeoutMs: Long get() = long(Knob.FIRST_BYTE_TIMEOUT_MS)

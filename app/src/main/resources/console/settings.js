@@ -116,9 +116,9 @@ const DATA_ROWS = [
   { id: "trace", g: "text", name: "Prompts and answers", unit: "requests", yours: true, door: ["requests.html", "Requests"] },
   // the stores a person's prompts sit in that no feature runs without: counted and cleared by /api/kept/stores, each naming the
   // feature that needs it in place of a switch, with the lifetime splice gives it (the history window, or its own)
-  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", needs: "Needed to resume on another model" },
-  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", store: "compaction_summaries", needs: "Needed to retry a compaction", life: "2 hours" },
-  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", needs: "Needed by code mode", life: "1 day unused" },
+  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", knob: "keepTranscriptCopies", off: "Continue on becomes one-way" },
+  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", yours: true, store: "compaction_summaries", knob: "keepCompactionSummaries", off: "Retried compactions cost again", life: "2 hours" },
+  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", yours: true, knob: "keepCodeModeWork", off: "A restart ends running scripts", life: "1 day unused" },
   { id: "reasoning", g: "text", name: "Reasoning between requests", own: true, door: ["sessions.html", "Sessions"] },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"] },
@@ -189,8 +189,8 @@ function dataRow(r) {
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   return drow({
     name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep,
-    sw: r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
-    more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
+    sw: r.knob ? `${ctlHtml(KNOB[r.knob], val(r.knob))}${saidHtml(r.knob)}` : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
+    more: r.knob && !val(r.knob) ? `<div class="dcost">${esc(r.off)}</div>` : on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
 }
@@ -228,7 +228,7 @@ const silenceOf = (row, tier) => {
   return at && gap >= tier && (firstByteAt == null || at >= firstByteAt) ? gap : 0;
 };
 /** The words the daemon cannot filter exactly: what else a row must say, given its command's silence tier. */
-const ROW_CHECK = { overloaded: (row) => row.cause !== "UPSTREAM_TRUNCATED", cutoff: (row) => row.cause === "UPSTREAM_TRUNCATED", waited: (row, tier) => silenceOf(row, tier) > 0, silentresume: (row) => !!row.stall_ms, silentover: (row) => !!row.stall_ms };
+const ROW_CHECK = { gaveup: (row) => WHY.gaveup.has({ outcome: row.outcome, cause: row.cause }), overloaded: (row) => row.cause !== "UPSTREAM_TRUNCATED" && row.cause !== "UPSTREAM_STALLED", cutoff: (row) => row.cause === "UPSTREAM_TRUNCATED", waited: (row, tier) => silenceOf(row, tier) > 0, silentresume: (row) => !!row.stall_ms, silentover: (row) => !!row.stall_ms };
 async function countWeek(head, why, from) {
   const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
   if (why === "waited") { if (!Number.isFinite(tier)) return { head, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
@@ -258,7 +258,7 @@ async function readPeak(head) {
 async function readWeek() {
   ui.peaks = await Promise.all(ui.headRows.map(readPeak));
   const day = startOfToday(), week = Date.now() - 7 * DAY;
-  const plan = [["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week], ["overloaded", day], ["cutoff", day], ["queued", day], ["failed", week]];
+  const plan = [["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week], ["overloaded", day], ["cutoff", day], ["queued", day]];
   ui.week = {};
   const results = await Promise.all(plan.map(([why, from]) => Promise.all(ui.headRows.map((h) => countWeek(h, why, from)))));
   plan.forEach(([why], i) => { ui.week[why] = results[i]; });
@@ -317,12 +317,11 @@ function peaksHtml() {
   const doors = rows.filter((p) => p.queued).length;
   return `<section class="tally"><h3>Today</h3><div class="card peaks">${doors > 1 ? `<header><a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued" })}">${SV.open}<span>Waited in line</span><b>${fmt(waited)}</b><em>Open on Requests</em></a></header>` : ""}${rows.map(row).join("")}</div></section>`;
 }
-const busyHtml = () => `<section class="tally"><h3>Who refused</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}`
+const busyHtml = () => `<section class="tally"><h3>Providers</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}${figHtml({ why: "cutoff", what: "Cut off today" })}`
   + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`
   + peaksHtml()
   + `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
-  + (keysOf("busy").includes("maxRequestBytes") ? `<section class="sub"><h3>Too large</h3>${form(["maxRequestBytes"])}</section>` : "")
-  + `<div class="doors">${figHtml({ why: "cutoff", what: "Cut off today", cmds: false })}${figHtml({ why: "failed", what: "Failed this week", cmds: false })}</div>`;
+  + (keysOf("busy").includes("maxRequestBytes") ? `<section class="sub"><h3>Too large</h3>${form(["maxRequestBytes"])}</section>` : "");
 
 // ---------- Version ----------
 // Running, Newest and Go back, from GET /api/upgrade. The route never fetches, so Newest is a version only when a check

@@ -31,6 +31,7 @@ import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
 import splice.head.compaction.FileCompactionRecordings
+import splice.head.compaction.KeepingRecordings
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
 import splice.head.usage.CredentialQuotaFiles
@@ -158,7 +159,7 @@ internal class ManagedHeadFactory(
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
         if (forwardClientAuth) primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
-        val server = serving.observedHead(ctx, wired, stores, forwardClientAuth, recordings(key))
+        val server = serving.observedHead(ctx, wired, stores, forwardClientAuth, recordings(ctx))
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
@@ -257,8 +258,12 @@ internal class ManagedHeadFactory(
 
     /** V4-216: the head's kept compaction answers. Not in [HeadStores]: only the head reads them, no
      *  control-plane adapter, so there is no second holder that must share the instance. */
-    private fun recordings(key: String): FileCompactionRecordings =
-        FileCompactionRecordings(statePaths.compactionRecordingsDir(key), log)
+    private fun recordings(ctx: ProviderBuild): FileCompactionRecordings =
+        FileCompactionRecordings(
+            statePaths.compactionRecordingsDir(ctx.key),
+            log,
+            keeping = KeepingRecordings { ctx.cfg.current().keepCompactionSummaries },
+        )
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a

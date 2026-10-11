@@ -142,12 +142,15 @@ names = [
     "ClientFrameEmitted",
     "ClientGone",
     "ConfigRepair",
+    "CodeModeJournaling",
     "ConsolePresence",
     "ContentReached",
+    "CopyingOriginals",
     "DaemonRestart",
     "DaemonSuccessor",
     "DaemonSupervised",
     "KeyPresenceProbe",
+    "KeepingRecordings",
     "ProgressLineOn",
     "SessionTranscriptViewEnabled",
     "StderrEcho",
@@ -180,6 +183,11 @@ would silently expose private conversation text or hide it despite the operator'
 TranscriptReadBudget (2026-10-04) asks whether this request has time left across every root and \
 metadata chunk, not whether private transcript viewing is enabled or a client has disconnected. \
 Swapping those roles could scan past the deadline, stop a healthy read, or bypass its view guard. \
+CopyingOriginals, KeepingRecordings and CodeModeJournaling (2026-10-11) are the three live prompt-store \
+switches: each is asked at the moment its writer is about to put the user's prompts on disk (a moved \
+transcript's original, a parked compaction answer, a code-mode journal save), and each answers the \
+same console choice for a different store. Swapping them would keep what the user stopped, or stop \
+what they kept. \
 StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
 until the daemon is up) is a logging decision read per line; read as any of the others it would either \
 re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \

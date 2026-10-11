@@ -215,6 +215,13 @@ public enum class Knob(
     // per-head TRACE below (on by default since the operator's 2026-09-28 ruling, off per head);
     // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
     TRANSCRIPT_VIEW("transcriptView", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+
+    // The two prompt stores that are splice's own to stop (Marcos, Oct 10: the user decides how much splice keeps). Both ON
+    // by default, both read LIVE by their writers, so a PATCH stops the next copy with no restart. Off keeps what is
+    // already held until Delete now.
+    KEEP_TRANSCRIPT_COPIES("keepTranscriptCopies", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+    KEEP_COMPACTION_SUMMARIES("keepCompactionSummaries", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+    KEEP_CODE_MODE_WORK("keepCodeModeWork", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
     UPSTREAM_RETRIES(
         "upstreamRetries",
         KnobKind.NUMBER,

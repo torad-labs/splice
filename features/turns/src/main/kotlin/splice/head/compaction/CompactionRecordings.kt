@@ -45,6 +45,11 @@ public interface CompactionRecordings {
 
 public data class KeptAnswer(public val generation: String, public val frames: List<String>)
 
+/** Whether a finished answer is parked at all, asked at each save so the console switch acts on the next one. */
+public fun interface KeepingRecordings {
+    public fun now(): Boolean
+}
+
 /** One owner-only file per key under [dir], named by the key's hash (the key carries a
  *  client-supplied session id, which is never a path). [now] is wall time because the file outlives
  *  the process that wrote it; a file older than [ttlMs] is never served, and is swept at the head's
@@ -55,10 +60,12 @@ public class FileCompactionRecordings(
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ttlMs: Long = RECORDING_TTL_MS,
     private val heap: HeapReservations = JvmHeap.budget,
+    private val keeping: KeepingRecordings = KeepingRecordings { true },
 ) : CompactionRecordings {
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun save(key: String, generation: String, frames: List<String>) {
+        if (!keeping.now()) return
         Cancellables.runCatchingCancellable {
             SecureFile.ownerOnlyDirectory(dir)?.let { open -> log("[compaction] $dir is not owner-only: $open\n") }
             sweepExpired()

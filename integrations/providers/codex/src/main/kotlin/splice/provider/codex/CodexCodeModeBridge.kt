@@ -100,10 +100,20 @@ public data class CodeModeBridgeConfig(
     val cellLease: CodeModeCellLease = CodeModeCellLease(),
 )
 
+/** Asked at each code-mode save, so the console switch acts on the next one with no restart. */
+public fun interface CodeModeJournaling {
+    public fun now(): Boolean
+}
+
 /** V4-340: where a head keeps its code-mode records: one owner-only file per conversation in [dir]. [legacyFile]
  *  is the single file every daemon before V4-340 kept the whole head in: read once, on the first load, its
  *  conversations carried into [dir], and deleted. */
-public data class CodeModeStateLocation(val dir: Path, val legacyFile: Path)
+public data class CodeModeStateLocation(
+    val dir: Path,
+    val legacyFile: Path,
+    /** Whether a save reaches the disk, asked at each save: off keeps the journal in memory only. */
+    val journaling: CodeModeJournaling = CodeModeJournaling { true },
+)
 
 // why: how often a head's code-mode records are swept with no turn (V4-287). A record goes within
 // this long of its ttl, and a dead session's parked cell is reclaimed on the next sweep.

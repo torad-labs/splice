@@ -46,6 +46,7 @@ import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumeHookTarget
 import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.CopyingOriginals
 import splice.client.resume.originals.TranscriptOriginals
 import splice.client.wrap.WrappedHead
 import splice.configuration.topology.TopologyStale
@@ -213,7 +214,8 @@ internal class ControlPlane(
      *  the guard refuses to every other head. */
     private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
-        val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths))
+        val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
+        val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths, keeping = copying))
         val wrap = WrappedHead(home)
         val arm = ClaudeLoginWiring(
             statePaths,

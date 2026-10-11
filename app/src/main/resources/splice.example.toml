@@ -798,6 +798,13 @@ command = "claude-splice"
 #                                                           #     redacted conversation. The console switch sets
 #                                                           #     this false live; full request/response tracing
 #                                                           #     stays per-head and on by default (trace below).
+# keepTranscriptCopies = "true"                            # HOT, global: copy a conversation's original before a move to another
+#                                                           #     model rewrites it; false stops new copies, and "Continue on"
+#                                                           #     becomes one-way. Delete now clears the held ones.
+# keepCompactionSummaries = "true"                          # HOT, global: park a finished compaction answer for Claude Code's
+#                                                           #     retry; false parks none, and a retried compaction runs again.
+# keepCodeModeWork = "true"                                 # HOT, global: write code mode's journal to disk; false keeps it in
+#                                                           #     memory only, so a restart ends running scripts.
 #                                                           #     No env alias can override the console's off switch.
 # upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing (HOT, per request)
 # wireTap = "0"                                             # bodies; how many of this head's most recent upstream

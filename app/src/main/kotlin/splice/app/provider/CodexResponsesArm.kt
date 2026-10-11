@@ -25,6 +25,7 @@ import splice.dialect.responses.stream.LiveFoldConfig
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeCellLease
+import splice.provider.codex.CodeModeJournaling
 import splice.provider.codex.CodeModeOnlyModels
 import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
@@ -157,6 +158,7 @@ internal class CodexResponsesArm(
                     state = CodeModeStateLocation(
                         dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
                         legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
+                        journaling = CodeModeJournaling { ctx.cfg.current().keepCodeModeWork },
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                     cellLease = CodeModeCellLease(sessionAlive = sessionAlive),

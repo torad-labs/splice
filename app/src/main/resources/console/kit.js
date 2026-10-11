@@ -211,8 +211,14 @@ function stallOf(turn, reanchorMs, endedBy) {
   }
   const idle = turn.idle_ms ?? 0;
   if (turn.retries > 0 && !turn.seen_output) return { kind: "retries", n: turn.retries, at };
-  if (reanchorMs && (turn.resumes ?? 0) < MAX_CONTINUATIONS && idle >= RESUME_SHOWN_MS) return { kind: "silent", ms: idle, resumeMs: Math.max(0, reanchorMs - idle), at };
-  if (idle >= STALL_SHOWN_MS) return { kind: "silent", ms: idle, at };
+  // will_resume is the wire saying whether splice would re-send this round now; a round that already emitted a tool
+  // call never is, whatever the head's tier. Only an explicit false says so: a daemon that does not publish it, or a
+  // turn it has not decided, says nothing, and the card stays bare Stalled (fin, Oct 10).
+  // Before the first byte a refusal or a dropped connection is retried, not resumed, so the fact speaks only once the
+  // provider has begun answering.
+  const wontResume = turn.seen_output === true && turn.will_resume === false;
+  if (reanchorMs && !wontResume && (turn.resumes ?? 0) < MAX_CONTINUATIONS && idle >= RESUME_SHOWN_MS) return { kind: "silent", ms: idle, resumeMs: Math.max(0, reanchorMs - idle), at };
+  if (idle >= STALL_SHOWN_MS) return { kind: "silent", ms: idle, wontResume, at };
   return null;
 }
 
@@ -229,7 +235,8 @@ function look(s) {
     paneDetail: `<span class="detail resumes" data-resume="${s.id}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>` };
   if (stalled(s)) {
     const k = s.stall.kind, lamp = k === "silent" ? ICON.flat : ICON[k];
-    const detail = k === "silent" ? `<span class="detail" data-silent="${s.id}">${ICON.watch(Math.floor(s.stall.ms / 1000))}<span>${counter(s.stall.ms)}</span></span>`
+    // "Won't resume" ends the line Stalled begins, in its colour and with no glyph of its own (fin, hitstop 131ad54)
+    const detail = k === "silent" ? `<span class="detail" data-silent="${s.id}">${ICON.watch(Math.floor(s.stall.ms / 1000))}<span>${counter(s.stall.ms)}</span></span>${s.stall.wontResume ? `<span class="detail noresume">Won't resume</span>` : ""}`
       : k === "retries" ? `<span class="detail">${s.stall.n} ${s.stall.n === 1 ? "retry" : "retries"}</span>`
       : k === "limit" ? `${s.stall.acct ? acctPlanHtml(s.stall.acct, s.stall.plan) : ""}${s.stall.until ? `<span class="detail">Resets ${backWord(s.stall.until)}</span>` : ""}` : "";
     // a plan's limit ended the turn; nothing stalled, so the word is Accounts' own (fin): lock, At limit, the plan, its reset

@@ -19,6 +19,7 @@ import splice.core.config.ConfigService
 import splice.core.perf.KeptHistory
 import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
+import splice.head.perf.TurnTallies
 import splice.models.roster.DeclaredHeads
 import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.alerts.AlertRoutes
@@ -44,6 +45,8 @@ internal class UsageMount(
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
+    // The turn rows each perf file held when last counted, kept across requests so a count reads only what was appended.
+    private val turnTallies = TurnTallies()
     private val liveTotals = heads.mapNotNull { (key, managed) ->
         (managed.sources.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
     }.toMap()
@@ -88,12 +91,14 @@ internal class UsageMount(
         }
         route.get("/api/kept/turns") {
             guard.guarded(call) {
-                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics).kept() }.send(call)
+                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, tallies = turnTallies).kept() }.send(call)
             }
         }
         route.delete("/api/kept/turns") {
             guard.guarded(call) {
-                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
+                withContext(fileIo) {
+                    TurnKeptRoutes(ports.turnStatistics, liveTotals, tallies = turnTallies).delete()
+                }.send(call)
             }
         }
         history.register(route)

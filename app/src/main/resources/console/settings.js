@@ -47,38 +47,67 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
-const ui = { said: {}, capture: {}, week: null, ver: null, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
+// A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "splice did not answer".
+const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, err: null };
+const READING = `<span class="none">Reading…</span>`;
+let drawLater = 0;
+/** Many answers arrive in a burst; one drawing a moment later takes them all. */
+/** The per-command reads and the week's counts are over a hundred requests, and a browser sends six at a time to one address: left to
+ *  queue they hold every other call (a setting being saved, another page) behind them. Four at a time leaves the rest of the six free. */
+const BULK = 4;
+const bulk = { running: 0, waiting: [] };
+const bulkGet = (path) => new Promise((resolve) => {
+  const start = () => {
+    bulk.running += 1;
+    API.get(path).then(resolve).finally(() => { bulk.running -= 1; bulk.waiting.shift()?.(); });
+  };
+  if (bulk.running < BULK) start(); else bulk.waiting.push(start);
+});
+const later = () => { if (!drawLater) drawLater = setTimeout(() => { drawLater = 0; render(); }, 60); };
 
 // ---------- what the daemon keeps ----------
 // One read per store; a store whose route answers with an error is drawn as unreadable, never as empty.
-async function readKept() {
-  const [hist, turns, edges, labels, heads, models, upgrade, upgradeRun] = await Promise.all([
-    API.get("/api/history"), API.get("/api/kept/turns"), API.get("/api/kept/edges"), API.get("/api/kept/labels"), API.get("/api/heads"), API.get("/api/models"),
-    API.get("/api/upgrade"), API.get("/api/upgrade/run"),
-  ]);
-  ui.hist = hist.ok ? hist.body : null;
-  const stores = await API.get("/api/kept/stores");
-  ui.stores = stores.ok ? stores.body.stores : null;
-  ui.kept = { turns: turns.ok ? turns.body : null, edges: edges.ok ? edges.body : null, labels: labels.ok ? labels.body : null };
+/** Each store, each command's own read and each week's count start together and draw as they answer, so the cards are
+ *  on the page at once and a slow store only keeps its own value waiting. */
+function readKept() {
+  const get = async (path, then) => { then(await API.get(path)); later(); };
+  get("/api/history", (r) => { ui.hist = r.ok ? r.body : null; });
+  get("/api/kept/turns", (r) => { ui.kept.turns = r.ok ? r.body : null; });
+  get("/api/kept/edges", (r) => { ui.kept.edges = r.ok ? r.body : null; });
+  get("/api/kept/labels", (r) => { ui.kept.labels = r.ok ? r.body : null; });
+  get("/api/kept/stores", (r) => { ui.stores = r.ok ? r.body.stores : null; });
+  // a rollback already running (started elsewhere) is picked up once the version is known: it names the release it goes back to
+  get("/api/upgrade", (r) => { ui.ver = r.ok ? r.body : null; }).then(async () => {
+    const upgradeRun = await API.get("/api/upgrade/run");
+    if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = { state: "running", to: ui.ver?.rollback_target, output: upgradeRun.body.run.output || [] }; pollRun(ui.run.to); }
+  });
+  readWeek();
+  readHeads();
+}
+/** The commands and their models: two quick reads the first drawing waits for, because every setting names them. */
+async function readBase() {
+  const [heads, models] = await Promise.all([API.get("/api/heads"), API.get("/api/models")]);
   ui.heads = (heads.body?.heads || []).map((h) => h.key);
   ui.headRows = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
-  ui.ver = upgrade.ok ? upgrade.body : null;
   // the commands whose provider splice resumes mid-answer report a finite resume tier on their gate
   KNOB.stallReanchorMs.only = (heads.body?.heads || []).filter((h) => typeof h.gate?.stall_reanchor_ms === "number").map((h) => h.key);
-  if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = { state: "running", to: ui.ver?.rollback_target, output: upgradeRun.body.run.output || [] }; pollRun(ui.run.to); }
   ks.cmds = ui.heads;
   ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
   // the fold set is ChatGPT models, so only the commands that reach that provider offer theirs
   ks.models = [...new Map((models.body?.heads || []).filter((r) => r.provider === "codex").flatMap((r) => r.models || []).map((m) => [m.id, { id: m.id, label: m.label || m.id }])).values()];
-  // the bodies each tapped command holds in memory now, counted and never read out (GET /api/heads/{head}/wire)
+}
+/** What each command keeps: the bodies its tap holds in memory (GET /api/heads/{head}/wire), what its trace holds and whether it is saving. */
+async function readHeads() {
   const tapped = ui.heads.filter((h) => tapOf(h) > 0);
-  const wires = await Promise.all(tapped.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/wire`)));
+  const [wires, traces, caps] = await Promise.all([
+    Promise.all(tapped.map((h) => bulkGet(`/api/heads/${encodeURIComponent(h)}/wire`))),
+    Promise.all(ui.heads.map((h) => bulkGet(`/api/heads/${encodeURIComponent(h)}/trace/kept`))),
+    Promise.all(ui.heads.map((h) => bulkGet(`/api/heads/${encodeURIComponent(h)}/capture`))),
+  ]);
   ui.held = Object.fromEntries(tapped.map((h, i) => [h, wires[i].ok ? (wires[i].body?.records ?? []).length : null]));
-  const traces = await Promise.all(ui.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/trace/kept`)));
-  const caps = await Promise.all(ui.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/capture`)));
   ui.capture = Object.fromEntries(ui.heads.map((h, i) => [h, caps[i].ok && typeof caps[i].body?.enabled === "boolean" ? caps[i].body.enabled : null]));
   ui.kept.trace = traces.every((t) => t.ok) && traces.length ? traces.map((t) => t.body) : null;
-  await readWeek();
+  later();
 }
 const mbWord = (b) => { const mb = b / MiB; return mb >= 1000 ? `${+(mb / 1024).toFixed(1)} GB` : mb >= 1 ? `${+mb.toFixed(1)} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1024))} KB` : "0 B"; };
 const dateWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -129,15 +158,21 @@ const EP = { trace: null, hist: "/api/kept/turns", edges: "/api/kept/edges", lab
 const storeOf = (r) => r.store && ui.stores && ui.stores[r.store];
 // what a store holds now: rows, bytes, since when. null when its route would not answer.
 function heldOf(r) {
-  if (r.id === "hist") return ui.hist && { n: ui.hist.held.turns, bytes: ui.hist.held.bytes, since: ui.hist.held.oldest_epoch_ms };
+  if (r.id === "hist") return ui.hist === undefined ? undefined : ui.hist && { n: ui.hist.held.turns, bytes: ui.hist.held.bytes, since: ui.hist.held.oldest_epoch_ms };
   if (r.id === "trace") {
     const t = ui.kept.trace;
-    return t && { n: t.reduce((s, x) => s + x.records, 0), bytes: t.reduce((s, x) => s + x.bytes, 0), since: null };
+    return t === undefined ? undefined : t && { n: t.reduce((s, x) => s + x.records, 0), bytes: t.reduce((s, x) => s + x.bytes, 0), since: null };
   }
-  if (r.store) { const s = storeOf(r); return s && !s.error ? { n: s.files, bytes: s.bytes, since: s.oldest_epoch_ms ?? null } : null; }
+  if (r.store) {
+    if (ui.stores === undefined) return undefined;
+    const s = storeOf(r);
+    return s && !s.error ? { n: s.files, bytes: s.bytes, since: s.oldest_epoch_ms ?? null } : null;
+  }
   const k = ui.kept[r.id];
-  return k && { n: k.rows, bytes: k.bytes, since: k.oldest ? Date.parse(`${k.oldest}T00:00:00`) : null };
+  return k === undefined ? undefined : k && { n: k.rows, bytes: k.bytes, since: k.oldest ? Date.parse(`${k.oldest}T00:00:00`) : null };
 }
+/** A store whose count has not come back yet (a store with no route to count it is never waiting). */
+const stillReading = (r) => !(r.noRoute || r.own) && heldOf(r) === undefined;
 const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
   ? `<span class="armed"><button class="act danger small" data-act="delete" data-id="${id}">Delete ${fmt(n)} ${unit}</button><button class="act quiet small" data-act="disarm">Cancel</button></span>`
   : `<button class="act quiet small" data-act="arm" data-id="${id}">Delete now</button>`);
@@ -161,6 +196,7 @@ function histBar(h) {
     + `${days}<span class="hgone" style="--w:${at}%"></span><b class="hfreed" style="--w:${at}%"><span>${mbWord(h.cut.bytes)}</span></b>${tick}</div><span class="hend">Today</span></div>`;
 }
 function histRow(r) {
+  if (ui.hist === undefined) return drow({ name: r.name, door: r.door, amount: READING });
   if (!ui.hist) return drow({ name: r.name, door: r.door, amount: unreadable });
   const a = ui.ask, h = a && a.h ? a.h : ui.hist, x = heldOf(r), id = "del:hist";
   const month = ui.hist.rate_bytes_per_month;
@@ -184,6 +220,7 @@ function dataRow(r) {
     return drow({ name: r.name, yours: r.yours, amount: `<span class="none">Not counted</span>`, keep: "", sw: r.always ? ALWAYS : "" }); // a store the daemon has no off switch for
   }
   const x = heldOf(r), id = `del:${r.id}`;
+  if (x === undefined) return drow({ name: r.name, yours: r.yours, door: r.door, amount: READING });
   if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
   const keep = (r.id === "edges" || r.id === "trace" || r.id === "originals") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
@@ -205,12 +242,12 @@ function dataHtml() {
   // offers nothing (the tap is restart-only and has no control here), so it is not drawn at all (fin, Oct 11).
   const memory = taps.length || heldN ? drow({
     name: "Last requests, in memory", yours: true,
-    amount: taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<b>${fmt(heldN)}</b> ${heldN === 1 ? "request" : "requests"}` : `<span class="none">Nothing held</span>`,
+    amount: taps.some((h) => ui.held[h] === undefined) ? READING : taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<b>${fmt(heldN)}</b> ${heldN === 1 ? "request" : "requests"}` : `<span class="none">Nothing held</span>`,
     keep: `<span class="taps">${taps.map((h) => `<span class="tap">${cmdChip(h)}<span class="fixed">Last ${tapOf(h)}</span></span>`).join("")}</span>`,
     sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
   }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
-  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}</span></div>`;
+  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading…" : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`}</span></div>`;
   const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;
   const rows = (g) => DATA_ROWS.filter((r) => r.g === g).map(dataRow).join("");
   return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
@@ -238,7 +275,7 @@ async function countWeek(head, why, from) {
   const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
   if (why === "waited") { if (!Number.isFinite(tier)) return { head, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
   const exact = !ROW_CHECK[why];
-  const res = await API.get(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(from), time_zone: ZONE, n: String(exact ? 1 : MAX_ROWS), local: "0", ...ask })}`);
+  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(from), time_zone: ZONE, n: String(exact ? 1 : MAX_ROWS), local: "0", ...ask })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
   if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
   const rows = exact ? (answer.rows || []) : (answer.rows || []).filter((r) => ROW_CHECK[why](r, tier));
@@ -250,7 +287,7 @@ async function countWeek(head, why, from) {
  *  end minus its time, plus its wait in line) to its end. A read at the cap is not a read of the whole day, so it
  *  claims no peak. */
 async function readPeak(head) {
-  const res = await API.get(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: String(MAX_ROWS), local: "0" })}`);
+  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: String(MAX_ROWS), local: "0" })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
   if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
   const rows = answer.rows || [];
@@ -260,22 +297,22 @@ async function readPeak(head) {
   for (const [t, d] of events) { n += d; if (n > peak) { peak = n; at = t; } }
   return { head, peak, at, n: rows.length, queued: rows.filter((r) => r.admit_wait_ms).length };
 }
-async function readWeek() {
-  ui.peaks = await Promise.all(ui.headRows.map(readPeak));
+function readWeek() {
   const day = startOfToday(), week = Date.now() - 7 * DAY;
-  const plan = [["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week], ["overloaded", day], ["cutoff", day], ["queued", day]];
-  ui.week = {};
-  const results = await Promise.all(plan.map(([why, from]) => Promise.all(ui.headRows.map((h) => countWeek(h, why, from)))));
-  plan.forEach(([why], i) => { ui.week[why] = results[i]; });
+  const plan = [["overloaded", day], ["cutoff", day], ["queued", day], ["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week]];
+  Promise.all(ui.headRows.map(readPeak)).then((peaks) => { ui.peaks = peaks; later(); });
+  plan.forEach(([why, from]) => Promise.all(ui.headRows.map((h) => countWeek(h, why, from))).then((counts) => { ui.week[why] = counts; later(); }));
 }
+const weekReading = (...words) => words.some((why) => ui.week[why] === undefined);
 /** A word's figure across every command: the total, or null when any command's read did not answer. */
-const weekTotal = (why) => { const per = ui.week?.[why]; return per && per.every((p) => !p.err) ? per.reduce((s, p) => s + p.n, 0) : null; };
+const weekTotal = (why) => { const per = ui.week[why]; return per && per.every((p) => !p.err) ? per.reduce((s, p) => s + p.n, 0) : null; };
 const doorTo = (url, what, tail, chip) => `<a class="door" href="${url}">${SV.open}<span>${what}</span>${tail}${chip ? cmdChip(chip) : ""}<em>Open it</em></a>`;
 const clockOf = (ts) => clock(new Date(ts));
 const msLong = (ms) => (ms >= MIN ? `${Math.floor(ms / MIN)} min${ms % MIN ? ` ${Math.round((ms % MIN) / SEC)} s` : ""}` : `${Math.round(ms / SEC)} s`);
 /** One figure: how many, opening them all on Requests, then each command's share; a count splice could not read says so. */
 function figHtml({ why, what, door, cmds = true }) {
-  const per = ui.week?.[why] ?? [], total = weekTotal(why), from = why === "overloaded" || why === "cutoff" || why === "queued" ? { from: String(startOfToday()) } : { win: "7d" };
+  if (weekReading(why)) return `<div class="fig3 none"><span class="big">…</span><span class="what">${esc(what)}</span><span class="state">Reading</span></div>`;
+  const per = ui.week[why] ?? [], total = weekTotal(why), from = why === "overloaded" || why === "cutoff" || why === "queued" ? { from: String(startOfToday()) } : { win: "7d" };
   if (total === null) return `<div class="fig3 none"><span class="big">?</span><span class="what">${esc(what)}</span><span class="state limit">${esc(per.find((p) => p.err)?.err ?? "splice did not answer")}</span></div>`;
   if (!total) return `<div class="fig3 none"><span class="big">0</span><span class="what">${esc(what)}</span></div>`;
   const ask = why === "failed" ? { outcome: "fail" } : { why };
@@ -307,7 +344,8 @@ const silentHtml = () => tallyHtml("This week", [
 ]) + `<section class="sub">${form(keysOf("silent"), true)}</section>`;
 const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
 function peaksHtml() {
-  if (!ui.peaks?.length) return "";
+  if (ui.peaks === undefined) return `<section class="tally"><h3>Today</h3><div class="card peaks">${READING}</div></section>`;
+  if (!ui.peaks.length) return "";
   const rows = [...ui.peaks].sort((a, b) => (b.peak ?? -1) - (a.peak ?? -1));
   const row = (p) => {
     const key = p.head.key, lim = limitOf(key);
@@ -335,6 +373,7 @@ const RELEASES = "https://github.com/torad-labs/splice/releases";
 const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" };
 function versionHtml() {
   const v = ui.ver;
+  if (v === undefined) return `<span class="state">Reading…</span>`;
   if (!v) return `<span class="state limit">splice did not answer</span>`;
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
   const rows = `<div class="form vform"><div class="lbl">Running</div><div class="ctl"><b class="v">${esc(v.installed)}</b></div>`
@@ -376,17 +415,20 @@ const PANES = {
 
 // ---------- the rail ----------
 function summary(id) {
+  if (id === "silent" && weekReading("restarted", "gaveup", "waited")) return ["Reading…"];
+  if (id === "busy" && weekReading("overloaded", "queued")) return ["Reading…"];
   if (id === "silent") {
     const early = ["restarted", "gaveup"].map(weekTotal), waited = weekTotal("waited");
     return early.includes(null) || waited === null ? [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`]
       : [`${early[0] + early[1]} ended early this week`, `${waited} waited out`];
   }
-  if (id === "version") return [ui.ver ? ui.ver.installed : "Not read"];
+  if (id === "version") return [ui.ver === undefined ? "Reading…" : ui.ver ? ui.ver.installed : "Not read"];
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
   if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${weekTotal("overloaded")} overloaded today`, `${weekTotal("queued")} waited in line`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
+  if (DATA_ROWS.some(stillReading)) return ["Reading…"];
   const h = DATA_ROWS.filter((r) => !(r.noRoute || r.own)).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute || r.own) ? "counted" : "kept"; // a total that leaves a store out says counted
   return h.some((x) => x === null) ? ["Some stores did not answer"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
 }
@@ -469,8 +511,11 @@ async function remove(id) {
 }
 async function refresh() {
   const err = await KNOBS.load();
-  if (err) ui.err = err; else { ui.err = null; await readKept(); }
-  render();
+  if (err) { ui.err = err; render(); return; }
+  ui.err = null;
+  await readBase();
+  render(); // the cards and every setting draw now; what the daemon keeps and counts fills in as each read answers
+  readKept();
 }
 
 KNOBS.wire(root, render);

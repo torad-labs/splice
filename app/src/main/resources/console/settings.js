@@ -41,13 +41,13 @@ const topicOf = (key) => KNOB[key].home || TOPICS.find((x) => x.keys && x.keys.i
 const liveKnobs = () => Object.values(KNOB)
   .filter((k) => !needsRestart(k.key) && shownKnob(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 // the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
-const shownKnob = (key) => key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off";
+const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0);
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
 const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
-const ui = { week: null, ver: null, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
+const ui = { said: {}, capture: {}, week: null, ver: null, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
 
 // ---------- what the daemon keeps ----------
 // One read per store; a store whose route answers with an error is drawn as unreadable, never as empty.
@@ -61,6 +61,8 @@ async function readKept() {
   ui.heads = (heads.body?.heads || []).map((h) => h.key);
   ui.headRows = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
   ui.ver = upgrade.ok ? upgrade.body : null;
+  // the commands whose provider splice resumes mid-answer report a finite resume tier on their gate
+  KNOB.stallReanchorMs.only = (heads.body?.heads || []).filter((h) => typeof h.gate?.stall_reanchor_ms === "number").map((h) => h.key);
   if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = { state: "running", to: ui.ver?.rollback_target, output: upgradeRun.body.run.output || [] }; pollRun(ui.run.to); }
   ks.cmds = ui.heads;
   ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
@@ -71,6 +73,8 @@ async function readKept() {
   const wires = await Promise.all(tapped.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/wire`)));
   ui.held = Object.fromEntries(tapped.map((h, i) => [h, wires[i].ok ? (wires[i].body?.records ?? []).length : null]));
   const traces = await Promise.all(ui.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/trace/kept`)));
+  const caps = await Promise.all(ui.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/capture`)));
+  ui.capture = Object.fromEntries(ui.heads.map((h, i) => [h, caps[i].ok && typeof caps[i].body?.enabled === "boolean" ? caps[i].body.enabled : null]));
   ui.kept.trace = traces.every((t) => t.ok) && traces.length ? traces.map((t) => t.body) : null;
   await readWeek();
 }
@@ -100,7 +104,9 @@ const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(k
 
 // the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
 const tapOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.wireTap) || 0;
-const traceOn = (head) => ks.cfg?.layers?.perHead?.[head]?.trace !== false;
+// whether a command is saving prompts and answers NOW: its capture switch (GET /api/heads/{head}/capture), which the daemon
+// applies on the command's next request; the setting it booted with is only the fallback when that route did not answer
+const traceOn = (head) => ui.capture[head] ?? ks.cfg?.layers?.perHead?.[head]?.trace !== false;
 
 // ---------- Your data ----------
 // Each store, what it holds, how long, and its Delete now. A store with no route to count or delete it says so.
@@ -173,7 +179,7 @@ function dataRow(r) {
   return drow({
     name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep,
     sw: on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
-    more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdset">${ui.heads.map((h) => `${cmdChip(h)}<span class="fixed quiet">${traceOn(h) ? "Saved" : "Not saved"}</span>`).join("")}</div></div>` : "",
+    more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
 }
@@ -416,6 +422,16 @@ async function shorten() {
   if (r.ok) { ks.said.historyRetentionDays = "Applied"; delete ks.bad.historyRetentionDays; } else { ks.bad.historyRetentionDays = "Not saved"; delete ks.said.historyRetentionDays; }
   await refresh();
 }
+/** One command's prompt saving, on or off: the daemon takes it on that command's next request, and the row says so. */
+async function setCapture(head, on) {
+  const id = `capture@${head}`;
+  delete ui.bad[id];
+  const res = await API.put(`/api/heads/${encodeURIComponent(head)}/capture`, { enabled: on });
+  if (!res.ok) { ui.bad[id] = true; ui.said[id] = "Not saved"; render(); return; }
+  ui.capture[head] = on;
+  ui.said[id] = res.body?.restart_required ? "Saves after splice restarts" : "Applied";
+  render();
+}
 async function remove(id) {
   const key = id.slice(4), bad = () => { ui.bad[id] = "Not deleted"; };
   const paths = key === "trace" ? ui.heads.map((h) => `/api/heads/${encodeURIComponent(h)}/trace/kept`) : [EP[key]];
@@ -444,6 +460,7 @@ document.addEventListener("click", (e) => {
     case "close": ui.shown = false; break;
     case "clear": ui.q = ""; document.getElementById("q").value = ""; break;
     case "again": refresh(); return;
+    case "capture": setCapture(d.head, d.v === "true"); return;
     case "saving": ui.saving = ui.saving === "trace" ? null : "trace"; break;
     case "arm": ui.armed = d.id; delete ui.bad[d.id]; break;
     case "disarm": ui.armed = null; break;

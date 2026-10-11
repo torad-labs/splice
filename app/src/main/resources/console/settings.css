@@ -72,7 +72,7 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 
 /* ---------- Your data: one row per thing splice saves ---------- */
 .dlist { display: flex; flex-direction: column; }
-.drow { display: grid; grid-template-columns: minmax(18rem, 1.3fr) minmax(14rem, 1fr) minmax(14rem, 1fr) 15rem 17rem; column-gap: 1.6rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
+.drow { display: grid; grid-template-columns: minmax(13rem, 1.3fr) minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(11rem, 15rem) max-content; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
 .drow.dhead { padding: 0 0 .8rem; border-top: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .drow.lit { box-shadow: inset .3rem 0 0 var(--key-light); padding-left: 1.1rem; margin-left: -1.1rem; }
 .dname { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
@@ -357,3 +357,10 @@ button.count:hover { color: var(--text); }
 
 /* the setting that answers a figure sits apart from its card */
 #st .tally > .fix { margin-top: 1.8rem; }
+
+/* one On/Off per command under "Prompts and answers": the chip, then its switch, then what the change did */
+.dmore .cmdsw { display: flex; flex-wrap: wrap; gap: .55rem 3rem; }
+.dmore .cs { display: flex; align-items: center; justify-content: flex-start; gap: .8rem; padding: .3rem 0; }
+.dmore .cs .said { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.dmore .cs .said.limit { color: var(--bad, #e0584a); }
+.dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }

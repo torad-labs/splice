@@ -37,7 +37,7 @@ const KNOBS = (() => {
     K("firstByteTimeoutMs", "Ask if a silent start is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "first word first byte" }),
     K("streamIdleMs", "Ask if a silent answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, also: "silence idle hang" }),
     // arms only on a provider measured to resume from a prefill (HeadBuildInputs.kt:168-171)
-    K("stallReanchorMs", "Resume a silent answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC, { cmd: true, home: "silent", also: "resume", only: ["claude-deepseek", "claude-kimi"] }),
+    K("stallReanchorMs", "Resume a silent answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC, { cmd: true, home: "silent", also: "resume", only: [] }),
     // admission per command (Knob.kt:186-194); attempts, the first included
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),

@@ -85,7 +85,11 @@ internal data class LostClient(val headKey: String, val log: LogSink, val sessio
 private object ModelAccounting {
     fun count(frame: String, perf: TurnPerf) {
         if (carriesContent(frame)) perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
-        if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+        // first_delta is when the MODEL's first token reached the client, so it cannot come before the first upstream
+        // byte. A delta written before that one is splice's own (code mode writes the live exec script to the client
+        // as a thinking block while the round is still being sent), and it is not the model's first token.
+        val upstreamBegan = perf.hasMark(PerfKeys.FIRST_BYTE)
+        if (frame.startsWith(DELTA_FRAME_PREFIX) && upstreamBegan) perf.markOnce(PerfKeys.FIRST_DELTA)
     }
 
     /** The structural turn-opening pair carries no content — see PerfKeys.CONTENT_FRAMES_OUT for

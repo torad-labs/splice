@@ -58,11 +58,37 @@ class ClientChannelProgressTest {
     @Test
     fun `the identical frame through the model's port does count, so the exclusion is the port and not the bytes`() {
         val perf = TurnPerf()
+        perf.markOnce(PerfKeys.FIRST_BYTE)
         channel().timedClientWrite(delta, perf, clock)
         val snap = perf.snapshot()
 
         assertEquals(1L, snap.counters[PerfKeys.CONTENT_FRAMES_OUT])
         assertTrue(PerfKeys.FIRST_DELTA in snap.marks)
+    }
+
+    @Test
+    fun `a delta splice writes before the first upstream byte is not the model's first token`() {
+        var now = 0L
+        val perf = TurnPerf(clock = ElapsedClock { now })
+        val channel = channel()
+
+        now = 120
+        channel.timedClientWrite(delta, perf, ElapsedClock { now })
+        assertFalse(
+            PerfKeys.FIRST_DELTA in perf.snapshot().marks,
+            "a delta ahead of any upstream byte is splice's own (code mode's live exec script), never the first token",
+        )
+        assertEquals(1L, perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT], "it still reached the client as output")
+
+        now = 529
+        perf.markOnce(PerfKeys.FIRST_BYTE)
+        now = 700
+        channel.timedClientWrite(delta, perf, ElapsedClock { now })
+        val marks = perf.snapshot().marks
+        assertTrue(
+            marks.getValue(PerfKeys.FIRST_DELTA) >= marks.getValue(PerfKeys.FIRST_BYTE),
+            "first_delta is the first delta after the first byte, never before it",
+        )
     }
 
     @Test

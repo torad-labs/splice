@@ -11,11 +11,10 @@ package splice.core.config
 
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
-// restartRequired. The genuinely hot knobs are maxInflight and maxQueued (both read via a live
-// lambda per admission, straight into InflightGate), requestReadTimeoutMs (read via one per client
-// body read, straight into RequestBodyReader) and maxRequestBytes (read via one per request, by the
-// head path and the ingress guard both). If you make a knob live-read, remove its restartRequired
-// flag in the same commit.
+// restartRequired. THE LIVE ONES, and the reader each is read through, are the whole list: maxInflight
+// and maxQueued (LiveLimit, per admission), requestReadTimeoutMs (RequestReadBudgetMs, per body read),
+// maxRequestBytes (RequestByteCap, per request, in the head path and the ingress guard both). Make a
+// knob live-read and it joins this line and loses its restartRequired flag, in that same commit.
 public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
@@ -407,17 +406,12 @@ public enum class Knob(
     // Why 32 MiB (V4-374): the Messages API's own limit (platform.claude.com/docs/en/api/errors,
     // "Request size limits"), so splice is never the tighter hop for an Anthropic-shaped request; at
     // 8 MiB a screenshot-heavy session died with the client's canned "Request too large (max 32MB)".
-    // LIVE since 2026-10-10: asked for at every request through a RequestByteCap, by the head path AND by the
-    // ingress guard in front of it, so a raised cap admits the next request and no restart is named.
     MAX_REQUEST_BYTES(
         "maxRequestBytes",
         KnobKind.NUMBER,
         listOf("SPLICE_MAX_REQUEST_BYTES"),
         typedDefault = KnobDefault.Count(32 * 1024 * 1024L),
     ),
-
-    // LIVE since 2026-10-10: every client body read asks for this knob's current value through the head's
-    // RequestReadBudgetMs, so a PATCH bounds the NEXT read and nothing here claims a restart.
     REQUEST_READ_TIMEOUT_MS(
         "requestReadTimeoutMs",
         KnobKind.NUMBER,

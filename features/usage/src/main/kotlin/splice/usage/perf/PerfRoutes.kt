@@ -70,6 +70,8 @@ private data class AskedWindow(
     val filter: TurnsFilter,
     val zone: ZoneId,
     val usage: Boolean = true,
+    /** Whether the answer also carries the most requests held at once over EVERY matching row, not the clamped newest. */
+    val peak: Boolean = false,
     /** More questions of the SAME window, each its own filter and clamp, answered from the one read of it. */
     val asks: List<AskedWindow> = emptyList(),
 )
@@ -179,7 +181,9 @@ public class PerfRoutes(
         val read = readFilter(params)
         val filter = (read as? TurnsFilterRead.Read)?.filter
         val window = rowsAsked(nText)?.let { n ->
-            filter?.let { AskedWindow(since = since, n = n, filter = it, zone = zone, usage = params["usage"] != "0") }
+            filter?.let {
+                AskedWindow(since, n, it, zone, usage = params["usage"] != "0", peak = params["peak"] == "1")
+            }
         }
         return AskRead(window, refusal(nText, read).takeIf { window == null })
     }
@@ -239,6 +243,8 @@ public class PerfRoutes(
             if (asked.usage) {
                 put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
             }
+            // Over every row of the window the filters matched, never the newest n: a busy command's day is more than n rows.
+            if (asked.peak) put("at_once", PerfPeak(matching).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
             // Each further question the request carried reads the window already in hand: the cost of a read is the
             // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).

@@ -310,19 +310,16 @@ async function countsWeek(head, plan, week) {
   asks.filter((a) => a.err).forEach((a) => byWhy.set(a.why, { head, err: a.err }));
   return byWhy;
 }
-/** The most requests a command held at once today, and when: each request held a slot from the start of its sending (its
- *  end minus its time, plus its wait in line) to its end. A read at the cap is not a read of the whole day, so it
- *  claims no peak. */
+/** The most requests a command held at once today, and when. The daemon works it out over every request of the day, each
+ *  holding a slot from the start of its sending to its end, so a busy command's day, which is more rows than one read
+ *  returns, still has its peak. */
 async function readPeak(head) {
-  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: String(MAX_ROWS), local: "0", usage: "0" })}`);
+  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: "1", local: "0", usage: "0", peak: "1" })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
   if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
-  const rows = answer.rows || [];
-  if (answer.truncated || (answer.count ?? 0) > rows.length) return { head, err: `Most at once not read: over ${fmt(MAX_ROWS)} requests today`, n: answer.count };
-  const events = rows.flatMap((r) => [[r.ts - (r.total ?? 0) + (r.admit_wait_ms || 0), 1], [r.ts, -1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  let n = 0, peak = 0, at = 0;
-  for (const [t, d] of events) { n += d; if (n > peak) { peak = n; at = t; } }
-  return { head, peak, at, n: rows.length, queued: rows.filter((r) => r.admit_wait_ms).length };
+  const held = answer.at_once;
+  if (!held) return { head, err: "Most at once not read" };
+  return { head, peak: held.peak, at: held.at, n: held.counted, queued: held.queued };
 }
 function readWeek() {
   const day = startOfToday(), week = Date.now() - 7 * DAY;

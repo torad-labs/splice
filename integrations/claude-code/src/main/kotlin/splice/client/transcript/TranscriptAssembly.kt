@@ -18,6 +18,10 @@ import splice.sessions.transcript.TranscriptRole
 private const val API_ERROR = "API error"
 private const val UNTYPED = "untyped"
 
+/** The model Claude Code files on a reply it wrote itself, such as the "No response requested." it adds on resuming a
+ *  turn nobody answered. Nobody said it, so it is counted, not shown; its real API errors are read before this. */
+private const val SYNTHETIC = "<synthetic>"
+
 /** How Claude Code opens the text it files when a turn is stopped or a tool call refused, whether or not it goes on to
  *  say "for tool use". */
 private const val INTERRUPTED_MARKER = "[Request interrupted by user"
@@ -83,6 +87,7 @@ internal class PageAssembly(
         val message = record[MESSAGE] as? JsonObject
         val ts = records.timestamp(record)
         return when {
+            message?.get("model") == JsonPrimitive(SYNTHETIC) -> count("synthetic")
             type == "assistant" && message != null -> assistant(message, messageId, ts)
             type == "user" && message != null -> user(record, message, ts)
             type == "system" -> system(record, ts)

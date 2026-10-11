@@ -136,6 +136,18 @@ class TranscriptReaderTest {
     }
 
     @Test
+    fun `a reply Claude Code wrote itself on resume is not shown, and its API errors still are`() {
+        val said = """{"type":"user","message":{"role":"user","content":"hold silent"}}"""
+        val synthetic = """{"type":"assistant","message":{"id":"msg_s","role":"assistant","model":"<synthetic>",""" +
+            """"content":[{"type":"text","text":"No response requested."}]}}"""
+        val error = """{"type":"assistant","isApiErrorMessage":true,"message":{"id":"msg_e","role":"assistant",""" +
+            """"model":"<synthetic>","content":[{"type":"text","text":"API Error: Request rejected (429)"}]}}"""
+        transcript(home.resolve(".claude"), listOf(said, synthetic, error))
+        val page = found(TranscriptReader().page(ID, listOf(home.resolve(".claude")), null, 100))
+        assertEquals(listOf("hold silent", "API Error: Request rejected (429)"), page.messages.map { it.text })
+    }
+
+    @Test
     fun `pages continue where the last one stopped and never split a message`() {
         transcript(home.resolve(".claude"))
         val reader = TranscriptReader()

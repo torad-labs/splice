@@ -6,7 +6,7 @@
 // (the week's turns, MCP servers, the version), join as each one is true end to end.
 "use strict";
 
-const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip } = KNOBS;
+const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needsRestart } = KNOBS;
 const SV = {
   open: G('<path d="M7 17L17 7M9 7h8v8"/>'),
   busy: G('<path d="M4 6h16M4 12h16M4 18h9"/><circle cx="18" cy="18" r="1.6"/>'),
@@ -22,7 +22,11 @@ const TOPICS = [
 ];
 const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
 const topicOf = (key) => KNOB[key].home || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
-const LIVE = new Set(["maxInflight", "maxQueued", "transcriptView", "historyRetentionDays"]); // the settings the daemon takes without a restart
+/** The settings this page offers: those with a job here that the daemon names as taken without a restart (GET
+ *  /api/config's restart_required_keys, Knob.kt), so a knob that turns live joins and one that turns boot-only leaves
+ *  with the daemon's own answer, never a list kept here. */
+const liveKnobs = () => Object.values(KNOB)
+  .filter((k) => !needsRestart(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 
 const ui = { open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
 
@@ -56,13 +60,13 @@ function hl(s) {
 }
 function found(id) {
   if (!words().length) return [];
-  const f = [...LIVE].map((k) => KNOB[k]).filter((k) => topicOf(k.key) === id && hits(knobHay(k))).map((k) => k.label);
+  const f = liveKnobs().filter((k) => topicOf(k.key) === id && hits(knobHay(k))).map((k) => k.label);
   if (id === "data") f.push(...DATA_ROWS.filter((r) => hits(r.name)).map((r) => r.name));
   if (!f.length && hits(jobHay(id))) f.push(TOPIC[id].name);
   return [...new Set(f)];
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
-const form = (keys) => `<div class="form">${keys.map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])) })).join("")}</div>`;
+const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])) })).join("")}</div>`;
 
 // ---------- Your data ----------
 // Each store, what it holds, how long, and its Delete now. A store with no route to count or delete it says so.

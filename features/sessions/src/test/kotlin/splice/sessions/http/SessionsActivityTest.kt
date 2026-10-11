@@ -184,6 +184,14 @@ class SessionsActivityTest {
     }
 
     @Test
+    fun `a sentence that leads into a dropped code block with a colon leaves with it`(@TempDir tmp: Path) {
+        val said = "The lamp check is ready. From the desk folder, run:\n```\nlamp --check\n```\n" +
+            "It needs nothing else.\nTwo notes follow.\nFirst:\n~~~\nnote one\n~~~\nThe colon in 10:30 stays."
+        val read = "The lamp check is ready. It needs nothing else. Two notes follow. The colon in 10:30 stays."
+        assertEquals(read, textOf(tmp, said))
+    }
+
+    @Test
     fun `a message that is only a code block has no line`(@TempDir tmp: Path) {
         val said = TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "```\nopen jar 51ab check\n```")
         assertEquals(JsonNull, row(tmp, LastSource(said))["last"])

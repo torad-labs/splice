@@ -17,8 +17,10 @@ internal object SessionActivity {
     // Markdown the card has no place to draw (splice-lead, Oct 11): a heading, bullet or quote mark at a line's start,
     // a link's target, and the marks around bold, italic and code. The words between the marks stay. A fenced code
     // block is code, never prose: the fence and all inside it leave the line, an unclosed one to the end (splice-lead,
-    // Oct 11: "the new daemon is healthy. open…" read a block's first word as the sentence's last).
+    // Oct 11: "the new daemon is healthy. open…" read a block's first word as the sentence's last), and so does the
+    // sentence that led into it with a colon, which would point at nothing ("From the repo root, type: It needs…").
     private val fenced = Regex("(?ms)^[ \\t]*(```|~~~).*?(?:^[ \\t]*\\1[^\\n]*$|\\z)")
+    private val sentenceEnd = Regex("[.!?](?=\\s)|\\n")
     private val lineMarks = Regex("(?m)^[ \\t]*(?:#{1,6}[ \\t]+|[-*+][ \\t]+|>[ \\t]+)+")
     private val itemMark = Regex("^[ \\t]*(?:#{1,6}|[-*+])[ \\t]+\\S")
     private val tableRule = Regex("\\|[ \\t:|-]*-[ \\t:|-]*")
@@ -87,10 +89,28 @@ internal object SessionActivity {
     /** What was said, with its markdown read rather than shown: a call's summary keeps its marks, where a star can be a
      *  glob. */
     private fun plain(said: String): String {
-        val unmarked = said.replace(fenced, "").lines().mapNotNull(::untabled)
+        val unmarked = unfenced(said).lines().mapNotNull(::untabled)
             .joinToString("\n", transform = ::stopped)
             .replace(lineMarks, "").replace(link, "$1").replace("`", "")
         return unmarked.replace(strong, "$2").replace(starred, "$1").replace(underscored, "$1")
+    }
+
+    /** What was said with its fenced code blocks gone, each with the sentence that introduced it with a colon. */
+    private fun unfenced(said: String): String = buildString {
+        var from = 0
+        for (block in fenced.findAll(said)) {
+            append(unled(said.substring(from, block.range.first)))
+            from = block.range.last + 1
+        }
+        append(said.substring(from))
+    }
+
+    /** The prose before a dropped block, less its last sentence when that sentence ends in a colon. */
+    private fun unled(before: String): String {
+        val text = before.trimEnd()
+        if (!text.endsWith(":")) return before
+        val start = sentenceEnd.findAll(text).lastOrNull()?.let { it.range.last + 1 } ?: 0
+        return text.substring(0, start) + "\n"
     }
 
     /** A table row reads as its cells, comma-joined, as one sentence; the row under a table's header that only draws

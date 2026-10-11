@@ -363,6 +363,33 @@ class SessionsConsoleRoutesTest {
     }
 
     @Test
+    fun `a card names the model a move put it on until a reply comes, then the model of that reply`() {
+        val transcripts = object : SessionTranscripts {
+            override fun tail(sessionId: String, roots: List<Path>, cwd: String?): SessionTail {
+                val at = if (sessionId == ALPHA) 1_000L else 3_000L
+                return SessionTail("claude-opus-5-5", TranscriptMessage(4, TranscriptRole.ASSISTANT, at, "a reply"))
+            }
+
+            override fun moves(sessionId: String): List<ModelMove> =
+                listOf(ModelMove(null, "claude-fable-5-1", "claude", 2_000L, "claude", "claude-opus-5-5"))
+
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+                error("a card never pages")
+
+            override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
+                SentTexts(null, emptyMap(), ids)
+        }
+        val dir = Files.createDirectories(tmp.resolve("sessions"))
+        Files.writeString(dir.resolve("11.json"), """{"pid":11,"sessionId":"$ALPHA","updatedAt":$NOW}""")
+        Files.writeString(dir.resolve("12.json"), """{"pid":12,"sessionId":"$BETA","updatedAt":$NOW}""")
+        val registry = SessionRegistry(dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true }, clock = { NOW })
+        val roots = TranscriptRoots(vanilla = tmp.resolve(".claude"))
+        val rows = rowsOf(SessionsRoutes(registry, transcripts, roots = roots))
+        assertEquals("claude-fable-5-1", rows.getValue(ALPHA)["model"]!!.jsonPrimitive.content, "moved, no reply since")
+        assertEquals("claude-opus-5-5", rows.getValue(BETA)["model"]!!.jsonPrimitive.content, "replied after its move")
+    }
+
+    @Test
     fun `the transcript page names each assistant message and where the session moved to another model`() {
         val reply = TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "hi", messageId = "m1")
         val transcripts = object : SessionTranscripts {

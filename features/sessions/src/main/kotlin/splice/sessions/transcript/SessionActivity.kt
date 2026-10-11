@@ -25,8 +25,8 @@ internal object SessionActivity {
         return json(sessionId?.let { source.last(it, roots, cwd) })
     }
 
-    /** The model that wrote the session's newest assistant message, or JSON null when the view is off or no model is
-     *  recorded. */
+    /** The model that wrote the session's newest assistant message, or the one a move since then put it on; JSON
+     *  null when the view is off or no model is recorded. */
     fun model(
         sessionId: String?,
         cwd: String?,
@@ -35,7 +35,11 @@ internal object SessionActivity {
         viewEnabled: SessionTranscriptViewEnabled,
     ): JsonElement {
         if (!viewEnabled()) return JsonNull
-        val model = sessionId?.let { source.tail(it, roots, cwd)?.model } ?: return JsonNull
+        val tail = sessionId?.let { source.tail(it, roots, cwd) }
+        // a move with no reply since names the model the session goes on with: the newest reply is still the old one
+        val moved = sessionId?.let { source.moves(it).lastOrNull() }
+            ?.takeIf { it.model.isNotBlank() && it.movedAt > (tail?.answered?.ts ?: 0L) }
+        val model = moved?.model ?: tail?.model ?: return JsonNull
         return JsonPrimitive(model)
     }
 

@@ -66,6 +66,18 @@ public class ModelMoves(private val dir: Path) {
         write(session, if (kept == null) all + move else all.dropLast(1) + kept)
     }
 
+    /** [session]'s move onto [command] did not come back, so the mark its launch wrote is dropped: the session went
+     *  on where it was, and a mark left standing would name the model it never reached ever after (Marlin, move
+     *  check 5). Only a launch's own mark from [since] on is dropped; a move that came back earlier is kept. */
+    public fun unmoved(session: String, command: String, since: Long): Unit = synchronized(this) {
+        if (!sessionIdShape.matches(session)) return
+        val all = of(session)
+        val launched = all.lastOrNull()?.takeIf {
+            it.fromCommand == null && it.command == command && it.movedAt >= since
+        } ?: return
+        write(session, all - launched)
+    }
+
     private fun write(sessionId: String, all: List<ModelMove>) {
         val body = JsonArray(
             all.map { kept ->

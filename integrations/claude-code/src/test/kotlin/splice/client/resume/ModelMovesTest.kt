@@ -82,6 +82,25 @@ class ModelMovesTest {
     }
 
     @Test
+    fun `a move that did not come back drops the mark its launch wrote, and keeps the moves it made before`(
+        @TempDir home: Path,
+    ) {
+        val moves = ModelMoves(home)
+        // an earlier move that came back, then the failed attempt's launch rewrite
+        moves.record("s1", ModelMove("m1", "claude-opus-5-5", "claude-splice", 1_000L))
+        moves.moved("s1", ModelMove(null, "claude-opus-5-5", "claude-splice", 1_000L, "claudex", "gpt-6-sol"))
+        moves.record("s1", ModelMove("m2", "gpt-5.6", "claudex", 3_000L))
+
+        moves.unmoved("s1", "claudex", 2_000L)
+
+        assertEquals(listOf("claude-opus-5-5"), moves.of("s1").map { it.model }, "it went on where it was")
+        // a mark from before the attempt, or from another command, is not this move's to drop
+        moves.unmoved("s1", "claude-splice", 2_000L)
+        moves.unmoved("s1", "claudex", 2_000L)
+        assertEquals(1, moves.of("s1").size)
+    }
+
+    @Test
     fun `another model on the same command is named by his pick, though its launch moved leftover rows elsewhere`(
         @TempDir home: Path,
     ) {

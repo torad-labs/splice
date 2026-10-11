@@ -140,7 +140,11 @@ internal class SessionsWiring(
             pending.remove(session)?.let { moves.moved(session, it) }
         }
 
-        override fun failed(session: String): String? = pending.remove(session)?.fromModel
+        // a move that did not come back leaves the mark its launch wrote: dropped here, so the session's model is
+        // the one it went on with, not the one it never reached (Marlin, move check 5)
+        override fun failed(session: String): String? = pending.remove(session)?.also {
+            moves.unmoved(session, it.command, it.movedAt)
+        }?.fromModel
     }
 
     /** The stable label of the login [session]'s requests on [head] carry, the one the Accounts roster and the perf

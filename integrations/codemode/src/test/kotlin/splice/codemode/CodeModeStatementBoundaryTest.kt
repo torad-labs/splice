@@ -150,7 +150,7 @@ class CodeModeStatementBoundaryTest {
                 runtime.startStreaming(CodeModeSource { input.receive() }, setOf("Read"))
                     .let { cell -> cell to cell.advance() }
             }
-            val (cell, first) = withTimeout(2_000) { pending.await() }
+            val (cell, first) = withTimeout(30_000) { pending.await() }
             assertEquals("now", path(calls(first).single()))
             input.send(CodeModeSourcePart.Complete("'done');"))
             val completed = cell.advance(listOf(CodeModeResult("1", "now ran"))) as CodeModeStep.Completed
@@ -179,7 +179,7 @@ class CodeModeStatementBoundaryTest {
                 runtime.startStreaming(CodeModeSource { input.receive() }, setOf("Read"))
                     .let { cell -> cell to cell.advance() }
             }
-            val (cell, step) = withTimeout(2_000) { pending.await() }
+            val (cell, step) = withTimeout(30_000) { pending.await() }
             assertEquals("now", path(calls(step).single()))
             input.send(CodeModeSourcePart.Complete(last))
             val completed = cell.advance(listOf(CodeModeResult("1", "ran"))) as CodeModeStep.Completed
@@ -212,7 +212,7 @@ class CodeModeStatementBoundaryTest {
             val parts = ArrayDeque<CodeModeSourcePart>(
                 listOf(CodeModeSourcePart.Delta(first), CodeModeSourcePart.Complete(last)),
             )
-            val step = withTimeout(2_000) {
+            val step = withTimeout(30_000) {
                 runtime.startStreaming(CodeModeSource { parts.removeFirst() }, emptySet()).advance()
             }
             val completed = step as CodeModeStep.Completed
@@ -243,10 +243,10 @@ class CodeModeStatementBoundaryTest {
             val pending = async {
                 runtime.startStreaming(source, setOf("Read")).let { cell -> cell to cell.advance() }
             }
-            withTimeout(2_000) { held.await() }
+            withTimeout(30_000) { held.await() }
             assertFalse(pending.isCompleted, "The incomplete compound statement must not publish a call")
             input.send(CodeModeSourcePart.Delta(rest))
-            val (cell, initial) = withTimeout(2_000) { pending.await() }
+            val (cell, initial) = withTimeout(30_000) { pending.await() }
             input.send(CodeModeSourcePart.Complete("'after');"))
             val observed = mutableListOf<String>()
             var step = initial

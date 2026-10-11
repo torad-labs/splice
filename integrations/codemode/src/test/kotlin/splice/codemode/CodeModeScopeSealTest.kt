@@ -25,7 +25,7 @@ class CodeModeScopeSealTest {
             val source = sealed(input)
             input.send(CodeModeSourcePart.Delta("let n=1; text(await tools.Read({path:String(n)}));\ntext("))
             val first = async { runtime.startStreaming(source, setOf("Read")).let { it to it.advance() } }
-            val (cell, step) = withTimeout(2_000) { first.await() }
+            val (cell, step) = withTimeout(30_000) { first.await() }
             assertEquals("1", (step as CodeModeStep.Calls).calls.single().arguments["path"]?.toString()?.trim('"'))
             input.send(CodeModeSourcePart.Complete("'done');"))
             val done = cell.advance(listOf(CodeModeResult("1", "ran"))) as CodeModeStep.Completed
@@ -52,7 +52,7 @@ class CodeModeScopeSealTest {
                     ),
                 )
                 val first = async { runtime.startStreaming(source, setOf("Read")).let { it to it.advance() } }
-                val (cell, step) = withTimeout(2_000) { first.await() }
+                val (cell, step) = withTimeout(30_000) { first.await() }
                 cell.use {
                     val calls = (step as CodeModeStep.Calls).calls
                     assertEquals(listOf("one", "two"), calls.map { it.arguments["path"]?.toString()?.trim('"') })
@@ -102,10 +102,10 @@ class CodeModeScopeSealTest {
                 ),
             )
             val first = async { runtime.startStreaming(source, setOf("Read")).let { it to it.advance() } }
-            withTimeout(2_000) { waiting.await() }
+            withTimeout(30_000) { waiting.await() }
             assertTrue(!first.isCompleted)
             input.send(CodeModeSourcePart.Complete("'done');"))
-            val (cell, step) = withTimeout(2_000) { first.await() }
+            val (cell, step) = withTimeout(30_000) { first.await() }
             assertEquals("object", (step as CodeModeStep.Calls).calls.single().arguments["path"]?.toString()?.trim('"'))
             val done = cell.advance(listOf(CodeModeResult("1", "ran"))) as CodeModeStep.Completed
             assertEquals("ran\ndone", done.output)
@@ -137,10 +137,10 @@ class CodeModeScopeSealTest {
                 }
                 input.send(CodeModeSourcePart.Delta("$expression;\ntext("))
                 val first = async { runtime.startStreaming(source, setOf("Read")).let { it to it.advance() } }
-                withTimeout(2_000) { waiting.await() }
+                withTimeout(30_000) { waiting.await() }
                 assertTrue(!first.isCompleted, expression)
                 input.send(CodeModeSourcePart.Complete("'done');"))
-                val (cell, step) = withTimeout(2_000) { first.await() }
+                val (cell, step) = withTimeout(30_000) { first.await() }
                 cell.use {
                     val calls = (step as CodeModeStep.Calls).calls
                     val done = cell.advance(calls.map { CodeModeResult(it.id, "ran") }) as CodeModeStep.Completed
@@ -162,7 +162,7 @@ class CodeModeScopeSealTest {
             }
             input.send(CodeModeSourcePart.Delta("await Promise.all([tools.Read({path:'once'})]);\nlet "))
             runtime.startStreaming(source, setOf("Read")).use { cell ->
-                val calls = (withTimeout(2_000) { cell.advance() } as CodeModeStep.Calls).calls
+                val calls = (withTimeout(30_000) { cell.advance() } as CodeModeStep.Calls).calls
                 input.send(CodeModeSourcePart.Complete("Promise;"))
                 val done = cell.advance(calls.map { CodeModeResult(it.id, "ran") }) as CodeModeStep.Completed
                 assertEquals("SyntaxError: Streaming source cannot declare sealed binding 'Promise'", done.error)

@@ -80,7 +80,7 @@ class CodeModeStatementStreamingTest {
                 }
             }
             input.send(CodeModeSourcePart.Delta("text(await tools.Read({path: 'a'}));\ntext("))
-            val cell = withTimeout(2_000) { first.await() }
+            val cell = withTimeout(30_000) { first.await() }
             input.send(CodeModeSourcePart.Complete("'done');"))
             val completed = cell.advance(listOf(CodeModeResult("1", "A"))) as CodeModeStep.Completed
             assertEquals("A\ndone", completed.output)

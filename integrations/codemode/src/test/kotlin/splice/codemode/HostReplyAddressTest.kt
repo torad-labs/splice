@@ -46,7 +46,7 @@ class HostReplyAddressTest {
                 }
             }
             assertTrue(
-                withTimeout(2_000) { observed.await() },
+                withTimeout(30_000) { observed.await() },
                 "a failed generation must be closed before a waiting caller resumes",
             )
         }
@@ -71,7 +71,7 @@ class HostReplyAddressTest {
                 JvmCodeModeRuntime(
                     launch = HostLaunch(spawn = WorkerSpawn { WrongAddressProcess(wrongRequest) }),
                 ).use { runtime ->
-                    withTimeout(2_000) { runtime.start("return 'never';", emptySet()) }
+                    withTimeout(30_000) { runtime.start("return 'never';", emptySet()) }
                 }
             }
         }

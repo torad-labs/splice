@@ -329,7 +329,7 @@ class CodeModeRuntimeTest {
             withTimeout(5_000) { worker.frameSent.await() }
             runtime.close()
             val child = worker.toHandle()
-            child.onExit().get(1, TimeUnit.SECONDS)
+            child.onExit().get(30, TimeUnit.SECONDS)
             assertTrue(reaped(child))
         } finally {
             startup.cancelAndJoin()

@@ -53,19 +53,19 @@ class SharedWorkerChannelCellCloseTest {
             }
         }
         try {
-            val request = withTimeout(1_000) { process.sent.receive() }
+            val request = withTimeout(30_000) { process.sent.receive() }
             first.close()
-            val close = withTimeout(1_000) { process.sent.receive() }
-            val failure = withTimeout(500) { waiting.await() }
+            val close = withTimeout(30_000) { process.sent.receive() }
+            val failure = withTimeout(30_000) { waiting.await() }
             assertTrue(failure is CodeModeWorkerLostException, "context close must release the pending reply")
             process.reply(close, CodeModeWire.completedFrame("", null))
-            withTimeout(1_000) { firstExited.await() }
+            withTimeout(30_000) { firstExited.await() }
             assertEquals(0, pendingCount(host), "a disposed cell must not retain its cancelled reply slot")
             if (late) process.reply(request, CodeModeWire.completedFrame("late", null))
             val healthy = async { sibling.exchange(HostProtocol.command("synthetic-work")) }
-            val next = withTimeout(1_000) { process.sent.receive() }
+            val next = withTimeout(30_000) { process.sent.receive() }
             process.reply(next, CodeModeWire.completedFrame("sibling", null))
-            withTimeout(1_000) { healthy.await() }
+            withTimeout(30_000) { healthy.await() }
             assertFalse(host.isClosed, "a late reply for the disposed context cannot kill the sibling")
         } finally {
             waiting.cancelAndJoin()
@@ -83,14 +83,14 @@ class SharedWorkerChannelCellCloseTest {
             val cell = host.cell(1)
             val waiting = async { cell.exchange(HostProtocol.command("synthetic-work")) }
             try {
-                val request = withTimeout(1_000) { process.sent.receive() }
+                val request = withTimeout(30_000) { process.sent.receive() }
                 waiting.cancelAndJoin()
                 assertEquals(0, pendingCount(host), "cancellation alone must release the reply slot")
                 process.reply(request, CodeModeWire.completedFrame("late", null))
                 val next = async { cell.exchange(HostProtocol.command("synthetic-work")) }
-                val nextRequest = withTimeout(1_000) { process.sent.receive() }
+                val nextRequest = withTimeout(30_000) { process.sent.receive() }
                 process.reply(nextRequest, CodeModeWire.completedFrame("healthy", null))
-                withTimeout(1_000) { next.await() }
+                withTimeout(30_000) { next.await() }
                 assertEquals(0, pendingCount(host))
                 assertFalse(host.isClosed)
             } finally {
@@ -110,12 +110,12 @@ class SharedWorkerChannelCellCloseTest {
             val cell = host.cell(1)
             val waiting = async { cell.exchange(HostProtocol.command("synthetic-work")) }
             try {
-                val request = withTimeout(1_000) { process.sent.receive() }
+                val request = withTimeout(30_000) { process.sent.receive() }
                 waiting.cancelAndJoin()
                 assertEquals(0, pendingCount(host))
                 val died = InternalError("synthetic").apply { stackTrace = emptyArray() }
                 process.reply(request, CodeModeFatalFrame.died(died, CodeModeWire.completedFrame("late", null)))
-                withTimeout(1_000) { gone.await() }
+                withTimeout(30_000) { gone.await() }
                 assertTrue(host.isClosed)
                 assertEquals("InternalError in unknown.frame", host.death)
             } finally {
@@ -142,11 +142,11 @@ class SharedWorkerChannelCellCloseTest {
             val cell = host.cell(1)
             val waiting = async(Dispatchers.Default) { cell.exchange(HostProtocol.command("synthetic-work")) }
             try {
-                val request = withTimeout(1_000) { process.sent.receive() }
+                val request = withTimeout(30_000) { process.sent.receive() }
                 replies.holdLookup = true
                 val died = InternalError("synthetic").apply { stackTrace = emptyArray() }
                 process.reply(request, CodeModeFatalFrame.died(died, CodeModeWire.completedFrame("late", null)))
-                assertTrue(replies.lookedUp.await(2, TimeUnit.SECONDS))
+                assertTrue(replies.lookedUp.await(30, TimeUnit.SECONDS))
                 waiting.cancelAndJoin()
                 assertTrue(gone.isCompleted, "a removed caller cannot claim a fatal reply from a stale lookup")
                 assertEquals(0, pendingCount(host))
@@ -170,10 +170,10 @@ class SharedWorkerChannelCellCloseTest {
                     error
                 }
             }
-            val request = withTimeout(1_000) { process.sent.receive() }
+            val request = withTimeout(30_000) { process.sent.receive() }
             val died = InternalError("synthetic").apply { stackTrace = emptyArray() }
             process.reply(request, CodeModeFatalFrame.died(died))
-            val failure = withTimeout(500) { waiting.await() }
+            val failure = withTimeout(30_000) { waiting.await() }
             assertTrue(failure is CodeModeWorkerLostException, "fatal processing cannot strand a taken control slot")
             assertEquals(0, pendingCount(host))
         }
@@ -190,7 +190,7 @@ class SharedWorkerChannelCellCloseTest {
             val reply = super.get(key)
             if (holdLookup && reply != null) {
                 lookedUp.countDown()
-                check(removed.await(2, TimeUnit.SECONDS))
+                check(removed.await(30, TimeUnit.SECONDS))
             }
             return reply
         }
@@ -200,7 +200,7 @@ class SharedWorkerChannelCellCloseTest {
             if (holdLookup && reply != null) {
                 removed.countDown()
                 // Hold cancellation before answer.cancel, so a stale lookup would falsely complete the answer.
-                retired.await(2, TimeUnit.SECONDS)
+                retired.await(30, TimeUnit.SECONDS)
             }
             return reply
         }

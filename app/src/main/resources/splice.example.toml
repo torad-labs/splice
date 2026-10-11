@@ -775,7 +775,7 @@ command = "claude-splice"
 # is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
 # needs a restart whatever its marking, which is also why a `[heads.<key>.overrides]` example below
 # carries no marker even for a HOT knob. The marker is not a habit: KnobLivenessDocumentedLawTest
-# pairs every knob here against its restartRequired flag in Knob.kt and fails on either mismatch, so
+# pairs every knob here against its restart flag in Knob.kt and fails on either mismatch, so
 # what you read below is what /api/config will answer.
 # `[daemon]` spells these with underscores (`show_reasoning`);
 # everywhere else a key is spelled as the name shown below. Both name the same knob. Defaults sit
@@ -785,10 +785,10 @@ command = "claude-splice"
 # chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
 # codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
 # progressLine = "true"                                     # bool; splice's own status line on a quiet wire (HOT, per heartbeat)
-# foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold
-# foldMaxContinue = "3"                                     # rounds; max hidden continuation rounds per fold
-# foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn
-# foldMaxTier = "6"                                         # n; the deepest truncation tier that still folds
+# foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold (HOT, per turn)
+# foldMaxContinue = "3"                                     # rounds; max hidden continuation rounds per fold (HOT, per turn)
+# foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn (HOT, per turn)
+# foldMaxTier = "6"                                         # n; the deepest truncation tier that still folds (HOT, per turn)
 # toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
 # quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage (HOT, per wait)

@@ -17,7 +17,7 @@ import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCacheFiles
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.stream.ConversationSummaryParts
-import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.stream.LiveFoldConfig
 import splice.dialect.responses.stream.ResponsesFailureAmend
 import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.dialect.responses.tools.ToolSurfaceRecovery
@@ -28,7 +28,7 @@ internal class ResponsesParts(
     tuning: ProviderTuning,
     reasoning: ReasoningSettings,
     quirks: ResponsesQuirks,
-    foldConfig: FoldConfig?,
+    foldConfig: LiveFoldConfig?,
     log: LogSink,
     toolNames: ToolNameShortener,
 ) {

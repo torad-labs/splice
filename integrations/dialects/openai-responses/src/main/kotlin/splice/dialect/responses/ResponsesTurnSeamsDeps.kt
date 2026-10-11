@@ -4,12 +4,12 @@ package splice.dialect.responses
 
 import splice.core.util.LogSink
 import splice.dialect.responses.stream.ConversationSummaryParts
-import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.stream.LiveFoldConfig
 import splice.upstream.ToolNameShortener
 
 /** What the seams carry from one round to the next: the intra-turn fold. */
 internal data class RoundCarry(
-    val foldConfig: FoldConfig?,
+    val foldConfig: LiveFoldConfig?,
 )
 
 /** The two collaborators the seams hand the stream translator beside its turn context. */

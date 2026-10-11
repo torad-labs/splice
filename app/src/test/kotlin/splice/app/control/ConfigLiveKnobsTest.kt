@@ -213,6 +213,28 @@ class ConfigLiveKnobsTest {
         }
 
     @Test
+    fun `the reasoning-fold knobs are live, so no restart is named and a head reads them`() = runBlocking<Unit> {
+        val answer = json.parseToJsonElement(
+            patch(
+                """{"foldReasoningModels":"gpt-6-luna","foldMaxContinue":5,""" +
+                    """"foldMarkerText":"Go on.","foldMaxTier":2}""",
+            ),
+        ).jsonObject
+
+        assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+        val view = json.parseToJsonElement(read()).jsonObject
+        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        listOf(Knob.FOLD_REASONING_MODELS, Knob.FOLD_MAX_CONTINUE, Knob.FOLD_MARKER_TEXT, Knob.FOLD_MAX_TIER)
+            .forEach { assertFalse(it.key in restartOnly, "${it.key} is live, so it is not restart-only") }
+        // What the codex head's per-turn LiveFoldConfig reads off its own config at every turn.
+        val head = config.getConfig("h")
+        assertEquals(setOf("gpt-6-luna"), head.foldReasoningModels)
+        assertEquals(5, head.foldMaxContinue)
+        assertEquals("Go on.", head.foldMarkerText)
+        assertEquals(2, head.foldMaxTier)
+    }
+
+    @Test
     fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {
         patch("""{"maxInflight":9,"effort":"low"}""")
 

@@ -21,6 +21,14 @@ import splice.dialect.responses.request.responsesRequestJson
 import splice.upstream.FoldPolicy
 import splice.upstream.FoldRound
 
+/** The fold policy as it stands NOW, asked once per turn (knobs foldReasoningModels, foldMaxContinue,
+ *  foldMarkerText and foldMaxTier) so an operator who edits any of them is obeyed by the next turn rather than the next restart. A turn
+ *  already folding keeps the [FoldConfig] it began with. null = the feature is off for this provider. A [FoldConfig]
+ *  is itself the reader that always answers the same value, which is what a test or a provider with no knobs passes. */
+public fun interface LiveFoldConfig {
+    public operator fun invoke(): FoldConfig?
+}
+
 /** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
 public data class FoldConfig(
     /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
@@ -35,7 +43,9 @@ public data class FoldConfig(
     val markerText: String = DEFAULT_MARKER_TEXT,
     /** V4-100: READS Knob.FOLD_MAX_TIER, same reason as [maxContinue]. */
     val maxTierN: Int = Knob.FOLD_MAX_TIER.count().toInt(),
-)
+) : LiveFoldConfig {
+    override fun invoke(): FoldConfig = this
+}
 
 // The one FoldConfig default still at file scope, because Kotlin main sources carry no `companion`
 // blocks and a consumer only drops the `FoldConfig.` prefix. The two NUMERIC defaults that used to

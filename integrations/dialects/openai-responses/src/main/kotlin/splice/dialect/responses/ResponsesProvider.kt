@@ -16,7 +16,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.request.ResponsesCompactionTail
 import splice.dialect.responses.request.ResponsesParts
 import splice.dialect.responses.request.ResponsesSystemPrompt
-import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.stream.LiveFoldConfig
 import splice.dialect.responses.websocket.ResponsesWsSupport
 import splice.dialect.responses.websocket.WsExtraHeaders
 import splice.upstream.BuiltTurn
@@ -36,7 +36,7 @@ public abstract class ResponsesProvider(
     protected val quirks: ResponsesQuirks,
     // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
     // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.
-    private val foldConfig: FoldConfig? = null,
+    private val foldConfig: LiveFoldConfig? = null,
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall

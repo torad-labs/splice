@@ -21,6 +21,7 @@ import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.dialect.responses.stream.LiveFoldConfig
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeCellLease
@@ -79,8 +80,9 @@ internal class CodexResponsesArm(
                 reasoning = ReasoningWiring.settingsOf(cfg),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
                 // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
-                // never receive a fold config, so they stay pure passthrough.
-                foldConfig = quirksOverlay.foldConfigFrom(cfg),
+                // never receive a fold config, so they stay pure passthrough. Asked per turn, off this head's
+                // config as it stands then, so all four fold knobs are live.
+                foldConfig = LiveFoldConfig { quirksOverlay.foldConfigFrom(cfg.current()) },
                 accountIdHeader = providerCfg.quirks.accountIdHeader,
                 codeMode = CodexCodeModeWiring(
                     bridge = codeModeBridge(ctx),

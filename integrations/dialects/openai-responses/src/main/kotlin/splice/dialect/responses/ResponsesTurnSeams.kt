@@ -102,7 +102,8 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // compaction (a text summarizer requests no encrypted_content). Sol and every non-codex head get
     // null here → the gateway never buffers or loops → pure passthrough.
     fun foldPolicy(meta: TurnMeta): FoldPolicy? {
-        val cfg = deps.carry.foldConfig ?: return null
+        // ONE reading for this turn: the policy it folds under is the policy it was admitted under.
+        val cfg = deps.carry.foldConfig?.invoke() ?: return null
         if (meta.compact || meta.route.upstreamModel !in cfg.models) return null
         return ResponsesFoldPolicy(
             cfg,

@@ -14,7 +14,7 @@ import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesReasoningQuirks
-import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.stream.LiveFoldConfig
 import splice.upstream.ProviderTuning
 
 internal class TestResponsesQuirks {
@@ -37,7 +37,7 @@ internal class TestResponsesProvider(
     tuning: ProviderTuning,
     reasoning: ReasoningSettings,
     quirks: ResponsesQuirks = TestResponsesQuirks().profile(),
-    foldConfig: FoldConfig? = null,
+    foldConfig: LiveFoldConfig? = null,
     log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(
     tuning,

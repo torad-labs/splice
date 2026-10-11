@@ -37,6 +37,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.stream.LiveFoldConfig
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -71,6 +72,9 @@ class HeadServerFoldTest {
     private lateinit var head: HeadServer
     private lateinit var tmp: java.nio.file.Path
 
+    /** The fold policy the head asks at every turn, which a test MOVES the way an operator's PATCH does. */
+    @Volatile private var fold = FoldConfig(models = setOf("gpt-5.6-luna"))
+
     private val catalog = ModelCatalog(
         discoveryPrefix = "claude-codex--",
         models = listOf(
@@ -95,7 +99,7 @@ class HeadServerFoldTest {
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             // luna folds; sol is deliberately NOT in the set (passthrough parity).
-            foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
+            foldConfig = LiveFoldConfig { fold },
         )
         head = HeadServer(
             provider = provider,
@@ -126,6 +130,30 @@ class HeadServerFoldTest {
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
+
+    @Test
+    fun `a fold policy changed while the head runs governs the next turn, not the next restart`() = runTest {
+        val original = fold
+        try {
+            fold = FoldConfig(models = emptySet())
+            val before = mock.upstreamBodies.size
+            messages("fold", "claude-codex--gpt-5.6-luna")
+            assertEquals(1, mock.upstreamBodies.size - before, "luna left the fold set, so no continuation POST")
+
+            fold = FoldConfig(models = setOf("gpt-5.6-luna"))
+            val after = mock.upstreamBodies.size
+            messages("fold", "claude-codex--gpt-5.6-luna")
+            assertEquals(2, mock.upstreamBodies.size - after, "luna rejoined the set, so the truncated round continues")
+
+            fold = FoldConfig(models = setOf("gpt-5.6-luna"), markerText = "Keep going, please.")
+            val last = mock.upstreamBodies.size
+            messages("fold", "claude-codex--gpt-5.6-luna")
+            val roundTwo = mock.upstreamBodies.drop(last)[1].second
+            assertTrue(roundTwo.contains("Keep going, please."), "the edited marker reaches the next turn: $roundTwo")
+        } finally {
+            fold = original
+        }
+    }
 
     @Test
     fun `fold-and-continue - a truncated round then a clean round fold into ONE response`() = runTest {

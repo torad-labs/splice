@@ -56,6 +56,7 @@ internal class CodeModeSourceCapture(
                 checkSource(event.call.input)
                 completedCall = event.call
             }
+            CustomToolSource.Terminal -> Unit // the live round reads it, before this capture is asked
         }
     }
 

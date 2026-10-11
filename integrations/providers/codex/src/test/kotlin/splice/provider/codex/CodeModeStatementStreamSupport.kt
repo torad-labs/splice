@@ -109,6 +109,10 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         val stopped = CompletableDeferred<Unit>()
         val itemDone = CompletableDeferred<Unit>()
         var itemCompletionGate: CompletableDeferred<Unit>? = null
+
+        /** The upstream parsed the round's terminal; the outcome is held until [terminalGate] opens, when set. */
+        val terminalSent = CompletableDeferred<Unit>()
+        var terminalGate: CompletableDeferred<Unit>? = null
         var terminalProblem: String? = null
         var wholeOnly = false
         var repeatOuter = false
@@ -171,6 +175,9 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
             sink.customToolSource(CustomToolSource.Completed(completed))
             itemDone.complete(Unit)
             complete.await()
+            sink.customToolSource(CustomToolSource.Terminal)
+            terminalSent.complete(Unit)
+            terminalGate?.await()
             val reasoning = JsonObject(
                 mapOf(
                     "type" to JsonPrimitive("reasoning"),

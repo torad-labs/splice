@@ -44,6 +44,7 @@ import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
+import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
@@ -154,7 +155,10 @@ internal class ResponsesStreamTranslator(
             unexpected = ignored
         } finally {
             // Sign and close the live script block even when the upstream omits item-done or the turn aborts.
-            withContext(NonCancellable) { itemFold.execProgress.closeAll(sink) }
+            withContext(NonCancellable) {
+                itemFold.execProgress.closeAll(sink)
+                if (terminalSeen(state)) sink.customToolSource(CustomToolSource.Terminal)
+            }
         }
 
         // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.

@@ -19,8 +19,10 @@ internal class CodeModeCutClaim {
         owner.compareAndSet(SourceCutOwner.UNCLAIMED, SourceCutOwner.CLIENT)
     }
 
-    fun cancel(reader: Deferred<*>?, stoppedByHead: Boolean) {
-        if (stoppedByHead || reader?.isActive != true) return
+    /** [terminal]: the upstream already delivered the round's terminal, so the source is whole and nothing is cut. */
+    fun cancel(reader: Deferred<*>?, stoppedByHead: Boolean, terminal: Boolean = false) {
+        if (stoppedByHead || terminal) return
+        if (reader?.isActive != true) return
         claimClient()
         cancelled = true
     }

@@ -69,6 +69,10 @@ internal class CodeModeLiveRound(
     private val stoppedByHead: Boolean get() = headStopped || headStop?.isStopping == true
 
     @Volatile internal var upstreamEnded = false
+
+    /** The upstream delivered the round's terminal; its outcome has not reached [settleRead] yet. A client step that
+     *  fails in that gap cuts nothing: the source finished. */
+    @Volatile private var terminalSeen = false
         private set
 
     @Volatile private var executionLost = false
@@ -265,7 +269,7 @@ internal class CodeModeLiveRound(
     fun cancel() {
         if (upstreamEnded) return
         val reader = finished
-        cut.cancel(reader, stoppedByHead)
+        cut.cancel(reader, stoppedByHead, terminalSeen)
         executionLost = true
         source.fail(SOURCE_DISPOSED)
         reader?.cancel()
@@ -277,7 +281,7 @@ internal class CodeModeLiveRound(
     fun stopClientStep() {
         synchronized(lifecycle) {
             if (!stoppedByHead) {
-                if (!upstreamEnded) cut.cancel(finished, stoppedByHead = false)
+                if (!upstreamEnded) cut.cancel(finished, stoppedByHead = false, terminal = terminalSeen)
                 headStopped = true
             }
         }
@@ -292,6 +296,10 @@ internal class CodeModeLiveRound(
 
     /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
     private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
+        if (event == CustomToolSource.Terminal) {
+            terminalSeen = true
+            return@synchronized
+        }
         if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         if (sourceLost) return@synchronized
         if (localFailure != null || record?.terminal() == true) return@synchronized

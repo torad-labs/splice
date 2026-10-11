@@ -9,6 +9,9 @@ public sealed class CustomToolSource {
     public data class Started(val call: GatewayCustomCall) : CustomToolSource()
     public data class Delta(val callId: String, val text: String) : CustomToolSource()
     public data class Completed(val call: GatewayCustomCall) : CustomToolSource()
+
+    /** The round's terminal was parsed: the source is whole, whatever cancels the reader after this. */
+    public data object Terminal : CustomToolSource()
 }
 
 /** The transport borrows this lifetime when one upstream source round spans several client tool steps. */

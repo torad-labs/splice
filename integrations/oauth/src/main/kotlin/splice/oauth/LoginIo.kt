@@ -92,7 +92,7 @@ public class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOp
         ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         true
-    }.onFailure { output.line("splice: could not open a browser (${SafeFailureText.render(it)})") }
+    }.onFailure { output.line("splice: the browser did not open. Use the link below to sign in.") }
         .getOrDefault(false)
 }
 

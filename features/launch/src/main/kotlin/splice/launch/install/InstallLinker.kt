@@ -56,7 +56,9 @@ internal class InstallLinker(
             topology.heads.filterKeys { it == key }
         }
         val refusal = collisionRefusal(topology) ?: linkRefusal(bin, selected, launchShim)
-        if (refusal == null) output.line("splice: ensure $bin is on your PATH to use the wrappers")
+        // Said only when it is true: doctor, a few lines later, grades the same fact.
+        val onPath = env("PATH").orEmpty().split(':').any { it == bin.toString() }
+        if (refusal == null && !onPath) output.line("splice: add $bin to your PATH to use the wrappers")
         return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
     }
 

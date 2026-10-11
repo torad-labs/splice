@@ -487,14 +487,12 @@ fi
 case ":$PATH:" in
   *":$BIN_DIR:"*)
     echo
-    echo "Next:  export OPENROUTER_API_KEY=…   # create one at https://openrouter.ai/keys"
-    echo "       splice add openrouter     # save the head and install its command"
-    echo "       claude-openrouter          # Claude Code through OpenRouter"
-    echo "       splice doctor     # if anything misbehaves — every check prints its fix"
+    echo "Next:  splice setup     # connect the plan you pay for"
+    echo "       (splice doctor checks the install and prints the fix for anything wrong)"
     ;;
   *)
     echo
-    echo "Add $BIN_DIR to your PATH (export PATH=\"$BIN_DIR:\$PATH\"), then run:  splice add openrouter"
+    echo "Add $BIN_DIR to your PATH (export PATH=\"$BIN_DIR:\$PATH\"), then run:  splice setup"
     echo "(splice doctor checks the install and prints the fix for anything wrong)"
     ;;
 esac

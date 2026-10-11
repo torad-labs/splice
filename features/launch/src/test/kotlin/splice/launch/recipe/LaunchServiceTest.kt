@@ -441,6 +441,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         val env = service.launch(nativeSpec(), extraArgs = emptyList(), dangerouslySkipPermissions = false).env
         assertNull(env["DISABLE_LOGIN_COMMAND"])
         assertNull(env["DISABLE_LOGOUT_COMMAND"])
+        assertNull(env["CLAUDE_CODE_AUTO_MODE_SERVER"], "a native head keeps Anthropic's own server-side checks")
     }
 
     @Test
@@ -461,6 +462,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertEquals("test-inference-token", recipe.env["ANTHROPIC_AUTH_TOKEN"])
         assertEquals("1", recipe.env["DISABLE_LOGIN_COMMAND"])
         assertEquals("1", recipe.env["DISABLE_LOGOUT_COMMAND"])
+        assertEquals("0", recipe.env["CLAUDE_CODE_AUTO_MODE_SERVER"], "no auto-mode notice on a translated head")
         assertEquals(
             listOf(
                 "ANTHROPIC_API_KEY",

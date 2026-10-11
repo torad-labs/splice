@@ -170,10 +170,9 @@ describe("install.sh release provenance (V4-217)", () => {
     test(`first-time instructions add OpenRouter with install bin on PATH: ${binOnPath}`, async () => {
       const r = await install("absent", { binOnPath });
       expect(r.code).toBe(0);
-      expect(r.out).toContain("splice add openrouter");
-      expect(r.out).not.toContain("splice setup");
-      if (binOnPath) expect(r.out).toContain("claude-openrouter");
-      else expect(r.out).toContain("to your PATH");
+      expect(r.out).toContain("splice setup");
+      expect(r.out).not.toContain("openrouter");
+      if (!binOnPath) expect(r.out).toContain("to your PATH");
     });
   }
 

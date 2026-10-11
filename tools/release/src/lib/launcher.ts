@@ -770,7 +770,7 @@ const ARMS: readonly Arm[] = [
       copyFileSync(join(ctx.dir, "bin", "systemctl"), join(bare, "systemctl"));
       ctx.daemon.forget();
       const run = await ctx.launch({ ...ctx.harness, PATH: bare });
-      if (run.code !== 1 || !run.stderr.includes("curl is not installed") || !run.stderr.includes("Install curl")) {
+      if (run.code !== 1 || !run.stderr.includes("needs curl") || !run.stderr.includes("Install curl")) {
         return `a missing curl must exit 1 and say what to install, got ${run.code}: ${run.output}`;
       }
       return ctx.daemon.lastLaunch === undefined ? null : "a launch was sent with no curl";

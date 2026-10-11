@@ -333,6 +333,11 @@ public class LaunchService(
             if (!spec.gateway.forwardClientAuth) {
                 put("DISABLE_LOGIN_COMMAND", "1")
                 put("DISABLE_LOGOUT_COMMAND", "1")
+                // Auto mode asks Anthropic's server to check each action. A translated head is not Anthropic, so
+                // that check can never come back, and Claude Code stops the first checked action to tell the
+                // user their gateway is incompatible. Say up front that the checks are the client's own. A
+                // native-auth head reaches Anthropic and keeps the server's checks.
+                put("CLAUDE_CODE_AUTO_MODE_SERVER", "0")
             }
             put("SPLICE", "1")
         }

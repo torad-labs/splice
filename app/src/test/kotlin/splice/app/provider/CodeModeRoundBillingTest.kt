@@ -85,6 +85,7 @@ import splice.upstream.WsRoundRunner
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.retry.InflightGate
 import splice.upstream.sse.SseReader
 import java.io.IOException
@@ -1235,6 +1236,7 @@ class CodeModeFirstStepBillingTest {
             if (reported) {
                 ws.endSource()
                 awaitCleanRounds(ws, 1)
+                withTimeout(TURN_BOUND_MS) { runtime.sourceEnded() }
             }
             runtime.reject.complete(Unit)
             val answer = if (failure is CancellationException) {
@@ -1278,6 +1280,14 @@ private fun assertFirstStepBill(posting: JsonObject, reported: Boolean) {
 private class FirstStepBillingRuntime(private val failure: Exception) : CodeModeRuntime {
     val started = CompletableDeferred<Unit>()
     val reject = CompletableDeferred<Unit>()
+    private val held = CompletableDeferred<CodeModeSource>()
+
+    /** Reads the source to its end. That end is made after the reader has settled its terminal, so a rejection sent
+     *  once this returns can no longer cut a source that finished. */
+    suspend fun sourceEnded() {
+        val source = held.await()
+        while (source.read().let { it !is CodeModeSourcePart.Complete && it !is CodeModeSourcePart.Failed }) Unit
+    }
 
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =
         error("the synthetic first step must use its streaming source")
@@ -1287,6 +1297,7 @@ private class FirstStepBillingRuntime(private val failure: Exception) : CodeMode
         tools: Set<String>,
         descriptions: Map<String, String>,
     ): CodeModeCell {
+        held.complete(source)
         started.complete(Unit)
         reject.await()
         if (failure is CancellationException) currentCoroutineContext().cancel(failure)

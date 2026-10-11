@@ -185,6 +185,19 @@ class TranscriptModelRewriteTest {
     }
 
     @Test
+    fun `a reply Claude Code wrote itself keeps its synthetic mark through a move, so the page still hides it`(
+        @TempDir dir: Path,
+    ) {
+        val synthetic = """{"type":"assistant","sessionId":"s1","message":{"model":"<synthetic>",""" +
+            """"content":[{"type":"text","text":"No response requested."}]}}"""
+        val transcript = write(dir.resolve("s1.jsonl"), USER_ROW, FOREIGN_ROW, synthetic)
+
+        assertEquals(1, rewriter.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY))
+
+        assertEquals(listOf(USER_ROW, FOREIGN_ROW_ON_SOL, synthetic, ""), rows(transcript))
+    }
+
+    @Test
     fun `a transcript reached through a link is rewritten where the link points, and stays a link`(@TempDir dir: Path) {
         val real = write(dir.resolve("store").resolve("s1.jsonl"), FOREIGN_ROW)
         val link = Files.createSymbolicLink(dir.resolve("s1.jsonl"), real)

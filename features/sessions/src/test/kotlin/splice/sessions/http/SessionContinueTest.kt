@@ -99,6 +99,19 @@ class SessionContinueTest {
     }
 
     @Test
+    fun `another model on the command it already runs on goes on there, the same exit and resume`() {
+        panes.remember(LEAD, leadPane)
+
+        val reply = move(LEAD, """{"head":"claude","model":"claude-opus-5"}""")
+
+        assertEquals(HttpStatusCode.OK, reply.status)
+        assertEquals(listOf(leadPane to "/exit"), terminal.sent)
+        assertEquals(listOf("claude-claude", "-r", LEAD, "--model", "claude-opus-5"), terminal.opened.single().command)
+        val (_, kept) = kept.single()
+        assertEquals(listOf("claude", "claude"), listOf(kept.command, kept.fromCommand))
+    }
+
+    @Test
     fun `a session started from his own shell is resumed in that shell, typed as he would type it`() {
         panes.remember(LEAD, leadPane)
         closesWithClient = false

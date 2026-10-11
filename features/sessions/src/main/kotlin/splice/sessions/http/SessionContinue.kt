@@ -16,7 +16,9 @@
 // would type it. A terminal splice opened closes with its client, so the resume opens a new one. A session whose
 // client already exited opens a new one too.
 //
-// WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One already on that command.
+// WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One already on that command
+// with no other model picked; another model on the same command is a move like any other (p176: his Opus week is
+// spent and Fable on the same plan has room).
 // One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
 // would be sent with them. A working turn is stopped first, as Stop would, and once it has stopped the prompt is
 // emptied, because Claude Code puts the stopped message back in it and that message is already in the transcript.
@@ -105,7 +107,7 @@ public class SessionContinue(
     private fun plan(session: String, head: String, model: String?): Plan {
         val record = registry?.read().orEmpty().firstOrNull { it.sessionId == session }
             ?: return Plan.Refused(Refusals.reply(HttpStatusCode.NotFound, "no such session: $session"))
-        refusalToMove(record, head)?.let { return Plan.Refused(it) }
+        refusalToMove(record, head, model)?.let { return Plan.Refused(it) }
         return when (val command = commands.forHead(head)) {
             is StartCommand.Refused -> Plan.Refused(Refusals.reply(HttpStatusCode.Conflict, command.reason))
             is StartCommand.Ready -> {
@@ -128,8 +130,9 @@ public class SessionContinue(
     }
 
     /** Why this session cannot move to [head] now, or null when it can. */
-    private fun refusalToMove(record: SessionRecord, head: String): JsonReply? = when {
-        record.head == head -> Refusals.reply(HttpStatusCode.Conflict, "it already runs on $head")
+    private fun refusalToMove(record: SessionRecord, head: String, model: String?): JsonReply? = when {
+        record.head == head && model == null ->
+            Refusals.reply(HttpStatusCode.Conflict, "it already runs on $head; pick another model on it")
         record.availability != SessionAvailability.GONE && record.status.waitingFor != null ->
             Refusals.reply(HttpStatusCode.Conflict, "it is waiting on an answer; answer it before moving it")
         else -> null

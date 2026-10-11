@@ -74,7 +74,17 @@ const REQVIEW = (() => {
       if (depth === 0) return `<ul class="tree root">${kids}</ul>`;  // the body itself is always open: no caret on its own
       return `${toggle}<span class="pv">${Array.isArray(v) ? `[${v.length}]` : ""}</span><ul class="tree">${kids}</ul>`;
     }
+    // A body splice could not keep says so in the words the page uses when keeping is off, with what it measured when
+    // that was the disk, and the door where old records are deleted to free the space (fin). Its raw reason goes to the log.
+    function unsavedHtml(body) {
+      if (!body || typeof body !== "object" || body.unavailable !== true) return null;
+      if (body.reason) console.info("request body not kept:", body.reason);
+      const disk = /free-space floor/.test(body.reason || "");
+      return `<div class="gone"><span class="state">Not saved${disk ? " · Disk nearly full" : ""}</span>${disk ? `<a class="act quiet" href="settings.html#data">Your data</a>` : ""}</div>`;
+    }
     function bodyTree(body, path) {
+      const unsaved = unsavedHtml(body);
+      if (unsaved) return unsaved;
       const n = body.messages ? body.messages.length - 1 : -1;
       const openBy = (p, d) => d === 0 || p === `${path}.messages` || p === `${path}.messages.${n}` || p === `${path}.messages.${n}.content` || p.startsWith(`${path}.messages.${n}.content.`) && d <= 4;
       return `<div class="json">${tree(body, path, 0, openBy)}</div>`;
@@ -143,7 +153,7 @@ const REQVIEW = (() => {
       if (tab === "returned") {
         if (gone) return blockHtml("Status", absent) + blockHtml("Body", absent);
         const rt = tr.returned;
-        const inner = rt.frames ? `${replyHtml(rt.frames, r.provider)}${framesHtml(rt.frames, `${r.id}:ret`)}` : `<div class="json">${tree(rt.body, `${r.id}.ret`, 0, () => true)}</div>`;
+        const inner = rt.frames ? `${replyHtml(rt.frames, r.provider)}${framesHtml(rt.frames, `${r.id}:ret`)}` : (unsavedHtml(rt.body) ?? `<div class="json">${tree(rt.body, `${r.id}.ret`, 0, () => true)}</div>`);
         // a 200 whose stream ends on an error event keeps its true status, out of the success colour, so the eye lands on the
         // ending (fin, after p88 read Claude's in-stream Overloaded as a success)
         const ended = ["error", "response.failed"].includes(rt.frames?.at(-1)?.event);

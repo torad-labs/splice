@@ -418,7 +418,7 @@ function usageHtml(s) {
   const figs = [`${num(u.requests.toLocaleString("en-US"))} ${u.requests === 1 ? "request" : "requests"}`,
     u.noIn < u.requests ? `${num(kTok(u.tin))} tokens in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} ${u.noIn < u.requests ? "" : "tokens "}out` : "",
     ...moneyOf(u)].filter(Boolean);
-  return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}</a>`;
+  return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}<span class="go">Open on Requests</span></a>`; // the arrow's words (fin; hitstop 22df5bf)
 }
 
 function moneyOf(u) {
@@ -466,15 +466,19 @@ const movable = (s) => s.state !== "needs" && (s.state === "ended" || drivable(s
 async function readChoices(s) {
   const [ac, md, ks] = await Promise.all(["/api/accounts", "/api/models", "/api/keys"].map((p) => API.get(p)));
   const rows = ac.body?.accounts || [], keys = ks.body?.keys || [];
-  const groups = await Promise.all((md.body?.heads || []).filter((h) => h.head !== s.head && h.models?.length).map(async (h) => {
-    const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }));
+  // its own command is offered too, without the model it runs on now: another model on the same plan is a move (p176)
+  const now = s.turn?.model ?? s.row.model;
+  const groups = (await Promise.all((md.body?.heads || []).filter((h) => h.models?.length).map(async (h) => {
+    const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }))
+      .filter((n) => h.head !== s.head || (n.id !== now && n.label !== s.model));
+    if (!names.length) return null;
     if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
       // a key reads as its provider, the heading Accounts draws over it; its variable joins only when two keys of
       // that provider feed this command, so the line says which one it sends (fin)
       const feeding = keys.filter((k) => (k.heads || []).some((x) => x.head === h.head)), key = feeding[0];
       const missing = !key || key.heads.find((x) => x.head === h.head).source === "missing";
       const provider = PROVIDER_NAME[state.providerOf[h.head]] ?? key?.name ?? null;
-      return { head: h.head, names, kind: missing ? "signedout" : "key", acct: provider, keyVar: feeding.length > 1 ? key.name : null, rank: missing ? 3 : 2 };
+      return { head: h.head, own: h.head === s.head, names, kind: missing ? "signedout" : "key", acct: provider, keyVar: feeding.length > 1 ? key.name : null, rank: missing ? 3 : 2 };
     }
     const mine = rows.filter((r) => (r.heads || []).includes(h.head));
     const next = mine.length > 1 ? (await API.get(`/api/auth/${encodeURIComponent(h.head)}/order`)).body?.next_target : null;
@@ -482,11 +486,12 @@ async function readChoices(s) {
     const near = [[row?.five_hour_used_percent, row?.five_hour_reset_epoch_seconds], [row?.seven_day_used_percent, row?.seven_day_reset_epoch_seconds]]
       .filter(([pct]) => pct != null).reduce((a, w) => (!a || w[0] > a[0] ? w : a), null);
     const kind = !row || !row.credential_present || row.refusal ? "signedout" : near && near[0] >= 100 ? "limit" : "room";
-    return { head: h.head, names, kind, acct: row?.display_name ?? null, plan: row?.plan ? row.plan.charAt(0).toUpperCase() + row.plan.slice(1) : null,
+    return { head: h.head, own: h.head === s.head, names, kind, acct: row?.display_name ?? null, plan: row?.plan ? row.plan.charAt(0).toUpperCase() + row.plan.slice(1) : null,
       used: near ? Math.round(near[0]) : null, until: near?.[1] ? new Date(near[1] * 1000) : null, rank: kind === "room" ? 0 : 3,
       long: row?.seven_day_reset_epoch_seconds ?? Infinity, short: row?.five_hour_reset_epoch_seconds ?? Infinity };
-  }));
-  return groups.sort((x, y) => x.rank - y.rank || x.long - y.long || x.short - y.short);
+  }))).filter(Boolean);
+  // with room first, and among those its own command first; then the rest by when their windows come back
+  return groups.sort((x, y) => x.rank - y.rank || (y.own ? 1 : 0) - (x.own ? 1 : 0) || x.long - y.long || x.short - y.short);
 }
 function choicesHtml(s) {
   const groups = ui.choices[s.id];

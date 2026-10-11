@@ -20,6 +20,10 @@ import splice.core.util.JsonScalars
 private const val TRANSCRIPT_TYPE = "type"
 private const val TRANSCRIPT_MESSAGE = "message"
 
+/** The model Claude Code files on a reply it wrote itself ("No response requested." on resuming an unanswered turn).
+ *  It names no model a head serves, so it never moves: the transcript reader hides such rows by this mark (p176). */
+private const val SYNTHETIC_MODEL = "<synthetic>"
+
 /** Whether a row on this model stays where it is. */
 internal fun interface KeptModel {
     operator fun invoke(model: String?): Boolean
@@ -74,7 +78,8 @@ internal class AssistantRowMove {
      *  serves), otherwise the row the move takes. */
     fun moveOf(line: LineShape, kept: KeptModel): RowMove? {
         if (line !is LineShape.Assistant) return null
-        if (kept(JsonScalars.str(line.message, Keys.MODEL))) return null
+        val model = JsonScalars.str(line.message, Keys.MODEL)
+        if (model == SYNTHETIC_MODEL || kept(model)) return null
         return RowMove(line, strips = holdsThinking(line.message))
     }
 

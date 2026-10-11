@@ -267,12 +267,15 @@ function logHtml(s) {
   const first = held.messages.find((m) => m.ts)?.ts;
   const marks = (held.moves || []).filter((mv) => !held.earlier || first == null || mv.moved_at >= first)
     .sort((a, b) => a.moved_at - b.moved_at);
-  const markUpTo = (ts) => { while (marks.length && (ts == null || marks[0].moved_at <= ts)) items.push(jointHtml(marks.shift())); };
+  let mark = null, exit = EXIT_LOOKING;
+  const markUpTo = (ts) => { while (marks.length && (ts == null || marks[0].moved_at <= ts)) { mark = marks.shift(); exit = EXIT_LOOKING; items.push(jointHtml(mark)); } };
   held.messages.forEach((m) => {
     if (m.ts) markUpTo(m.ts);
     const key = `${s.id}:${m.index}`;
     const at = m.ts ? `<time>${clock(new Date(m.ts))}</time>` : "";
     if (m.role === "tool") return; // drawn under its call
+    const next = moveExit(m, mark, exit);
+    if (next !== exit) { exit = next; return; }
     if (m.tool) {
       // only the newest call of a running turn runs; a call with no result has nothing to open
       const result = results.get(m.tool_use_id) ?? null, open = ui.results.has(key), none = result == null;
@@ -296,6 +299,17 @@ function logHtml(s) {
   });
   markUpTo(null); // a move after the newest message, before anything was said on the new model
   return `<div class="log">${items.join("")}</div>`;
+}
+/** The /exit splice typed to end the client for a move, and what Claude Code printed for it: the move's mechanics, which
+ *  the joint already says, so they are not his conversation (Marlin #3). Only the first /exit after a mark, sent within
+ *  the move's own wait, and the one line it printed next; an /exit he types himself later is his and stays. */
+const MOVE_EXIT_MS = 60_000;
+const EXIT_LOOKING = 0, EXIT_TYPED = 1, EXIT_DONE = 2;
+/** Where reading [m] leaves the search for the move's /exit: a step on when [m] is part of it, and so hidden. */
+function moveExit(m, mark, exit) {
+  if (!mark || exit === EXIT_DONE || !m.ts || m.ts - mark.moved_at > MOVE_EXIT_MS) return exit;
+  if (exit === EXIT_LOOKING) return m.role === "user" && (m.text || "").trim() === "/exit" ? EXIT_TYPED : exit;
+  return m.role === "system" && !m.kind ? EXIT_DONE : exit;
 }
 /** The rail where a session moved: each chip keeps its model, since a move can stay on one command and change only the
  *  model, and the time sits under it where a message's does, with what didn't come along beside it (hitstop f38853e). */

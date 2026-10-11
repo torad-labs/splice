@@ -1,10 +1,13 @@
 // NEW: what Claude Code files as a user record that is not the person's own prose: a slash command and what it
-// printed, and the system-reminder notes it adds for the model. The person typed "/rename notes", so that is the line
+// printed, and the notes it adds for the model: system reminders, and the caveat it files before a command. The person typed "/rename notes", so that is the line
 // they see; the command's output is a quiet system line; the reminders are the client's note to the model and are
 // never a message.
 package splice.client.transcript
 
-private val REMINDER = Regex("<system-reminder>.*?</system-reminder>", RegexOption.DOT_MATCHES_ALL)
+private val REMINDER = Regex(
+    "<system-reminder>.*?</system-reminder>|<local-command-caveat>.*?</local-command-caveat>",
+    RegexOption.DOT_MATCHES_ALL,
+)
 private val COMMAND_NAME = Regex("<command-name>\\s*(.*?)\\s*</command-name>", RegexOption.DOT_MATCHES_ALL)
 private val COMMAND_ARGS = Regex("<command-args>(.*?)</command-args>", RegexOption.DOT_MATCHES_ALL)
 private val COMMAND_STDOUT =

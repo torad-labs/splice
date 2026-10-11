@@ -105,6 +105,8 @@ class TranscriptReaderTest {
 
     @Test
     fun `a slash command reads as the line the person typed, its output as a system line, a reminder never`() {
+        val caveat = """{"type":"user","isMeta":true,"timestamp":"$TS","message":{"role":"user","content":""" +
+            """"<local-command-caveat>The command below was run directly in Claude Code.</local-command-caveat>"}}"""
         val rename = """{"type":"user","timestamp":"$TS","message":{"role":"user","content":""" +
             """"<command-name>/rename</command-name>\n<command-message>rename</command-message>\n""" +
             """<command-args>notes-2-5</command-args>"}}"""
@@ -114,7 +116,7 @@ class TranscriptReaderTest {
             """{"type":"text","text":"<system-reminder>\nCalled the Read tool\n</system-reminder>"}]}}"""
         val quiet = """{"type":"user","timestamp":"$TS","message":{"role":"user","content":""" +
             """"<local-command-stdout></local-command-stdout>"}}"""
-        transcript(home.resolve(".claude"), listOf(rename, printed, reminder, quiet))
+        transcript(home.resolve(".claude"), listOf(caveat, rename, printed, reminder, quiet))
         val page = found(TranscriptReader().page(ID, listOf(home.resolve(".claude")), null, 100))
         assertEquals(
             listOf(
@@ -123,7 +125,7 @@ class TranscriptReaderTest {
             ),
             page.messages,
         )
-        assertEquals(mapOf("user:client-note" to 2), page.skipped)
+        assertEquals(mapOf("user:client-note" to 3), page.skipped, "the caveat is the client's note to the model")
     }
 
     @Test

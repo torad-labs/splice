@@ -13,13 +13,14 @@ import splice.sessions.registry.SessionRecord
 
 /** How the session's newest request ended, when that ending holds it back: the outcome tag, the account it was on,
  *  when the spent window comes back (null when the provider named none), when it ended, and the head that turned it
- *  away (null when unknown). */
+ *  away (null when unknown), and how many times splice re-sent it before it gave up (0 for a request turned away). */
 public data class SessionEnding(
     val outcome: String,
     val account: String?,
     val resetMs: Long?,
     val atMs: Long,
     val head: String? = null,
+    val retries: Long = 0,
 )
 
 /** The daemon's newest ending per session, read per row. Null = nothing holds the session back. */
@@ -38,6 +39,7 @@ public fun interface SessionEndingOf {
                 ending.account?.let { put("account", it) }
                 ending.resetMs?.let { put("reset_ms", it) }
                 put("at_ms", ending.atMs)
+                if (ending.retries > 0) put("retries", ending.retries)
             },
         )
     }

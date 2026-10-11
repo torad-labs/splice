@@ -202,6 +202,9 @@ const RESUME_SHOWN_MS = 5000;
 const MAX_CONTINUATIONS = 5;
 // The endings that hold a session back until something changes, as the session row's ended_by names them (SessionsWiring).
 const LIMIT_ENDINGS = new Set(["error:plan-limit", "error:all-accounts-exhausted"]);
+// The endings where splice re-sent a request until it gave up: the provider kept failing, or the turn ran past its cap.
+// Nothing will send it again, so the session needs him (Marlin #2).
+const GAVE_UP_ENDINGS = new Set(["error:upstream-failed", "error:turn-cap"]);
 /** What the session is waiting on. With a request in flight, from the live turn splice holds (LiveTurnsRoutes): refused
  *  and re-sent before any answer, quiet with a re-send coming (the head's stall_reanchor_ms, /api/heads gate), or quiet
  *  with none. With none, from how its newest request ended (the row's ended_by): turned away at a spent plan or pool
@@ -212,6 +215,7 @@ function stallOf(turn, reanchorMs, endedBy) {
   const at = Date.now();
   if (!turn) {
     if (endedBy?.outcome === "error:auth-missing") return { kind: "signout", at };
+    if (GAVE_UP_ENDINGS.has(endedBy?.outcome)) return { kind: "gaveup", word: OUTCOME_WORD[endedBy.outcome], n: endedBy.retries ?? 0, at };
     if (!LIMIT_ENDINGS.has(endedBy?.outcome) || (endedBy.reset_ms != null && endedBy.reset_ms <= at)) return null;
     return { kind: "limit", acct: endedBy.account ?? null, plan: null, until: endedBy.reset_ms ? new Date(endedBy.reset_ms) : null, at };
   }
@@ -234,9 +238,16 @@ function stallOf(turn, reanchorMs, endedBy) {
 const resuming = (s) => s.state === "working" && s.stall?.resumeMs != null;
 // A limit or a sign-out ended the turn, so it holds an idle session as well as a working one.
 const heldByEnding = (s) => s.stall?.kind === "limit" || s.stall?.kind === "signout";
+// splice gave up re-sending his newest request: it waits on him as a question does, with the outcome's own word and
+// how many times it was re-sent (fin), the count in the key's ink and the retries glyph in the key-light ring (hitstop 605ab5c)
+const gaveUp = (s) => s.stall?.kind === "gaveup" && s.state === "idle";
 const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s) : s.state === "idle" && heldByEnding(s));
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
+  if (gaveUp(s)) {
+    const n = s.stall.n, count = n ? `<span class="detail retried">${n} ${n === 1 ? "retry" : "retries"}</span>` : "";
+    return { cls: "needs", lamp: ICON.retries, word: s.stall.word, detail: count };
+  }
   if (resuming(s)) return { cls: "working", lamp: ICON.trace, word: "Working",
     paneDetail: `<span class="detail resumes" data-resume="${s.id}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>` };
   if (stalled(s)) {

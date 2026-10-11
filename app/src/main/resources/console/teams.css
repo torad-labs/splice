@@ -216,3 +216,4 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .pick-menu[data-what="model"] { grid-column: 3 / 4; }
 .pick-menu[data-what="account"] { grid-column: 4 / 5; }
 .card.m .meta .detail.noresume { color: var(--limit); flex: none; white-space: nowrap; }  /* nothing will re-send the silent answer: the stalled colour, words only (hitstop) */
+.card.m .meta .detail.retried { color: var(--key-ink); flex: none; white-space: nowrap; }  /* splice gave up re-sending: the count in the key's ink (hitstop 605ab5c) */

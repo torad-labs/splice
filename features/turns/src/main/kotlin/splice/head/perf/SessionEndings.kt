@@ -14,13 +14,15 @@ import splice.core.perf.PerfKeys
 
 /** One request's ending: its outcome tag, the account it ran on, when a spent window comes back (epoch seconds,
  *  null when the provider named none), the row's own time, and the model splice last served the session: this
- *  row's, or the one before it when splice turned this request away before a model was chosen. */
+ *  row's, or the one before it when splice turned this request away before a model was chosen, and how many times
+ *  splice re-sent it before it ended. */
 public data class SessionEnding(
     val outcome: String,
     val account: String?,
     val resetEpochSeconds: Long?,
     val ts: Long,
     val model: String? = null,
+    val retries: Long = 0,
 )
 
 // why: a person runs tens of sessions a day, so this many covers every one the console lists with room to spare,
@@ -55,7 +57,8 @@ public class SessionEndings {
             val outcome = text(row, "outcome") ?: return@forEach
             val ts = (row["ts"] as? JsonPrimitive)?.longOrNull ?: return@forEach
             val reset = (row[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS] as? JsonPrimitive)?.longOrNull
-            note(session, SessionEnding(outcome, text(row, "account"), reset, ts, text(row, "model")))
+            val retries = (row[PerfKeys.RETRIES] as? JsonPrimitive)?.longOrNull ?: 0
+            note(session, SessionEnding(outcome, text(row, "account"), reset, ts, text(row, "model"), retries))
         }
     }
 

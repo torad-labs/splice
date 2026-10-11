@@ -196,7 +196,7 @@ function cardHtml(s) {
 // ---------- the list: what needs him first, then what runs, then what rests ----------
 // a session a failed move left with nothing running waits on him as Needs you does: ranked, coloured and listed with it (Marlin, 6:08 AM)
 const stranded = (s) => s.state === "ended" && ui.failed.get(s.id)?.unmoved === true && !ui.failed.get(s.id).back;
-const RANK = (s) => (s.state === "needs" || stranded(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
+const RANK = (s) => (s.state === "needs" || stranded(s) || gaveUp(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
 const matches = (s) => !ui.q || [s.name, s.repo, s.cmd, s.row.repo?.root, s.row.cwd].some((v) => v && v.toLowerCase().includes(ui.q));
 function sorted() { // what waits on him: the longest waiting first; the rest: the latest first
   const list = state.rows.filter((s) => (s.state !== "ended" || stranded(s)) && matches(s))

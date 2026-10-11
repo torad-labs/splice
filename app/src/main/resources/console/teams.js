@@ -302,7 +302,7 @@ function memberHtml(tm, slot) {
   const refused = ui.failed.get(`stop:${key}`);
   const refusal = refused ? `<span class="refusal" role="status">${esc(refused)}</span>` : "";
   const now = L.cls === "ended" ? null : lastActivity(slot.id);
-  const body = L.cls === "needs" ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
+  const body = L.cls === "needs" && s.waiting_for ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
   // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
   const folder = s.repo?.root || s.cwd || "";
   const where = s.name || folder.split("/").pop();

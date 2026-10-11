@@ -54,11 +54,18 @@ class SessionLimitSurvivesRestartTest {
     @TempDir
     lateinit var tmp: Path
 
-    private fun row(session: String, outcome: String, ts: Long, resetEpochSeconds: Long? = null): String = buildString {
+    private fun row(
+        session: String,
+        outcome: String,
+        ts: Long,
+        resetEpochSeconds: Long? = null,
+        retries: Int = 0,
+    ): String = buildString {
         append("""{"ts":$ts,"model":"gpt-5.6-sol","outcome":"$outcome","compact":false,""")
         append(""""session":"${session.take(8)}",""")
         append(""""account":"Torad"""")
         resetEpochSeconds?.let { append(""","earliest_reset_epoch_seconds":$it""") }
+        if (retries > 0) append(""","retries":$retries""")
         append("}")
     }
 
@@ -129,6 +136,27 @@ class SessionLimitSurvivesRestartTest {
         assertEquals(resetS * 1_000, ended.getValue("reset_ms").jsonPrimitive.longOrNull)
         assertNull(listed.getValue(LIMIT_CLEARED)["ended_by"], "a window whose reset has passed is not At limit")
         assertNull(listed.getValue(WENT_THROUGH)["ended_by"], "a request that went through after the limit clears it")
+    }
+
+    @Test
+    fun `a session whose last turn splice re-sent until it gave up says how it ended and how many times`() {
+        val now = System.currentTimeMillis()
+        val listed = listing(
+            listOf(
+                row(LIMITED, "error:upstream-failed", now - 60_000, retries = 3),
+                row(LIMIT_CLEARED, "error:turn-cap", now - 60_000, retries = 1),
+                row(WENT_THROUGH, "error:upstream-failed", now - 90_000, retries = 3),
+                row(WENT_THROUGH, "ok", now - 30_000, retries = 2),
+            ),
+        )
+
+        val gaveUp = listed.getValue(LIMITED).getValue("ended_by").jsonObject
+        assertEquals("error:upstream-failed", gaveUp.getValue("outcome").jsonPrimitive.content)
+        assertEquals(3L, gaveUp.getValue("retries").jsonPrimitive.longOrNull)
+        val capped = listed.getValue(LIMIT_CLEARED).getValue("ended_by").jsonObject
+        val read = listOf("outcome", "retries").map { capped.getValue(it).jsonPrimitive.content }
+        assertEquals(listOf("error:turn-cap", "1"), read)
+        assertNull(listed.getValue(WENT_THROUGH)["ended_by"], "a request that went through after it clears it")
     }
 
     private fun managed(perf: PerfStatsSource): ManagedHead = ManagedHead(

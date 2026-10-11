@@ -43,10 +43,17 @@ internal class SessionPerfFacts(
 
     /** How the session's newest request ended, newest across every head, and only when that ending holds the session
      *  back until something changes: a plan window or every account spent (At limit), or no credential (Signed
-     *  out). A burst 429 passes on its own, so it is not one, and neither is a spent window whose reset has already
+     *  out), or splice re-sent it until it gave up: the provider kept failing, or the turn ran past its cap (Marlin #2).
+     *  A burst 429 passes on its own, so it is not one, and neither is a spent window whose reset has already
      *  come: the limit it names is over, so the session reads as it is, not At limit. */
     private val holdingEndings =
-        setOf(OutcomeTag.PLAN_LIMIT, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.AUTH_MISSING)
+        setOf(
+            OutcomeTag.PLAN_LIMIT,
+            OutcomeTag.ALL_ACCOUNTS_EXHAUSTED,
+            OutcomeTag.AUTH_MISSING,
+            OutcomeTag.UPSTREAM_FAILED,
+            OutcomeTag.TURN_CAP,
+        )
             .mapTo(HashSet()) { it.wire }
 
     fun endingOf(): SessionEndingOf = SessionEndingOf { id ->
@@ -59,7 +66,7 @@ internal class SessionPerfFacts(
                 val resetMs = ended.resetEpochSeconds?.let(TimeUnit.SECONDS::toMillis)
                 // in the Accounts roster's words: a client head's row carries the login's identity, not its label
                 val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
-                SessionEnding(ended.outcome, account, resetMs, ended.ts, head)
+                SessionEnding(ended.outcome, account, resetMs, ended.ts, head, ended.retries)
             }
             ?.takeIf { ending -> ending.resetMs?.let { it > clock() } != false }
     }

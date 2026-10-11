@@ -8,6 +8,7 @@
     ".github/scripts/tsconfig.json",
     "tools/probes/tsconfig.json",
     "tools/screen-review/tsconfig.json",
+    "tools/console/tsconfig.json",
     ".claude/hooks/tsconfig.json"
   ],
   "excused": {},

@@ -47,7 +47,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
-// A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "splice did not answer".
+// A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
 const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
@@ -70,7 +70,7 @@ const later = () => { if (!drawLater) drawLater = setTimeout(() => { drawLater =
 /** Each store, each command's own read and each week's count start together and draw as they answer, so the cards are
  *  on the page at once and a slow store only keeps its own value waiting. */
 function readKept() {
-  const get = async (path, then) => { then(await API.get(path)); later(); };
+  const get = async (path, then) => { const r = await API.get(path); if (!r.ok) whyNot(path, r); then(r); later(); };
   get("/api/history", (r) => { ui.hist = r.ok ? r.body : null; });
   get("/api/kept/turns", (r) => { ui.kept.turns = r.ok ? r.body : null; });
   get("/api/kept/edges", (r) => { ui.kept.edges = r.ok ? r.body : null; });
@@ -104,6 +104,8 @@ async function readHeads() {
     Promise.all(ui.heads.map((h) => bulkGet(`/api/heads/${encodeURIComponent(h)}/trace/kept`))),
     Promise.all(ui.heads.map((h) => bulkGet(`/api/heads/${encodeURIComponent(h)}/capture`))),
   ]);
+  wires.forEach((w, i) => { if (!w.ok) whyNot(`/api/heads/${tapped[i]}/wire`, w); });
+  traces.forEach((t, i) => { if (!t.ok) whyNot(`/api/heads/${ui.heads[i]}/trace/kept`, t); });
   ui.held = Object.fromEntries(tapped.map((h, i) => [h, wires[i].ok ? (wires[i].body?.records ?? []).length : null]));
   ui.capture = Object.fromEntries(ui.heads.map((h, i) => [h, caps[i].ok && typeof caps[i].body?.enabled === "boolean" ? caps[i].body.enabled : null]));
   ui.kept.trace = traces.every((t) => t.ok) && traces.length ? traces.map((t) => t.body) : null;
@@ -184,7 +186,11 @@ const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw =
   `<div class="drow${cls}${lit(hay)}"><div class="dname"><span class="nm">${hl(name)}${yours ? YOURS : ""}</span>${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</div>`
   + `<div class="amt">${amount}</div><div class="keep">${keep}</div><div class="dsw">${sw}</div><div class="ddel">${del}</div>${costHtml(off, offShown)}${more}</div>`;
 const amountOf = (x, unit) => (x.n ? `<b>${fmt(x.n)}</b> ${unit}<span class="mb">${mbWord(x.bytes)}</span>${x.since ? `<span class="mb">Since ${atWord(x.since)}</span>` : ""}` : `<span class="none">Nothing saved</span>`);
-const unreadable = `<span class="none">splice did not answer</span>`;
+// A store splice could not read is a quiet "Not read" in the muted line, as every page says it; why goes to the console,
+// where the read that failed is named (fin, Oct 11)
+const unreadable = `<span class="none">Not read</span>`;
+/** The reason a read failed, in the words every page warns with. */
+const whyNot = (path, r) => console.warn(`${path}: ${r.status === 0 ? "splice is not answering" : r.body?.error || `splice answered ${r.status}`}`);
 
 // The usage and request history. A shorter window waits for the yes in a band under the row: the held days as one bar,
 // the ones that go hatched, the first day kept as a tick. The yes sends the moment it showed (PUT /api/history).
@@ -247,7 +253,9 @@ function dataHtml() {
     sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
   }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
-  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading" : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`}</span></div>`;
+  // a total over a store that was not read is not read either: "0 B" over unread stores is a figure that is not true
+  const unreadIn = (g) => DATA_ROWS.some((r) => r.g === g && !(r.noRoute || r.own) && heldOf(r) === null);
+  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading" : unreadIn(g) ? "Not read" : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`}</span></div>`;
   const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;
   const rows = (g) => DATA_ROWS.filter((r) => r.g === g).map(dataRow).join("");
   return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
@@ -384,7 +392,7 @@ const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not b
 function versionHtml() {
   const v = ui.ver;
   if (v === undefined) return `<span class="state">Reading</span>`;
-  if (!v) return `<span class="state limit">splice did not answer</span>`;
+  if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
   const rows = `<div class="form vform"><div class="lbl">Running</div><div class="ctl"><b class="v">${esc(v.installed)}</b></div>`
     + `<div class="lbl">Newest</div><div class="ctl">${v.latest ? `<b class="v${v.latest !== v.installed ? " new" : ""}">${esc(v.latest)}</b>` : ""}`
@@ -440,7 +448,7 @@ function summary(id) {
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
   if (DATA_ROWS.some(stillReading)) return ["Reading"];
   const h = DATA_ROWS.filter((r) => !(r.noRoute || r.own)).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute || r.own) ? "counted" : "kept"; // a total that leaves a store out says counted
-  return h.some((x) => x === null) ? ["Some stores did not answer"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
+  return h.some((x) => x === null) ? ["Not read"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
 }
 function cardHtml(x) {
   const f = found(x.id), s = summary(x.id);

@@ -1,7 +1,7 @@
 // A session at its plan's limit still reads At limit after the daemon restarts: the ending is seeded from the tail of
 // the head's own perf rows, which the restart left on disk, so the page does not turn into Idle until the session sends
-// again. The restart here is a PerfStats built over a file that an earlier daemon wrote; the listing is the real
-// /api/sessions over HTTP.
+// again, on the head it was turned away from. The restart here is a PerfStats built over a file that an earlier
+// daemon wrote; the listing is the real /api/sessions over HTTP.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -80,7 +80,7 @@ class SessionLimitSurvivesRestartTest {
             runtime = ControlRuntime(
                 sessions = SessionRegistry(
                     sessionsDir = sessions,
-                    routeOf = { SessionRoute.Unknown },
+                    routeOf = { SessionRoute.Head("claudex") },
                     pidAlive = { true },
                     clock = { NOW_MS },
                 ),

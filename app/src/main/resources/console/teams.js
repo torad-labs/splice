@@ -1,3 +1,4 @@
+  state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
 // Teams: a team is his. Members on different models, each a role on a command, with a goal; splice carries the
 // members' sessions and reports what they do. Create one and start its members; track each member's state, their
 // messages to each other, what each is doing and what it has cost.
@@ -334,6 +335,11 @@ function askHtml(session, slotId, readOnly, key) {
     : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
   const failed = ui.failed.get(key);
   const why = failed ? `<p class="why limit">${esc(failed)}</p>` : "";
+  // reading off: the question and its choices are the conversation, so the card says only where to answer it, with a
+  // quiet door to the switch (Marlin 5:12 AM CT; fin; hitstop b5a39e3)
+  if (!state.reading) {
+    return `<div class="ask"><p class="why">Answer it in the terminal it runs in · <a class="door" href="settings.html#data">Reading off${ICON.door}</a></p>${why}</div>`;
+  }
   if (!asked) {
     const offer = going?.offer ?? state.screens[slotId];
     const what = prompted(session.last, offer);
@@ -341,7 +347,7 @@ function askHtml(session, slotId, readOnly, key) {
     // not read one, the card says where the answer is given rather than offering an act it cannot carry —
     // the second half of the sentence the answer route returns for a pane it cannot drive.
     if (!offer || readOnly) {
-      return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in.</p>${why}</div>`;
+      return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in</p>${why}</div>`;
     }
     const acts = offer.choices.map((c, i) => pick(c.choice, c.label, i)).join("");
     return `<div class="ask">${what}<div class="answers">${acts}</div>${why}</div>`;

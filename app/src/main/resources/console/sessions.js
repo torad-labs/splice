@@ -35,6 +35,7 @@ function refusalOf(answer, fallback) {
 async function read() {
   tick();
   const [sessions, heads, models] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models")]);
+  state.reading = sessions.body?.reading !== false; // off: no question text, no choices, answered in the terminal
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
   for (const row of models.body?.heads || []) {
@@ -135,10 +136,15 @@ function runHtml(call, offer) {
   const run = panel.filter((l) => l.framed).map((l) => l.text).join("\n"), why = at > 0 ? panel[at - 1].text : "";
   return `<p class="cmd"><span class="tname">${esc(call?.tool || panel[0].text)}</span>${esc(run)}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
 }
+const READING_OFF_ASK = "Answer it in the terminal it runs in";
 function askHtml(s, where = "card") {
   // from his press until the session moves on, the answer he pressed keeps its words with the wait ring and the rest
   // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile (Marlin p165, hitstop 8a04273)
   const going = ui.answered.get(s.id);
+  // reading off: he told splice not to read his conversations, and a question and its choices are the conversation, so
+  // the card says only that it waits and where to answer it (Marlin, 5:12 AM CT)
+  // the line ends on a quiet door to the switch: the cause, and the way back (fin)
+  if (!state.reading) return `<div class="ask"><p class="why">${READING_OFF_ASK} · <a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
   const a = s.ask, offer = going?.offer ?? state.screens[s.id], can = going ? true : drivable(s);
   const busy = going || ui.sending.has(s.id) ? " disabled" : "";
   const pick = (choice, label, i) => going?.choice === choice
@@ -148,12 +154,12 @@ function askHtml(s, where = "card") {
     const opts = a.asked.options || [];
     const answers = !opts.length ? "" : can && !a.asked.multi ? `<div class="answers">${opts.map((o, i) => pick(i + 1, o, i)).join("")}</div>`
       : `<div class="answers">${opts.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`;
-    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${can ? "" : `<p class="why">Answer it in the terminal it runs in.</p>`}</div>`;
+    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${can ? "" : `<p class="why">Answer it in the terminal it runs in</p>`}</div>`;
   }
   // what it wants to do, off its transcript, then the question its screen puts
   const call = a.call?.tool ? `<p class="cmd"><span class="tname">${esc(a.call.tool)}</span>${esc(a.call.text || "")}</p>` : "";
   const q = offer?.asked ? `<p class="q">${esc(offer.asked)}</p>` : "";
-  if (!offer?.choices?.length) return `<div class="ask">${call}<p class="why">Answer it in the terminal it runs in.</p></div>`;
+  if (!offer?.choices?.length) return `<div class="ask">${call}<p class="why">Answer it in the terminal it runs in</p></div>`;
   // in the open session the refusal is the Message field's Deny, which also carries what to do instead
   const deny = where === "pane" && composerHtml(s) ? denyOf(s) : null;
   const choices = offer.choices.filter((c) => c !== deny);

@@ -5,6 +5,7 @@ package splice.sessions.http
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -39,6 +40,13 @@ class SessionServedRowTest {
         assertEquals(JsonNull, lead["model"] ?: JsonNull, "reading off reads nothing from the conversation")
         assertEquals("claude-opus-5-5", lead.getValue("served_model").jsonPrimitive.content)
         assertFalse(rows().getValue(BUILDER).containsKey("served_model"), "a session splice never served names none")
+    }
+
+    @Test
+    fun `the listing says reading is off, so the console shows no question a session waits on`() {
+        val listing = Json.parseToJsonElement(routes.sessionsJson()).jsonObject
+
+        assertEquals(false, listing.getValue("reading").jsonPrimitive.boolean)
     }
 
     @Test

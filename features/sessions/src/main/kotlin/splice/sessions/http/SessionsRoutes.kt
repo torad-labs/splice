@@ -136,6 +136,8 @@ public class SessionsRoutes(
         val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
         val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
         addEdgeState(this, edgeRead.reason)
+        // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
+        put("reading", viewEnabled())
         put("note", HEADLESS_NOTE)
         val noteVersions = PeerNoteAbi.AUDITED_VERSIONS.sorted()
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })

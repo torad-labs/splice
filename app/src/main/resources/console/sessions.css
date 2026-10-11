@@ -174,10 +174,11 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 }
 
 /* the joint where a conversation moved to another model: the rail, crossing, with the new command on it */
-.joint { position: relative; display: flex; align-items: center; justify-content: center; gap: .8rem; min-height: 2.6rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); }
+.joint { position: relative; display: flex; align-items: center; justify-content: center; min-height: 2.6rem; font: 500 .95rem/1 var(--font-data); color: var(--text-body); }  /* no gap: the words' padding spaces the run, so the rail stops at its ends */
 .joint::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: .55rem; transform: translateY(-50%); background: var(--rail); border-radius: .3rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 .joint > * { position: relative; }
-.joint .model { background: var(--obj); padding: .3rem .55rem; border-radius: .3rem; }
+.joint .model { background: var(--obj); padding: .3rem .8rem; border-radius: .3rem; }
+[data-theme="day"] .joint::before { background: var(--obj-sunk); box-shadow: none; }  /* a quiet divider in day: night's dark rail and ink read as a weight on the light card (Marlin, p176; hitstop 9dd0f95) */
 /* the move's time under its line, where a message's time sits, with what didn't come along beside it (hitstop f38853e) */
 .log > .jwrap { display: flex; flex-direction: column; align-items: center; gap: .45rem; align-self: stretch; max-width: none; }  /* the divider crosses the whole conversation */
 .jwrap > .joint { align-self: stretch; }

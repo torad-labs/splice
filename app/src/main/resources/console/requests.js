@@ -708,7 +708,7 @@ document.addEventListener("click", (e) => {
   if (!el.dataset.act) { if (e.target.closest("a")) return; open(el.dataset.open); return; }
   const v = el.dataset.v, m = el.dataset.m;
   switch (el.dataset.act) {
-    case "theme": document.documentElement.dataset.theme = document.documentElement.dataset.theme === "day" ? "night" : "day"; break;
+    case "theme": toggleTheme(); break;
     case "menu": ui.menu = ui.menu === m ? null : m; render(); break;
     case "set": ui[m] = v || null; if (m === "win") ui.win = v; ui.menu = null; ui.n = 200; again(); break;
     case "unset": ui[m] = null; if (m === "from") ui.to = null; ui.n = 200; again(); break;

@@ -265,7 +265,9 @@ function sinceOf(tm) {
 function tabHtml(tm) {
   const needs = tm.slots.some((s) => sessOf(s)?.waiting_for);
   const blots = tm.slots.map((s) => `<i style="--c:${headColor(s.head)}"${sessOf(s) ? "" : ' class="open"'}></i>`).join("");
-  return `<button class="tab${needs ? " needs" : ""}" data-act="team" data-t="${esc(tm.id)}" aria-current="${ui.team === tm.id}">` +
+  const members = tm.slots.length, live = tm.slots.filter((x) => sessOf(x)).length;
+  const dots = `${members} ${members === 1 ? "member" : "members"}, ${live} with a session; a hollow dot has none`;
+  return `<button class="tab${needs ? " needs" : ""}" data-act="team" data-t="${esc(tm.id)}" title="${esc(dots)}" aria-current="${ui.team === tm.id}">` +
     `<span class="tname">${esc(tm.name)}</span><span class="blots" aria-hidden="true">${blots}</span></button>`;
 }
 function tabsHtml() {
@@ -548,7 +550,8 @@ function composerHtml() {
     `<h3>Members</h3><div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
     `<button class="add" data-act="add-slot"><span class="plus" aria-hidden="true">+</span>Add member</button></div>` +
     `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
-    `<footer><button class="act quiet" data-act="cancel">Cancel</button>` +
+    `<footer><p class="foothint">Save keeps the team. Start team also starts a session for every member that has none.</p>` +
+    `<button class="act quiet" data-act="cancel">Cancel</button>` +
     `<button class="act quiet" data-act="save"${ok ? "" : " disabled"}>Save</button>` +
     `<button class="act primary" data-act="start-team"${ok ? "" : " disabled"}>Start team</button></footer></section>`;
 }
@@ -732,11 +735,7 @@ document.addEventListener("click", async (e) => {
   const i = +b.dataset.i;
   const slot = tm && b.dataset.s ? slotOf(tm, b.dataset.s) : null;
   switch (b.dataset.act) {
-    case "theme": {
-      const h = document.documentElement;
-      h.dataset.theme = h.dataset.theme === "night" ? "day" : "night";
-      break;
-    }
+    case "theme": toggleTheme(); break;
     case "read": await read(); break;
     case "team": Object.assign(ui, { team: b.dataset.t, compose: null, pick: null, menu: null, day: 0 }); render(); await readTeam(); break;
     case "archived": ui.archived = !ui.archived; render(); break;

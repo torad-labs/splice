@@ -578,7 +578,7 @@ document.addEventListener("click", (e) => {
   }
   const s = el.dataset.s && find(el.dataset.s);
   switch (el.dataset.act) {
-    case "theme": document.documentElement.dataset.theme = document.documentElement.dataset.theme === "day" ? "night" : "day"; break;
+    case "theme": toggleTheme(); break;
     case "ended": ui.ended = !ui.ended; render({ stick: false }); break;
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.auto = false; render(); break;

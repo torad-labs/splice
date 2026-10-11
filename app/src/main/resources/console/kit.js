@@ -285,6 +285,15 @@ const PAGES = [
   ["requests.html", "Requests"],
   ["settings.html", "Settings"],
 ];
+// THE THEME HOLDS ACROSS PAGES AND LOADS: the toggle saves it, and every page applies the saved one as kit.js loads.
+// A page with nothing saved keeps the night its HTML opens in.
+const THEME_KEY = "splice-console-theme";
+try { const saved = localStorage.getItem(THEME_KEY); if (saved === "day" || saved === "night") document.documentElement.dataset.theme = saved; } catch { /* storage off: the page keeps its own theme */ }
+function toggleTheme() {
+  const h = document.documentElement;
+  h.dataset.theme = h.dataset.theme === "day" ? "night" : "day";
+  try { localStorage.setItem(THEME_KEY, h.dataset.theme); } catch { /* storage off: this page still switches */ }
+}
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
 // selected box reads as a strip with its other tabs torn off. The column keeps its width, its wordmark and its
 // theme toggle either way, so nothing moves when the links arrive.

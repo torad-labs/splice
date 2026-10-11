@@ -470,7 +470,7 @@ document.addEventListener("click", (e) => {
   const d = t.dataset;
   if (d.open && !d.act) { ui.open = d.open; ui.shown = true; ui.armed = null; ks.custom = null; render(); return; }
   switch (d.act) {
-    case "theme": document.documentElement.dataset.theme = document.documentElement.dataset.theme === "day" ? "night" : "day"; return;
+    case "theme": toggleTheme(); return;
     case "close": ui.shown = false; break;
     case "clear": ui.q = ""; document.getElementById("q").value = ""; break;
     case "again": refresh(); return;

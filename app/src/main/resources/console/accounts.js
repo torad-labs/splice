@@ -864,7 +864,7 @@ document.addEventListener("click", async (e) => {
   const act = t.dataset.act, p = t.dataset.p && findProv(t.dataset.p), a = t.dataset.a && findAcct(t.dataset.a);
   const k = t.dataset.c && findCmd(t.dataset.c).c;
   switch (act) {
-    case "theme": document.documentElement.dataset.theme = document.documentElement.dataset.theme === "day" ? "night" : "day"; break;
+    case "theme": toggleTheme(); break;
     case "probe": probe(); break;
     // Soonest reset is no order of his own (AccountPool.kt:101, :259); My order keeps the order shown, as his.
     case "mode": {

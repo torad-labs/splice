@@ -311,7 +311,7 @@ function memberHtml(tm, slot) {
   return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +
-    `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span>${esc(model)}</span>` +
+    `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
     `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
@@ -407,7 +407,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
   return `<article class="card m vacant" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp open" aria-hidden="true"></span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}</div>` +
-    `<div class="meta">${word}<span>${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
+    `<div class="meta">${word}<span class="mdl">${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
     `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
 

@@ -89,6 +89,8 @@
 .card.m .meta { flex-wrap: nowrap; }
 .card.m .meta > span:not([class]) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.m .meta > [class] { flex: none; white-space: nowrap; }
+/* the model's label is what a member runs, so it keeps its room and the session's name beside it gives (console rewalk, ea3eeff67) */
+.card.m .meta > .mdl { flex: none; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
 /* a member bound to a session opens it: the whole card is the control, its own buttons keep their own acts */
 .card.m.go { cursor: pointer; }
 .card.m.go:hover { background: var(--obj-high); }

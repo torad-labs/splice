@@ -351,26 +351,21 @@ function linkCuts(rows) {
     if (!lists.has(key)) lists.set(key, []);
     lists.get(key).push(r);
   }
-  // A carrying request holds exactly cut_source_rounds cut requests, so a link is made only where it is the only way the
-  // counts can fit: the cut requests waiting before it are no more than it holds. When more wait than it holds (two cut
-  // requests, then two carrying ones, each holding one), no cut request can be pinned to a carrier: they say they were
-  // counted later, and name no row (fin: don't guess a row).
+  // The cut requests waiting in a session are those since its last request that carried tokens; the next request that
+  // carries tokens and holds cut rounds took them. When it holds at least as many as wait, each names it (a door). When
+  // fewer, which of them it took cannot be known, so they say they were counted later and name no row (fin: don't guess a
+  // row). A request with tokens and no cut rounds ends the wait: what waited before it has no carrier and says so.
   for (const list of lists.values()) {
-    let waiting = [], taken = 0;
+    let waiting = [];
     for (const r of list) {
       if (r.outcome === "ok" && r.in == null && r.out == null) { waiting.push(r); continue; }
-      if (r.cut > 0 && waiting.length > taken) {
-        if (taken === 0 && waiting.length <= r.cut) {
-          for (const c of waiting) { c.counted = true; c.countedOn = r.id; }
-          if (waiting.length === 1 && r.cut === 1) r.cutId = waiting[0].id;
-          waiting = [];
-        } else {
-          taken += Math.min(r.cut, waiting.length - taken);
-        }
+      if (r.in == null && r.out == null) continue;
+      if (r.cut > 0) {
+        for (const c of waiting) { c.counted = true; if (waiting.length <= r.cut) c.countedOn = r.id; }
+        if (waiting.length === 1 && r.cut === 1) r.cutId = waiting[0].id;
       }
+      waiting = [];
     }
-    // what is left waiting was taken by some carrier when taken covers it all, and has none yet otherwise
-    if (taken >= waiting.length) for (const c of waiting) c.counted = true;
   }
   return rows;
 }

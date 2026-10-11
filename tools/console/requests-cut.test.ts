@@ -21,6 +21,9 @@ const rows = [
   row("plain", 60, { ...tokens }),
   row("orphan", 90, { session: "bbbbbbbb", session_id: "bbbbbbbb-2" }),
   // two cut requests, then two carriers holding one each: which carrier took which cannot be known
+  // an older cut request whose tokens never came back: it must not change how the later group reads
+  row("staleCut", 200, { session: "cccccccc", session_id: "cccccccc-3" }),
+  row("staleTok", 170, { ...tokens, session: "cccccccc", session_id: "cccccccc-3" }),
   row("pairA", 140, { session: "cccccccc", session_id: "cccccccc-3" }),
   row("pairB", 130, { session: "cccccccc", session_id: "cccccccc-3" }),
   row("pairC", 120, { ...tokens, cut_source_rounds: 1, session: "cccccccc", session_id: "cccccccc-3" }),
@@ -91,6 +94,9 @@ test("a cut request names the one that took its tokens, that one names it back, 
       await expect(card(t)).toContainText("with 1 earlier request");
       expect(await card(t).locator("button.door").count()).toBe(0);
     }
+
+    await expect(card("staleCut")).toContainText("No usage reported");
+    expect(await card("staleCut").locator("button.door").count()).toBe(0);
 
     // the door selects the carrier
     await card("cutrow").locator("button.door").click();

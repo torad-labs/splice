@@ -10,12 +10,15 @@ package splice.head.perf
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 
 /** One request's ending: its outcome tag, the account it ran on, when a spent window comes back (epoch seconds,
  *  null when the provider named none), the row's own time, and the model splice last served the session: this
  *  row's, or the one before it when splice turned this request away before a model was chosen, and how many times
- *  splice re-sent it before it ended. */
+ *  splice re-sent it before it ended, and when this run of refusals began: the time of the first request splice
+ *  gave up on since the session's last clean answer, null while no such run is open. */
 public data class SessionEnding(
     val outcome: String,
     val account: String?,
@@ -23,11 +26,15 @@ public data class SessionEnding(
     val ts: Long,
     val model: String? = null,
     val retries: Long = 0,
+    val runSince: Long? = null,
 )
 
 // why: a person runs tens of sessions a day, so this many covers every one the console lists with room to spare,
 // and each note is a few short strings.
 private const val MAX_SESSION_ENDINGS = 2_000
+
+/** The endings where splice re-sent a request until it gave up, which open a run of refusals (Marlin, Oct 11). */
+private val GAVE_UP = setOf(OutcomeTag.UPSTREAM_FAILED.wire, OutcomeTag.TURN_CAP.wire)
 
 public class SessionEndings {
     private val lock = Any()
@@ -43,7 +50,7 @@ public class SessionEndings {
             val held = newest.remove(sessionTag)
             newest[sessionTag] = when {
                 held != null && held.ts > ending.ts -> held.copy(model = held.model ?: ending.model)
-                else -> ending.copy(model = ending.model ?: held?.model)
+                else -> ending.copy(model = ending.model ?: held?.model, runSince = runSince(held, ending))
             }
             while (newest.size > MAX_SESSION_ENDINGS) newest.remove(newest.keys.first())
         }
@@ -60,6 +67,16 @@ public class SessionEndings {
             val retries = (row[PerfKeys.RETRIES] as? JsonPrimitive)?.longOrNull ?: 0
             note(session, SessionEnding(outcome, text(row, "account"), reset, ts, text(row, "model"), retries))
         }
+    }
+
+    /** When the run of refusals [ending] belongs to began. A clean answer ends the run; a request splice gave up on
+     *  opens one when none is open; any other ending (a stop, a client abort between the client's own re-sends)
+     *  neither opens nor ends it, so the run is counted from its first refusal and never from a later one. */
+    private fun runSince(held: SessionEnding?, ending: SessionEnding): Long? = when {
+        OutcomeTags.isClean(ending.outcome) -> null
+        held?.runSince != null -> held.runSince
+        ending.outcome in GAVE_UP -> ending.ts
+        else -> null
     }
 
     private fun text(row: JsonObject, key: String): String? =

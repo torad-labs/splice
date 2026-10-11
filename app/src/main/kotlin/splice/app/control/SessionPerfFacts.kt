@@ -66,7 +66,7 @@ internal class SessionPerfFacts(
                 val resetMs = ended.resetEpochSeconds?.let(TimeUnit.SECONDS::toMillis)
                 // in the Accounts roster's words: a client head's row carries the login's identity, not its label
                 val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
-                SessionEnding(ended.outcome, account, resetMs, ended.ts, head, ended.retries)
+                SessionEnding(ended.outcome, account, resetMs, ended.ts, head, ended.retries, ended.runSince)
             }
             ?.takeIf { ending -> ending.resetMs?.let { it > clock() } != false }
     }

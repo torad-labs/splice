@@ -74,4 +74,50 @@ class SessionEndingsTest {
 
         assertEquals("claude-fable-5-1", restarted.endings.endingFor("aaaa1111-full-id")?.model)
     }
+
+    @Test
+    fun `a run of refusals is dated from its first refusal, through the client's own stops between re-sends`() {
+        ended("aaaa1111", "ok")
+        val first = now
+        ended("aaaa1111", "error:upstream-failed")
+        ended("aaaa1111", "client_abort")
+        ended("aaaa1111", "error:upstream-failed")
+
+        assertEquals(first, stats.endings.endingFor("aaaa1111-full-id")?.runSince)
+        AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `a clean answer ends the run, and the next refusal opens a new one`() {
+        ended("aaaa1111", "error:upstream-failed")
+        ended("aaaa1111", "ok")
+        assertNull(stats.endings.endingFor("aaaa1111-full-id")?.runSince, "an answer closes the run")
+
+        val reopened = now
+        ended("aaaa1111", "error:turn-cap")
+
+        assertEquals(reopened, stats.endings.endingFor("aaaa1111-full-id")?.runSince)
+        AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `a stop on its own opens no run`() {
+        ended("aaaa1111", "client_abort")
+
+        assertNull(stats.endings.endingFor("aaaa1111-full-id")?.runSince)
+        AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `a restarted daemon dates the open run from the same first refusal`() {
+        ended("aaaa1111", "ok")
+        val first = now
+        ended("aaaa1111", "error:upstream-failed")
+        ended("aaaa1111", "error:upstream-failed")
+        AsyncFileIo.drain()
+
+        val restarted = PerfStats(tmp.resolve("perf.jsonl"), clock = { now })
+
+        assertEquals(first, restarted.endings.endingFor("aaaa1111-full-id")?.runSince)
+    }
 }

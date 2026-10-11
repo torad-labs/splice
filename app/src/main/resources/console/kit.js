@@ -259,7 +259,7 @@ function stallOf(turn, reanchorMs, endedBy) {
   const at = Date.now();
   if (!turn) {
     if (endedBy?.outcome === "error:auth-missing") return { kind: "signout", at };
-    if (GAVE_UP_ENDINGS.has(endedBy?.outcome)) return { kind: "gaveup", word: OUTCOME_WORD[endedBy.outcome], n: endedBy.retries ?? 0, at };
+    if (GAVE_UP_ENDINGS.has(endedBy?.outcome)) return { kind: "gaveup", word: OUTCOME_WORD[endedBy.outcome], n: endedBy.retries ?? 0, since: endedBy.run_since_ms ?? null, at };
     if (!LIMIT_ENDINGS.has(endedBy?.outcome) || (endedBy.reset_ms != null && endedBy.reset_ms <= at)) return null;
     return { kind: "limit", acct: endedBy.account ?? null, plan: null, until: endedBy.reset_ms ? new Date(endedBy.reset_ms) : null, at };
   }
@@ -291,12 +291,22 @@ const heldByEnding = (s) => s.stall?.kind === "limit" || s.stall?.kind === "sign
 // lamp for "gaveup" and printed the word "undefined" (console-lead, desk walk, Oct 11). stallOf only answers gaveup
 // when no request is in flight, so the moment the client re-sends, the live turn's own state takes the card again.
 const gaveUp = (s) => s.stall?.kind === "gaveup";
+// THE WORDS NEVER CHANGE; ONLY THE COLOUR AND RANK MOVE WITH THE CLOCK (Marlin, Oct 11, 10:53; fin's words). While the
+// client is still re-sending and the run of refusals is under half an hour old, the card is Stalled: the client may
+// yet get through, as "Resumes in" is for a silence. Idle, or busy half an hour or more, it is Needs you: the provider
+// is not coming back on its own soon, and moving or stopping it is his act. The run is dated by the daemon (the row's
+// run_since_ms, the first request splice gave up on since the last clean answer), never from when the page loaded, so
+// a busy card whose daemon names no start stays Stalled rather than guessing.
+const GAVE_UP_NEEDS_MS = 30 * 60_000;
+const gaveUpNeeds = (s) => gaveUp(s)
+  && (s.state !== "working" || (s.stall.since != null && s.stall.at - s.stall.since >= GAVE_UP_NEEDS_MS));
 const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s) : s.state === "idle" && heldByEnding(s));
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
   if (gaveUp(s)) {
     const n = s.stall.n, count = n ? `<span class="detail retried">${n} ${n === 1 ? "retry" : "retries"}</span>` : "";
-    return { cls: "needs", lamp: ICON.retries, word: s.stall.word, detail: count };
+    const since = s.stall.since != null ? `<span class="detail retried">since ${backWord(new Date(s.stall.since))}</span>` : "";
+    return { cls: gaveUpNeeds(s) ? "needs" : "stalled", lamp: ICON.retries, word: s.stall.word, detail: count + since };
   }
   if (resuming(s)) return { cls: "working", lamp: ICON.trace, word: "Working",
     paneDetail: `<span class="detail resumes" data-resume="${s.id}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>` };

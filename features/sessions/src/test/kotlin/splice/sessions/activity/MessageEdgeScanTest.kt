@@ -1,8 +1,8 @@
 // NEW: V4-444 — a caller that names its edges reads a whole window the row cache cannot hold.
 //
 // On his desk (36,743 edges over 20 days) the row cache passed its 16 MiB allowance, so a team's edges, a session's
-// edges and the all-sessions board answered the named storage refusal and showed no edges. These tests drive the store the
-// way those routes do, over real day files, and hold it to three things:
+// edges and the all-sessions board answered the named storage refusal and showed no edges. These tests drive the
+// store the way those routes do, over real day files, and hold it to three things:
 //
 //  · a caller that names few edges gets them from a window the row cache refuses;
 //  · what it gets is what the row cache would have given for the same files (oldest first, one per id); and

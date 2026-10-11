@@ -15,6 +15,7 @@ import splice.core.prompt.SystemPromptMode
 import splice.core.topology.ProjectConfig
 import splice.core.topology.Topology
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
 
 /** [replaceFix] is DoctorConfigChecks' fix text for a REPLACE layer, and [stripFix] its remedy for a
@@ -27,8 +28,8 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
      *  root, mode and source. A layer set to replace is a WARN for the same reason a head's is. A
      *  root missing on disk is a WARN: the layer can never match a session, but the config is legal.
      *  A root that is not absolute after `~/` is a FAIL, because the daemon refuses it at load.
-     *  Declarations are read off the schema and prompt files are never opened, as in
-     *  DoctorConfigChecks.systemPromptChecks. */
+     *  Declarations are read off the schema. A layer's prompt file is checked for being a readable file, never read:
+     *  the daemon refuses to load one it cannot read (spec section 13). */
     internal fun projectPromptChecks(topology: Topology): List<DoctorCheck> =
         topology.projects.flatMap { (key, project) ->
             val raw = key.trim('"')
@@ -44,16 +45,18 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
                 )
             }
             val layers = listOf(
-                Triple(
+                Layer(
                     "project:$raw",
                     project.systemPromptMode,
                     projectSource(project.systemPrompt, project.systemPromptFile),
+                    project.systemPromptFile,
                 ),
             ) + project.heads.map { (head, prompt) ->
-                Triple(
+                Layer(
                     "project-head:$raw:$head",
                     prompt.systemPromptMode,
                     projectSource(prompt.systemPrompt, prompt.systemPromptFile),
+                    prompt.systemPromptFile,
                 )
             }
             val missing = if (Files.isDirectory(root)) {
@@ -68,7 +71,7 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
                     ),
                 )
             }
-            val rows = layers.mapNotNull { (name, mode, source) -> source?.let { layerRow(name, mode, it) } }
+            val rows = layers.mapNotNull { layer -> layer.source?.let { layerRow(layer, root) } }
             missing + bothKeys(raw, project) + rows
         }
 
@@ -88,7 +91,32 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
         }
     }
 
-    private fun layerRow(name: String, mode: SystemPromptMode?, source: String): DoctorCheck = when (mode) {
+    /** One layer as the doctor reads it: its row name, mode, where its text comes from, and the file when it is one. */
+    private data class Layer(val name: String, val mode: SystemPromptMode?, val source: String?, val file: String?)
+
+    /** The layer's row. A prompt file the daemon cannot read is a load error, so it is a FAIL whatever the mode. */
+    private fun layerRow(layer: Layer, root: Path): DoctorCheck {
+        val path = layer.file?.let { resolvedFile(it, root) }
+        if (path != null && !readable(path)) {
+            return DoctorCheck(
+                "project-prompt:${layer.name}",
+                CheckStatus.FAIL,
+                "${layer.name} system_prompt_file is unreadable: $path, so the daemon refuses to load it",
+                "create the file, fix the path (a relative one is under the project root), or remove the key",
+            )
+        }
+        return modeRow(layer.name, layer.mode, requireNotNull(layer.source))
+    }
+
+    private fun readable(path: Path): Boolean = Files.isRegularFile(path) && Files.isReadable(path)
+
+    /** Where the daemon looks for a layer's file: `~/` is home, a relative path is under the project root. */
+    private fun resolvedFile(raw: String, root: Path): Path {
+        val path = Paths.get(UserHome.expand(raw))
+        return if (path.isAbsolute) path.normalize() else root.resolve(path).normalize()
+    }
+
+    private fun modeRow(name: String, mode: SystemPromptMode?, source: String): DoctorCheck = when (mode) {
         SystemPromptMode.REPLACE -> DoctorCheck(
             "project-prompt:$name",
             CheckStatus.INFO,

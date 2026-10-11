@@ -13,6 +13,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -69,6 +70,8 @@ class DoctorConfigChecksTest {
 
     @Test
     fun `every project layer gets a row naming its root, mode and source`(@TempDir tmp: Path) {
+        Files.createDirectories(tmp.resolve(".splice"))
+        Files.writeString(tmp.resolve(".splice/prompt.md"), "stay terse")
         val rows = projectRows(toml(tmp, projectMode = null))
 
         val names = listOf("project-prompt:project:$tmp", "project-prompt:project-head:$tmp:one")
@@ -79,7 +82,21 @@ class DoctorConfigChecksTest {
     }
 
     @Test
+    fun `a prompt file the daemon cannot read fails the doctor, whatever its mode`(@TempDir tmp: Path) {
+        val rows = projectRows(toml(tmp, projectMode = "\"replace\""))
+
+        val failed = rows.single { it.status == CheckStatus.FAIL }
+        assertEquals("project-prompt:project-head:$tmp:one", failed.name)
+        val missing = tmp.resolve(".splice/prompt.md")
+        assertTrue(failed.detail.contains("system_prompt_file is unreadable: $missing"), failed.detail)
+        assertTrue(failed.detail.contains("the daemon refuses to load it"), failed.detail)
+    }
+
+    @Test
     fun `a project table setting both system_prompt and system_prompt_file fails the doctor`(@TempDir tmp: Path) {
+        Files.createDirectories(tmp.resolve(".splice"))
+        Files.writeString(tmp.resolve(".splice/prompt.md"), "stay terse")
+        Files.writeString(tmp.resolve("p.md"), "stay terse")
         val both = toml(tmp, projectMode = null).replace(
             "system_prompt = \"be careful here\"",
             "system_prompt = \"be careful here\"\nsystem_prompt_file = \"p.md\"",

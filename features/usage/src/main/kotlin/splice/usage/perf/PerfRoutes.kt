@@ -25,6 +25,8 @@ package splice.usage.perf
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
+import io.ktor.http.parseQueryString
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonObject
@@ -68,6 +70,8 @@ private data class AskedWindow(
     val filter: TurnsFilter,
     val zone: ZoneId,
     val usage: Boolean = true,
+    /** More questions of the SAME window, each its own filter and clamp, answered from the one read of it. */
+    val asks: List<AskedWindow> = emptyList(),
 )
 
 public class PerfRoutes(
@@ -159,22 +163,25 @@ public class PerfRoutes(
             refuse(call, "unknown time_zone: $zoneText", HttpStatusCode.BadRequest)
             return null
         }
-        val nText = call.request.queryParameters["n"]
-        val read = readFilter(call.request.queryParameters)
+        val asks = call.request.queryParameters.getAll("ask").orEmpty()
+            .map { askedOf(parseQueryString(it), since, zone) }
+        val asked = askedOf(call.request.queryParameters, since, zone)
+        val unread = (listOf(asked) + asks).firstOrNull { it.refusal != null }
+        unread?.let { refuse(call, it.refusal.orEmpty(), HttpStatusCode.BadRequest) }
+        return asked.window?.copy(asks = asks.mapNotNull { it.window })?.takeIf { unread == null }
+    }
+
+    /** One question's window, or the sentence naming what it could not read. */
+    private data class AskRead(val window: AskedWindow?, val refusal: String? = null)
+
+    private fun askedOf(params: Parameters, since: Long, zone: ZoneId): AskRead {
+        val nText = params["n"]
+        val read = readFilter(params)
         val filter = (read as? TurnsFilterRead.Read)?.filter
-        val asked = rowsAsked(nText)?.let { n ->
-            filter?.let {
-                AskedWindow(
-                    since = since,
-                    n = n,
-                    filter = it,
-                    zone = zone,
-                    usage = call.request.queryParameters["usage"] != "0",
-                )
-            }
+        val window = rowsAsked(nText)?.let { n ->
+            filter?.let { AskedWindow(since = since, n = n, filter = it, zone = zone, usage = params["usage"] != "0") }
         }
-        if (asked == null) refuse(call, refusal(nText, read), HttpStatusCode.BadRequest)
-        return asked
+        return AskRead(window, refusal(nText, read).takeIf { window == null })
     }
 
     /** The rows `?n=` asks for, or null when it is not a whole number. Clamped rather than refused, and the
@@ -233,6 +240,11 @@ public class PerfRoutes(
                 put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
             }
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
+            // Each further question the request carried reads the window already in hand: the cost of a read is the
+            // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).
+            if (asked.asks.isNotEmpty()) {
+                putJsonArray("asks") { asked.asks.forEach { add(turnsJson(head, projection, it)) } }
+            }
         }
     }
 

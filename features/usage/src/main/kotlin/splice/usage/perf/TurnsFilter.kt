@@ -55,6 +55,7 @@ internal data class TurnsAttribution(
  *  answered itself, which are not model requests; [compact] true asks for the compactions and false for every request
  *  that was not one, a row that never carried the field included. */
 internal data class TurnsFilter(
+    val from: Long? = null,
     val until: Long? = null,
     val outcome: String? = null,
     val attribution: TurnsAttribution = TurnsAttribution(),
@@ -63,6 +64,7 @@ internal data class TurnsFilter(
     val waits: TurnsWaits = TurnsWaits(),
 ) {
     fun matches(row: PerfRow): Boolean = listOf(
+        from == null || row.ts >= from,
         until == null || row.ts < until,
         outcomeMatches(row.outcome),
         attribution.model == null || row.facts.model == attribution.model,
@@ -99,6 +101,8 @@ internal sealed class TurnsFilterRead {
  *  ignored: ignoring it would answer the unfiltered window while looking exactly like the filtered one. */
 internal class TurnsFilterReader {
     operator fun invoke(params: Parameters): TurnsFilterRead {
+        val fromText = params["from"]
+        val from = fromText?.toLongOrNull()?.takeIf { it >= 0 }
         val untilText = params["until"]
         val until = untilText?.toLongOrNull()?.takeIf { it >= 0 }
         val unattributedText = params["unattributed"]
@@ -106,6 +110,7 @@ internal class TurnsFilterReader {
         val localText = params["local"]
         val compactText = params["compact"]
         val problem = listOfNotNull(
+            "from must be a non-negative epoch-ms instant, got '$fromText'".takeIf { fromText != null && from == null },
             "until must be a non-negative epoch-ms instant, got '$untilText'"
                 .takeIf { untilText != null && until == null },
             "unattributed must be model or account, got '$unattributedText'"
@@ -115,6 +120,7 @@ internal class TurnsFilterReader {
             waitProblem(params),
         ).firstOrNull()
         val filter = TurnsFilter(
+            from = from,
             until = until,
             outcome = given(params["outcome"]),
             attribution = TurnsAttribution(

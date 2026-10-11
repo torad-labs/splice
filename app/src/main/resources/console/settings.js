@@ -279,17 +279,36 @@ const silenceOf = (row, tier) => {
 };
 /** The words the daemon cannot filter exactly: what else a row must say, given its command's silence tier. */
 const ROW_CHECK = { gaveup: (row) => WHY.gaveup.has({ outcome: row.outcome, cause: row.cause }), overloaded: (row) => row.cause !== "UPSTREAM_TRUNCATED" && row.cause !== "UPSTREAM_STALLED", cutoff: (row) => row.cause === "UPSTREAM_TRUNCATED", waited: (row, tier) => silenceOf(row, tier) > 0, silentresume: (row) => !!row.stall_ms, silentover: (row) => !!row.stall_ms };
-async function countWeek(head, why, from) {
+/** One figure's question of the daemon: the filter its word means, its floor in time, and whether the count is the whole answer. */
+function askWeek(head, why, from) {
   const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
-  if (why === "waited") { if (!Number.isFinite(tier)) return { head, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
+  if (why === "waited") { if (!Number.isFinite(tier)) return { head, why, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
   const exact = !ROW_CHECK[why];
-  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(from), time_zone: ZONE, n: String(exact ? 1 : MAX_ROWS), local: "0", usage: "0", ...ask })}`);
-  const answer = (res.body?.heads || []).find((x) => x.key === head.key);
-  if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
+  return { head, why, tier, exact, query: new URLSearchParams({ n: String(exact ? 1 : MAX_ROWS), from: String(from), local: "0", usage: "0", ...ask }).toString() };
+}
+/** The figure one question's answer makes, or why it makes none. */
+function countOf({ head, why, tier, exact }, answer) {
+  if (!answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || "splice did not answer" };
   const rows = exact ? (answer.rows || []) : (answer.rows || []).filter((r) => ROW_CHECK[why](r, tier));
   const newest = rows.reduce((a, b) => (!a || b.ts > a.ts ? b : a), null);
   const longest = why === "waited" ? rows.reduce((a, b) => (!a || silenceOf(b, tier) > silenceOf(a, tier) ? b : a), null) : null;
   return { head, n: exact ? answer.count ?? 0 : rows.length, newest, longest, silence: longest ? silenceOf(longest, tier) : 0 };
+}
+/** Every figure of one command from ONE read of its week: the daemon's cost is the file's, not the question's (about 3 s per
+ *  read on a busy command), so nine questions one after another were half a minute. */
+async function countsWeek(head, plan, week) {
+  const asks = plan.map(([why, from]) => askWeek(head, why, from));
+  const sent = asks.filter((a) => !a.err);
+  if (!sent.length) return new Map(asks.map((a) => [a.why, { head, err: a.err }]));
+  const q = new URLSearchParams({ head: head.key, since: String(week), time_zone: ZONE, n: "1", local: "0", usage: "0" });
+  sent.forEach((a) => q.append("ask", a.query));
+  const res = await bulkGet(`/api/perf/turns?${q}`);
+  const answer = (res.body?.heads || []).find((x) => x.key === head.key);
+  const answers = answer?.asks;
+  const failure = !res.ok || !answer || !Array.isArray(answers) || answers.length !== sent.length ? answer?.error || answer?.read_error || `splice answered ${res.status}` : null;
+  const byWhy = new Map(sent.map((a, i) => [a.why, failure ? { head, err: failure } : countOf(a, answers[i])]));
+  asks.filter((a) => a.err).forEach((a) => byWhy.set(a.why, { head, err: a.err }));
+  return byWhy;
 }
 /** The most requests a command held at once today, and when: each request held a slot from the start of its sending (its
  *  end minus its time, plus its wait in line) to its end. A read at the cap is not a read of the whole day, so it
@@ -309,7 +328,10 @@ function readWeek() {
   const day = startOfToday(), week = Date.now() - 7 * DAY;
   const plan = [["overloaded", day], ["cutoff", day], ["queued", day], ["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week]];
   Promise.all(ui.headRows.map(readPeak)).then((peaks) => { ui.peaks = peaks; later(); });
-  plan.forEach(([why, from]) => Promise.all(ui.headRows.map((h) => countWeek(h, why, from))).then((counts) => { ui.week[why] = counts; later(); }));
+  Promise.all(ui.headRows.map((h) => countsWeek(h, plan, week))).then((perHead) => {
+    plan.forEach(([why]) => { ui.week[why] = perHead.map((m) => m.get(why)); });
+    later();
+  });
 }
 const weekReading = (...words) => words.some((why) => ui.week[why] === undefined);
 /** A word's figure across every command: the total, or null when any command's read did not answer. */

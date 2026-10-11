@@ -146,6 +146,43 @@ class PerfTurnsFilterTest {
         }
 
     @Test
+    fun `several asks are answered from one read of the window, each with its own filter, floor and clamp`() =
+        testApplication {
+            var reads = 0
+            val counted = UsageHead(
+                key = "kimi",
+                label = "claude-kimi",
+                usage = HeadUsageSource { UsageView(0, 0, null) },
+                warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+                sinks = UsageHeadSinks(
+                    perfRows = PerfRowsSource { since ->
+                        reads++
+                        PerfRowsWindow(rows.filter { it.ts >= since })
+                    },
+                ),
+            )
+            val countedRoutes = PerfRoutes(UsageHeadLookup { listOf(counted) }, WallClock { 20_000 })
+            application { routing { get("/api/perf/turns") { countedRoutes.turns(call) } } }
+            val head = ask(
+                client,
+                "n=1&ask=outcome%3Dfailed%26n%3D2000&ask=outcome%3Dfailed%26from%3D6000%26n%3D2000&ask=queued_ms%3D1",
+            )
+            val asks = head.getValue("asks").jsonArray.map { it.jsonObject }
+            assertEquals(1, reads, "three questions, one read of the window")
+            assertEquals(listOf(5_000L, 9_300L), stamps(asks[0]))
+            assertEquals(listOf(9_300L), stamps(asks[1]), "from is a floor on the row's own time inside the window")
+            assertEquals(1L, count(asks[2]), "the third question counts the one request that waited in line")
+        }
+
+    @Test
+    fun `an ask the daemon cannot read refuses the whole request by name`() = testApplication {
+        mount()
+        val response = client.get("/api/perf/turns?head=kimi&since=0&ask=from%3Dsoon")
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertTrue(response.bodyAsText().contains("from must be a non-negative epoch-ms instant"))
+    }
+
+    @Test
     fun `Failed includes watchdog cancellation but excludes stops however many newer rows fill the list`() =
         testApplication {
             mount()

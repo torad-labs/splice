@@ -41,6 +41,9 @@ private const val FROM_COMMAND = "from_command"
 private const val FROM_MODEL = "from_model"
 private const val THINKING_DROPPED = "thinking_dropped"
 
+// why: a session id never holds a dot, so this file can never be another session's moves
+private const val TRIED_SUFFIX = ".unmoved.json"
+
 public class ModelMoves(private val dir: Path) {
     /** Adds [move] to [sessionId]'s record. A session id that is no id records nothing. */
     public fun record(sessionId: String, move: ModelMove): Unit = synchronized(this) {
@@ -68,14 +71,34 @@ public class ModelMoves(private val dir: Path) {
 
     /** [session]'s move onto [command] did not come back, so the mark its launch wrote is dropped: the session went
      *  on where it was, and a mark left standing would name the model it never reached ever after (Marlin, move
-     *  check 5). Only a launch's own mark from [since] on is dropped; a move that came back earlier is kept. */
+     *  check 5). Only a launch's own mark from [since] on is dropped; a move that came back earlier is kept. The
+     *  attempt itself is kept at [since]: splice ended the client for it, and the /exit it typed is in the
+     *  conversation with no mark to sit under (Marlin, #3). */
     public fun unmoved(session: String, command: String, since: Long): Unit = synchronized(this) {
         if (!sessionIdShape.matches(session)) return
+        val tried = triedAt(session)
+        if (since !in tried) {
+            val body = JsonArray((tried + since).map(::JsonPrimitive)).toString()
+            SecureFile.writeAtomic0600(dir.resolve("$session$TRIED_SUFFIX"), body)
+        }
         val all = of(session)
         val launched = all.lastOrNull()?.takeIf {
             it.fromCommand == null && it.command == command && it.movedAt >= since
         } ?: return
         write(session, all - launched)
+    }
+
+    /** When [sessionId]'s moves that did not come back were pressed, oldest first; none for a session never tried. */
+    public fun triedAt(sessionId: String): List<Long> {
+        if (!sessionIdShape.matches(sessionId)) return emptyList()
+        val text = try {
+            Files.readString(dir.resolve("$sessionId$TRIED_SUFFIX"))
+        } catch (_: NoSuchFileException) {
+            return emptyList()
+        } catch (failure: IOException) {
+            throw IOException("cannot read the moves of $sessionId: ${SafeFailureText.render(failure)}", failure)
+        }
+        return Json.parseToJsonElement(text).jsonArray.mapNotNull { it.jsonPrimitive.longOrNull }
     }
 
     private fun write(sessionId: String, all: List<ModelMove>) {

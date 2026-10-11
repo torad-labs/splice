@@ -106,7 +106,7 @@ async function readLog(s, before = "end") {
   } else {
     const page = res.body;
     const messages = before === "end" || !held?.messages ? page.messages : [...page.messages, ...held.messages];
-    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end", moves: page.moves ?? held?.moves ?? [],
+    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end", moves: page.moves ?? held?.moves ?? [], unmoved: page.unmoved ?? held?.unmoved ?? [],
       unreadable: (before === "end" ? 0 : held?.unreadable ?? 0) + (page.unparseable_lines ?? 0) };
   }
   render({ stick: before === "end" });
@@ -267,14 +267,19 @@ function logHtml(s) {
   const first = held.messages.find((m) => m.ts)?.ts;
   const marks = (held.moves || []).filter((mv) => !held.earlier || first == null || mv.moved_at >= first)
     .sort((a, b) => a.moved_at - b.moved_at);
-  let mark = null, exit = EXIT_LOOKING;
-  const markUpTo = (ts) => { while (marks.length && (ts == null || marks[0].moved_at <= ts)) { mark = marks.shift(); exit = EXIT_LOOKING; items.push(jointHtml(mark)); } };
+  // a move that did not come back draws no mark, but splice ended the client for it all the same (Marlin, #3)
+  const tries = (held.unmoved || []).slice().sort((a, b) => a - b);
+  let pressed = null, exit = EXIT_LOOKING;
+  const markUpTo = (ts) => {
+    while (marks.length && (ts == null || marks[0].moved_at <= ts)) { const mv = marks.shift(); pressed = mv.moved_at; exit = EXIT_LOOKING; items.push(jointHtml(mv)); }
+    while (tries.length && ts != null && tries[0] <= ts) { pressed = tries.shift(); exit = EXIT_LOOKING; }
+  };
   held.messages.forEach((m) => {
     if (m.ts) markUpTo(m.ts);
     const key = `${s.id}:${m.index}`;
     const at = m.ts ? `<time>${clock(new Date(m.ts))}</time>` : "";
     if (m.role === "tool") return; // drawn under its call
-    const next = moveExit(m, mark, exit);
+    const next = moveExit(m, pressed, exit);
     if (next !== exit) { exit = next; return; }
     if (m.tool) {
       // only the newest call of a running turn runs; a call with no result has nothing to open
@@ -301,13 +306,14 @@ function logHtml(s) {
   return `<div class="log">${items.join("")}</div>`;
 }
 /** The /exit splice typed to end the client for a move, and what Claude Code printed for it: the move's mechanics, which
- *  the joint already says, so they are not his conversation (Marlin #3). Only the first /exit after a mark, sent within
+ *  the joint already says, so they are not his conversation (Marlin #3). A move that did not come back is the same
+ *  press with no joint. Only the first /exit after a mark, sent within
  *  the move's own wait, and the one line it printed next; an /exit he types himself later is his and stays. */
 const MOVE_EXIT_MS = 60_000;
 const EXIT_LOOKING = 0, EXIT_TYPED = 1, EXIT_DONE = 2;
 /** Where reading [m] leaves the search for the move's /exit: a step on when [m] is part of it, and so hidden. */
-function moveExit(m, mark, exit) {
-  if (!mark || exit === EXIT_DONE || !m.ts || m.ts - mark.moved_at > MOVE_EXIT_MS) return exit;
+function moveExit(m, pressed, exit) {
+  if (pressed == null || exit === EXIT_DONE || !m.ts || m.ts - pressed > MOVE_EXIT_MS) return exit;
   if (exit === EXIT_LOOKING) return m.role === "user" && (m.text || "").trim() === "/exit" ? EXIT_TYPED : exit;
   return m.role === "system" && !m.kind ? EXIT_DONE : exit;
 }

@@ -298,6 +298,8 @@ public class SessionsRoutes(
         put("next", page.next)
         if (fromEnd) put("earlier", page.earlier)
         put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
+        // a move that did not come back leaves no mark, but splice ended the client for it: when he pressed
+        put("unmoved", buildJsonArray { transcripts.unmoved(page.sessionId).forEach { add(JsonPrimitive(it)) } })
         // Declared additions (V4-130, routed to splice-design): the page's denominator. What it read
         // past, by kind, with the two kinds the orchestrator asked for named on their own.
         put("unparseable_lines", page.skipped[SKIPPED_UNPARSEABLE] ?: 0)

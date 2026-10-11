@@ -162,6 +162,9 @@ public interface SessionTranscripts {
     /** Where [sessionId] changed model, oldest first; none for a session that was never moved. */
     public fun moves(sessionId: String): List<ModelMove> = emptyList()
 
+    /** When [sessionId]'s moves that did not come back were pressed, oldest first: the client was ended for each. */
+    public fun unmoved(sessionId: String): List<Long> = emptyList()
+
     public fun page(
         sessionId: String,
         roots: List<Path>,

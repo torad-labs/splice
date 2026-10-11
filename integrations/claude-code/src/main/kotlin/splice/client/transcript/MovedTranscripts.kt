@@ -11,4 +11,6 @@ public class MovedTranscripts(
     private val moved: ModelMoves,
 ) : SessionTranscripts by reader {
     override fun moves(sessionId: String): List<ModelMove> = moved.of(sessionId)
+
+    override fun unmoved(sessionId: String): List<Long> = moved.triedAt(sessionId)
 }

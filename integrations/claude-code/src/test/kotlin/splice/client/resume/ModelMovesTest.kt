@@ -98,6 +98,8 @@ class ModelMovesTest {
         moves.unmoved("s1", "claude-splice", 2_000L)
         moves.unmoved("s1", "claudex", 2_000L)
         assertEquals(1, moves.of("s1").size)
+        assertEquals(listOf(2_000L), moves.triedAt("s1"), "the attempt is kept once, when he pressed")
+        assertEquals(emptyList<Long>(), moves.triedAt("s2"))
     }
 
     @Test

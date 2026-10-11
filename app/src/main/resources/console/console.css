@@ -342,7 +342,9 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
   position: relative; margin: 1.1rem 0 1.6rem 3.4rem; padding: 1.15rem 1.5rem .85rem; background: var(--obj-sunk);
   border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
 }
-.meter.windows.spend { grid-template-columns: auto 1fr auto auto; column-gap: 1.3rem; }  /* outside the cards: its own columns */
+.meter.windows.spend { grid-template-columns: auto minmax(0, 1fr) auto auto; column-gap: 1.3rem; }  /* outside the cards: its own columns */
+.meter.windows.spend .money { white-space: normal; }  /* the figure wraps when the card is narrow, so the reset and the button keep their words whole and inside the edge */
+.meter.windows.spend .act { white-space: nowrap; }
 .meter .editor { margin-top: 0; }
 /* the command the day belongs to, as a tab on the row's top edge: it names the row without taking its width, and it has
    no live dot, which it carries only when it rides an account */

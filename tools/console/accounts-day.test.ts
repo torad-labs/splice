@@ -12,7 +12,7 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const HOUR = 3_600_000;
 const dayStart = Math.floor(Date.now() / (24 * HOUR)) * 24 * HOUR; // a UTC midnight: whole hours, so no opening half-hour
 const noon = dayStart + 12 * HOUR;
-const commands = ["torn-day", "clean-day"];
+const commands = ["torn-day", "clean-day", "plan-day"];
 
 /** What the stub daemon says: both commands have a priced hour today; the first also holds an hour it could not read. */
 function economics() {
@@ -21,6 +21,7 @@ function economics() {
     heads: [
       { key: "torn-day", label: "torn-day", buckets: [bucket(noon)], not_read_hours: [noon + HOUR] },
       { key: "clean-day", label: "clean-day", buckets: [bucket(noon)], not_read_hours: [] },
+      { key: "plan-day", label: "plan-day", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }], not_read_hours: [noon + HOUR] },
     ],
   };
 }
@@ -80,4 +81,23 @@ test("a day whose hours were all read shows its figure", async () => {
   const day = await dayOf("clean-day");
   expect(day).toContain("$1.50");
   expect(day).not.toContain("Not read");
+});
+
+test("at 3828 the requests-on-your-plan line under a Day reading stays clear of the Set budget button", async () => {
+  const page = await browser.newPage({ viewport: { width: 3828, height: 1889 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
+    const meter = page.locator(`[data-meter="plan-day"]`);
+    await expect(meter).toBeVisible({ timeout: 15_000 });
+    await expect(meter).not.toContainText("Reading", { timeout: 15_000 });
+    const gap = await meter.evaluate((el) => {
+      const sub = el.querySelector(".unpriced.own .part")?.getBoundingClientRect();
+      const button = [...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Set budget")?.getBoundingClientRect();
+      return sub && button ? button.left - sub.right : null;
+    });
+    expect(gap).not.toBeNull();
+    expect(gap!).toBeGreaterThanOrEqual(0);
+  } finally {
+    await page.close();
+  }
 });

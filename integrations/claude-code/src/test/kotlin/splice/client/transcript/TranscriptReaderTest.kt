@@ -90,7 +90,7 @@ class TranscriptReaderTest {
                     "api_key = [redacted]",
                     TranscriptToolUse("Read", true, "toolu_1"),
                 ),
-                TranscriptMessage(4, TranscriptRole.SYSTEM, null, "<command-name>/model</command-name>"),
+                TranscriptMessage(4, TranscriptRole.USER, null, "/model"),
                 TranscriptMessage(5, TranscriptRole.SYSTEM, null, "API error: overloaded_error"),
                 TranscriptMessage(6, TranscriptRole.ASSISTANT, null, "Done.", messageId = "msg_2"),
             ),
@@ -101,6 +101,29 @@ class TranscriptReaderTest {
             page.skipped,
         )
         assertNull(page.next, "the whole file fit in one page")
+    }
+
+    @Test
+    fun `a slash command reads as the line the person typed, its output as a system line, a reminder never`() {
+        val rename = """{"type":"user","timestamp":"$TS","message":{"role":"user","content":""" +
+            """"<command-name>/rename</command-name>\n<command-message>rename</command-message>\n""" +
+            """<command-args>notes-2-5</command-args>"}}"""
+        val printed = """{"type":"user","timestamp":"$TS","message":{"role":"user","content":""" +
+            """"<local-command-stdout>Session renamed to: notes-2-5</local-command-stdout>"}}"""
+        val reminder = """{"type":"user","isMeta":true,"timestamp":"$TS","message":{"role":"user","content":[""" +
+            """{"type":"text","text":"<system-reminder>\nCalled the Read tool\n</system-reminder>"}]}}"""
+        val quiet = """{"type":"user","timestamp":"$TS","message":{"role":"user","content":""" +
+            """"<local-command-stdout></local-command-stdout>"}}"""
+        transcript(home.resolve(".claude"), listOf(rename, printed, reminder, quiet))
+        val page = found(TranscriptReader().page(ID, listOf(home.resolve(".claude")), null, 100))
+        assertEquals(
+            listOf(
+                TranscriptMessage(0, TranscriptRole.USER, TS_MS, "/rename notes-2-5"),
+                TranscriptMessage(1, TranscriptRole.SYSTEM, TS_MS, "Session renamed to: notes-2-5"),
+            ),
+            page.messages,
+        )
+        assertEquals(mapOf("user:client-note" to 2), page.skipped)
     }
 
     @Test

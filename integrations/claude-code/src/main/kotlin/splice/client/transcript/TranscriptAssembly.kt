@@ -42,6 +42,7 @@ internal class PageAssembly(
     val skipped: MutableMap<String, Int> = sortedMapOf()
     private val records = TranscriptRecords()
     private val peers = PeerEnvelope()
+    private val echoes = ClientEcho()
     private val lineage = TranscriptLineage()
     private var pending: PendingAssistant? = null
 
@@ -127,14 +128,25 @@ internal class PageAssembly(
     /** What a user record's text is: a teammate's message, the marker of a stopped turn, or the person's words. */
     private fun userText(record: JsonObject, speaker: TranscriptRole, ts: Long?, text: String) {
         val received = peers.read(record, text)
-        when {
-            received != null -> ledger.received(at, ts, received.from, received.body)
-            text.trimStart().startsWith(INTERRUPTED_MARKER) -> ledger.interrupted(at, ts, text)
-            else -> {
-                ledger.text(at, speaker, ts, text)
-                if (speaker == TranscriptRole.USER) lineage.person(record, ledger.all().last().index)
-            }
+        if (received != null) return ledger.received(at, ts, received.from, received.body)
+        when (val echo = echoes.read(text)) {
+            EchoReading.Hidden -> count("user:client-note")
+            is EchoReading.Command -> person(record, ts, echo.line)
+            is EchoReading.Output -> ledger.text(at, TranscriptRole.SYSTEM, ts, echo.text)
+            is EchoReading.Plain ->
+                if (echo.text.startsWith(INTERRUPTED_MARKER)) {
+                    ledger.interrupted(at, ts, echo.text)
+                } else if (speaker == TranscriptRole.USER) {
+                    person(record, ts, echo.text)
+                } else {
+                    ledger.text(at, speaker, ts, echo.text)
+                }
         }
+    }
+
+    private fun person(record: JsonObject, ts: Long?, text: String) {
+        ledger.text(at, TranscriptRole.USER, ts, text)
+        lineage.person(record, ledger.all().last().index)
     }
 
     private fun userBlock(record: JsonObject, block: JsonObject, speaker: TranscriptRole, ts: Long?) {

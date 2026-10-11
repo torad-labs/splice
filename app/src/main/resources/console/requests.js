@@ -276,7 +276,7 @@ async function readRows(held = MAX_HELD) {
     for (const a of menus?.accounts || []) if (a.key) facets.accounts.set(`${head.key}|${a.key}`, { head, account: a.key });
     for (const s of menus?.sessions || []) if (s.key) facets.sessions.set(s.key, { head, last: s.last_model_ts_epoch_ms });
   });
-  state.rows = rows;
+  state.rows = linkCuts(rows);
   state.matched = matched;
   state.capped = capped;
   state.held = held;
@@ -322,6 +322,7 @@ function mapRow(head, row) {
     // tokens at all (no cache_write_tokens key on any error:rate-limited or error:plan-limit row in the live file),
     // and the open request drew "Cache write 0" over it, which is a measurement nobody made. `cached` keeps its zero:
     // it is never printed, only compared, and it decides whether the "% cached" line is drawn at all.
+    cut: row.cut_source_rounds ?? 0,
     in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? null, out: row.out_tokens ?? null,
     cost: row.cost_usd ?? null, reason: row.cost_reason ?? null,
     reset: row.earliest_reset_epoch_seconds ? new Date(row.earliest_reset_epoch_seconds * 1000) : null,
@@ -335,6 +336,28 @@ function mapRow(head, row) {
     // root and never a name (SessionsRoutes repoJson), and /api/projects ids are roots, so a link may name either
     repo: repoName(state.sessions[sid]?.repo?.root), repoRoot: state.sessions[sid]?.repo?.root ?? null,
   };
+}
+/** Code mode cuts a source round on purpose and bills it to the same session's next request (cut_source_rounds, PerfKeys.kt;
+ *  TurnUsage.kt). The cut request is ok and carries no tokens; the request that took them carries them, and its count
+ *  looks too big with no reason. Each side names the other, and only where the other is in the loaded list: a row is
+ *  never pointed at by a guess (fin, Oct 11). countedOn: the carrying row's id. earlier: how many cut requests the
+ *  carrying row holds, and cutId their row when it is exactly one. */
+function linkCuts(rows) {
+  const asc = [...rows].sort((a, b) => a.ts - b.ts), bySession = new Map();
+  for (const r of asc) if (r.sid) bySession.set(r.head + "|" + r.sid, [...(bySession.get(r.head + "|" + r.sid) ?? []), r]);
+  for (const r of rows) { r.countedOn = null; r.earlier = r.cut; r.cutId = null; }
+  const cutRows = new Map();
+  for (const list of bySession.values()) {
+    list.forEach((r, i) => {
+      if (r.outcome !== "ok" || r.in != null || r.out != null) return;
+      const carrier = list.slice(i + 1).find((x) => x.cut > 0);
+      if (!carrier) return;
+      r.countedOn = carrier.id;
+      cutRows.set(carrier.id, [...(cutRows.get(carrier.id) ?? []), r]);
+    });
+  }
+  for (const r of rows) if (cutRows.get(r.id)?.length === 1 && r.cut === 1) r.cutId = cutRows.get(r.id)[0].id;
+  return rows;
 }
 const repoName = (root) => (root || "").split("/").filter(Boolean).pop() || null;
 
@@ -502,12 +525,20 @@ function rowHtml(r) {
   const tokens = (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached / r.in >= .5 ? `<em>${Math.round((r.cached / r.in) * 100)}% cached</em>` : ""}</span>` : "")
     + (r.out != null ? `<span class="tok">${kTok(r.out)} out</span>` : "");
   const toks = tokens ? `<span class="toks">${tokens}</span>` : "";
+  // a finished request with no tokens says where they went: counted on the request that took them, a door to it when it
+  // is in the list; any other has no reading and says so. The request that took them says what its count holds.
+  const noReading = r.outcome === "ok" && r.in == null && r.out == null
+    ? (r.countedOn ? `<button class="tok quiet door" data-open="${esc(r.countedOn)}">Counted on the next request</button>` : `<span class="tok quiet">No usage reported</span>`)
+    : "";
+  const earlier = r.cut > 0 && r.in != null
+    ? (r.cutId ? `<button class="tok quiet door" data-open="${esc(r.cutId)}">with 1 earlier request</button>` : `<span class="tok quiet">with ${r.cut} earlier request${r.cut === 1 ? "" : "s"}</span>`)
+    : "";
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span><span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}</div>${match}</article>`;
+    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${earlier}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and

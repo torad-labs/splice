@@ -109,6 +109,8 @@
 .rq .meta .toks { display: inline-flex; align-items: center; gap: .45rem 1.1rem; white-space: nowrap; }
 .rq .name { min-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tok { color: var(--text-body); }
+.tok.quiet { color: var(--text-mute); }
+.rq .meta .door { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: .2em; }
 .rq.fail { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }  /* a failure keeps its edge in the limit's colour */
 /* what the search found, in the body it was found in */
 .match { margin: .55rem 0 0 8.5rem; font: 500 .98rem/1.35 var(--font-data); color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

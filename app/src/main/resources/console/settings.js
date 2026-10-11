@@ -43,7 +43,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || liveKnobs().some((k) 
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
-const ui = { open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
+const ui = { saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
 
 // ---------- what the daemon keeps ----------
 // One read per store; a store whose route answers with an error is drawn as unreadable, never as empty.
@@ -56,6 +56,10 @@ async function readKept() {
   ui.heads = (heads.body?.heads || []).map((h) => h.key);
   ks.cmds = ui.heads;
   ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
+  // the bodies each tapped command holds in memory now, counted and never read out (GET /api/heads/{head}/wire)
+  const tapped = ui.heads.filter((h) => tapOf(h) > 0);
+  const wires = await Promise.all(tapped.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/wire`)));
+  ui.held = Object.fromEntries(tapped.map((h, i) => [h, wires[i].ok ? (wires[i].body?.records ?? []).length : null]));
   const traces = await Promise.all(ui.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/trace/kept`)));
   ui.kept.trace = traces.every((t) => t.ok) && traces.length ? traces.map((t) => t.body) : null;
 }
@@ -82,6 +86,10 @@ function found(id) {
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
 const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key) && shownKnob(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])) })).join("")}</div>`;
+
+// the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
+const tapOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.wireTap) || 0;
+const traceOn = (head) => ks.cfg?.layers?.perHead?.[head]?.trace !== false;
 
 // ---------- Your data ----------
 // Each store, what it holds, how long, and its Delete now. A store with no route to count or delete it says so.
@@ -148,20 +156,31 @@ function dataRow(r) {
   }
   const x = heldOf(r), id = `del:${r.id}`;
   if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
+  const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
   const keep = r.id === "edges" && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>` : "";
   return drow({
     name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep,
+    sw: on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
+    more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdset">${ui.heads.map((h) => `${cmdChip(h)}<span class="fixed quiet">${traceOn(h) ? "Saved" : "Not saved"}</span>`).join("")}</div></div>` : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
 }
 function dataHtml() {
   const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")) });
+  // what each tapped command holds in memory right now: counted, never shown, and no Delete since the daemon has none
+  const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
+  const memory = drow({
+    cls: taps.length ? "" : " off", name: "Last requests, in memory", yours: true,
+    amount: taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<b>${fmt(heldN)}</b> ${heldN === 1 ? "request" : "requests"}` : `<span class="none">Nothing held</span>`,
+    keep: `<span class="taps">${taps.map((h) => `<span class="tap">${cmdChip(h)}<span class="fixed">Last ${tapOf(h)}</span></span>`).join("")}</span>`,
+    sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
+  });
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
   const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && r.noRoute) ? " counted" : ""}</span></div>`;
   const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;
   const rows = (g) => DATA_ROWS.filter((r) => r.g === g).map(dataRow).join("");
-  return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${head("Records", "records")}${rows("records")}</div>`;
+  return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
 }
 
 const PANES = {
@@ -259,6 +278,7 @@ document.addEventListener("click", (e) => {
     case "close": ui.shown = false; break;
     case "clear": ui.q = ""; document.getElementById("q").value = ""; break;
     case "again": refresh(); return;
+    case "saving": ui.saving = ui.saving === "trace" ? null : "trace"; break;
     case "arm": ui.armed = d.id; delete ui.bad[d.id]; break;
     case "disarm": ui.armed = null; break;
     case "delete": ui.armed = null; render(); remove(d.id); return;

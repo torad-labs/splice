@@ -119,7 +119,7 @@ const DATA_ROWS = [
   { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", needs: "Needed to resume on another model" },
   { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", store: "compaction_summaries", needs: "Needed to retry a compaction", life: "2 hours" },
   { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", needs: "Needed by code mode", life: "1 day unused" },
-  { id: "reasoning", g: "text", name: "Reasoning between requests", noRoute: true },
+  { id: "reasoning", g: "text", name: "Reasoning between requests", own: true, door: ["sessions.html", "Sessions"] },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"] },
   { id: "labels", g: "records", name: "What each agent is doing", unit: "lines", door: ["teams.html", "Teams"] },
@@ -175,6 +175,9 @@ function histRow(r) {
 }
 function dataRow(r) {
   if (r.id === "hist") return histRow(r);
+  if (r.own) { // splice keeps no copy: the reasoning rides inside the conversations Claude Code writes, so the switch stops it and Sessions deletes it
+    return drow({ name: r.name, yours: true, door: r.door, amount: `<span class="none">Inside your conversations</span>`, keep: `<span class="fixed quiet">As long as the conversation</span>`, sw: `${ctlHtml(KNOB.replayReasoning, val("replayReasoning"))}`, del: `<a class="act quiet small" href="sessions.html">Delete in Sessions</a>` });
+  }
   if (r.noRoute) { // no route counts or deletes it: say so on the row, never an empty Delete
     return drow({ name: r.name, yours: r.yours, amount: `<span class="none">Not counted</span>`, keep: "", sw: r.always ? ALWAYS : "" }); // a store the daemon has no off switch for
   }
@@ -202,7 +205,7 @@ function dataHtml() {
     sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
   });
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
-  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && r.noRoute) ? " counted" : ""}</span></div>`;
+  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}</span></div>`;
   const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;
   const rows = (g) => DATA_ROWS.filter((r) => r.g === g).map(dataRow).join("");
   return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
@@ -380,7 +383,7 @@ function summary(id) {
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
   if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${weekTotal("overloaded")} overloaded today`, `${weekTotal("queued")} waited in line`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
-  const h = DATA_ROWS.filter((r) => !r.noRoute).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute) ? "counted" : "kept"; // a total that leaves a store out says counted
+  const h = DATA_ROWS.filter((r) => !(r.noRoute || r.own)).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute || r.own) ? "counted" : "kept"; // a total that leaves a store out says counted
   return h.some((x) => x === null) ? ["Some stores did not answer"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
 }
 function cardHtml(x) {

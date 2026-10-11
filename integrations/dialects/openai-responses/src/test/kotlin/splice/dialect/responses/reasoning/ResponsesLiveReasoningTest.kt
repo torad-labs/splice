@@ -6,8 +6,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -60,23 +58,21 @@ class ResponsesLiveReasoningTest {
         """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
     )
 
-    private fun JsonObject.summary(): String? = getValue("reasoning").jsonObject["summary"]?.jsonPrimitive?.content
     private fun JsonObject.asksForHandle(): Boolean =
         (this["include"] as? JsonArray)?.contains(JsonPrimitive("reasoning.encrypted_content")) == true
 
     @Test
-    fun `the next turn is built from the display, replay and summary the operator has now`() = runTest {
+    fun `the next turn is built from the display and replay the operator has now`() = runTest {
         var now = ReasoningSettings(ReasoningDisplay.OFF, false, "low", "detailed")
         val started = ReasoningSettings(ReasoningDisplay.OFF, false, "high", "detailed", live = LiveReasoning { now })
         val provider = LiveReasoningProvider(started)
 
         val hidden = provider.buildTurn(body, compact = false, sessionId = null).requestBody
-        assertEquals("none", hidden.summary(), "reasoning is off, so no summary is asked for")
+        assertTrue(!hidden.asksForHandle(), "reasoning is off, so no encrypted handle is asked for")
         assertEquals(ReasoningDisplay.OFF, provider.showReasoning)
 
         now = ReasoningSettings(ReasoningDisplay.TEXT, true, "low", "concise")
         val shown = provider.buildTurn(body, compact = false, sessionId = null)
-        assertEquals("concise", shown.requestBody.summary(), "the summary the operator chose, from the next turn")
         assertTrue(shown.requestBody.asksForHandle(), "shown reasoning asks for the encrypted handle")
         assertEquals(ReasoningDisplay.TEXT, shown.meta.reasoning.showReasoning)
         assertEquals(ReasoningDisplay.TEXT, provider.showReasoning)

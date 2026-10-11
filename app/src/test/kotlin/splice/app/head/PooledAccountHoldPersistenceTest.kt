@@ -14,6 +14,7 @@ import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.chat.ChatQuirks
@@ -53,7 +54,7 @@ class PooledAccountHoldPersistenceTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             ChatQuirks("test"),
-            ReasoningDisplay.TEXT,
+            ReasoningDisplayNow { ReasoningDisplay.TEXT },
         )
         return Wired(
             provider,

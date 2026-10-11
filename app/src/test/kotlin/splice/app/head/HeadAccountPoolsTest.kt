@@ -21,6 +21,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaSnapshot
@@ -186,7 +187,7 @@ class HeadAccountPoolsTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             ChatQuirks("test"),
-            ReasoningDisplay.TEXT,
+            ReasoningDisplayNow { ReasoningDisplay.TEXT },
         )
         return Wired(
             provider,

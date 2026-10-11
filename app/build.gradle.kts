@@ -597,12 +597,13 @@ tasks.register("stageRelease") {
         }
         val javaBin = launcher.get().executablePath.asFile.absolutePath
         val versionProcess = ProcessBuilder(javaBin, "-jar", jar.absolutePath, "version")
-            .redirectErrorStream(false)
+            .redirectErrorStream(true)
             .start()
-        val jarVersion = versionProcess.inputStream.bufferedReader().use { it.readText() }.trim()
-        versionProcess.waitFor()
-        check(jarVersion == "splice $version") {
-            "release stage: package version $version does not match '$jarVersion'"
+        val jarOutput = versionProcess.inputStream.bufferedReader().use { it.readText() }.trim()
+        val jarExit = versionProcess.waitFor()
+        check(jarExit == 0) { "release stage: the jar's version command exited $jarExit: '$jarOutput'" }
+        check(jarOutput == "splice $version") {
+            "release stage: package version $version does not match '$jarOutput'"
         }
 
         val dist = distDir.asFile

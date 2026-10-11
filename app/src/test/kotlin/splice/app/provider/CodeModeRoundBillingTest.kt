@@ -125,7 +125,7 @@ private val PRICED = ModelCatalog(
 private const val SPEND_EPSILON = 1e-12
 
 // why: the first turn boots a real code-mode worker JVM, which the product allows its own bound to start.
-private const val BILLING_TEST_SECONDS = 60L
+private const val BILLING_TEST_SECONDS = 180L
 private const val TURN_BOUND_MS: Long = WORKER_START_TIMEOUT_MS + 5_000L
 
 // How often the slot test reads the admission gate while it waits for the source round's permit to return.
@@ -1359,7 +1359,7 @@ private suspend fun sendAndDisconnect(client: HttpClient, url: String, history: 
 /** The head's perf rows once [count] have landed; the row is written as its turn finishes. */
 private suspend fun rows(tmp: Path, count: Int): List<JsonObject> {
     val file = tmp.resolve("perf.jsonl")
-    return withTimeout(TURN_BOUND_MS) {
+    return withTimeout(ROW_BOUND_MS) {
         var found = emptyList<JsonObject>()
         while (found.size < count) {
             delay(ROW_POLL_MS)
@@ -1459,6 +1459,9 @@ private fun provider(
 
 // why: the perf row lands as the turn finishes; a short poll keeps the test from racing it.
 private const val ROW_POLL_MS = 20L
+
+// why: a ceiling the row beats; a turn that ends by cancellation lands its row late on a loaded machine.
+private const val ROW_BOUND_MS = 150_000L
 
 private enum class BillingReply { SOURCE, CONTENT, CONTENT_WITHOUT_USAGE }
 

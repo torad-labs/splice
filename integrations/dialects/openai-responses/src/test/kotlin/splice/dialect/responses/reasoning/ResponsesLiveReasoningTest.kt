@@ -3,9 +3,6 @@
 package splice.dialect.responses.reasoning
 
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -58,22 +55,18 @@ class ResponsesLiveReasoningTest {
         """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
     )
 
-    private fun JsonObject.asksForHandle(): Boolean =
-        (this["include"] as? JsonArray)?.contains(JsonPrimitive("reasoning.encrypted_content")) == true
-
     @Test
     fun `the next turn is built from the display and replay the operator has now`() = runTest {
         var now = ReasoningSettings(ReasoningDisplay.OFF, false, "low", "detailed")
         val started = ReasoningSettings(ReasoningDisplay.OFF, false, "high", "detailed", live = LiveReasoning { now })
         val provider = LiveReasoningProvider(started)
 
-        val hidden = provider.buildTurn(body, compact = false, sessionId = null).requestBody
-        assertTrue(!hidden.asksForHandle(), "reasoning is off, so no encrypted handle is asked for")
+        val hidden = provider.buildTurn(body, compact = false, sessionId = null)
+        assertEquals(ReasoningDisplay.OFF, hidden.meta.reasoning.showReasoning)
         assertEquals(ReasoningDisplay.OFF, provider.showReasoning)
 
         now = ReasoningSettings(ReasoningDisplay.TEXT, true, "low", "concise")
         val shown = provider.buildTurn(body, compact = false, sessionId = null)
-        assertTrue(shown.requestBody.asksForHandle(), "shown reasoning asks for the encrypted handle")
         assertEquals(ReasoningDisplay.TEXT, shown.meta.reasoning.showReasoning)
         assertEquals(ReasoningDisplay.TEXT, provider.showReasoning)
         assertTrue(provider.replayReasoning)

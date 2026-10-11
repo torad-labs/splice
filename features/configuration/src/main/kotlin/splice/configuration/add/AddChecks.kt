@@ -99,7 +99,9 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             AuthKindRegistry.isOAuth(kind) -> oauthPath(provider)?.let { credentialFile.problem(it, kind) }
             else -> null
         }
-        return AddCheck("credential", problem == null, problem ?: "present")
+        val oauth = AuthKindRegistry.isOAuth(kind)
+        val usable = if (problem == null && oauth) "usable (unexpired or refreshable)" else "present"
+        return AddCheck("credential", problem == null, problem ?: usable)
     }
 
     /** [StoredCredential] owns where a kind keeps its file (2026-09-22), so this check and

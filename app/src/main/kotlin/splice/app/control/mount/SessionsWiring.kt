@@ -142,8 +142,8 @@ internal class SessionsWiring(
 
         // a move that did not come back leaves the mark its launch wrote: dropped here, so the session's model is
         // the one it went on with, not the one it never reached (Marlin, move check 5)
-        override fun failed(session: String): String? = pending.remove(session)?.also {
-            moves.unmoved(session, it.command, it.movedAt)
+        override fun failed(session: String): String? = pending.remove(session)?.also { move ->
+            move.command?.let { moves.unmoved(session, it, move.movedAt) }
         }?.fromModel
     }
 

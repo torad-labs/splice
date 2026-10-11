@@ -284,7 +284,13 @@ const resuming = (s) => s.state === "working" && s.stall?.resumeMs != null;
 const heldByEnding = (s) => s.stall?.kind === "limit" || s.stall?.kind === "signout";
 // splice gave up re-sending his newest request: it waits on him as a question does, with the outcome's own word and
 // how many times it was re-sent (fin), the count in the key's ink and the retries glyph in the key-light ring (hitstop 605ab5c)
-const gaveUp = (s) => s.stall?.kind === "gaveup" && s.state === "idle";
+// IDLE OR NOT. splice launches every client in its persistent-retry mode (CLAUDE_CODE_RETRY_WATCHDOG, LaunchService), so
+// a client whose provider keeps failing does not go idle: it waits up to five minutes and re-sends, up to 300 times,
+// and reads busy the whole while. Requiring idle meant this state never drew on the session it exists for (march-csv,
+// busy nine hours on a provider that refused every request), and that session fell to the Stalled branch, which has no
+// lamp for "gaveup" and printed the word "undefined" (console-lead, desk walk, Oct 11). stallOf only answers gaveup
+// when no request is in flight, so the moment the client re-sends, the live turn's own state takes the card again.
+const gaveUp = (s) => s.stall?.kind === "gaveup";
 const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s) : s.state === "idle" && heldByEnding(s));
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };

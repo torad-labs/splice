@@ -43,10 +43,10 @@ import java.util.UUID
 
 // why: a cold Claude Code on a slow disk, or one that stops at a first-run prompt, shows itself within this long;
 // past it the screen is the answer, and a person is never left looking at Starting.
-private const val ARRIVAL_SECONDS = 45L
+internal const val ARRIVAL_SECONDS = 45L
 
 // why: enough of the bottom of the screen to read the question a prompt asks, and not a page of scrollback.
-private const val SCREEN_TAIL_LINES = 12
+internal const val SCREEN_TAIL_LINES = 12
 private const val NO_TERMINAL = "splice has no terminal to start sessions in yet"
 
 /** The member a request names, or the reply that says there is none. */

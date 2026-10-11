@@ -6,9 +6,9 @@ package splice.app.control.mount
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
+import splice.app.control.SessionPerfFacts
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
-import splice.app.sources.PerfStatsSource
 import splice.client.resume.ModelMoves
 import splice.client.transcript.MovedTranscripts
 import splice.client.transcript.TranscriptHistoryIndex
@@ -18,7 +18,6 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
-import splice.core.perf.OutcomeTag
 import splice.core.process.LaunchOwners
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
@@ -28,11 +27,7 @@ import splice.sessions.http.LaunchedTerminals
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionDrive
-import splice.sessions.http.SessionEnding
-import splice.sessions.http.SessionEndingOf
 import splice.sessions.http.SessionRowFacts
-import splice.sessions.http.SessionTurnCount
-import splice.sessions.http.SessionTurnsOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
@@ -44,7 +39,6 @@ import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
-import java.util.concurrent.TimeUnit
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -63,6 +57,7 @@ internal class SessionsWiring(
     val historyIndex = TranscriptHistoryIndex()
     val historyRoots = listOf(SessionHistoryRoot(null, UserHome.claudeDir())) +
         sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
+    private val perfFacts = SessionPerfFacts(heads, ports)
     private val sessionAccounts = object : SessionAccountOf {
         override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
             val saved = records.groupBy { it.head }.mapNotNull { (head, sessions) ->
@@ -81,47 +76,6 @@ internal class SessionsWiring(
             head?.let { account(it, sessionId, null) }
 
         override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
-    }
-
-    /** Every head's per-session accumulator, summed, because a session that moved heads has rows on
-     *  both and one head's count would read as the whole of it. The combined start is the LATEST of
-     *  the heads that contributed (SessionTurnCount): the sum covers the session only where every one
-     *  of those counters was already running when it began, so the conservative start is the honest
-     *  one. A head with no counted row for the session contributes nothing and does not move the
-     *  start, and no total anywhere leaves the row's `turns` absent rather than zero. */
-    private val sessionTurns = SessionTurnsOf { id ->
-        val counted = heads.values
-            .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionTotals }
-            .mapNotNull { store -> store.totalFor(id) }
-        if (counted.isEmpty()) {
-            null
-        } else {
-            SessionTurnCount(
-                turns = counted.sumOf { total -> total.models.values.sumOf { it.turns } },
-                fromMs = counted.maxOf { it.fromMs },
-            )
-        }
-    }
-
-    /** How the session's newest request ended, newest across every head, and only when that ending holds the session
-     *  back until something changes: a plan window or every account spent (At limit), or no credential (Signed
-     *  out). A burst 429 passes on its own, so it is not one. */
-    private val holdingEndings =
-        setOf(OutcomeTag.PLAN_LIMIT, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.AUTH_MISSING)
-            .mapTo(HashSet()) { it.wire }
-
-    private val sessionEnding = SessionEndingOf { id ->
-        heads.mapNotNull { (key, head) ->
-            (head.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id)?.let { key to it }
-        }
-            .maxByOrNull { (_, ended) -> ended.ts }
-            ?.takeIf { (_, ended) -> ended.outcome in holdingEndings }
-            ?.let { (head, ended) ->
-                val resetMs = ended.resetEpochSeconds?.let(TimeUnit.SECONDS::toMillis)
-                // in the Accounts roster's words: a client head's row carries the login's identity, not its label
-                val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
-                SessionEnding(ended.outcome, account, resetMs, ended.ts)
-            }
     }
 
     /** The launch records splice-launch writes: a session started from the person's own tmux names its pane there. */
@@ -157,7 +111,11 @@ internal class SessionsWiring(
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
-            facts = SessionRowFacts(accountOf = sessionAccounts, turnsOf = sessionTurns, endingOf = sessionEnding),
+            facts = SessionRowFacts(
+                accountOf = sessionAccounts,
+                turnsOf = perfFacts.turnsOf(),
+                endingOf = perfFacts.endingOf(),
+            ),
         )
     }
 

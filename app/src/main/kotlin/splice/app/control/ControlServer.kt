@@ -123,7 +123,7 @@ internal class ControlServer(
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val trace = TraceMount(heads, resolver, config, ports, guard)
     private val sessionWiring = SessionsWiring(sessions, heads, config, ports)
-    private val sessionMount = SessionsMount(sessions, sessionWiring, config, guard)
+    private val sessionMount = SessionsMount(sessions, sessionWiring, heads, config, guard)
     private val teams = TeamsMount(sessionWiring, sessions, heads, ports, guard)
     private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)
     private val events = EventsMount(ports, guard)

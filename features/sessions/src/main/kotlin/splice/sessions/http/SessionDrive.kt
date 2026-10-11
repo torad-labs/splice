@@ -149,7 +149,7 @@ public class SessionDrive(
     /** The pane to act in for [session], or the refusal that says why there is none. A pane splice opened is used
      *  while it is open. Otherwise the terminal the session's own launch recorded is used only while that pane is
      *  open AND still has the session's process in front, so a closed or reused terminal is refused by name. */
-    private fun locate(driving: SessionDriver, session: String, notOurs: String, closed: String): Located {
+    internal fun locate(driving: SessionDriver, session: String, notOurs: String, closed: String): Located {
         val mine = driving.panes.paneFor(session)
         if (mine != null) return if (driving.terminal.isOpen(mine)) Located(pane = mine) else refused(closed, CLOSED)
         val launch = launched.of(session) ?: return refused(notOurs, Refusal.NOT_OURS)
@@ -171,8 +171,8 @@ public class SessionDrive(
     private fun refused(sentence: String, reason: Refusal) =
         Located(refusal = refuse(HttpStatusCode.Conflict, sentence, reason))
 
-    /** Either the pane to act in or the refusal, never both. */
-    private data class Located(val pane: SessionPane? = null, val refusal: JsonReply? = null)
+    /** Either the pane to act in or the refusal, never both. SessionContinue reads it to end a client in its pane. */
+    internal data class Located(val pane: SessionPane? = null, val refusal: JsonReply? = null)
 
     private fun offered(session: String, offer: ScreenOffer): JsonReply = JsonReply(
         HttpStatusCode.OK,

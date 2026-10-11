@@ -9,12 +9,14 @@ import splice.app.control.ManagedHead
 import splice.core.config.InstallPaths
 import splice.sessions.http.AccountPins
 import splice.sessions.http.SessionArrival
+import splice.sessions.http.SessionHandover
 import splice.sessions.http.StartCommand
 import splice.sessions.http.StartCommands
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 import splice.upstream.Waiter
 import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 
 /** How often a start asks the registry whether its session has come up. */
 // why: Claude Code writes its registration once at boot, so this only decides how soon a successful start answers.
@@ -68,4 +70,31 @@ internal class RegistryArrival(
 
     private fun live(session: String): Boolean =
         sessions?.read().orEmpty().any { it.sessionId == session && it.availability == SessionAvailability.LIVE }
+}
+
+/** The two waits a session's move makes (Continue on, SessionContinue), read off the same registry: that its old
+ *  client exited, and that it registered again on the command it moved to. */
+internal class RegistryHandover(private val sessions: SessionSource?, private val waiter: Waiter) : SessionHandover {
+    override suspend fun left(session: String, pid: Long, seconds: Long): Boolean = within(seconds) {
+        sessions?.read().orEmpty().none {
+            it.sessionId == session && it.process.pid == pid && it.availability != SessionAvailability.GONE
+        }
+    }
+
+    override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean = within(seconds) {
+        sessions?.read().orEmpty().any {
+            it.sessionId == session && it.head == head && it.availability == SessionAvailability.LIVE
+        }
+    }
+
+    private suspend inline fun within(seconds: Long, done: () -> Boolean): Boolean {
+        val deadline = TimeUnit.SECONDS.toMillis(seconds)
+        var waited = 0L
+        while (!done()) {
+            if (waited >= deadline) return false
+            waiter.wait(ARRIVAL_POLL_MS)
+            waited += ARRIVAL_POLL_MS
+        }
+        return true
+    }
 }

@@ -8,8 +8,11 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.coroutines.withContext
+import splice.app.control.ManagedHead
 import splice.core.config.ConfigService
+import splice.core.config.UserHome
 import splice.sessions.http.KeptActivity
+import splice.sessions.http.SessionContinue
 import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
@@ -18,12 +21,14 @@ import splice.sessions.note.SessionNoteRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.codemode.ProcessWaiter
 
 /** Every route here is registered only when a session registry is wired, as /api/sessions always was. The team and
  *  project routes over the same registry are [TeamsMount] and [ProjectsMount]. */
 internal class SessionsMount(
     sessions: SessionSource?,
     private val wiring: SessionsWiring,
+    heads: Map<String, ManagedHead>,
     config: ConfigService,
     private val guard: ControlGuard,
 ) {
@@ -39,6 +44,15 @@ internal class SessionsMount(
             SessionRepoNameOf { record -> routes.repoOf(record)?.root },
         )
     }
+
+    /** Continue on: the session ended where it runs and resumed on another command (SessionContinue). */
+    private val continueOn = SessionContinue(
+        drive = wiring.drive,
+        commands = HeadStartCommands(heads),
+        handover = RegistryHandover(sessions, ProcessWaiter()),
+        registry = sessions,
+        home = UserHome.dir(),
+    )
 
     /** V4-444: the console's note to one live session, written to its inbox socket. */
     private val noteRoute = sessions?.let { SessionNoteRoute(it, PeerNoteSocket(fileIo)) }
@@ -104,6 +118,9 @@ internal class SessionsMount(
         }
         route.get("/api/sessions/{id}/screen") {
             guard.guarded(call) { drive.screen(call.parameters["id"].orEmpty()).send(call) }
+        }
+        route.post("/api/sessions/{id}/continue") {
+            guard.guarded(call) { continueOn.moveJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
         }
     }
 }

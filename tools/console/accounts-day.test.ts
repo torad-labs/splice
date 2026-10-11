@@ -12,7 +12,7 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const HOUR = 3_600_000;
 const dayStart = Math.floor(Date.now() / (24 * HOUR)) * 24 * HOUR; // a UTC midnight: whole hours, so no opening half-hour
 const noon = dayStart + 12 * HOUR;
-const commands = ["torn-day", "clean-day", "plan-day", "warming"];
+const commands = ["torn-day", "clean-day", "plan-day", "plan-torn", "warming"];
 // the daemon says a command is still being read for this many answers, then answers with its day (wire shape of EconomicsPayloads)
 const READING_ANSWERS = 2;
 let asked = 0;
@@ -24,7 +24,8 @@ function economics(reading: boolean) {
     heads: [
       { key: "torn-day", label: "torn-day", buckets: [bucket(noon)], not_read_hours: [noon + HOUR] },
       { key: "clean-day", label: "clean-day", buckets: [bucket(noon)], not_read_hours: [] },
-      { key: "plan-day", label: "plan-day", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }], not_read_hours: [noon + HOUR] },
+      { key: "plan-day", label: "plan-day", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }], not_read_hours: [] },
+      { key: "plan-torn", label: "plan-torn", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }, { hour: noon + 2 * HOUR, turns: 4, cost_usd: 1.5, unpriced_turns: 0 }], not_read_hours: [noon + HOUR] },
       reading
         ? { key: "warming", label: "warming", buckets: [], read_pending: true, unavailable: "Reading saved request history before showing this command's hourly totals." }
         : { key: "warming", label: "warming", buckets: [bucket(noon)], not_read_hours: [] },
@@ -81,6 +82,14 @@ test("a day that holds an hour splice could not read says Not read, not the sum 
   const day = await dayOf("torn-day");
   expect(day).toContain("Not read");
   expect(day).not.toContain("$1.50");
+});
+
+test("a day with an unread hour is the one word Not read: no money and no requests-on-your-plan count from its readable hours", async () => {
+  const day = await dayOf("plan-torn");
+  expect(day).toContain("Not read");
+  expect(day).not.toContain("on your plan");
+  expect(day).not.toContain("$");
+  expect(day).not.toMatch(/\d+ requests/);
 });
 
 test("a day whose hours were all read shows its figure", async () => {

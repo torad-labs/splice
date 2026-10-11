@@ -357,13 +357,13 @@ function meterHtml(c, pick = null) {
   // ones, "≈$0.84 for 50 requests", and the rest by why under it; with none, only the count. Never "$0.00" over all.
   // a spend splice is still reading (spend_pending, used_usd null after a restart) is no figure yet: it once threw here
   // and left the whole board empty on the first open after a restart
-  const spent = c.local || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
+  const spent = c.local || c.unread || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
   const share = spent && c.unpriced ? `for ${reqs(c.priced)}` : "";
   // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
   const none = c.unread ? `<em>${c.unread}</em>` : !c.local && c.spent != null && !c.priced && !c.unpriced ? "<em>No requests</em>" : "";
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
-      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${openingRow(c)}</div>`;
+      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${c.unread ? "" : openingRow(c)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
   const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${[share, noPrice(c)].filter(Boolean).join(", ")}` : ""}`;
@@ -379,7 +379,8 @@ function meterHtml(c, pick = null) {
 const reqs = (n) => `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"}`;
 const noPrice = (c) => `${reqs(c.unpriced)} ${c.onPlan ? "on your plan" : "with no price"}`;
 // with a budget the priced share leads the line under the meter, since "≈$0.84 for 50 requests of $20" misreads (fin)
-const unpriced = (c, lead = "") => (c.unpriced && !c.local ? `<span class="unpriced own">${[lead, noPrice(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
+// a day with an hour splice has not read has no count to share either: its readable hours would undercount it (fin, Oct 11)
+const unpriced = (c, lead = "") => (c.unpriced && !c.local && !c.unread ? `<span class="unpriced own">${[lead, noPrice(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
 // The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
 // the hourly totals cannot split them, so they are said once, apart from the day's figure.
 //

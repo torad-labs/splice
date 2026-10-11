@@ -300,9 +300,12 @@ function mapRow(head, row) {
     saving: row.capture === false ? false : null,
     // what the provider answered, kept on the row even when no body was (provider_status, provider_message)
     providerStatus: row.provider_status ?? null, providerMessage: row.provider_message ?? null,
-    repo: state.sessions[sid]?.repo?.name ?? null,
+    // the project is the session's repo, named as Sessions names it (its root's last folder); /api/sessions carries the
+    // root and never a name (SessionsRoutes repoJson), and /api/projects ids are roots, so a link may name either
+    repo: repoName(state.sessions[sid]?.repo?.root), repoRoot: state.sessions[sid]?.repo?.root ?? null,
   };
 }
+const repoName = (root) => (root || "").split("/").filter(Boolean).pop() || null;
 
 /** One search hit as a row. A hit carries its turn's own ending, so a request older than the perf window the page
  *  holds is drawn from the hit alone (TraceSearch.kt) — never dropped because the rows do not reach it. */
@@ -365,7 +368,7 @@ function searched() {
 // ---------- what the daemon cannot filter: a project, a stretch of time and what happened ----------
 // These narrow the rows the read already cut. The read asks for the window's newest 2,000, so a narrow one of these
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
-const narrow = (rows) => rows.filter((r) => (!ui.repo || r.repo === ui.repo)
+const narrow = (rows) => rows.filter((r) => (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
   && (!ui.why || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
@@ -440,7 +443,7 @@ function filtersHtml() {
     + pickBtn("sid", ui.sid ? esc(sessTitle(ui.sid)) : "Session", Boolean(ui.sid))
     + pickBtn("model", ui.model ? (ui.model === "none" ? "No model" : esc(state.modelLabel[ui.model] ?? ui.model)) : "Model", Boolean(ui.model))
     + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : acctHtml({ account: acct?.[1].account ?? "" })) : "Account", Boolean(ui.account))
-    + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(ui.repo)}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
+    + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
     + `${sw}${over}${tog("compact", "Compactions", ui.compact)}</div>`;

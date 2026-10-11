@@ -199,7 +199,11 @@ const REQVIEW = (() => {
       const cachePct = r.in ? Math.round((r.cached / r.in) * 100) : 0;
       const of = { in: () => cell("Tokens in", told(r.in), r.cached ? `${cachePct}% cached` : ""), write: () => cell("Cache write", told(r.write)),
         out: () => cell("Tokens out", told(r.out)), cost: () => cell("Cost", cost), attempts: () => cell("Attempts", r.attempts) };
-      return `<div class="figs" style="--n:${cells.length}">${cells.map((k) => of[k]()).join("")}</div>`;
+      // the three token counts are one fact when none was reported: one card where they sat (fin)
+      const none = r.in == null && r.write == null && r.out == null, tok = ["in", "write", "out"];
+      const shown = none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
+      if (none) of.in = of.write = of.out = () => cell("Tokens", told(null));
+      return `<div class="figs" style="--n:${shown.length}">${shown.map((k) => of[k]()).join("")}</div>`;
     }
     // the open request. h: the head's lamp (cls, glyph), word, name and account, the page's own acts, the trace and its
     // state, the figures with the cost's text, and h.gone: the one line the page says when the records are not here

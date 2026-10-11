@@ -57,6 +57,7 @@
 .wt { display: inline-flex; align-items: center; gap: .35rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .wt svg, .team svg { width: 1rem; height: 1rem; flex: none; }
 .s .top .chip { margin-left: auto; }
+.s .top .state { margin-left: auto; }  /* "unknown head" takes the chip's place at the right edge (hitstop) */
 .meta { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem 1.1rem; margin-top: .45rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 .meta .word.stalled, .meta .word.limit { color: var(--limit); }
 .meta .word.needs { color: var(--key-light); }

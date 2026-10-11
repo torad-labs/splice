@@ -67,7 +67,9 @@ const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
 
 // a session splice cannot place reads "unknown head" (SessionsRoutes UNKNOWN_HEAD) and the card says so, as the spec's
 // Sep 13 Resolved block has it (§4 reading, Oct 11); a head key no configured command has names nothing
-const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? (head === "unknown head" ? head : null);
+// it reads as a quiet fact in the chip's slot, never as a chip: a chip claims a command (hitstop)
+const UNPLACED = "unknown head";
+const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? (head === UNPLACED ? head : null);
 const folderOf = (row) => (row.repo?.root || row.cwd || "").split("/").filter(Boolean).pop() || "";
 
 /** A signed-out session's way back: Accounts on its command, in Accounts' own word for that kind of credential. */
@@ -112,7 +114,7 @@ const title = (s) => s.name || s.repo || `Session ${s.id.slice(0, 8)}`;
 const color = (s) => colorOf(s.provider);
 
 function metaHtml(s, L, inPane) {
-  const chip = inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
+  const chip = inPane && s.cmd === UNPLACED ? `<span class="state mute">${UNPLACED}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
   const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
   const model = s.model ? `<span>${esc(s.model)}</span>` : "";
   const repo = s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
@@ -178,7 +180,7 @@ function cardHtml(s) {
   const was = ui.looks.get(s.id); ui.looks.set(s.id, L.cls);
   return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
-    + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
+    + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${s.cmd === UNPLACED ? `<span class="state mute">${UNPLACED}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
     + `${metaHtml(s, L, false)}${body}${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}</article>`;
 }
 

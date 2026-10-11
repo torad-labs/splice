@@ -71,7 +71,7 @@ const besideOf = (r) => {
   return mend + (r.retries ? `<span class="detail">${r.retries} ${r.retries === 1 ? "retry" : "retries"}</span>` : "");
 };
 // why a request has no dollar figure (TurnPriceGap.kt), in fin's words; one that was never answered says nothing
-const REASON = { plan: "Plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
+const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
 // A key is an account: its variable and the day splice first saw THAT key, "OPENROUTER_API_KEY · Sep 14" (fin's
 // words). A row names the key it was sent with as `VARIABLE:fingerprint` (KeyAccount.kt), so a rotated key reads as
 // its own account and the one it replaced keeps its own history, marked Replaced — on Requests as on Accounts

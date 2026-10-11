@@ -25,8 +25,15 @@ public data class SessionPane(val id: String)
 /** What the person's terminal can be asked to do, for a session splice opened. One implementation at a time
  *  (tmux today, seatd next); no caller names which. */
 public interface SessionTerminal {
-    /** Start [command] in a new terminal for this session, in [directory], and answer its pane. */
-    public fun open(sessionId: String, command: List<String>, directory: String): SessionPane
+    /** Start [command] in a new terminal for this session, in [directory], and answer its pane. With [beside], it
+     *  opens where that pane lives (its server and so its environment), as a session that goes on after its own
+     *  terminal closed belongs with the terminals it ran among; without, where the person opens terminals. */
+    public fun open(
+        sessionId: String,
+        command: List<String>,
+        directory: String,
+        beside: SessionPane? = null,
+    ): SessionPane
 
     /** Give the session [text] as the person would: whole, line breaks intact, then submit it. The client
      *  takes it at once when idle and queues it mid-turn, which is its behaviour and not splice's to change. */

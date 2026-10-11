@@ -183,17 +183,18 @@ public class SessionContinue(
     /** The resume where the person is: his own shell when one is left in front, else a new terminal. */
     private suspend fun resume(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply {
         driving.panes.forget(move.session)
-        if (!driving.terminal.isOpen(pane)) return openNew(move)
+        if (!driving.terminal.isOpen(pane)) return openNew(move, beside = pane)
         // his own shell is in front again: the resume is typed there, the way he would type it
         val line = move.argv.joinToString(" ", transform = ::shellWord)
         val failure = Cancellables.runCatchingCleanup { driving.terminal.send(pane, line) }.exceptionOrNull()
         return if (failure != null) refusedByTerminal(failure) else cameBack(driving, pane, move)
     }
 
-    private suspend fun openNew(move: Move): JsonReply {
+    private suspend fun openNew(move: Move, beside: SessionPane? = null): JsonReply {
         val driving = drive.driver() ?: return unwired()
-        val pane = Cancellables.runCatchingCleanup { driving.terminal.open(move.session, move.argv, move.folder) }
-            .getOrElse { return refusedByTerminal(it) }
+        val pane = Cancellables.runCatchingCleanup {
+            driving.terminal.open(move.session, move.argv, move.folder, beside)
+        }.getOrElse { return refusedByTerminal(it) }
         driving.panes.remember(move.session, pane)
         return cameBack(driving, pane, move)
     }

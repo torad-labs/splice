@@ -194,6 +194,23 @@ class TmuxTerminalTest {
         }
     }
 
+    /** A session moved after its own terminal closed goes on among the terminals it ran in: its server, not the
+     *  person's default one, which on another desk or under another home has another environment. */
+    @Test
+    fun `a terminal opened beside a pane opens on that pane's server`() {
+        val other = tmp.resolve("other.sock")
+        val elsewhere = TmuxTerminal(socket = other, exitWaitMs = 500)
+        val theirs = elsewhere.open("22222222-2222-4333-8444-555555555555", listOf("cat"), tmp.toString())
+        try {
+            val moved = terminal.open("33333333-2222-4333-8444-555555555555", listOf("cat"), tmp.toString(), theirs)
+
+            assertEquals(theirs.id.substringAfter('@'), moved.id.substringAfter('@'), "it opened on the other server")
+            assertTrue(elsewhere.isOpen(moved), "and runs there")
+        } finally {
+            killServer(other)
+        }
+    }
+
     @Test
     fun `a pane a launch recorded is driven only while that launch's process is the one in front of it`() {
         val pane = open("sh", "-c", "echo pid=\$\$; exec cat")

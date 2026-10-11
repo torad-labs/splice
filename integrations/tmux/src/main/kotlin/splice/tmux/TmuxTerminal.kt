@@ -59,7 +59,7 @@ public class TmuxTerminal(
 ) : SessionTerminal {
     private val tmux = TmuxCommand(binary, socket, CALL_DEADLINE_MS)
 
-    override fun open(sessionId: String, command: List<String>, directory: String): SessionPane {
+    override fun open(sessionId: String, command: List<String>, directory: String, beside: SessionPane?): SessionPane {
         require(command.isNotEmpty()) { "a session needs a command to run" }
         val name = "splice-" + NAME_UNSAFE.replace(sessionId, "_")
         // `--` before the command: a session's own arguments start with dashes (`--name`, `--resume`), and tmux
@@ -69,6 +69,7 @@ public class TmuxTerminal(
                 "new-session", "-d", "-s", name, "-x", OPEN_COLUMNS, "-y", OPEN_ROWS, "-c", directory,
                 "-P", "-F", "#{pane_id} #{socket_path}", "--",
             ) + command,
+            beside?.let(::paneOf)?.socket,
         ).trim()
         return TmuxPane(made.substringBefore(' '), made.substringAfter(' ')).pane
     }

@@ -73,6 +73,7 @@ class SessionContinueTest {
         val reopened = terminal.opened.single()
         assertEquals(listOf("claude-codex", "-r", LEAD, "--model", "gpt-6-sol"), reopened.command)
         assertEquals(rig.repo.toString(), reopened.directory, "it goes on in the folder it ran in")
+        assertEquals(listOf(leadPane), terminal.besides, "and among the terminals it ran in, not the person's default")
         assertEquals(listOf(LEAD to "codex"), cameOn)
         assertEquals("codex", rig.json(reply.body).getValue("head").jsonPrimitive.content)
     }

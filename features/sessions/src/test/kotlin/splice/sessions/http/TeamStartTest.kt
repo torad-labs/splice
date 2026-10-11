@@ -34,9 +34,13 @@ internal class FakeTerminal(var openFails: Boolean = false, var screenText: Stri
     val closed = mutableListOf<SessionPane>()
     var live = true
 
-    override fun open(sessionId: String, command: List<String>, directory: String): SessionPane {
+    /** The pane each open was asked to sit beside, in order: where a moved session's new terminal goes. */
+    val besides = mutableListOf<SessionPane?>()
+
+    override fun open(sessionId: String, command: List<String>, directory: String, beside: SessionPane?): SessionPane {
         if (openFails) throw IOException("no server is running")
         opened += Opened(sessionId, command, directory)
+        besides += beside
         return SessionPane("%$sessionId")
     }
 

@@ -12,7 +12,7 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const HOUR = 3_600_000;
 const dayStart = Math.floor(Date.now() / (24 * HOUR)) * 24 * HOUR; // a UTC midnight: whole hours, so no opening half-hour
 const noon = dayStart + 12 * HOUR;
-const commands = ["torn-day", "clean-day", "plan-day", "plan-torn", "warming"];
+const commands = ["torn-day", "clean-day", "plan-day", "plan-torn", "warming", "big-day"];
 // the daemon says a command is still being read for this many answers, then answers with its day (wire shape of EconomicsPayloads)
 const READING_ANSWERS = 2;
 let asked = 0;
@@ -26,6 +26,7 @@ function economics(reading: boolean) {
       { key: "clean-day", label: "clean-day", buckets: [bucket(noon)], not_read_hours: [] },
       { key: "plan-day", label: "plan-day", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }], not_read_hours: [] },
       { key: "plan-torn", label: "plan-torn", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }, { hour: noon + 2 * HOUR, turns: 4, cost_usd: 1.5, unpriced_turns: 0 }], not_read_hours: [noon + HOUR] },
+      { key: "big-day", label: "big-day", buckets: [{ hour: noon, turns: 23_559, cost_usd: 1512.4, unpriced_turns: 94 }], not_read_hours: [] },
       reading
         ? { key: "warming", label: "warming", buckets: [], read_pending: true, unavailable: "Reading saved request history before showing this command's hourly totals." }
         : { key: "warming", label: "warming", buckets: [bucket(noon)], not_read_hours: [] },
@@ -136,3 +137,33 @@ test("a command the daemon is still reading says Reading, never Not read, and th
     await page.close();
   }
 });
+
+test("a figure past a thousand dollars groups its thousands and keeps its dollar sign", async () => {
+  const day = await dayOf("big-day");
+  expect(day).toContain("≈$1,512.40");
+  expect(day).toContain("for 23,465 requests");
+});
+
+for (const width of [3828, 1440]) {
+  test(`at ${width} a Day with a figure and a count keeps each phrase on one line, inside the card`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    try {
+      await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
+      const meter = page.locator(`[data-meter="big-day"]`);
+      await expect(meter).toContainText("≈$1,512.40", { timeout: 15_000 });
+      const shape = await meter.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const lines = (e: Element | null) => (e ? e.getClientRects().length : 0);
+        const phrases = [el.querySelector(".money > em"), el.querySelector(".unpriced.own .part")];
+        return {
+          phraseLines: phrases.map(lines),
+          past: [...el.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > box.right + 1).length,
+        };
+      });
+      expect(shape.phraseLines).toEqual([1, 1]);
+      expect(shape.past).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+}

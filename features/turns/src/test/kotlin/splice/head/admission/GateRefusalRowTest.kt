@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -66,7 +67,8 @@ private const val ENTRY_WAIT_SECONDS = 10L
 private const val INTERNAL_ERROR = 500
 
 // why: the second request must be inside the gate's queue before the third arrives; there is no signal for that.
-private const val QUEUE_SETTLE_MS = 1_000L
+private const val QUEUE_POLL_MS = 10L
+private const val QUEUE_WAIT_SECONDS = 15
 
 private object QuietAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok", "acct")
@@ -91,6 +93,7 @@ private class FullGateHead(tmp: Path) {
         }
         start()
     }
+    private val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
     private val perfFile: Path = tmp.resolve("perf.jsonl")
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
     private val head = HeadServer(
@@ -113,12 +116,17 @@ private class FullGateHead(tmp: Path) {
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
-            gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
+            gate = gate,
             log = {},
         ).let { it.copy(stores = headStores(tmp).copy(perfStats = PerfStats(perfFile))) },
     )
 
     suspend fun start() = head.start()
+
+    /** Returns once the gate holds the second request in its one queue place, so a third meets a full gate. */
+    suspend fun awaitQueued() {
+        withTimeout(QUEUE_WAIT_SECONDS.seconds) { while (gate.snapshot().queued != 1) delay(QUEUE_POLL_MS) }
+    }
 
     suspend fun close() {
         release.countDown()
@@ -157,7 +165,7 @@ class GateRefusalRowTest {
                 // The wait blocks its thread, so the first turn runs on the IO pool where it can still make progress.
                 assertTrue(head.entered.await(ENTRY_WAIT_SECONDS, TimeUnit.SECONDS), "the first turn holds the slot")
                 val queued = async(Dispatchers.IO) { head.turn().bodyAsText() }
-                delay(QUEUE_SETTLE_MS)
+                head.awaitQueued()
                 val refused = head.turn(session = "sess-refused-0001")
                 assertEquals(AT_CAPACITY_STATUS, refused.status.value, "the client is told the gate is full")
                 val row = head.rows().single()

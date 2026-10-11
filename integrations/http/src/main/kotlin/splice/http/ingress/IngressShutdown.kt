@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 // why: RFC 9112 section 9.6 describes staged close; bound the final acknowledgement/drain interval to one second.
-private const val SHUTDOWN_GRACE_MS = 1000L
+internal const val SHUTDOWN_GRACE_MS = 1000L
 
 /**
  * After the final response flush, half-close output through the charged connection. Its input halves sit on
@@ -25,6 +25,7 @@ private const val SHUTDOWN_GRACE_MS = 1000L
 internal class IngressShutdown(
     private val ownership: IngressOwnership,
     private val stopping: AtomicBoolean,
+    private val graceMs: Long = SHUTDOWN_GRACE_MS,
 ) : ChannelDuplexHandler() {
     private var deadline: ScheduledFuture<*>? = null
 
@@ -41,7 +42,7 @@ internal class IngressShutdown(
         socket.shutdownOutput().addListener { result ->
             if (result.isSuccess) ctx.read() else ctx.close()
         }
-        deadline = ctx.executor().schedule({ ctx.close() }, SHUTDOWN_GRACE_MS, TimeUnit.MILLISECONDS)
+        deadline = ctx.executor().schedule({ ctx.close() }, graceMs, TimeUnit.MILLISECONDS)
     }
 
     override fun channelReadComplete(ctx: ChannelHandlerContext) {

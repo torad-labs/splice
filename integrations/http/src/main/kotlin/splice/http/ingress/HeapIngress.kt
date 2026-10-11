@@ -44,6 +44,8 @@ public class HeapIngress(
      *  this guard would have refused (MaterializedByteCap). The default is the whole process ledger, for a listener
      *  with no gate behind it. */
     private val requestLimit: MaterializedByteCap = MaterializedByteCap { heap.limitBytes },
+    /** How long a staged close waits for the client's own FIN before closing; a test stretches it to tell a FIN from the timer. */
+    private val shutdownGraceMs: Long = SHUTDOWN_GRACE_MS,
 ) {
     private val requests = NettyIngressRequest()
     private val stopping = AtomicBoolean()
@@ -57,7 +59,7 @@ public class HeapIngress(
         // Order is load-bearing: input shutdown sits before IngressShutdown, so its ctx.close() travels toward the
         // head and never re-enters the staged close.
         pipeline.addBefore(CODEC_HANDLER, "splice-heap-input-shutdown", IngressInputShutdown(ownership))
-        pipeline.addBefore(CODEC_HANDLER, "splice-heap-close", IngressShutdown(ownership, stopping))
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-close", IngressShutdown(ownership, stopping, shutdownGraceMs))
         pipeline.addBefore(CODEC_HANDLER, "splice-heap-drain", IngressDrain(ownership))
         pipeline.addAfter(
             CODEC_HANDLER,

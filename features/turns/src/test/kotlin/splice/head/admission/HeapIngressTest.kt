@@ -31,6 +31,10 @@ import java.net.http.HttpResponse
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
+/** The staged close's grace, stretched past the wait below so only the client's FIN can win the race. */
+private const val GRACE_FAR_MS = 60_000L
+private const val CLOSE_WAIT_SECONDS = 15L
+
 class HeapIngressTest {
     private fun testServer(
         ingress: HeapIngress,
@@ -348,7 +352,8 @@ class HeapIngressTest {
     fun `a refused connection closes when the client half-closes, not at the grace deadline`() = runBlocking {
         val heap = HeapBudget(1024 * 1024, 128 * 1024)
         val channel = CompletableFuture<Channel>()
-        val server = testServer(HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody), channel) {
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody, shutdownGraceMs = GRACE_FAR_MS)
+        val server = testServer(ingress, channel) {
             routing { post("/") { error("a cap-backed refusal must not read chunks") } }
         }
         server.start(false)
@@ -365,8 +370,8 @@ class HeapIngressTest {
                 assertTrue(reply.startsWith("HTTP/1.1 413"), reply)
                 assertTrue(accepted.isOpen, "the server holds its input open until the client half-closes")
                 socket.shutdownOutput()
-                // The grace timer is one second from the staged close. The client's FIN must close well before it.
-                val closed = accepted.closeFuture().await(500, TimeUnit.MILLISECONDS)
+                // The grace timer is stretched past the wait, so only the client's FIN can close the connection in time.
+                val closed = accepted.closeFuture().await(CLOSE_WAIT_SECONDS, TimeUnit.SECONDS)
                 assertTrue(closed, "the client's FIN must close the connection, not the grace timer")
             }
         } finally {

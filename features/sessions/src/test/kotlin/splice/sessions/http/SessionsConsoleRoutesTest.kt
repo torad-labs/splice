@@ -287,7 +287,8 @@ class SessionsConsoleRoutesTest {
             json(
                 """{"session_id":"$ALPHA","path":"$file","messages":[""" +
                     """{"index":0,"role":"user","text":"the head's copy"}],"next":null,""" +
-                    """"moves":[],"unparseable_lines":1,"sidechain_records":1,"skipped_records":{"attachment":1}}""",
+                    """"moves":[],"unmoved":[],"unparseable_lines":1,"sidechain_records":1,""" +
+                    """"skipped_records":{"attachment":1}}""",
             ),
             json(reply.body),
         )

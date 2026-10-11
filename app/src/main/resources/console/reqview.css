@@ -3,7 +3,7 @@
 .word.fail { color: var(--limit); }
 .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
 .detail svg { width: 1rem; height: 1rem; }
-.detail.mend { color: var(--key-light); }  /* a broken stream splice resumed or started over: the timeline tick's colour, on the row */
+.detail.mend { color: var(--key-ink); }  /* a broken stream splice resumed or started over: the timeline tick's colour, on the row */
 mark { background: var(--key-light); color: #241d14; border-radius: .2rem; padding: 0 .12rem; }
 /* the outcome as an element: clean a still dot, a failure in the limit's colour with what stopped it, stopped a square,
    a compaction its own mark, and a step splice answered itself an outline */
@@ -35,12 +35,12 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .rail-t .mk.late > span { left: auto; right: -.09rem; padding: 0 .55rem 0 0; border-left: 0; border-right: .12rem solid var(--text); }
 /* a silence splice waited out: the stretch it lasted, outlined in the key light, named above the rail */
 .rail-t .quiet { position: absolute; top: -.45rem; bottom: -.45rem; min-width: .5rem; border: .14rem dashed var(--key-light); border-radius: .35rem; background: color-mix(in oklab, var(--key-light) 14%, transparent); }
-.rail-t .quiet > span, .rail-t .resume > span { position: absolute; bottom: calc(100% + .5rem); left: 0; white-space: nowrap; font: 500 .95rem/1 var(--font-name); color: var(--key-light); }
+.rail-t .quiet > span, .rail-t .resume > span { position: absolute; bottom: calc(100% + .5rem); left: 0; white-space: nowrap; font: 500 .95rem/1 var(--font-name); color: var(--key-ink); }
 .rail-t .quiet.late > span, .rail-t .resume.late > span { left: auto; right: 0; }
 /* a resume: where splice re-sent the turn from its partial answer */
 .rail-t .resume { position: absolute; top: -.45rem; bottom: -.45rem; width: .22rem; margin-left: -.11rem; background: var(--key-light); border-radius: .1rem; }
-.rail-t .resume > span { left: -.11rem; padding-left: .55rem; border-left: .14rem solid var(--key-light); }
-.rail-t .resume.late > span { right: -.11rem; padding: 0 .55rem 0 0; border-left: 0; border-right: .14rem solid var(--key-light); }
+.rail-t .resume > span { left: -.11rem; padding-left: .55rem; border-left: .14rem solid var(--key-ink); }
+.rail-t .resume.late > span { right: -.11rem; padding: 0 .55rem 0 0; border-left: 0; border-right: .14rem solid var(--key-ink); }
 .ends { display: flex; justify-content: space-between; align-items: baseline; margin-top: 3.9rem; font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
 .ends .tot { font: 600 1.2rem/1 var(--font-data); color: var(--text); }
 
@@ -101,7 +101,7 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .frames { list-style: none; margin: .5rem 0 0; padding: .8rem 1.05rem; display: flex; flex-direction: column; gap: .3rem; font: 500 .92rem/1.4 var(--font-data); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
 .frames li { display: flex; align-items: baseline; gap: .9rem; min-width: 0; }
 .frames .ev { color: var(--text); flex: none; }
-.frames .times { color: var(--key-light); flex: none; }
+.frames .times { color: var(--key-ink); flex: none; }
 .frames .fd { color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .status { margin: 0; font: 600 1.25rem/1 var(--font-data); color: var(--text); }
 .status.s2 { color: var(--live); }

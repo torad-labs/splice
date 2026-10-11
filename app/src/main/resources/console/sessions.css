@@ -25,6 +25,9 @@
   display: grid; place-items: center; color: var(--text-mute);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail);
 }
+/* the socket is dark in both themes, so what is lit in it keeps night's ink in day: day's dark green and greys sank into
+   it (Working's trace near-invisible, walk ea3eeff67). The open seat in Teams is a light socket and keeps day's. */
+[data-theme="day"] .lamp:not(.open) { --live: #5bb59c; --limit: #f06a4c; --text-body: #cbbd9d; --text-mute: #9c8f70; --track-line: rgba(239, 226, 198, .22); }
 .lamp svg { width: 1.55rem; height: 1.55rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .lamp i { width: .8rem; height: .8rem; border-radius: 50%; background: currentColor; }
 /* Working: a trace that runs, small and slow, because it repeats on every working card */

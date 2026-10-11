@@ -44,6 +44,7 @@
   --text: #efe2c6; --text-body: #cbbd9d; --text-mute: #9c8f70;
   --track: rgba(239, 226, 198, .12); --track-line: rgba(239, 226, 198, .22);
   --limit: #f06a4c; --live: #5bb59c;
+  --key-ink: var(--key-light);        /* the key as ink on a card: words and marks it lights */
   --shaft: rgba(174, 182, 200, .055);
   color-scheme: dark;
 }
@@ -55,6 +56,7 @@
   --text: #241d14; --text-body: #4e4434; --text-mute: #6b604b;
   --track: rgba(36, 29, 20, .09); --track-line: rgba(36, 29, 20, .3);
   --limit: #bb301a; --live: #2c6555;
+  --key-ink: #8a5a12;                 /* day's key ink: the pale key washed out on cream (walk ea3eeff67), Needs you's colour */
   --shaft: rgba(255, 246, 220, .35);
   color-scheme: light;
 }

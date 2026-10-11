@@ -46,8 +46,8 @@
   display: inline-flex; align-items: center; gap: .6rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap;
   background: none; border: .12rem dashed var(--track-line); border-radius: var(--r-in); padding: .72rem .9rem; cursor: pointer;
 }
-.ftog svg { width: 1.35rem; height: 1.35rem; flex: none; fill: none; stroke: var(--key-light); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
-.ftog i.tick { width: .22rem; height: 1.35rem; margin: 0 .3rem; border-radius: .1rem; background: var(--key-light); flex: none; }
+.ftog svg { width: 1.35rem; height: 1.35rem; flex: none; fill: none; stroke: var(--key-ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
+.ftog i.tick { width: .22rem; height: 1.35rem; margin: 0 .3rem; border-radius: .1rem; background: var(--key-ink); flex: none; }
 .ftog:hover { color: var(--text); }
 .ftog[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--key-light); }
 

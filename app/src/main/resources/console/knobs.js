@@ -34,19 +34,19 @@ const KNOBS = (() => {
     // silence, never a turn's length (Watchdog.kt:6-7, :148-155, :390-398). The three tiers under it ask whether the
     // provider is alive and never end a turn on their own (Knob.kt:237-300)
     K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, also: "timeout limit cut off long turn wedged stuck", short: "Give up after" }),
-    K("firstByteTimeoutMs", "Ask if a silent start is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, also: "first word first byte" }),
+    K("firstByteTimeoutMs", "Ask if a silent start is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "first word first byte" }),
     K("streamIdleMs", "Ask if a silent answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, also: "silence idle hang" }),
     // arms only on a provider measured to resume from a prefill (HeadBuildInputs.kt:168-171)
-    K("stallReanchorMs", "Resume a silent answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC, { cmd: true, also: "resume", only: ["claude-deepseek", "claude-kimi"] }),
+    K("stallReanchorMs", "Resume a silent answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC, { cmd: true, home: "silent", also: "resume", only: ["claude-deepseek", "claude-kimi"] }),
     // admission per command (Knob.kt:186-194); attempts, the first included
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
     K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8], unit: "tries" }, 4, { cmd: true, also: "retry retries attempts" }),
     K("quotaPoll", "Read plan limits", { k: "pick", opts: [["auto", "On"], ["off", "Off"]] }, "auto", { also: "quota" }),
-    K("quotaPollIntervalMs", "Read them every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN),
-    K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { also: "warning" }),
-    K("usageWarnTokens5h", "Warn after, in 5 hours", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens" }, 0, { also: "warning" }),
-    K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", opts: [["warn", "Warns"], ["block", "Blocks"]] }, "warn", { also: "spend money" }),
+    K("quotaPollIntervalMs", "Read plan limits every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN, { home: "plan" }),
+    K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { home: "plan", also: "warning" }),
+    K("usageWarnTokens5h", "5-hour limit if none is reported", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0, { home: "plan", also: "warning" }),
+    K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", opts: [["warn", "Warns"], ["block", "Blocks"]] }, "warn", { home: "plan", also: "spend money" }),
     K("effort", "Reasoning effort", { k: "pick", opts: [[null, "Model's own"], ["minimal", "Minimal"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"]] }, null),
     K("summary", "Reasoning summaries", { k: "pick", opts: [["detailed", "Detailed"], ["concise", "Concise"], ["auto", "Auto"]] }, "detailed"),
     K("showReasoning", "Show reasoning in Claude Code", { k: "pick", opts: [["text", "As text"], ["thinking", "As thinking"], ["off", "Off"]] }, "text", { also: "display" }),
@@ -54,7 +54,15 @@ const KNOBS = (() => {
     K("progressLine", "Progress line while it thinks", { k: "flag" }, true),
     K("foldMaxContinue", "Keep thinking at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3, { also: "continue" }),
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
-    K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { also: "too large image size 413" }),
+    K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { home: "busy", also: "too large image size 413" }),
+    // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)
+    K("requestReadTimeoutMs", "Longest wait for a request to arrive", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { home: "busy", also: "slow client body timeout" }),
+    // 0 is the daemon working the budget out from its own heap (Knob.kt:434-444), as maxInflight's 0 is Unlimited
+    K("materializationHeapBytes", "Memory for reading requests", { k: "count", opts: [0, 256 * MB, 512 * MB, 1024 * MB, 2048 * MB], none: "Automatic", unit: "MB", per: MB }, 0, { home: "busy", also: "heap memory large requests" }),
+    // the curve for a failure with no known cause: a 429 keeps its Retry-After and DNS its own plan (Knob.kt:231-234)
+    K("retryBackoffBaseMs", "First wait between tries", { k: "dur", opts: [100, 200, 500, SEC, 2 * SEC], unit: "s" }, 200, { home: "busy", also: "retry backoff" }),
+    K("retryBackoffCapMs", "Longest wait between tries", { k: "dur", opts: [5 * SEC, 10 * SEC, 30 * SEC, MIN], unit: "s" }, 10 * SEC, { home: "busy", also: "retry backoff ceiling" }),
+    K("retryBackoffJitterPct", "Each wait varies by", { k: "count", opts: [0, 10, 25, 50], unit: "%", pre: "±" }, 10, { home: "busy", also: "retry backoff jitter random" }),
     K("traceRetentionDays", "Keep prompts and answers for", { k: "count", opts: [1, 3, 7, 14, 30], unit: "days" }, 7, { home: "data" }),
     K("traceMaxBodyChars", "Longest saved prompt", { k: "count", opts: [4 * MB, 8 * MB, 16 * MB, 32 * MB], unit: "M characters", per: MB }, 16 * MB, { home: "data" }),
     // one setting for the usage and request history (the hourly totals and the request records), what Usage and
@@ -116,7 +124,7 @@ const KNOBS = (() => {
     if (c.k === "count") {
       const n = v === null ? null : Number(v);
       return n === 0 && c.zero ? c.zero : (n === 0 || n === null) && c.none ? c.none : n === 1 && c.unit === "days" ? "1 day"
-        : c.tok ? `${tok(n)} ${c.unit}` : `${fmt(n / (c.per || 1))}${c.unit ? (c.unit === "%" ? "%" : ` ${c.unit}`) : ""}`;
+        : c.tok ? `${tok(n)} ${c.unit}` : `${c.pre || ""}${fmt(n / (c.per || 1))}${c.unit ? (c.unit === "%" ? "%" : ` ${c.unit}`) : ""}`;
     }
     if (c.k === "pick") return (c.opts.find(([o]) => String(o) === String(v)) || [, String(v)])[1];
     if (c.k === "flag") return v === true || v === "true" ? "On" : "Off";

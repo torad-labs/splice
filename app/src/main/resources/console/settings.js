@@ -10,14 +10,23 @@ const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needs
 const SV = {
   open: G('<path d="M7 17L17 7M9 7h8v8"/>'),
   busy: G('<path d="M4 6h16M4 12h16M4 18h9"/><circle cx="18" cy="18" r="1.6"/>'),
+  silent: G('<circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2M9 3h6"/>'),
+  plan: G('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
+  mcp: G('<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0z"/><path d="M12 17v4"/>'),
   data: G('<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>'),
 };
 const MiB = 1048576;
 const DAY = 864e5;
 
 // ---------- the jobs ----------
+// Only the jobs people come to it with (Marlin, Oct 10): a job draws the settings the daemon takes live, in knobs.js's
+// order, and a job none of whose settings is live is not on the rail until one is (Reasoning, today). The names are the
+// mock's, with no description line under them (fin).
 const TOPICS = [
-  { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors" },
+  { id: "silent", name: "Silent models", also: "stall stuck wedged hang quiet resume timeout" },
+  { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors retry" },
+  { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
+  { id: "mcp", name: "MCP servers", also: "tools servers model context protocol" },
   { id: "data", name: "Your data", also: "privacy prompts saved keep delete disk history logs" },
 ];
 const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
@@ -26,7 +35,13 @@ const topicOf = (key) => KNOB[key].home || TOPICS.find((x) => x.keys && x.keys.i
  *  /api/config's restart_required_keys, Knob.kt), so a knob that turns live joins and one that turns boot-only leaves
  *  with the daemon's own answer, never a list kept here. */
 const liveKnobs = () => Object.values(KNOB)
-  .filter((k) => !needsRestart(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
+  .filter((k) => !needsRestart(k.key) && shownKnob(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
+// the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
+const shownKnob = (key) => key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off";
+/** The jobs on the rail: Your data always, the others once one of their settings is live. */
+const jobs = () => TOPICS.filter((x) => x.id === "data" || liveKnobs().some((k) => topicOf(k.key) === x.id));
+/** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
+const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
 const ui = { open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
 
@@ -66,7 +81,7 @@ function found(id) {
   return [...new Set(f)];
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
-const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])) })).join("")}</div>`;
+const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key) && shownKnob(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])) })).join("")}</div>`;
 
 // ---------- Your data ----------
 // Each store, what it holds, how long, and its Delete now. A store with no route to count or delete it says so.
@@ -150,12 +165,19 @@ function dataHtml() {
 }
 
 const PANES = {
-  busy: () => `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`,
+  busy: () => `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
+    + (keysOf("busy", ["maxInflight", "maxQueued"]).length ? `<section class="sub">${form(keysOf("busy", ["maxInflight", "maxQueued"]))}</section>` : ""),
+  silent: () => `<section class="sub">${form(keysOf("silent"))}</section>`,
+  plan: () => `<section class="sub">${form(keysOf("plan"))}</section>`,
+  mcp: () => `<section class="sub">${form(keysOf("mcp"))}</section>`,
   data: dataHtml,
 };
 
 // ---------- the rail ----------
 function summary(id) {
+  if (id === "silent") return [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`];
+  if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
+  if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
   const h = DATA_ROWS.filter((r) => !r.noRoute).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute) ? "counted" : "kept"; // a total that leaves a store out says counted
   return h.some((x) => x === null) ? ["Some stores did not answer"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
@@ -175,7 +197,7 @@ const root = document.getElementById("st");
 function render() {
   tick(); // times read in the person's present
   if (ui.err) { root.innerHTML = `<div class="list rail empty"><div class="nomatch"><span class="state limit">${esc(ui.err)}</span><button class="act quiet" data-act="again">Read again</button></div></div>`; return; }
-  const shown = words().length ? TOPICS.filter((x) => found(x.id).length) : TOPICS;
+  const shown = words().length ? jobs().filter((x) => found(x.id).length) : jobs();
   if (shown.length && !shown.some((x) => x.id === ui.open)) ui.open = shown[0].id;
   const x = TOPIC[ui.open], s = summary(x.id);
   const list = shown.length ? `<div class="list rail">${shown.map(cardHtml).join("")}</div>`

@@ -21,7 +21,6 @@ const KNOBS = (() => {
   const dur = (ms) => (ms % HR === 0 ? `${ms / HR} h` : ms % MIN === 0 ? `${ms / MIN} min` : ms % SEC === 0 ? `${ms / SEC} s` : `${ms} ms`);
   const tok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : `${n}`);
   const PLUS = G('<path d="M12 5v14M5 12h14"/>');
-  const BACK = G('<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'); // what removing a command's own value goes back to
 
   // c: the control. dur: preset durations with a Custom value in `unit`. count: preset counts, 0 the `none` word.
   // pick: named choices (a switch up to three, else a menu). flag: On and Off. models: a list of models, picked.
@@ -178,13 +177,12 @@ const KNOBS = (() => {
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
     return st.said[id] ? `<span class="said ok">${esc(st.said[id])}</span>` : "";
   }
-  // one command's own value, and the value it goes back to: the shared one, drawn as the way back. It says it in
-  // words, because a bare "↩ 16" changed nothing a walker could see and the next one guessed (fin, p75 and p76).
-  function backHtml(k, c) {
-    return `<button class="back" data-kact="unover" data-key="${k.key}" data-cmd="${c}">${BACK}<span>Back to ${esc(word(k, valueOf(k).v))}</span></button>`;
-  }
+  // why: a command's own value is a splice.toml write the console has no route for yet; true once PUT /api/topology does
+  const OWN_VALUES_WRITABLE = false;
   function overHtml(k, c, hl = esc) {
-    return `<div class="over">${cmdChip(c, hl)}${ctlHtml(k, ownValue(k.key, c), c)}${backHtml(k, c)}${saidHtml(`${k.key}@${c}`)}</div>`;
+    // the console cannot write a command's own value yet (a splice.toml change, PUT /api/topology), so it is shown as
+    // its value with no act on it: a control whose every press fails is not drawn (fin)
+    return `<div class="over">${cmdChip(c, hl)}<span class="fixed">${esc(word(k, ownValue(k.key, c)))}</span></div>`;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
   function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false } = {}) {
@@ -194,7 +192,7 @@ const KNOBS = (() => {
     }
     const owners = ownersOf(k.key), left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
     const lines = owners.map((c) => overHtml(k, c, hl)).join("");
-    const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
+    const add = OWN_VALUES_WRITABLE && st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(c)}</button>`).join("")}</div>` : "") + "</span>" : "";
     const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>`;
@@ -257,7 +255,6 @@ const KNOBS = (() => {
       sent(d.key, (d.kact === "model" ? [...ids, d.m] : ids.filter((x) => x !== d.m)).join(","), render);
       return true;
     }
-    if (d.kact === "over" || d.kact === "unover") { st.bad[`${d.key}@${d.cmd}`] = "Not saved: one command's own value is a splice.toml change"; return true; }
     return true;
   }
   /** Sends the change and redraws when the daemon answers; the row says "Saving" with the wait ring while it is out. */

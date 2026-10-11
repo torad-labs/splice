@@ -63,10 +63,7 @@ internal class CompactClassifier {
             append(lastUser)
         }.lowercase()
         val hasMarker = compactMarkers.any { hay.contains(it) }
-        val compact = hasMarker ||
-            compactionTextOnlyRe.containsMatchIn(lastUser) ||
-            compactionNoToolsRe.containsMatchIn(lastUser)
-        return CompactProbe(compact = compact, hasMarker = hasMarker, sysLen = system.length)
+        return CompactProbe(compact = hasMarker, hasMarker = hasMarker, sysLen = system.length)
     }
 }
 
@@ -109,26 +106,11 @@ public class ShadowClassifier(
             "[shadow-compact] compact=${row.compact} has_marker=${row.hasMarker} " +
                 "tool_count=${row.toolCount} sys_len=${row.sysLen}\n",
         )
-        // CMP-001: literal matching can't be made version-proof, but a PARTIAL drift — the pinned
-        // compactMarkers miss while the looser fallback regexes still catch the turn as compact —
-        // is mechanically detectable from signals this classifier already computes. Tagged and
-        // logged separately from the per-request noise above so it is actually loud, not buried.
-        if (row.compact && !row.hasMarker) {
-            log(
-                "[compact-drift] fallback-only match (has_marker=false, compact=true): " +
-                    "Claude Code's summarizer wording may have drifted from compactMarkers\n",
-            )
-        }
         return row
     }
 
     public fun tail(n: Int = SHADOW_DEFAULT_TAIL): List<ShadowRow> = synchronized(lock) { ring.takeLast(n) }
 }
-
-// FILE SCOPE ON PURPOSE: two compiled Regex singletons. As members of CompactClassifier they would
-// recompile per instance, and the classifier is constructed per consumer.
-private val compactionTextOnlyRe = Regex("compaction agent should only produce text", RegexOption.IGNORE_CASE)
-private val compactionNoToolsRe = Regex("tool use is not allowed during compaction", RegexOption.IGNORE_CASE)
 
 private const val RING_MAX = 500
 

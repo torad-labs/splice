@@ -105,53 +105,19 @@ class CompactTest {
         assertFalse(classifier.markerPresent(toolTurn), "the marker lives in history, not the last user turn")
     }
 
+    // Spec section 7: detection is the verbatim summarizer marker and nothing looser. Prose that merely
+    // talks about compaction is an ordinary turn, so a wording drift shows as has_marker=false in the shadow
+    // row, never as a guessed compaction.
     @Test
-    fun `explicit compaction affordances match`() {
-        assertTrue(
-            classifier.classifyCompact(
-                body(
-                    """{"model":"m","messages":[
-                        {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
-                ),
-            ).compact,
-        )
-        assertTrue(
-            classifier.classifyCompact(
-                body(
-                    """{"model":"m","messages":[
-                        {"role":"user","content":"Tool use is not allowed during compaction."}]}""",
-                ),
-            ).compact,
-        )
-    }
-
-    // CMP-001: the drift canary itself was untested — `compact-drift` appeared exactly once in the
-    // repo, in Compact.kt. It fires on the PARTIAL drift: the pinned verbatim compactMarkers all
-    // miss while a looser affordance regex still catches the turn as compact, which is what a
-    // Claude Code summarizer-wording change looks like from here. Untested, the instrument built to
-    // catch marker rot would have rotted silently with it.
-    @Test
-    fun `a fallback-only match fires the compact-drift canary, a verbatim marker never does`() {
-        val lines = mutableListOf<String>()
-        val shadow = ShadowClassifier(log = { lines.add(it) }, clock = { 9L })
-
-        val verbatim = body("""{"model":"m","system":"You are $COMPACT_MARKER.","messages":[]}""")
-        val onMarker = shadow.record(verbatim, classifier.classifyCompact(verbatim))
-        assertTrue(onMarker.compact)
-        assertTrue(onMarker.hasMarker)
-        assertEquals(0, lines.count { it.startsWith("[compact-drift]") }, "a pinned marker is not drift: $lines")
-
-        // Matches compactionTextOnlyRe, carries none of the five verbatim marker sentences.
-        val fallbackOnly = body(
-            """{"model":"m","messages":[
-                {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
-        )
-        val onDrift = shadow.record(fallbackOnly, classifier.classifyCompact(fallbackOnly))
-        assertTrue(onDrift.compact, "the fallback regex must still classify this as compact")
-        assertFalse(onDrift.hasMarker, "the pinned markers must all miss — that IS the drift signal")
-        val drift = lines.filter { it.startsWith("[compact-drift]") }
-        assertEquals(1, drift.size, "the canary must fire exactly once: $lines")
-        assertTrue(drift.single().contains("has_marker=false, compact=true"), drift.single())
+    fun `text about compaction without a verbatim marker is an ordinary turn`() {
+        listOf("The compaction agent should only produce TEXT.", "Tool use is not allowed during compaction.")
+            .forEach { text ->
+                val probe = classifier.classifyCompact(
+                    body("""{"model":"m","messages":[{"role":"user","content":"$text"}]}"""),
+                )
+                assertFalse(probe.compact, text)
+                assertFalse(probe.hasMarker, text)
+            }
     }
 
     @Test

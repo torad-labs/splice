@@ -346,6 +346,14 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .meter.windows.spend { grid-template-columns: auto minmax(0, 1fr) auto auto; column-gap: 1.3rem; }  /* outside the cards: its own columns */
 .meter.windows.spend .money { white-space: normal; }  /* the figure wraps when the card is narrow, so the reset and the button keep their words whole and inside the edge */
 .meter.windows.spend .act { white-space: nowrap; }
+/* a Day that carries a figure and a count under it gives them the whole row: "Day" and the figure on the first line,
+   Set budget and the reset on the next, so no phrase breaks off and nothing packs beside the tab (3828, 1440, b09b81c15) */
+.meter.windows.spend:has(> span.money > .unpriced) { row-gap: .9rem; }
+.meter.windows.spend:has(> span.money > .unpriced) > .money { grid-column: 2 / -1; }
+.meter.windows.spend:has(> span.money > .unpriced) > .act { grid-row: 2; grid-column: 3; }
+.meter.windows.spend:has(> span.money > .unpriced) > .when { grid-row: 2; grid-column: 4; }
+.meter.windows.spend > .money > em, .meter.windows.spend .money .unpriced.own .part { white-space: nowrap; }
+.meter.windows.spend > .money > .unpriced.own { width: auto; }
 .meter .editor { margin-top: 0; }
 /* the command the day belongs to, as a tab on the row's top edge: it names the row without taking its width, and it has
    no live dot, which it carries only when it rides an account */

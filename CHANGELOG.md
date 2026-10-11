@@ -36,6 +36,9 @@
   finished answer whose client disconnected is kept on disk for its identical retry.
 - **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
   against the release's checksums, and build provenance is verified whenever `gh` is signed in.
+- **Installing and launching need no Node.** The launch shim is plain `sh` and `curl`, so a machine with Java and a
+  natively installed Claude Code runs `claudex` with no Node on it. `install.sh` and `splice doctor` no longer ask for
+  it, and the installer ends on one next step, `splice setup`.
 - **Code mode is on by default for eligible ChatGPT models.** The model batches tool calls in a
   short JavaScript program, while Claude Code still checks permissions and runs each operation.
 - **Teams.** Sessions on different heads, say Claude and GPT-6 Astra, work one goal: each gets
@@ -55,7 +58,7 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
 
 - **The installer leaves the running 0.3.x daemon alone.** The next launch of a head's command,
   such as `claudex` or `claude-grok`, replaces it: the launch shim sees the old version on `/health`, stops that daemon and starts
-  0.4.0. The launch shim needs Node 22.15 or newer.
+  0.4.0. The launch shim needs only `sh` and `curl`.
 - **Config and credentials keep their contents, and the state root stays where it is.**
   `splice.toml` and its backups are tightened to owner-only (0600). An install
   made before 0.4.0 keeps `~/.claude-codex/state` and its management key. 0.4.0 tightens that
@@ -755,6 +758,16 @@ origin.
 - **`splice doctor` and `splice models` honour `NO_COLOR`.** Doctor gives its problems more room than passing
   checks, and each doctor row says whether its fix is a command or advice (`fix_kind`).
 - **Usage rows report each turn's reasoning tokens** and give the reason when a row has no cost.
+- **A session splice did not launch joins the head its requests reach.** With no launch record, a session is placed on
+  the head whose port its requests arrive on, and keeps that head across a restart. `unknown head` stays for a session
+  splice still cannot place.
+- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-19`). It sends each argument exactly as typed, whatever
+  it holds, and when `curl` is missing it says so: "splice needs curl to start Claude Code, and curl is not installed"
+  with the install command for this machine.
+- **Translated heads no longer show Claude Code's auto-mode notice.** A session on any head but `claude-splice` used to
+  open with "this session isn't eligible… ask your gateway to implement", and an interactive auto-mode session held
+  its first checked action until it was answered. The launch now tells Claude Code the server-side checks are not
+  available there, so it runs its own and shows nothing.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -1360,6 +1373,25 @@ origin.
   `contextWindowOverride` setting, replaces the provider's window on every model, rule and default,
   but each such row said `context_window_source: "model"`. Those rows now say `"head"`. A discovered
   model held to a smaller published ceiling still says `"model"`, because that number is the model's.
+- **Concurrent launches are no longer refused.** The launch request states its length and a busy answer is tried again,
+  so several `claudex` starts at once are not turned away as chunked bodies. An installed launcher older than this is
+  flagged stale by doctor.
+- **The first launch on a fresh install works.** `claudex` before any daemon had run was refused with "cannot establish
+  this launcher's owning HOME". A launcher installed inside the HOME now owns it, and the launch starts splice.
+- **First-run words are plain.** A browser that did not open says so and points at the link, the daemon start reads
+  "starting splice…", and the PATH note appears only when the bin directory is not on PATH.
+- **A key ledger splice cannot read is kept beside the new one,** never written over. The README names the unreadable
+  copy.
+- **Teams says what its request counts cover:** since joining on a slot, since members joined on the team.
+- **Requests names a key by its provider,** "OpenRouter" and not `OPENROUTER_API_KEY`, the name Continue on uses; two
+  entries that read the same are told apart as "OpenRouter 1" and "OpenRouter 2", and an account from before splice
+  tracked keys reads "OpenRouter, before key tracking". A door to one request opens it, and Requests' search keeps its
+  filters.
+- **An open Settings card taller than its pane says "More below"** on its lower edge until the scroll reaches the end, and
+  the day or night theme holds across pages and reloads.
+- **Continue on is honest about what it can do.** It says a command is not installed, with its `splice install` line,
+  before the press; drops a plan window whose reset has gone by; and, with reading off, still knows the model a session
+  is on.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

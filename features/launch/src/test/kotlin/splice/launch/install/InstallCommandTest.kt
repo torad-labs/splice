@@ -181,6 +181,14 @@ class InstallCommandTest {
     }
 
     @Test
+    fun `installedShimVersion extracts the marker of the POSIX sh shim`(@TempDir home: Path) {
+        withHome(home) {
+            writeShim(home, "#!/bin/sh\nSPLICE_GATEWAY_VERSION=\"0.4.0\"\nSPLICE_SHIM_VERSION=\"shim-19\"\n")
+            assertEquals("shim-19", InstallShim().installedShimVersion(env = noEnv))
+        }
+    }
+
+    @Test
     fun `shimStalenessWarning is null when the marker matches SHIM_VERSION`(@TempDir home: Path) {
         withHome(home) {
             writeShim(home, "#!/usr/bin/env node\nconst SPLICE_SHIM_VERSION = \"$SHIM_VERSION\";\n")

@@ -73,7 +73,7 @@ jobs:
       - name: upgrade rehearsal from the newest other release
         if: ${{ !cancelled() }}
         run: |
-          candidate="$(sed -nE 's/^const SPLICE_GATEWAY_VERSION = "([^"]+)";$/\1/p' app/src/main/dist/bin/splice-launch)"
+          candidate="$(sed -nE 's/^SPLICE_GATEWAY_VERSION="([^"]+)"$/\1/p' app/src/main/dist/bin/splice-launch)"
           from="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 20 \
             --json tagName --jq '.[].tagName' | grep -vx "v$candidate" | head -1)"
           if [ -z "$candidate" ] || [ -z "$from" ]; then

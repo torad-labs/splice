@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
       - name: the promoted version must not already be tagged
         run: |
-          version="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
+          version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
           if [ -z "$version" ]; then
             echo "::error::could not read SPLICE_GATEWAY_VERSION from app/src/main/dist/bin/splice-launch"
             exit 1

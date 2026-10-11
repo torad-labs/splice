@@ -32,7 +32,7 @@ function bundle(changes: Record<string, string> = {}, extra: Record<string, stri
   workspaces.push(dir);
   const content: Record<string, string> = {
     "splice.jar": "not really a jar\n",
-    "splice-launch": `#!/usr/bin/env node\nconst SPLICE_GATEWAY_VERSION = "${JAR_VERSION}";\nconst SPLICE_SHIM_VERSION = "shim-5";\n`,
+    "splice-launch": `#!/bin/sh\nSPLICE_GATEWAY_VERSION="${JAR_VERSION}"\nSPLICE_SHIM_VERSION="shim-5"\n`,
     "install.sh": "#!/usr/bin/env bash\ntrue\n",
     LICENSE: "license\n",
     "THIRD_PARTY_NOTICES.md": "notices\n",
@@ -177,17 +177,17 @@ describe("release accept", () => {
 
   test("the launcher and the jar must agree on a version", () => {
     const dir = bundle({
-      "splice-launch": '#!/usr/bin/env node\nconst SPLICE_GATEWAY_VERSION = "0.0.1";\nconst SPLICE_SHIM_VERSION = "shim-5";\n',
+      "splice-launch": '#!/bin/sh\nSPLICE_GATEWAY_VERSION="0.0.1"\nSPLICE_SHIM_VERSION="shim-5"\n',
     });
     const run = accept(dir);
     expect(run.code).toBe(1);
     expect(run.output).toContain(`launcher expects gateway 0.0.1 but jar is ${JAR_VERSION}`);
   });
 
-  // The shim marker is JS as of PR 6; the bash spelling must not be readable by accident, or two
-  // blanks would compare equal and the leg above would pass on a shim it never read.
-  test("a shim with no JS marker fails the version comparison rather than passing it", () => {
-    const dir = bundle({ "splice-launch": '#!/usr/bin/env bash\nSPLICE_GATEWAY_VERSION="9.9.9"\n' });
+  // The shim marker is a plain sh assignment as of shim-19; the old Node spelling must not be readable by accident, or
+  // two blanks would compare equal and the leg above would pass on a shim it never read.
+  test("a shim with no sh marker fails the version comparison rather than passing it", () => {
+    const dir = bundle({ "splice-launch": '#!/usr/bin/env node\nconst SPLICE_GATEWAY_VERSION = "9.9.9";\n' });
     expect(accept(dir).output).toContain(`launcher expects gateway undefined but jar is ${JAR_VERSION}`);
   });
 

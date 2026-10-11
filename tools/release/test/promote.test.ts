@@ -42,7 +42,7 @@ interface Fixture {
   readonly mainSha: string;
 }
 
-function fixture(shim = `#!/usr/bin/env node\nconst SPLICE_GATEWAY_VERSION = "${VERSION}";\nconst SPLICE_SHIM_VERSION = "shim-5";\n`): Fixture {
+function fixture(shim = `#!/bin/sh\nSPLICE_GATEWAY_VERSION="${VERSION}"\nSPLICE_SHIM_VERSION="shim-5"\n`): Fixture {
   const dir = mkdtempSync(join(tmpdir(), "release-promote-"));
   workspaces.push(dir);
   const origin = join(dir, "origin.git");
@@ -171,7 +171,7 @@ describe("release promote", () => {
   });
 
   test("a shim with no marker at origin/main is named, never promoted blind", async () => {
-    const f = fixture('#!/usr/bin/env node\nconst NOTHING = "0.0.0";\n');
+    const f = fixture('#!/bin/sh\nNOTHING="0.0.0"\n');
     const result = await run(f, { env: { PROMOTE_YES: "1" } });
     expect(result.code).toBe(1);
     expect(result.output).toContain("could not read SPLICE_GATEWAY_VERSION from origin/main");

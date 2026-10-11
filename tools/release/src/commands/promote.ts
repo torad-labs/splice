@@ -82,7 +82,7 @@ export async function promote(
   // duration, so main advancing mid-prompt could silently change what got promoted).
   const mainSha = run(repoRoot, ["git", "rev-parse", "origin/main"]).stdout;
   const shim = run(repoRoot, ["git", "show", `${mainSha}:${SHIM_RELATIVE}`]).stdout;
-  const version = /^const SPLICE_GATEWAY_VERSION = "([^"]+)";$/m.exec(shim)?.[1] ?? "";
+  const version = /^SPLICE_GATEWAY_VERSION="([^"]+)"$/m.exec(shim)?.[1] ?? "";
   if (version === "") return fail("promote: could not read SPLICE_GATEWAY_VERSION from origin/main");
 
   if (run(repoRoot, ["git", "ls-remote", "--exit-code", "--tags", "origin", `refs/tags/v${version}`]).ok) {

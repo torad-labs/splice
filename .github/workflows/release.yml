@@ -93,7 +93,7 @@ jobs:
           else
             # Promotion path: the promoted CODE is the version authority — the same shim marker
             # accept.sh compares against the jar, so resolve and accept can never disagree.
-            version="$(awk -F'"' '/^const SPLICE_GATEWAY_VERSION = "/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
+            version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' app/src/main/dist/bin/splice-launch)"
             if [ -z "$version" ]; then
               echo "release: could not read SPLICE_GATEWAY_VERSION from app/src/main/dist/bin/splice-launch" >&2
               exit 1

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { layout } from "../../gate/src/lib/repo.ts";
 import { shimMarkers, shimPath } from "../../release/src/lib/shim.ts";
 
-// The real shim and packaged CLI, a synthetic control plane and a local Node client.
+// The real shim and packaged CLI, a synthetic control plane and a local client (run by bun, never by the shim).
 // The client reads its declaration AFTER exec, proving both record-before-exec and PID continuity.
 test("the declaration names the live process after the real launcher exec", async () => {
   const { repoRoot, buildRoot } = layout();
@@ -47,8 +47,12 @@ test("the declaration names the live process after the real launcher exec", asyn
         return Response.json({ok: true, version: markers.gateway, wantShimVersion: markers.shim});
       }
       if (url.pathname === "/launch/fixture" || url.pathname === "/launch/claude") {
+        // The shim asks for the line form; a JSON caller still gets JSON.
+        if ((request.headers.get("accept") ?? "").includes("text/x-splice-launch")) {
+          return new Response(`splice-launch 1\nE SPLICE=1\nE ANTHROPIC_BASE_URL=http://127.0.0.1:3101\nA ${process.execPath}\nA ${client}\nend\n`);
+        }
         return Response.json({
-          argv: ["node", client], unset: [],
+          argv: [process.execPath, client], unset: [],
           env: {SPLICE: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:3101"},
         });
       }
@@ -77,7 +81,7 @@ pinned_model = "fixture-model"
       // HOME and, for the wrapped `claude`, execs the operator's real Claude Code (seen Oct 7, 2026).
       SPLICE_SUPERVISOR_UNIT: "splice-launch-owner-test-absent.service",
     };
-    const child = Bun.spawn(["node", shim], {env, stdout: "pipe", stderr: "pipe"});
+    const child = Bun.spawn([shim], {env, stdout: "pipe", stderr: "pipe"});
     const [out, err, code] = await Promise.all([
       new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
     ]);
@@ -92,7 +96,7 @@ pinned_model = "fixture-model"
     expect(result.owner.kind).toBe("session");
     expect(result.mode).toBe(0o600);
     expect(Number.isNaN(Date.parse(result.owner.startedAt))).toBe(false);
-    const wrapped = Bun.spawn(["node", shim], {
+    const wrapped = Bun.spawn([shim], {
       env: {...env, SPLICE_HEAD: "claude"}, stdout: "pipe", stderr: "pipe",
     });
     const [wrappedOut, wrappedErr, wrappedCode] = await Promise.all([
@@ -100,19 +104,16 @@ pinned_model = "fixture-model"
     ]);
     expect(wrappedCode, wrappedErr).toBe(0);
     expect(JSON.parse(wrappedOut).owner.head).toBe("fixture");
-    // Real ownership writer, but the final login is a local Node stand-in, never a provider request.
+    // Real ownership writer, but the final login is a local stand-in, never a provider request.
     const bin = join(dir, "bin");
     mkdirSync(bin);
     const fakeJava = join(bin, "java");
-    writeFileSync(fakeJava, `#!/usr/bin/env node
-      const args = process.argv.slice(2);
-      if (args.includes("record-launch")) {
-        process.execve(${JSON.stringify(realJava)}, ["java", ...args], process.env);
-      }
-      require(${JSON.stringify(client)});
-    `);
+    writeFileSync(fakeJava, `#!/bin/sh
+case " $* " in *" record-launch "*) exec ${realJava} "$@" ;; esac
+exec ${process.execPath} ${client}
+`);
     chmodSync(fakeJava, 0o700);
-    const login = Bun.spawn(["node", shim, "login", "--label", "work", "fixture"], {
+    const login = Bun.spawn([shim, "login", "--label", "work", "fixture"], {
       env: {...env, PATH: bin + ":" + env.PATH, SPLICE_HEAD: "splice"},
       stdout: "pipe", stderr: "pipe",
     });
@@ -125,17 +126,16 @@ pinned_model = "fixture-model"
     expect(loginRecord.head).toBe("fixture");
     expect(loginRecord.kind).toBe("login");
     // This proof must fail when the launcher omits its declaration, not merely observe an exec.
-    const preload = join(dir, "omit-owner.cjs");
-    writeFileSync(preload, `
-      const cp = require("node:child_process");
-      const original = cp.execFileSync;
-      cp.execFileSync = function(command, args, options) {
-        if (args.includes("record-launch")) throw new Error("synthetic omitted declaration");
-        return original(command, args, options);
-      };
-    `);
-    const mutant = Bun.spawn(["node", shim], {
-      env: {...env, NODE_OPTIONS: "--require " + preload}, stdout: "pipe", stderr: "pipe",
+    const omitBin = join(dir, "omit-bin");
+    mkdirSync(omitBin);
+    const omitJava = join(omitBin, "java");
+    writeFileSync(omitJava, `#!/bin/sh
+case " $* " in *" record-launch "*) exit 1 ;; esac
+exec ${realJava} "$@"
+`);
+    chmodSync(omitJava, 0o700);
+    const mutant = Bun.spawn([shim], {
+      env: {...env, PATH: omitBin + ":" + env.PATH}, stdout: "pipe", stderr: "pipe",
     });
     const [mutantErr, mutantCode] = await Promise.all([
       new Response(mutant.stderr).text(), mutant.exited,

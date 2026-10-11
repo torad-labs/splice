@@ -11,7 +11,7 @@ import java.nio.file.Files
 
 // FILE SCOPE ON PURPOSE: one compiled Regex shared by every shim-version read, rather than a
 // recompile per InstallShim instance (doctor constructs one just to reach installedShimVersion).
-private val SHIM_VERSION_LINE = Regex("""^const SPLICE_SHIM_VERSION = "([^"]*)";""", RegexOption.MULTILINE)
+private val SHIM_VERSION_LINE = Regex("""^(?:const )?SPLICE_SHIM_VERSION ?= ?"([^"]*)";?""", RegexOption.MULTILINE)
 
 /** The installed launch shim's version marker, read for doctor and for the daemon's boot warning. */
 public class InstallShim(

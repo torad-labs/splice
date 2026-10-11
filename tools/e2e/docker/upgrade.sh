@@ -516,7 +516,7 @@ step "the pre-0.4 state root stays at ~/.claude-codex/state with the same manage
 
 doctor_after_upgrade() {
   local out shim
-  shim="$(sed -nE 's/^const SPLICE_SHIM_VERSION = "([^"]+)";$/\1/p' "$ARTIFACTS/splice-launch")"
+  shim="$(sed -nE 's/^SPLICE_SHIM_VERSION="([^"]+)"$/\1/p' "$ARTIFACTS/splice-launch")"
   out="$(splice doctor 2>&1 | strip_ansi)"
   printf '%s\n' "$out"
   [ -n "$shim" ] || { echo "the candidate shim carries no SPLICE_SHIM_VERSION marker"; return 1; }

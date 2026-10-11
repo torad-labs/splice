@@ -188,16 +188,16 @@ class StateDirAgreementTest {
     private fun declaresResolver(file: Path, read: (Path) -> String): Boolean {
         val text = read(file)
         return "\nresolve_state_dir() {" in text || "export function liveStateDir(" in text ||
-            "\nfunction liveStateDir(" in text
+            "\nlive_state_dir() {" in text
     }
 
-    /** The launch shim is a Node script with no extension (its installed name is the contract), so
+    /** The launch shim is a POSIX sh script with no extension (its installed name is the contract), so
      *  its runtime is read off its first line rather than its suffix. */
-    private fun isNodeScript(script: Path, read: (Path) -> String): Boolean =
-        read(script).startsWith("#!/usr/bin/env node")
+    private fun isPosixShScript(script: Path, read: (Path) -> String): Boolean =
+        read(script).startsWith("#!/bin/sh")
 
-    /** A bash copy is sourced out of its file; a TS copy is imported and called; the Node shim is
-     *  `require`d and called. Same contract, three runtimes — which is the point: the rule is not
+    /** A bash copy is sourced out of its file; a TS copy is imported and called; the sh shim is
+     *  sourced with its functions only and called. Same contract, three runtimes — which is the point: the rule is not
      *  bash's, it is splice's. */
     private fun resolveWith(script: Path, home: Path, env: Map<String, String>, read: (Path) -> String): String {
         val absolute = script.toAbsolutePath().toString()
@@ -210,15 +210,14 @@ class StateDirAgreementTest {
                 "const m = await import(process.env.PIN_MODULE); " +
                     "console.log(m.liveStateDir(process.env.PIN_HOME, JSON.parse(process.env.PIN_ENV)))",
             )
-        } else if (isNodeScript(script, read)) {
-            // `require`, not `import`: an extensionless file is CommonJS to Node's loader and the
-            // shim exports through module.exports for exactly this read. Its main() runs only when
-            // it is the entry module, so requiring it launches nothing.
+        } else if (isPosixShScript(script, read)) {
+            // SPLICE_LAUNCH_FUNCTIONS_ONLY loads the shim's functions and stops before main(), so sourcing launches
+            // nothing. Plain sh, not bash: the shim is what a machine without bash would run.
             listOf(
-                "node",
-                "-e",
-                "const m = require(process.env.PIN_MODULE); " +
-                    "console.log(m.liveStateDir(process.env.PIN_HOME, JSON.parse(process.env.PIN_ENV)))",
+                "sh",
+                "-c",
+                "SPLICE_LAUNCH_FUNCTIONS_ONLY=1 . \"${"$"}PIN_MODULE\"; " +
+                    "live_state_dir \"${"$"}PIN_HOME\" \"${"$"}{SPLICE_STATE_DIR-}\" \"${"$"}{CLAUDEX_STATE_DIR-}\"",
             )
         } else {
             listOf("bash", "-c", "source <(sed -n '/^resolve_state_dir()/,/^}/p' $absolute); resolve_state_dir")

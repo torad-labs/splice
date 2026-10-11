@@ -369,3 +369,4 @@ button.count:hover { color: var(--text); }
 .dmore .cs .said.limit { color: var(--bad, #e0584a); }
 .dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
 .dcost { grid-column: 1 / -1; margin-top: .5rem; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.dcost span { white-space: nowrap; }

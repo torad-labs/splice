@@ -195,7 +195,7 @@ function dataRow(r) {
   });
 }
 function dataHtml() {
-  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")) });
+  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")), more: val("transcriptView") ? "" : `<div class="dcost">${["Sessions, Requests and Teams show no conversations", "Questions are answered in the terminal", "Nothing is deleted"].map((t) => `<span>${t}</span>`).join(" · ")}</div>` });
   // what each tapped command holds in memory right now: counted, never shown, and no Delete since the daemon has none
   const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
   // The row draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and

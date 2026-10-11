@@ -41,6 +41,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -104,6 +105,25 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     @Test
     fun `a request the upstream never reads is cut at the write timeout, named, and retried on a fresh connection`() {
         assertCutAndRetried(upstream(then = Serving.Reads(0)), BIG_BODY)
+    }
+
+    // firstByteTimeoutMs is live: the client is built while the bound is a minute, the operator then sets it to the
+    // rig's write timeout, and the very next request is cut at that, not at the minute the client was built with.
+    @Test
+    fun `a write bound changed after the client was built cuts the next request at the new bound`() {
+        val bound = AtomicLong(LONG_TOTAL_MS)
+        val client = client(totalMs = TOTAL_MS, writeBound = WriteBoundMs { bound.get() })
+        bound.set(WRITE_TIMEOUT_MS)
+        val upstream = upstream(then = Serving.Reads(0))
+        val started = System.nanoTime()
+
+        val thrown = runCatching {
+            runBlocking { client.posted(context(upstream), BIG_BODY) { "ok" } }
+        }.exceptionOrNull()
+
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        assertTrue(stalled(thrown), "the failure is named a stalled write: $thrown")
+        assertTrue(elapsedMs < TOTAL_MS / 2, "cut at the ${WRITE_TIMEOUT_MS}ms the operator set: ${elapsedMs}ms")
     }
 
     @Test
@@ -259,11 +279,12 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
         totalMs: Long = TOTAL_MS,
         writeTimeoutMs: Long = WRITE_TIMEOUT_MS,
         sockets: UpstreamSockets = UpstreamSockets(),
+        writeBound: WriteBoundMs = WriteBoundMs { writeTimeoutMs },
     ) =
         UpstreamClient(
             totalTimeoutMs = totalMs,
             maxRetries = attempts,
-            client = UpstreamTransport().client(totalMs, LogSink {}, AtomicBoolean(true), writeTimeoutMs, sockets),
+            client = UpstreamTransport().client(totalMs, LogSink {}, AtomicBoolean(true), writeBound, sockets),
             pacing = RetryPacing(waiter = RecordingWaiter()),
         )
 

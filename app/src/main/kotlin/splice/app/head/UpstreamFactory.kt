@@ -12,6 +12,7 @@ import splice.upstream.transport.BackoffCurve
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
+import splice.upstream.transport.WriteBoundMs
 
 internal class UpstreamFactory {
     internal fun upstreamFor(
@@ -35,6 +36,7 @@ internal class UpstreamFactory {
             cfg.upstreamTimeoutMs,
             log,
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
+            requestWriteBound = WriteBoundMs { ctx.faultPlan.liveWatchdog().firstByteTimeout.inWholeMilliseconds },
         ),
         // V4-110 retry curve: read per head from the merged+normalized map (seeded with the Knob
         // defaults, so absent config keeps the generic 200ms/10s/±10% curve). The map is always

@@ -11,10 +11,17 @@ package splice.core.config
 
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
-// restartRequired. THE LIVE ONES, and the reader each is read through, are the whole list: maxInflight
+// restartRequired. A knob is LIVE only when something re-reads it AT THE ENFORCEMENT POINT through a
+// reader; what follows is a reading of the ones that do, taken 2026-10-10, and not a gate: maxInflight
 // and maxQueued (LiveLimit, per admission), requestReadTimeoutMs (RequestReadBudgetMs, per body read),
-// maxRequestBytes (RequestByteCap, per request, in the head path and the ingress guard both). Make a
-// knob live-read and it joins this line and loses its restartRequired flag, in that same commit.
+// maxRequestBytes (RequestByteCap, per request, in the head path and the ingress guard both),
+// materializationHeapBytes (MaterializationBudgetBytes, per admission, which the gate caps into the
+// MaterializedByteCap that same guard asks), historyRetentionDays (RetentionDays, per read),
+// firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
+// through WriteBoundMs). Away from the turn: transcriptView (SessionTranscriptViewEnabled, per console route)
+// and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Recount these by reading
+// the reader lambdas over getConfig() in :app, never off this line. Make a knob live-read and it joins this
+// line and loses its restartRequired flag, in that same commit.
 public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
@@ -250,7 +257,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("CLAUDEX_FIRST_BYTE_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(90_000L),
-        restartRequired = true,
     ),
 
     // The mid-output stall detector, and the one timer the reference client also keeps. codex-rs
@@ -298,7 +304,6 @@ public enum class Knob(
         // blocks a NEW bare literal in a call argument, and this is the spelling it blesses. The
         // sibling entries above pass only because their literals are pre-existing.
         typedDefault = KnobDefault.Count(20_000L),
-        restartRequired = true,
     ),
     AUTH_CACHE_MS(
         "authCacheMs",
@@ -429,7 +434,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_MATERIALIZATION_HEAP_BYTES"),
         typedDefault = KnobDefault.Count(0L),
-        restartRequired = true,
     ),
 
     // Extra trusted roots (colon-separated absolute paths) for the statusline git-branch lookup.

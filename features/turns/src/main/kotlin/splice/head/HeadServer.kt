@@ -95,7 +95,13 @@ public class HeadServer(
         CompactionPreflight(provider.catalog, deps.stores.perfStats),
         GateRefusals(driver::recordGateRefusal),
     )
-    private val diagnostics = HeadDiagnostics(provider, deps.traffic.gate, driver, deps.stores.captures.wireTap)
+    private val diagnostics = HeadDiagnostics(
+        provider,
+        deps.traffic.gate,
+        driver,
+        deps.stores.captures.wireTap,
+        deps.traffic.watchdog,
+    )
     private val admission = HeadAdmission(
         deps,
         admissionGate,

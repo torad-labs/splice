@@ -66,14 +66,22 @@ public class UpstreamTransport {
         // (RequestWriteBound; V4-289: none it ACKNOWLEDGES). The head passes its firstByteTimeout; the
         // default keeps the whole-turn cap, as before the row.
         requestWriteTimeoutMs: Long = totalTimeoutMs,
-    ): HttpClient = client(totalTimeoutMs, log, noDelayGuard, requestWriteTimeoutMs, UpstreamSockets())
+        // Read at each request when the caller has a live answer; else [requestWriteTimeoutMs] for the client's life.
+        requestWriteBound: WriteBoundMs? = null,
+    ): HttpClient = client(
+        totalTimeoutMs,
+        log,
+        noDelayGuard,
+        requestWriteBound ?: WriteBoundMs { requestWriteTimeoutMs },
+        UpstreamSockets(),
+    )
 
     /** [defaultClient] over [sockets], whose TLS trust and send buffer a test sets (V4-289). */
     internal fun client(
         totalTimeoutMs: Long,
         log: LogSink,
         noDelayGuard: AtomicBoolean,
-        requestWriteTimeoutMs: Long,
+        writeBound: WriteBoundMs,
         sockets: UpstreamSockets,
     ): HttpClient {
         val queues = sockets.queues ?: ProcNetTcp(log)
@@ -95,7 +103,7 @@ public class UpstreamTransport {
         val ledger = SocketLedger()
         val factory = sockets.factory
             ?: KeepaliveSocketFactory(ledger = ledger, sendBufferBytes = sockets.sendBufferBytes)
-        val bound = RequestWriteBound(requestWriteTimeoutMs, pool, ledger, queues)
+        val bound = RequestWriteBound(writeBound, pool, ledger, queues)
         val timing = UpstreamTimingBridge()
         return HttpClient(OkHttp) {
             install(HttpTimeout) {

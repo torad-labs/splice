@@ -54,7 +54,8 @@ internal class TurnDriveFactory(
         meta.tools.deferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
         // A compact turn's silence before its first output is bounded by totalCap only — see
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
-        val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
+        val live = deps.traffic.watchdog?.invoke() ?: provider.watchdog
+        val budget = if (meta.compact) live.forCompact() else live
         val watchdog = TurnWatchdog(budget, deps.seams.clock, log = { deps.log("[${provider.key}] $it") })
         // Retry admission shares the watchdog's renewal, rather than a second elapsed-time cap.
         // The origin remains after admission and preparation, never the time spent queued.

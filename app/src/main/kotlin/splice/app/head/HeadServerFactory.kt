@@ -11,7 +11,6 @@ import splice.app.provider.ProviderBuild
 import splice.core.budget.NoHeadBudget
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
-import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.TurnKey
@@ -64,8 +63,10 @@ internal class HeadServerFactory(
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
 
+    // Process-shared, so it is read off the GLOBAL layer (no head key) — and read at every admission, like the two
+    // per-head knobs below: an operator who widens the budget for one big request is obeyed by the next one.
     private val requestMaterializationGate = RequestMaterializationGate(
-        materializationHeapBytes(),
+        { config.getConfig().materializationHeapBytes },
         heap = splice.upstream.memory.JvmHeap.budget,
     )
 
@@ -119,6 +120,7 @@ internal class HeadServerFactory(
                     requestReadTimeoutMs = { config.getConfig(key).requestReadTimeoutMs },
                 ),
                 traffic = HeadDeps.HeadTraffic(
+                    watchdog = ctx.faultPlan.liveWatchdog,
                     upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),
                     // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
                     // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
@@ -179,12 +181,6 @@ internal class HeadServerFactory(
         ),
         events = console?.forHead(key) ?: NoHeadEvents,
     )
-
-    /** Process-shared heap bytes, read once from the global layer. Zero derives spare JVM heap. */
-    private fun materializationHeapBytes(): Long {
-        val m = config.getConfig().asMap()
-        return m[Knob.MATERIALIZATION_HEAP_BYTES.key] as Long
-    }
 }
 
 /** One head's view of the daemon's credential resolver: it names through that resolver and reports each sent digest

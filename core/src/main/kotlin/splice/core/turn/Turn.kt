@@ -265,6 +265,12 @@ public class SharedSummaryParts(
 // a bound on how long splice keeps a turn alive on its own.
 public const val DEFAULT_MAX_CONTINUATIONS: Int = 5
 
+/** The watchdog budget as it stands NOW. firstByteTimeoutMs and stallReanchorMs are live knobs, so a turn asks for its
+ *  budget when it starts instead of holding the one the head was built with; the other tiers stay as built. */
+public fun interface LiveWatchdogBudget {
+    public operator fun invoke(): WatchdogBudget
+}
+
 /** The watchdog knobs (v35 doctrine): before the client has seen output the idle limit is
  *  firstByteTimeout (prefill is legitimately silent for minutes); after, [stallReanchor] when the
  *  round can be continued and [streamIdle] otherwise; the legacy totalCap bounds time without protocol progress. */

@@ -181,7 +181,7 @@ fix session for a splice.toml boot refuses and answers whether every finding was
 restart` read the file again and go on to stop and start a daemon, so wired where a probe is wanted it would \
 restart on a read, and a probe wired here would restart on a file still broken."""
 
-# ── 7 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
+# ── 10 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]
 signature = "()->Long"
 dated = "2026-09-17"
@@ -189,9 +189,12 @@ names = [
     "ElapsedClock",
     "HeadPerfSkipSource",
     "HostClock",
+    "MaterializationBudgetBytes",
+    "MaterializedByteCap",
     "RemainingTurnWait",
     "RequestReadBudgetMs",
     "WallClock",
+    "WriteBoundMs",
     "WsPathPulse",
 ]
 reason = """Three different KINDS of long, none interchangeable, plus a count. WallClock reads UNIX \
@@ -206,11 +209,26 @@ ages are testable without a process-global clock. RemainingTurnWait is a BUDGET 
 turn deadline is left — not a clock reading at all. WsPathPulse is an AGE, milliseconds since the \
 last WS ping, which is a derived difference rather than either clock. HeadPerfSkipSource is not a \
 time at all: it is a COUNT of perf rows that could not be attributed. RequestReadBudgetMs (Oct 10) is a \
-CONFIGURED CEILING and the only one of the seven an operator sets: how long ONE client body read may take, \
-read fresh at every read so a PATCH bounds the next one without a restart. It is not a reading of either \
-clock, and it is not RemainingTurnWait, which is what is left of a deadline already running — wiring that \
-budget in here would bound every body read by the remainder of one turn, and wiring this one there would \
-restart the turn's deadline at every read. \
+CONFIGURED CEILING, the first of the three an operator sets rather than a reading of anything: how long ONE \
+client body read may take, read fresh at every read so a PATCH bounds the next one without a restart. It is \
+not a reading of either clock, and it is not RemainingTurnWait, which is what is left of a deadline already \
+running — wiring that budget in here would bound every body read by the remainder of one turn, and wiring \
+this one there would restart the turn's deadline at every read. The other two are BYTES rather than \
+milliseconds, and they are the pair most easily swapped, because one DERIVES from the other (Oct 10). \
+MaterializationBudgetBytes is what the operator configured — materializationHeapBytes, in which 0 means \
+'derive it from spare JVM heap' — and only SpliceConfig and the gate's own default produce one. \
+MaterializedByteCap is the EFFECTIVE ceiling that budget becomes once the materialization gate caps it by \
+the process heap ledger, so it is always positive, and the gate is its only producer: the ingress guard in \
+front of the head asks the gate's own reader rather than deriving a second copy, so the 413 the transport \
+writes names the number the gate would have refused on. Swap them and an untouched install, whose budget \
+reads 0, answers 413 to every request — a ceiling of zero bytes where the budget meant 'take the ledger' — \
+while the reverse swap caps a configured budget at itself and reads as correct forever. \
+WriteBoundMs (Oct 10) is the second CONFIGURED CEILING in milliseconds, and the one most easily taken for the \
+first: how long the upstream may take none of ONE request's bytes before the write is cut, read fresh at \
+each request so a PATCH of firstByteTimeoutMs bounds the next one. It is not RequestReadBudgetMs, which bounds \
+a CLIENT's body read on the way in — this bounds splice's own write on the way out — and it is not \
+RemainingTurnWait, which is what is left of a turn deadline already running: wiring that here would cut every \
+write by the remainder of one turn, and wiring this one there would restart the turn's deadline at every write. \
 DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
 second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""

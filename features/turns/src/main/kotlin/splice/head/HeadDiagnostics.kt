@@ -19,6 +19,7 @@ import splice.core.head.GateHealth
 import splice.core.head.GateWatchdog
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
+import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.JsonWire
 import splice.head.turn.TurnDriver
 import splice.head.wire.WIRE_TAP_OFF
@@ -34,6 +35,8 @@ internal class HeadDiagnostics(
     private val driver: TurnDriver,
     /** V4-173: null on every head whose operator did not turn the tap on. */
     private val wireTap: WireTap?,
+    /** The live watchdog tiers; null where no knob is live, and the provider's own budget stands. */
+    private val liveWatchdog: LiveWatchdogBudget? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -59,16 +62,17 @@ internal class HeadDiagnostics(
                     avgWaitMs = gateSnap.traffic.avgWaitMs,
                 ),
                 live = gateSnap.live,
-                // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in
-                // force. A tier with no limit is INFINITE here and crosses as null rather than as the
-                // Long.MAX_VALUE it converts to, because a reader handed that number draws a real ceiling.
-                watchdog = GateWatchdog(
-                    streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,
-                    firstByteTimeoutMs = provider.watchdog.firstByteTimeout
-                        .takeIf { it.isFinite() }?.inWholeMilliseconds,
-                    stallReanchorMs = provider.watchdog.stallReanchor
-                        .takeIf { it.isFinite() }?.inWholeMilliseconds,
-                ),
+                // The first-output and re-anchor tiers are live knobs, read as a turn would read them now; the
+                // idle tier is restartRequired (Knob.STREAM_IDLE_MS), the one the head was built with. A tier with
+                // no limit is INFINITE here and crosses as null rather than as the Long.MAX_VALUE it converts to,
+                // because a reader handed that number draws a real ceiling.
+                watchdog = (liveWatchdog?.invoke() ?: provider.watchdog).let { now ->
+                    GateWatchdog(
+                        streamIdleMs = now.streamIdle.inWholeMilliseconds,
+                        firstByteTimeoutMs = now.firstByteTimeout.takeIf { it.isFinite() }?.inWholeMilliseconds,
+                        stallReanchorMs = now.stallReanchor.takeIf { it.isFinite() }?.inWholeMilliseconds,
+                    )
+                },
             ),
         )
     }

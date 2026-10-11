@@ -51,8 +51,14 @@ import java.util.concurrent.atomic.AtomicReference
  * A NETWORK interceptor, because only there is the connection known; [untimedWrite] is its application
  * half, since only an application interceptor may change a call's timeouts.
  */
+/** How long the upstream may take none of a request's bytes before the request is cut, asked at each request so the
+ *  operator's knob (firstByteTimeoutMs) governs the next one. */
+public fun interface WriteBoundMs {
+    public operator fun invoke(): Long
+}
+
 internal class RequestWriteBound(
-    private val boundMs: Long,
+    private val bound: WriteBoundMs,
     private val pool: ConnectionPool,
     private val ledger: SocketLedger,
     private val queues: SendQueues,
@@ -71,22 +77,23 @@ internal class RequestWriteBound(
         val request = chain.request()
         val socket = chain.connection()?.socket()?.let(ledger::find)
         if (request.body == null || socket == null) return chain.proceed(request)
+        val boundMs = bound()
         val watched = watch.start(WatchedWrite(socket, boundMs, chain.call(), queues))
         val response = try {
             chain.proceed(request)
         } catch (failure: IOException) {
-            throw named(watched, failure)
+            throw named(watched, failure, boundMs)
         } finally {
             watch.stop(watched)
         }
         if (!watched.cut) return response
         response.close()
-        throw named(watched, IOException("the headers arrived as the stalled request was cut"))
+        throw named(watched, IOException("the headers arrived as the stalled request was cut"), boundMs)
     }
 
     /** [failure] as a stalled write when the watch cut the call, after evicting this client's idle
      *  connections, which sit on the same path; otherwise [failure] itself. */
-    private fun named(watched: WatchedWrite, failure: IOException): IOException {
+    private fun named(watched: WatchedWrite, failure: IOException, boundMs: Long): IOException {
         if (!watched.cut) return failure
         pool.evictAll()
         return RequestWriteStalled(boundMs, failure)

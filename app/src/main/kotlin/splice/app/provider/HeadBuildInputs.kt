@@ -18,6 +18,7 @@ import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.turn.LiveWatchdogBudget
 import splice.core.turn.WatchdogBudget
 import splice.core.util.EnvReader
 import splice.provider.codex.CodexLegacyKnobs
@@ -120,25 +121,38 @@ internal class HeadBuildInputs(
         } else {
             null
         }
+        // V4-116: arm the mid-output stall-re-anchor tier only where a continuation EXISTS. This is the one place
+        // the fact lives — the watchdog is handed a budget, not a provider, so arming has to happen where the two
+        // meet, and that is here.
+        val built = WatchdogBudget(
+            firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
+            streamIdle = headCfg.streamIdleMs.milliseconds,
+            totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+            stallReanchor = stallReanchorFor(resolvedProvider, headCfg),
+        )
         return ProviderBuild(
             key = key,
             head = resolvedHead,
             providerCfg = resolvedProvider,
             catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern),
             faultPlan = UpstreamFaultPlan(
-                watchdog = WatchdogBudget(
-                    firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
-                    streamIdle = headCfg.streamIdleMs.milliseconds,
-                    totalCap = headCfg.upstreamTimeoutMs.milliseconds,
-                    // V4-116: arm the mid-output stall-re-anchor tier only where a continuation EXISTS.
-                    // This is the one place the fact lives — the watchdog is handed a budget, not a
-                    // provider, so arming has to happen where the two meet, and that is here.
-                    stallReanchor = stallReanchorFor(resolvedProvider, headCfg),
-                ),
+                watchdog = built,
+                liveWatchdog = LiveWatchdogBudget { liveBudget(key, resolvedProvider, built) },
                 loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
             ),
             cfg = headCfg,
             roster = PublishedRoster(discovered = headModels, localRows = localRows),
+        )
+    }
+
+    /** [built] with the two live tiers, firstByteTimeoutMs and stallReanchorMs, read from head [key]'s own config as it
+     *  stands now: a turn asks this when it starts, so a PATCH governs the next turn and no restart. The other tiers
+     *  (streamIdleMs, upstreamTimeoutMs) stay as built; they are restartRequired. */
+    private fun liveBudget(key: String, provider: ProviderConfig, built: WatchdogBudget): WatchdogBudget {
+        val now = config.getConfig(key)
+        return built.copy(
+            firstByteTimeout = now.firstByteTimeoutMs.milliseconds,
+            stallReanchor = stallReanchorFor(provider, now),
         )
     }
 

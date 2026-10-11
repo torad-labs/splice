@@ -14,6 +14,7 @@ import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
 import splice.core.session.ActivityAction
+import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -121,6 +122,9 @@ public data class HeadDeps(
          *  slots. No default, like the bundles below: a head built without the daemon's registry would run
          *  turns no console can see or stop, and compile. */
         val liveTurns: LiveTurns,
+        /** The watchdog budget as the live knobs (firstByteTimeoutMs, stallReanchorMs) say it is now: a turn asks it
+         *  when it starts. Null is no live knob: the budget the provider was built with. */
+        val watchdog: LiveWatchdogBudget? = null,
     )
 
     /** Where the head writes what it observes. Grouped by ROLE — a bundle is a boundary, not a bag. */

@@ -8,6 +8,7 @@ import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.turn.LiveWatchdogBudget
 import splice.core.turn.WatchdogBudget
 
 /** The per-head inputs every provider builder threads through — a parameter object. */
@@ -25,6 +26,9 @@ internal data class ProviderBuild(
 internal data class UpstreamFaultPlan(
     val watchdog: WatchdogBudget,
     val loginCommand: String,
+    /** [watchdog] with the live knobs (firstByteTimeoutMs, stallReanchorMs) read as they stand when a turn asks;
+     *  the budget as built where nothing is live. */
+    val liveWatchdog: LiveWatchdogBudget = LiveWatchdogBudget { watchdog },
 )
 
 /** What the head's endpoint published, as the provider builders read it. */

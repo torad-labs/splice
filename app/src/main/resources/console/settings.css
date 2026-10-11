@@ -72,7 +72,7 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 
 /* ---------- Your data: one row per thing splice saves ---------- */
 .dlist { display: flex; flex-direction: column; }
-.drow { display: grid; grid-template-columns: minmax(13rem, 1.3fr) minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(11rem, 15rem) max-content; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
+.drow { display: grid; grid-template-columns: minmax(15rem, 1.6fr) minmax(8rem, 1fr) minmax(9rem, 1fr) 11rem 17.5rem; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
 .drow.dhead { padding: 0 0 .8rem; border-top: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .drow.lit { box-shadow: inset .3rem 0 0 var(--key-light); padding-left: 1.1rem; margin-left: -1.1rem; }
 .dname { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }

@@ -174,7 +174,7 @@ function dataRow(r) {
   const x = heldOf(r), id = `del:${r.id}`;
   if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
-  const keep = r.id === "edges" && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
+  const keep = (r.id === "edges" || r.id === "trace") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>` : "";
   return drow({
     name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep,

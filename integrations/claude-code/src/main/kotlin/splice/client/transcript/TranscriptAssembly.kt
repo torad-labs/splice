@@ -15,6 +15,7 @@ import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
 
+private const val API_ERROR = "API error"
 private const val UNTYPED = "untyped"
 
 /** How Claude Code opens the text it files when a turn is stopped or a tool call refused, whether or not it goes on to
@@ -160,7 +161,9 @@ internal class PageAssembly(
             ?.takeIf { it.isNotBlank() }
             ?: JsonScalars.str(record, "error")
             ?: "the client recorded an API error with no text"
-        ledger.text(at, TranscriptRole.SYSTEM, records.timestamp(record), "API error: $text")
+        // Claude Code's own words often open with "API Error:" already, and the page must not say it twice
+        val said = if (text.startsWith(API_ERROR, ignoreCase = true)) text else "$API_ERROR: $text"
+        ledger.text(at, TranscriptRole.SYSTEM, records.timestamp(record), said)
         return true
     }
 

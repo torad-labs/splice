@@ -104,6 +104,15 @@ class TranscriptReaderTest {
     }
 
     @Test
+    fun `an API error already worded as one by the client is not prefixed twice`() {
+        val worded = """{"type":"assistant","isApiErrorMessage":true,"message":{"id":"msg_e","role":"assistant",""" +
+            """"content":[{"type":"text","text":"API Error: Request rejected (429)"}]}}"""
+        transcript(home.resolve(".claude"), listOf(worded))
+        val page = found(TranscriptReader().page(ID, listOf(home.resolve(".claude")), null, 100))
+        assertEquals(listOf("API Error: Request rejected (429)"), page.messages.map { it.text })
+    }
+
+    @Test
     fun `pages continue where the last one stopped and never split a message`() {
         transcript(home.resolve(".claude"))
         val reader = TranscriptReader()

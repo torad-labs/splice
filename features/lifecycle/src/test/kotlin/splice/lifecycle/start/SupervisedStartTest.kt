@@ -214,12 +214,12 @@ class ShimSelectorListLawTest {
     @Test
     fun `the selector list is the shim's unitDefaults list, byte for byte`() {
         val shim = repo().resolve(SHIM).readText()
-        // The `selectors` array literal: `env.NAME` entries, then the captured CONTROL_PORT_FROM_ENV.
-        val list = shim.substringAfter("function unitDefaults() {").substringBefore("];")
-        val shimSelectors = Regex("""\b(?:env\.)?([A-Z_]+)\b""").findAll(list.substringAfter("["))
+        // unit_defaults's for-list: each `${NAME-}` is an environment selector, then CONTROL_PORT_FROM_ENV.
+        val list = shim.substringAfter("\nunit_defaults() {").substringBefore("; do")
+        val shimSelectors = Regex("""\$\{?([A-Z_]+)""").findAll(list)
             .map { it.groupValues[1].removeSuffix("_FROM_ENV") }
             .toList()
-        assertEquals(shimSelectors, harnessSelectors, "$SHIM unitDefaults() and the CLI's list drifted")
+        assertEquals(shimSelectors, harnessSelectors, "$SHIM unit_defaults and the CLI's list drifted")
     }
 
     private fun repo(): Path {

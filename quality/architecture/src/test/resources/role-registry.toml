@@ -57,6 +57,12 @@ names = ["BufferedSinkWrite", "SourceFrameAction"]
 reason = """BufferedSinkWrite retains tentative client output until certification releases it. SourceFrameAction delivers one validated native event immediately inside an opaque-field scope that always unwinds; delaying that scope would lose source ordering."""
 
 [[groups]]
+signature = "(MessageEdge)->Boolean"
+dated = "2026-10-10"
+names = ["EdgeWanted", "SparedEdges"]
+reason = """SparedEdges is asked by a deletion: an edge it names survives a cut, so a wrong yes keeps data the person asked to remove. EdgeWanted is asked by a read: an edge it names is returned to a caller, so a wrong yes shows an edge that is not theirs. The two decide opposite things about the same row, and a team that is active would be shown every edge or lose none of them if one stood for the other."""
+
+[[groups]]
 signature = "(Path)->Boolean"
 dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]

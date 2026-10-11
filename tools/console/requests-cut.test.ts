@@ -20,6 +20,11 @@ const rows = [
   row("cutrow", 30, {}),
   row("plain", 60, { ...tokens }),
   row("orphan", 90, { session: "bbbbbbbb", session_id: "bbbbbbbb-2" }),
+  // two cut requests, then two carriers holding one each: which carrier took which cannot be known
+  row("pairA", 140, { session: "cccccccc", session_id: "cccccccc-3" }),
+  row("pairB", 130, { session: "cccccccc", session_id: "cccccccc-3" }),
+  row("pairC", 120, { ...tokens, cut_source_rounds: 1, session: "cccccccc", session_id: "cccccccc-3" }),
+  row("pairD", 110, { ...tokens, cut_source_rounds: 1, session: "cccccccc", session_id: "cccccccc-3" }),
 ];
 
 const answers: Record<string, unknown> = {
@@ -76,6 +81,16 @@ test("a cut request names the one that took its tokens, that one names it back, 
     await expect(card("plain")).not.toContainText("earlier request");
     await expect(card("plain")).not.toContainText("Counted on");
     await expect(card("plain")).not.toContainText("No usage reported");
+
+    // two cut requests and two carriers: both say they were counted later, none is pinned to a carrier by a guess
+    for (const t of ["pairA", "pairB"]) {
+      await expect(card(t)).toContainText("Counted on the next request");
+      expect(await card(t).locator("button.door").count()).toBe(0);
+    }
+    for (const t of ["pairC", "pairD"]) {
+      await expect(card(t)).toContainText("with 1 earlier request");
+      expect(await card(t).locator("button.door").count()).toBe(0);
+    }
 
     // the door selects the carrier
     await card("cutrow").locator("button.door").click();

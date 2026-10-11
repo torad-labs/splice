@@ -343,20 +343,35 @@ function mapRow(head, row) {
  *  never pointed at by a guess (fin, Oct 11). countedOn: the carrying row's id. earlier: how many cut requests the
  *  carrying row holds, and cutId their row when it is exactly one. */
 function linkCuts(rows) {
-  const asc = [...rows].sort((a, b) => a.ts - b.ts), bySession = new Map();
-  for (const r of asc) if (r.sid) bySession.set(r.head + "|" + r.sid, [...(bySession.get(r.head + "|" + r.sid) ?? []), r]);
-  for (const r of rows) { r.countedOn = null; r.earlier = r.cut; r.cutId = null; }
-  const cutRows = new Map();
-  for (const list of bySession.values()) {
-    list.forEach((r, i) => {
-      if (r.outcome !== "ok" || r.in != null || r.out != null) return;
-      const carrier = list.slice(i + 1).find((x) => x.cut > 0);
-      if (!carrier) return;
-      r.countedOn = carrier.id;
-      cutRows.set(carrier.id, [...(cutRows.get(carrier.id) ?? []), r]);
-    });
+  for (const r of rows) { r.countedOn = null; r.counted = false; r.cutId = null; }
+  const lists = new Map();
+  for (const r of [...rows].sort((x, y) => x.ts - y.ts)) {
+    if (!r.sid) continue;
+    const key = r.head + "|" + r.sid;
+    if (!lists.has(key)) lists.set(key, []);
+    lists.get(key).push(r);
   }
-  for (const r of rows) if (cutRows.get(r.id)?.length === 1 && r.cut === 1) r.cutId = cutRows.get(r.id)[0].id;
+  // A carrying request holds exactly cut_source_rounds cut requests, so a link is made only where it is the only way the
+  // counts can fit: the cut requests waiting before it are no more than it holds. When more wait than it holds (two cut
+  // requests, then two carrying ones, each holding one), no cut request can be pinned to a carrier: they say they were
+  // counted later, and name no row (fin: don't guess a row).
+  for (const list of lists.values()) {
+    let waiting = [], taken = 0;
+    for (const r of list) {
+      if (r.outcome === "ok" && r.in == null && r.out == null) { waiting.push(r); continue; }
+      if (r.cut > 0 && waiting.length > taken) {
+        if (taken === 0 && waiting.length <= r.cut) {
+          for (const c of waiting) { c.counted = true; c.countedOn = r.id; }
+          if (waiting.length === 1 && r.cut === 1) r.cutId = waiting[0].id;
+          waiting = [];
+        } else {
+          taken += Math.min(r.cut, waiting.length - taken);
+        }
+      }
+    }
+    // what is left waiting was taken by some carrier when taken covers it all, and has none yet otherwise
+    if (taken >= waiting.length) for (const c of waiting) c.counted = true;
+  }
   return rows;
 }
 const repoName = (root) => (root || "").split("/").filter(Boolean).pop() || null;
@@ -528,7 +543,7 @@ function rowHtml(r) {
   // a finished request with no tokens says where they went: counted on the request that took them, a door to it when it
   // is in the list; any other has no reading and says so. The request that took them says what its count holds.
   const noReading = r.outcome === "ok" && r.in == null && r.out == null
-    ? (r.countedOn ? `<button class="tok quiet door" data-open="${esc(r.countedOn)}">Counted on the next request</button>` : `<span class="tok quiet">No usage reported</span>`)
+    ? (r.countedOn ? `<button class="tok quiet door" data-open="${esc(r.countedOn)}">Counted on the next request</button>` : r.counted ? `<span class="tok quiet">Counted on the next request</span>` : `<span class="tok quiet">No usage reported</span>`)
     : "";
   const earlier = r.cut > 0 && r.in != null
     ? (r.cutId ? `<button class="tok quiet door" data-open="${esc(r.cutId)}">with 1 earlier request</button>` : `<span class="tok quiet">with ${r.cut} earlier request${r.cut === 1 ? "" : "s"}</span>`)

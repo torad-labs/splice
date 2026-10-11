@@ -8,8 +8,10 @@
 //                  5-hour rate window; user.membership.level is the plan.
 //   grok-oauth     GET cli-chat-proxy.grok.com/v1/billing?format=credits   config.currentPeriod
 //                  {type,end} + creditUsagePercent: one weekly period, no 5-hour window.
-// api-key heads have per-minute x-ratelimit-* families, not plan windows; the client-auth head
-// relays Anthropic's own unified headers from its rounds. Both get no probe.
+//   client         ClaudeUsageProbe: each Claude account splice holds a login for is asked on Anthropic's
+//                  usage endpoint, and the head also relays Anthropic's own unified headers from its rounds.
+//                  A forwarded sign-in (no token of splice's own) gets the headers only.
+// api-key heads have per-minute x-ratelimit-* families, not plan windows, and get no probe.
 package splice.usage.quota
 
 import io.ktor.client.HttpClient

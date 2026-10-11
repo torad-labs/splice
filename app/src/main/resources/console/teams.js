@@ -52,7 +52,6 @@ const monthDay = (ms) => {
   return `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
 };
 const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n ?? 0));
-const usd = (n) => `≈$${n.toFixed(2)}`;
 
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
@@ -238,8 +237,8 @@ function figures(u, since) {
   const priced = u.priced;
   const shares = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
     .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
-  const dollars = u.usd != null && u.usd > 0 && priced > 0 ? [`${usd(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
-  const money = [...dollars, ...shares].join(" · ");
+  const spent = u.usd != null && priced > 0 ? [`${dollars(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
+  const money = [...spent, ...shares].join(" · ");
   return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money ? `<span>${money}</span>` : ""}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }

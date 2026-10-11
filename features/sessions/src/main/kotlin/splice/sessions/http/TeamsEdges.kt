@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.sessions.activity.EdgeWanted
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.NameHolders
 import splice.sessions.activity.RecipientResolution
@@ -58,7 +59,7 @@ internal class Members(
     private val team: Team,
     private val records: List<SessionRecord>,
     private val names: NameHolders? = null,
-) {
+) : EdgeWanted {
     val slotOfSession: Map<String, TeamSlot> = team.slots
         .flatMap { slot -> (slot.sessionsHistory + listOfNotNull(slot.session)).map { it to slot } }
         .distinctBy { it.first }
@@ -81,7 +82,13 @@ internal class Members(
      *  through one named registry member; an explicit null never does. Subagent names ("main",
      *  "code-review") remain tool traffic, not team hand-offs (V4-263), even if a member reused one.
      *  An address carries its scheme (`uds:`) and reaches the registry member holding it. */
-    fun edges(all: List<MessageEdge>): List<TeamEdge> = all.mapNotNull { stored ->
+    fun edges(all: List<MessageEdge>): List<TeamEdge> = all.mapNotNull(::teamEdge).sortedBy { it.edge.at }
+
+    /** Whether [stored] is one of the team's: the filter a scan of the day files keeps, so a whole window is read
+     *  without holding the edges of every other team and session. */
+    override fun wants(edge: MessageEdge): Boolean = teamEdge(edge) != null
+
+    private fun teamEdge(stored: MessageEdge): TeamEdge? {
         val edge = addresses.reported(stored)
         val from = slotOfSession[edge.from]
         val held = heldSession(edge)
@@ -90,9 +97,9 @@ internal class Members(
         } else {
             slotOfAddress[edge.to] ?: slotOfSession[edge.to] ?: slotSpelledBy(edge, from)
         }
-        if (to == null && reachedNoSession(edge)) return@mapNotNull null
-        direction(from, to)?.let { TeamEdge(edge, it, from, to, headOf(edge.from)) }
-    }.sortedBy { it.edge.at }
+        if (to == null && reachedNoSession(edge)) return null
+        return direction(from, to)?.let { TeamEdge(edge, it, from, to, headOf(edge.from)) }
+    }
 
     /** Only pre-resolution rows may recover one named team member; explicit null never does. */
     private fun heldSession(edge: MessageEdge): String? = when {

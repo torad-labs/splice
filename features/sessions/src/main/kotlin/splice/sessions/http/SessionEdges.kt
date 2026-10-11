@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.sessions.activity.EdgeTotals
+import splice.sessions.activity.EdgeWanted
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRecord
 import splice.sessions.transcript.SentTexts
@@ -37,6 +38,14 @@ internal class EdgeSummaries(private val totals: EdgeTotals) {
             put("last_at", counts.lastAt?.let(::JsonPrimitive) ?: JsonNull)
         }
     }
+}
+
+/** The edges that touch [sessions], by their ids and by the addresses a legacy edge names: the filter a scan of the day files
+ *  keeps. It is the rule [EdgeIndex.edgesOf] files an edge under, so what a scan keeps is what the index then shows. */
+internal class EdgeInterest(private val sessions: Set<String>, private val addresses: Set<String>) : EdgeWanted {
+    override fun wants(edge: MessageEdge): Boolean = edge.from in sessions ||
+        edge.toSession in sessions ||
+        (edge.toSession == null && edge.to in addresses)
 }
 
 /** The edge store read once, each edge as [Addresses.reported] against the registry. */

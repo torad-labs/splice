@@ -116,8 +116,8 @@ public class ActivityRoutes(
 
     private fun sessionEdges(sessionId: String): JsonReply {
         val records = registry.read()
-        val index = index(records) ?: return unwired()
         val record = records.firstOrNull { it.sessionId == sessionId }
+        val index = index(records, EdgeInterest(setOf(sessionId), setOfNotNull(record?.address))) ?: return unwired()
         val body = buildJsonObject {
             put("session_id", sessionId)
             val status = state()
@@ -133,7 +133,12 @@ public class ActivityRoutes(
         Cancellables.runCatchingCancellable { boardEdgesReply() }.getOrElse(::storageFailure)
 
     private fun boardEdgesReply(): JsonReply {
-        val index = index() ?: return unwired()
+        val records = registry.read()
+        val every = EdgeInterest(
+            records.mapNotNullTo(HashSet()) { it.sessionId },
+            records.mapNotNullTo(HashSet()) { it.address },
+        )
+        val index = index(records, every) ?: return unwired()
         val body = buildJsonObject {
             val status = state()
             put("state", status?.wire)
@@ -141,7 +146,7 @@ public class ActivityRoutes(
             put(
                 "sessions",
                 buildJsonObject {
-                    registry.read().forEach { record ->
+                    records.forEach { record ->
                         record.sessionId?.let { put(it, index.edgesOf(it, record.address)) }
                     }
                 },
@@ -153,9 +158,10 @@ public class ActivityRoutes(
     /** The store's explicit state accompanies empty reads; null means unwired, not off. */
     internal fun state(): KeptState? = source()?.edgeState()
 
-    /** One read of the edge store, resolved against [records]; null when the stores are unwired. */
-    internal fun index(records: List<SessionRecord> = registry.read()): EdgeIndex? =
-        source()?.let { EdgeIndex(it.edges.edges(), records) }
+    /** One read of the edge store, resolved against [records]: only the edges [interest] names, read from the day files
+     *  and not held, so the window can be longer than the row cache could keep. Null when the stores are unwired. */
+    internal fun index(records: List<SessionRecord>, interest: EdgeInterest): EdgeIndex? =
+        source()?.let { EdgeIndex(it.edges.scan(interest), records) }
 
     /**
      * One read of the edge store that CANNOT FAIL THE CALLER. [EdgeRead.summaries] is null when the stores

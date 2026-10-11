@@ -72,7 +72,7 @@ public class TeamReads internal constructor(
             val state = stores.edgeState()
             put("state", state.wire)
             state.reason(EDGE_STORE)?.let { put(REASON_KEY, it) }
-            put(EDGE_STORE, buildJsonArray { members.edges(stores.edges.edges()).forEach { add(it.json()) } })
+            put(EDGE_STORE, buildJsonArray { members.edges(stores.edges.scan(members)).forEach { add(it.json()) } })
         }
     }
 

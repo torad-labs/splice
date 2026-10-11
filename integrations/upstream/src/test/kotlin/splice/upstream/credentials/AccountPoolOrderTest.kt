@@ -76,14 +76,14 @@ class AccountPoolOrderTest {
     }
 
     @Test
-    fun `the earliest usable reset wins even when the weekly reset is later`() {
+    fun `the weekly reset decides, so a sooner five hour reset does not outrank a later weekly one`() {
         val fixture = Fixture()
         fixture.quota("primary", fiveReset = 1_100L, sevenReset = 9_000L)
         fixture.quota("higher", fiveReset = 1_800L, sevenReset = 2_000L)
         fixture.quota("lower", fiveReset = 1_900L, sevenReset = 3_000L)
 
-        assertEquals("primary", fixture.pool.nextTargetLabel())
-        assertEquals("primary", (fixture.pool.select("synthetic-session") as Selection.Chosen).account.account.label)
+        assertEquals("higher", fixture.pool.nextTargetLabel())
+        assertEquals("higher", (fixture.pool.select("synthetic-session") as Selection.Chosen).account.account.label)
     }
 
     @Test

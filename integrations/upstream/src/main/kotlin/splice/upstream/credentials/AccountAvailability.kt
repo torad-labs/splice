@@ -70,12 +70,6 @@ internal object AccountAvailability {
             val quota = account.quotaSnapshot
             rankingWindow(account, quota?.sevenDay, at) == null && rankingWindow(account, quota?.fiveHour, at) == null
         }.thenBy { !available(it, at) }
-            .thenBy { account ->
-                listOfNotNull(
-                    rankingWindow(account, account.quotaSnapshot?.fiveHour, at)?.resetsAt,
-                    rankingWindow(account, account.quotaSnapshot?.sevenDay, at)?.resetsAt,
-                ).minOrNull() ?: Long.MAX_VALUE
-            }
             .thenBy { rankingWindow(it, it.quotaSnapshot?.sevenDay, at)?.resetsAt ?: Long.MAX_VALUE }
             .thenBy { rankingWindow(it, it.quotaSnapshot?.fiveHour, at)?.resetsAt ?: Long.MAX_VALUE }
             .thenByDescending { it.primary }

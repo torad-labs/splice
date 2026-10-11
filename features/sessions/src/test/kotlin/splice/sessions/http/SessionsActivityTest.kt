@@ -145,7 +145,17 @@ class SessionsActivityTest {
     ) {
         val said = "## Done\n- **The fix.** Each _card_ reads *whole*.\n" +
             "> See `sessions.js` and [the spec](docs/spec.md)."
-        assertEquals("Done The fix. Each card reads whole. See sessions.js and the spec.", textOf(tmp, said))
+        assertEquals("Done. The fix. Each card reads whole. See sessions.js and the spec.", textOf(tmp, said))
+    }
+
+    @Test
+    fun `a heading or bullet with no stop of its own gets one, and one that has a stop keeps it`(
+        @TempDir tmp: Path,
+    ) {
+        val said = "# Shipped today\n- the lamp\n- **the clip**\n- the reader, too:\n" +
+            "* every card reads whole!\nThat is all"
+        val read = "Shipped today. the lamp. the clip. the reader, too: every card reads whole! That is all"
+        assertEquals(read, textOf(tmp, said))
     }
 
     @Test

@@ -17,6 +17,7 @@ internal object SessionActivity {
     // Markdown the card has no place to draw (splice-lead, Oct 11): a heading, bullet or quote mark at a line's start,
     // a link's target, and the marks around bold, italic and code. The words between the marks stay.
     private val lineMarks = Regex("(?m)^[ \\t]*(?:#{1,6}[ \\t]+|[-*+][ \\t]+|>[ \\t]+)+")
+    private val itemMark = Regex("^[ \\t]*(?:#{1,6}|[-*+])[ \\t]+\\S")
     private val link = Regex("\\[([^\\]\\n]+)]\\([^)\\s]+\\)")
     private val strong = Regex("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1")
     private val starred = Regex("(?<![*\\w])\\*(?=\\S)(.+?)(?<=\\S)\\*(?![*\\w])")
@@ -82,8 +83,18 @@ internal object SessionActivity {
     /** What was said, with its markdown read rather than shown: a call's summary keeps its marks, where a star can be a
      *  glob. */
     private fun plain(said: String): String {
-        val unmarked = said.replace(lineMarks, "").replace(link, "$1").replace("`", "")
+        val unmarked = said.lines().joinToString("\n", transform = ::stopped)
+            .replace(lineMarks, "").replace(link, "$1").replace("`", "")
         return unmarked.replace(strong, "$2").replace(starred, "$1").replace(underscored, "$1")
+    }
+
+    /** A heading or bullet is its own sentence once its marks are gone: with no stop of its own it gets one, so it
+     *  never runs into the next line ("Done The fix.", splice-lead, Oct 11). */
+    private fun stopped(line: String): String {
+        val text = line.trimEnd()
+        if (!itemMark.containsMatchIn(text)) return line
+        val last = text.trimEnd('*', '_', '`').last()
+        return if (last in ".!?:;,\u2026") line else "$text."
     }
 
     /** A line past the cap ends on its last whole word and an ellipsis, so a card never shows a word cut in half

@@ -370,7 +370,11 @@ class SessionsConsoleRoutesTest {
                 TranscriptLookup.Found(TranscriptPage(sessionId, "/x/$ALPHA.jsonl", listOf(reply), null, emptyMap()))
 
             override fun moves(sessionId: String): List<ModelMove> =
-                if (sessionId == ALPHA) listOf(ModelMove("m1", "gpt-6.1", "gpt", 5L)) else emptyList()
+                if (sessionId == ALPHA) {
+                    listOf(ModelMove("m1", "gpt-6.1", "gpt", 5L, "claude", "claude-fable-5-1", true))
+                } else {
+                    emptyList()
+                }
 
             override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
                 SentTexts(null, emptyMap(), ids)
@@ -381,7 +385,8 @@ class SessionsConsoleRoutesTest {
         assertEquals("m1", message.getValue("message_id").jsonPrimitive.content)
         assertEquals(
             kotlinx.serialization.json.Json.parseToJsonElement(
-                """[{"message_id":"m1","model":"gpt-6.1","command":"gpt","moved_at":5}]""",
+                """[{"message_id":"m1","model":"gpt-6.1","command":"gpt","moved_at":5,"from_command":"claude",""" +
+                    """"from_model":"claude-fable-5-1","thinking_dropped":true}]""",
             ),
             body.getValue("moves"),
         )

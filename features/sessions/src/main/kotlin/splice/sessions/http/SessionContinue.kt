@@ -8,6 +8,9 @@
 // joint the page draws (ModelMoves). A move between heads is that explicit `-r` copy and nothing else (head
 // isolation). Nothing is sent for the person: his next message runs on the new model (the mock, hitstop).
 //
+// WHAT IS KEPT. A move that came back is handed to [MoveLedger] with what it left, the command and the model it ran on
+// before he pressed, and that moment, so the transcript's mark reads "Continued on [to] · from [from]" (fin, hitstop).
+//
 // WHERE IT GOES ON. In the terminal it ran in. The client is ended with its own `/exit`, never by killing the
 // terminal: a session he started from his own shell leaves that shell in front, and the resume is typed there as he
 // would type it. A terminal splice opened closes with its client, so the resume opens a new one. A session whose
@@ -50,24 +53,14 @@ private const val MOVE_CLOSED = "its terminal is closed, so there is no client t
 private const val MOVE_NOT_OURS =
     "splice did not start this session, so it cannot move it from here; exit it and resume it on the other command"
 
-/** Whether a moved session's client has gone and come back, read off the registry: the move's two waits. */
-public interface SessionHandover {
-    /** Whether process [pid] no longer runs [session] within [seconds]. */
-    public suspend fun left(session: String, pid: Long, seconds: Long): Boolean
-
-    /** Whether [session] has no turn running within [seconds]. */
-    public suspend fun stopped(session: String, seconds: Long): Boolean
-
-    /** Whether [session] runs on [head] within [seconds]. */
-    public suspend fun cameOn(session: String, head: String, seconds: Long): Boolean
-}
-
 public class SessionContinue(
     private val drive: SessionDrive,
     private val commands: StartCommands,
     private val handover: SessionHandover,
     private val registry: SessionSource?,
     private val home: Path,
+    /** Where a move that came back is kept, with what it left, read before it leaves. */
+    private val ledger: MoveLedger? = null,
 ) {
     /** The client's own words for a turn in flight. */
     private val busy = setOf("working", "busy")
@@ -119,6 +112,7 @@ public class SessionContinue(
                 val resume = listOf("-r", session) + model?.let { listOf("--model", it) }.orEmpty()
                 val running = record.availability != SessionAvailability.GONE
                 val folder = record.process.cwd?.takeIf { Files.isDirectory(Path.of(it)) } ?: home.toString()
+                ledger?.leaving(record, head, model)
                 Plan.Go(
                     Move(
                         session = session,
@@ -214,6 +208,7 @@ public class SessionContinue(
                 }.toString(),
             )
         }
+        ledger?.arrived(move.session)
         return JsonReply(
             HttpStatusCode.OK,
             buildJsonObject {

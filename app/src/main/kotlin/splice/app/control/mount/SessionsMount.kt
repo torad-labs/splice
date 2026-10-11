@@ -53,6 +53,7 @@ internal class SessionsMount(
         // the listing Sessions draws, so a session Claude Code forgot on a clean exit still moves from its Ended card
         registry = wiring.listed,
         home = UserHome.dir(),
+        ledger = wiring.moveLedger,
     )
 
     /** V4-444: the console's note to one live session, written to its inbox socket. */

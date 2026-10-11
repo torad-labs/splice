@@ -12,9 +12,9 @@
 //   POST /api/sessions/{id}/say · answer · stop   the Message field, an answer's button, and Stop, in the pane splice
 //                                           opened for it (SessionDrive.kt); a session it did not open draws none of them
 //
-// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): Continue on, a session's
-// model when no turn is running, a teammate's message as its sender's, and the joint where a session moved. None is
-// explained on screen: each appears with the read or the act that makes it true.
+// WHERE A SESSION MOVED is drawn from the transcript page's `moves` (ModelMoves): "Continued on [to] model · from
+// [from] model", at the moment of the move, with its time and, when moved rows lost it, "Thinking not carried over"
+// (fin, hitstop f38853e). A move kept from before Continue on named its start carries no from, and draws only where it went.
 "use strict";
 
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
@@ -101,7 +101,7 @@ async function readLog(s, before = "end") {
   } else {
     const page = res.body;
     const messages = before === "end" || !held?.messages ? page.messages : [...page.messages, ...held.messages];
-    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end",
+    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end", moves: page.moves ?? held?.moves ?? [],
       unreadable: (before === "end" ? 0 : held?.unreadable ?? 0) + (page.unparseable_lines ?? 0) };
   }
   render({ stick: before === "end" });
@@ -248,7 +248,14 @@ function logHtml(s) {
   const results = new Map(held.messages.filter((m) => m.role === "tool" && m.tool_use_id).map((m) => [m.tool_use_id, m.text]));
   const calls = held.messages.filter((m) => m.tool && m.role !== "tool");
   const lastCall = calls.at(-1);
+  // each move sits where it happened: before the first message written after it, oldest first. One older than every
+  // message read so far waits for Show earlier, unless the conversation starts here.
+  const first = held.messages.find((m) => m.ts)?.ts;
+  const marks = (held.moves || []).filter((mv) => !held.earlier || first == null || mv.moved_at >= first)
+    .sort((a, b) => a.moved_at - b.moved_at);
+  const markUpTo = (ts) => { while (marks.length && (ts == null || marks[0].moved_at <= ts)) items.push(jointHtml(marks.shift())); };
   held.messages.forEach((m) => {
+    if (m.ts) markUpTo(m.ts);
     const key = `${s.id}:${m.index}`;
     const at = m.ts ? `<time>${clock(new Date(m.ts))}</time>` : "";
     if (m.role === "tool") return; // drawn under its call
@@ -273,7 +280,18 @@ function logHtml(s) {
     }
     items.push(`<div class="msg ${m.role === "user" ? "his" : "agent"}"><div class="body">${md(m.text)}</div>${at}</div>`);
   });
+  markUpTo(null); // a move after the newest message, before anything was said on the new model
   return `<div class="log">${items.join("")}</div>`;
+}
+/** The rail where a session moved: each chip keeps its model, since a move can stay on one command and change only the
+ *  model, and the time sits under it where a message's does, with what didn't come along beside it (hitstop f38853e). */
+function jointHtml(mv) {
+  const chip = (head) => `<span class="chip" style="--c:${colorOf(state.providerOf[head])}">${esc(commandOf(head) ?? head)}</span>`;
+  const model = (id) => (id ? `<span class="model">${esc(state.modelLabel[id] ?? id)}</span>` : "");
+  const from = mv.from_command ? `<span class="model">from</span>${chip(mv.from_command)}${model(mv.from_model)}` : "";
+  const at = [`<time>${clock(new Date(mv.moved_at))}</time>`, mv.thinking_dropped ? "<span>Thinking not carried over</span>" : ""].filter(Boolean).join(" · ");
+  return `<div class="jwrap"><div class="joint"><span class="model">Continued on</span>${mv.command ? chip(mv.command) : ""}${model(mv.model)}${from}</div>`
+    + `<p class="jat">${at}</p></div>`;
 }
 
 function paneHtml() {
@@ -451,9 +469,12 @@ async function readChoices(s) {
   const groups = await Promise.all((md.body?.heads || []).filter((h) => h.head !== s.head && h.models?.length).map(async (h) => {
     const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }));
     if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
-      const key = keys.find((k) => (k.heads || []).some((x) => x.head === h.head));
+      // a key reads as its provider, the heading Accounts draws over it; its variable joins only when two keys of
+      // that provider feed this command, so the line says which one it sends (fin)
+      const feeding = keys.filter((k) => (k.heads || []).some((x) => x.head === h.head)), key = feeding[0];
       const missing = !key || key.heads.find((x) => x.head === h.head).source === "missing";
-      return { head: h.head, names, kind: missing ? "signedout" : "key", acct: key?.name ?? null, rank: missing ? 3 : 2 };
+      const provider = PROVIDER_NAME[state.providerOf[h.head]] ?? key?.name ?? null;
+      return { head: h.head, names, kind: missing ? "signedout" : "key", acct: provider, keyVar: feeding.length > 1 ? key.name : null, rank: missing ? 3 : 2 };
     }
     const mine = rows.filter((r) => (r.heads || []).includes(h.head));
     const next = mine.length > 1 ? (await API.get(`/api/auth/${encodeURIComponent(h.head)}/order`)).body?.next_target : null;
@@ -470,8 +491,8 @@ async function readChoices(s) {
 function choicesHtml(s) {
   const groups = ui.choices[s.id];
   if (!groups) return "";
-  const acctOf = (g) => (!g.acct ? "<span></span>" : g.kind === "key" || (g.kind === "signedout" && !g.plan && /^[A-Z0-9_]+$/.test(g.acct))
-    ? `<span class="acct"><span class="var">${esc(g.acct)}</span></span>` : acctPlanHtml(g.acct, g.plan));
+  const acctOf = (g) => (!g.acct ? "<span></span>" : g.keyVar !== undefined
+    ? `<span class="acct">${esc(g.acct)}${g.keyVar ? ` · <span class="var">${esc(g.keyVar)}</span>` : ""}</span>` : acctPlanHtml(g.acct, g.plan));
   return `<div class="menu models" role="menu">${groups.map((g, gi) => g.names.map((n, i) => {
     const room = g.kind === "room" && g.used != null ? `<span class="room"><span class="bar sub"><b style="width:${g.used}%"></b></span><span class="pct">${g.used}%<span class="used">used</span></span></span>`
       : g.kind === "limit" ? `<span class="room out"><span class="pct limit">100%<span class="used">used</span></span>${g.until ? `${ICON.lock}Resets ${backWord(g.until)}` : ""}</span>`

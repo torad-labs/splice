@@ -62,4 +62,22 @@ class ModelMovesTest {
         Files.writeString(file, Files.readString(file) + row("m3", "gpt-6.1", "back") + "\n")
         assertEquals(listOf("m2"), originals.moves.of("s1").map { it.messageId })
     }
+
+    @Test
+    fun `Continue on completes the move its launch recorded, and is kept alone when the launch moved no row`(
+        @TempDir home: Path,
+    ) {
+        val moves = ModelMoves(home)
+        moves.record("s1", ModelMove("m1", "gpt-6-sol", "claudex", 2_000L, thinkingDropped = true))
+        moves.moved("s1", ModelMove(null, "gpt-6-sol", "claudex", 1_000L, "claude-splice", "claude-fable-5-1"))
+        assertEquals(
+            listOf(ModelMove("m1", "gpt-6-sol", "claudex", 1_000L, "claude-splice", "claude-fable-5-1", true)),
+            moves.of("s1"),
+        )
+
+        // a move between two commands that serve the model rewrote nothing: the handover is its only record
+        moves.moved("s1", ModelMove(null, "gpt-6-sol", "codex", 3_000L, "claudex", "gpt-6-sol"))
+        assertEquals(listOf("m1", null), moves.of("s1").map { it.messageId })
+        assertEquals(listOf("claude-splice", "claudex"), moves.of("s1").map { it.fromCommand })
+    }
 }

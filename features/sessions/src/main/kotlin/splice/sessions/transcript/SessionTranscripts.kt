@@ -46,9 +46,19 @@ public data class TranscriptMessage(
 /** [model] is null when none is recorded; [answered] is the newest message that is not the person's, null when there is none. */
 public data class SessionTail(val model: String?, val answered: TranscriptMessage?)
 
-/** A session's move onto another model: the message it moved at (the first moved assistant message), the model its rows
- *  moved to, the command (the head's key) that moved them when known, and when, in epoch milliseconds. */
-public data class ModelMove(val messageId: String, val model: String, val command: String?, val movedAt: Long)
+/** A session's move onto another model: the message it moved at (the first moved assistant message; null when no row
+ *  changed model, as on a move between two commands that serve it), the model it went on, the command (the head's
+ *  key) it went on when known, and when, in epoch milliseconds. A move made with Continue on also names the command
+ *  and the model it left; [thinkingDropped] is true when moved rows lost their thinking, the one thing not carried. */
+public data class ModelMove(
+    val messageId: String?,
+    val model: String,
+    val command: String?,
+    val movedAt: Long,
+    val fromCommand: String? = null,
+    val fromModel: String? = null,
+    val thinkingDropped: Boolean = false,
+)
 
 public data class TranscriptSource(
     /** What a system line is, when the page draws it apart from other notes: [KIND_INTERRUPTED], or a person's message that was taken back, [KIND_TAKEN_BACK]. */

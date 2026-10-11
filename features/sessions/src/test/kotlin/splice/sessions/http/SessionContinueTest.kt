@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
+import splice.sessions.registry.SessionRecord
+import splice.sessions.transcript.ModelMove
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -30,6 +32,8 @@ class SessionContinueTest {
     /** A terminal splice opened runs the client alone and closes with it; his own shell stays in front. */
     private var closesWithClient = true
     private val cameOn = mutableListOf<Pair<String, String>>()
+    private val kept = mutableListOf<Pair<String, ModelMove>>()
+    private var leaving: ModelMove? = null
 
     private val continueOn by lazy {
         SessionContinue(
@@ -49,6 +53,15 @@ class SessionContinueTest {
             },
             registry = rig.registry,
             home = tmp.resolve("home"),
+            ledger = object : MoveLedger {
+                override fun leaving(record: SessionRecord, to: String, model: String?) {
+                    leaving = ModelMove(null, model.orEmpty(), to, 1L, record.head, "claude-fable-5-1")
+                }
+
+                override fun arrived(session: String) {
+                    kept += session to checkNotNull(leaving)
+                }
+            },
         )
     }
 
@@ -76,6 +89,13 @@ class SessionContinueTest {
         assertEquals(listOf(leadPane), terminal.besides, "and among the terminals it ran in, not the person's default")
         assertEquals(listOf(LEAD to "codex"), cameOn)
         assertEquals("codex", rig.json(reply.body).getValue("head").jsonPrimitive.content)
+        // the mark keeps where it went on and what it left, at the moment he pressed
+        val (session, move) = kept.single()
+        assertEquals(LEAD, session)
+        assertEquals(
+            listOf("codex", "gpt-6-sol", "claude", "claude-fable-5-1"),
+            listOf(move.command, move.model, move.fromCommand, move.fromModel),
+        )
     }
 
     @Test
@@ -103,6 +123,7 @@ class SessionContinueTest {
         assertEquals(HttpStatusCode.GatewayTimeout, reply.status)
         assertTrue(terminal.opened.isEmpty())
         assertEquals(listOf(leadPane to "/exit"), terminal.sent)
+        assertTrue(kept.isEmpty(), "a move that did not happen leaves no mark")
     }
 
     @Test

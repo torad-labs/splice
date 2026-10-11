@@ -40,6 +40,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonScalars
 import splice.http.JsonReply
 import splice.sessions.note.PeerNoteAbi
 import splice.sessions.registry.RepoOrigin
@@ -83,10 +84,13 @@ private object MessageWire {
 
 private object MoveWire {
     fun json(move: ModelMove): JsonObject = buildJsonObject {
-        put("message_id", move.messageId)
+        move.messageId?.let { put("message_id", it) }
         put("model", move.model)
         move.command?.let { put("command", it) }
         put("moved_at", move.movedAt)
+        move.fromCommand?.let { put("from_command", it) }
+        move.fromModel?.let { put("from_model", it) }
+        put("thinking_dropped", move.thinkingDropped)
     }
 }
 
@@ -242,6 +246,15 @@ public class SessionsRoutes(
         SessionRoute.Direct -> "direct"
         SessionRoute.Unknown -> "unknown"
     }
+
+    /** The model [record] runs on as its row reports it: what Continue on keeps as the model a move left. */
+    public fun modelOf(record: SessionRecord): String? = SessionActivity.model(
+        record.sessionId,
+        record.process.cwd,
+        roots.treesFor(record.head),
+        transcripts,
+        viewEnabled,
+    ).let(JsonScalars::str)
 
     /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
     public fun repoOf(record: SessionRecord): RepoRoot? =

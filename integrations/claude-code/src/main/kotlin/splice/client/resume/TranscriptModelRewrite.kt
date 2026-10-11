@@ -130,7 +130,7 @@ public class TranscriptModelRewrite(
         val preservedChanged = "Transcript changed while preserving its original; nothing was rewritten"
         surveys.forEach { ensureUnchanged(it, preservedChanged) }
         surveys.forEach { publish(it, policy) }
-        recordMove(transcript, surveys.first(), policy, roster)
+        recordMove(transcript, surveys.first(), policy, roster, dropped = surveys.any { it.strips > 0 })
         return rewritten
     }
 
@@ -153,13 +153,15 @@ public class TranscriptModelRewrite(
     }
 
     /** A move that gave rows a model is recorded for the Sessions page, so the joint can be drawn where the session
-     *  changed model. A move that only stripped thinking changed no model and records nothing. */
-    private fun recordMove(transcript: Path, main: Survey, policy: RowPolicy, roster: CallingRoster) {
+     *  changed model, saying whether moved rows lost their thinking ([dropped]). A move that only stripped thinking
+     *  changed no model and records nothing. */
+    private fun recordMove(transcript: Path, main: Survey, policy: RowPolicy, roster: CallingRoster, dropped: Boolean) {
         val model = policy.target
         val at = main.movedAt
         if (model == null || at == null) return
         val session = transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX)
-        originals.moves.record(session, ModelMove(at, model, roster.command, System.currentTimeMillis()))
+        val move = ModelMove(at, model, roster.command, System.currentTimeMillis(), thinkingDropped = dropped)
+        originals.moves.record(session, move)
     }
 
     private fun survey(path: Path, kept: KeptModel): Survey {

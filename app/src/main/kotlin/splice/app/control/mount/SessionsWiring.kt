@@ -24,6 +24,7 @@ import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.LaunchedTerminal
 import splice.sessions.http.LaunchedTerminals
+import splice.sessions.http.MoveLedger
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionDrive
@@ -38,7 +39,9 @@ import splice.sessions.registry.SeenSessions
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.sessions.transcript.ModelMove
 import splice.sessions.transcript.SessionHistoryRoot
+import java.util.concurrent.ConcurrentHashMap
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -96,6 +99,9 @@ internal class SessionsWiring(
         },
     )
 
+    /** Where each session's moves are kept: the transcript route serves them and Continue on completes them. */
+    private val moves = ModelMoves(StatePaths().modelMovesDir)
+
     /** The listing Sessions and Requests read: the registry, with the sessions Claude Code already forgot kept as
      *  ended under the one history window (SeenSessions). */
     val listed = sessions?.let {
@@ -106,7 +112,7 @@ internal class SessionsWiring(
     val routes: SessionsRoutes? = listed?.let {
         SessionsRoutes(
             it,
-            MovedTranscripts(TranscriptReader(), ModelMoves(StatePaths().modelMovesDir)),
+            MovedTranscripts(TranscriptReader(), moves),
             TranscriptRoots(sessionHeads),
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },
@@ -117,6 +123,21 @@ internal class SessionsWiring(
                 endingOf = perfFacts.endingOf(),
             ),
         )
+    }
+
+    /** Continue on's ledger: a move keeps the command it left and the model its row reported before it left. */
+    val moveLedger = object : MoveLedger {
+        private val pending = ConcurrentHashMap<String, ModelMove>()
+
+        override fun leaving(record: SessionRecord, to: String, model: String?) {
+            val id = record.sessionId ?: return
+            val now = System.currentTimeMillis()
+            pending[id] = ModelMove(null, model.orEmpty(), to, now, record.head, routes?.modelOf(record))
+        }
+
+        override fun arrived(session: String) {
+            pending.remove(session)?.let { moves.moved(session, it) }
+        }
     }
 
     /** The stable label of the login [session]'s requests on [head] carry, the one the Accounts roster and the perf

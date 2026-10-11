@@ -14,6 +14,7 @@ const SV = {
   reasoning: G('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.4 1 2.5h6c0-1.1.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>'),
   plan: G('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
   mcp: G('<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0z"/><path d="M12 17v4"/>'),
+  version: G('<path d="M12 19V5M6 11l6-6 6 6"/>'),
   data: G('<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>'),
 };
 const MiB = 1048576;
@@ -30,6 +31,7 @@ const TOPICS = [
   { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
   { id: "mcp", name: "MCP servers", also: "tools servers model context protocol" },
   { id: "data", name: "Your data", also: "privacy prompts saved keep delete disk history logs" },
+  { id: "version", name: "Version", also: "update upgrade new release roll back restart" },
 ];
 const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
 const topicOf = (key) => KNOB[key].home || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
@@ -41,21 +43,25 @@ const liveKnobs = () => Object.values(KNOB)
 // the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
 const shownKnob = (key) => key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off";
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
-const jobs = () => TOPICS.filter((x) => x.id === "data" || liveKnobs().some((k) => topicOf(k.key) === x.id));
+const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
-const ui = { saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
+const ui = { week: null, ver: null, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: null, kept: {}, err: null };
 
 // ---------- what the daemon keeps ----------
 // One read per store; a store whose route answers with an error is drawn as unreadable, never as empty.
 async function readKept() {
-  const [hist, turns, edges, labels, heads, models] = await Promise.all([
+  const [hist, turns, edges, labels, heads, models, upgrade, upgradeRun] = await Promise.all([
     API.get("/api/history"), API.get("/api/kept/turns"), API.get("/api/kept/edges"), API.get("/api/kept/labels"), API.get("/api/heads"), API.get("/api/models"),
+    API.get("/api/upgrade"), API.get("/api/upgrade/run"),
   ]);
   ui.hist = hist.ok ? hist.body : null;
   ui.kept = { turns: turns.ok ? turns.body : null, edges: edges.ok ? edges.body : null, labels: labels.ok ? labels.body : null };
   ui.heads = (heads.body?.heads || []).map((h) => h.key);
+  ui.headRows = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
+  ui.ver = upgrade.ok ? upgrade.body : null;
+  if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = { state: "running", to: ui.ver?.rollback_target, output: upgradeRun.body.run.output || [] }; pollRun(ui.run.to); }
   ks.cmds = ui.heads;
   ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
   // the bodies each tapped command holds in memory now, counted and never read out (GET /api/heads/{head}/wire)
@@ -64,6 +70,7 @@ async function readKept() {
   ui.held = Object.fromEntries(tapped.map((h, i) => [h, wires[i].ok ? (wires[i].body?.records ?? []).length : null]));
   const traces = await Promise.all(ui.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/trace/kept`)));
   ui.kept.trace = traces.every((t) => t.ok) && traces.length ? traces.map((t) => t.body) : null;
+  await readWeek();
 }
 const mbWord = (b) => { const mb = b / MiB; return mb >= 1000 ? `${+(mb / 1024).toFixed(1)} GB` : mb >= 1 ? `${+mb.toFixed(1)} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1024))} KB` : "0 B"; };
 const dateWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -185,22 +192,145 @@ function dataHtml() {
   return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
 }
 
+// ---------- what happened this week ----------
+// Counted from the requests Usage and Requests read (GET /api/perf/turns, one read per command and word), never kept
+// here: a count is the daemon's `count` for the filter a door opens on Requests, so the figure and the page it opens
+// agree. Three words need the rows themselves, because the daemon filters a superset of what they mean (kit.js WHY).
+const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const SEC = 1000, MIN = 60000;
+const MAX_ROWS = 2000; // PerfRoutes.kt MAX_TURNS
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
+const reqUrl = (f) => `requests.html?${new URLSearchParams(f)}`;
+const rowId = (head, row) => `${head}:${row.turn || row.turn_id || row.ts}`;
+/** The silence a request held mid-answer at or past its command's tier, or 0 (requests.js mapRow, same rule). */
+const silenceOf = (row, tier) => {
+  const gap = row.up_gap_max_ms ?? 0, at = row.up_gap_max_start_epoch_ms ?? null;
+  const firstByteAt = row.first_byte != null ? row.ts - (row.total ?? 0) + row.first_byte : null;
+  return at && gap >= tier && (firstByteAt == null || at >= firstByteAt) ? gap : 0;
+};
+/** The words the daemon cannot filter exactly: what else a row must say, given its command's silence tier. */
+const ROW_CHECK = { waited: (row, tier) => silenceOf(row, tier) > 0, silentresume: (row) => !!row.stall_ms, silentover: (row) => !!row.stall_ms };
+async function countWeek(head, why, from) {
+  const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
+  if (why === "waited") { if (!Number.isFinite(tier)) return { head, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
+  const exact = !ROW_CHECK[why];
+  const res = await API.get(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(from), time_zone: ZONE, n: String(exact ? 1 : MAX_ROWS), local: "0", ...ask })}`);
+  const answer = (res.body?.heads || []).find((x) => x.key === head.key);
+  if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
+  const rows = exact ? (answer.rows || []) : (answer.rows || []).filter((r) => ROW_CHECK[why](r, tier));
+  const newest = rows.reduce((a, b) => (!a || b.ts > a.ts ? b : a), null);
+  const longest = why === "waited" ? rows.reduce((a, b) => (!a || silenceOf(b, tier) > silenceOf(a, tier) ? b : a), null) : null;
+  return { head, n: exact ? answer.count ?? 0 : rows.length, newest, longest, silence: longest ? silenceOf(longest, tier) : 0 };
+}
+async function readWeek() {
+  const day = startOfToday(), week = Date.now() - 7 * DAY;
+  const plan = [["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week], ["overloaded", day], ["queued", day], ["failed", week]];
+  ui.week = {};
+  const results = await Promise.all(plan.map(([why, from]) => Promise.all(ui.headRows.map((h) => countWeek(h, why, from)))));
+  plan.forEach(([why], i) => { ui.week[why] = results[i]; });
+}
+/** A word's figure across every command: the total, or null when any command's read did not answer. */
+const weekTotal = (why) => { const per = ui.week?.[why]; return per && per.every((p) => !p.err) ? per.reduce((s, p) => s + p.n, 0) : null; };
+const doorTo = (url, what, tail, chip) => `<a class="door" href="${url}">${SV.open}<span>${what}</span>${tail}${chip ? cmdChip(chip) : ""}<em>Open it</em></a>`;
+const clockOf = (ts) => clock(new Date(ts));
+const msLong = (ms) => (ms >= MIN ? `${Math.floor(ms / MIN)} min${ms % MIN ? ` ${Math.round((ms % MIN) / SEC)} s` : ""}` : `${Math.round(ms / SEC)} s`);
+/** One figure: how many, opening them all on Requests, then each command's share; a count splice could not read says so. */
+function figHtml({ why, what, door, cmds = true }) {
+  const per = ui.week?.[why] ?? [], total = weekTotal(why), from = why === "overloaded" || why === "queued" ? { from: String(startOfToday()) } : { win: "7d" };
+  if (total === null) return `<div class="fig3 none"><span class="big">?</span><span class="what">${esc(what)}</span><span class="state limit">${esc(per.find((p) => p.err)?.err ?? "splice did not answer")}</span></div>`;
+  if (!total) return `<div class="fig3 none"><span class="big">0</span><span class="what">${esc(what)}</span></div>`;
+  const ask = why === "failed" ? { outcome: "fail" } : { why };
+  const shares = per.filter((p) => p.n).sort((a, b) => b.n - a.n);
+  return `<div class="fig3"><a class="lead" href="${reqUrl({ ...from, ...ask })}"><span class="big">${fmt(total)}</span><span class="what">${esc(what)}</span><em>${SV.open}Open on Requests</em></a>`
+    + (cmds ? `<div class="cdoors">${shares.map((p) => `<a class="cdoor" href="${reqUrl({ ...from, ...ask, cmd: p.head.command })}">${cmdChip(p.head.key)}<b>${fmt(p.n)}</b></a>`).join("")}</div>` : "")
+    + (door ? door(shares) : "") + `</div>`;
+}
+const latestDoor = (shares) => {
+  const best = shares.filter((p) => p.newest).sort((a, b) => b.newest.ts - a.newest.ts)[0];
+  return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.newest))}`, "Latest", `<b>${clockOf(best.newest.ts)}</b>`, best.head.key) : "";
+};
+const longestDoor = (shares) => {
+  const best = shares.filter((p) => p.longest).sort((a, b) => b.silence - a.silence)[0];
+  return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.longest))}`, "Longest silence", `<b>${msLong(best.silence)}</b>`, best.head.key) : "";
+};
+const groupHtml = (label, figs) => `<div class="fgroup"><span class="glabel">${label}</span><div class="figs3">${figs.map(figHtml).join("")}</div></div>`;
+const tallyHtml = (title, groups) => `<section class="tally"><h3>${title}</h3><div class="fgroups">${groups.join("")}</div></section>`;
+const silentHtml = () => tallyHtml("This week", [
+  groupHtml("Ended early", [
+    { why: "restarted", what: WHY.restarted.word, door: latestDoor },
+    { why: "gaveup", what: WHY.gaveup.word, door: latestDoor },
+  ].sort((a, b) => (weekTotal(b.why) ?? 0) - (weekTotal(a.why) ?? 0))),
+  groupHtml("Kept going", [
+    { why: "waited", what: WHY.waited.word, door: longestDoor },
+    { why: "silentresume", what: WHY.silentresume.word.replace(" after a silence", "") },
+    { why: "silentover", what: WHY.silentover.word.replace(" after a silence", "") },
+  ]),
+]) + `<section class="sub">${form(keysOf("silent"))}</section>`;
+const busyHtml = () => `<section class="tally"><h3>Who refused</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}`
+  + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`
+  + `<section class="tally"><h3>Waited in line</h3>${figHtml({ why: "queued", what: "Waited in line today" })}</section>`
+  + `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
+  + (keysOf("busy").includes("maxRequestBytes") ? `<section class="sub"><h3>Too large</h3>${form(["maxRequestBytes"])}</section>` : "")
+  + `<div class="doors">${figHtml({ why: "failed", what: "Failed this week", cmds: false })}</div>`;
+
+// ---------- Version ----------
+// Running, Newest and Go back, from GET /api/upgrade. The route never fetches, so Newest is a version only when a check
+// has succeeded on this daemon; otherwise it is the releases page, one tap away. Go back is POST /api/upgrade {rollback}.
+const RELEASES = "https://github.com/torad-labs/splice/releases";
+const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" };
+function versionHtml() {
+  const v = ui.ver;
+  if (!v) return `<span class="state limit">splice did not answer</span>`;
+  const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
+  const rows = `<div class="form vform"><div class="lbl">Running</div><div class="ctl"><b class="v">${esc(v.installed)}</b></div>`
+    + `<div class="lbl">Newest</div><div class="ctl">${v.latest ? `<b class="v${v.latest !== v.installed ? " new" : ""}">${esc(v.latest)}</b>` : ""}`
+    + `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}See releases</a></div>`
+    + (back ? `<div class="lbl">Previous</div><div class="ctl"><b class="v">${esc(back)}</b>${ui.armed === "rollback"
+      ? `<button class="act primary small" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet small" data-act="disarm">Stay on ${esc(v.installed)}</button>`
+      : `<button class="act quiet small" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}</div>` : "")
+    + `</div>`;
+  const ran = run ? `<section class="run"><header><h3>${runWord[run.state] ?? "Going back to"} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
+  return rows + ran;
+}
+async function goBack() {
+  const to = ui.ver?.rollback_target;
+  const res = await API.post("/api/upgrade", { rollback: true });
+  ui.run = res.ok ? { state: "running", to, output: [] } : { state: "failed", to, output: [res.body?.error || `splice answered ${res.status}`] };
+  render();
+  if (res.ok) pollRun(to);
+}
+function pollRun(to) {
+  setTimeout(async () => {
+    const r = await API.get("/api/upgrade/run"), run = r.body?.run;
+    if (run) ui.run = { state: run.state, to, output: run.output || [] };
+    if (!run || run.state === "running") { render(); pollRun(to); return; }
+    ui.ver = (await API.get("/api/upgrade")).body ?? ui.ver;
+    render();
+  }, 2000);
+}
+
 const PANES = {
-  busy: () => `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
-    + (keysOf("busy", ["maxInflight", "maxQueued"]).length ? `<section class="sub">${form(keysOf("busy", ["maxInflight", "maxQueued"]))}</section>` : ""),
-  silent: () => `<section class="sub">${form(keysOf("silent"))}</section>`,
+  busy: busyHtml,
+  silent: silentHtml,
   reasoning: () => `<section class="sub">${form(keysOf("reasoning"))}</section>`,
   plan: () => `<section class="sub">${form(keysOf("plan"))}</section>`,
   mcp: () => `<section class="sub">${form(keysOf("mcp"))}</section>`,
   data: dataHtml,
+  version: versionHtml,
 };
 
 // ---------- the rail ----------
 function summary(id) {
-  if (id === "silent") return [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`];
+  if (id === "silent") {
+    const early = ["restarted", "gaveup"].map(weekTotal), waited = weekTotal("waited");
+    return early.includes(null) || waited === null ? [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`]
+      : [`${early[0] + early[1]} ended early this week`, `${waited} waited out`];
+  }
+  if (id === "version") return [ui.ver ? ui.ver.installed : "Not read"];
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
+  if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${weekTotal("overloaded")} overloaded today`, `${weekTotal("queued")} waited in line`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
   const h = DATA_ROWS.filter((r) => !r.noRoute).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute) ? "counted" : "kept"; // a total that leaves a store out says counted
   return h.some((x) => x === null) ? ["Some stores did not answer"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
@@ -285,6 +415,7 @@ document.addEventListener("click", (e) => {
     case "saving": ui.saving = ui.saving === "trace" ? null : "trace"; break;
     case "arm": ui.armed = d.id; delete ui.bad[d.id]; break;
     case "disarm": ui.armed = null; break;
+    case "rollback": ui.armed = null; goBack(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;
     case "unask": ui.ask = null; break;

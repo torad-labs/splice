@@ -92,6 +92,30 @@ const WHY = {
   restarted: { word: "splice restarted", has: (r) => r.outcome === "error:restarted" },
 };
 
+// What a door's "what happened" asks the daemon for (TurnsFilter.kt), so it narrows over the WHOLE window and not
+// over the newest 2,000 the route already cut: the doors that name a wait open requests that are mostly old, which is
+// exactly where a browser filter finds nothing. What the daemon reads is a SUPERSET of what the word means -- a
+// silence must also have begun after the first byte, and only this page compares that -- so WHY's own check still
+// runs over the answer and the two together are exact. `tier` is this command's own silence setting, not a figure
+// this page chose. "Resumed" and "Started over" are asked APART, as fin's two phrases mean them: a request whose
+// re-anchor re-posted it verbatim started over, and the resumed doors leave it out.
+const WHY_ASKS = {
+  gaveup: { outcome: "error:turn-cap" }, overloaded: { outcome: "failure:overloaded_error" },
+  restarted: { outcome: "error:restarted" }, queued: { queued_ms: "1" }, waited: { silence_ms: "tier" },
+  resumed: { resumed: "1", started_over: "0" }, silentresume: { resumed: "1", started_over: "0" },
+  startedover: { started_over: "1" }, silentover: { started_over: "1" },
+};
+
+/** The silence tier splice acts on mid-answer for one command: its own value where it holds one, the daemon's
+ *  otherwise. Infinity is a tier nobody answered, which draws no band and asks for no floor. [cfg] is GET /api/config. */
+const idleTierOf = (cfg, headKey) => {
+  if (!cfg) return Infinity;
+  const own = cfg.layers?.perHead?.[headKey] ?? {};
+  const of = (key) => own[key] ?? cfg.effective?.[key];
+  const tiers = [of("stallReanchorMs"), of("streamIdleMs")].filter((v) => typeof v === "number" && v > 0);
+  return tiers.length ? Math.min(...tiers) : Infinity;
+};
+
 // ---------- drawing ----------
 const G = (d, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
 const ICON = {

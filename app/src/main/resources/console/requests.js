@@ -170,12 +170,7 @@ async function readStanding() {
 /** The silence tier splice acts on mid-answer for one command: its own value where it holds one, the daemon's
  *  otherwise. Reading it keeps the rail's quiet band to the silences splice itself would have asked about. */
 function idleTier(head) {
-  const cfg = state.config;
-  if (!cfg) return Infinity; // a tier nobody answered draws no band, rather than a band at a figure this page chose
-  const own = cfg.layers?.perHead?.[head.key] ?? {};
-  const of = (key) => own[key] ?? cfg.effective?.[key];
-  const tiers = [of("stallReanchorMs"), of("streamIdleMs")].filter((v) => typeof v === "number" && v > 0);
-  return tiers.length ? Math.min(...tiers) : Infinity;
+  return idleTierOf(state.config, head.key);
 }
 
 /** A refusal in the words the daemon used, under the name of what was being read, so a page never says "none" where
@@ -184,19 +179,7 @@ const refusalOf = (res, subject) => (res.status === 0 ? `${subject}: splice is n
   : `${subject}: ${res.body?.error || `splice answered ${res.status}`}`);
 
 /** One head's window: the rows the filters asked for, and the window's own menus from an unfiltered read. */
-// What a door's "what happened" asks the daemon for (TurnsFilter.kt), so it narrows over the WHOLE window and not
-// over the newest 2,000 the route already cut: the doors that name a wait open requests that are mostly old, which is
-// exactly where a browser filter finds nothing. What the daemon reads is a SUPERSET of what the word means -- a
-// silence must also have begun after the first byte, and only this page compares that -- so WHY's own check still
-// runs over the answer and the two together are exact. `tier` is this command's own silence setting, not a figure
-// this page chose. "Resumed" and "Started over" are asked APART, as fin's two phrases mean them: a request whose
-// re-anchor re-posted it verbatim started over, and the resumed doors leave it out.
-const WHY_ASKS = {
-  gaveup: { outcome: "error:turn-cap" }, overloaded: { outcome: "failure:overloaded_error" },
-  restarted: { outcome: "error:restarted" }, queued: { queued_ms: "1" }, waited: { silence_ms: "tier" },
-  resumed: { resumed: "1", started_over: "0" }, silentresume: { resumed: "1", started_over: "0" },
-  startedover: { started_over: "1" }, silentover: { started_over: "1" },
-};
+// WHY_ASKS (what a door's "what happened" asks the daemon for) lives in kit.js, where Settings counts the same requests.
 function turnsPath(head, filtered, win = ui.win) {
   // local=0 on both reads, so the menus count the same requests the list does
   const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(MAX_HELD) : "1", local: "0" });

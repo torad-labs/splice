@@ -121,6 +121,7 @@ internal class SessionsWiring(
                 accountOf = sessionAccounts,
                 turnsOf = perfFacts.turnsOf(),
                 endingOf = perfFacts.endingOf(),
+                servedOf = perfFacts.servedOf(moves),
             ),
         )
     }

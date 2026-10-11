@@ -4,12 +4,15 @@
 package splice.app.control
 
 import splice.app.sources.PerfStatsSource
+import splice.client.resume.ModelMoves
 import splice.core.perf.OutcomeTag
 import splice.core.util.WallClock
 import splice.sessions.http.SessionEnding
 import splice.sessions.http.SessionEndingOf
+import splice.sessions.http.SessionServedOf
 import splice.sessions.http.SessionTurnCount
 import splice.sessions.http.SessionTurnsOf
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /** [ports] is read at CALL time, the SessionsWiring rule. */
@@ -59,5 +62,19 @@ internal class SessionPerfFacts(
                 SessionEnding(ended.outcome, account, resetMs, ended.ts, head)
             }
             ?.takeIf { ending -> ending.resetMs?.let { it > clock() } != false }
+    }
+
+    /** The model splice last served the session, newest across every head, unless Continue on moved it since: then
+     *  the model it moved onto, which serves its next request. Both are splice's own records, so this holds with
+     *  reading Claude Code conversations off. */
+    fun servedOf(moves: ModelMoves): SessionServedOf = SessionServedOf { id ->
+        val served = heads.values
+            .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id) }
+            .filter { it.model != null }
+            .maxByOrNull { it.ts }
+        // an unreadable moves file leaves what splice served standing; the transcript route reports that file's failure
+        val made = try { moves.of(id) } catch (_: IOException) { emptyList() }
+        val moved = made.filter { it.model.isNotBlank() }.maxByOrNull { it.movedAt }
+        if (moved != null && moved.movedAt > (served?.ts ?: Long.MIN_VALUE)) moved.model else served?.model
     }
 }

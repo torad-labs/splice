@@ -16,10 +16,16 @@ class SessionEndingsTest {
     private var now = 1_000L
     private val stats by lazy { PerfStats(tmp.resolve("perf.jsonl"), clock = { now }) }
 
-    private fun ended(session: String, outcome: String, account: String? = null, reset: Long? = null) {
+    private fun ended(
+        session: String,
+        outcome: String,
+        account: String? = null,
+        reset: Long? = null,
+        model: String? = null,
+    ) {
         val counters = reset?.let { mapOf(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS to it) }.orEmpty()
         stats.record(
-            PerfRowMeta(null, outcome, compact = false, session = session, account = PerfAccount(account)),
+            PerfRowMeta(model, outcome, compact = false, session = session, account = PerfAccount(account)),
             PerfSnapshot(emptyMap(), counters),
         )
         now += 1_000
@@ -45,5 +51,27 @@ class SessionEndingsTest {
         assertEquals("ok", stats.endings.endingFor("aaaa1111-full-id")?.outcome)
         assertNull(stats.endings.endingFor("bbbb2222-full-id"), "a session with no row has no ending")
         AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `a request turned away before a model was chosen keeps the model splice last served the session`() {
+        ended("aaaa1111", "ok", model = "claude-opus-5-5")
+        ended("aaaa1111", "error:auth-missing")
+
+        val ending = stats.endings.endingFor("aaaa1111-full-id")
+
+        assertEquals("error:auth-missing", ending?.outcome)
+        assertEquals("claude-opus-5-5", ending?.model)
+        AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `a restarted daemon learns each session's served model from its row file`() {
+        ended("aaaa1111", "ok", model = "claude-fable-5-1")
+        AsyncFileIo.drain()
+
+        val restarted = PerfStats(tmp.resolve("perf.jsonl"), clock = { now })
+
+        assertEquals("claude-fable-5-1", restarted.endings.endingFor("aaaa1111-full-id")?.model)
     }
 }

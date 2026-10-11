@@ -247,14 +247,15 @@ public class SessionsRoutes(
         SessionRoute.Unknown -> "unknown"
     }
 
-    /** The model [record] runs on as its row reports it: what Continue on keeps as the model a move left. */
+    /** The model [record] runs on as its row reports it: what Continue on keeps as the model a move left. With
+     *  reading off its row reads no model, and what splice served it stands in. */
     public fun modelOf(record: SessionRecord): String? = SessionActivity.model(
         record.sessionId,
         record.process.cwd,
         roots.treesFor(record.head),
         transcripts,
         viewEnabled,
-    ).let(JsonScalars::str)
+    ).let(JsonScalars::str) ?: record.sessionId?.let(facts.servedOf::servedModel)
 
     /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
     public fun repoOf(record: SessionRecord): RepoRoot? =

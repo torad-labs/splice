@@ -408,6 +408,7 @@ names = [
     "HistoryWindowStore",
     "QuotaHeaderRead",
     "SessionAddress",
+    "SessionServedOf",
     "SliceMemoryCap",
 ]
 reason = """CredentialAccountNames resolves a PRIVATE EFFECTIVE-CREDENTIAL DIGEST to a proved account name. \
@@ -449,7 +450,12 @@ session's requests arrived on, answered from the daemon's own record of the turn
 is ordinary and means "this daemon has seen no request of that session yet", where the session then \
 keeps the route its registration gave it. Its answer is a head KEY, a name this daemon owns, and it \
 is never a config value, a header or an address. Served by SessionAddress it would hand a SendMessage \
-caller a head name, and served by EnvReader a head name would stand where a path or a URL is expected."""
+caller a head name, and served by EnvReader a head name would stand where a path or a URL is expected. \
+SessionServedOf (Oct 11, 2026) is a SIXTH source: a session id to the MODEL splice last served it, or the \
+model a later Continue on move put it on, from the daemon's own perf rows and move records. Its miss means \
+"splice has served this session nothing and never moved it". Its answer is a model id, which Continue on \
+compares against its menu and keeps as a move's "from" model. Served by HeadOfSession it would put a head \
+key where a model id is compared, and the menu would offer back the very model the session is on."""
 
 # ── 3 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

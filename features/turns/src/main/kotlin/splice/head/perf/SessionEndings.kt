@@ -13,8 +13,15 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.perf.PerfKeys
 
 /** One request's ending: its outcome tag, the account it ran on, when a spent window comes back (epoch seconds,
- *  null when the provider named none) and the row's own time. */
-public data class SessionEnding(val outcome: String, val account: String?, val resetEpochSeconds: Long?, val ts: Long)
+ *  null when the provider named none), the row's own time, and the model splice last served the session: this
+ *  row's, or the one before it when splice turned this request away before a model was chosen. */
+public data class SessionEnding(
+    val outcome: String,
+    val account: String?,
+    val resetEpochSeconds: Long?,
+    val ts: Long,
+    val model: String? = null,
+)
 
 // why: a person runs tens of sessions a day, so this many covers every one the console lists with room to spare,
 // and each note is a few short strings.
@@ -28,12 +35,14 @@ public class SessionEndings {
 
     /** The row just appended for [sessionTag]. A row older than the one held (a streaming round's row is appended
      *  late) does not replace it. */
-    public fun note(sessionTag: String, outcome: String, account: String?, resetEpochSeconds: Long?, ts: Long) {
+    public fun note(sessionTag: String, ending: SessionEnding) {
         if (sessionTag.isEmpty()) return
-        val ending = SessionEnding(outcome, account, resetEpochSeconds, ts)
         synchronized(lock) {
             val held = newest.remove(sessionTag)
-            newest[sessionTag] = if (held != null && held.ts > ending.ts) held else ending
+            newest[sessionTag] = when {
+                held != null && held.ts > ending.ts -> held.copy(model = held.model ?: ending.model)
+                else -> ending.copy(model = ending.model ?: held?.model)
+            }
             while (newest.size > MAX_SESSION_ENDINGS) newest.remove(newest.keys.first())
         }
     }
@@ -46,7 +55,7 @@ public class SessionEndings {
             val outcome = text(row, "outcome") ?: return@forEach
             val ts = (row["ts"] as? JsonPrimitive)?.longOrNull ?: return@forEach
             val reset = (row[PerfKeys.EARLIEST_RESET_EPOCH_SECONDS] as? JsonPrimitive)?.longOrNull
-            note(session, outcome, text(row, "account"), reset, ts)
+            note(session, SessionEnding(outcome, text(row, "account"), reset, ts, text(row, "model")))
         }
     }
 

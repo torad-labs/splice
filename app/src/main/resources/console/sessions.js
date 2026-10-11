@@ -469,7 +469,7 @@ async function readChoices(s) {
   const [ac, md, ks] = await Promise.all(["/api/accounts", "/api/models", "/api/keys"].map((p) => API.get(p)));
   const rows = ac.body?.accounts || [], keys = ks.body?.keys || [];
   // its own command is offered too, without the model it runs on now: another model on the same plan is a move (p176)
-  const now = s.turn?.model ?? s.row.model;
+  const now = s.turn?.model ?? s.row.model ?? s.row.served_model; // reading off: what splice served it
   const groups = (await Promise.all((md.body?.heads || []).filter((h) => h.models?.length).map(async (h) => {
     const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }))
       .filter((n) => h.head !== s.head || (n.id !== now && n.label !== s.model));

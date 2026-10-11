@@ -138,6 +138,43 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **Settings changes reach the next request, with no restart.** The retry count and the generic retry
+  curve, the first-byte and re-send timeouts, the request body cap and read ceiling, the materialization budget,
+  the quota poll cadence, the MCP host's idle window, server ceiling, handshake and request budgets, the status
+  line's progress line, the reasoning summary, display and replay settings, and the reasoning-fold settings are read
+  when a request or wait needs them, so a PATCH governs the next one instead of the next restart. Reasoning effort
+  stays restart-only on purpose: it is part of the prompt-cache key, so changing it per turn would void the cache.
+- **Settings is a page of what happened and what governs it.** Silent models and Many agents at once open on
+  counts read from real requests: how many ended early or waited out this week, each command's peak today against its
+  limit, and how many waited in line, each opening the matching requests. Reasoning lists the models that keep
+  thinking on. Your data shows what each command saves and for how long, with an On/Off per command for saving
+  prompts that applies at once, and asks before deleting history older than a shorter window. Version shows the
+  installed and latest release, with upgrade and rollback. Every setting the daemon takes live has a row, and a test
+  fails the day a setting turns live without one.
+- **Sessions and Teams say why a session is held.** A session whose newest request was turned away at a spent
+  plan reads At limit, with the account and when the window comes back; one with no credential reads Signed out,
+  one tap from its sign-in. A silent turn reads Stalled with the silence counter, then Resumes in while splice will
+  re-send it, or Won't resume when it will not: `GET /api/heads/<head>/turns/live` now carries `will_resume`, decided
+  by each dialect's own re-anchor rule, and the words appear only once the provider has begun answering. Teams
+  re-reads every five seconds, so the counters move. A session still reads At limit after a daemon restart, and a
+  limit on the command a session moved off does not follow it to the new one.
+- **`splice add local` finds the runtime.** With no `--base-url` it asks Ollama's, LM Studio's and vLLM's usual ports
+  for a model list and uses the one that answers; if several do, it names them and asks for `--base-url`. A model the
+  runtime itself reports cannot call tools is refused when the row is checked, read from Ollama's and LM Studio's
+  capability lists, without `--live`; a runtime that reports nothing is trusted.
+- **A restart can queue clients instead of refusing them.** Under socket activation the manager keeps the listening
+  socket and the daemon serves on the descriptor it was handed, so a client that connects while the daemon restarts
+  waits in the kernel's accept queue. `splice capabilities` says whether the native transport loads on this machine,
+  so a manager learns a hand-off would be refused before it stops the daemon.
+- **`/api/sessions` rows carry what Claude Code registers about the session.** The peer protocol revision,
+  its advertised features, the bridge session and who set the session's name (`peer_protocol`, `peer_features`,
+  `bridge_session_id`, `name_source`) are read from the registry and returned. A session joins its command by the launch
+  splice made, read from the launch roster; the process environment only tells a session splice never launched
+  (`direct`) from one it cannot place (`unknown head`).
+- **A slash command reads as what the person typed.** In a session's conversation `/rename notes` shows as their
+  line, its output as a quiet system line, and the reminders Claude Code adds for the model are not shown at all.
+- **One dollar form on every page.** Nothing charged reads `$0`, a charge under a hundredth of a cent reads `<$0.0001`,
+  and a team's figures say why there is no dollar amount, on your plan or with no price, the bigger count first.
 - **Foreground tools keep their session live between model calls.** Claude Code's tool-start and
   tool-end hooks tell splice when the session is still active, so a long tool does not make it
   stale just because no request reached the model. Completion, session end or process exit ends
@@ -863,6 +900,27 @@ origin.
   used, and the daemon log names the variable once.
 
 ### Fixed
+- **A restart no longer cuts the last chunk of a finished turn.** A turn's gate slot is released while its response
+  is still being written, and the drain stopped the head once the gate was empty, so the client could read a chunked
+  body that never ended. The drain now waits for every call to leave its handler too, within the same two-second budget.
+- **The account pool orders by the weekly reset, as ruled.** Sessions move to the account with the soonest weekly
+  reset, and the five-hour reset breaks ties. It ranked by the soonest of either window, so a sooner five-hour reset
+  beat a later weekly one.
+- **Compaction is recognised by its marker only.** A turn is a compaction when it carries the summarizer's verbatim
+  marker; prose that merely mentions compaction is an ordinary turn.
+- **A cross-head resume lands in the project the person is standing in.** It prefers the copy under the launch's own
+  working directory before any other head's tree.
+- **`splice doctor` fails a project prompt file the daemon cannot read.** The row names the path, so the config
+  error shows before a restart instead of only as a skipped head in the boot log.
+- **`splice add` checks what it says it checks.** The live turn runs the first model the person chose, so a head
+  whose model is wrong fails the check instead of passing on the default; an OAuth credential counts as usable when it
+  is unexpired or refreshable, not merely present; and an openai-responses head's model list is read with the one URL `splice models`
+  asks.
+- **Moving a session is safer.** A move runs the wrapper by the path splice checked, never sends words with
+  `/exit`, resumes only once the old client has truly gone, goes on among the terminals the session ran in rather than
+  the person's default tmux, and works on an Ended card.
+- **Sessions no longer reads "API error: API Error:".** An API error Claude Code already words as one is served as
+  it wrote it.
 - **Every registered command can show help without running.** `splice <verb> --help` and
   `splice <verb> -h` print that verb's usage and exit successfully without starting the command.
 - **An explicitly reported cached-token count of zero stays a measurement.** It is not discarded

@@ -34,9 +34,10 @@ internal sealed class ProbeDeduction {
 
 /** Each hour is judged on its own evidence. An hour the request log covers whole, with no torn line in it, whose rollup
  *  agrees with that log, shows its figure with the legacy probes taken off. Any other hour is not read: lost, torn or
- *  mismatched evidence makes that hour unavailable, never falsely clean. A line that cannot be placed in an hour makes
- *  every hour unavailable. New probes cannot dispatch, so a settled hour stays judged while the log is only appended to
- *  and the rollup for that hour is as it was. */
+ *  mismatched evidence makes that hour unavailable, never falsely clean. The one exception is an hour after the log's
+ *  first where the span holds no probe row at all: there is nothing to take off, so the rollup's count stands. A line that
+ *  cannot be placed in an hour makes every hour unavailable. New probes cannot dispatch, so a settled hour stays judged
+ *  while the log is only appended to and the rollup for that hour is as it was. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     /** The answer for one hour, and the rollup it was an answer for. */
     private data class Judged(val signature: List<Long>, val probes: EconomicsBucket?, val gap: ProbeGap?)
@@ -120,17 +121,34 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         fun settled(hour: Long): Boolean =
             hour in torn || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
 
-        fun gap(bucket: EconomicsBucket): ProbeGap? =
-            if (bucket.hour in torn) ProbeGap.UNREADABLE else grade(bucket, all[bucket.hour], probes[bucket.hour])
+        // Where the span read holds no probe row and no line that could be one, no probe was dispatched in it: the log's only
+        // work here is to subtract probes from the rollup, and there are none to subtract. So an hour after the one the log
+        // begins in is the rollup's own count even when the rollup is ahead of the log, as it is when a hard stop tore log
+        // lines the rollup had already counted (live, Oct 11: claudex and claude-splice at 3 AM CT). The hour the log begins
+        // in is partial, and an older one is not in the log at all, so neither is vouched for.
+        private val noProbeInSpan = probes.isEmpty() && read.probeTears.isEmpty()
+        private val beginsIn = read.work.oldestHeldTs?.let { it / PROBE_BUCKET_MS * PROBE_BUCKET_MS }
+
+        fun gap(bucket: EconomicsBucket): ProbeGap? {
+            if (bucket.hour in torn) return ProbeGap.UNREADABLE
+            val noProbeToTake = noProbeInSpan && beginsIn != null && bucket.hour > beginsIn
+            return grade(bucket, all[bucket.hour], probes[bucket.hour], noProbeToTake)
+        }
     }
 
     /** Why this hour cannot be shown with its probes off, or null when its rollup and its rows agree. Perf is recorded
      *  before economics, so a live hour may be ahead of the rollup; an hour holding probes must match to the row. */
-    private fun grade(bucket: EconomicsBucket, seen: EconomicsBucket?, probes: EconomicsBucket?): ProbeGap? {
+    private fun grade(
+        bucket: EconomicsBucket,
+        seen: EconomicsBucket?,
+        probes: EconomicsBucket?,
+        noProbeToTake: Boolean,
+    ): ProbeGap? {
         val recorded = signature(listOf(bucket))
         val observed = signature(listOfNotNull(seen))
         return when {
-            probes == null -> ProbeGap.UNRECONCILED.takeUnless { recorded.zip(observed).all { (r, o) -> r <= o } }
+            probes == null ->
+                ProbeGap.UNRECONCILED.takeUnless { noProbeToTake || recorded.zip(observed).all { (r, o) -> r <= o } }
             recorded != observed -> ProbeGap.SPLIT_HOUR
             !fits(bucket, probes) -> ProbeGap.EXCEEDS
             else -> null

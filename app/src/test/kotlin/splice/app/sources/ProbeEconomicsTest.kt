@@ -332,8 +332,31 @@ class ProbeEconomicsTest {
         assertEquals(listOf(5 * PROBE_HOUR), read.notRead)
     }
 
+    // The log holds a probe row, so it is a log of the probe era: an hour whose rollup is ahead of it may hide probes the
+    // log lost, and reads Not read.
     @Test
-    fun `a mismatch inside the log's span refuses only its own hour`(@TempDir dir: Path) {
+    fun `a mismatch inside the log's span refuses only its own hour where the log holds a probe`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        store.record(turn("", 0, 30, 15, 2L to 1L))
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(21 * PROBE_HOUR), read.notRead, "the log holds one request of the two the rollup counted")
+    }
+
+    // Live, Oct 11: a hard stop tore request-log lines the rollup had already counted. A log with no probe row has nothing
+    // to take off, so the rollup's own count stands for every hour after the one the log begins in.
+    @Test
+    fun `a rollup ahead of a log that holds no probe stands for the hours after the log begins`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         Files.writeString(
             file,
@@ -346,8 +369,27 @@ class ProbeEconomicsTest {
         now = 21 * PROBE_HOUR + 123
         recordWork(store)
         val read = shown(store, file)
-        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
-        assertEquals(listOf(21 * PROBE_HOUR), read.notRead, "the log holds one request of the two the rollup counted")
+        assertEquals(listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(emptyList<Long>(), read.notRead, "no probe is in the span, so the rollup stands")
+        assertEquals(1L, read.rows.last().localSteps, "the figure is the rollup's, as counted")
+    }
+
+    @Test
+    fun `the hour a log begins in is partial and stays not read when its rollup is ahead`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(21 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(20 * PROBE_HOUR), read.notRead, "the log may have begun part-way through that hour")
     }
 
     @Test

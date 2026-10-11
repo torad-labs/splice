@@ -229,7 +229,9 @@ function useOf(tm, slotId) {
   const onPlan = state.priceWhy[head] === "plan" ? unpriced : 0;
   return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, priced, unpriced, onPlan };
 }
-function figures(u, since) {
+// `scope` says what the request count covers: a slot counts the requests of the sessions it held, from the moment each
+// joined, so the figure reads "since joining" and never as the session's own total (the Sessions page shows that)
+function figures(u, since, scope = "since joining") {
   if (!u) return "";
   // One money form on every page (Marlin, Oct 10): dollars first, tied to the requests that were priced when some were
   // not, then each count of the unpriced above nothing, the bigger first. A cost is never summed over some as though it
@@ -239,7 +241,7 @@ function figures(u, since) {
     .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
   const spent = u.usd != null && priced > 0 ? [`${dollars(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
   const money = [...spent, ...shares].join(" · ");
-  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money ? `<span>${money}</span>` : ""}` +
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"} ${scope}</span><span>${big(u.tokens)} tokens</span>${money ? `<span>${money}</span>` : ""}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
@@ -488,7 +490,7 @@ function boardHtml(tm) {
     `<button class="icon" data-act="day" data-d="-1" aria-label="Later day"${ui.day === 0 ? " disabled" : ""}>${GLYPH.next}</button></div>`;
   return `<section class="team${ro ? " archived" : ""}" data-key="team:${esc(tm.id)}">` +
     `<header class="team-head"><div class="who"><h2>${esc(tm.name)}</h2>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
-    `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm)) : ""}</div></div>` +
+    `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm), "since members joined") : ""}</div></div>` +
     `<div class="acts">${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
     `<div class="room"><div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}</div>` +
     `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +

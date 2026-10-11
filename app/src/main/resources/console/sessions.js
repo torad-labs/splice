@@ -486,7 +486,8 @@ async function readChoices(s) {
     const next = mine.length > 1 ? (await API.get(`/api/auth/${encodeURIComponent(h.head)}/order`)).body?.next_target : null;
     const row = mine.find((r) => (r.account_labels?.[h.head] || r.label) === next) || mine.find((r) => r.credential_present) || mine[0];
     const near = [[row?.five_hour_used_percent, row?.five_hour_reset_epoch_seconds], [row?.seven_day_used_percent, row?.seven_day_reset_epoch_seconds]]
-      .filter(([pct]) => pct != null).reduce((a, w) => (!a || w[0] > a[0] ? w : a), null);
+      // a window whose reset has gone by holds the ended window's figure, which Accounts drops too: it is not spent now
+      .filter(([pct, reset]) => pct != null && !(reset && reset * 1000 <= Date.now())).reduce((a, w) => (!a || w[0] > a[0] ? w : a), null);
     const kind = !row || !row.credential_present || row.refusal ? "signedout" : near && near[0] >= 100 ? "limit" : "room";
     return { head: h.head, own: h.head === s.head, names, kind, acct: row?.display_name ?? null, plan: row?.plan ? row.plan.charAt(0).toUpperCase() + row.plan.slice(1) : null,
       used: near ? Math.round(near[0]) : null, until: near?.[1] ? new Date(near[1] * 1000) : null, rank: kind === "room" ? 0 : 3,

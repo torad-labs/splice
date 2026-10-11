@@ -80,11 +80,49 @@ class RecordedSessionsTest {
         assertFalse(Files.exists(dir) && Files.list(dir).use { it.count() } > 0)
     }
 
-    private fun live(id: String, at: Long) = SessionRecord(
+    // Eli's Reading, §4, Oct 11: a session with no launch record joins the head its requests arrive on.
+    @Test
+    fun `a session with no launch record joins the head its requests arrive on, and keeps it across a restart`() {
+        listed = listOf(live("aaaa-1", at = now, route = SessionRoute.Unknown))
+        val arrivals = HeadOfSession { id -> "claude-splice".takeIf { id == "aaaa-1" } }
+        val before = recorded(ArrivalJoinedSessions(source(), arrivals))
+
+        assertEquals("claude-splice", before.list().sessions.single().head)
+
+        // a restart: no request has arrived yet, so only the record can say which head it was
+        val after = recorded(ArrivalJoinedSessions(source(), { null }))
+        assertEquals("claude-splice", after.list().sessions.single().head)
+    }
+
+    @Test
+    fun `a session splice launched joins by its launch record, whatever head its requests arrive on`() {
+        listed = listOf(live("aaaa-1", at = now, route = SessionRoute.Head("claude-launched")))
+        val joined = ArrivalJoinedSessions(source()) { "claude-other" }
+
+        assertEquals("claude-launched", joined.list().sessions.single().head)
+    }
+
+    @Test
+    fun `a session with no record and no request since the upgrade has no head`() {
+        listed = listOf(live("aaaa-1", at = now, route = SessionRoute.Unknown))
+
+        assertEquals(null, sessions.list().sessions.single().head)
+        assertEquals(null, ArrivalJoinedSessions(source()) { null }.list().sessions.single().head)
+    }
+
+    private fun recorded(source: SessionSource) =
+        RecordedSessions(source, SeenSessions(dir, KeptHistory { window }) { now })
+
+    private fun source() = object : SessionSource {
+        override fun read() = listed
+        override fun list() = SessionListing(listed)
+    }
+
+    private fun live(id: String, at: Long, route: SessionRoute = SessionRoute.Head("claude-splice")) = SessionRecord(
         sessionId = id,
         name = "tax-rounding",
         status = SessionStatus("idle", at),
-        route = SessionRoute.Head("claude-splice"),
+        route = route,
         availability = SessionAvailability.LIVE,
         process = SessionProcess(pid = 42, cwd = "/work/billing-api", startedAt = at - HOUR, updatedAt = at, null),
         client = SessionClient("claude-code", "2.1.296"),

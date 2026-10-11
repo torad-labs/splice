@@ -69,6 +69,13 @@ public class SeenSessions(
         }
     }
 
+    /** The head recorded for [sessionId], or null when none is, the file is gone or the window no longer keeps it. */
+    internal fun headOf(sessionId: String): String? {
+        if (!SESSION_ID.matches(sessionId)) return null
+        val cutoff = kept.now().cutoffMs(clock()) ?: Long.MIN_VALUE
+        return read(dir.resolve("$sessionId.json"))?.takeIf { it.lastActivityMs >= cutoff }?.head
+    }
+
     /** The sessions recorded that [present] does not hold and the window still keeps, newest first. */
     internal fun absent(present: Set<String>): List<SeenSession> {
         val cutoff = kept.now().cutoffMs(clock()) ?: Long.MIN_VALUE

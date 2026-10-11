@@ -68,6 +68,7 @@ import splice.sessions.activity.NameHolders
 import splice.sessions.activity.RecipientResolution
 import splice.sessions.prompt.SessionAddress
 import splice.sessions.prompt.SlotInstructions
+import splice.sessions.registry.HeadOfSession
 import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
@@ -278,6 +279,12 @@ internal class ConsoleEventPublisher(
         val now = clock()
         val seen = synchronized(sessionsSeen) { sessionsSeen.mapValues { it.value.at } }
         seen + liveTurns.sessions().associateWith { now }
+    }
+
+    /** The head each session's latest turn arrived on, for the session listing's join of a session with no launch
+     *  record. A copy under the lock, so the listing never reads under it. */
+    internal val sessionHeads: HeadOfSession = HeadOfSession { id ->
+        synchronized(sessionsSeen) { sessionsSeen[id]?.head }
     }
 
     private data class Seen(val head: String, val at: Long)

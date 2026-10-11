@@ -74,6 +74,7 @@ import splice.lifecycle.restart.SuccessorInstall
 import splice.oauth.codex.CodexRefresh
 import splice.sessions.http.SessionDriver
 import splice.sessions.prompt.SlotInstructions
+import splice.sessions.registry.ArrivalJoinedSessions
 import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.RememberedPanes
 import splice.sessions.registry.RouteOfPid
@@ -294,11 +295,14 @@ internal class ControlPlane(
             runtime = ControlRuntime(
                 launchService = launchService(home, sharing, controlPort),
                 shutdownDaemon = shutdownDaemon,
-                sessions = SessionRegistry(
-                    home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
-                    RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
-                    heard = console.sessionsHeard,
-                    foreground = foregroundTools,
+                sessions = ArrivalJoinedSessions(
+                    SessionRegistry(
+                        home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
+                        RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
+                        heard = console.sessionsHeard,
+                        foreground = foregroundTools,
+                    ),
+                    console.sessionHeads,
                 ),
                 mcpHost = mcpHost,
                 clientVersions = clientVersions,

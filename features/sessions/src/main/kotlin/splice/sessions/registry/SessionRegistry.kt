@@ -84,6 +84,9 @@ public data class SessionRecord(
 
     /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
     public val head: String? get() = (route as? SessionRoute.Head)?.key
+
+    /** A live session no head is known for yet: the only kind a head is joined to from what its requests showed. */
+    internal fun wantsHead(): Boolean = availability != SessionAvailability.GONE && route !is SessionRoute.Head
 }
 
 /** The registry view consumed by session queries. Implementations read on every call so callers never

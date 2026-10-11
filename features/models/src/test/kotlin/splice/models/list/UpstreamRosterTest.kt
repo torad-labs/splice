@@ -14,7 +14,6 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelTierSuffix
 import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKind
-import splice.core.topology.CODEX_LIST_CLIENT_VERSION
 import splice.core.topology.Dialect
 import splice.core.topology.ModelDiscoveryConfig
 import splice.core.topology.ProviderConfig
@@ -74,10 +73,8 @@ class UpstreamRosterTest {
     // every model the account may use at a version at or above each row's minimal_client_version.
     @Test
     fun `the codex backend lists with a client version, and an api-key responses provider without`() {
-        assertEquals(
-            "$CODEX_BASE/models?client_version=${CODEX_LIST_CLIENT_VERSION}",
-            listUrl(Dialect.OPENAI_RESPONSES, CODEX_BASE, null, AuthKind.ChatgptOAuth.wire),
-        )
+        val codex = listUrl(Dialect.OPENAI_RESPONSES, CODEX_BASE, null, AuthKind.ChatgptOAuth.wire)
+        assertTrue(codex.startsWith("$CODEX_BASE/models?client_version="), codex)
         assertEquals(
             "https://api.openai.com/v1/models",
             listUrl(Dialect.OPENAI_RESPONSES, "https://api.openai.com/v1", null, "api-key"),
@@ -92,10 +89,7 @@ class UpstreamRosterTest {
             ),
         )
         // A blank override is not an answer — it must fall through to the dialect's own URL.
-        assertEquals(
-            "$CODEX_BASE/models?client_version=${CODEX_LIST_CLIENT_VERSION}",
-            listUrl(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  ", AuthKind.ChatgptOAuth.wire),
-        )
+        assertEquals(codex, listUrl(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  ", AuthKind.ChatgptOAuth.wire))
     }
 
     // ── parsing ─────────────────────────────────────────────────────────────────

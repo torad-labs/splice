@@ -449,4 +449,4 @@ private const val CONTROL_PLANE_OWNER: String = "daemon.controlPort"
 /** The version the Codex model list is asked as. The version is a claim about the CLIENT; measured 2026-09-22 against
  *  chatgpt.com/backend-api/codex: no version is HTTP 400, `0.1.0` an empty list, `0.200.0` and above all nine models.
  *  Pinning a codex-rs release instead would hide each new model until someone bumped it. */
-public const val CODEX_LIST_CLIENT_VERSION: String = "999.0.0"
+internal const val CODEX_LIST_CLIENT_VERSION: String = "999.0.0"

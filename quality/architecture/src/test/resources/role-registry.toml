@@ -74,7 +74,7 @@ dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
 reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
 
-# ── 20 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+# ── 19 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
 dated = "2026-10-05"
@@ -84,7 +84,6 @@ names = [
     "ClaudePoolChange",
     "CodeModeCleanup",
     "FileIoTask",
-    "HaltJvm",
     "HandoffMark",
     "HoldChange",
     "ListingReturned",
@@ -116,8 +115,7 @@ refresh happened mid-attempt), WorkerExited (the code-mode worker process died),
 PulseTick (the spinner's next frame is due), UpstreamBytes (a provider body chunk or WebSocket JSON \
 event arrived; stamp the live turn's silence clock before parsing or client output, never on \
 headers, watchdog touch, socket pings or client keep-alives), TurnEnd (a built turn is over, on whatever path — the \
-provider gives back what it held for it, a llama-server slot lease since V4-165). Actions the caller commands: HaltJvm (exit the \
-process), StopControl (shut the control plane down), ShutdownDaemon \
+provider gives back what it held for it, a llama-server slot lease since V4-165). Actions the caller commands: StopControl (shut the control plane down), ShutdownDaemon \
 (the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \
 (release the worker's cell), RawSseFlush (push buffered bytes to the client socket), RecordingCompleted (FrameRecording.complete returned \
 successfully, so the detached drive may keep its recording only if its terminal also ended cleanly; \
@@ -129,10 +127,8 @@ child's tools/list answer is back and the cache has not kept it yet: the one ins
 land, which the cache's own test uses to force that interleaving), HandoffMark (the \
 turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \
 its own rather than folded onto one of the observers above: an observer is subscribed to, a mark \
-is set). Substituting any for any other is not a type error and would be silent: HaltJvm for \
-StopControl kills the process \
-where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
-middle of a turn. These need MORE naming than a shared shape, not less."""
+is set). Substituting any for any other is not a type error and would be silent: RestoreStep \
+for WsRoundAbort unwinds an upgrade in the middle of a turn. These need MORE naming than a shared shape, not less."""
 
 # ── 17 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -512,15 +508,16 @@ names = [
 ]
 reason = """All take a PORT and answer Boolean, but their roles differ: DaemonUpProbe asks whether a splice daemon responds at the control port before an add offers restart. PeerProbe asks whether a lock-winning peer is LIVE so startup may yield rather than race its teardown. HeadPortBindable opens and closes a TCP listener on IPv4 loopback to test a NEW head port before an add writes its topology; false means a foreign listener or unbindable port, not that a daemon is down. Substituting liveness for bindability would assign a new head the local runtime's occupied port, while substituting a bind probe for peer liveness would mistake a closing daemon for a fresh one."""
 
-# ── 2 names, (Int) -> Unit ────────────────────────────────────────────────────────────────────────
+# ── 3 names, (Int) -> Unit ────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "(Int)->Unit"
 dated = "2026-09-17"
 names = [
     "BytesRead",
+    "HaltJvm",
     "SearchRoundCounter",
 ]
-reason = """Two observers whose Int is a different quantity in a different unit. BytesRead "reports the SIZE of one chunk lifted off the socket, before any decoding" — wire bytes, which is what `sse_bytes_in` on the perf row means, and it is a seam because after decode the chunk boundary is gone. SearchRoundCounter records how many search-continuation rounds the turn ran, stamped as an ABSOLUTE count rather than incremented, precisely so an unmoved counter is evidence rather than ambiguity — it is the expected-delta instrument the bring-up ritual reads. A swap would stamp a byte count as a round count, and the perf summary would render it without complaint."""
+reason = """Two observers whose Int is a different quantity in a different unit, and one action that takes an Int as an exit status. BytesRead "reports the SIZE of one chunk lifted off the socket, before any decoding" — wire bytes, which is what `sse_bytes_in` on the perf row means, and it is a seam because after decode the chunk boundary is gone. SearchRoundCounter records how many search-continuation rounds the turn ran, stamped as an ABSOLUTE count rather than incremented, precisely so an unmoved counter is evidence rather than ambiguity — it is the expected-delta instrument the bring-up ritual reads. A swap would stamp a byte count as a round count, and the perf summary would render it without complaint. HaltJvm is not an observer at all: it ends the process, and its Int is the exit status the process ends with (STOP_OVERRAN_EXIT_CODE for a stop the watchdog cut off), so a cut-off stop is never reported as a clean exit. Handing it a byte count or a round count would end the daemon with a status no one reads as a status."""
 
 # ── 2 names, (JsonObject) -> String? ──────────────────────────────────────────────────────────────
 [[groups]]

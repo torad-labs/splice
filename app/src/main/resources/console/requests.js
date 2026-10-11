@@ -775,15 +775,19 @@ if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +A
 if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");
 if (ADDR.get("q")) { ui.q = ADDR.get("q"); document.getElementById("q").value = ui.q; }
-// a door that names one request shows that request, never the top row
-const asked = location.hash.slice(1);
+// a door that names one request shows that request, never the top row. Doors encode the id ("claude-splice%3A…"), so
+// it is decoded before it is matched: matched raw, Settings' Open it landed on the unfiltered top (Marlin's rewalk 4)
+const askedOf = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return location.hash.slice(1); } };
+const asked = askedOf();
 ui.auto = !asked;
-reload({ standing: true }).then(() => {
-  if (!asked) return;
+const showAsked = (asked) => {
   const r = state.rows.find((x) => x.id === asked || x.turn === asked);
   if (!r) return;
   const at = filtered().slice().sort((a, b) => +b.ts - +a.ts).findIndex((x) => x.id === r.id);
   if (at >= ui.n) { ui.n = Math.ceil((at + 1) / 200) * 200; }
   open(r.id);
   requestAnimationFrame(() => document.querySelector(`[data-open="${CSS.escape(r.id)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" }));
-});
+};
+reload({ standing: true }).then(() => { if (asked) showAsked(asked); });
+// a door followed while Requests is already open changes only the address's fragment, and the page follows it too
+addEventListener("hashchange", () => { const id = askedOf(); if (id) showAsked(id); });

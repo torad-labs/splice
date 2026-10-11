@@ -84,6 +84,9 @@ public class PerfRowsFileSource internal constructor(
 
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)
 
+    /** The files this source reads, for telling a later look at them from this one. */
+    internal val files = PerfReadFiles(file, archiveDir, archiveName, generations)
+
     @Synchronized
     override fun window(sinceMs: Long): PerfRowsWindow = settledRead(sinceMs, PerfSelection.WORK).window()
 

@@ -59,9 +59,21 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         ProbeDeduction.Done(kept.filter { it.turns != 0L || it.localSteps != 0L })
     }
 
+    /** A request log refused for a row it could not parse stays refused while its files are only appended to, so it is
+     *  not read again (that read took 17 to 45 s on a live command, at every request). */
+    private val refusal = PerfRefusal(perf.files)
+
+    /** The evidence the log gives for hours from [since], or null when the log is refused, now or by an earlier read. */
+    private fun evidence(since: Long): EconomicsPerfEvidence? {
+        if (refusal.stands(since)) return null
+        val before = perf.files.stamp()
+        val read = perf.economicsEvidence(since)
+        refusal.note(before, since, read.work)
+        return read.takeIf { it.work.readError == null && it.work.skipped == 0 }
+    }
+
     private fun read(buckets: List<EconomicsBucket>): ProbeRead {
-        val evidence = perf.economicsEvidence(buckets.minOf { it.hour })
-        if (evidence.work.readError != null || evidence.work.skipped != 0) return ProbeRead.Gapped(ProbeGap.UNREADABLE)
+        val evidence = evidence(buckets.minOf { it.hour }) ?: return ProbeRead.Gapped(ProbeGap.UNREADABLE)
         val all = summarize(rows.recorded(evidence))
         val probes = summarize(evidence.probes)
         if (!reconciles(buckets, all, probes)) return ProbeRead.Gapped(ProbeGap.UNRECONCILED)

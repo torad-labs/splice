@@ -76,9 +76,8 @@ The per-turn write bound still runs on macOS, without the kernel acknowledgement
 | Dependency | Why | If missing |
 | --- | --- | --- |
 | **Java 21+** | the spliced daemon ships as a fat jar | `apt install openjdk-21-jre-headless` · `brew install --cask temurin@21` · [adoptium.net](https://adoptium.net) |
-| **Node 22.15+**, with 24 recommended | the launch shim needs `process.execve` | [nodejs.org](https://nodejs.org) or `nvm install 24` |
-| **Claude Code** | splice wraps it; `claude` must resolve on PATH | `npm install -g @anthropic-ai/claude-code` |
-| **curl** + **bash** | the installer | preinstalled almost everywhere |
+| **Claude Code** | splice wraps it; `claude` must resolve on PATH | `curl -fsSL https://claude.ai/install.sh \| bash` (the native installer; no Node needed) |
+| **curl** + **bash** | the installer, and the launch shim, which is plain `sh` and `curl` | preinstalled almost everywhere |
 | **GitHub CLI** (optional) | signed in, it lets release installs and `splice upgrade` also verify each asset's build-provenance attestation | [cli.github.com](https://cli.github.com), then `gh auth login`; without it the install still verifies checksums and prints the command that checks provenance later |
 
 You don't have to pre-check any of this: `install.sh` verifies every dependency up front, prints
@@ -128,7 +127,7 @@ cd splice
 
 ```text
 Install splice (https://github.com/torad-labs/splice) on this machine and verify it works:
-1. Check prerequisites: bash, curl, Java 21+, Node 22.15+ (24 recommended), and Claude Code
+1. Check prerequisites: bash, curl, Java 21+, and Claude Code
    (`claude` on PATH). Install anything missing with this machine's package manager:
    show me each install command and ask before running it.
 2. Install from source: `git clone https://github.com/torad-labs/splice && cd splice
@@ -710,7 +709,7 @@ off, in the provider's existing quirks section:
 code_mode = false # true or omitted enables both runner and guidance on Claudex-shaped providers
 ```
 
-When on, an eligible turn declares one tool, `exec`, the way Codex does for a model its catalog runs code-mode-only: splice's bundled JavaScript runner, whose description lists every fully declared tool as a TypeScript declaration, with deferred tools named in `ALL_TOOLS`, called in a script as `await tools.Read({...})`; orchestration guidance is appended to the caller's instructions. Eligible: every model the Codex backend marks `tool_mode = "code_mode_only"` in its own model list (splice reads it at start, keeps it for the next start, and checks the current roster on every turn, so a model the backend adds needs no edit), plus the ids in `code_mode_models` in the same quirks section, which adds to that and is the only way to name a model the backend hides from its list, such as `codex-auto-review`. With no list known at start (no answer and none kept) only `code_mode_models` runs code mode, and the head's log says so once. A cell that fails reports why (the rejected tool's error text, or a syntax error's position) together with whatever it logged before failing, and output past 64 KiB is cut behind a `[truncated N chars]` marker rather than failing the cell. Toolless turns and forced named-tool choices keep the ordinary path; a compaction is built exactly like the turn before it, so its prompt cache still hits. Every real operation runs through Claude Code's permission-checked client handlers. The runner needs no Codex or Node installation because it runs inside splice; the launch shim itself needs Node 22.15+. Each script has an independent GraalJS context with no guest host or file access. Scripts with the same persisted session, conversation and model key share one engine, isolate, guest heap and collector; another key gets its own. Hosts start only when a cell is admitted. A new session goes to the least-loaded eligible host and stays pinned there, with at most four session engines per host. `Promise.all` and `Promise.allSettled` calls still dispatch as one batch.
+When on, an eligible turn declares one tool, `exec`, the way Codex does for a model its catalog runs code-mode-only: splice's bundled JavaScript runner, whose description lists every fully declared tool as a TypeScript declaration, with deferred tools named in `ALL_TOOLS`, called in a script as `await tools.Read({...})`; orchestration guidance is appended to the caller's instructions. Eligible: every model the Codex backend marks `tool_mode = "code_mode_only"` in its own model list (splice reads it at start, keeps it for the next start, and checks the current roster on every turn, so a model the backend adds needs no edit), plus the ids in `code_mode_models` in the same quirks section, which adds to that and is the only way to name a model the backend hides from its list, such as `codex-auto-review`. With no list known at start (no answer and none kept) only `code_mode_models` runs code mode, and the head's log says so once. A cell that fails reports why (the rejected tool's error text, or a syntax error's position) together with whatever it logged before failing, and output past 64 KiB is cut behind a `[truncated N chars]` marker rather than failing the cell. Toolless turns and forced named-tool choices keep the ordinary path; a compaction is built exactly like the turn before it, so its prompt cache still hits. Every real operation runs through Claude Code's permission-checked client handlers. The runner needs no Codex or Node installation because it runs inside splice; the launch shim is plain `sh` and `curl`, so no Node is needed anywhere. Each script has an independent GraalJS context with no guest host or file access. Scripts with the same persisted session, conversation and model key share one engine, isolate, guest heap and collector; another key gets its own. Hosts start only when a cell is admitted. A new session goes to the least-loaded eligible host and stays pinned there, with at most four session engines per host. `Promise.all` and `Promise.allSettled` calls still dispatch as one batch.
 
 The provider's quirks control the head's host and memory admission limits:
 
@@ -853,7 +852,7 @@ docs/         architecture and design docs (PROVENANCE.md, the request-byte cont
 .github/       workflows, the community health files, issue and PR templates
 ```
 
-The daemon is Kotlin; the launch shim runs on Node 22.15 or newer. The legacy `server/` Node proxy and its
+The daemon is Kotlin; the launch shim is POSIX `sh` and `curl`. The legacy `server/` Node proxy and its
 `bin/claudex-next` shim were **deleted on 2026-08-10** (P8-CUT), after the Kotlin daemon had
 owned the production ports for three days and 32,326 turns at 99.14% clean. The wire behaviour it
 established survives as 11 byte-exact fixtures in the migration oracle

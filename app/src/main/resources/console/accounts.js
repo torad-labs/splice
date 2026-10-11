@@ -74,6 +74,7 @@ const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 // goes, and when it answers the page is read again with that answer in hand.
 let economics = null; // the last /api/economics answer, kept so a later read draws the day it knew while a new one is asked
 let askingEconomics = false;
+const ECONOMICS_REASK_MS = 2000;
 function askEconomics() {
   if (askingEconomics) return;
   askingEconomics = true;
@@ -82,6 +83,8 @@ function askEconomics() {
     askingEconomics = false;
     await load({ asks: false });
     render();
+    // a command the daemon is still reading said so, and Reading is true only until it has: ask again until none is
+    if (answer.ok && (answer.body?.heads || []).some((h) => h.read_pending)) setTimeout(askEconomics, ECONOMICS_REASK_MS);
   });
 }
 async function load({ asks = true } = {}) {
@@ -117,7 +120,7 @@ async function load({ asks = true } = {}) {
   // a day that holds an hour the daemon could not read has no total, never the sum of the hours it could (not_read_hours)
   const dayUnread = (h) => (h.not_read_hours || []).some((hour) => hour + HOUR > dayStart);
   const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable || dayUnread(h))
-    .map((h) => [h.key, h.unavailable || dayUnread(h) ? DAY_NOT_READ : DAY_READING])
+    .map((h) => [h.key, !h.read_pending && (h.unavailable || dayUnread(h)) ? DAY_NOT_READ : DAY_READING])
     : (st.body?.registry || []).map((h) => [h.key, DAY_NOT_READ]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));

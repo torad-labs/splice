@@ -12,16 +12,22 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const HOUR = 3_600_000;
 const dayStart = Math.floor(Date.now() / (24 * HOUR)) * 24 * HOUR; // a UTC midnight: whole hours, so no opening half-hour
 const noon = dayStart + 12 * HOUR;
-const commands = ["torn-day", "clean-day", "plan-day"];
+const commands = ["torn-day", "clean-day", "plan-day", "warming"];
+// the daemon says a command is still being read for this many answers, then answers with its day (wire shape of EconomicsPayloads)
+const READING_ANSWERS = 2;
+let asked = 0;
 
 /** What the stub daemon says: both commands have a priced hour today; the first also holds an hour it could not read. */
-function economics() {
+function economics(reading: boolean) {
   const bucket = (hour: number) => ({ hour, turns: 4, cost_usd: 1.5, unpriced_turns: 0 });
   return {
     heads: [
       { key: "torn-day", label: "torn-day", buckets: [bucket(noon)], not_read_hours: [noon + HOUR] },
       { key: "clean-day", label: "clean-day", buckets: [bucket(noon)], not_read_hours: [] },
       { key: "plan-day", label: "plan-day", buckets: [{ hour: noon, turns: 210, cost_usd: null, unpriced_turns: 210 }], not_read_hours: [noon + HOUR] },
+      reading
+        ? { key: "warming", label: "warming", buckets: [], read_pending: true, unavailable: "Reading saved request history before showing this command's hourly totals." }
+        : { key: "warming", label: "warming", buckets: [bucket(noon)], not_read_hours: [] },
     ],
   };
 }
@@ -33,13 +39,13 @@ const answers: Record<string, unknown> = {
   "/api/budgets": { budgets: [], day_started_at_epoch_ms: dayStart, day_resets_at_epoch_ms: dayStart + 24 * HOUR },
   "/api/models": { heads: [] },
   "/api/heads": [],
-  "/api/economics": economics(),
 };
 
 const server = Bun.serve({
   port: 0,
   fetch(req) {
     const path = new URL(req.url).pathname;
+    if (path === "/api/economics") return Response.json(economics(++asked <= READING_ANSWERS));
     if (path in answers) return Response.json(answers[path]);
     const file = join(consoleDir, path === "/" ? "accounts.html" : path.slice(1));
     return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : Response.json({}, { status: 404 });
@@ -97,6 +103,26 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
     });
     expect(gap).not.toBeNull();
     expect(gap!).toBeGreaterThanOrEqual(0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a command the daemon is still reading says Reading, never Not read, and then shows its day", async () => {
+  asked = 0;
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const seen: string[] = [];
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
+    const meter = page.locator(`[data-meter="warming"]`);
+    await expect(meter).toBeVisible({ timeout: 15_000 });
+    // first draw: the page has not been answered yet; then the daemon answers "still reading", twice
+    const watch = setInterval(async () => seen.push((await meter.innerText().catch(() => "")).replace(/\s+/g, " ")), 100);
+    await expect(meter).toContainText("$1.50", { timeout: 30_000 });
+    clearInterval(watch);
+    expect(asked).toBeGreaterThan(READING_ANSWERS);
+    expect(seen.some((day) => day.includes("Reading"))).toBe(true);
+    expect(seen.some((day) => day.includes("Not read"))).toBe(false);
   } finally {
     await page.close();
   }

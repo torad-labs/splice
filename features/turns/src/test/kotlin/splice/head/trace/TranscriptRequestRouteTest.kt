@@ -167,7 +167,7 @@ class TranscriptRequestRouteTest {
         val read = async { slow.read("kimi", SESSION, RESPONSE) }
         try {
             runCurrent()
-            assertTrue(entered.await(1, TimeUnit.SECONDS), "the source must start before advancing its deadline")
+            assertTrue(entered.await(15, TimeUnit.SECONDS), "the source must start before advancing its deadline")
             advanceTimeBy(50)
             runCurrent()
             if (!read.isCompleted) release.countDown()

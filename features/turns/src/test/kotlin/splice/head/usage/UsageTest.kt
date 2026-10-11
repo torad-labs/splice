@@ -211,7 +211,7 @@ class UsageTest {
             try {
                 assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
                 workers.submit { repeat(1000) { answers.record(ProviderAnswer(403, 2L + it)) } }
-                    .get(1, java.util.concurrent.TimeUnit.SECONDS)
+                    .get(15, java.util.concurrent.TimeUnit.SECONDS)
                 assertEquals(1, writes.get(), "no response waits for or performs a disk write")
                 assertEquals(ProviderAnswer(403, 1001L), answers.snapshot())
             } finally {

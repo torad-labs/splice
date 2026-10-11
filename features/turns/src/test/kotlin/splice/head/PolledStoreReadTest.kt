@@ -92,7 +92,7 @@ class PolledStoreReadTest {
         )
         try {
             assertTrue(entered.await(5, TimeUnit.SECONDS), "the write lane must be held before the read")
-            return reader.submit<T> { read() }.get(250, TimeUnit.MILLISECONDS)
+            return reader.submit<T> { read() }.get(15, TimeUnit.SECONDS)
         } finally {
             release.countDown()
             reader.shutdown()

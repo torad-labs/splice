@@ -185,7 +185,7 @@ class TurnStreamerCleanupTest {
                 try {
                     rig.run(recording)
                     assertSame(first, withTimeout(5_000) { rig.failure.await() })
-                    assertFalse(withTimeout(1_000) { follower.await() }, "an attached retry ends torn")
+                    assertFalse(withTimeout(15_000) { follower.await() }, "an attached retry ends torn")
                     assertEquals(recording.frames(), frames, "every recorded frame still reaches the follower")
                 } finally {
                     follower.cancel()

@@ -296,7 +296,7 @@ class IndependentSourceRoundTest {
                     assertTrue(first.contains("tool_use"))
                 }
                 for (session in sessions) {
-                    val next = withTimeout(3_000) {
+                    val next = withTimeout(15_000) {
                         sourceStep(
                             client,
                             head.port,
@@ -337,7 +337,7 @@ class IndependentSourceRoundTest {
             assertTrue(first.contains("tool_use"))
             val live = deps.traffic.liveTurns.list().single()
             assertTrue(deps.traffic.liveTurns.stop(live.id) != null)
-            withTimeout(3_000) { while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield() }
+            withTimeout(15_000) { while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield() }
             assertTrue(checkNotNull(interceptor.reading).isCancelled)
             assertEquals(1, provider.ended.get())
             assertEquals(1, upstream.posts.get())

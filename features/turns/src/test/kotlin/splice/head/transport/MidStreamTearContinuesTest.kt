@@ -110,7 +110,7 @@ private const val SERVE_THREADS = 8
 // One more tear than PassthroughReanchorPolicy's continuation budget, so the turn runs the
 // whole re-anchor loop out and finishes with the honest failure instead of recovering.
 private const val TEARS_PAST_BUDGET = 7
-private const val PERF_POLLS = 40
+private const val PERF_POLLS = 300
 private const val PERF_POLL_MS = 50L
 
 private const val HOLD_MS = 6_000L

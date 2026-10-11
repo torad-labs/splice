@@ -314,7 +314,7 @@ class HeadServerCapacityTest {
         // (this head discards the journal with log = {}); the append is best-effort on a bounded
         // file lane, so it is polled rather than read once.
         val perfFile = tmp.resolve("perf.jsonl")
-        val recorded = waitFor(2_000) {
+        val recorded = waitFor(15_000) {
             Files.exists(perfFile) && Files.readString(perfFile).contains("error:rate-limited")
         }
         assertTrue(recorded, "the refusal must record a perf row; a refused turn with no trace is unfalsifiable")

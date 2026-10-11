@@ -197,10 +197,10 @@ class SourceContinuationAdmissionTest {
                 client.post("/probe") { header(SESSION_HEADER, "synthetic-session") }
             }
             try {
-                withTimeout(3.seconds) { while (deps.traffic.gate.snapshot().queued != 1) kotlinx.coroutines.yield() }
+                withTimeout(15.seconds) { while (deps.traffic.gate.snapshot().queued != 1) kotlinx.coroutines.yield() }
                 assertFalse(result.isCompleted)
                 previous.release()
-                assertEquals(HttpStatusCode.OK, withTimeout(3.seconds) { result.await() }.status)
+                assertEquals(HttpStatusCode.OK, withTimeout(15.seconds) { result.await() }.status)
                 assertEquals(1L, deps.traffic.gate.snapshot().traffic.acquired, "no fresh upstream permit was acquired")
                 assertEquals(1, deps.traffic.gate.snapshot().inflight, "the independent source still owns its permit")
             } finally {

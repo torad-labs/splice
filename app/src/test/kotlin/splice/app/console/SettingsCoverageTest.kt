@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import splice.core.config.Knob
 
 private const val NO_JOB = "no job among the six the page offers"
+private const val NOT_DRAWN = "live, but the drawing of Many agents at once leaves it off (Marlin, Oct 10)"
 
 class SettingsCoverageTest {
 
@@ -35,7 +36,14 @@ class SettingsCoverageTest {
         val kit = console("knobs.js")
         val (jobIds, ownKeys) = jobs(console("settings.js"))
         // live and deliberately off the page, each with the reason: no job among the six holds it
-        val offPage = mapOf("statuslineGitRoots" to NO_JOB)
+        val offPage = mapOf(
+            "statuslineGitRoots" to NO_JOB,
+            "requestReadTimeoutMs" to NOT_DRAWN,
+            "materializationHeapBytes" to NOT_DRAWN,
+            "retryBackoffBaseMs" to NOT_DRAWN,
+            "retryBackoffCapMs" to NOT_DRAWN,
+            "retryBackoffJitterPct" to NOT_DRAWN,
+        )
 
         val undrawn = Knob.entries.filter { !it.restartRequired && it.key !in offPage }
             .filter { it.key !in ownKeys && homeOf(kit, it.key) !in jobIds }

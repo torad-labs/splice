@@ -56,13 +56,13 @@ const KNOBS = (() => {
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
     K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { home: "busy", also: "too large image size 413" }),
     // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)
-    K("requestReadTimeoutMs", "Longest wait for a request to arrive", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { home: "busy", also: "slow client body timeout" }),
+    K("requestReadTimeoutMs", "Longest wait for a request to arrive", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { also: "slow client body timeout" }),
     // 0 is the daemon working the budget out from its own heap (Knob.kt:434-444), as maxInflight's 0 is Unlimited
-    K("materializationHeapBytes", "Memory for reading requests", { k: "count", opts: [0, 256 * MB, 512 * MB, 1024 * MB, 2048 * MB], none: "Automatic", unit: "MB", per: MB }, 0, { home: "busy", also: "heap memory large requests" }),
+    K("materializationHeapBytes", "Memory for reading requests", { k: "count", opts: [0, 256 * MB, 512 * MB, 1024 * MB, 2048 * MB], none: "Automatic", unit: "MB", per: MB }, 0, { also: "heap memory large requests" }),
     // the curve for a failure with no known cause: a 429 keeps its Retry-After and DNS its own plan (Knob.kt:231-234)
-    K("retryBackoffBaseMs", "First wait between tries", { k: "dur", opts: [100, 200, 500, SEC, 2 * SEC], unit: "s" }, 200, { home: "busy", also: "retry backoff" }),
-    K("retryBackoffCapMs", "Longest wait between tries", { k: "dur", opts: [5 * SEC, 10 * SEC, 30 * SEC, MIN], unit: "s" }, 10 * SEC, { home: "busy", also: "retry backoff ceiling" }),
-    K("retryBackoffJitterPct", "Each wait varies by", { k: "count", opts: [0, 10, 25, 50], unit: "%", pre: "±" }, 10, { home: "busy", also: "retry backoff jitter random" }),
+    K("retryBackoffBaseMs", "First wait between tries", { k: "dur", opts: [100, 200, 500, SEC, 2 * SEC], unit: "s" }, 200, { also: "retry backoff" }),
+    K("retryBackoffCapMs", "Longest wait between tries", { k: "dur", opts: [5 * SEC, 10 * SEC, 30 * SEC, MIN], unit: "s" }, 10 * SEC, { also: "retry backoff ceiling" }),
+    K("retryBackoffJitterPct", "Each wait varies by", { k: "count", opts: [0, 10, 25, 50], unit: "%", pre: "±" }, 10, { also: "retry backoff jitter random" }),
     K("traceRetentionDays", "Keep prompts and answers for", { k: "count", opts: [1, 3, 7, 14, 30], unit: "days" }, 7, { home: "data" }),
     K("traceMaxBodyChars", "Longest saved prompt", { k: "count", opts: [4 * MB, 8 * MB, 16 * MB, 32 * MB], unit: "M characters", per: MB }, 16 * MB, { home: "data" }),
     // one setting for the usage and request history (the hourly totals and the request records), what Usage and

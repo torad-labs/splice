@@ -70,7 +70,12 @@ const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
 // Sep 13 Resolved block has it (§4 reading, Oct 11); a head key no configured command has names nothing
 // it reads as a quiet fact in the chip's slot, never as a chip: a chip claims a command (hitstop)
 const UNPLACED = "unknown head";
+// a session that never went through splice has no command to name: its row's route says direct, and the card says
+// "direct", the spec's word for it (Reading, Oct 10), never "unknown head" (splice-lead, Oct 11: the telegram bridge)
+const DIRECT = "direct";
+const QUIET = new Set([UNPLACED, DIRECT]);
 const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? (head === UNPLACED ? head : null);
+const cmdOf = (row) => (row.route === DIRECT ? DIRECT : commandOf(row.head));
 const folderOf = (row) => (row.repo?.root || row.cwd || "").split("/").filter(Boolean).pop() || "";
 
 /** A signed-out session's way back: Accounts on its command, in Accounts' own word for that kind of credential. */
@@ -86,7 +91,7 @@ function sessionOf(row) {
   const st = ended ? "ended" : row.waiting_for ? "needs" : working ? "working" : "idle";
   return {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
-    head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
+    head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
     model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
     team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
@@ -117,7 +122,7 @@ const title = (s) => s.name || s.repo || `Session ${s.id.slice(0, 8)}`;
 const color = (s) => colorOf(s.provider);
 
 function metaHtml(s, L, inPane) {
-  const chip = inPane && s.cmd === UNPLACED ? `<span class="state mute">${UNPLACED}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
+  const chip = inPane && QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
   const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
   const model = s.model && !ui.moving.has(s.id) ? `<span>${esc(s.model)}</span>` : ""; // a move in flight names its target model in the word (hitstop)
   const repo = s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
@@ -192,7 +197,7 @@ function cardHtml(s) {
   const was = ui.looks.get(s.id); ui.looks.set(s.id, L.cls);
   return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
-    + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${s.cmd === UNPLACED ? `<span class="state mute">${UNPLACED}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
+    + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
     + `${metaHtml(s, L, false)}${body}${failedHtml(s, failed, false)}</article>`;
 }
 

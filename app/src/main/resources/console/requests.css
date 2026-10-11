@@ -39,6 +39,8 @@
 .list-err p + p { margin-top: .35rem; }
 .list-wait { display: flex; align-items: center; gap: .6rem; margin: 0 0 1rem 0; font: 500 .98rem/1.45 var(--font-data); color: var(--text-mute); }
 .list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
+.list-wait.unread { color: var(--limit); }
+.list-wait:has(+ .list-wait) { margin-bottom: .35rem; }
 
 /* what the list holds against what the window counted, and how far back a search read */
 .list .foot { margin: .9rem 0 .2rem 0; font: 500 .95rem/1.4 var(--font-data); color: var(--text-mute); }

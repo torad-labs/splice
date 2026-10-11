@@ -246,6 +246,14 @@ function askedHeads() {
 /** Each command's newest requests, at most [held] of them. The read answers at once with what splice has ready: a
  *  command whose saved requests splice is still reading after a restart is named so, and asked again shortly, rather
  *  than holding every other command's rows back (splice-lead, Marcos's live console: 28 to 45 s to settle). */
+/** A command whose read failed is named with one word on the list, never splice's prose: the reason goes to the
+ *  browser's log, as every source string does (fin). Partly read when some rows came back, so Not read is never said
+ *  over rows on screen. */
+const LIST_NOT_READ = "Not read", LIST_PARTLY_READ = "Partly read";
+function unreadable(errors, head, word, why) {
+  console.warn(`${head.command}: ${why}`);
+  errors.push({ cmd: head.command, word });
+}
 async function readRows(held = MAX_HELD) {
   const heads = askedHeads();
   const reads = await Promise.all(heads.flatMap((h) => [API.getReady(turnsPath(h, true, ui.win, held)), API.getReady(turnsPath(h, false))]));
@@ -254,10 +262,10 @@ async function readRows(held = MAX_HELD) {
   heads.forEach((head, i) => {
     const [filtered, window] = [reads[i * 2], reads[i * 2 + 1]];
     const answer = (filtered.body?.heads || []).find((x) => x.key === head.key);
-    if (!filtered.ok || !answer) { errors.push(refusalOf(filtered, `${head.command}\u2019s requests could not be read`)); return; }
+    if (!filtered.ok || !answer) return unreadable(errors, head, LIST_NOT_READ, refusalOf(filtered, "no answer"));
     if (answer.read_pending) { pending.push(head.command); return; }
-    if (answer.error) { errors.push(`${head.command}: ${answer.error}`); return; }
-    if (answer.read_error) errors.push(`${head.command}: ${answer.read_error}`);
+    if (answer.error) return unreadable(errors, head, LIST_NOT_READ, answer.error);
+    if (answer.read_error) unreadable(errors, head, LIST_PARTLY_READ, answer.read_error);
     matched += answer.count ?? 0;
     if (answer.truncated) capped = true;
     for (const row of answer.rows || []) rows.push(mapRow(head, row));
@@ -518,10 +526,11 @@ function searchFoot() {
 }
 function listHtml() {
   const rows = filtered().slice().sort((a, b) => +b.ts - +a.ts);
-  const errs = state.headErrors.concat(state.search?.errors || [], state.sessionsError ? [state.sessionsError] : []);
+  const errs = (state.search?.errors || []).concat(state.sessionsError ? [state.sessionsError] : []);
   // a command splice is still reading is not trouble: a quiet line, gone once its rows join (asked again shortly)
   const wait = (state.pending || []).map((cmd) => `<p class="list-wait">${ICON.wait}${esc(cmd)} \u00b7 Reading</p>`).join("");
-  const trouble = wait + (errs.length ? `<div class="list-err">${errs.map((e) => `<p>${esc(e)}</p>`).join("")}</div>` : "");
+  const unread = state.headErrors.map((e) => `<p class="list-wait unread">${esc(e.cmd)} \u00b7 ${e.word}</p>`).join("");
+  const trouble = wait + unread + (errs.length ? `<div class="list-err">${errs.map((e) => `<p>${esc(e)}</p>`).join("")}</div>` : "");
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${searchFoot()}</div>`;

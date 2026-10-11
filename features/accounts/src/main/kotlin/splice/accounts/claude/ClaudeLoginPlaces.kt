@@ -64,7 +64,7 @@ public interface ClaudeCarrying {
     public fun carryingAccount(head: String, session: String): String? = carrying(head, session)?.wire
 
     /** Whether this session sent since boot, including an unmatched send that must defeat older history. */
-    public fun hasCarryingProof(head: String, session: String): Boolean = carryingAccount(head, session) != null
+    public fun hasCarryingProof(head: String, session: String): Boolean
 
     /** Resolve a persisted proved identity to its current roster label without changing its Requests spelling. */
     public fun accountLabel(head: String, account: String): String = account

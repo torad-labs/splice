@@ -305,6 +305,7 @@ class AuthAndAccountsRoutesTest {
             AccountMutation.Ok
         }
         control.ports.claudeLogins = object : ClaudeLoginPlaces {
+            override fun hasCarryingProof(head: String, session: String): Boolean = false
             override fun places(): List<ClaudeLoginPlaceView> = listOf(
                 ClaudeLoginPlaceView(
                     ClaudeLoginPlaceId.NATIVE,
@@ -350,6 +351,7 @@ class AuthAndAccountsRoutesTest {
             AccountMutation.Ok
         }
         control.ports.claudeLogins = object : ClaudeLoginPlaces {
+            override fun hasCarryingProof(head: String, session: String): Boolean = false
             override fun places(): List<ClaudeLoginPlaceView> = listOf(
                 ClaudeLoginPlaceView(
                     ClaudeLoginPlaceId.NATIVE,

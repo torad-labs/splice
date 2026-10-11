@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
@@ -84,6 +85,19 @@ class ClaudeCarryingPlacesTest {
         carried.sent(HEAD, "moving", nativeKey)
         assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD, "moving"))
         assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD))
+    }
+
+    @Test
+    fun `a session whose credential matches no login still counts as having sent`() {
+        val native = location()
+        write(native.target.head.configDir, "synthetic-native", "native-account")
+        val carried = carrying(native)
+        assertFalse(carried.hasCarryingProof(HEAD, "never-sent"), "a session that never sent has no proof")
+
+        carried.sent(HEAD, "unmatched", key("synthetic-unknown"))
+
+        assertNull(carried.carryingAccount(HEAD, "unmatched"), "no login matches this credential")
+        assertTrue(carried.hasCarryingProof(HEAD, "unmatched"), "the unmatched send still defeats older history")
     }
 
     @Test

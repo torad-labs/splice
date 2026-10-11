@@ -27,6 +27,8 @@ private class TestNativePlaces : ClaudeLoginPlaces {
         prompt = LoginPrompt(browserUrl = "https://claude.ai/fixture"),
     )
 
+    override fun hasCarryingProof(head: String, session: String): Boolean = false
+
     override fun places(): List<ClaudeLoginPlaceView> = ClaudeLoginPlaceId.entries.map {
         ClaudeLoginPlaceView(
             it,

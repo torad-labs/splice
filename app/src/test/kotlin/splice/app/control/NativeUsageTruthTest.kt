@@ -187,6 +187,8 @@ class NativeUsageTruthTest {
         override suspend fun submit(id: String, code: String): Boolean = false
         override fun carrying(head: String): ClaudeLoginPlaceId? = carried?.carrying(head)
         override fun carrying(head: String, session: String): ClaudeLoginPlaceId? = carried?.carrying(head, session)
+        override fun hasCarryingProof(head: String, session: String): Boolean =
+            carried?.hasCarryingProof(head, session) == true
     }
 
     private fun digest(token: String): String =

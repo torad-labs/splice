@@ -253,7 +253,7 @@ const GLYPH = {
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
 };
-const money = (v) => `≈$${v > 0 && v < 0.01 ? v.toFixed(4) : v.toFixed(2)}`; // priced from the rate card, so an estimate on every command; under a cent to four places (fin)
+const money = dollars; // priced from the rate card, so an estimate; nothing charged reads "$0" (kit.js)
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
 const locked = (pop = false) => `<span class="state limit" role="img" aria-label="At limit"><span class="lockico${pop ? " lock-pop" : ""}">${GLYPH.lock}</span></span>`;
@@ -326,8 +326,10 @@ function meterHtml(c, pick = null) {
   // and left the whole board empty on the first open after a restart
   const spent = c.local || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
   const share = spent && c.unpriced ? `for ${reqs(c.priced)}` : "";
+  // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
+  const none = !c.local && c.spent != null && !c.priced && !c.unpriced ? "<em>No requests</em>" : "";
   if (!c.budget) {
-    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
+    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${openingRow(c)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";

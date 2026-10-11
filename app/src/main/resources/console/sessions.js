@@ -408,7 +408,7 @@ function moneyOf(u) {
   const rest = [[u.plan, "on your plan"], [u.noPrice, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
     .map(([n, w]) => `${num(n.toLocaleString("en-US"))} ${w}`);
   if (!u.priced) return rest;
-  const usd = num(`≈$${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`);
+  const usd = num(dollars(u.cost));
   return rest.length ? [`${usd} for ${num(u.priced.toLocaleString("en-US"))}`, ...rest] : [usd];
 }
 

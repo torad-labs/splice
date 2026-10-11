@@ -92,6 +92,15 @@ function dayWindow(back) {
 const dayName = (back) => (back === 0 ? "Today" : back === 1 ? "Yesterday" : monthDay(dayWindow(back).from));
 
 // ---------- reading ----------
+/** The turns running now, by session: what a Stalled or Resumes line is read from (kit stallOf). */
+async function readLive() {
+  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
+  state.live = {};
+  state.heads.forEach((h, i) => {
+    for (const turn of lives[i].body?.turns || []) if (turn.session && !turn.stopped) state.live[turn.session] = { head: h.key, ...turn };
+  });
+}
+
 async function read() {
   state.loading = true;
   render();
@@ -102,12 +111,7 @@ async function read() {
   state.teams = teams.body?.teams || [];
   state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
-  // the turns running now, by session: what a Stalled or Resumes line is read from (kit stallOf)
-  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
-  state.live = {};
-  state.heads.forEach((h, i) => {
-    for (const turn of lives[i].body?.turns || []) if (turn.session && !turn.stopped) state.live[turn.session] = { head: h.key, ...turn };
-  });
+  await readLive();
   state.models = {};
   state.providerOf = {};
   for (const row of models.body?.heads || []) {
@@ -774,6 +778,17 @@ document.addEventListener("click", async (e) => {
 });
 
 read();
+
+// A countdown or a silence is only true as of the read it came from, so the turns and the sessions are read again every
+// five seconds while the page is shown and nothing is being edited; without it Resumes in sat at 0:00 and a turn that
+// had ended stayed Working until he pressed Read again (desk walk, Oct 10).
+setInterval(async () => {
+  if (document.hidden || state.loading || ui.compose || ui.pick || ui.menu) return;
+  const sessions = await API.get("/api/sessions");
+  if (sessions.ok) state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
+  await readLive();
+  render();
+}, 5000);
 
 // the silence counter and the resume countdown move each second between reads, from when the turn was read
 setInterval(() => {

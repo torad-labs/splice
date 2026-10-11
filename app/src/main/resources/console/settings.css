@@ -45,7 +45,7 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 .pane.more { position: relative; }
 .pane.more::after { content: "More below"; position: absolute; left: 0; right: 0; bottom: 0; height: 5.5rem; display: flex; align-items: flex-end; justify-content: center; padding-bottom: .8rem; pointer-events: none;
   border-radius: 0 0 var(--r-obj) var(--r-obj); font: 600 .95rem/1 var(--font-name); letter-spacing: .04em; color: var(--text);
-  background: linear-gradient(transparent, color-mix(in srgb, var(--key-light) 34%, var(--obj)) 85%); }
+  background: linear-gradient(transparent, color-mix(in srgb, var(--key-light) 34%, var(--obj)) 50%); }
 .pane .body { flex: 1; overflow-y: auto; padding: 2rem 2.4rem 2.6rem; display: flex; flex-direction: column; gap: 2.6rem; }
 
 /* the page's own: the kit's controls are in knobs.css, under .kn (the pane's body) */

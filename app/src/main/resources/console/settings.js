@@ -222,7 +222,22 @@ async function countWeek(head, why, from) {
   const longest = why === "waited" ? rows.reduce((a, b) => (!a || silenceOf(b, tier) > silenceOf(a, tier) ? b : a), null) : null;
   return { head, n: exact ? answer.count ?? 0 : rows.length, newest, longest, silence: longest ? silenceOf(longest, tier) : 0 };
 }
+/** The most requests a command held at once today, and when: each request held a slot from the start of its sending (its
+ *  end minus its time, plus its wait in line) to its end. A read at the cap is not a read of the whole day, so it
+ *  claims no peak. */
+async function readPeak(head) {
+  const res = await API.get(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: String(MAX_ROWS), local: "0" })}`);
+  const answer = (res.body?.heads || []).find((x) => x.key === head.key);
+  if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
+  const rows = answer.rows || [];
+  if (answer.truncated || (answer.count ?? 0) > rows.length) return { head, err: `more than ${fmt(MAX_ROWS)} requests today`, n: answer.count };
+  const events = rows.flatMap((r) => [[r.ts - (r.total ?? 0) + (r.admit_wait_ms || 0), 1], [r.ts, -1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let n = 0, peak = 0, at = 0;
+  for (const [t, d] of events) { n += d; if (n > peak) { peak = n; at = t; } }
+  return { head, peak, at, n: rows.length, queued: rows.filter((r) => r.admit_wait_ms).length };
+}
 async function readWeek() {
+  ui.peaks = await Promise.all(ui.headRows.map(readPeak));
   const day = startOfToday(), week = Date.now() - 7 * DAY;
   const plan = [["restarted", week], ["gaveup", week], ["waited", week], ["silentresume", week], ["silentover", week], ["overloaded", day], ["queued", day], ["failed", week]];
   ui.week = {};
@@ -266,9 +281,24 @@ const silentHtml = () => tallyHtml("This week", [
     { why: "silentover", what: WHY.silentover.word.replace(" after a silence", "") },
   ]),
 ]) + `<section class="sub">${form(keysOf("silent"))}</section>`;
+const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
+function peaksHtml() {
+  if (!ui.peaks?.length) return "";
+  const rows = [...ui.peaks].sort((a, b) => (b.peak ?? -1) - (a.peak ?? -1));
+  const row = (p) => {
+    const key = p.head.key, lim = limitOf(key);
+    if (p.err) return `<div class="peak">${cmdChip(key)}<span></span><span class="pnum"><span class="state limit">${esc(p.err)}</span></span><span></span></div>`;
+    return `<div class="peak${lim && p.peak >= lim ? " full" : ""}">${cmdChip(key)}`
+      + `<span class="pbar"><b style="width:${lim ? Math.min(100, (100 * p.peak) / lim) : 4}%"></b></span>`
+      + `<span class="pnum"><b>${p.peak}</b> of ${lim || "Unlimited"} requests at once${p.peak ? `<i>${clockOf(p.at)}</i>` : ""}</span>`
+      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${p.queued}</b><em>Open on Requests</em></a>` : "<span></span>") + `</div>`;
+  };
+  const all = rows.reduce((a, p) => a + (p.n || 0), 0);
+  return `<section class="tally"><h3>Today</h3><div class="card peaks"><header><span class="pall"><b>${fmt(all)}</b> requests</span></header>${rows.map(row).join("")}</div></section>`;
+}
 const busyHtml = () => `<section class="tally"><h3>Who refused</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}`
   + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`
-  + `<section class="tally"><h3>Waited in line</h3>${figHtml({ why: "queued", what: "Waited in line today" })}</section>`
+  + peaksHtml()
   + `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
   + (keysOf("busy").includes("maxRequestBytes") ? `<section class="sub"><h3>Too large</h3>${form(["maxRequestBytes"])}</section>` : "")
   + `<div class="doors">${figHtml({ why: "failed", what: "Failed this week", cmds: false })}</div>`;

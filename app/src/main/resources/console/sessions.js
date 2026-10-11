@@ -123,7 +123,10 @@ function metaHtml(s, L, inPane) {
   const repo = s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
   const past = s.at.toDateString() !== NOW.toDateString();
   const when = `<span class="when">${past ? `${s.at.toLocaleDateString("en-US", { weekday: "short" })} ` : ""}${clock(s.at)}</span>`;
-  return `<div class="meta">${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}${inPane ? "" : when}</div>`;
+  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}`;
+  // on a list card everything but the time sits in one row that drops whole parts from its end when it runs out of
+  // room, the folder first, then the model, then the team; the open pane has the width and shows every part (hitstop b6bae4e)
+  return inPane ? `<div class="meta">${parts}</div>` : `<div class="meta"><span class="parts">${parts}</span>${when}</div>`;
 }
 
 // What a waiting session asks, and answering it where it waits. A question's words and options come off its transcript

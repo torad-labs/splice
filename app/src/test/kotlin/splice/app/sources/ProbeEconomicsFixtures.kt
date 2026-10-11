@@ -8,7 +8,9 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
+import splice.head.usage.AccountOnPlan
 import splice.head.usage.EconomicsStore
+import splice.head.usage.NoPlans
 import splice.head.usage.TurnBytes
 import splice.head.usage.TurnEconomics
 import splice.head.usage.TurnTokens
@@ -51,19 +53,24 @@ internal fun recordWork(store: EconomicsStore) {
     store.record(turn("synthetic", 7, 20, 10, 1L to 0L).copy(localStep = true))
 }
 
-internal fun store(dir: Path, clock: WallClock = WallClock { PROBE_HOUR + 123 }): EconomicsStore = EconomicsStore(
-    dir.resolve("economics.json"),
-    TurnPrice(
-        ModelCatalog(
-            discoveryPrefix = "synthetic--",
-            models = listOf(
-                ModelEntry("synthetic", contextWindow = 1000, rates = ModelRates(3.0, 0.3, 15.0, 6.0)),
-            ),
-            defaultContextWindow = 1000,
-        ),
+internal val probePrice = TurnPrice(
+    ModelCatalog(
+        discoveryPrefix = "synthetic--",
+        models = listOf(ModelEntry("synthetic", contextWindow = 1000, rates = ModelRates(3.0, 0.3, 15.0, 6.0))),
+        defaultContextWindow = 1000,
     ),
+)
+
+internal fun store(
+    dir: Path,
+    clock: WallClock = WallClock { PROBE_HOUR + 123 },
+    plans: AccountOnPlan = NoPlans,
+): EconomicsStore = EconomicsStore(
+    dir.resolve("economics.json"),
+    probePrice,
     clock,
     log = { },
+    plans = plans,
 )
 
 internal fun turn(

@@ -24,6 +24,7 @@ import splice.head.compact.HeadCompactSource
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionEndings
 import splice.head.perf.SessionTotals
+import splice.head.usage.AccountOnPlan
 import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
@@ -109,11 +110,13 @@ public class EconomicsStoreSource(
      *  at every read so a window the person just widened is reached on the next one. */
     kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
     clock: WallClock = WallClock(System::currentTimeMillis),
+    /** Whether a plan covers an account's requests, for the hours rebuilt from the request log. */
+    plans: AccountOnPlan = store.plans,
 ) : HeadEconomicsSource {
     private val probes = perfRows?.let(::ProbeEconomics)
-    private val reprice = perfRows?.let { rows -> price?.let { EconomicsReprice(rows, it) } }
+    private val reprice = perfRows?.let { rows -> price?.let { EconomicsReprice(rows, it, plans) } }
     private val backfill = perfRows?.let { rows ->
-        price?.let { EconomicsBackfill(rows, it, kept, clock) }
+        price?.let { EconomicsBackfill(rows, it, kept, clock, plans) }
     }
 
     override fun read(): EconomicsRead {
@@ -147,7 +150,13 @@ public class EconomicsStoreSource(
                 deferralTurns = it.deferralTurns,
             ),
             rateLimited = it.rateLimited,
-            cost = EconomicsCost(costUsd = it.costUsd, unpricedTurns = it.unpricedTurns),
+            cost = EconomicsCost(
+                costUsd = it.costUsd,
+                unpricedTurns = it.unpricedTurns,
+                planTurns = it.cost.planTurns,
+                planValueUsd = it.cost.planValueUsd,
+                planUnpricedTurns = it.cost.planUnpricedTurns,
+            ),
         )
 }
 

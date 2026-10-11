@@ -246,9 +246,9 @@ class PerfTurnUsageTest {
         val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
             .getValue("usage").jsonObject
         val totals = usage.getValue("totals").jsonObject
-        assertEquals(listOf(4L, 2L, 1L, 1L), causes(totals))
+        assertEquals(listOf(4L, 1L, 2L, 1L), causes(totals))
         val models = usage.getValue("models").jsonArray.associate { it.jsonObject.let { m -> m.key() to causes(m) } }
-        assertEquals(listOf(2L, 2L, 0L, 0L), models["m"])
+        assertEquals(listOf(2L, 1L, 1L, 0L), models["m"])
         assertEquals(listOf(2L, 0L, 1L, 1L), models["free"])
         assertSummed(usage)
     }

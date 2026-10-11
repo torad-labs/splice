@@ -145,16 +145,14 @@ internal class TurnTelemetry(
         closeTrace(drive.trace, outcomeTag, snap)
         val session = drive.sessionTag()
         val account = drive.account
+        val accountLabel = drive.observedAccountLabel ?: account?.account?.label ?: drive.fallbackAccountLabel
         val rowTs = perfStats.record(
             PerfRowMeta(
                 drive.upstreamModel,
                 outcomeTag,
                 drive.meta.compact,
                 session,
-                PerfAccount(
-                    drive.observedAccountLabel ?: account?.account?.label ?: drive.fallbackAccountLabel,
-                    account?.cacheCold == true,
-                ),
+                PerfAccount(accountLabel, account?.cacheCold == true),
                 // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
                 // outcome TAG is not replaced — it is what the operator already greps — so this is an
                 // addition to the row, never a change to the string that identifies it.
@@ -179,7 +177,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
-        recordEconomics(snap, drive.upstreamModel, ending.rateLimited)
+        recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
     }
 
@@ -221,7 +219,7 @@ internal class TurnTelemetry(
     /** Fold this turn into the hourly quota rollup. The perf snapshot is the single source for
      *  BOTH the JSONL row and this store, so the dashboard can never disagree with the log line.
      *  Wrapped because recordPerf's contract is never-throws and telemetry must not fail a turn. */
-    private fun recordEconomics(snap: PerfSnapshot, model: String, rateLimited: Boolean) {
+    private fun recordEconomics(snap: PerfSnapshot, model: String, rateLimited: Boolean, account: String?) {
         val store = economics ?: return
         Cancellables.discard(
             Cancellables.runCatchingCancellable {
@@ -251,6 +249,7 @@ internal class TurnTelemetry(
                         rateLimited = rateLimited,
                         history = TurnBill.history(snap.counters),
                     ),
+                    account,
                 )
             },
             "telemetry is best-effort; a turn must never fail on the quota rollup",

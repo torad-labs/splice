@@ -98,4 +98,13 @@ public data class BucketCost(
     val costUsd: Double? = 0.0,
     /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
     val unpricedTurns: Long = 0,
+    /** Oct 11 (fin): the requests an account with a plan carried, priced or not. Their dollars are NOT in [costUsd]
+     *  and they are not in [unpricedTurns]: a plan covered them. NULL for an hour recorded before the split, whose
+     *  [costUsd] and [unpricedTurns] mix plan and key requests, and it stays null if this daemon adds requests to
+     *  that hour, for the reason [costUsd] does. */
+    val planTurns: Long? = 0,
+    /** What the plan requests with a price would have cost at the API rates; a value, never a charge. Null as [planTurns]. */
+    val planValueUsd: Double? = 0.0,
+    /** The plan requests the rate card cannot value. Null as [planTurns]. */
+    val planUnpricedTurns: Long? = 0,
 )

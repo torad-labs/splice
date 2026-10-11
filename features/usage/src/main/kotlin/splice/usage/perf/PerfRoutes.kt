@@ -301,6 +301,8 @@ public class PerfRoutes(
         // cost_reason exactly where cost_usd is a number, so the console never has to guess which it is.
         put("cost_usd", gaps.usd(row))
         put("cost_reason", gaps.of(row)?.wire)
+        // A plan covered this request: what it would have cost at the API rates, kept apart from any cost.
+        put("plan_value_usd", gaps.value(row).takeIf { gaps.onPlan(row) })
     }
 
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {

@@ -75,11 +75,14 @@ public class EconomicsStore(
      *  shortening it on the page shortens it now. Defaults to what a fresh install writes, so a
      *  store built without one keeps the shipped window rather than nothing. */
     private val kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
+    /** Whether a plan covers the account that carried a turn; its requests are a plan's, not a key's. */
+    public val plans: AccountOnPlan = NoPlans,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. */
-    public fun record(turn: TurnEconomics) {
+    /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. [account] is the label
+     *  that carried it, asked of the head's plans to say whether a plan or a key paid. */
+    public fun record(turn: TurnEconomics, account: String? = null) {
         val now = clock()
         val hour = now / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
@@ -103,7 +106,7 @@ public class EconomicsStore(
                     deferralTurns = b.deferralTurns + deferralTurn(turn),
                 ),
                 rateLimited = b.rateLimited + if (turn.rateLimited) 1 else 0,
-                cost = priced(b.cost, usd, localStep),
+                cost = priced(b.cost, usd, localStep, !localStep && plans(account)),
             )
             trimUnderLock()
             version += 1
@@ -147,10 +150,20 @@ public class EconomicsStore(
 
     /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card or incomplete usage. A null hour (one
      *  written before the field) stays null: a partial sum must not read as the hour's cost. */
-    private fun priced(cost: BucketCost, usd: Double?, localStep: Boolean): BucketCost = BucketCost(
-        costUsd = cost.costUsd?.plus(usd ?: 0.0),
-        unpricedTurns = cost.unpricedTurns + if (usd == null && !localStep) 1 else 0,
-    )
+    private fun priced(cost: BucketCost, usd: Double?, localStep: Boolean, onPlan: Boolean): BucketCost =
+        if (onPlan) {
+            // A plan covered the request: its API-rate value is kept apart and is no cost. An hour never split stays so.
+            cost.copy(
+                planTurns = cost.planTurns?.plus(1),
+                planValueUsd = cost.planValueUsd?.plus(usd ?: 0.0),
+                planUnpricedTurns = cost.planUnpricedTurns?.plus(if (usd == null) 1 else 0),
+            )
+        } else {
+            cost.copy(
+                costUsd = cost.costUsd?.plus(usd ?: 0.0),
+                unpricedTurns = cost.unpricedTurns + if (usd == null && !localStep) 1 else 0,
+            )
+        }
 
     /** Buckets inside the retention window, oldest first. */
     public fun read(): List<EconomicsBucket> {
@@ -311,6 +324,9 @@ public class EconomicsStore(
                                 put("rate_limited", b.rateLimited)
                                 put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
                                 put("unpriced_turns", b.unpricedTurns)
+                                put("plan_turns", b.cost.planTurns) // null writes JSON null: never split
+                                put("plan_value_usd", b.cost.planValueUsd)
+                                put("plan_unpriced_turns", b.cost.planUnpricedTurns)
                             },
                         )
                     }
@@ -372,6 +388,11 @@ public class EconomicsStore(
                     // unpriceable) reads null too.
                     costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
                     unpricedTurns = longOr(o, "unpriced_turns"),
+                    // Oct 11: an hour written before the split has no `plan_turns` key and reads NULL, never zero: its
+                    // cost above mixes plan and key requests, which is the true historical value.
+                    planTurns = long(o, "plan_turns"),
+                    planValueUsd = (o["plan_value_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
+                    planUnpricedTurns = long(o, "plan_unpriced_turns"),
                 ),
             )
         }

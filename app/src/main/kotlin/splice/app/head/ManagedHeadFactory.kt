@@ -7,6 +7,7 @@ package splice.app.head
 import kotlinx.coroutines.CoroutineScope
 import splice.accounts.order.ACCOUNT_ORDER_FILE
 import splice.accounts.order.AccountOrderStore
+import splice.accounts.pool.HeadAccountPoolSource
 import splice.app.control.HeadAuthSurface
 import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
@@ -27,6 +28,8 @@ import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.model.TurnPrice
 import splice.core.perf.KeptHistory
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
@@ -34,6 +37,7 @@ import splice.head.compaction.FileCompactionRecordings
 import splice.head.compaction.KeepingRecordings
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
+import splice.head.usage.AccountOnPlan
 import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
@@ -41,6 +45,10 @@ import splice.head.usage.UsageStore
 import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.upstream.credentials.AccountPool
+import splice.usage.AccountPlanLookup
+import splice.usage.HeadQuotaPlan
+import splice.usage.UsageBilling
 import splice.usage.quota.ClientUserAgent
 import splice.usage.quota.QuotaCadence
 import splice.usage.quota.QuotaIntervalMs
@@ -221,6 +229,24 @@ internal class ManagedHeadFactory(
         wired: Wired,
         primaryQuota: QuotaTracker,
         accountQuotas: Map<String, QuotaTracker>,
+    ): HeadStores {
+        val pool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota)
+        return headStoresOf(ctx, primaryQuota, accountQuotas, pool)
+    }
+
+    /** Who covers a request on this command's accounts: its credential says subscription or key, and its pool and quota
+     *  say which accounts have a plan. The one answer the rollup, the rebuilt hours and the pages share. */
+    private fun planLookup(ctx: ProviderBuild, pool: HeadAccountPoolSource?, quota: QuotaTracker): AccountPlanLookup {
+        val auth = AuthKindRegistry.from(ctx.providerCfg.auth.kind)
+        val kind = if (auth?.isOAuth == true || auth == AuthKind.Client) UsageBilling.SUBSCRIPTION else null
+        return AccountPlanLookup(kind, pool, HeadQuotaPlan { quota.snapshot()?.plan })
+    }
+
+    private fun headStoresOf(
+        ctx: ProviderBuild,
+        primaryQuota: QuotaTracker,
+        accountQuotas: Map<String, QuotaTracker>,
+        pool: AccountPool?,
     ): HeadStores = HeadStores(
         usageStore = UsageStore(statePaths.usageFile(ctx.key), statePaths.ratelimitFile(ctx.key)),
         telemetry = HeadTelemetryStores(
@@ -244,11 +270,13 @@ internal class ManagedHeadFactory(
                 statePaths.economicsFile(ctx.key),
                 TurnPrice(ctx.catalog),
                 kept = perfSources.kept,
+                plans = planLookup(ctx, accountPools.source(pool, ctx.key, accountOrders), primaryQuota)
+                    .let { lookup -> AccountOnPlan { lookup.covers(it) } },
             ),
         ),
         quota = primaryQuota,
         accounts = HeadAccountStores(
-            pool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota),
+            pool = pool,
             quotas = accountQuotas,
         ),
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),

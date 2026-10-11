@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
+import splice.usage.AccountPlanLookup
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import java.time.Instant
@@ -27,13 +28,14 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
         val gaps = TurnPriceGap(price, plans)
         rows.forEach { row ->
             val cost = gaps.usd(row)
+            val value = gaps.value(row).takeIf { gaps.onPlan(row) }
             val gap = gaps.of(row)
             val day = Instant.ofEpochMilli(row.ts).atZone(zone).toLocalDate().toString()
-            totals.add(row, cost, gap)
-            models.getOrPut(row.facts.model, ::Counters).add(row, cost, gap)
-            accounts.getOrPut(row.facts.account, ::Counters).add(row, cost, gap)
-            days.getOrPut(day, ::Counters).add(row, cost, gap)
-            sessions.getOrPut(row.transcript.sessionId, ::Counters).add(row, cost, gap)
+            totals.add(row, Priced(cost, value), gap)
+            models.getOrPut(row.facts.model, ::Counters).add(row, Priced(cost, value), gap)
+            accounts.getOrPut(row.facts.account, ::Counters).add(row, Priced(cost, value), gap)
+            days.getOrPut(day, ::Counters).add(row, Priced(cost, value), gap)
+            sessions.getOrPut(row.transcript.sessionId, ::Counters).add(row, Priced(cost, value), gap)
             recordModel(row)
         }
     }
@@ -80,12 +82,19 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
 
     private data class LastModel(val ts: Long, val model: String)
 
+    /** One row's figures: what a key was billed, or what a plan's request would have cost at the API rates. */
+    private data class Priced(val usd: Double?, val planValue: Double?)
+
     private class Counters {
         private var requests = 0L
         private var input: Long? = null
         private var cached: Long? = null
         private var output: Long? = null
         private var cost: Double? = null
+
+        // The requests a plan covered priced at the API rates: a value, never a cost.
+        private var planValue: Double? = null
+        private var planValued = 0L
         private val gaps = PriceGap.entries.associateWith { 0L }.toMutableMap()
         private var missingInput = 0L
         private var missingOutput = 0L
@@ -102,7 +111,7 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
          *  as a request made every window with steps report requests that never reached a provider, each one also
          *  missing its input and output because a step has no token counts, and each one unpriced for a reason no
          *  case covers. It takes no token count, no price, no reason and no cut round: it has none of those. */
-        fun add(row: PerfRow, usd: Double?, gap: PriceGap?) {
+        fun add(row: PerfRow, priced: Priced, gap: PriceGap?) {
             if (row.fields[PerfKeys.LOCAL_STEP] == 1L) {
                 localSteps++
                 return
@@ -110,7 +119,8 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             requests++
             addTokens(row)
             cutRounds += row.fields[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L
-            if (usd != null) cost = (cost ?: 0.0) + usd
+            priced.usd?.let { cost = (cost ?: 0.0) + it }
+            priced.planValue?.let { planValue = (planValue ?: 0.0) + it; planValued++ }
             if (gap != null) gaps[gap] = gaps.getValue(gap) + 1
         }
 
@@ -136,6 +146,9 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             put("cached_tokens", cached)
             put("output_tokens", output)
             put("cost_usd", cost)
+            put("plan_requests", gaps.getValue(PriceGap.PLAN))
+            put("plan_value_usd", planValue)
+            put("plan_valued_requests", planValued)
             // Unanswered failures remain requests, but do not qualify estimates as missing spend.
             put("unpriced_requests", gaps.values.sum() - gaps.getValue(PriceGap.UNANSWERED))
             put("unpriced_uncounted_requests", gaps.getValue(PriceGap.UNCOUNTED))
@@ -152,16 +165,18 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
     }
 }
 
-/** The plan each recorded account runs on, as the head reports it now. An account the head's pool names
- *  answers for itself, an API key with no plan included; any other row falls back to the head's own quota. */
+/** The plan each recorded account runs on, as the head reports it now (see [AccountPlanLookup]). */
 internal class AccountPlans(head: UsageHead, billing: UsageBilling? = null) {
-    val kind: UsageBilling? = billing ?: if (head.anthropicUpstream) UsageBilling.SUBSCRIPTION else null
+    private val lookup = AccountPlanLookup(
+        billing ?: if (head.anthropicUpstream) UsageBilling.SUBSCRIPTION else null,
+        head.sinks.accountPool,
+    ) { head.usage.snapshot().quota?.plan }
 
-    // Read only when a request lacks a price, so a fully priced window never touches the pool or the quota file.
-    private val byLabel by lazy {
-        head.sinks.accountPool?.view(null)?.accounts.orEmpty().associate { it.label to it.plan }
-    }
-    private val headPlan by lazy { head.usage.snapshot().quota?.plan }
+    val kind: UsageBilling? get() = lookup.kind
 
-    fun of(account: String?): String? = if (account != null && account in byLabel) byLabel[account] else headPlan
+    fun of(account: String?): String? = lookup.planOf(account)
+
+    fun covers(account: String?): Boolean = lookup.covers(account)
+
+    fun coversEveryAccount(): Boolean = lookup.coversEveryAccount()
 }

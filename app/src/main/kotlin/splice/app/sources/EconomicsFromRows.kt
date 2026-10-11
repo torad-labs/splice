@@ -14,12 +14,14 @@ import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
+import splice.head.usage.AccountOnPlan
 import splice.head.usage.BucketBytes
 import splice.head.usage.BucketCost
 import splice.head.usage.BucketTokens
 import splice.head.usage.BucketTools
 import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsTurnCounts
+import splice.head.usage.NoPlans
 import splice.usage.perf.PerfRow
 
 // why: a turn the budget or the plan refused before any attempt is written to perf and never to the
@@ -70,7 +72,7 @@ internal class EconomicsRows {
 }
 
 /** Reads one hour of economics back from the perf rows written inside it. */
-internal class EconomicsFromRows(private val price: TurnPrice) {
+internal class EconomicsFromRows(private val price: TurnPrice, private val plans: AccountOnPlan = NoPlans) {
     /** The hour [at] as its [rows] describe it, priced at the cards this daemon holds now. */
     fun bucket(at: Long, rows: List<PerfRow>): EconomicsBucket {
         val client = rows.filterNot { it.fields[PerfKeys.LOCAL_STEP] == 1L }
@@ -127,13 +129,30 @@ internal class EconomicsFromRows(private val price: TurnPrice) {
     private fun cost(client: List<PerfRow>): BucketCost {
         var usd = 0.0
         var unpriced = 0L
+        var planTurns = 0L
+        var planValue = 0.0
+        var planUnpriced = 0L
         for (row in client) {
             val amount = price.usd(row.facts.model, row.fields, row.ts)
-            if (amount == null) unpriced += 1 else usd += amount
+            if (plans(row.facts.account)) {
+                // A plan covered the request: its API-rate value is kept apart and is no cost.
+                planTurns += 1
+                if (amount == null) planUnpriced += 1 else planValue += amount
+            } else if (amount == null) {
+                unpriced += 1
+            } else {
+                usd += amount
+            }
         }
         // An hour that still holds an unpriced turn keeps its count, so the console says so rather
         // than reading a partial sum as the hour's whole cost.
-        return BucketCost(costUsd = usd, unpricedTurns = unpriced)
+        return BucketCost(
+            costUsd = usd,
+            unpricedTurns = unpriced,
+            planTurns = planTurns,
+            planValueUsd = planValue,
+            planUnpricedTurns = planUnpriced,
+        )
     }
 
     private fun plain(rows: List<PerfRow>, key: String): Long = rows.sumOf { it.fields[key] ?: 0L }

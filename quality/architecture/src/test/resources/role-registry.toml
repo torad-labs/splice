@@ -464,18 +464,19 @@ names = [
 ]
 reason = """RawBlock is "the work done while the terminal is in raw mode — run exactly once, raw or not"; it is the BODY the raw-mode bracket wraps, and the bracket's own ShutdownHookAdd / ShutdownHookRemove pair is what guarantees the restore. StoreEdit is "one read-modify-write of `keys.toml`, performed while the sibling `.lock` is held", and its KDoc is explicit that the type IS the boundary of the lost-update fix rather than a formatting of braces: a `set` that read outside the section and wrote inside it would still lose an update. It is also `private`, because the lock is KeyStore's own and nothing outside that file may claim to run under it. DayDirectoryAction is "one operation under the directory-wide day mutation fence", held before a head's lock through body admission, eviction and index publication. Confusing it with a store edit would allow cross-head eviction between a trace body's append and its metadata publication. The three scoped bodies protect a TTY, one key store and the shared trace directory, respectively."""
 
-# ── 3 names, () -> String? ────────────────────────────────────────────────────────────────────────
+# ── 4 names, () -> String? ────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->String?"
 dated = "2026-09-17"
 names = [
     "ClientUserAgent",
     "DaemonVersionRead",
+    "HeadQuotaPlan",
     "ManagerEnvironmentBlock",
 ]
 reason = """DaemonVersionRead asks the RUNNING daemon for its version and is null when no daemon \
 answers; the upgrade path branches on that null. (ClasspathHtml, the bundled dashboard read, left \
-with the console UI on 2026-10-07.) ADDED 2026-09-28 (V4-395): ManagerEnvironmentBlock is the systemd user manager's environment block as text (`systemctl --user show-environment`), which SystemdUnitDaemon parses to learn the HOME and control port a supervisor unit's daemon runs under, so `splice restart` never acts on another home's unit. Null there means \"no manager answered\", and the restart refuses on it. DaemonVersionRead reads a version; it cannot answer that question, and substituting it would let a restart judge ownership from the wrong string. ClientUserAgent (added 2026-10-04) is the whole User-Agent header splice has SEEN this daemon's Claude Code send, read at probe time and presented to Anthropic's subscription usage endpoint, which buckets that endpoint's rate limit by User-Agent and answers a caller that sends none with a 429 that does not recover (anthropics/claude-code#30930). It keeps its own port because the two reads above are a running daemon version and a unit manager environment block: wiring either of them here would present the vendor an identity that never spoke to splice, and wiring this one into the upgrade path would compare a client header against a release version."""
+with the console UI on 2026-10-07.) ADDED 2026-09-28 (V4-395): ManagerEnvironmentBlock is the systemd user manager's environment block as text (`systemctl --user show-environment`), which SystemdUnitDaemon parses to learn the HOME and control port a supervisor unit's daemon runs under, so `splice restart` never acts on another home's unit. Null there means \"no manager answered\", and the restart refuses on it. DaemonVersionRead reads a version; it cannot answer that question, and substituting it would let a restart judge ownership from the wrong string. ClientUserAgent (added 2026-10-04) is the whole User-Agent header splice has SEEN this daemon's Claude Code send, read at probe time and presented to Anthropic's subscription usage endpoint, which buckets that endpoint's rate limit by User-Agent and answers a caller that sends none with a 429 that does not recover (anthropics/claude-code#30930). It keeps its own port because the two reads above are a running daemon version and a unit manager environment block: wiring either of them here would present the vendor an identity that never spoke to splice, and wiring this one into the upgrade path would compare a client header against a release version. HeadQuotaPlan (added 2026-10-11) is the plan name a command's own quota file reports, e.g. max or pro, which a command's accounts fall back to when its pool does not name them, so a request is filed as a plan's or a key's. It is null when the quota names none. It reads a billing plan; none of the three above can answer it, and handing it to the User-Agent read would send a vendor a plan name as the identity of a client."""
 
 # ── 2 names, () -> TurnOutcome ────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -699,3 +700,13 @@ signature = "(SessionRecord)->String?"
 dated = "2026-10-11"
 names = ["MovingSessionModel", "SessionRepoNameOf"]
 reason = """MovingSessionModel reads the MODEL the session's row reported, at the one moment Continue on needs it: before the move ends that client, because afterwards the row reports the model it moved to and the mark would name its destination as its origin. SessionRepoNameOf reads the FOLDER a session's row belongs to, for the history route's rows, and is read whenever a row is written. Passing the repo name where the model belongs would write a folder into the transcript's move mark; passing the model where the repo name belongs would group a session's history under its model."""
+
+# ── 2 names, (String?) -> Boolean ────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String?)->Boolean"
+dated = "2026-10-11"
+names = [
+    "AccountOnPlan",
+    "KeptModel",
+]
+reason = """Two questions asked of a nullable name that share nothing else. AccountOnPlan asks of an ACCOUNT label whether a plan covers the requests it carried, so the hourly rollup files a request as a plan's or a key's at the moment it is recorded. KeptModel asks of a MODEL id whether a resumed session keeps the assistant row it came from. Handing one the other's name would answer a question about a model with a fact about a billing account, or file a request under a plan because a model id happened to be known, and either would compile and run."""

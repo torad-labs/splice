@@ -11,15 +11,25 @@
 package splice.app.sources
 
 import splice.core.model.TurnPrice
+import splice.head.usage.AccountOnPlan
+import splice.head.usage.BucketCost
 import splice.head.usage.EconomicsBucket
+import splice.head.usage.NoPlans
 import splice.usage.perf.PerfRow
 import kotlin.time.Duration.Companion.hours
 
 private val REPRICE_BUCKET_MS = 1.hours.inWholeMilliseconds
 
+/** How far past an hour the newest row must be before no more rows can land in it. */
+private val REPRICE_SETTLED_MS = 2.hours.inWholeMilliseconds
+
 /** Prices an hour again from the perf rows behind it, with the rate cards this daemon holds now. */
-internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: TurnPrice) {
-    private val rows = EconomicsFromRows(price)
+internal class EconomicsReprice(
+    private val perf: PerfRowsFileSource,
+    price: TurnPrice,
+    plans: AccountOnPlan = NoPlans,
+) {
+    private val rows = EconomicsFromRows(price, plans)
     private val refusal = PerfRefusal(perf.files)
 
     // WHICH rows an hour is made of is not answered here. The reconciliation this must agree with and the
@@ -29,17 +39,59 @@ internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: Tur
     // different hour from its own rows and kept the figure it had.
     private val selection = EconomicsRows()
 
-    /** [buckets] with every re-derivable unpriced hour priced again, or [buckets] unchanged when the rows
+    // An hour no more rows can land in is answered once: its answer is its own cost fields, or none when its rows are
+    // not its turns. Asking again at every poll would regroup the whole window for the hours that can never match.
+    private val settled = HashMap<Long, Settled>()
+
+    private data class Settled(val recorded: List<Long>, val cost: BucketCost?)
+
+    /** [buckets] with every re-derivable hour priced again: an hour with an unpriced turn, and an hour recorded before
+     *  the plan split, whose plan and key requests the rows tell apart by account. [buckets] unchanged where the rows
      *  cannot be read. The deduction has already run, so [buckets] holds no probe turns. */
     fun priced(buckets: List<EconomicsBucket>): List<EconomicsBucket> {
-        val wanted = buckets.filter { it.unpricedTurns > 0L }
-        if (wanted.isEmpty()) return buckets
-        val evidence = exact(wanted.minOf { it.hour }) ?: return buckets
+        val wanted = buckets.filter { needs(it) && settled[it.hour]?.recorded != recorded(it) }
+        val fresh = if (wanted.isEmpty()) emptyMap() else answer(wanted)
+        return buckets.map { bucket ->
+            val cost = if (bucket.hour in fresh) {
+                fresh.getValue(bucket.hour)
+            } else {
+                settled[bucket.hour]?.takeIf { it.recorded == recorded(bucket) }?.cost
+            }
+            if (cost != null) bucket.copy(cost = cost) else bucket
+        }
+    }
+
+    // An hour from before the rollup priced anything stays "not priced then": its rows could price it, but that is no
+    // unpriced count to re-derive from, and a cost appearing for it would read as one it always had.
+    private fun needs(bucket: EconomicsBucket): Boolean =
+        bucket.unpricedTurns > 0L || bucket.cost.planTurns == null && bucket.costUsd != null
+
+    private fun recorded(bucket: EconomicsBucket): List<Long> =
+        listOf(
+            bucket.turns,
+            bucket.localSteps,
+            bucket.inTokens,
+            bucket.cachedTokens,
+            bucket.outTokens,
+            bucket.unpricedTurns,
+        )
+
+    /** The rows' cost for each of [wanted] they can answer for, null where an hour's rows are not its turns. */
+    private fun answer(wanted: List<EconomicsBucket>): Map<Long, BucketCost?> {
+        val evidence = exact(wanted.minOf { it.hour }) ?: return emptyMap()
         val probes = evidence.probes.toSet()
         val byHour = selection.billed(evidence.work.rows).filterNot { it in probes }
             .groupBy { it.ts / REPRICE_BUCKET_MS * REPRICE_BUCKET_MS }
-        return buckets.map { bucket ->
-            if (bucket.unpricedTurns == 0L) bucket else repriced(bucket, byHour[bucket.hour].orEmpty())
+        val newest = evidence.work.rows.maxOfOrNull { it.ts } ?: return emptyMap()
+        return wanted.associate { bucket ->
+            val cost = repriced(bucket, byHour[bucket.hour].orEmpty())
+            // Only an hour the log has moved well past is final; the hour still being written is asked again.
+            if (bucket.hour + REPRICE_SETTLED_MS <= newest) {
+                settled[bucket.hour] = Settled(recorded(bucket), cost)
+            } else {
+                settled.remove(bucket.hour)
+            }
+            bucket.hour to cost
         }
     }
 
@@ -49,16 +101,15 @@ internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: Tur
         if (refusal.stands(from)) return null
         val before = perf.files.stamp()
         val evidence = perf.economicsEvidence(from)
-        val tore = evidence.work.readError == null && evidence.work.skipped != 0
+        val tore = evidence.work.readError == null && evidence.probeTears.any { it == null }
         refusal.note(before, from, tore)
         return evidence.takeIf { it.work.readError == null && !tore }
     }
 
-    /** The hour's cost from its own rows, or the hour unchanged when the rows are not the turns it counted. */
-    private fun repriced(bucket: EconomicsBucket, hourRows: List<PerfRow>): EconomicsBucket {
-        if (hourRows.isEmpty()) return bucket
+    /** The hour's cost from its own rows, or null when the rows are not the turns it counted. */
+    private fun repriced(bucket: EconomicsBucket, hourRows: List<PerfRow>): BucketCost? {
+        if (hourRows.isEmpty()) return null
         val rebuilt = rows.bucket(bucket.hour, hourRows)
-        if (!rows.sameTurns(bucket, rebuilt)) return bucket
-        return bucket.copy(cost = rebuilt.cost)
+        return rebuilt.cost.takeIf { rows.sameTurns(bucket, rebuilt) }
     }
 }

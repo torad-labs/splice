@@ -76,4 +76,11 @@ public data class EconomicsCost(
     val costUsd: Double?,
     /** V4-221: turns whose model had no rate card, so their dollars are not in [costUsd]. */
     val unpricedTurns: Long,
+    /** Oct 11: the requests an account with a plan carried, priced or not, whose cost is NOT in [costUsd]; null for an
+     *  hour whose requests were never split (then [costUsd] and [unpricedTurns] mix plan and key requests). */
+    val planTurns: Long? = null,
+    /** What the plan requests that have a price would have cost at the API rates: a value, never a charge. */
+    val planValueUsd: Double? = null,
+    /** The plan requests the rate card cannot value. */
+    val planUnpricedTurns: Long? = null,
 )

@@ -15,6 +15,7 @@ import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.usage.UsageBilling
+import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 
 /** Why a request has no dollar figure. [wire] is the console's own word for it. */
@@ -60,9 +61,20 @@ private object ProviderRefusal {
 /** One row's price and, when it has none, the reason. Built once per window from the head's own card and
  *  plans, so the window's counters and each row's own figure are the same decision read twice. */
 internal class TurnPriceGap(private val price: TurnPrice?, private val plans: AccountPlans) {
-    /** The dollars this row billed, or null when [of] has a reason instead. */
-    fun usd(row: PerfRow): Double? =
+    /** The dollars this row billed to a key, or null when [of] has a reason instead. A request on an account with a
+     *  plan billed nothing: the plan covered it, so its API-rate figure is [value] and never a cost. */
+    fun usd(row: PerfRow): Double? = if (onPlan(row)) null else value(row)
+
+    /** What this row would cost at the API rates on the head's card, whoever paid for it; null with no card or
+     *  without both reported token totals. */
+    fun value(row: PerfRow): Double? =
         price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields, row.ts)
+
+    /** Whether a plan covered this request: its account has a plan (Oct 11, fin: "on your plan" is a fact about the
+     *  account, never about the card having no price for the model). A local runtime has none, and a code-mode step
+     *  or an unanswered failure sent nothing a plan could cover. */
+    fun onPlan(row: PerfRow): Boolean =
+        row.fields[PerfKeys.LOCAL_STEP] != 1L && !unanswered(row) && plans.covers(row.facts.account)
 
     /** Null when [usd] has a figure, and for a code-mode step, which has neither: a reply splice wrote itself
      *  asked no provider, so it has no price AND no reason for the absence. Before V4-444 a step fell through to
@@ -72,10 +84,10 @@ internal class TurnPriceGap(private val price: TurnPrice?, private val plans: Ac
     fun of(row: PerfRow): PriceGap? = when {
         row.fields[PerfKeys.LOCAL_STEP] == 1L -> null
         unanswered(row) -> PriceGap.UNANSWERED
+        onPlan(row) -> PriceGap.PLAN
         usd(row) != null -> null
         HeadPriceGap.of(plans.kind) != null -> HeadPriceGap.of(plans.kind)
         declares(row) -> PriceGap.UNCOUNTED
-        plans.of(row.facts.account) != null -> PriceGap.PLAN
         else -> PriceGap.UNDECLARED
     }
 
@@ -113,4 +125,8 @@ internal object HeadPriceGap {
         val head = heads.byName(key).firstOrNull { it.key == key } ?: return null
         return (of(AccountPlans(head, heads.billing(key)).kind) ?: PriceGap.UNDECLARED).wire
     }
+
+    /** Whether a plan covers every account of [head], so none of its requests can be charged to a key. */
+    fun coversEveryAccount(lookup: UsageHeadLookup?, head: UsageHead): Boolean =
+        AccountPlans(head, lookup?.billing(head.key)).coversEveryAccount()
 }

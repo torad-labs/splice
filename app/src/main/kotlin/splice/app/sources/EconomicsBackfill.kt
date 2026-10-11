@@ -29,7 +29,9 @@ package splice.app.sources
 import splice.core.model.TurnPrice
 import splice.core.perf.KeptHistory
 import splice.core.util.WallClock
+import splice.head.usage.AccountOnPlan
 import splice.head.usage.EconomicsBucket
+import splice.head.usage.NoPlans
 import kotlin.time.Duration.Companion.hours
 
 private val BACKFILL_HOUR_MS = 1.hours.inWholeMilliseconds
@@ -40,8 +42,9 @@ internal class EconomicsBackfill(
     private val price: TurnPrice,
     private val kept: KeptHistory,
     private val clock: WallClock,
+    plans: AccountOnPlan = NoPlans,
 ) {
-    private val rows = EconomicsFromRows(price)
+    private val rows = EconomicsFromRows(price, plans)
     private val refusal = PerfRefusal(perf.files)
 
     /** The earliest cutoff a pass has already covered, or null when none has. A moment and not a

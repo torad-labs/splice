@@ -50,6 +50,7 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.TrustedRoot
+import splice.sessions.teams.Team
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.ModelMove
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
@@ -233,7 +234,10 @@ public class SessionsRoutes(
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
         resumable.mark(this, s.sessionId)
         repoOf(s)?.let { put("repo", repoJson(it)) }
-        put("team", s.sessionId?.let { teamOf(it) })
+        val bound = s.sessionId?.let { teamOf(it) }
+        put("team", bound?.id)
+        // the card names the team a person reads, never its id: `team` stays the id other readers join on
+        put("team_name", bound?.name)
         rowFacts.write(s, this)
         val id = s.sessionId
         addEdgeState(this)
@@ -273,8 +277,8 @@ public class SessionsRoutes(
         return transcripts.sentTexts(session, roots.treesFor(head), ids)
     }
 
-    private fun teamOf(session: String): String? =
-        teams()?.bindingsOf(session)?.firstOrNull { (team, _) -> !team.archived }?.first?.id
+    private fun teamOf(session: String): Team? =
+        teams()?.bindingsOf(session)?.firstOrNull { (team, _) -> !team.archived }?.first
 
     private fun repoJson(repo: RepoRoot) = buildJsonObject {
         put("root", repo.root)

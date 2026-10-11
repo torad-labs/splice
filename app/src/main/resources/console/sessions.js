@@ -88,7 +88,7 @@ function sessionOf(row) {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
     model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
-    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
+    team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
   };

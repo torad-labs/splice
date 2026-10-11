@@ -293,7 +293,7 @@ class ProjectsRoutesTest {
     fun `a session bound in several teams reports the earliest created, ties broken by id, not file order`() {
         val slot = """{"id":"b1","role":"builder","head":"codex","session":"$BUILDER"}"""
         val team = { id: String, created: Int ->
-            """{"id":"$id","name":"$id","created_epoch_millis":$created,"slots":[$slot]}"""
+            """{"id":"$id","name":"atlas $id","created_epoch_millis":$created,"slots":[$slot]}"""
         }
         Files.createDirectories(tmp.resolve("state"))
         Files.writeString(
@@ -309,6 +309,8 @@ class ProjectsRoutesTest {
         )
         val row = rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER)
         assertEquals("team-0", row.getValue("team").jsonPrimitive.content)
+        // the card names the team he reads, never its id (Marlin, move check: a bound session showed no team at all)
+        assertEquals("atlas team-0", row.getValue("team_name").jsonPrimitive.content)
     }
 
     @Test

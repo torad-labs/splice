@@ -75,10 +75,20 @@ internal class RegistryArrival(
 /** The two waits a session's move makes (Continue on, SessionContinue), read off the same registry: that its old
  *  client exited, and that it registered again on the command it moved to. */
 internal class RegistryHandover(private val sessions: SessionSource?, private val waiter: Waiter) : SessionHandover {
+    /** Claude Code's own words for a turn in flight. */
+    private val running = setOf("working", "busy")
+
+    /** Claude Code drops its registry file before its process is gone, and a resume typed in that gap lands in the
+     *  dying client's terminal and is lost, so the process itself has to have ended too. */
     override suspend fun left(session: String, pid: Long, seconds: Long): Boolean = within(seconds) {
-        sessions?.read().orEmpty().none {
+        val ended = ProcessHandle.of(pid).map { !it.isAlive }.orElse(true)
+        ended && sessions?.read().orEmpty().none {
             it.sessionId == session && it.process.pid == pid && it.availability != SessionAvailability.GONE
         }
+    }
+
+    override suspend fun stopped(session: String, seconds: Long): Boolean = within(seconds) {
+        sessions?.read().orEmpty().none { it.sessionId == session && it.status.state in running }
     }
 
     override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean = within(seconds) {

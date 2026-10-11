@@ -14,7 +14,9 @@
 // client already exited opens a new one too.
 //
 // WHAT IS REFUSED. A session waiting on an answer: `/exit` would land in the question. One already on that command.
-// One splice cannot reach (the refusals SessionDrive gives). A working turn is stopped first, as Stop would.
+// One splice cannot reach (the refusals SessionDrive gives). One whose prompt holds words he has not sent: `/exit`
+// would be sent with them. A working turn is stopped first, as Stop would, and once it has stopped the prompt is
+// emptied, because Claude Code puts the stopped message back in it and that message is already in the transcript.
 // The route waits for the client to exit and for the session to register on the new command, and answers:
 //   200  it runs on the new command: its id, the command, and what a person types to sit in front of it.
 //   400  no command named.   404  no such session.   409  refused, and why.
@@ -40,6 +42,9 @@ import java.nio.file.Path
 // why: Claude Code's /exit flushes and quits within a second or two; past this the client is holding on something
 // the person has to see, and nothing is started on top of it.
 private const val EXIT_SECONDS = 15L
+
+// why: a stopped turn settles within a second; past this it is still running and nothing is typed over it.
+private const val STOP_SECONDS = 10L
 private const val EXIT_COMMAND = "/exit"
 private const val MOVE_CLOSED = "its terminal is closed, so there is no client to move"
 private const val MOVE_NOT_OURS =
@@ -49,6 +54,9 @@ private const val MOVE_NOT_OURS =
 public interface SessionHandover {
     /** Whether process [pid] no longer runs [session] within [seconds]. */
     public suspend fun left(session: String, pid: Long, seconds: Long): Boolean
+
+    /** Whether [session] has no turn running within [seconds]. */
+    public suspend fun stopped(session: String, seconds: Long): Boolean
 
     /** Whether [session] runs on [head] within [seconds]. */
     public suspend fun cameOn(session: String, head: String, seconds: Long): Boolean
@@ -144,18 +152,32 @@ public class SessionContinue(
 
     /** End the client in [pane] with its own exit, and resume once it has gone. */
     private suspend fun handOver(driving: SessionDriver, pane: SessionPane, pid: Long, move: Move): JsonReply {
-        val failure = Cancellables.runCatchingCleanup {
-            if (move.working) driving.terminal.press(pane, SessionKey.STOP)
-            driving.terminal.send(pane, EXIT_COMMAND)
-        }.exceptionOrNull()
+        if (!move.working) drive.drafted(move.session)?.let { return it }
+        val failure = if (move.working) stopTurn(driving, pane, move) else null
+        if (failure != null) return failure
+        val sent = Cancellables.runCatchingCleanup { driving.terminal.send(pane, EXIT_COMMAND) }.exceptionOrNull()
         return when {
-            failure != null -> refusedByTerminal(failure)
+            sent != null -> refusedByTerminal(sent)
             !handover.left(move.session, pid, EXIT_SECONDS) -> Refusals.reply(
                 HttpStatusCode.GatewayTimeout,
                 "its client did not exit within ${EXIT_SECONDS}s, so nothing was started on ${move.head}",
             )
             else -> resume(driving, pane, move)
         }
+    }
+
+    /** Stop the turn in flight and empty the prompt the stopped message came back to; null once both are done. */
+    private suspend fun stopTurn(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply? {
+        Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }
+            .exceptionOrNull()?.let { return refusedByTerminal(it) }
+        if (!handover.stopped(move.session, STOP_SECONDS)) {
+            return Refusals.reply(
+                HttpStatusCode.GatewayTimeout,
+                "its turn did not stop within ${STOP_SECONDS}s, so nothing was started on ${move.head}",
+            )
+        }
+        return Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.CLEAR) }
+            .exceptionOrNull()?.let(::refusedByTerminal)
     }
 
     /** The resume where the person is: his own shell when one is left in front, else a new terminal. */

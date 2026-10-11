@@ -87,7 +87,7 @@ internal class SessionsWiring(
         TerminalSource { ports.sessionDriver },
         launched = LaunchedTerminals { id ->
             sessions?.read()
-                ?.firstOrNull { it.sessionId == id && it.availability == SessionAvailability.LIVE }
+                ?.firstOrNull { it.sessionId == id && it.availability != SessionAvailability.GONE }
                 ?.process?.pid
                 ?.let { pid ->
                     launchOwners.read(pid)?.takeIf { it.kind == "session" }?.terminal

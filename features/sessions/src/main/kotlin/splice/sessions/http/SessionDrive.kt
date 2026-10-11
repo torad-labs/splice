@@ -82,8 +82,8 @@ public class SessionDrive(
     }
 
     /** The refusal a message meets when the session's prompt already holds words, carrying them; null when it is empty
-     *  or splice cannot reach or read it, which the act itself then answers for. */
-    private fun drafted(session: String): JsonReply? {
+     *  or splice cannot reach or read it, which the act itself then answers for. SessionContinue asks it before `/exit`. */
+    internal fun drafted(session: String): JsonReply? {
         val driving = driver() ?: return null
         val pane = locate(driving, session, SAY_NOT_OURS, "").pane?.takeIf(driving.terminal::isOpen) ?: return null
         val draft = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).draft }.getOrDefault("")

@@ -50,7 +50,8 @@ internal class SessionsMount(
         drive = wiring.drive,
         commands = HeadStartCommands(heads),
         handover = RegistryHandover(sessions, ProcessWaiter()),
-        registry = sessions,
+        // the listing Sessions draws, so a session Claude Code forgot on a clean exit still moves from its Ended card
+        registry = wiring.listed,
         home = UserHome.dir(),
     )
 

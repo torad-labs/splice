@@ -23,7 +23,8 @@ import java.util.concurrent.TimeUnit
 private const val ARRIVAL_POLL_MS = 250L
 
 /** The command a head's member starts under: the head's own wrapper command, which must be linked where
- *  `splice install` puts it — a recipe naming a command that does not run is the refusal ResumeRecipeRoute
+ *  `splice install` puts it, and is run by that path: a terminal resolves a bare name on its own server's PATH, which
+ *  can find another wrapper of the same name or none, so it runs exactly the one checked here — a recipe naming a command that does not run is the refusal ResumeRecipeRoute
  *  already gives (409 with the fix), and a start gets the same sentence rather than a terminal that exits. */
 internal class HeadStartCommands(
     private val heads: Map<String, ManagedHead>,
@@ -37,7 +38,7 @@ internal class HeadStartCommands(
                 StartCommand.Refused("no launchable head is keyed '$head'")
             !Files.isSymbolicLink(installPaths.binDir.resolve(command)) ->
                 StartCommand.Refused("The $command command is not linked; run splice install $head.")
-            else -> StartCommand.Ready(listOf(command))
+            else -> StartCommand.Ready(listOf(installPaths.binDir.resolve(command).toString()))
         }
     }
 }

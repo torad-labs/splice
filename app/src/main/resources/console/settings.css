@@ -76,7 +76,7 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 
 /* ---------- Your data: one row per thing splice saves ---------- */
 .dlist { display: flex; flex-direction: column; }
-.drow { display: grid; grid-template-columns: minmax(15rem, 1.6fr) minmax(8rem, 1fr) minmax(9rem, 1fr) 11rem 17.5rem; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
+.drow { display: grid; grid-template-columns: minmax(15rem, 1.6fr) minmax(8rem, 1fr) minmax(9rem, 1fr) 12.5rem 17.5rem; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
 .drow.dhead { padding: 0 0 .8rem; border-top: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .drow.lit { box-shadow: inset .3rem 0 0 var(--key-light); padding-left: 1.1rem; margin-left: -1.1rem; }
 .dname { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
@@ -87,7 +87,7 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 .amt .none { color: var(--text-mute); }
 .keep { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
 .keep .pickbtn { min-width: 10rem; }
-.count { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem 0; font: 500 .98rem/1 var(--font-data); color: var(--text-body); background: none; border: 0; }
+.count { display: inline-flex; align-items: center; white-space: nowrap; gap: .45rem; padding: .3rem 0; font: 500 .98rem/1 var(--font-data); color: var(--text-body); background: none; border: 0; }
 button.count { cursor: pointer; }
 button.count:hover { color: var(--text); }
 .count svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }

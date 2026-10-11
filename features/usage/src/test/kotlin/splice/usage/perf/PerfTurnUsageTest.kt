@@ -429,6 +429,18 @@ class PerfTurnUsageTest {
     }
 
     @Test
+    fun `a caller that asks for no usage gets the same count and rows without the usage block`() = testApplication {
+        mount(priced + failure + local)
+        val query = "/api/perf/turns?head=synthetic&since=1000&until=4000&n=1&local=0&outcome=failed"
+        val with = head(client.get(query).bodyAsText())
+        val without = head(client.get("$query&usage=0").bodyAsText())
+        assertTrue(with.containsKey("usage"))
+        assertTrue(!without.containsKey("usage"))
+        assertEquals(with.getValue("count"), without.getValue("count"))
+        assertEquals(with.getValue("rows"), without.getValue("rows"))
+    }
+
+    @Test
     fun `session models keep the latest ordinary request rather than a compactor or short tag`() = testApplication {
         val ordinary = priced.first().copy(ts = 1_500, facts = priced.first().facts.copy(model = "earlier"))
         val compact = priced.last().copy(ts = 2_000, facts = priced.last().facts.copy(model = "m", compact = true))

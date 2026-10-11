@@ -275,7 +275,7 @@ async function countWeek(head, why, from) {
   const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
   if (why === "waited") { if (!Number.isFinite(tier)) return { head, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
   const exact = !ROW_CHECK[why];
-  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(from), time_zone: ZONE, n: String(exact ? 1 : MAX_ROWS), local: "0", ...ask })}`);
+  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(from), time_zone: ZONE, n: String(exact ? 1 : MAX_ROWS), local: "0", usage: "0", ...ask })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
   if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
   const rows = exact ? (answer.rows || []) : (answer.rows || []).filter((r) => ROW_CHECK[why](r, tier));
@@ -287,7 +287,7 @@ async function countWeek(head, why, from) {
  *  end minus its time, plus its wait in line) to its end. A read at the cap is not a read of the whole day, so it
  *  claims no peak. */
 async function readPeak(head) {
-  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: String(MAX_ROWS), local: "0" })}`);
+  const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: String(MAX_ROWS), local: "0", usage: "0" })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
   if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
   const rows = answer.rows || [];

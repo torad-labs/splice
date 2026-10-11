@@ -62,7 +62,13 @@ private const val MAX_TURNS = 2_000
 /** The window one request asks for, after validation. A named pair and not a `Pair<Long, Int>`: the
  *  two are read straight into a cutoff and a clamp, and a positional swap of same-shaped values is the
  *  defect the row's own named-argument rule exists for. */
-private data class AskedWindow(val since: Long, val n: Int, val filter: TurnsFilter, val zone: ZoneId)
+private data class AskedWindow(
+    val since: Long,
+    val n: Int,
+    val filter: TurnsFilter,
+    val zone: ZoneId,
+    val usage: Boolean = true,
+)
 
 public class PerfRoutes(
     private val heads: UsageHeadLookup,
@@ -157,7 +163,15 @@ public class PerfRoutes(
         val read = readFilter(call.request.queryParameters)
         val filter = (read as? TurnsFilterRead.Read)?.filter
         val asked = rowsAsked(nText)?.let { n ->
-            filter?.let { AskedWindow(since = since, n = n, filter = it, zone = zone) }
+            filter?.let {
+                AskedWindow(
+                    since = since,
+                    n = n,
+                    filter = it,
+                    zone = zone,
+                    usage = call.request.queryParameters["usage"] != "0",
+                )
+            }
         }
         if (asked == null) refuse(call, refusal(nText, read), HttpStatusCode.BadRequest)
         return asked
@@ -213,7 +227,11 @@ public class PerfRoutes(
             put("oldest_held_ts", read.oldestHeldTs)
             read.readError?.let { put("read_error", it) }
             if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
-            put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
+            // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only
+            // `count` and `rows` (Settings asks about a hundred such counts) must not pay for figures it drops.
+            if (asked.usage) {
+                put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
+            }
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
         }
     }

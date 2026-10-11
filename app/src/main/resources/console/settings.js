@@ -309,17 +309,27 @@ const weekTotal = (why) => { const per = ui.week[why]; return per && per.every((
 const doorTo = (url, what, tail, chip) => `<a class="door" href="${url}">${SV.open}<span>${what}</span>${tail}${chip ? cmdChip(chip) : ""}<em>Open it</em></a>`;
 const clockOf = (ts) => clock(new Date(ts));
 const msLong = (ms) => (ms >= MIN ? `${Math.floor(ms / MIN)} min${ms % MIN ? ` ${Math.round((ms % MIN) / SEC)} s` : ""}` : `${Math.round(ms / SEC)} s`);
-/** One figure: how many, opening them all on Requests, then each command's share; a count splice could not read says so. */
-function figHtml({ why, what, door, cmds = true }) {
-  if (weekReading(why)) return `<div class="fig3 none"><span class="big">…</span><span class="what">${esc(what)}</span><span class="state">Reading</span></div>`;
+/** One figure: how many, opening them all on Requests, then each command's share. A figure he can open is a tile; a zero, or a
+ *  count splice could not read, is a quiet line beside the tiles, never a tile of its own (fin, Oct 11). */
+function figParts({ why, what, door, cmds = true }) {
+  if (weekReading(why)) return { tile: `<div class="fig3 none"><span class="big">…</span><span class="what">${esc(what)}</span><span class="state">Reading</span></div>` };
   const per = ui.week[why] ?? [], total = weekTotal(why), from = why === "overloaded" || why === "cutoff" || why === "queued" ? { from: String(startOfToday()) } : { win: "7d" };
-  if (total === null) return `<div class="fig3 none"><span class="big">?</span><span class="what">${esc(what)}</span><span class="state limit">${esc(per.find((p) => p.err)?.err ?? "splice did not answer")}</span></div>`;
-  if (!total) return `<div class="fig3 none"><span class="big">0</span><span class="what">${esc(what)}</span></div>`;
+  if (total === null) {
+    console.warn(`${what}: ${per.find((p) => p.err)?.err ?? "splice did not answer"}`);
+    return { line: `<span class="fig"><span class="state limit">Not read</span> ${esc(what)}</span>` };
+  }
+  if (!total) return { line: `<span class="fig"><b>0</b> ${esc(what)}</span>` };
   const ask = why === "failed" ? { outcome: "fail" } : { why };
   const shares = per.filter((p) => p.n).sort((a, b) => b.n - a.n);
-  return `<div class="fig3"><a class="lead" href="${reqUrl({ ...from, ...ask })}"><span class="big">${fmt(total)}</span><span class="what">${esc(what)}</span><em>${SV.open}Open on Requests</em></a>`
+  return { tile: `<div class="fig3"><a class="lead" href="${reqUrl({ ...from, ...ask })}"><span class="big">${fmt(total)}</span><span class="what">${esc(what)}</span><em>${SV.open}Open on Requests</em></a>`
     + (cmds ? `<div class="cdoors">${shares.map((p) => `<a class="cdoor" href="${reqUrl({ ...from, ...ask, cmd: p.head.command })}">${cmdChip(p.head.key)}<b>${fmt(p.n)}</b></a>`).join("")}</div>` : "")
-    + (door ? door(shares) : "") + `</div>`;
+    + (door ? door(shares) : "") + `</div>` };
+}
+/** The figures of one group: the tiles he can open, then one quiet line holding the zeros. */
+function figsHtml(figs) {
+  const parts = figs.map(figParts), lines = parts.filter((p) => p.line).map((p) => p.line);
+  return `<div class="figs3">${parts.filter((p) => p.tile).map((p) => p.tile).join("")}</div>`
+    + (lines.length ? `<div class="zeros">${lines.join('<span class="dot">·</span>')}</div>` : "");
 }
 const latestDoor = (shares) => {
   const best = shares.filter((p) => p.newest).sort((a, b) => b.newest.ts - a.newest.ts)[0];
@@ -329,7 +339,7 @@ const longestDoor = (shares) => {
   const best = shares.filter((p) => p.longest).sort((a, b) => b.silence - a.silence)[0];
   return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.longest))}`, "Longest silence", `<b>${msLong(best.silence)}</b>`, best.head.key) : "";
 };
-const groupHtml = (label, figs) => `<div class="fgroup"><span class="glabel">${label}</span><div class="figs3">${figs.map(figHtml).join("")}</div></div>`;
+const groupHtml = (label, figs) => `<div class="fgroup"><span class="glabel">${label}</span>${figsHtml(figs)}</div>`;
 const tallyHtml = (title, groups) => `<section class="tally"><h3>${title}</h3><div class="fgroups">${groups.join("")}</div></section>`;
 const silentHtml = () => tallyHtml("This week", [
   groupHtml("Ended early", [
@@ -360,7 +370,7 @@ function peaksHtml() {
   const doors = rows.filter((p) => p.queued).length;
   return `<section class="tally"><h3>Today</h3><div class="card peaks">${doors > 1 ? `<header><a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued" })}">${SV.open}<span>Waited in line</span><b>${fmt(waited)}</b><em>Open on Requests</em></a></header>` : ""}${rows.map(row).join("")}</div></section>`;
 }
-const busyHtml = () => `<section class="tally"><h3>Providers</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}${figHtml({ why: "cutoff", what: "Cut off today" })}`
+const busyHtml = () => `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "cutoff", what: "Cut off today" }])}`
   + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`
   + peaksHtml()
   + `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`

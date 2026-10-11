@@ -192,6 +192,10 @@ button.count:hover { color: var(--text); }
 .fig3 em { display: inline-flex; align-items: center; gap: .4rem; font: 500 1rem/1 var(--font-name); font-style: normal; color: var(--text-body); }
 .fig3 em svg { width: 1.05rem; height: 1.05rem; }
 .fig3.none { border-style: dashed; }
+/* a zero, or a count splice could not read: one quiet line under the tiles, never a tile (fin) */
+.figs3:empty { display: none; }
+.zeros { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; margin-top: 1rem; }
+.zeros .dot { color: var(--text-mute); }
 .fig3.none .big, .fig3.none .what { color: var(--text-mute); }
 
 /* groups of figures under one heading, each with its label */

@@ -271,8 +271,6 @@ const MAX_ROWS = 2000; // PerfRoutes.kt MAX_TURNS
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
 const reqUrl = (f) => `requests.html?${new URLSearchParams(f)}`;
 const rowId = (head, row) => `${head}:${row.turn || row.turn_id || row.ts}`;
-/** The words whose test of a row the daemon applies itself, over every row of the window (TurnsTest.kt). */
-const ROW_TEST = { gaveup: "gaveup", overloaded: "overloaded", cutoff: "cutoff", waited: "waited", silentresume: "silent", silentover: "silent" };
 /** One figure's question of the daemon: the filter its word means and its floor in time. The daemon counts; no row is sent back
  *  but the newest, so a busy command's figure is its true count and never the size of a read. */
 function askWeek(head, why, from) {

@@ -235,6 +235,10 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD) {
       if (tier != null && !Number.isFinite(tier)) continue;
       p.set(key, tier != null ? String(Math.round(tier)) : value);
     }
+    // the words the daemon tests itself are listed by that test, so the list holds exactly what a Settings tile counted
+    if (ROW_TEST[ui.why]) p.set("test", ROW_TEST[ui.why]);
+    // a named stretch begins at the daemon too, or a cap on the newest rows would cut the stretch's start off
+    if (ui.from) p.set("from", String(+ui.from + 1));
   }
   return `/api/perf/turns?${p}`;
 }
@@ -444,7 +448,7 @@ function searched() {
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
 const narrow = (rows) => rows.filter((r) => (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
-  && (!ui.why || WHY[ui.why].has(r)));
+  && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
 
 // AN EMPTY WINDOW WHOSE OLDER ROWS MATCH says how many and widens in one tap, for every door and filter (Marlin, after

@@ -156,6 +156,10 @@ const WHY_ASKS = {
   startedover: { started_over: "1" }, silentover: { started_over: "1" },
 };
 
+// The words whose test of a row the DAEMON applies, over every row of the window (TurnsTest.kt): Settings counts with it and
+// Requests lists with it, so a tile and the list its door opens hold the same requests however busy the command is.
+const ROW_TEST = { gaveup: "gaveup", overloaded: "overloaded", cutoff: "cutoff", waited: "waited", silentresume: "silent", silentover: "silent" };
+
 /** The silence tier splice acts on mid-answer for one command: its own value where it holds one, the daemon's
  *  otherwise. Infinity is a tier nobody answered, which draws no band and asks for no floor. [cfg] is GET /api/config. */
 const idleTierOf = (cfg, headKey) => {

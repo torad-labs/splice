@@ -215,7 +215,8 @@ const KNOBS = (() => {
     const body = answer.body ?? {};
     const refused = body.rejected?.[key];
     if (!answer.ok || refused || !(body.applied && key in body.applied)) {
-      st.bad[id] = refused ? `Not saved: ${refused}` : "Not saved";
+      if (refused || !answer.ok) console.warn(`${key}: ${refused ?? "no answer"}`);
+      st.bad[id] = "Not saved";
       delete st.said[id];
       return { bad: true, reason: refused };
     }

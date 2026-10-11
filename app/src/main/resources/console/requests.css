@@ -32,11 +32,9 @@
 .fmenu .sname { flex: 1; }
 .fmenu .aname { display: flex; flex-direction: column; gap: .35rem; white-space: nowrap; }  /* an account, with its provider under it */
 .fmenu .aprov { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
-/* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED, above the rows it is missing from, in the daemon's own words. One
-   command that cannot answer is not an empty day. */
-.list-err { margin: 0 0 1rem 0; padding: .7rem .9rem; border: var(--ink-w) solid var(--limit); border-radius: .4rem; background: var(--obj); }
-.list-err p { margin: 0; font: 500 .98rem/1.45 var(--font-data); color: var(--text-body); }
-.list-err p + p { margin-top: .35rem; }
+/* A READ THAT REFUSED SAYS SO WHERE IT HAPPENED: the command and one word, above the rows it is missing from, or under
+   the rows for a search; the reason goes to the browser's log (fin). One command that cannot answer is not an empty day. */
+.list > :not(.list-wait) + .list-wait { margin-top: 1rem; }
 .list-wait { display: flex; align-items: center; gap: .6rem; margin: 0 0 1rem 0; font: 500 .98rem/1.45 var(--font-data); color: var(--text-mute); }
 .list-wait .wait { --c: var(--text-mute); width: 1.1rem; height: 1.1rem; }
 .list-wait.unread { color: var(--limit); }

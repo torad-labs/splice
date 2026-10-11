@@ -150,7 +150,8 @@ async function readStanding() {
   const [heads, models, sessions, keys, topology] = await Promise.all([
     API.get("/api/heads"), API.get("/api/models"), API.get("/api/sessions"), API.get("/api/keys"), API.get("/api/topology"),
   ]);
-  state.error = heads.ok ? null : refusalOf(heads, "The commands could not be read");
+  state.error = heads.ok ? null : LIST_NOT_READ;
+  if (!heads.ok) console.warn(`commands: ${refusalOf(heads, "no answer")}`);
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
   // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called:
   // his own model servers and the tunnel to a rented GPU both answer at 127.0.0.1 (splice.toml base_url), and both
@@ -163,7 +164,8 @@ async function readStanding() {
   }
   // A session's name is its own page's to read. When that read refuses, the rows still list by the id splice recorded
   // and the refusal is said, because every row reading "Session 8cb8a71d" is not a day without names.
-  state.sessionsError = sessions.ok ? null : refusalOf(sessions, "The session names could not be read");
+  state.sessionsError = sessions.ok ? null : LIST_NOT_READ;
+  if (!sessions.ok) console.warn(`session names: ${refusalOf(sessions, "no answer")}`);
   state.sessions = {};
   for (const s of sessions.body?.sessions || []) {
     if (!s.session_id) continue;
@@ -249,7 +251,7 @@ function askedHeads() {
 /** A command whose read failed is named with one word on the list, never splice's prose: the reason goes to the
  *  browser's log, as every source string does (fin). Partly read when some rows came back, so Not read is never said
  *  over rows on screen. */
-const LIST_NOT_READ = "Not read", LIST_PARTLY_READ = "Partly read";
+const LIST_NOT_READ = "Not read", LIST_PARTLY_READ = "Partly read", LIST_NOT_SEARCHED = "Not searched";
 function unreadable(errors, head, word, why) {
   console.warn(`${head.command}: ${why}`);
   errors.push({ cmd: head.command, word });
@@ -365,7 +367,7 @@ async function readSearch() {
   let backTo = null, stopped = null;
   heads.forEach((head, i) => {
     const res = reads[i];
-    if (!res.ok) { errors.push(refusalOf(res, `${head.command}\u2019s prompts and answers could not be searched`)); return; }
+    if (!res.ok) return unreadable(errors, head, LIST_NOT_SEARCHED, refusalOf(res, "no answer"));
     for (const hit of res.body?.hits || []) hits.push(mapHit(head, hit));
     // a head that stopped early sets the floor; one that read all it keeps reaches nothing older and sets none
     if (res.body?.stopped_on) {
@@ -526,14 +528,16 @@ function searchFoot() {
 }
 function listHtml() {
   const rows = filtered().slice().sort((a, b) => +b.ts - +a.ts);
-  const errs = (state.search?.errors || []).concat(state.sessionsError ? [state.sessionsError] : []);
   // a command splice is still reading is not trouble: a quiet line, gone once its rows join (asked again shortly)
   const wait = (state.pending || []).map((cmd) => `<p class="list-wait">${ICON.wait}${esc(cmd)} \u00b7 Reading</p>`).join("");
-  const unread = state.headErrors.map((e) => `<p class="list-wait unread">${esc(e.cmd)} \u00b7 ${e.word}</p>`).join("");
-  const trouble = wait + unread + (errs.length ? `<div class="list-err">${errs.map((e) => `<p>${esc(e)}</p>`).join("")}</div>` : "");
+  const said = (list) => list.map((e) => `<p class="list-wait unread">${esc(e.cmd)} \u00b7 ${e.word}</p>`).join("");
+  const names = state.sessionsError ? [{ cmd: "Session names", word: state.sessionsError }] : [];
+  const trouble = wait + said(state.headErrors.concat(names));
+  // a command whose search failed sits under the rows the others found (fin)
+  const unsearched = said(state.search?.errors || []);
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
-  if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${searchFoot()}</div>`;
+  if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${unsearched}${searchFoot()}</div>`;
   if (!rows.length) {
     const w = state.wider, widen = w ? `<button class="act" data-act="widen" data-v="${w.win}">${n0(w.n)}${w.floor ? "+" : ""} in the last ${WINDOWS[w.win][0]}</button>` : "";
     return `<div class="list">${trouble}<div class="nomatch"><span class="state">${anyFilter() ? "No match" : "No requests"}</span>${widen}${anyFilter() ? `<button class="act quiet" data-act="clearall">Clear</button>` : ""}</div></div>`;
@@ -547,7 +551,7 @@ function listHtml() {
   }
   const more = rows.length > shown.length ? `<div class="more"><span class="count">${n0(shown.length)} of ${n0(rows.length)}</span><button class="act quiet" data-act="more">Show ${n0(Math.min(200, rows.length - shown.length))} more</button></div>`
     : "";
-  return `<div class="list">${trouble}${items.join("")}${more}${heldFoot()}${searchFoot()}</div>`;
+  return `<div class="list">${trouble}${items.join("")}${more}${unsearched}${heldFoot()}${searchFoot()}</div>`;
 }
 const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui.repo || ui.from || ui.why || ui.compact || ui.outcome !== "all" || ui.q);
 
@@ -620,7 +624,12 @@ async function startSaving(head) {
   state.saving[head] = { word: "Saving" };
   render();
   const res = await API.put(`/api/heads/${encodeURIComponent(head)}/capture`, { enabled: true });
-  if (!res.ok) { state.saving[head] = { word: refusalOf(res, "Saving could not be started"), failed: true }; render(); return; }
+  if (!res.ok) {
+    console.warn(`${head} saving: ${refusalOf(res, "no answer")}`);
+    state.saving[head] = { word: "Not applied", failed: true };
+    render();
+    return;
+  }
   state.capture[head] = { ...state.capture[head], on: true };
   if (res.body?.restart_required) { delete state.saving[head]; console.warn("capture switch answered restart_required", head, res.body); render(); return; }
   // Settings' word for a change the daemon took live (knobs.js), so the same fact reads the same on both pages

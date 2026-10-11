@@ -159,7 +159,8 @@ public class McpHost(
     /** Idle reaping; public so tests drive it with a fake clock instead of waiting a minute. */
     public fun sweep() {
         val now = config.clock.millis()
-        val limit = config.idleTimeout.inWholeMilliseconds
+        // ONE reading for this sweep, so every server in it is judged against the same window.
+        val limit = config.idleTimeout().inWholeMilliseconds
         // The registry checks liveness and unbinds under the same lock used to acquire request leases.
         servers.sweep(now, limit)
     }

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
@@ -63,6 +64,82 @@ class McpHostLifecycleTest : McpHostFixture() {
                 "the raised budget let the same host wait out the same child",
             )
         }
+
+    @Test
+    fun `an idle window shortened while the host runs reaps on the next sweep what the old one kept`() =
+        runBlocking {
+            // mcpIdleTimeoutMs is live, so the sweep asks for the window rather than the one it was built with.
+            boot(idleTimeout = 30.minutes)
+            val session = init()
+            call(session, 1, "echo", "x")
+            clock.now += 10.minutes.inWholeMilliseconds
+            host.sweep()
+            assertTrue(hosted("fake"), "ten minutes idle is inside a thirty minute window")
+
+            idleBudget = 5.minutes
+
+            host.sweep()
+            assertFalse(hosted("fake"), "the shortened window reaps on the very next sweep")
+        }
+
+    @Test
+    fun `a ceiling raised while the host runs keeps the server the old one would have evicted`() = runBlocking {
+        // mcpMaxServers is live, read once per spawn attempt, so the raise governs the next attempt.
+        boot(maxServers = 1)
+        init("fake")
+        serverCeiling = 2
+        init("fake2")
+        assertTrue(hosted("fake"), "the raised ceiling left room, so nothing was evicted for the newcomer")
+        assertTrue(hosted("fake2"))
+    }
+
+    @Test
+    fun `a capacity refusal names the ceiling that refused it, not the one the host was built with`(
+        @TempDir dir: Path,
+    ) = runBlocking {
+        // The reading is taken once per attempt and carried into the eviction path, so these two refusals
+        // name different numbers: a second reading could print a ceiling that never applied to the caller.
+        boot(maxServers = 1)
+        val a = init("fake")
+        val held = dir.resolve("fake-is-busy")
+        val busy = async(Dispatchers.IO) { call(a, 8, "hold", held.toString()) }
+        awaitFile(held)
+        val atOne = host.post("fake2", null, MCP_HOST_INIT)
+        assertEquals(503, atOne.status)
+        assertTrue(atOne.body!!.contains("1 servers"), "the refusal must name the ceiling in force: ${atOne.body}")
+
+        serverCeiling = 2
+        val b = init("fake2")
+        val alsoHeld = dir.resolve("fake2-is-busy")
+        val busy2 = async(Dispatchers.IO) { call(b, 9, "hold", alsoHeld.toString(), name = "fake2") }
+        awaitFile(alsoHeld)
+        val atTwo = host.post("fake3", null, MCP_HOST_INIT)
+        assertEquals(503, atTwo.status)
+        assertTrue(atTwo.body!!.contains("2 servers"), "the refusal must name the raised ceiling: ${atTwo.body}")
+
+        host.post("fake", a, FakeMcpServer.RELEASE)
+        host.post("fake2", b, FakeMcpServer.RELEASE)
+        assertTrue(text(busy.await()).contains("echo="))
+        assertTrue(text(busy2.await()).contains("echo="))
+    }
+
+    @Test
+    fun `a handshake budget raised while the host runs starts the child the old one gave up on`() = runBlocking {
+        // mcpInitializeTimeoutMs is live. A zero budget gives up before the child can answer, with no sleep
+        // anywhere in the test, and the raise is what lets the very next attempt complete the handshake.
+        boot(initializeTimeout = Duration.ZERO)
+        val refused = host.post("fake", null, MCP_HOST_INIT)
+        assertTrue(
+            refused.body!!.contains("did not complete the MCP handshake"),
+            "a zero budget cannot admit any handshake: ${refused.body}",
+        )
+        assertFalse(hosted("fake"))
+
+        handshakeBudget = 1.minutes
+
+        val session = init()
+        assertTrue(text(call(session, 1, "echo", "ok")).endsWith("echo=ok"), "the raised budget seated the child")
+    }
 
     @Test
     fun `a streamless active operation survives idle sweep and refuses capacity eviction`(@TempDir dir: Path) =

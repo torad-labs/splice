@@ -20,12 +20,15 @@ package splice.core.config
 // firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
 // through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
 // sleep and deadline check). Away from the turn: quotaPollIntervalMs (QuotaIntervalMs, per wait between two looks at
-// an account's usage endpoint), mcpRequestTimeoutMs (McpRequestBudget, per forwarded request, and the only one of
-// the four MCP host knobs that is live), transcriptView (SessionTranscriptViewEnabled, per console route)
+// an account's usage endpoint), all four MCP host knobs — mcpRequestTimeoutMs (McpRequestBudget, per forwarded
+// request), mcpIdleTimeoutMs (McpIdleBudget, per idle sweep), mcpMaxServers (McpServerCeiling, once per spawn
+// attempt and carried into the refusal so the ceiling named is the ceiling that refused) and
+// mcpInitializeTimeoutMs (McpHandshakeBudget, per child handshake) — transcriptView
+// (SessionTranscriptViewEnabled, per console route)
 // and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Two more are live
 // WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
-// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is eighteen, which is every knob
+// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is twenty-one, which is every knob
 // here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
 // agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
@@ -380,22 +383,21 @@ public enum class Knob(
     ),
 
     // ── shared MCP hosting (v0.4.0, FEATURES.md §8) ────────────────────────────────────────────
-    // One McpHost serves every head; these four shape its lifecycle. Daemon-global, read once at
-    // ControlPlane.start — a per-head override is meaningless but harmless. The [daemon] spellings
-    // (mcp_idle_timeout_ms etc.) are the same knob under DaemonConfig's @SerialName transliteration.
+    // One McpHost serves every head; these four shape its lifecycle. Daemon-global, and since Oct 10 all
+    // four are read LIVE through a reader on McpHostConfig rather than once at ControlPlane.start — a
+    // per-head override is still meaningless but harmless. The [daemon] spellings (mcp_idle_timeout_ms
+    // etc.) are the same knob under DaemonConfig's @SerialName transliteration.
     MCP_IDLE_TIMEOUT_MS(
         "mcpIdleTimeoutMs",
         KnobKind.NUMBER,
         listOf("SPLICE_MCP_IDLE_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(1_800_000L),
-        restartRequired = true,
     ),
     MCP_MAX_SERVERS(
         "mcpMaxServers",
         KnobKind.NUMBER,
         listOf("SPLICE_MCP_MAX_SERVERS"),
         typedDefault = KnobDefault.Count(32L),
-        restartRequired = true,
     ),
     MCP_REQUEST_TIMEOUT_MS(
         "mcpRequestTimeoutMs",
@@ -408,7 +410,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_MCP_INITIALIZE_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(60_000L),
-        restartRequired = true,
     ),
 
     // ── request materialization (v0.4.0) ───────────────────────────────────────────────────────

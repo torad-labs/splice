@@ -20,7 +20,7 @@ class HostedServersTest {
     ).jsonObject
 
     private fun registry(): HostedServers {
-        val config = McpHostConfig(maxServers = 1)
+        val config = McpHostConfig(maxServers = { 1 })
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "K" }, DirectoryProbe { false })
         return HostedServers(
             sharing,

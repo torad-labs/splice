@@ -87,12 +87,24 @@ abstract class McpHostFixture {
         }
     }
 
-    /** The host's per-request budget, which [boot] sets and a test may MOVE while the host runs, the way an
-     *  operator's PATCH of mcpRequestTimeoutMs does: the host asks for it at every forwarded request. */
+    /** The host's four lifecycle values, which [boot] sets and a test may MOVE while the host runs, the way an
+     *  operator's PATCH of each knob does: the host asks for every one of them at its own enforcement point —
+     *  a forwarded request, an idle sweep, a spawn attempt, a child's handshake. */
     protected var requestBudget: Duration = 20.seconds
+    protected var idleBudget: Duration = 30.minutes
+    protected var handshakeBudget: Duration = 1.minutes
+    protected var serverCeiling: Int = 32
 
-    protected fun boot(maxServers: Int = 32, requestTimeout: Duration = 20.seconds): McpHost {
+    protected fun boot(
+        maxServers: Int = 32,
+        requestTimeout: Duration = 20.seconds,
+        idleTimeout: Duration = 30.minutes,
+        initializeTimeout: Duration = 1.minutes,
+    ): McpHost {
         requestBudget = requestTimeout
+        idleBudget = idleTimeout
+        handshakeBudget = initializeTimeout
+        serverCeiling = maxServers
         val global = buildJsonObject {
             put("fake", FakeMcpServer.entry())
             put("alias", FakeMcpServer.entry())
@@ -105,9 +117,10 @@ abstract class McpHostFixture {
             sharing,
             { global },
             McpHostConfig(
-                idleTimeout = 30.minutes,
-                maxServers = maxServers,
+                idleTimeout = { idleBudget },
+                maxServers = { serverCeiling },
                 requestTimeout = { requestBudget },
+                initializeTimeout = { handshakeBudget },
                 clock = clock,
             ),
             log = LogSink { line ->

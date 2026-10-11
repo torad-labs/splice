@@ -249,6 +249,29 @@ DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's 
 second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""
 
+# ── 3 names, () -> Duration ───────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Duration"
+dated = "2026-10-10"
+names = [
+    "McpHandshakeBudget",
+    "McpIdleBudget",
+    "McpRequestBudget",
+]
+reason = """THREE BUDGETS ON ONE HOST, and the whole group was born on Oct 10 when the MCP host's \
+lifecycle values stopped being numbers: each is read at its OWN enforcement point off the operator's config as \
+it stands then, so a PATCH moves the next one without a daemon restart. They are not interchangeable and the \
+compiler cannot tell them apart. McpRequestBudget bounds how long ONE FORWARDED REQUEST may wait for a child's \
+answer (30 min by default, because a long tool call is a legitimate request). McpHandshakeBudget bounds how long \
+a STARTING CHILD may take to answer initialize (1 min, because a server that cannot handshake in a minute is not \
+hostable). McpIdleBudget is not a bound on an operation at all: it is how long a server with no stream and no \
+request is KEPT before the sweep closes it (30 min). Swap the request budget and the handshake budget and every \
+tool call dies after a minute while a hung child is waited on for half an hour; wire the idle budget where either \
+belongs and a request waits as long as an unused server is kept, which is the same number by default and so \
+would pass every test that does not move one of them. That default coincidence is exactly why the disposition is \
+written: they agree today and mean different things. A fourth name on this shape that is not one host's budget \
+needs its own sentence here before it compiles into the tree."""
+
 # ── 10 names, () -> String ────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->String"
@@ -324,18 +347,19 @@ names = [
 ]
 reason = """Four generic suspend producers whose contracts are about DUPLICATION and OWNERSHIP, which a type parameter cannot say. CoalescedWork "runs EXACTLY ONCE per wave however many callers pile up and however many of them are cancelled mid-wait", in a scope SingleFlight owns rather than any caller's — so it must not close over one caller's cancellation or deadline. CredentialRefresh is "the whole indivisible unit" run under the credential-file lock, where anything split out leaves the race open, and it may deliberately run WITHOUT the lock once the bounded wait expires (SH-06: bounded beats hung). MaterializedRequest produces the turn's request body under the materialization gate and must NOT hold its lease across the upstream call, or it starves every other head; its `T : Any` bound makes null mean CONTENTION and nothing else. TimedWork is the body TurnPerf wraps to measure, charged to its counter even when it throws, and deliberately not inlined. Collapsing any two would make "run this at most once" and "run this and time it" the same seam."""
 
-# ── 5 names, () -> Int ────────────────────────────────────────────────────────────────────────────
+# ── 6 names, () -> Int ────────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Int"
 dated = "2026-09-17"
 names = [
     "FailedHeads",
     "LiveLimit",
+    "McpServerCeiling",
     "OpenSockets",
     "RequestByteCap",
     "RetentionDays",
 ]
-reason = """Two GAUGES and a CAP, and InflightGate's own KDoc draws the line: LiveLimit is "a concurrency limit READ FRESH at every admission decision, never captured at construction" — the freshness is why kotlinx Semaphore is banned there, since a live PATCH of maxInflight must change the next admission without a head restart — and it is "distinct from a GAUGE (ControlServer.failedHeads), which is also `() -> Int` but reports what IS rather than bounding what may happen next". FailedHeads is that gauge, counting heads that failed to start, which the control plane turns into `ok:false`. OpenSockets counts live WS sockets on the responses path. A gauge wired where the limit was expected admits traffic against the current occupancy, so the gate stops gating — and both are non-negative Ints, so nothing complains. RetentionDays (Oct 10) is a fourth role: the days of history the operator chose (historyRetentionDays), read fresh so a live change moves the trace window on the next day asked. It counts days to keep, not live things. RequestByteCap (Oct 10) is a fifth role and the second cap: the largest request BODY the gateway will decode, in bytes, read fresh at every request by the head path and by the ingress guard in front of it — two layers, one knob, which is why its type sits in core rather than beside either enforcer. It bounds ONE request's size where LiveLimit bounds HOW MANY requests run at once, so swapping them would cap a body at the inflight ceiling and admit as many concurrent turns as a body has bytes, and neither is a gauge of what is happening now. RequestByteCap and RetentionDays are the two a config PATCH changes while the daemon runs."""
+reason = """Two GAUGES and a CAP, and InflightGate's own KDoc draws the line: LiveLimit is "a concurrency limit READ FRESH at every admission decision, never captured at construction" — the freshness is why kotlinx Semaphore is banned there, since a live PATCH of maxInflight must change the next admission without a head restart — and it is "distinct from a GAUGE (ControlServer.failedHeads), which is also `() -> Int` but reports what IS rather than bounding what may happen next". FailedHeads is that gauge, counting heads that failed to start, which the control plane turns into `ok:false`. OpenSockets counts live WS sockets on the responses path. A gauge wired where the limit was expected admits traffic against the current occupancy, so the gate stops gating — and both are non-negative Ints, so nothing complains. RetentionDays (Oct 10) is a fourth role: the days of history the operator chose (historyRetentionDays), read fresh so a live change moves the trace window on the next day asked. It counts days to keep, not live things. RequestByteCap (Oct 10) is a fifth role and the second cap: the largest request BODY the gateway will decode, in bytes, read fresh at every request by the head path and by the ingress guard in front of it — two layers, one knob, which is why its type sits in core rather than beside either enforcer. It bounds ONE request's size where LiveLimit bounds HOW MANY requests run at once, so swapping them would cap a body at the inflight ceiling and admit as many concurrent turns as a body has bytes, and neither is a gauge of what is happening now. McpServerCeiling (Oct 10) is a sixth role and the SECOND concurrency ceiling in the group, which is the dangerous pairing here: LiveLimit bounds how many REQUESTS run at once on one head, McpServerCeiling bounds how many child PROCESSES the shared MCP host owns at once (32 by default, past which the longest-idle streamless server is evicted). Swapped, splice would cap hosted children at the inflight ceiling and admit as many concurrent turns as there are hosted servers, and both are small non-negative Ints so nothing would complain until a user noticed their turns queueing behind a process count. It is also read ONCE per spawn attempt and carried into the eviction path, because the refusal names the ceiling and a second reading could print a number that never applied. RequestByteCap, RetentionDays, LiveLimit and McpServerCeiling are the four a config PATCH changes while the daemon runs; the two gauges answer to nothing but what is running."""
 
 # ── 2 names, (Path) -> Long ───────────────────────────────────────────────────────────────────────
 [[groups]]

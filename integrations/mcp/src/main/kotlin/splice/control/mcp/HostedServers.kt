@@ -87,7 +87,10 @@ internal class HostedServers(
 
     /** A new server for [id], evicting one first at capacity. Caller holds [lock]. */
     private fun register(id: McpIdentity, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
-        if (servers.size >= config.maxServers) evictOne(closing)?.let { return it }
+        // ONE reading for this attempt, carried into the refusal: a raise between the comparison and the
+        // message would have the operator read a ceiling that never applied to them (McpServerCeiling).
+        val ceiling = config.maxServers()
+        if (servers.size >= ceiling) evictOne(closing, ceiling)?.let { return it }
         val sink = object : NotificationSink {
             override fun onNotification(msg: JsonObject) {
                 namesOf(id).forEach { alias -> sessions.fanOut(alias, codec.encode(msg)) }
@@ -157,13 +160,14 @@ internal class HostedServers(
         }
     }
 
-    /** Null once a victim is gone; the refusal when every server is reserved or streaming. */
-    private fun evictOne(closing: Closing): McpResult.Refused? {
+    /** Null once a victim is gone; the refusal when every server is reserved or streaming. [ceiling] is the
+     *  caller's one reading of [McpServerCeiling], so the number in the refusal is the one that refused. */
+    private fun evictOne(closing: Closing, ceiling: Int): McpResult.Refused? {
         val victim = servers.keys
             .filterNot { id -> (reserved[id] ?: 0) > 0 || namesOf(id).any(sessions::streaming) }
             .minByOrNull { id -> namesOf(id).maxOfOrNull(sessions::lastActivity) ?: 0L }
             ?: return McpResult.Refused(
-                "MCP host at capacity (${config.maxServers} servers, all streaming or starting)",
+                "MCP host at capacity ($ceiling servers, all streaming or starting)",
             )
         val last = namesOf(victim).maxOfOrNull(sessions::lastActivity) ?: 0L
         val idle = (config.clock.millis() - last) / MILLIS_PER_MINUTE

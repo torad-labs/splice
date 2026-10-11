@@ -207,7 +207,8 @@ internal class HostedServer(
         val slot = Pending("host", JsonPrimitive(hostId))
         pending[hostId] = slot
         send(codec.initializeRequest(hostId))
-        val answer = withTimeoutOrNull(config.initializeTimeout) { slot.answer.await() }
+        // ONE reading for this handshake: the budget it waits under is the budget it began under.
+        val answer = withTimeoutOrNull(config.initializeTimeout()) { slot.answer.await() }
         if (answer == null) {
             pending.remove(hostId)
             tearDown("no initialize answer")

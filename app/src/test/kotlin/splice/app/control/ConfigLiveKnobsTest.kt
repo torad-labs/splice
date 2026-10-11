@@ -188,9 +188,29 @@ class ConfigLiveKnobsTest {
         val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
         assertFalse("mcpRequestTimeoutMs" in restartOnly, "a live knob is not listed as restart-only")
         // Daemon-global, so the hosted MCP server asks the same unkeyed config at every forwarded request
-        // (McpRequestBudget) — the other three MCP host values stay the numbers the host was built with.
+        // (McpRequestBudget).
         assertEquals(60_000L, config.getConfig().asMap()[Knob.MCP_REQUEST_TIMEOUT_MS.key] as? Long)
     }
+
+    @Test
+    fun `the MCP host's lifecycle knobs are live, so no restart is named and the host reads them`() =
+        runBlocking<Unit> {
+            val answer = json.parseToJsonElement(
+                patch("""{"mcpIdleTimeoutMs":120000,"mcpMaxServers":4,"mcpInitializeTimeoutMs":5000}"""),
+            ).jsonObject
+
+            assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+            val view = json.parseToJsonElement(read()).jsonObject
+            val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+            val keys = listOf(Knob.MCP_IDLE_TIMEOUT_MS, Knob.MCP_MAX_SERVERS, Knob.MCP_INITIALIZE_TIMEOUT_MS)
+            keys.forEach { assertFalse(it.key in restartOnly, "${it.key} is live, so it is not restart-only") }
+            // All four MCP host values are readers over this one unkeyed config: the idle sweep, spawn admission
+            // and a child's handshake each ask it again (McpIdleBudget, McpServerCeiling, McpHandshakeBudget).
+            val effective = config.getConfig().asMap()
+            assertEquals(120_000L, effective[Knob.MCP_IDLE_TIMEOUT_MS.key] as? Long)
+            assertEquals(4L, effective[Knob.MCP_MAX_SERVERS.key] as? Long)
+            assertEquals(5_000L, effective[Knob.MCP_INITIALIZE_TIMEOUT_MS.key] as? Long)
+        }
 
     @Test
     fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {

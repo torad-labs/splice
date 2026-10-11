@@ -22,6 +22,8 @@
 #                adds one, the real Claude Code through it in print mode (V4-232).
 #   --client-model ID  the runtime row's client_model (default claude-sonnet-4-6, what setup writes);
 #                `none` writes the row as setup wrote it before V4-232.
+#   --scenario no-node  run tools/e2e/docker/no-node.sh on a machine with Java and a natively installed Claude Code and no
+#                Node anywhere: install.sh, `splice add codex`, claudex, four sessions, doctor, and curl missing.
 #   --keep       keep the artifacts scratch dir and print its path
 #   --no-build   reuse the image if it exists (skips docker build); the in-image version check still
 #                fails if that image does not match Versions.kt's tested Claude Code pin.
@@ -113,7 +115,8 @@ if [ -n "$SCENARIO_NAME" ]; then
   case "$SCENARIO_NAME" in
     plan-limit) SCENARIO="plan-limit.sh"; RECEIPT_NAME="plan-limit" ;;
     runtime-head) SCENARIO="runtime-head.sh"; RECEIPT_NAME="runtime-head" ;;
-    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit, runtime-head)" >&2; exit 2 ;;
+    no-node) SCENARIO="no-node.sh"; RECEIPT_NAME="no-node"; IMAGE="splice-e2e-nonode:local"; IMAGE_TARGET="nonode" ;;
+    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit, runtime-head, no-node)" >&2; exit 2 ;;
   esac
   [ -z "$PLAN_RESET_S" ] || MODE_ARGS+=(-e "PLAN_RESET_S=$PLAN_RESET_S")
   [ -z "$PROBE_MESSAGE" ] || MODE_ARGS+=(-e "PLAN_PROBE_MESSAGE=$PROBE_MESSAGE")

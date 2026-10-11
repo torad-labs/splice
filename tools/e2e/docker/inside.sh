@@ -38,7 +38,7 @@ doctor_prereqs() {
   local out bin
   out="$(splice doctor 2>&1 | strip_ansi)"
   printf '%s\n' "$out"
-  for bin in java claude node curl bash; do
+  for bin in java claude curl bash; do
     grep -qE "^\s*✓\s+$bin\b" <<<"$out" || { echo "prerequisite $bin is not ✓"; return 1; }
   done
   [ "$(grep -v '^splice doctor' <<<"$out" | grep -c '✗')" = 0 ]

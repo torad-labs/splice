@@ -56,3 +56,28 @@ FROM fresh AS upgrade
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 USER tester
+
+# A machine with NO Node anywhere: what the no-node scenario proves a new user can install splice on. The prerequisite
+# set is Java, curl, bash and a NATIVELY installed Claude Code (the installer at claude.ai ships its own runtime). Bun
+# is here only to run the test's mock upstreams and probes; it is not on a user's machine and the scenario says so.
+FROM eclipse-temurin:21-jre-noble AS nonode
+ARG CLAUDE_CODE_VERSION=2.1.296
+ARG BUN_VERSION=1.4.2
+ARG BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
+ARG UID=1000
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl bash iproute2 procps unzip \
+ && curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" -o /tmp/bun.zip \
+ && echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - \
+ && unzip -p /tmp/bun.zip bun-linux-x64/bun > /usr/local/bin/bun \
+ && chmod 0755 /usr/local/bin/bun \
+ && rm /tmp/bun.zip \
+ && rm -rf /var/lib/apt/lists/*
+RUN (userdel -r ubuntu 2>/dev/null || true) && useradd -m -u "${UID}" -s /bin/bash tester \
+ && mkdir -p /out && chown tester:tester /out
+USER tester
+WORKDIR /home/tester
+ENV HOME=/home/tester
+ENV PATH="/home/tester/.local/bin:${PATH}"
+# Claude Code's native installer, pinned to the tested version.
+RUN curl -fsSL https://claude.ai/install.sh | bash -s "${CLAUDE_CODE_VERSION}"

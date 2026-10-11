@@ -145,7 +145,7 @@ client_version_receipt() {
 # step() runs its command in a command substitution (a subshell), so the mocks report through
 # files — pid + the one JSON line each prints — and the MAIN shell reads the ports back.
 start_mocks() {
-  nohup node "$REPO/tools/e2e/docker/mock_codex.mjs" "$REPO" 0 > "$OUT/mock_codex.out" 2> "$OUT/mock_codex.err" &
+  nohup bun "$REPO/tools/e2e/docker/mock_codex.mjs" "$REPO" 0 > "$OUT/mock_codex.out" 2> "$OUT/mock_codex.err" &
   echo $! > "$OUT/mock_codex.pid"
   MOCK_CHAT_HOLD_S=45 nohup bun "$REPO/tools/e2e/docker/mock_chat.ts" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
   echo $! > "$OUT/mock_chat.pid"

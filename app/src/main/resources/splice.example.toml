@@ -562,7 +562,7 @@ context_window = 272000
 command = "claudex"
 [heads.claudex.overrides]
 maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
-# progressLine (bool, default true, restart) is the other knob worth knowing on THIS head. A wire
+# progressLine (bool, default true, HOT) is the other knob worth knowing on THIS head. A wire
 # that has gone quiet for 30s carries a short line from splice saying how long the turn has been
 # running and whether the model has produced anything yet — the codex rows reason for minutes with
 # nothing on the wire, and a blank spinner cannot be told from a hung session. Set it to "false" to
@@ -784,7 +784,7 @@ command = "claude-splice"
 #
 # chatgptApiBase = "https://chatgpt.com/backend-api/codex"  # base URL of the ChatGPT/Codex backend
 # codexAuthPath = "~/.codex/auth.json"                      # where the Codex OAuth credential file lives
-# progressLine = "true"                                     # bool; splice's own status line on a quiet wire
+# progressLine = "true"                                     # bool; splice's own status line on a quiet wire (HOT, per heartbeat)
 # foldReasoningModels = "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5" # comma-separated upstream ids eligible to fold
 # foldMaxContinue = "3"                                     # rounds; max hidden continuation rounds per fold
 # foldMarkerText = "Continue thinking..."                   # the marker instruction that continues a cut turn

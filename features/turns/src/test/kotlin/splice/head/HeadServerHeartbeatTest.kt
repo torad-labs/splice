@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.config.ProgressLineOn
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -55,6 +56,9 @@ class HeadServerHeartbeatTest {
     private val gate = InflightGate({ 0 })
     private val lines = CopyOnWriteArrayList<String>()
     private val ticks = Channel<Unit>(Channel.UNLIMITED)
+
+    @Volatile
+    private var statusLineOn = true
     private lateinit var head: HeadServer
 
     @BeforeAll
@@ -81,6 +85,7 @@ class HeadServerHeartbeatTest {
                 upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
                 gate = gate,
                 log = { lines += it },
+                policy = HeadDeps.HeadPolicy(progressLine = ProgressLineOn { statusLineOn }),
                 // 15 silent ticks = one heartbeat. The TEST supplies the ticks (V4-139): the pinger is
                 // the ticker's only consumer (ClientChannel.launchClientPinger), so each tick sent is
                 // one cadence step, with no wall-clock pacing at all.
@@ -197,5 +202,37 @@ class HeadServerHeartbeatTest {
             contentOut <= 12,
             "and none of them may be counted as the model reaching the client: $perf",
         )
+    }
+
+    @Test
+    fun `the status line follows the knob while the turn waits, with no restart`() = runBlocking {
+        mock.resetHold()
+        statusLineOn = false
+        val socket = Socket("127.0.0.1", port)
+        val request = "POST /v1/messages HTTP/1.1\r\n" +
+            "Host: 127.0.0.1:$port\r\n" +
+            "Authorization: Bearer test-inference-token\r\n" +
+            "Content-Type: application/json\r\n" +
+            "Content-Length: ${body.toByteArray().size}\r\n" +
+            "Connection: close\r\n\r\n" + body
+        socket.getOutputStream().write(request.toByteArray())
+        socket.getOutputStream().flush()
+        val received = StringBuilder()
+        drain(socket.getInputStream(), received)
+        fun text() = synchronized(received) { received.toString() }
+        assertTrue(waitFor(15_000) { text().contains("event: content_block_delta") }, "first delta: ${text()}")
+        repeat(SILENT_TICKS_SENT) { ticks.trySend(Unit) }
+        assertTrue(waitFor(10_000) { pingFrame.findAll(text()).count() >= 3 }, "pings while off: ${text()}")
+        assertTrue("[splice]" !in text(), "the line is off, so the silent wire carries pings only: ${text()}")
+        // The operator turns it on while this very turn is still parked; the next heartbeat obeys.
+        statusLineOn = true
+        repeat(SILENT_TICKS_SENT) { ticks.trySend(Unit) }
+        assertTrue(
+            waitFor(10_000) { "[splice] holding this turn open." in text() },
+            "turned on mid-turn, the line must reach this turn: ${text()}",
+        )
+        mock.releaseHold()
+        assertTrue(waitFor(15_000) { text().contains("event: message_stop") }, "ends cleanly: ${text()}")
+        socket.close()
     }
 }

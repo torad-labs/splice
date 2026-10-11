@@ -25,6 +25,12 @@ public fun interface RequestByteCap {
     public operator fun invoke(): Int
 }
 
+/** Whether the status line rides the heartbeat of a quiet turn (knob `progressLine`), ASKED FOR AT EVERY HEARTBEAT: an
+ *  operator who turns the line off while a turn is waiting stops it on the next tick instead of at the next restart. */
+public fun interface ProgressLineOn {
+    public operator fun invoke(): Boolean
+}
+
 /** Typed view over the merged+normalized map. */
 public class SpliceConfig internal constructor(
     private val m: Map<String, Any?>,

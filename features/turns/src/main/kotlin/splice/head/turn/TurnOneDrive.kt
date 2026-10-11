@@ -87,7 +87,7 @@ internal class TurnOneDrive(
                         // it off — the status line that makes the wait visible instead of blank.
                         heartbeat = Heartbeat {
                             drive.emitter.heartbeat()
-                            if (deps.policy.progressLine) {
+                            if (deps.policy.progressLine()) {
                                 // Composed only if the emitter actually writes it: a line built for
                                 // a dropped write spends the intro and the clock reading with it.
                                 drive.emitter.progress { fresh ->

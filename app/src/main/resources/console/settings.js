@@ -11,6 +11,7 @@ const SV = {
   open: G('<path d="M7 17L17 7M9 7h8v8"/>'),
   busy: G('<path d="M4 6h16M4 12h16M4 18h9"/><circle cx="18" cy="18" r="1.6"/>'),
   silent: G('<circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2M9 3h6"/>'),
+  reasoning: G('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.4 1 2.5h6c0-1.1.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>'),
   plan: G('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
   mcp: G('<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0z"/><path d="M12 17v4"/>'),
   data: G('<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>'),
@@ -20,11 +21,12 @@ const DAY = 864e5;
 
 // ---------- the jobs ----------
 // Only the jobs people come to it with (Marlin, Oct 10): a job draws the settings the daemon takes live, in knobs.js's
-// order, and a job none of whose settings is live is not on the rail until one is (Reasoning, today). The names are the
+// order, and a job none of whose settings is live is not on the rail until one is. The names are the
 // mock's, with no description line under them (fin).
 const TOPICS = [
   { id: "silent", name: "Silent models", also: "stall stuck wedged hang quiet resume timeout" },
   { id: "busy", name: "Many agents at once", keys: ["maxInflight", "maxQueued"], also: "overloaded busy queue waiting 429 failed errors retry" },
+  { id: "reasoning", name: "Reasoning", also: "thinking summary show hide progress line replay" },
   { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
   { id: "mcp", name: "MCP servers", also: "tools servers model context protocol" },
   { id: "data", name: "Your data", also: "privacy prompts saved keep delete disk history logs" },
@@ -187,6 +189,7 @@ const PANES = {
   busy: () => `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
     + (keysOf("busy", ["maxInflight", "maxQueued"]).length ? `<section class="sub">${form(keysOf("busy", ["maxInflight", "maxQueued"]))}</section>` : ""),
   silent: () => `<section class="sub">${form(keysOf("silent"))}</section>`,
+  reasoning: () => `<section class="sub">${form(keysOf("reasoning"))}</section>`,
   plan: () => `<section class="sub">${form(keysOf("plan"))}</section>`,
   mcp: () => `<section class="sub">${form(keysOf("mcp"))}</section>`,
   data: dataHtml,
@@ -195,6 +198,7 @@ const PANES = {
 // ---------- the rail ----------
 function summary(id) {
   if (id === "silent") return [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`];
+  if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];

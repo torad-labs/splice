@@ -134,7 +134,7 @@ StopControl kills the process \
 where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
 middle of a turn. These need MORE naming than a shared shape, not less."""
 
-# ── 16 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 17 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
 dated = "2026-09-27"
@@ -148,6 +148,7 @@ names = [
     "DaemonSuccessor",
     "DaemonSupervised",
     "KeyPresenceProbe",
+    "ProgressLineOn",
     "SessionTranscriptViewEnabled",
     "StderrEcho",
     "TerminalSeen",
@@ -185,7 +186,10 @@ re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a f
 shared BooleanSupplier would make every one of those substitutions compile. ConfigRepair (2026-10-10) offers the \
 fix session for a splice.toml boot refuses and answers whether every finding was fixed: its true lets `splice \
 restart` read the file again and go on to stop and start a daemon, so wired where a probe is wanted it would \
-restart on a read, and a probe wired here would restart on a file still broken."""
+restart on a read, and a probe wired here would restart on a file still broken. \
+ProgressLineOn (2026-10-10) asks, at every heartbeat of a quiet turn, whether splice may write its own status line \
+to the client; it says nothing about the client being gone or the transcript being viewable, and swapped with either it \
+would write the line to a hung-up socket or hide the wait from a user who left it on."""
 
 # ── 11 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]

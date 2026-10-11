@@ -48,11 +48,11 @@ const KNOBS = (() => {
     K("usageWarnTokens5h", "5-hour limit if none is reported", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0, { home: "plan", also: "warning" }),
     K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", opts: [["warn", "Warns"], ["block", "Blocks"]] }, "warn", { home: "plan", also: "spend money" }),
     K("effort", "Reasoning effort", { k: "pick", opts: [[null, "Model's own"], ["minimal", "Minimal"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"]] }, null),
-    K("summary", "Reasoning summaries", { k: "pick", opts: [["detailed", "Detailed"], ["concise", "Concise"], ["auto", "Auto"]] }, "detailed"),
-    K("showReasoning", "Show reasoning in Claude Code", { k: "pick", opts: [["text", "As text"], ["thinking", "As thinking"], ["off", "Off"]] }, "text", { also: "display" }),
-    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, false),
-    K("progressLine", "Progress line while it thinks", { k: "flag" }, true),
-    K("foldMaxContinue", "Keep thinking at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3, { also: "continue" }),
+    K("summary", "Reasoning summaries", { k: "pick", opts: [["detailed", "Detailed"], ["concise", "Concise"], ["auto", "Auto"]] }, "detailed", { home: "reasoning", also: "thinking summary" }),
+    K("showReasoning", "Show reasoning in Claude Code", { k: "pick", opts: [["text", "As text"], ["thinking", "As thinking"], ["off", "Off"]] }, "text", { home: "reasoning", also: "display thinking" }),
+    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, false, { home: "reasoning", also: "thinking replay" }),
+    K("progressLine", "Progress line while it thinks", { k: "flag" }, true, { home: "reasoning", also: "waiting status" }),
+    K("foldMaxContinue", "Keep thinking at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3, { home: "reasoning", also: "continue" }),
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
     K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { home: "busy", also: "too large image size 413" }),
     // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)

@@ -9,6 +9,7 @@ package splice.head
 
 import splice.core.budget.HeadBudget
 import splice.core.config.Knob
+import splice.core.config.ProgressLineOn
 import splice.core.config.RequestByteCap
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
@@ -226,7 +227,7 @@ public data class HeadDeps(
         val requestReadTimeoutMs: RequestReadBudgetMs = RequestReadBudgetMs { defaultRequestReadTimeoutMs },
         val stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
         val mirrorReasoning: Boolean = false,
-        val progressLine: Boolean = true,
+        val progressLine: ProgressLineOn = ProgressLineOn { true },
         val forwardClientAuth: Boolean = false,
         /** V4-124: the head layer plus any per-project layers, resolved per turn against the
          *  session's working directory ([SessionSeams.sessionProject]). No projects = the head layer

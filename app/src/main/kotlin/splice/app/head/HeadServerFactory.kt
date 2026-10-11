@@ -113,8 +113,8 @@ internal class HeadServerFactory(
                     ),
                     forwardClientAuth = forwardClientAuth,
                     mirrorReasoning = cfg.mirrorReasoning,
-                    progressLine = cfg.progressLine,
-                    // Both re-read per head at EVERY request, the way the inflight ceiling is: these knobs belong to
+                    progressLine = { config.getConfig(key).progressLine },
+                    // These three are re-read per head at EVERY request or heartbeat, the way the inflight ceiling is: these knobs belong to
                     // the operator, who may widen one for a big or slow request mid-session without a restart.
                     maxRequestBytes = { config.getConfig(key).maxRequestBytes },
                     requestReadTimeoutMs = { config.getConfig(key).requestReadTimeoutMs },

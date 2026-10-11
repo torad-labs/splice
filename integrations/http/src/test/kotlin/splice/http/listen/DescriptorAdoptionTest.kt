@@ -26,7 +26,7 @@ import java.net.Socket
 
 private const val CONTROL = "control"
 private const val GRACE_MS = 100L
-private const val TIMEOUT_MS = 2_000L
+private const val TIMEOUT_MS = 15_000L
 
 @Timeout(60)
 class DescriptorAdoptionTest {

@@ -447,13 +447,13 @@ function summary(id) {
   if (id === "silent") {
     const early = ["restarted", "gaveup"].map(weekTotal), waited = weekTotal("waited");
     return early.includes(null) || waited === null ? [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`]
-      : [`${early[0] + early[1]} ended early this week`, `${waited} waited out`];
+      : [`${fmt(early[0] + early[1])} ended early this week`, `${fmt(waited)} waited out`];
   }
   if (id === "version") return [ui.ver === undefined ? "Reading" : ui.ver ? ui.ver.installed : "Not read"];
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
-  if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${weekTotal("overloaded")} overloaded today`, `${weekTotal("queued")} waited in line`];
+  if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${fmt(weekTotal("overloaded"))} overloaded today`, `${fmt(weekTotal("queued"))} waited in line`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
   if (DATA_ROWS.some(stillReading)) return ["Reading"];
   const h = DATA_ROWS.filter((r) => !(r.noRoute || r.own)).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute || r.own) ? "counted" : "kept"; // a total that leaves a store out says counted

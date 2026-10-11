@@ -160,7 +160,7 @@ async function readStanding() {
   const local = (name) => /^https?:\/\/(127\.0\.0\.1|\[?::1\]?|localhost)\b/.test(bases[name]?.base_url || "");
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = FAMILY[row.provider] ?? (local(row.provider) ? "local" : row.provider);
-    for (const m of row.models || []) if (m.id) state.modelLabel[m.id] = m.label || m.id;
+    learnModels(state.modelLabel, row);
   }
   // A session's name is its own page's to read. When that read refuses, the rows still list by the id splice recorded
   // and the refusal is said, because every row reading "Session 8cb8a71d" is not a day without names.
@@ -272,7 +272,7 @@ async function readRows(held = MAX_HELD) {
     if (answer.truncated) capped = true;
     for (const row of answer.rows || []) rows.push(mapRow(head, row));
     const menus = (window.body?.heads || []).find((x) => x.key === head.key)?.usage;
-    for (const m of menus?.models || []) if (m.key) facets.models.set(m.key, state.modelLabel[m.key] ?? m.key);
+    for (const m of menus?.models || []) if (m.key) facets.models.set(m.key, modelName(state.modelLabel, m.key));
     for (const a of menus?.accounts || []) if (a.key) facets.accounts.set(`${head.key}|${a.key}`, { head, account: a.key });
     for (const s of menus?.sessions || []) if (s.key) facets.sessions.set(s.key, { head, last: s.last_model_ts_epoch_ms });
   });
@@ -311,7 +311,7 @@ function mapRow(head, row) {
     id: `${head.key}:${row.turn || row.turn_id || row.ts}`, head: head.key, cmd: head.command, turn: row.turn ?? null,
     provider: state.providerOf[head.key] ?? null,
     ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null,
-    model: row.model ? state.modelLabel[row.model] ?? row.model : null, modelId: row.model ?? null,
+    model: modelName(state.modelLabel, row.model), modelId: row.model ?? null,
     account: row.account ?? null, compact: row.compact === true,
     attempts: row.attempts ?? 0, retries: row.retries ?? 0,
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
@@ -481,7 +481,7 @@ function filtersHtml() {
   return `<div class="filters">${pickBtn("win", WINDOWS[ui.win][0], false)}`
     + pickBtn("cmd", ui.cmd ? `<i class="blot" style="--c:${colorOf(providerOfCmd(ui.cmd))}"></i>${esc(ui.cmd)}` : "Command", Boolean(ui.cmd))
     + pickBtn("sid", ui.sid ? esc(sessTitle(ui.sid)) : "Session", Boolean(ui.sid))
-    + pickBtn("model", ui.model ? (ui.model === "none" ? "No model" : esc(state.modelLabel[ui.model] ?? ui.model)) : "Model", Boolean(ui.model))
+    + pickBtn("model", ui.model ? (ui.model === "none" ? "No model" : esc(modelName(state.modelLabel, ui.model))) : "Model", Boolean(ui.model))
     + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : (acctNames().get(ui.account) ?? "")) : "Account", Boolean(ui.account))
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
@@ -495,14 +495,19 @@ function rowHtml(r) {
   const lamp = r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : "<i></i>";
   const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : "") + besideOf(r);
   // a figure the provider never reported is left out, never printed as 0
+  // THE TWO FIGURES TRAVEL TOGETHER. In and out are one reading, and a meta line that wraps between them leaves
+  // "4 out" alone under a row whose neighbour kept both ("1.5K out" and "2.2K out", live at 3828 — splice-lead,
+  // Oct 11): the orphan is what reads as sloppy, not the wrap. Held in one group the line can only break BEFORE
+  // the pair, so every row that is too long breaks in the same place and no row loses half a reading.
   const tokens = (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached / r.in >= .5 ? `<em>${Math.round((r.cached / r.in) * 100)}% cached</em>` : ""}</span>` : "")
     + (r.out != null ? `<span class="tok">${kTok(r.out)} out</span>` : "");
+  const toks = tokens ? `<span class="toks">${tokens}</span>` : "";
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span><span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${tokens}</div>${match}</article>`;
+    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and

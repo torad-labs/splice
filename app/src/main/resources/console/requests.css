@@ -68,6 +68,15 @@
   .requests.open .pane { flex: 1 1 0; max-width: 128rem; position: sticky; top: 1.6rem; height: calc(100vh - 17.4rem); overflow: hidden; }
   .requests.open .rqpane .scroll { overflow-y: auto; }
 }
+/* A WIDER SCREEN MUST NOT GIVE THE LIST LESS THAN A NARROW ONE. At 64rem the column is a sixth of a 3828-wide
+   screen while the page keeps tens of rem unused, so his widest screen was the one width where a row's meta line
+   ran out of room and wrapped (splice-lead, Oct 11). The step is where it can be paid for: at 140rem the list
+   takes 72rem and the open request still holds 65rem, more than it has at the breakpoint above. 72rem is what a
+   row needs — a command, a model name, his plan account's whole email address and both token figures on one
+   line — so from here the list is never narrower than it is at 1440, where that line already fits. */
+@container (min-width: 140rem) {
+  .requests .list, .requests.open .list { flex: 0 0 72rem; }
+}
 /* where the open request takes the page, it grows with what it holds and the page scrolls */
 .requests .rqpane { height: auto; overflow: visible; }
 .requests .rqpane .scroll { overflow: visible; }
@@ -90,10 +99,14 @@
 /* NOTHING BREAKS MID-NAME. The meta line wraps where it must, as its row gap is there for; what it must not do is
    break a model name or an account across two lines ("Claude Opus" over "5"), which is what a flex line does to a
    span it is allowed to squeeze. Live, Oct 10: a plan account is his whole email address and a model name is three
-   words, so this line is a few characters over its width on most rows. Each piece stays whole and the line wraps
-   between pieces. A session's name is as long as he made it, so that one ends in an ellipsis rather than pushing
-   the duration and the cost off the row; the open request shows it whole. */
+   words, so this line was a few characters over its width on most rows at the 64rem column — which is why the
+   column is 72rem from 140rem up (above). Each piece stays whole and the line wraps between pieces. A session's
+   name is as long as he made it, so that one ends in an ellipsis rather than pushing the duration and the cost
+   off the row; the open request shows it whole. */
 .rq .meta > * { white-space: nowrap; }
+/* and the two token figures are ONE piece: a line that must wrap breaks before the pair, never between them, so
+   no row is left with "4 out" alone under a neighbour that kept both (requests.js, rowHtml) */
+.rq .meta .toks { display: inline-flex; align-items: center; gap: .45rem 1.1rem; white-space: nowrap; }
 .rq .name { min-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tok { color: var(--text-body); }
 .rq.fail { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }  /* a failure keeps its edge in the limit's colour */

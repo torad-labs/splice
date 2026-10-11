@@ -40,7 +40,7 @@ async function read() {
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = PROVIDER_FAMILY[row.provider] ?? row.provider;
-    for (const m of row.models || []) if (m.id) state.modelLabel[m.id] = m.label || m.id;
+    learnModels(state.modelLabel, row);
   }
   // the turns running now, by session: what Stop ends, and the model a session is on while one runs
   const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
@@ -87,7 +87,7 @@ function sessionOf(row) {
   return {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
-    model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
+    model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
     team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
@@ -321,7 +321,7 @@ function moveExit(m, pressed, exit) {
  *  model, and the time sits under it where a message's does, with what didn't come along beside it (hitstop f38853e). */
 function jointHtml(mv) {
   const chip = (head) => `<span class="chip" style="--c:${colorOf(state.providerOf[head])}">${esc(commandOf(head) ?? head)}</span>`;
-  const model = (id) => (id ? `<span class="model">${esc(state.modelLabel[id] ?? id)}</span>` : "");
+  const model = (id) => (id ? `<span class="model">${esc(modelName(state.modelLabel, id))}</span>` : "");
   const from = mv.from_command ? `<span class="model">from</span>${chip(mv.from_command)}${model(mv.from_model)}` : "";
   const at = [`<time>${clock(new Date(mv.moved_at))}</time>`, mv.thinking_dropped ? "<span>Thinking not carried over</span>" : ""].filter(Boolean).join(" · ");
   return `<div class="jwrap"><div class="joint"><span class="model">Continued on</span>${mv.command ? chip(mv.command) : ""}${model(mv.model)}${from}</div>`

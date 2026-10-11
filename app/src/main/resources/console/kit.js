@@ -35,6 +35,50 @@ const PROVIDER_FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai:
 // A provider splice has no colour for draws in the muted text colour rather than in another provider's.
 const colorOf = (provider) => `var(${COLORS[provider] || "--text-mute"})`;
 
+// ---------- what to call a model ----------
+/** How a request's row spells the model it ran on: the declared id without its trailing tier hint, the
+ *  `[<digits><k|m>]` grammar ModelTierSuffix owns (DR-27). splice sends the stripped id upstream and records
+ *  that, while the picker entry keeps the hint, so "muse-spark-1.3[1m]" serves rows spelled
+ *  "muse-spark-1.3". The catalog already covers both spellings for windows and pricing (Topology.kt:367);
+ *  the labels have to cover both too, or every row of a "[1m]" model reads a raw id beside a sibling that
+ *  reads its name. */
+const modelKey = (id) => String(id ?? "").replace(/\[\d+[km]]$/i, "");
+/** One /api/models head row's labels learned into [into]: each under its own id, and a suffixed id's label
+ *  also under the spelling its rows carry. A declared id's own label always wins over that alias, whichever
+ *  row is read first, and an id with no label is left for [modelName] to spell. */
+function learnModels(into, row) {
+  for (const m of row.models || []) {
+    if (!m.id || !m.label) continue;
+    const key = modelKey(m.id);
+    if (key !== m.id && !(key in into)) into[key] = m.label;
+    into[m.id] = m.label;
+  }
+}
+/** The words these read as themselves rather than as a capitalised word, proved by his own declared labels:
+ *  "GPT-5.6", "GLM-5.3-Flash Uncensored", "Kimi K3 (256k)". */
+const MODEL_WORD = { gpt: "GPT", glm: "GLM", k3: "K3" };
+/** What a model is called: the label its head declares, else the name its own id spells. THE CLIENT PICKS
+ *  MODELS THE CATALOG NEVER DECLARED — Claude Code runs its own small model for titles and summaries — so
+ *  those live in the rows and in no catalog, and "claude-haiku-5-5" sat beside "Claude Sonnet 5.5" in one
+ *  list (splice-lead, Oct 11). Only an id whose shape proves the convention is respelled: lowercase words
+ *  and version numbers between hyphens, which is the spelling every declared Claude label already follows.
+ *  Anything else keeps its own spelling, because a GGUF filename or a vendor-prefixed id has no convention
+ *  to read and a guess at one would misname a real product. */
+function modelName(labels, id) {
+  if (!id) return null;
+  const known = labels[id] ?? labels[modelKey(id)];
+  if (known) return known;
+  const raw = String(id);
+  if (!/^[a-z][a-z\d.]*(-[a-z\d.]+)*$/.test(raw)) return raw;
+  const words = [];
+  for (const part of raw.split("-")) {
+    const last = words.at(-1);
+    if (last && /^[\d.]+$/.test(last) && /^[\d.]+$/.test(part)) words[words.length - 1] = `${last}.${part}`;
+    else words.push(part);
+  }
+  return words.map((w) => MODEL_WORD[w] ?? w[0].toUpperCase() + w.slice(1)).join(" ");
+}
+
 // ---------- fin's words for how a request ended (OutcomeTag.kt's tags) ----------
 // A clean request and a spent window have no word: the window shows its own lock and reset time. A stop is not
 // a failure (isStopped, OutcomeTag.kt:75-76).

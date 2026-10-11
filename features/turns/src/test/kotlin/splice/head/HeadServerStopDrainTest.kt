@@ -17,6 +17,7 @@
 // 45s ladder the turn finishes comfortably inside the drain.
 package splice.head
 
+import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
@@ -57,8 +58,10 @@ import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
@@ -75,12 +78,53 @@ private const val SHORT_DRAIN_MS = 1_500L
 // bound (50 tries) from busy-spinning while still observing a slot promptly.
 private const val INFLIGHT_POLL_MS = 100L
 
+// why 10ms: the paced tail leaves the head within about a second of the slot releasing, so the stop must be
+// issued inside that window and a 100ms poll would spend a tenth of it.
+private const val RELEASE_POLL_MS = 10L
+
+// why 600: a burst this size is paced over the head's whole one-second window, not written in one go.
+private const val BURST_DELTAS = 600
+
 private const val EXPECTED_RESTART_SENTENCE = "Splice restarted while this request was running. Retry the request."
 
 private class DrainFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-drain", "acct-drain")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+/** An upstream that answers every request with one burst of small text deltas and its completion, then ends.
+ *  The head paces a burst out to its client over up to a second, so the client write outlives the turn. */
+private class BurstUpstream : AutoCloseable {
+    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    val asked = AtomicBoolean(false)
+    val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
+
+    init {
+        server.createContext("/") { ex ->
+            ex.requestBody.use { it.readAllBytes() }
+            asked.set(true)
+            ex.sendResponseHeaders(200, 0)
+            ex.responseBody.use { out ->
+                out.write(event("""{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}"""))
+                repeat(BURST_DELTAS) {
+                    out.write(event("""{"type":"response.output_text.delta","output_index":0,"delta":"burst "}"""))
+                }
+                out.write(event("""{"type":"response.output_item.done","output_index":0}"""))
+                out.write(
+                    event(
+                        """{"type":"response.completed","response":{"id":"rburst","status":"completed",""" +
+                            """"output":[],"usage":{"input_tokens":10,"output_tokens":5}}}""",
+                    ),
+                )
+            }
+        }
+        server.start()
+    }
+
+    private fun event(json: String): ByteArray = "data: $json\n\n".toByteArray()
+
+    override fun close() = server.stop(0)
 }
 
 class HeadServerStopDrainTest {
@@ -93,6 +137,7 @@ class HeadServerStopDrainTest {
         watchdog: WatchdogBudget = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
         waiter: Waiter = ProcessWaiter(),
         stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
+        upstreamUrl: String? = null,
     ) {
         val mock = MockChatGptUpstream()
         val cutAt = AtomicLong(0L)
@@ -113,7 +158,7 @@ class HeadServerStopDrainTest {
                     ),
                     pinnedModel = "gpt-5.6-sol",
                     auth = DrainFakeAuth(),
-                    locations = ProviderLocations(baseUrl = mock.baseUrl),
+                    locations = ProviderLocations(baseUrl = upstreamUrl ?: mock.baseUrl),
                     watchdog = watchdog,
                     loginCommand = "claudex login",
                 ),
@@ -155,6 +200,22 @@ class HeadServerStopDrainTest {
                         "messages":[{"role":"user","content":"go"}]}""",
                 )
             }
+
+        suspend fun awaitUpstreamAsked(asked: AtomicBoolean): Boolean {
+            repeat(50) {
+                if (asked.get()) return true
+                delay(INFLIGHT_POLL_MS)
+            }
+            return asked.get()
+        }
+
+        suspend fun awaitReleased(): Boolean {
+            repeat(500) {
+                if (gate.snapshot().inflight == 0) return true
+                delay(RELEASE_POLL_MS)
+            }
+            return gate.snapshot().inflight == 0
+        }
 
         suspend fun awaitInflight(): Boolean {
             repeat(50) {
@@ -261,6 +322,33 @@ class HeadServerStopDrainTest {
             )
         } finally {
             rig.close()
+        }
+    }
+
+    // Regression for "a stop never cuts a response mid-write". The upstream answers with a burst the head
+    // paces out over up to a second, so the gate slot has released while the tail is still being written.
+    // The drain used to wait on the gate alone, so the engine stopped here and cut the client's body.
+    @Test
+    fun `a stop waits for a response still being written after its turn released the gate`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val burst = BurstUpstream()
+        val rig = Rig(tmp, upstreamUrl = burst.baseUrl)
+        rig.start()
+        try {
+            val turn = async(Dispatchers.IO) { rig.heldTurn().bodyAsText() }
+            assertTrue(rig.awaitUpstreamAsked(burst.asked), "precondition: the turn reached the upstream")
+            assertTrue(rig.awaitReleased(), "precondition: the upstream ended and the gate slot released")
+            assertTrue(!turn.isCompleted, "precondition: the client is still being written to")
+
+            rig.head.stop()
+
+            val body = turn.await()
+            assertTrue(body.contains("message_stop"), "the client must get the whole body, tail included")
+            assertTrue(!body.contains("event: error"), "no error may replace the tail")
+        } finally {
+            rig.close()
+            burst.close()
         }
     }
 }

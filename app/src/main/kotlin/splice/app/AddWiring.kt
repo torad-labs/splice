@@ -93,15 +93,15 @@ internal class LinkerInstall(private val install: InstallCommand) : WrapperInsta
 /** Exercises the head's installed command, including client-auth and OAuth launch setup.
  *  Raw child output stays out of the add receipt because it can contain provider or login details. */
 internal class CommandLiveTurn(private val timeoutMs: Long = 120_000L) : AddLiveTurn {
-    override fun invoke(command: String, env: EnvReader): AddLiveResult =
-        check(InstallPaths(envReader = env).binDir.resolve(command))
+    override fun invoke(command: String, model: String, env: EnvReader): AddLiveResult =
+        check(InstallPaths(envReader = env).binDir.resolve(command), model)
 
-    internal fun check(wrapper: Path): AddLiveResult {
+    internal fun check(wrapper: Path, model: String): AddLiveResult {
         // A private file avoids waiting on pipes inherited by background startup children.
         val output = Files.createTempFile("splice-add-check-", ".out")
         var process: Process? = null
         return try {
-            process = ProcessBuilder(arguments(wrapper))
+            process = ProcessBuilder(arguments(wrapper, model))
                 .redirectOutput(output.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start()
             process.outputStream.close()
             val problem = when {
@@ -134,8 +134,8 @@ internal class CommandLiveTurn(private val timeoutMs: Long = 120_000L) : AddLive
         bytes.size <= LIVE_OUTPUT_BYTES && answer.equals("pong", ignoreCase = true)
     }
 
-    private fun arguments(wrapper: Path): List<String> = listOf(
-        wrapper.toString(), "-p", "Reply with the single word pong.",
+    private fun arguments(wrapper: Path, model: String): List<String> = listOf(
+        wrapper.toString(), "--model", model, "-p", "Reply with the single word pong.",
         "--tools", "", "--strict-mcp-config", "--mcp-config", "{}", "--output-format", "text",
         "--no-session-persistence", "--system-prompt", "This is a connection check. Reply only to the prompt.",
     )

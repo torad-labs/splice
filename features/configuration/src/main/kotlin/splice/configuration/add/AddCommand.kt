@@ -126,7 +126,9 @@ internal class AddCommand(
         val result = if (!activated || !linked) {
             AddLiveResult(false, "the saved head needs its command linked and the daemon restarted first")
         } else {
-            Cancellables.runCatchingBestEffort { ports.liveTurn(c.command, env) }.getOrElse { failure ->
+            Cancellables.runCatchingBestEffort {
+                ports.liveTurn(c.command, c.models.first(), env)
+            }.getOrElse { failure ->
                 AddLiveResult(false, "the check could not run: ${SafeFailureText.render(failure)}")
             }
         }

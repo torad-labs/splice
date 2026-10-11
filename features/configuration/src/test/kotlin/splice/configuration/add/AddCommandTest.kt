@@ -82,7 +82,7 @@ class AddCommandTest {
             },
             daemonUp = { daemonUp },
             prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
-            liveTurn = { _, _ -> AddLiveResult(true, "the head answered the check turn") },
+            liveTurn = { _, _, _ -> AddLiveResult(true, "the head answered the check turn") },
             doctor = {
                 doctored += 1
                 true
@@ -425,7 +425,7 @@ class AddLiveCommandTest {
         val events = mutableListOf<String>()
         val models = profile.models.joinToString(",") { """{"id":"${it.id}"}""" }
         val http = AddHttp { _, url, _, _ ->
-            AddHttpReply(200, if (url.endsWith("/models")) """{"data":[$models]}""" else "{}")
+            AddHttpReply(200, if (url.contains("/models")) """{"data":[$models]}""" else "{}")
         }
         val ports = AddPorts(
             login = { _, _, _ -> error("the synthetic credential is already present") },
@@ -436,10 +436,11 @@ class AddLiveCommandTest {
             restart = { events.add("restarted") },
             daemonUp = { true },
             prompt = { question, default -> if (question.startsWith("Run one short live")) "yes" else default },
-            liveTurn = { command, _ ->
+            liveTurn = { command, model, _ ->
                 assertTrue(profile.head.key in TopologyLoader.parse(Files.readString(config)).heads)
                 assertEquals(listOf("linked", "restarted"), events)
                 assertEquals(profile.head.command, command)
+                assertEquals(profile.models.first().id, model, "the live turn names the first model the person chose")
                 events += "checked"
                 if (throws) throw java.io.IOException("synthetic failure")
                 AddLiveResult(false, "the head did not answer before the check's time limit")

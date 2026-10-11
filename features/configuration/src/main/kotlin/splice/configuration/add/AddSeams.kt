@@ -38,9 +38,9 @@ public fun interface DaemonRestart {
 /** The result of checking the newly written command, without exposing its raw output. */
 public data class AddLiveResult(public val ok: Boolean, public val detail: String)
 
-/** One bounded turn through the installed head command, after save and activation. */
+/** One bounded turn through the installed head command, on the first model the person chose, after save and activation. */
 public fun interface AddLiveTurn {
-    public operator fun invoke(command: String, env: EnvReader): AddLiveResult
+    public operator fun invoke(command: String, model: String, env: EnvReader): AddLiveResult
 }
 
 /** Runs the checkup (`splice doctor`) once the head is saved; true when it found nothing to fail. */
@@ -56,7 +56,7 @@ public data class AddPorts(
     public val restart: DaemonRestart,
     public val daemonUp: DaemonUpProbe,
     public val prompt: AddPrompter,
-    public val liveTurn: AddLiveTurn = AddLiveTurn { _, _ ->
+    public val liveTurn: AddLiveTurn = AddLiveTurn { _, _, _ ->
         AddLiveResult(false, "the live checker is not configured; run the head's command to check it")
     },
     public val doctor: AddDoctor = AddDoctor { true },

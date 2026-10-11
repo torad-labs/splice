@@ -47,8 +47,8 @@ public abstract class ResponsesProvider(
     private val toolNames: ToolNameShortener = ToolNameShortener(),
 ) : Provider, ProviderIdentity by tuning {
 
-    final override val showReasoning: ReasoningDisplay = reasoning.display
-    final override val replayReasoning: Boolean = reasoning.replay
+    final override val showReasoning: ReasoningDisplay get() = reasoning.now().display
+    final override val replayReasoning: Boolean get() = reasoning.now().replay
 
     final override val upstreamUrl: String = "${tuning.locations.baseUrl}/responses"
 

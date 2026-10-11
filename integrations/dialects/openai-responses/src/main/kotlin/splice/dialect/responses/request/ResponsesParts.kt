@@ -67,7 +67,7 @@ internal class ResponsesParts(
             continuity = continuity,
             summaryParts = summaryParts,
             turnOptions = turnOptions,
-            carry = RoundCarry(foldConfig = foldConfig, replayReasoning = reasoning.replay),
+            carry = RoundCarry(foldConfig = foldConfig),
             caps = WatchdogCaps(
                 streamIdleMs = tuning.watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMs = tuning.watchdog.totalCap.inWholeMilliseconds,

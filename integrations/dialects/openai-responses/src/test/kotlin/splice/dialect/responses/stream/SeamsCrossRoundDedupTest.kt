@@ -111,7 +111,7 @@ private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
                 continuity,
                 ToolSurfaceLatch(),
             ),
-            carry = RoundCarry(foldConfig = null, replayReasoning = false),
+            carry = RoundCarry(foldConfig = null),
             caps = WatchdogCaps(streamIdleMs = 180_000, upstreamTimeoutMs = 900_000),
             services = TranslatorServices(log = log),
         ),

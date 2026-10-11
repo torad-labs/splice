@@ -47,7 +47,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                     // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
                     // and still display. Fold's own intra-turn reasoning replay is independent of this.
                     emitEncryptedReasoning = EmitEncryptedReasoning(
-                        deps.turnOptions.showOn() && deps.carry.replayReasoning,
+                        deps.turnOptions.emitsHandle(),
                     ),
                     encodeReasoningEnvelope = { ReasoningReplay.encodeReasoningEnvelope(it) },
                     signals = signals,

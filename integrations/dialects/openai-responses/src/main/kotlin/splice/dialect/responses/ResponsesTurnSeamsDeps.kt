@@ -7,10 +7,9 @@ import splice.dialect.responses.stream.ConversationSummaryParts
 import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ToolNameShortener
 
-/** What the seams carry from one round to the next: intra-turn fold, and transcript replay of reasoning. */
+/** What the seams carry from one round to the next: the intra-turn fold. */
 internal data class RoundCarry(
     val foldConfig: FoldConfig?,
-    val replayReasoning: Boolean,
 )
 
 /** The two collaborators the seams hand the stream translator beside its turn context. */

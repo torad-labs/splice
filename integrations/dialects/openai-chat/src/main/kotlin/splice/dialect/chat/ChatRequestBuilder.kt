@@ -7,6 +7,7 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
@@ -14,7 +15,7 @@ import splice.core.wire.AnthropicRequest
 
 public class ChatRequestBuilder(
     private val quirks: ChatQuirks,
-    private val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
+    private val showReasoning: ReasoningDisplayNow = ReasoningDisplayNow { ReasoningDisplay.TEXT },
     /** V4-165: null unless the provider opted into slot_affinity — and then only llama-server reads it. */
     private val affinity: SlotAffinity? = null,
 ) {
@@ -47,7 +48,7 @@ public class ChatRequestBuilder(
         val meta = TurnMeta(
             compact = compact,
             reasoning = TurnReasoning(
-                showReasoning = showReasoning,
+                showReasoning = showReasoning(),
                 effort = effort ?: "n/a",
                 summary = if (effort != null) "detailed" else null,
                 budgetTokens = body.thinking?.budgetTokens,

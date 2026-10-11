@@ -67,7 +67,7 @@ internal class ChatArm(
             // The profile and its TOML overlay live in QuirksOverlay with the other two dialects
             // (DR-155) — this arm's job is auth selection and provider construction.
             quirks = overlay.chatQuirks(providerCfg, key, label),
-            showReasoning = ctx.cfg.showReasoning,
+            display = { ctx.cfg.current().showReasoning },
             affinity = slotAffinity(ctx, (auth as? ApiKeyAuthProvider)?.keyNow()),
         )
         val configured = providerCfg.staticHeaders.takeIf { it.isNotEmpty() }

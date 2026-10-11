@@ -8,6 +8,7 @@ package splice.provider.openai
 import splice.core.parse.AnthropicTurnBody
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.TurnMeta
 import splice.dialect.chat.ChatCompactionTail
 import splice.dialect.chat.ChatQuirks
@@ -28,15 +29,17 @@ import splice.upstream.TurnSignals
 public class OpenAiChatProvider(
     private val tuning: ProviderTuning,
     private val quirks: ChatQuirks,
-    override val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
+    /** Asked at each turn's build, so a PATCH of showReasoning reaches the next turn. */
+    private val display: ReasoningDisplayNow = ReasoningDisplayNow { ReasoningDisplay.TEXT },
     /** V4-165: set only for a provider with slot_affinity (a llama-server runtime). */
     affinity: SlotAffinity? = null,
 ) : Provider, ProviderIdentity by tuning {
 
     override val upstreamUrl: String = "${tuning.locations.baseUrl}/chat/completions"
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
+    override val showReasoning: ReasoningDisplay get() = display()
 
-    private val builder = ChatRequestBuilder(quirks, showReasoning, affinity)
+    private val builder = ChatRequestBuilder(quirks, display, affinity)
     private val compactionTail = ChatCompactionTail()
     private val systemPrompt = ChatSystemPrompt()
 

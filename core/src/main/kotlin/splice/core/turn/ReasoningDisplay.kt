@@ -24,3 +24,9 @@ internal object ReasoningDisplayParser {
         else -> ReasoningDisplay.OFF
     }
 }
+
+/** How reasoning is shown right now (knob `showReasoning`), asked where a turn is built rather than held from boot,
+ *  so a PATCH reaches the next turn of a head that is already running. */
+public fun interface ReasoningDisplayNow {
+    public operator fun invoke(): ReasoningDisplay
+}

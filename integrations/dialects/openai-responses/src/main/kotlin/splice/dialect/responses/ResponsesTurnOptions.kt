@@ -47,7 +47,9 @@ internal class ResponsesTurnOptions(
 ) {
 
     fun build(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuildOptions {
-        val showOn = showOn()
+        // One reading for the whole build: the operator may PATCH these between turns, never inside one.
+        val now = reasoning.now()
+        val showOn = now.visible()
         // CMP-002: a transcript can carry many redacted_thinking blocks (appendRedactedThinking)
         // and many cached tool_use envelopes (appendToolUse's RC-3 lookup), both routed through
         // decodeReasoningEnvelope — logging every drop is transcript-length-proportional,
@@ -63,14 +65,14 @@ internal class ResponsesTurnOptions(
             ),
             reasoning = RequestedReasoning(
                 // Config-driven (TOML [daemon] / env / state); "none" suppresses when display is off.
-                effort = reasoning.effort,
-                summary = reasoning.summaryForRequest(),
-                display = reasoning.display,
+                effort = now.effort,
+                summary = now.summaryForRequest(),
+                display = now.display,
             ),
             handoff = ReasoningHandoff(
                 // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
                 // operator opt-in only; superseded by the gateway-held reasoning cache below.
-                replay = InjectPriorReasoning(reasoning.replay),
+                replay = InjectPriorReasoning(now.replay),
                 // Ask for the opaque encrypted handle whenever reasoning is visible OR the
                 // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
                 // Not a function of `compact`: the request is built like a turn (the builder header).
@@ -106,5 +108,9 @@ internal class ResponsesTurnOptions(
         )
     }
 
-    fun showOn(): Boolean = reasoning.visible()
+    fun showOn(): Boolean = reasoning.now().visible()
+
+    /** Whether the stream hands the client an encrypted reasoning handle to replay: only while reasoning is shown AND
+     *  the operator opted into replay, read together so a PATCH of either reaches the next turn. */
+    fun emitsHandle(): Boolean = reasoning.now().let { it.visible() && it.replay }
 }

@@ -5,7 +5,6 @@ package splice.app.provider
 
 import splice.core.config.StatePaths
 import splice.core.topology.ApiKeyProviderRegistry
-import splice.dialect.responses.ReasoningSettings
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
 import splice.provider.openai.ApiKeyAuthProvider
@@ -56,13 +55,13 @@ internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
         val provider = if (grok) {
             GrokProvider(
                 tuning = tuning,
-                reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
+                reasoning = ReasoningWiring.settingsOf(cfg),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),
             )
         } else {
             OpenAiResponsesProvider(
                 tuning = tuning,
-                reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
+                reasoning = ReasoningWiring.settingsOf(cfg),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, OpenAiQuirks().defaultQuirks(), cfg),
             )
         }

@@ -7,7 +7,6 @@ import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
-import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
@@ -57,12 +56,7 @@ internal class MuseResponsesArm(
                 loginCommand = ctx.faultPlan.loginCommand,
             ),
             options = MuseResponsesOptions(
-                reasoning = ReasoningSettings(
-                    ctx.cfg.showReasoning,
-                    ctx.cfg.replayReasoning,
-                    ctx.cfg.effort,
-                    ctx.cfg.summary,
-                ),
+                reasoning = ReasoningWiring.settingsOf(ctx.cfg),
                 quirks = quirks,
                 headers = headers,
                 toolNames = toolNames,

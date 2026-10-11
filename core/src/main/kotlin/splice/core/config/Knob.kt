@@ -20,7 +20,9 @@ package splice.core.config
 // firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
 // through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
 // sleep and deadline check), upstreamRetries (LiveRetries, once as each request begins, so a request in flight keeps
-// its bound), progressLine (ProgressLineOn, per heartbeat of a quiet turn). Away from the turn: quotaPollIntervalMs
+// its bound), progressLine (ProgressLineOn, per heartbeat of a quiet turn),
+// summary, showReasoning and replayReasoning (LiveReasoning, and ReasoningDisplayNow on a chat head, once as each turn
+// is built; effort is not among them, being part of the prompt-cache key). Away from the turn: quotaPollIntervalMs
 // (QuotaIntervalMs, per wait between two looks at
 // an account's usage endpoint), all four MCP host knobs — mcpRequestTimeoutMs (McpRequestBudget, per forwarded
 // request), mcpIdleTimeoutMs (McpIdleBudget, per idle sweep), mcpMaxServers (McpServerCeiling, once per spawn
@@ -30,7 +32,7 @@ package splice.core.config
 // and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Two more are live
 // WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
-// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is twenty-three, which is every knob
+// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is twenty-six, which is every knob
 // here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
 // agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
@@ -91,14 +93,12 @@ public enum class Knob(
         KnobKind.STRING,
         listOf("CLAUDEX_REASONING_SUMMARY", "CODEX_REASONING_SUMMARY"),
         KnobDefault.Text("detailed"),
-        restartRequired = true,
     ),
     SHOW_REASONING(
         "showReasoning",
         KnobKind.STRING,
         listOf("CLAUDEX_SHOW_REASONING", "CODEX_SHOW_REASONING"),
         KnobDefault.Text("text"),
-        restartRequired = true,
     ),
 
     // OFF for every head (codex/grok/openai). Input-injecting prior opaque encrypted reasoning items thins fresh
@@ -109,7 +109,6 @@ public enum class Knob(
         KnobKind.BOOL,
         listOf("CLAUDEX_REPLAY_REASONING", "CODEX_REPLAY_REASONING"),
         KnobDefault.Flag(false),
-        restartRequired = true,
     ),
 
     // The transcript mirror ("[reasoning summary]" text block, L2) is operator-locked OFF.

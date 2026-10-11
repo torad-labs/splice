@@ -21,7 +21,6 @@ import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.dialect.responses.ReasoningSettings
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeCellLease
@@ -77,7 +76,7 @@ internal class CodexResponsesArm(
                     watchdog = watchdog,
                     loginCommand = ctx.faultPlan.loginCommand,
                 ),
-                reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
+                reasoning = ReasoningWiring.settingsOf(cfg),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
                 // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                 // never receive a fold config, so they stay pure passthrough.

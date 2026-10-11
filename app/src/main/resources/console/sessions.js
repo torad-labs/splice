@@ -65,9 +65,9 @@ async function readScreens() {
 const ANSWER_HOLD_MS = 30_000;
 const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
 
-// an ended session's process is gone, so splice can't read which command it was on, and its row says so in words
-// ("unknown head", SessionsRoutes UNKNOWN_HEAD): that is no command, and nothing is drawn for it
-const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? null;
+// a session splice cannot place reads "unknown head" (SessionsRoutes UNKNOWN_HEAD) and the card says so, as the spec's
+// Sep 13 Resolved block has it (§4 reading, Oct 11); a head key no configured command has names nothing
+const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? (head === "unknown head" ? head : null);
 const folderOf = (row) => (row.repo?.root || row.cwd || "").split("/").filter(Boolean).pop() || "";
 
 /** A signed-out session's way back: Accounts on its command, in Accounts' own word for that kind of credential. */

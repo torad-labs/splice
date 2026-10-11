@@ -84,6 +84,8 @@ const acctHtml = (r) => {
   const isKey = Boolean(key) || /^[A-Z0-9_]+$/.test(name);
   if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(name || r.account);
   const both = (state.keysOfHead[r.head] ?? 0) > 1 ? ` · <span class="var">${esc(name)}</span>` : "";
+  // a bare variable, no fingerprint after it, is a row from before splice tracked keys: say so, never "1" and "2"
+  if (!key && !String(r.account).includes(":")) return `${esc(provider)}, before key tracking`;
   const when = key ? ` · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : "";
   return `${esc(provider)}${both}${when}`;
 };

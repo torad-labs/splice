@@ -87,6 +87,20 @@ const acctHtml = (r) => {
   const when = key ? ` · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : "";
   return `${esc(provider)}${both}${when}`;
 };
+// The menu's own reading of each account: two entries that read the same (one variable, a key splice never saw
+// next to rows from before it tracked keys) are told apart by their order, "OpenRouter 1" and "OpenRouter 2",
+// and never by the key itself.
+const acctNames = () => {
+  const html = state.facets.accounts.map(([k, { head, account }]) => [k, acctHtml({ account, head: head.key, provider: state.providerOf[head.key] }), head.key]);
+  const same = (h, head) => html.filter(([, x, hk]) => x === h && hk === head);
+  const seen = {}, out = new Map();
+  for (const [k, h, head] of html) {
+    const n = same(h, head).length;
+    seen[head + h] = (seen[head + h] ?? 0) + 1;
+    out.set(k, n > 1 ? `${h} ${seen[head + h]}` : h);
+  }
+  return out;
+};
 const costText = (r) => (r.cost != null ? money(r.cost) : REASON[r.reason] ?? "");
 const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
@@ -403,7 +417,7 @@ function menuHtml(key) {
   if (key === "model") return `<div class="menu fmenu" role="menu">${item("", "Every model", !ui.model)}${state.facets.models.map(([id, label]) => item(id, esc(label), ui.model === id)).join("")}${item("none", "No model", ui.model === "none")}</div>`;
   if (key === "account") { // an account on two commands is two accounts: a key's own variable and day, a plan's label
     return `<div class="menu fmenu" role="menu">${item("", "Every account", !ui.account)}`
-      + state.facets.accounts.map(([k, { head, account }]) => item(k, `<span class="aname">${acctHtml({ account, head: head.key, provider: state.providerOf[head.key] })}<span class="aprov">${esc(head.command)}</span></span>`, ui.account === k)).join("")
+      + (() => { const names = acctNames(); return state.facets.accounts.map(([k, { head }]) => item(k, `<span class="aname">${names.get(k)}<span class="aprov">${esc(head.command)}</span></span>`, ui.account === k)).join(""); })()
       + `${item("none", "No account", ui.account === "none")}</div>`;
   }
   if (key === "sid") { // the sessions with requests in the window, the latest first, each with its command's colour
@@ -427,12 +441,11 @@ function filtersHtml() {
   // combines with Failed and Stopped. Its toggle is its chip, so no second chip is drawn for it.
   const over = `<button class="ftog" data-act="why" data-v="startedover" aria-pressed="${ui.why === "startedover"}"><i class="tick"></i>${WHY.startedover.word}</button>`;
   const tog = (key, label, on) => `<button class="ftog" data-act="toggle" data-m="${key}" aria-pressed="${on}">${GLYPH.compact}${label}</button>`; // each toggle draws its rows' mark (fin; hitstop d91f182)
-  const acct = ui.account && ui.account !== "none" ? state.facets.accounts.find(([k]) => k === ui.account) : null;
   return `<div class="filters">${pickBtn("win", WINDOWS[ui.win][0], false)}`
     + pickBtn("cmd", ui.cmd ? `<i class="blot" style="--c:${colorOf(providerOfCmd(ui.cmd))}"></i>${esc(ui.cmd)}` : "Command", Boolean(ui.cmd))
     + pickBtn("sid", ui.sid ? esc(sessTitle(ui.sid)) : "Session", Boolean(ui.sid))
     + pickBtn("model", ui.model ? (ui.model === "none" ? "No model" : esc(state.modelLabel[ui.model] ?? ui.model)) : "Model", Boolean(ui.model))
-    + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : acctHtml({ account: acct?.[1].account ?? "", head: acct?.[1].head.key, provider: state.providerOf[acct?.[1].head.key] })) : "Account", Boolean(ui.account))
+    + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : (acctNames().get(ui.account) ?? "")) : "Account", Boolean(ui.account))
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")

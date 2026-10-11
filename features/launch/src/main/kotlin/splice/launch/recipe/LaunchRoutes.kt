@@ -4,8 +4,11 @@
 package splice.launch.recipe
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.contentType
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonArray
 import splice.client.wrap.WrappedLaunch
@@ -96,7 +99,13 @@ public class LaunchRoutes(
                 val recipe = launchResponse.withAuthWarning(target, launched, outcome.recipe)
                 audit.launched(key, recipe.argv)
                 recipe.warning?.let(audit::warned)
-                call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)
+                // A shim that names the line form in Accept is answered in it; everything else keeps the JSON body.
+                val lineForm = LaunchRecipeLines.RECIPE_MEDIA_TYPE
+                if (call.request.headers[HttpHeaders.Accept]?.contains(lineForm) == true) {
+                    call.respondText(LaunchRecipeLines.render(recipe), ContentType.parse(lineForm))
+                } else {
+                    call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)
+                }
             }
         }
     }
@@ -128,7 +137,20 @@ public class LaunchRoutes(
         return heads.byKey(CLAUDE_HEAD_KEY)?.let { Resolved(it, wrapped) }
     }
 
+    /** The same request, in the form a POSIX shim can write without JSON escaping: curl --data-urlencode puts each
+     *  field on the wire byte for byte, and every `arg` is one argv word, in order, empty ones included. */
+    private suspend fun receiveFormRequest(call: ApplicationCall): LaunchRequest {
+        val fields = call.receiveParameters()
+        return LaunchRequest(
+            fields.getAll("arg").orEmpty(),
+            fields["dangerouslySkipPermissions"] == "true",
+            fields["cwd"],
+            fields["inheritedConfigDir"],
+        )
+    }
+
     private suspend fun receiveLaunchRequest(call: ApplicationCall): LaunchRequest {
+        if (call.request.contentType().match(ContentType.Application.FormUrlEncoded)) return receiveFormRequest(call)
         val body = jsonBody.parse(call)
         // Safe by default: the caller must explicitly opt in with {"dangerouslySkipPermissions":"true"}
         // to get the flag; a missing key, malformed body, or any other value stays safe.

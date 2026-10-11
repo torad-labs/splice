@@ -80,9 +80,12 @@ const isFailed = (o) => !isClean(o) && !STOPPED.has(o);
 // about and held (Watchdog.kt:303-362). "Resumed" and "Started over" are a request's re-anchor tick: splice
 // re-sent a broken stream from its partial answer, or ran the round over from scratch (his own two phrases).
 // "Resumed after a silence" is the stall tier's resume (Knob.kt:270-283), the one Silent models counts.
+// A chat stream that ended before its terminal is tagged overloaded on the wire (WireType.kt) but was cut by the provider, not refused.
+const isCutOff = (r) => r.cause === "UPSTREAM_TRUNCATED";
 const WHY = {
   gaveup: { word: "Given up", has: (r) => r.outcome === "error:turn-cap" },
-  overloaded: { word: "Overloaded", has: (r) => r.outcome === "failure:overloaded_error" },
+  overloaded: { word: "Overloaded", has: (r) => r.outcome === "failure:overloaded_error" && !isCutOff(r) },
+  cutoff: { word: "Cut off", has: (r) => r.outcome === "failure:overloaded_error" && isCutOff(r) },
   queued: { word: "Waited in line", has: (r) => !!r.queued },
   waited: { word: "Waited out", has: (r) => !!r.silent },
   resumed: { word: "Resumed", has: (r) => !!r.resumed && !r.resumedFresh },
@@ -100,7 +103,7 @@ const WHY = {
 // this page chose. "Resumed" and "Started over" are asked APART, as fin's two phrases mean them: a request whose
 // re-anchor re-posted it verbatim started over, and the resumed doors leave it out.
 const WHY_ASKS = {
-  gaveup: { outcome: "error:turn-cap" }, overloaded: { outcome: "failure:overloaded_error" },
+  gaveup: { outcome: "error:turn-cap" }, overloaded: { outcome: "failure:overloaded_error" }, cutoff: { outcome: "failure:overloaded_error" },
   restarted: { outcome: "error:restarted" }, queued: { queued_ms: "1" }, waited: { silence_ms: "tier" },
   resumed: { resumed: "1", started_over: "0" }, silentresume: { resumed: "1", started_over: "0" },
   startedover: { started_over: "1" }, silentover: { started_over: "1" },

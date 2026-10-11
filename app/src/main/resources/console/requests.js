@@ -51,7 +51,7 @@ const OUTCOME = Object.fromEntries(Object.keys(OUTCOME_WORD).concat(["ok", "empt
 // "Failed". "Failed" is the Outcome switch's label, which counts every failure, and belongs nowhere else on this page.
 // The endings splice decides itself, whose outcome word already says who and why: no provider line is drawn for them
 const SPLICE_ENDED = new Set(["error:restarted", "error:at-capacity", "error:budget-blocked", "error:all-accounts-exhausted", "error:turn-cap", "error:cancelled"]);
-const outcomeOf = (r) => OUTCOME[r.outcome] || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
+const outcomeOf = (r) => (isCutOff(r) ? { ...OUTCOME[r.outcome], word: WHY.cutoff.word } : OUTCOME[r.outcome]) || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
 // DECIDES, not the tag: splice writes the reset when it turned a request away because every account was spent
 // (ExhaustedAccountAdmission.kt:32), and a request that met the window mid-flight ends error:plan-limit with no reset

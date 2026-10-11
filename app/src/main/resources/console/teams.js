@@ -450,7 +450,7 @@ const gone = (panel) => Boolean(panel?.error) || ["not_kept", "deleted", "off"].
 
 function chatHtml(tm) {
   const panel = state.chat;
-  if (!panel) return `<p class="empty">Reading…</p>`;
+  if (!panel) return `<p class="empty">Reading</p>`;
   if (gone(panel)) return keptHtml(panel);
   const msgs = panel.messages || [];
   if (!msgs.length) return `<p class="empty">No messages</p>`;
@@ -474,7 +474,7 @@ function party(tm, slotId, address) {
 
 function feedHtml(tm) {
   const panel = state.activity;
-  if (!panel) return `<p class="empty">Reading…</p>`;
+  if (!panel) return `<p class="empty">Reading</p>`;
   if (gone(panel)) return keptHtml(panel);
   const rows = activityRows().filter((a) => a.slot);
   if (!rows.length) return `<p class="empty">No activity</p>`;
@@ -578,7 +578,7 @@ function render() {
   root.innerHTML = state.error
     ? `<p class="empty limit">${esc(state.error)}</p>`
     : state.loading
-      ? `<p class="empty">Reading…</p>`
+      ? `<p class="empty">Reading</p>`
       : !state.teams.length
         ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
         : tabsHtml() + (tm ? boardHtml(tm) : "");

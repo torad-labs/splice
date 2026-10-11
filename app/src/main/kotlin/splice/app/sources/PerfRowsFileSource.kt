@@ -48,8 +48,9 @@ import java.nio.file.Path
 
 private enum class PerfSelection { WORK, ECONOMICS }
 
-/** One settled scan supplies the work and probe sides of historical economics reconciliation. */
-internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>)
+/** One settled scan supplies the work and probe sides of historical economics reconciliation. [tornAt] is the leading
+ *  timestamp of each line the scan could not read as a row (null where the line names none). */
+internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>, val tornAt: List<Long?>)
 
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
@@ -142,7 +143,7 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val scan = settledRead(sinceMs, PerfSelection.ECONOMICS)
-        return EconomicsPerfEvidence(scan.window(), scan.probes)
+        return EconomicsPerfEvidence(scan.window(), scan.probes, scan.tornAt)
     }
 
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
@@ -225,6 +226,7 @@ public class PerfRowsFileSource internal constructor(
     ) : PerfLineVisit {
         val rows = ArrayList<PerfRow>()
         val probes = ArrayList<PerfRow>()
+        val tornAt = ArrayList<Long?>()
         val errors = ArrayList<String>()
         private var skipped = 0
         private var windowSkipped = 0
@@ -329,7 +331,10 @@ public class PerfRowsFileSource internal constructor(
         private fun rejected(line: PerfCachedLine) {
             if (afterInWindowRow) windowSkipped++
             // Preserve the original baseline and economics proof, without giving this line a row time.
-            if (!skipBefore(line)) skipped++
+            if (!skipBefore(line)) {
+                skipped++
+                tornAt += line.leadingTs
+            }
         }
 
         private fun skipBefore(line: PerfCachedLine): Boolean {

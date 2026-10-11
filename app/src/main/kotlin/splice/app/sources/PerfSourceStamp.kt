@@ -2,7 +2,6 @@
 package splice.app.sources
 
 import splice.core.perf.PerfArchiveName
-import splice.usage.perf.PerfRowsWindow
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -116,9 +115,9 @@ internal class PerfRefusal(private val files: PerfReadFiles) {
     /** Whether the refusal noted earlier still holds for a read from [from]: that read covers no less, and no file changed. */
     fun stands(from: Long): Boolean = stamp?.let { from <= since && files.unchanged(it) } == true
 
-    /** Notes a read of [work] begun when the files were as [before]: a refusal for a torn row stands, any other answer clears it. */
-    fun note(before: PerfSourceStamp?, from: Long, work: PerfRowsWindow) {
-        stamp = before.takeIf { work.readError == null && work.skipped != 0 }
+    /** Notes a read begun when the files were as [before]: a refusal for a torn row ([tore]) stands, any other answer clears it. */
+    fun note(before: PerfSourceStamp?, from: Long, tore: Boolean) {
+        stamp = before.takeIf { tore }
         since = from
     }
 }

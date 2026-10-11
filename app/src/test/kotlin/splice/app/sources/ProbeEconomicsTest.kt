@@ -103,6 +103,30 @@ class ProbeEconomicsTest {
         assertEquals(expected, source.rows())
     }
 
+    // A torn line cannot be a probe once no build writes probes, so it must not hide the hours counted before it.
+    @Test
+    fun `a torn row written after probes retired leaves the day figure, and one from the probe era refuses it`(
+        @TempDir dir: Path,
+    ) {
+        val rows = listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW)
+        fun read(torn: String): EconomicsStoreSource {
+            val file = dir.resolve("head-${torn.length}-perf.jsonl")
+            Files.writeString(file, (rows + torn).joinToString("\n") + "\n")
+            val store = store(dir.resolve("store-${torn.length}"))
+            store.record(turn("", 0, 30, 15, 2L to 1L))
+            recordWork(store)
+            return EconomicsStoreSource(store, PerfRowsFileSource(file))
+        }
+        val control = store(dir.resolve("control"))
+        recordWork(control)
+        val after = """{"ts":1791707160100,"model":"synthetic","outcome":"ok","cache_write_tokens"""
+        assertEquals(EconomicsStoreSource(control).rows(), read(after).rows())
+        val before = """{"ts":3600200,"model":"synthetic","outcome":"ok","cache_write_tokens"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(before).gap())
+        val unstamped = """{"model":"synthetic","outcome":"ok","cache_write_tokens"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped).gap())
+    }
+
     // The rollup meters a turn's absorbed rounds beside its final round, so the perf evidence must sum
     // them the same way, or every hour with a hidden code-mode round fails to reconcile.
     @Test

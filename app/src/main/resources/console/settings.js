@@ -291,7 +291,7 @@ async function readPeak(head) {
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
   if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
   const rows = answer.rows || [];
-  if (answer.truncated || (answer.count ?? 0) > rows.length) return { head, err: `more than ${fmt(MAX_ROWS)} requests today`, n: answer.count };
+  if (answer.truncated || (answer.count ?? 0) > rows.length) return { head, err: `Most at once not read: over ${fmt(MAX_ROWS)} requests today`, n: answer.count };
   const events = rows.flatMap((r) => [[r.ts - (r.total ?? 0) + (r.admit_wait_ms || 0), 1], [r.ts, -1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   let n = 0, peak = 0, at = 0;
   for (const [t, d] of events) { n += d; if (n > peak) { peak = n; at = t; } }

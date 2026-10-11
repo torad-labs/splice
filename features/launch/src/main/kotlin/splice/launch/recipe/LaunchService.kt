@@ -133,7 +133,7 @@ public class LaunchService(
         // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
         // adoptResume judges.
         val bounded = headBoundedContinue.resolve(effective.trees.own, extraArgs, cwd)
-        val adoption = adoptResume(held, bounded.args)
+        val adoption = adoptResume(held, bounded.args, cwd)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)
@@ -166,7 +166,7 @@ public class LaunchService(
     /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees (V4-115). Null
      *  when the launch named no id — which is every `-c`, every plain launch, and every `-r` with NO
      *  id: the picker is head-bounded by construction, and this is where that stays true. */
-    private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>): SessionAdoption? {
+    private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): SessionAdoption? {
         val sessionId = headBoundedContinue.requestedSessionId(extraArgs) ?: return null
         return resumeAcrossHeads.adopt(
             spec.trees.own,
@@ -176,6 +176,7 @@ public class LaunchService(
                 spec.models.pinnedModel,
                 spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth },
                 spec.signIn.headKey.ifBlank { null },
+                cwd,
             ),
         )
     }

@@ -149,6 +149,24 @@ class ResumeAcrossHeadsTest {
     }
 
     @Test
+    fun `the launch cwd picks the copy even when this head holds no tree for it`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        register(home, "kimi", encodedCwd("elsewhere"), "abc-123", model = "k3-256k")
+        val wanted = register(home, "kimi", encodedCwd("repo"), "abc-123", model = "k3-256k")
+
+        val adopted = resumer().adopt(
+            calling,
+            listOf(headConfig(home, "kimi")),
+            "abc-123",
+            CallingRoster(pinned, listOf(pinned), cwd = "/home/operator/repo"),
+            log = {},
+        ) as SessionAdoption.Adopted
+
+        assertEquals(wanted, adopted.from, "the copy under the launch cwd wins over the one found first")
+        assertEquals(encodedCwd("repo"), adopted.into.parent.fileName.toString())
+    }
+
+    @Test
     fun `the session subdir is copied, and a link inside it is copied as content`(@TempDir home: Path) {
         val calling = headConfig(home, "codex")
         val source = register(home, "kimi", encodedCwd("repo"), "abc-123", model = "k3-256k")

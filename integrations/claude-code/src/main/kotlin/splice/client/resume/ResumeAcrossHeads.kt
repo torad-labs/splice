@@ -34,11 +34,11 @@
 // could not be copied is Refused. Neither is an exception: the refusal rides the return type of the
 // call that decided it (kt-no-exception-as-outcome).
 //
-// THE CALLER'S OWN TREE IS THE CWD SIGNAL. The launch request carries only argv (the app/src/main/dist/bin/splice-launch
-// shim sends {"args": [...]}; LaunchRequest has no cwd), so "same encoded cwd first" is read off the
-// one thing that IS available: an encoded-cwd directory this head already holds a transcript tree for
-// is the session's likely home, and a head whose tree is freshly empty has no signal at all — which
-// is exactly when falling through to any head is right.
+// SAME ENCODED CWD FIRST. The launch carries its cwd, and Claude Code names a project directory by that path with
+// every character outside letters and digits turned into a dash, so a copy found under the launch cwd's directory
+// wins. A shim too old to send a cwd falls back to the one signal left: an encoded-cwd directory this head already
+// holds a transcript tree for is the session's likely home, and a head whose tree is freshly empty has no signal at
+// all — which is exactly when falling through to any head is right.
 //
 // SAFE TEXT. The id becomes a path component and reaches operator-facing text, so it is validated
 // BEFORE either: every id any outcome carries matches SESSION_ID_SHAPE (`[A-Za-z0-9_-]{1,128}`),
@@ -62,6 +62,7 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 /** A Claude Code session id, and the only shape allowed to become a path component or a message. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
+private val NOT_ALPHANUMERIC = Regex("[^A-Za-z0-9]")
 
 /** One primary transcript is eligible for -r only when its own regular file has conversation bytes.
  *  The durable history index uses this same rule; a zero-byte file remains in its source census. */
@@ -148,6 +149,8 @@ public class CallingRoster(
     private val served: Collection<String>?,
     /** The head's key, the command whose launch moves a session: recorded with each move. */
     internal val command: String? = null,
+    /** The launch's working directory: the encoded cwd a foreign copy is preferred under. Null when the shim sent none. */
+    internal val cwd: String? = null,
 ) {
     /** Whether a row on a model stays where it is: a served model (the pinned one included), else a Claude one. */
     internal fun kept(): KeptModel = served?.let { roster ->
@@ -174,7 +177,7 @@ public class ResumeAcrossHeads(
         roster: CallingRoster,
         log: LogSink = LogSink(DaemonLog::write),
     ): SessionAdoption {
-        return when (val plan = plan(callingConfigDir, otherConfigDirs, sessionId, log)) {
+        return when (val plan = plan(callingConfigDir, otherConfigDirs, sessionId, log, roster.cwd)) {
             is ResumePlan.Invalid -> SessionAdoption.Invalid(plan.cause)
             is ResumePlan.Absent -> SessionAdoption.Absent(plan.sessionId, plan.searchedHeads)
             is ResumePlan.Empty -> SessionAdoption.Empty(plan.sessionId, plan.transcript)
@@ -191,6 +194,7 @@ public class ResumeAcrossHeads(
         otherConfigDirs: List<Path>,
         sessionId: String,
         log: LogSink = LogSink(DaemonLog::write),
+        cwd: String? = null,
     ): ResumePlan {
         // The id becomes a path component and reaches operator-facing text, so it is validated
         // before either.
@@ -202,7 +206,7 @@ public class ResumeAcrossHeads(
         val foreignUsable = foreign.filter { it.state == ResumableTranscript.State.USABLE }
         return when {
             ownedUsable != null -> ResumePlan.Owned(ownedUsable.transcript)
-            foreignUsable.isNotEmpty() -> preferSameCwd(callingConfigDir, foreignUsable, log).let { chosen ->
+            foreignUsable.isNotEmpty() -> preferSameCwd(callingConfigDir, foreignUsable, cwd, log).let { chosen ->
                 val into = callingConfigDir.resolve(Keys.PROJECTS).resolve(chosen.cwdDir)
                     .resolve(sessionId + TRANSCRIPT_SUFFIX)
                 ResumePlan.Copy(chosen.transcript, chosen.headConfigDir, into)
@@ -263,14 +267,18 @@ public class ResumeAcrossHeads(
                 }
             }
 
-    /** Same encoded cwd first, then any — see the header for why the calling head's own tree is the
-     *  only cwd signal available. [found] is non-empty by every caller's check. */
-    private fun preferSameCwd(callingConfigDir: Path, found: List<Located>, log: LogSink): Located {
+    /** Same encoded cwd first, then a directory this head already holds, then any. [found] is non-empty by every
+     *  caller's check. */
+    private fun preferSameCwd(callingConfigDir: Path, found: List<Located>, cwd: String?, log: LogSink): Located {
+        val launch = cwd?.takeIf { it.isNotBlank() }?.let(::encodedCwd)
         val known = directoryEntries(callingConfigDir.resolve(Keys.PROJECTS), log)
             .map { it.fileName.toString() }
             .toSet()
-        return found.firstOrNull { it.cwdDir in known } ?: found.first()
+        return found.firstOrNull { it.cwdDir == launch } ?: found.firstOrNull { it.cwdDir in known } ?: found.first()
     }
+
+    /** Claude Code's name for a project directory: the path with every character outside letters and digits a dash. */
+    private fun encodedCwd(cwd: String): String = cwd.replace(NOT_ALPHANUMERIC, "-")
 
     /** The copy, the subdir tree and the model rewrite are ONE transaction: a partial adoption would
      *  hand Claude Code a transcript that is half another head's. The source is read only. */

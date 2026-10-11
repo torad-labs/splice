@@ -232,11 +232,28 @@ class SessionContinueTest {
     }
 
     @Test
-    fun `a turn in flight is stopped and the message it puts back is cleared, so only exit is sent`() {
+    fun `a turn in flight is stopped and the words it puts back are his, answered back and never cleared`() {
         panes.remember(LEAD, leadPane)
         leadWorking()
+        terminal.screenText = "────────────── lead ─\n❯ the message it put back\n──────────────\n"
 
         val reply = move(LEAD, """{"head":"codex"}""")
+
+        assertEquals(HttpStatusCode.Conflict, reply.status)
+        val body = rig.json(reply.body)
+        assertEquals("draft", body.getValue("reason").jsonPrimitive.content)
+        assertEquals("the message it put back", body.getValue("draft").jsonPrimitive.content, "his words, back to him")
+        assertEquals(listOf(SessionKey.STOP), terminal.pressed.map { it.second }, "stopped, and nothing emptied")
+        assertTrue(terminal.sent.isEmpty(), "nothing is typed over words he has not sent")
+    }
+
+    @Test
+    fun `on his say-so the prompt is emptied and the move goes on, so only exit is sent`() {
+        panes.remember(LEAD, leadPane)
+        leadWorking()
+        terminal.screenText = "────────────── lead ─\n❯ the message it put back\n──────────────\n"
+
+        val reply = move(LEAD, """{"head":"codex","clear":true}""")
 
         assertEquals(HttpStatusCode.OK, reply.status)
         assertEquals(listOf(SessionKey.STOP, SessionKey.CLEAR), terminal.pressed.map { it.second })

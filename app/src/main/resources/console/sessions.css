@@ -299,3 +299,7 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .inprompt .lbl { margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
 .inprompt .words { margin: 0; min-width: 0; max-height: 14rem; overflow: auto; font: 500 1.05rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .6rem .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .inprompt .acts { display: flex; justify-content: flex-end; gap: .7rem; }
+
+/* the same card, hung under Continue on where the models menu was, so his answer appears where he pressed (hitstop 605ab5c) */
+.pane > header .acts > .inprompt.onmove { position: absolute; right: 0; top: calc(100% + .6rem); z-index: 6; height: auto; }
+.pane > header .acts > .inprompt.onmove .inprompt-card { position: static; }

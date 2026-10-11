@@ -21,7 +21,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map() };
+const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {} };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
@@ -314,7 +314,7 @@ function paneHtml() {
   const L = movingLook(s) || look(s);
   const stop = stopHtml(s, "act", ICON.stop);
   const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Moving</button>`
-    : `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>${ui.menu === s.id ? choicesHtml(s) : ""}`) : "";
+    : `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>${ui.menu === s.id ? choicesHtml(s) : heldHtml(s)}`) : "";
   const close = `<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`;
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s, "pane")}</div>` : "";
@@ -529,20 +529,57 @@ function choicesHtml(s) {
 }
 async function openChoices(s) {
   if (ui.menu === s.id) { ui.menu = null; render({ stick: false }); return; }
+  delete ui.held[s.id]; // opening the models menu dismisses the held card (hitstop)
   ui.menu = s.id; ui.choices[s.id] = await readChoices(s);
   if (ui.menu === s.id) render({ stick: false });
 }
 /** Move it, then read the session again: it comes back Idle on the new command, and his next message runs there. */
-async function continueOn(s, head, model, label) {
+async function continueOn(s, head, model, label, clear = false) {
   ui.menu = null; ui.moving.set(s.id, { head, label: label || head }); ui.failed.delete(s.id); render({ stick: false });
-  const res = await API.post(sessionPath(s, "continue"), { head, model });
+  const res = await API.post(sessionPath(s, "continue"), clear ? { head, model, clear: true } : { head, model });
   ui.moving.delete(s.id);
+  // the prompt holds words he never sent: they are his, so the card shows them and nothing moves until he says
+  if (!res.ok && res.body?.reason === "draft") {
+    ui.held[s.id] = { words: String(res.body.draft ?? ""), head, model, label: label || head };
+    render({ stick: false });
+    return;
+  }
+  delete ui.held[s.id];
   if (res.ok) ui.focusSay = true;
   // a move that did not come back went on where it was (MoveArrival): its card says so, with Try again
   else if (res.body?.moved === false) ui.failed.set(s.id, { ...res.body, unmoved: true, to: head, model, label: label || head, was: s.head, wasModel: s.model });
   else ui.failed.set(s.id, refusalOf(res, "It could not be moved"));
   await reload();
 }
+/** Copy his words, then clear and move. The clear waits on the clipboard: a button that says Copy never clears words
+ *  it did not copy, so a refused write leaves the card up and the session where it is (Marlin, fin). */
+async function heldCopy(s, button) {
+  const h = ui.held[s.id];
+  if (!h || h.copying) return; // a press while the copy is pending does nothing (hitstop 439f414)
+  h.copying = true;
+  try {
+    await navigator.clipboard.writeText(h.words);
+  } catch {
+    h.copying = false;
+    button.textContent = "Could not copy";
+    return;
+  }
+  delete ui.held[s.id];
+  await continueOn(s, h.head, h.model, h.label, true);
+}
+
+/** Words he typed and never sent, held under Continue on: the stopped message Claude Code put back, and anything he
+ *  typed while the turn ran. They are his, so they are shown verbatim and go to his clipboard before anything is
+ *  cleared (fin, hitstop 605ab5c). Cancel moves nothing. */
+function heldHtml(s) {
+  const h = ui.held[s.id];
+  if (!h) return "";
+  return `<div class="inprompt onmove" role="group" aria-label="In the prompt"><div class="inprompt-card">`
+    + `<p class="lbl">In the prompt</p><p class="words">${esc(h.words)}</p>`
+    + `<div class="acts"><button class="act" data-act="held-cancel" data-s="${esc(s.id)}">Cancel</button>`
+    + `<button class="act primary" data-act="held-copy" data-s="${esc(s.id)}">Copy and continue on</button></div></div></div>`;
+}
+
 /** A command as the move mark draws it: its chip, in its provider's colour. */
 const cmdChip = (head) => `<span class="chip" style="--c:${colorOf(state.providerOf[head])}">${esc(commandOf(head) ?? head)}</span>`;
 /** While a move is in flight its old client has exited, so the session reads as the move, never as Ended: one verb
@@ -600,6 +637,7 @@ async function send(s, text, clear = false) {
 }
 // Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.open != null && ui.held[ui.open]) { delete ui.held[ui.open]; render({ stick: false }); return; }
   if (e.key === "Escape" && ui.menu) { ui.menu = null; render({ stick: false }); return; }
   if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
   delete ui.leftover[ui.open]; ui.focusSay = true; render({ stick: false });
@@ -641,6 +679,9 @@ document.addEventListener("click", (e) => {
     case "copy-resume": if (s) { navigator.clipboard?.writeText(ui.failed.get(s.id)?.resume ?? "").catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;
     case "keep": if (s) { delete ui.leftover[s.id]; ui.focusSay = true; render({ stick: false }); } break;
+    case "held-cancel": if (s) { delete ui.held[s.id]; render({ stick: false }); } break;
+    // the button says Copy, so nothing is cleared until his words are on the clipboard: a refused write moves nothing
+    case "held-copy": if (s) heldCopy(s, el); break;
     case "answer": if (s && !ui.sending.has(s.id)) answer(s, Number(el.dataset.i)); break;
     case "result": { const k = el.dataset.k; ui.results.has(k) ? ui.results.delete(k) : ui.results.add(k); render({ stick: false }); break; }
     case "earlier": if (s && state.logs[s.id]?.earlier) readLog(s, state.logs[s.id].earlier); break;

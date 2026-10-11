@@ -900,6 +900,9 @@ origin.
   used, and the daemon log names the variable once.
 
 ### Fixed
+- **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
+  code-mode round's terminal added a cut to that request's row, though the source was whole and its tokens were
+  billed. The cut count now rises only when a source is cut before its terminal arrives.
 - **A restart no longer cuts the last chunk of a finished turn.** A turn's gate slot is released while its response
   is still being written, and the drain stopped the head once the gate was empty, so the client could read a chunked
   body that never ended. The drain now waits for every call to leave its handler too, within the same two-second budget.

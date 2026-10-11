@@ -302,7 +302,9 @@ function peaksHtml() {
       + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${p.queued}</b><em>Open on Requests</em></a>` : "<span></span>") + `</div>`;
   };
   const waited = rows.reduce((a, p) => a + (p.queued || 0), 0);
-  return `<section class="tally"><h3>Today</h3><div class="card peaks">${waited ? `<header><a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued" })}">${SV.open}<span>Waited in line</span><b>${fmt(waited)}</b><em>Open on Requests</em></a></header>` : ""}${rows.map(row).join("")}</div></section>`;
+  // the header door adds something only when it spans commands; with one command waiting, that command's own row door is the same list
+  const doors = rows.filter((p) => p.queued).length;
+  return `<section class="tally"><h3>Today</h3><div class="card peaks">${doors > 1 ? `<header><a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued" })}">${SV.open}<span>Waited in line</span><b>${fmt(waited)}</b><em>Open on Requests</em></a></header>` : ""}${rows.map(row).join("")}</div></section>`;
 }
 const busyHtml = () => `<section class="tally"><h3>Who refused</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}`
   + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`

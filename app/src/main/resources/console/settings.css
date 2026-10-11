@@ -369,6 +369,6 @@ button.count:hover { color: var(--text); }
 .dmore .cs .said.limit { color: var(--bad, #e0584a); }
 .dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
 .drow .offcost { grid-column: 4 / -1; margin: .6rem 0 0; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
-.drow .offcost.hold { visibility: hidden; }  /* room held while On: a flip never moves a row (p179) */
+.drow .offcost.quiet { color: color-mix(in oklab, var(--text-mute) 62%, transparent); }  /* the same words while On: still there, quieter */
 .drow .offcost .whole { white-space: nowrap; }
 .drow.once .keep { flex-wrap: nowrap; white-space: nowrap; }  /* "Applied" sits beside the value, not under it */

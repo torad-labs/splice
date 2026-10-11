@@ -116,9 +116,9 @@ const DATA_ROWS = [
   { id: "trace", g: "text", name: "Prompts and answers", unit: "requests", yours: true, door: ["requests.html", "Requests"] },
   // the stores a person's prompts sit in that no feature runs without: counted and cleared by /api/kept/stores, each naming the
   // feature that needs it in place of a switch, with the lifetime splice gives it (the history window, or its own)
-  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", knob: "keepTranscriptCopies", off: "Continue on becomes one-way" },
-  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", yours: true, store: "compaction_summaries", knob: "keepCompactionSummaries", off: "Retried compactions cost again", life: "2 hours" },
-  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", yours: true, knob: "keepCodeModeWork", off: "A restart ends running scripts", life: "1 day unused" },
+  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", knob: "keepTranscriptCopies", off: "When off, Continue on is one-way" },
+  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", yours: true, store: "compaction_summaries", knob: "keepCompactionSummaries", off: "When off, retried compactions cost again", life: "2 hours" },
+  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", yours: true, knob: "keepCodeModeWork", off: "When off, a restart ends running scripts", life: "1 day unused" },
   { id: "reasoning", g: "text", name: "Reasoning between requests", own: true, door: ["sessions.html", "Sessions"] },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"] },
@@ -143,8 +143,8 @@ const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
   : `<button class="act quiet small" data-act="arm" data-id="${id}">Delete now</button>`);
 const ALWAYS = `<span class="fixed quiet">Always saved</span>`; // a store whose daemon has no off switch
 const YOURS = `<span class="yours">Your prompts</span>`;
-// What Off costs, under the switch. Every row that has the line always draws it, hidden while On, so its room is held and a flip moves no row below (p179; hitstop e1f71b2). Wraps at a dot, never inside a part (fin).
-const costHtml = (off, shown) => (off ? `<p class="offcost${shown ? "" : " hold"}"${shown ? "" : ' aria-hidden="true"'}>${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
+// What Off costs, under the switch. Every row that has the line always draws it, quieter while On, in the room the row keeps, so a flip moves no row below (p179; Marlin reversed show-only-while-Off, Oct 11). Each line is true On or Off and wraps at a dot, never inside a part (fin).
+const costHtml = (off, isOff) => (off ? `<p class="offcost${isOff ? "" : " quiet"}">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
 const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "" }) =>
   `<div class="drow${cls}${lit(hay)}"><div class="dname"><span class="nm">${hl(name)}${yours ? YOURS : ""}</span>${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</div>`
   + `<div class="amt">${amount}</div><div class="keep">${keep}</div><div class="dsw">${sw}</div><div class="ddel">${del}</div>${costHtml(off, offShown)}${more}</div>`;
@@ -198,7 +198,7 @@ function dataRow(r) {
   });
 }
 function dataHtml() {
-  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")), off: "Sessions, Requests and Teams show no conversations · Questions are answered in the terminal · Nothing is deleted", offShown: !val("transcriptView") });
+  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")), off: "When off, Sessions, Requests and Teams show no conversations · Questions are answered in the terminal · Nothing is deleted", offShown: !val("transcriptView") });
   // what each tapped command holds in memory right now: counted, never shown, and no Delete since the daemon has none
   const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
   // The row draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and

@@ -4,6 +4,7 @@
 // and DaemonTest already reference it unqualified and need no edit for this move.
 package splice.app
 
+import splice.client.resume.MovingTrust
 import splice.core.config.StatePaths
 import splice.core.topology.TopologyBackupName
 import splice.core.util.AsyncFileIo
@@ -173,6 +174,20 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
      *  still open; the caller writes them once its logger exists, which is after the lock. */
     internal fun secureStateDirs(statePaths: StatePaths): List<String> =
         statePaths.ownedDirs.mapNotNull { dir -> SecureFile.ownerOnlyDirectory(dir)?.let { ownerOnlyRefusal(dir, it) } }
+
+    /** Oct 11, 2026: no move is in flight across a start. A move in flight says which folder its launch may carry
+     *  the operator's trust for (MovingTrust); a daemon that died between the press and the launch would leave that
+     *  standing, and the grant would outlive the move it was for. Returns one line when it cleared any, else none. */
+    internal fun clearMovesInFlight(statePaths: StatePaths): List<String> =
+        Cancellables.runCatchingCancellable { MovingTrust(statePaths.movingTrustDir).sweep() }
+            .fold(
+                onSuccess = { cleared ->
+                    if (cleared == 0) emptyList() else listOf("cleared $cleared move(s) an older start left")
+                },
+                // a record that cannot be cleared never stops the start: it is said, and the launch that reads it
+                // trusts home for one launch of one session that is no longer moving
+                onFailure = { listOf("a move left in flight could not be cleared: " + SafeFailureText.render(it)) },
+            )
 
     /** V4-278: splice.toml and every backup of it held owner-only on every start, beside
      *  [secureStateDirs]. V4-275 writes them 0600, but an older splice left them at the umask, and

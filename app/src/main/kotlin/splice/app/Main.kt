@@ -242,7 +242,8 @@ internal class DaemonProcess(
         // v0.4.0: the state splice owns is owner-only BEFORE the first write into it (the lock), and
         // (V4-278) so are splice.toml and its backups, which can hold header secrets and which an older
         // splice left at the umask. What they say is logged once the logger exists.
-        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath)
+        val ownerOnlyLines = secureStateDirs(statePaths) + secureConfig(topologyPath) +
+            boundary.clearMovesInFlight(statePaths)
         return StartState(topologyPath, loaded, statePaths, ownerOnlyLines)
     }
 

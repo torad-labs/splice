@@ -18,6 +18,7 @@ import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
 import splice.client.resume.CallingRoster
 import splice.client.resume.HeadBoundedContinue
+import splice.client.resume.MovingTrust
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
 import splice.client.resume.TranscriptModelRewrite
@@ -25,10 +26,12 @@ import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
+import java.nio.file.Path
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
@@ -54,6 +57,10 @@ public class LaunchService(
      *  until wrap is used, at which point it answers bare `claude` exactly like today. Read PER LAUNCH,
      *  never cached — wrap/unwrap can flip between two requests — and its answer is acted on where argv[0] is chosen. */
     private val wrapState: WrapStateRead = wrap,
+    /** Which moves are in flight (MovingTrust), so a resume of one carries the trust he granted in the folder it is
+     *  moving out of. A defaulted collaborator that reads the daemon's own state dir; ControlPlane passes the
+     *  daemon's, and a tree with no record in flight answers null for every launch. */
+    private val moving: MovingTrust = MovingTrust(StatePaths().movingTrustDir),
 ) {
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
@@ -113,9 +120,10 @@ public class LaunchService(
                 headKey = effective.signIn.headKey,
             ),
         )
-        // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in.
+        // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in, and for
+        // the resume of a move in flight, the folder it is moving out of: the one way home is ever trusted.
         val trust = caller.absoluteCwd()
-            ?.let { TrustedLaunch(it, effective.trees.siblings) }
+            ?.let { TrustedLaunch(it, effective.trees.siblings, movingFolder(extraArgs)) }
         // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
         // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
         // carries the head's settings as a --settings overlay below.
@@ -162,6 +170,11 @@ public class LaunchService(
     ) {
         if (wrapped == null) materializer.materialize(spec, trust, modelOverrides)
     }
+
+    /** The folder the move of this launch's session is in flight out of, or null when it names no session or no
+     *  move of its is in flight. */
+    private fun movingFolder(extraArgs: List<String>): Path? =
+        headBoundedContinue.requestedSessionId(extraArgs)?.let(moving::folderOf)
 
     /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees (V4-115). Null
      *  when the launch named no id — which is every `-c`, every plain launch, and every `-r` with NO

@@ -400,6 +400,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 1,
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/ModelMoves.kt" to mapOf(
+        "writeAtomic0600(" to 2,
+    ),
+    "integrations/claude-code/src/main/kotlin/splice/client/resume/MovingTrust.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/originals/TranscriptOriginalCopy.kt" to mapOf(

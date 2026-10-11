@@ -254,6 +254,10 @@ public class StatePaths(
     /** Where each session changed model: one owner-only file per session, written when a move gives rows a model. */
     public val modelMovesDir: Path = stateDir.resolve("model-moves")
 
+    /** Which moves are in flight and what folder each carries the operator's trust for: one owner-only file per
+     *  session, written when he presses and removed when the move ends, either way (MovingTrust). */
+    public val movingTrustDir: Path = stateDir.resolve("moving-trust")
+
     /** Per-head stat files. The codex/grok names are a frozen legacy contract kept for CONTINUITY,
      *  not for an external reader (the header's own words — the HUD that justified them is gone, and
      *  renaming them now would strand usage history for no measured gain); new heads derive

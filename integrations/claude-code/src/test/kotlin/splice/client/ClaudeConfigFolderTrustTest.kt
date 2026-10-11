@@ -58,8 +58,8 @@ class ClaudeConfigFolderTrustTest {
     )
 
     /** claudex launched at [cwd], with claude-splice as the other head, and the state file it gets. */
-    private fun launchClaudex(cwd: Path): JsonObject {
-        ClaudeConfigMaterializer(home).materialize(spec(claudex), TrustedLaunch(cwd, listOf(spliceHead)))
+    private fun launchClaudex(cwd: Path, moving: Path? = null): JsonObject {
+        ClaudeConfigMaterializer(home).materialize(spec(claudex), TrustedLaunch(cwd, listOf(spliceHead), moving))
         return Json.parseToJsonElement(claudex.resolve(".claude.json").readText()).jsonObject
     }
 
@@ -132,6 +132,43 @@ class ClaudeConfigFolderTrustTest {
         assertEquals("Bash", entry["allowedTools"]!!.jsonArray.single().jsonPrimitive.content, "the entry's keys stay")
         assertEquals("1.5", state["projects"]!!.jsonObject[other.toString()]!!.jsonObject["lastCost"].toString())
         assertEquals("7", state["numStartups"].toString(), "every other key survives")
+    }
+
+    @Test
+    fun `the home folder a move is carrying is trusted for that launch, and no other launch`() {
+        val real = home.toRealPath()
+        // he pressed Continue on in a session running in his home folder: Claude Code kept that trust in the
+        // session alone, so the move carries it and nothing else would (MovingTrust)
+        val moved = launchClaudex(real, moving = real)
+        assertEquals(true, trust(moved, real.toString()), "the move's own folder is trusted: $moved")
+
+        // the move has ended, so the next launch of this head takes the record back out
+        val after = launchClaudex(real)
+        assertNotEquals(true, trust(after, real.toString()), "the grant did not outlive the move: $after")
+    }
+
+    @Test
+    fun `a move out of any folder but home carries no grant of its own, since that folder has its own record`() {
+        val work = folder("work/untrusted")
+
+        val state = launchClaudex(work, moving = work)
+
+        assertNotEquals(true, trust(state, work.toString()), "a folder he never trusted keeps asking: $state")
+    }
+
+    @Test
+    fun `a home record left by a daemon that died mid-move is taken out by the next launch`() {
+        val real = home.toRealPath()
+        Files.createDirectories(claudex)
+        claudex.resolve(".claude.json").writeText(
+            """{"numStartups":3,"projects":{"$real":{"$ACCEPTED":true},"$real/work":{"$ACCEPTED":true}}}""",
+        )
+
+        val state = launchClaudex(folder("work"))
+
+        assertNotEquals(true, trust(state, real.toString()), "the leftover home record is gone: $state")
+        assertEquals(true, trust(state, "$real/work"), "a folder he really trusted is untouched: $state")
+        assertEquals("3", state["numStartups"].toString(), "every other key survives")
     }
 
     @Test

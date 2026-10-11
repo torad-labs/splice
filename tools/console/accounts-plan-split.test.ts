@@ -21,6 +21,8 @@ const heads = [
   { key: "mixed", all_accounts_on_plan: false, buckets: [split(23_559, 12.4, 0, 23_259, 1500)] },
   { key: "mixed-before", all_accounts_on_plan: false, buckets: [split(23_559, 12.4, 0, 23_259, 1500), before(50, 3)] },
   { key: "plan-budget", all_accounts_on_plan: true, buckets: [split(40, 0, 0, 40, 2)] },
+  // figures long enough that the line wraps in a column, as claude-splice did live at 3828 (24,700 · ≈$1,579.77)
+  { key: "long-plan", all_accounts_on_plan: true, buckets: [split(1_234_567, 0, 0, 1_234_567, 123_456.78)] },
 ];
 const answers: Record<string, unknown> = {
   "/api/status": { registry: heads.map((h) => ({ key: h.key, label: h.key, family: "openai", authKind: "oauth" })) },
@@ -115,3 +117,30 @@ for (const width of [3828, 1440]) {
     for (const command of heads.map((h) => h.key)) bunExpect((await dayOf(command, width)).past).toBe(0);
   });
 }
+
+// A split Day line that wraps opens its next line with the phrase, never with the dot that joined it to the one before:
+// that dot is cut off at the card's edge, and every dot still drawn stands between two phrases on one line.
+test("a wrapped split Day line never opens a line with a dot", async () => {
+  let wrapped = 0;
+  for (const width of [3828, 1440, 1280]) {
+    const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    try {
+      await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
+      await expect(page.locator(`[data-meter="long-plan"]`)).toContainText("on your plan", { timeout: 15_000 });
+      const seen = await page.evaluate(() => [...document.querySelectorAll(".money.line")].map((line) => {
+        const edge = line.getBoundingClientRect().left;
+        const parts = [...line.querySelectorAll(".part")].map((p) => p.getBoundingClientRect().top);
+        const leading = [...line.querySelectorAll(".sep")].filter((s) => {
+          const r = s.getBoundingClientRect();
+          return r.right > edge + 0.5 && r.left < edge + 2; // drawn, and at the line's start
+        }).length;
+        return { lines: new Set(parts.map(Math.round)).size, leading };
+      }));
+      for (const s of seen) bunExpect(s.leading).toBe(0);
+      wrapped += seen.filter((s) => s.lines > 1).length;
+    } finally {
+      await page.close();
+    }
+  }
+  bunExpect(wrapped).toBeGreaterThan(0); // at least one line did wrap, so the rule was put to the test
+});

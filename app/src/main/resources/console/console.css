@@ -446,8 +446,14 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* the split Day line: its phrases joined by dots, each kept whole with the dot that leads it, so a break never leaves a
    dot hanging at a line's end; the line takes the whole first row and the button and the reset go under it, so a
    one-line reading stays one line beside "Day", as a figure with a count does above */
-.meter.windows.spend > .money.line { line-height: 1.5; }
-.meter.windows.spend > .money.line .part { white-space: nowrap; }
+.meter.windows.spend > .money.line { line-height: 1.5; overflow: hidden; }
+/* a phrase that opens a wrapped line opens it with no dot: every line of the run starts one "· " (2ch of the mono data
+   face) left of the box, where the box clips it, and the first phrase is padded by the same 2ch so it sits at the edge */
+.meter.windows.spend > .money.line > .run { display: block; margin-left: -2ch; }
+.meter.windows.spend > .money.line .part { display: inline-block; white-space: nowrap; }
+.meter.windows.spend > .money.line .part:first-child { padding-left: 2ch; }
+.meter.windows.spend > .money.line .sep { white-space: pre; }
+.meter.windows.spend:has(> span.money.line) > .label { align-self: start; line-height: 1.5; }
 .meter.windows.spend:has(> span.money.line) { row-gap: .9rem; }
 .meter.windows.spend:has(> span.money.line) > .money { grid-column: 2 / -1; }
 .meter.windows.spend:has(> span.money.line) > .act { grid-row: 2; grid-column: 3; }

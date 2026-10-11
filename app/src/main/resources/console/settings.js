@@ -380,7 +380,7 @@ function peaksHtml() {
     return `<div class="peak${lim && p.peak >= lim ? " full" : ""}">${cmdChip(key)}`
       + `<span class="pbar"><b style="width:${lim ? Math.min(100, (100 * p.peak) / lim) : 4}%"></b></span>`
       + `<span class="pnum"><b>${p.peak}</b> of ${lim || "Unlimited"} requests at once${p.peak ? `<i>${clockOf(p.at)}</i>` : ""}</span>`
-      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${p.queued}</b><em>Open on Requests</em></a>` : "<span></span>") + `</div>`;
+      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${fmt(p.queued)}</b><em>Open on Requests</em></a>` : "<span></span>") + `</div>`;
   };
   const waited = rows.reduce((a, p) => a + (p.queued || 0), 0);
   // the header door adds something only when it spans commands; with one command waiting, that command's own row door is the same list

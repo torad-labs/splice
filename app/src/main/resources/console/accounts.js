@@ -399,7 +399,10 @@ function meterHtml(c, pick = null) {
 // split, on a mixed command, cannot say which side its requests were on, so they are counted as not split, never as money.
 function splitMeterHtml(c, tag, day) {
   const s = c.split, n0 = (n) => n.toLocaleString("en-US"), parts = [];
-  const line = (lead) => `<span class="money line">${lead}${parts.map((p, i) => `<span class="part">${i || lead ? "· " : ""}${p}</span>`).join(" ")}</span>`;
+  // each phrase after the first carries its dot as text; the run sits one dot's width left inside a clipping box, so a
+  // phrase that starts a wrapped line has its dot cut off instead of leading the line with it (live walk of 54af50884)
+  const line = (lead) => `<span class="money line"><span class="run">${[lead, ...parts].filter(Boolean)
+    .map((p, i) => `<span class="part">${i ? `<span class="sep">· </span>` : ""}${p}</span>`).join(" ")}</span></span>`;
   if (s.allPlan) {
     if (s.plan) parts.push(`${reqs(s.plan)} on your plan`);
     if (s.planUsd) parts.push(`${money(s.planUsd)} at API prices`);
@@ -412,7 +415,7 @@ function splitMeterHtml(c, tag, day) {
   if (s.plan) parts.push(many(s.plan, "on your plan"));
   if (s.keyUnpriced) parts.push(many(s.keyUnpriced, "with no price"));
   if (s.old) parts.push(many(s.old, "not split into plan and key"));
-  const body = lead ? `${lead} ` : parts.length ? "" : `<em>No requests</em>`;
+  const body = lead || (parts.length ? "" : `<em>No requests</em>`);
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${line(body)}`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}</div>`;

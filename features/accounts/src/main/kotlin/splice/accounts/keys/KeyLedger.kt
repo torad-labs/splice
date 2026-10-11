@@ -38,6 +38,8 @@ internal class KeyLedger(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private var writeRefused = false
+    private var moveRefused = false
+    private var unreadableStays = false
 
     /** Records that [name] reads the key with [fingerprint] now (null: no key), and answers its history. A key seen
      *  before under the same name comes back with its first date. */
@@ -56,8 +58,9 @@ internal class KeyLedger(
     }
 
     // A ledger splice cannot write (a read-only config folder) never stops the key list: it holds dates, not keys.
+    // A ledger that could not be read and could not be moved aside is never written over: its bytes are the only copy.
     private fun write(ledger: Map<String, List<KeySeen>>): Boolean =
-        Cancellables.runCatchingCancellable {
+        !unreadableStays && Cancellables.runCatchingCancellable {
             Files.createDirectories(file.parent)
             SecureFile.writeAtomic0600(file, json.encodeToString(ledger))
         }.onFailure {
@@ -76,16 +79,37 @@ internal class KeyLedger(
 
     private fun now(): Long = Instant.ofEpochMilli(clock()).epochSecond
 
-    // An unreadable ledger starts over rather than refusing the key routes: it holds dates, never a credential.
+    // An unreadable ledger never refuses the key routes, and never loses what it holds: it is moved aside once, to
+    // key-ledger.json.unreadable-<epoch> (a rename, so its 0600 stays), and a new ledger starts. When the move fails
+    // the file is left as it is and nothing is written over it, so new keys show no day until it can be moved.
     private fun read(): Map<String, List<KeySeen>> {
+        unreadableStays = false
         if (!Files.isRegularFile(file)) return emptyMap()
         return Cancellables.runCatchingCancellable {
             json.decodeFromString<Map<String, List<KeySeen>>>(Files.readString(file))
-        }.onFailure {
+        }.onFailure { moveAside(it) }.getOrNull().orEmpty()
+    }
+
+    private fun moveAside(cause: Throwable) {
+        val aside = file.resolveSibling("${file.fileName}.unreadable-${now()}")
+        val moved = Cancellables.runCatchingCancellable { Files.move(file, aside) }
+        moved.onSuccess {
             log(
                 "[control] keys: the key ledger at ${LogSafe.str(file.toString())} could not be read " +
-                    "(${LogSafe.str(SafeFailureText.render(it))}); starting over\n",
+                    "(${LogSafe.str(SafeFailureText.render(cause))}); kept at " +
+                    "${LogSafe.str(aside.toString())}, starting over\n",
             )
-        }.getOrNull().orEmpty()
+        }.onFailure {
+            unreadableStays = true
+            if (!moveRefused) {
+                moveRefused = true
+                log(
+                    "[control] keys: the key ledger at ${LogSafe.str(file.toString())} could not be read " +
+                        "(${LogSafe.str(SafeFailureText.render(cause))}) and could not be moved aside " +
+                        "(${LogSafe.str(SafeFailureText.render(it))}); it is left as it is, " +
+                        "a key first seen now shows no day\n",
+                )
+            }
+        }
     }
 }

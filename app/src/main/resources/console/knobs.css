@@ -1,0 +1,57 @@
+/* The settings kit's controls (knobs.js), the same on Settings, the gear on Requests and a command's pane on Models.
+   Every rule sits under .kn, the wrapper a page puts around what the kit draws, so none reaches a page's own .form,
+   .pickbtn or .said. Class names checked against console.css, sessions.css, models.css and requests.css. */
+
+/* a setting: its name, its control, and what the change did */
+.kn .form { display: grid; grid-template-columns: 24rem minmax(0, 1fr); gap: 1.3rem 1.8rem; align-items: baseline; }
+.kn .form .lbl.lit { color: var(--text); }
+.kn .form .lbl.lit::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin: 0 .6rem .15rem -1.1rem; border-radius: 50%; background: var(--key-light); }
+.kn .ctl { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; min-width: 0; }
+.kn .ctl.col { flex-direction: column; align-items: flex-start; gap: .7rem; }
+.kn .line { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; }
+.kn .menuwrap { position: relative; display: inline-flex; }
+.kn .menuwrap > .menu { left: 0; right: auto; top: calc(100% + .5rem); z-index: 20; }
+.kn .menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 2rem; }
+.kn .menu button[aria-current="true"] { box-shadow: inset .25rem 0 0 var(--key-light); }
+.kn .mmeta { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+.kn .pickbtn { --c: var(--key-light); justify-content: space-between; min-width: 13rem; }
+.kn .custom { display: inline-flex; align-items: center; gap: .55rem; }
+.kn .custom .field { width: 8rem; text-align: right; font: 500 1.08rem/1 var(--font-data); padding: .65rem .8rem; }
+.kn .custom em { font: 500 1rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+.kn .said { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.kn .said .wait { width: 1.1rem; height: 1.1rem; --c: var(--text-body); }
+.kn .said.ok { color: var(--live); }
+.kn .said.limit { color: var(--limit); }
+.kn .fixed { font: 500 1.08rem/1 var(--font-data); color: var(--text); display: inline-flex; align-items: center; min-height: var(--ctl-h); }  /* a value with no control stands where one would */
+.kn .from { display: inline-flex; align-items: center; gap: .45rem; font: 500 .98rem/1.2 var(--font-name); color: var(--text-mute); }
+.kn code { font: 500 .95rem/1 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: .3rem; padding: .2rem .4rem; }
+.kn .act.one { opacity: .75; }
+.kn .ctl:hover .act.one, .kn .act.one[aria-expanded="true"] { opacity: 1; }
+.kn .blot { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
+.kn .menu button:has(.blot) { justify-content: flex-start; gap: .7rem; }
+
+/* one command's own value, under the value every other command has, with the way back to it */
+.kn .over { display: flex; align-items: center; gap: .8rem; padding-left: 1.1rem; border-left: .2rem solid var(--track-line); }
+.kn .only { display: inline-flex; align-items: center; gap: .45rem; }
+.kn .over .pickbtn, .kn .own .pickbtn { min-width: 11rem; }
+.kn .back {
+  display: inline-flex; align-items: center; gap: .45rem; padding: .45rem .7rem .45rem .55rem; cursor: pointer;
+  font: 500 1rem/1 var(--font-data); color: var(--text-mute); background: transparent; border: .12rem dashed var(--track-line); border-radius: var(--r-in);
+}
+.kn .back svg { width: 1.05rem; height: 1.05rem; }
+.kn .back:hover { color: var(--text); border-style: solid; border-color: var(--text-mute); }
+
+/* a per-command switch: the command, then On and Off, as every other switch on the console */
+.kn .cmdsw { display: grid; grid-template-columns: repeat(auto-fill, minmax(25rem, 1fr)); gap: .55rem 1.6rem; }
+.kn .cs { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .3rem 0; }
+.kn .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
+
+/* the models to keep thinking on */
+.kn .mlist { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
+.kn .mchip { display: inline-flex; align-items: center; gap: .2rem; padding: .25rem .25rem .25rem .7rem; font: 500 1rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+.kn .mchip .icon { width: 1.8rem; height: 1.8rem; }
+.kn .mchip .icon svg { width: .95rem; height: .95rem; }
+
+/* a command's own settings, under its form on Models */
+.kn.ownsec h3 { margin-bottom: 1.2rem; }
+.kn.ownsec .form { grid-template-columns: 22rem minmax(0, 1fr); margin-bottom: 1.2rem; }

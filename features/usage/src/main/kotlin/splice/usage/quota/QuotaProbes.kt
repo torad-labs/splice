@@ -1,0 +1,131 @@
+// NEW: the provider usage endpoints that answer "how much of my plan is used", one probe per auth
+// kind, all read-only GETs on the head's own credential. Verified live 2026-09-02 against each:
+//   chatgpt-oauth  GET <origin>/backend-api/wham/usage   rate_limit.{primary,secondary}_window
+//                  {used_percent, limit_window_seconds, reset_at|reset_after_seconds}, plan_type.
+//                  A Pro plan reports its WEEKLY window as "primary" — slots go by length.
+//   kimi-oauth     GET <base>/v1/usages   usage{limit,remaining,resetTime} is the weekly quota,
+//                  limits[]{window{duration,timeUnit},detail{limit,remaining,resetTime}} the
+//                  5-hour rate window; user.membership.level is the plan.
+//   grok-oauth     GET cli-chat-proxy.grok.com/v1/billing?format=credits   config.currentPeriod
+//                  {type,end} + creditUsagePercent: one weekly period, no 5-hour window.
+//   client         ClaudeUsageProbe: each Claude account splice holds a login for is asked on Anthropic's
+//                  usage endpoint, and the head also relays Anthropic's own unified headers from its rounds.
+//                  A forwarded sign-in (no token of splice's own) gets the headers only.
+// api-key heads have per-minute x-ratelimit-* families, not plan windows, and get no probe.
+package splice.usage.quota
+
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import splice.core.auth.AuthProvider
+import splice.core.auth.Credentials
+import splice.core.usage.QuotaSnapshot
+import splice.core.util.EnvReader
+import splice.core.util.LoopbackOverride
+import splice.core.util.WallClock
+import java.io.IOException
+
+public fun interface QuotaProbe {
+    public suspend fun probe(): QuotaSnapshot?
+}
+
+/** Picks a head's probe by its auth kind. The kind and base URL are the head's provider config's; app
+ *  passes them in (LAYOUT-01), so the dispatch reads no composition type. */
+public class QuotaProbes(
+    private val client: HttpClient,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    env: EnvReader = EnvReader(System::getenv),
+) {
+    private val claudeUsageUrl = LoopbackOverride.url(env, CLAUDE_USAGE_URL_ENV, CLAUDE_USAGE_URL)
+
+    public fun forHead(
+        authKind: String,
+        baseUrl: String,
+        auth: AuthProvider,
+        usageFields: UsageFields?,
+        userAgent: ClientUserAgent? = null,
+    ): QuotaProbe? =
+        when (authKind) {
+            "chatgpt-oauth" -> CodexQuotaProbe(client, baseUrl, auth, clock)
+            "kimi-oauth" -> KimiQuotaProbe(client, baseUrl, auth, clock)
+            "grok-oauth" -> GrokQuotaProbe(client, auth, clock)
+            "muse-oauth" -> usageFields?.let { MuseMintProbe(it, MuseQuotaParser(), clock) }
+            // A Claude head's own accounts: Anthropic's subscription usage endpoint, one probe per account. The
+            // caller's forwarded sign-in gets one too and answers null from it, because splice holds no token of
+            // its own to ask with (ClaudeUsageProbe).
+            "client" -> userAgent?.let { ClaudeUsageProbe(client, auth, it, clock, url = claudeUsageUrl) }
+            else -> null
+        }
+}
+
+/** Parses one usage body into a snapshot; a role-named seam so the three parsers share one GET. */
+internal fun interface QuotaParse {
+    fun parse(body: kotlinx.serialization.json.JsonObject, now: Long): QuotaSnapshot?
+}
+
+internal class BearerGetProbe(
+    private val client: HttpClient,
+    private val url: String,
+    private val auth: AuthProvider,
+    private val parse: QuotaParse,
+    private val clock: WallClock,
+    private val extraHeaders: Map<String, String> = emptyMap(),
+) : QuotaProbe {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override suspend fun probe(): QuotaSnapshot? {
+        val creds = auth.credentials() ?: return null
+        val authHeaders = QuotaCredentialHeaders.of(creds) ?: return null
+        val resp = client.get(url) {
+            authHeaders.forEach { (name, value) -> header(name, value) }
+            extraHeaders.forEach { (name, value) -> header(name, value) }
+            if (creds is Credentials.Bearer) {
+                creds.accountId?.let { header("ChatGPT-Account-Id", it) }
+            }
+        }
+        // V4-296: a refusal (401, 429, a 5xx) is a failure, so QuotaPoller's log-once path names it; a null
+        // here reads as "nothing to record" and froze the bars on the last snapshot with no line.
+        if (resp.status.value != HTTP_OK) throw QuotaEndpointRefused(resp.status.value)
+        val now = clock()
+        val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+        return UsageAnswer.of(body, parse.parse(body, now), now)
+    }
+}
+
+/** How a credential rides on a usage GET, for every probe in this package. One reading, because a probe that
+ *  spelled it differently would ask the vendor as somebody else. A forwarded credential is no credential here:
+ *  splice holds nothing to send outside a turn. */
+internal object QuotaCredentialHeaders {
+    fun of(creds: Credentials): Map<String, String>? = when (creds) {
+        is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
+        is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
+        Credentials.ClientForwarded -> null
+    }
+}
+
+/** What a usage endpoint's 200 says (Marlin's ruling, Oct 10, 2026). Windows are a reading. A body naming an error is
+ *  a failure, so the last reading stays with its time. Anything else is the provider saying it has no usage for this
+ *  account (Kimi's `{}`): the tracker drops the older reading instead of drawing it as today's. */
+internal object UsageAnswer {
+    fun of(body: JsonObject, parsed: QuotaSnapshot?, now: Long): QuotaSnapshot = when {
+        parsed != null -> parsed
+        body.containsKey(ERROR_FIELD) -> throw UsageAnswerError()
+        else -> QuotaSnapshot(updatedAt = now)
+    }
+}
+
+/** A 200 whose body names an error. Its text is the vendor's and is never read, so this failure is safe to say. */
+internal class UsageAnswerError : IOException("the usage endpoint answered 200 with an error")
+
+// why: the one field every vendor here uses to say a 200 carries an error rather than usage.
+private const val ERROR_FIELD = "error"
+
+/** A usage endpoint that answered [status] rather than 200. The status is the whole report: the body is
+ *  the vendor's and is never read, so this failure is safe to say where any other is withheld. */
+internal class QuotaEndpointRefused(val status: Int) : IOException("the usage endpoint answered HTTP $status")
+
+private const val HTTP_OK = 200

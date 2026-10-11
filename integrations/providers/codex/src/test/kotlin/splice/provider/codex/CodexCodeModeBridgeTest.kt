@@ -1,0 +1,488 @@
+package splice.provider.codex
+
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.turn.AbsorbedRounds
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
+import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
+import splice.core.turn.UsageHistory
+import splice.core.turn.UsageOrigin
+import splice.upstream.RoundResult
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeStep
+
+class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
+    @Test
+    fun `onHeadStop closes the code-mode runtime`() = runTest {
+        val opened = mutableListOf<TerminalRuntime>()
+        val bridge = restartableBridge(opened)
+        assertTrue(runScript(bridge, "outer-1") is TurnOutcome.Success)
+
+        bridge.onHeadStop()
+
+        assertTrue(opened.single().closed, "onHeadStop must close the code-mode runtime")
+    }
+
+    // V4-107: HeadServer.restart is onHeadStop then start on the SAME provider, and a runtime's close()
+    // is terminal. Reusing the closed runtime failed every code-mode turn until the daemon restarted.
+    @Test
+    fun `a head restart opens a fresh runtime, so code mode survives stop then start`() = runTest {
+        val opened = mutableListOf<TerminalRuntime>()
+        val bridge = restartableBridge(opened)
+        assertTrue(runScript(bridge, "outer-1") is TurnOutcome.Success)
+
+        bridge.onHeadStop()
+        val after = runScript(bridge, "outer-2")
+
+        assertTrue(after is TurnOutcome.Success, "the first turn after a restart must run: $after")
+        assertEquals(2, opened.size, "the restarted head opened its own runtime")
+        assertTrue(opened.first().closed && !opened.last().closed)
+    }
+
+    /** Mirrors JvmCodeModeRuntime: close() is terminal, and a start after it fails. */
+    private class TerminalRuntime : CodeModeRuntime {
+        var closed = false
+
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
+            check(!closed) { "Code-mode runtime is closed" }
+            return ScriptedCell(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private fun restartableBridge(opened: MutableList<TerminalRuntime>) = CodexCodeModeBridge(
+        CodeModeBridgeConfig({ TerminalRuntime().also(opened::add) }, stateLocation()),
+    )
+
+    private suspend fun runScript(bridge: CodexCodeModeBridge, callId: String): TurnOutcome {
+        var posts = 0
+        return bridge.interceptor(turn(), null, disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
+            RoundResult.Outcome(if (++posts == 1) outerOutcome(callId) else completedOutcome())
+        }.turn()
+    }
+
+    @Test
+    fun `immediate completion rewrites opaque pair and aggregates real upstream usage`() = runTest {
+        val bridge = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("answer")))))
+        var upstreamCalls = 0
+        var rewritten = ""
+        val outcome = bridge.interceptor(turn(), null, disableParallel = false)
+            .intercept(BASE_REQUEST, RecordingSink()) { body ->
+                upstreamCalls++
+                val scriptCall = RoundHandoffs(customCalls = listOf(outer()))
+                RoundResult.Outcome(
+                    if (upstreamCalls == 1) {
+                        TurnOutcome.Success(false, false, Usage(10, 2, 3, 1), handoffs = scriptCall)
+                    } else {
+                        rewritten = body
+                        TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(20, 4, 5, 2),
+                            text = RoundText(bodyText = "final"),
+                            shape = ResponseShape(messageClosed = true),
+                        )
+                    },
+                )
+            }.turn() as TurnOutcome.Success
+
+        assertEquals(2, upstreamCalls)
+        assertTrue("custom_tool_call" in rewritten)
+        assertTrue("outer-call" in rewritten)
+        assertTrue("answer" in rewritten)
+        assertEquals("final", outcome.text.bodyText)
+        // The script round was a request of its own: its input is absorbed beside the final round's.
+        val script = AbsorbedRounds(rounds = 1, inputTokens = 10, cachedTokens = 3, outputTokens = 2)
+        assertEquals(Usage(20, 6, 5, 3, origin = UsageOrigin(history = UsageHistory(absorbed = script))), outcome.usage)
+    }
+
+    @Test
+    fun `consecutive completed scripts continue through one upstream loop`() = runTest {
+        val runtime = QueuedRuntime(
+            ArrayDeque(
+                listOf(
+                    ArrayDeque(listOf(CodeModeStep.Completed("one"))),
+                    ArrayDeque(listOf(CodeModeStep.Completed("two"))),
+                ),
+            ),
+        )
+        val bridge = bridge(runtime)
+        var calls = 0
+        var finalBody = ""
+        val outcome = bridge.interceptor(turn(), null, disableParallel = false)
+            .intercept(BASE_REQUEST, RecordingSink()) { body ->
+                calls++
+                RoundResult.Outcome(
+                    when (calls) {
+                        1 -> TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(1, 1),
+                            handoffs = RoundHandoffs(customCalls = listOf(outer("outer-1", "first"))),
+                        )
+                        2 -> TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(2, 1),
+                            handoffs = RoundHandoffs(customCalls = listOf(outer("outer-2", "second"))),
+                        )
+                        else -> {
+                            finalBody = body
+                            completedOutcome()
+                        }
+                    },
+                )
+            }.turn()
+
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(3, calls)
+        assertEquals(listOf("first", "second"), runtime.sources)
+        assertTrue("outer-1" in finalBody && "outer-2" in finalBody)
+        assertTrue("one" in finalBody && "two" in finalBody)
+    }
+
+    @Test
+    fun `dependent calls cross client requests without an intervening upstream call`() = runTest {
+        val steps = listOf(
+            CodeModeStep.Calls(listOf(call("runtime-1", "Read", "path" to "a"))),
+            CodeModeStep.Calls(listOf(call("runtime-2", "Edit", "file" to "b"))),
+            CodeModeStep.Completed("done"),
+        )
+        val runtime = ScriptedRuntime(ArrayDeque(steps))
+        val bridge = bridge(runtime)
+        val sink1 = RecordingSink()
+        val first = bridge.interceptor(turn(), outer(), disableParallel = false)
+        var upstreamCalls = 0
+        val firstOutcome = first.intercept(BASE_REQUEST, sink1) {
+            upstreamCalls++
+            val call = RoundHandoffs(customCalls = listOf(outer()))
+            RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(inputTokens = 100), handoffs = call))
+        }.turn()
+        assertTrue((firstOutcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(100, firstOutcome.usage.inputTokens)
+        assertEquals(listOf("Read"), sink1.tools.map { it.name })
+        assertEquals(1, upstreamCalls)
+        val readId = sink1.tools.single().id
+        val sink2 = RecordingSink()
+        val second = bridge.interceptor(turn(resultId = readId, result = "A"), null, disableParallel = false)
+        val secondOutcome = second.intercept(requestWithResult(readId, "A"), sink2) {
+            upstreamCalls++
+            RoundResult.Outcome(completedOutcome())
+        }.turn()
+        assertTrue((secondOutcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("Edit"), sink2.tools.map { it.name })
+        assertEquals(1, upstreamCalls, "resuming the cell must not call the model")
+        val editId = sink2.tools.single().id
+        val sink3 = RecordingSink()
+        val third = bridge.interceptor(turn(resultId = editId, result = "B"), null, disableParallel = false)
+        val thirdOutcome = third.intercept(requestWithTwoResults(readId, editId), sink3) { rewritten ->
+            upstreamCalls++
+            val input = Json.parseToJsonElement(rewritten).jsonObject.getValue("input").toString()
+            assertTrue("custom_tool_call" in input)
+            assertTrue("custom_tool_call_output" in input)
+            assertFalse(readId in input)
+            assertFalse(editId in input)
+            RoundResult.Outcome(completedOutcome())
+        }.turn()
+        assertFalse((thirdOutcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(true to false, secondOutcome.usage.origin.localStep to thirdOutcome.usage.origin.localStep)
+        assertEquals(2, upstreamCalls)
+        assertEquals(listOf("runtime-1", "runtime-2"), runtime.cell.results.flatten().map { it.id })
+    }
+
+    @Test
+    fun `immediate history survives a later cell with dependent callbacks`() = runTest {
+        val runtime = QueuedRuntime(
+            ArrayDeque(
+                listOf(
+                    ArrayDeque(listOf(CodeModeStep.Completed("one"))),
+                    ArrayDeque(
+                        listOf(
+                            CodeModeStep.Calls(listOf(call("runtime-read", "Read"))),
+                            CodeModeStep.Calls(listOf(call("runtime-edit", "Edit"))),
+                            CodeModeStep.Completed("two"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val manager = bridge(runtime)
+        val readSink = RecordingSink()
+        var initialPosts = 0
+        val first = manager.interceptor(turn(), null, disableParallel = false)
+            .intercept(BASE_REQUEST, readSink) {
+                initialPosts++
+                RoundResult.Outcome(if (initialPosts == 1) outerOutcome("outer-a") else outerOutcome("outer-b"))
+            }.turn()
+        assertTrue((first as TurnOutcome.Success).hasToolUse)
+        assertEquals(2, initialPosts)
+
+        val readId = readSink.tools.single().id
+        val editSink = RecordingSink()
+        val second = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
+            .intercept(requestWithResult(readId, "A"), editSink) { error("upstream must not run") }.turn()
+        assertTrue((second as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("Edit"), editSink.tools.map { it.name })
+        assertEquals(2, initialPosts)
+
+        val editId = editSink.tools.single().id
+        val finalTurn = turn(
+            results = listOf(CodeModeResult(readId, "A"), CodeModeResult(editId, "B")),
+        )
+        var finalPost = ""
+        val third = manager.interceptor(finalTurn, null, disableParallel = false)
+            .intercept(requestWithTwoResults(readId, editId), RecordingSink()) { body ->
+                finalPost = body
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
+
+        assertTrue(third is TurnOutcome.Success)
+        assertTrue("outer-a" in finalPost)
+        assertTrue("one" in finalPost)
+        assertTrue("outer-b" in finalPost)
+        assertTrue("two" in finalPost)
+    }
+
+    /** One callback exchange as the client replays it: the call and its output, as JSON items. */
+    private fun readExchange(id: String, tool: String, output: String) =
+        """{"type":"function_call","call_id":"$id","name":"$tool","arguments":"{}"},""" +
+            """{"type":"function_call_output","call_id":"$id","output":"$output"}"""
+
+    /** A client request body: the developer item, then the given JSON items in order. */
+    private fun clientBody(vararg items: String) =
+        """{"input":[{"role":"developer","content":"s"},""" + items.joinToString(",") + "]}"
+
+    @Test
+    fun `callback history keeps its position across a user turn and later cell`() = runTest {
+        val runtime = crossTurnRuntime()
+        val manager = bridge(runtime)
+        val aSink = RecordingSink()
+        manager.interceptor(turn(), null, disableParallel = false)
+            .intercept(BASE_REQUEST, aSink) { RoundResult.Outcome(outerOutcome("outer-a")) }
+        val aReadId = aSink.tools.single().id
+        manager.interceptor(turn(aReadId, "A"), null, disableParallel = false)
+            .intercept(requestWithResult(aReadId, "A"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
+
+        val userMessage = "start the second cell"
+        val aRead = readExchange(aReadId, "Read", "A")
+        val user = """{"role":"user","content":"$userMessage"}"""
+        val startBBody = clientBody(aRead, user)
+        val aResult = CodeModeResult(aReadId, "A")
+        val bReadSink = RecordingSink()
+        manager.interceptor(turn(results = listOf(aResult)), null, disableParallel = false)
+            .intercept(startBBody, bReadSink) { rewritten ->
+                assertTrue(rewritten.indexOf("outer-a") < rewritten.indexOf(userMessage))
+                assertFalse(aReadId in rewritten)
+                RoundResult.Outcome(outerOutcome("outer-b"))
+            }
+        val bReadId = bReadSink.tools.single().id
+
+        val bRead = readExchange(bReadId, "Read", "B")
+        val resumeBBody = clientBody(aRead, user, bRead)
+        val bReadResult = CodeModeResult(bReadId, "B")
+        val bEditSink = RecordingSink()
+        val resumed = manager.interceptor(
+            turn(results = listOf(aResult, bReadResult)),
+            null,
+            disableParallel = false,
+        ).intercept(resumeBBody, bEditSink) { error("upstream must not run") }.turn()
+        assertTrue((resumed as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("Edit"), bEditSink.tools.map { it.name })
+
+        val bEditId = bEditSink.tools.single().id
+        val finalBody = clientBody(aRead, user, bRead, readExchange(bEditId, "Edit", "C"))
+        val finalTurn = turn(
+            results = listOf(aResult, bReadResult, CodeModeResult(bEditId, "C")),
+        )
+        var finalPost = ""
+        manager.interceptor(finalTurn, null, disableParallel = false)
+            .intercept(finalBody, RecordingSink()) { body ->
+                finalPost = body
+                RoundResult.Outcome(completedOutcome())
+            }
+
+        assertFalse(aReadId in finalPost)
+        assertTrue(finalPost.indexOf("outer-a") < finalPost.indexOf(userMessage))
+        assertTrue(finalPost.indexOf(userMessage) < finalPost.indexOf("outer-b"))
+        assertEquals(2, Regex("outer-a").findAll(finalPost).count())
+    }
+
+    @Test
+    fun `client parallel disable exposes one runtime call at a time`() = runTest {
+        val runtime = ScriptedRuntime(
+            ArrayDeque(
+                listOf(
+                    CodeModeStep.Calls(
+                        listOf(
+                            call("r1", "Read", "path" to "a"),
+                            call("r2", "Read", "path" to "b"),
+                        ),
+                    ),
+                    CodeModeStep.Completed("ok"),
+                ),
+            ),
+        )
+        val bridge = bridge(runtime)
+        val sink = RecordingSink()
+        bridge.interceptor(turn(), outer(), disableParallel = true).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
+        assertEquals(1, sink.tools.size)
+
+        val firstId = sink.tools.single().id
+        val nextSink = RecordingSink()
+        bridge.interceptor(turn(resultId = firstId, result = "one"), null, disableParallel = true)
+            .intercept(requestWithResult(firstId, "one"), nextSink) { error("upstream must not run") }
+        assertEquals(1, nextSink.tools.size)
+        assertEquals(1, runtime.cell.advances, "the runtime waits until the complete yielded batch returns")
+    }
+
+    @Test
+    fun `passive sibling content before an owned result is preserved and interrupts further callbacks`() = runTest {
+        val runtime = ScriptedRuntime(
+            ArrayDeque(
+                listOf(
+                    CodeModeStep.Calls(listOf(call("runtime-1", "Read"))),
+                    CodeModeStep.Calls(listOf(call("runtime-2", "Edit"))),
+                ),
+            ),
+        )
+        val bridge = bridge(runtime)
+        val firstSink = RecordingSink()
+        bridge.interceptor(turn(), outer(), disableParallel = false)
+            .intercept(BASE_REQUEST, firstSink) { RoundResult.Outcome(outerOutcome()) }
+        val readId = firstSink.tools.single().id
+        val sibling = "Background job probe-job completed: 7 times 8 = 56."
+        var forwarded = ""
+
+        val outcome = bridge.interceptor(turn(resultId = readId, result = "A"), null, disableParallel = false)
+            .intercept(requestWithSiblingBeforeResult(readId, sibling), RecordingSink()) { rewritten ->
+                forwarded = rewritten
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
+
+        assertFalse((outcome as TurnOutcome.Success).hasToolUse)
+        assertTrue(sibling in forwarded)
+        assertTrue("custom_tool_call_output" in forwarded)
+        assertFalse("\"call_id\":\"$readId\"" in forwarded)
+        assertEquals(1, runtime.cell.advances, "new client content interrupts before any further JavaScript runs")
+        assertTrue(runtime.cell.closed)
+    }
+
+    @Test
+    fun `turn builder arms canonical lite requests, compactions included`() {
+        val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
+        val builder = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly)
+        listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-astra[1m]", "GPT-6-SOL[500K]").forEach { model ->
+            val prepared = builder.prepare(toolBody(), "s", built(model, lite = true))
+            assertTrue(prepared.roundInterceptor != null, model)
+        }
+        listOf("not-gpt-6-astra", "gpt-6-astra-preview", "gpt-6-astra[preview]").forEach { model ->
+            val prepared = builder.prepare(toolBody(), "s", built(model, lite = true))
+            assertTrue(prepared.roundInterceptor == null, model)
+        }
+        val toolless = builder.prepare(toollessBody(), "s", built("gpt-6-astra", lite = true))
+        val nonLite = builder.prepare(toolBody(), "s", built("gpt-6-astra", lite = false))
+        val named = builder.prepare(namedChoiceBody(), "s", built("gpt-6-astra", lite = true))
+        // 2026-09-21: a compaction is built exactly like a turn — same splice_exec declaration, same guidance, same
+        // interceptor — so its upstream bytes share the turn's cached prefix. 2026-10-09: the preparation no longer
+        // takes the provider's compaction flag, so that equivalence is structural and no call can diverge on it.
+        val turn = builder.prepare(toolBody(), "s", built("gpt-6-astra", lite = true))
+        assertTrue(turn.roundInterceptor != null, "an eligible turn rides the bridge")
+        assertTrue(toolless.roundInterceptor == null)
+        assertTrue(nonLite.roundInterceptor == null)
+        assertTrue(named.roundInterceptor == null)
+    }
+
+    @Test
+    fun `turn builder admits an image result as an announced marker, never a refusal`() {
+        // V4-178: this was `assertThrows(IllegalArgumentException)` — the refusal that wedged a
+        // live session on a screenshot (the image stays in history, so it refused every turn).
+        // V4-179: the marker tells the truth about where the pixels went — a readable image is
+        // DELIVERED beside the script's output; an unreadable one is omitted with the renderer's reason.
+        val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok"))))
+        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media(), codeModeOnly = backendCodeModeOnly)
+        val delivered = builder.toolResults(nonTextResultBody()).single().output
+        assertEquals(
+            "[image from tool_result toolu_splice_test: image/png, 4 base64 chars",
+            delivered.substringBefore(", delivered"),
+        )
+        assertTrue(delivered.contains("delivered to the model beside this script's output"), delivered)
+        assertTrue(delivered.contains("text only"), delivered)
+        // The whole turn still prepares: the interceptor is armed, nothing throws.
+        val prepared = builder.prepare(nonTextResultBody(), "s", built("gpt-6-astra", lite = true))
+        assertNotNull(prepared.roundInterceptor)
+
+        val omitted = builder.toolResults(unreadableResultBody()).single().output
+        assertEquals(
+            "[image omitted by splice code-mode from tool_result toolu_splice_test: image/png, 0 base64 chars",
+            omitted.substringBefore(" ("),
+        )
+        assertTrue(omitted.contains("unsupported source"), omitted)
+
+        // Text FOLLOWED by an image keeps the text AND announces the image, in order — the silent
+        // `filterIsInstance` V4-114 refused to ship is still refused; the announcement is the point.
+        val mixed = builder.toolResults(mixedResultBody()).single().output
+        assertTrue(mixed.startsWith("ok[image from tool_result toolu_splice_test"), mixed)
+    }
+
+    @Test
+    fun `historical nonbridge image result passes without bridge conversion`() {
+        val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
+        val built = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly).prepare(
+            historicalImageResultBody(),
+            sessionId = "s",
+            built = built("gpt-6-astra", lite = true),
+        )
+
+        assertTrue(built.roundInterceptor != null)
+    }
+
+    @Test
+    fun `unknown current tool is refused before runtime receives results`() = runTest {
+        val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r1", "Gone"))))))
+        val outcome = bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }.turn()
+        assertTrue(outcome is TurnOutcome.Failure)
+        assertTrue((outcome as TurnOutcome.Failure).message.contains("not in the current tool catalog"))
+        assertEquals(1, runtime.cell.advances)
+    }
+
+    private fun crossTurnRuntime(): QueuedRuntime = QueuedRuntime(
+        ArrayDeque(
+            listOf(
+                ArrayDeque(
+                    listOf(
+                        CodeModeStep.Calls(listOf(call("runtime-a-read", "Read"))),
+                        CodeModeStep.Completed("one"),
+                    ),
+                ),
+                ArrayDeque(
+                    listOf(
+                        CodeModeStep.Calls(listOf(call("runtime-b-read", "Read"))),
+                        CodeModeStep.Calls(listOf(call("runtime-b-edit", "Edit"))),
+                        CodeModeStep.Completed("two"),
+                    ),
+                ),
+            ),
+        ),
+    )
+}

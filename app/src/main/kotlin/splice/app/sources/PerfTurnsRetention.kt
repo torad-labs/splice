@@ -1,0 +1,32 @@
+// NEW: share repeated descriptions in the single lossless perf-row cache, never a second row copy.
+package splice.app.sources
+
+/** Preserve every field while sharing only repeated descriptions in the source-owned bounded pool. */
+internal class PerfTurnsRetention : PerfLineKeep {
+    override fun keep(line: PerfCachedLine, names: PerfFieldNames): PerfCachedLine {
+        val row = line.row ?: return line
+        var textBytes = 0L
+        fun share(value: String?): String? = value?.let {
+            val shared = names.share(it)
+            if (!names.contains(it)) textBytes += PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES
+            shared
+        }
+        // Request and trace identities are not interned: one-off values cannot crowd repeated descriptions out.
+        listOf(row.turn, row.turnId, row.transcript.responseMessageId).forEach {
+            if (it != null) textBytes += PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES
+        }
+        return line.copy(
+            row = row.copy(
+                outcome = requireNotNull(share(row.outcome)),
+                cause = share(row.cause),
+                facts = row.facts.copy(
+                    model = share(row.facts.model),
+                    session = share(row.facts.session),
+                    account = share(row.facts.account),
+                ),
+                transcript = row.transcript.copy(sessionId = share(row.transcript.sessionId)),
+            ),
+            retainedTextBytes = textBytes,
+        )
+    }
+}

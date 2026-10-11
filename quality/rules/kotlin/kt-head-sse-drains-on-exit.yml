@@ -1,0 +1,53 @@
+# 2026-09-23 — the daemon answers a stream ONLY through splice.http.SseResponse (SseChannelResponse for the control plane).
+#
+# Ktor 3.5.2's own streaming bodies (respondTextWriter / respondBytesWriter / respondOutputStream and
+# the WriterContent / ChannelWriterContent / OutputStreamContent they build) run inside the engine's
+# `responseChannel().use { content.writeTo(this) }`. A body that ends by throwing is closed WITH a
+# cause, which is cancel(cause), and a cancelled ByteChannel's reader throws before it takes the bytes
+# already flushed into it. On a loaded host the engine's reader lags, so the frame written last is
+# dropped — and in the head the frame written last before a throw is the cancellation seal's error
+# frame (SealedDrive rethrows after sealing). Measured twice: HeadServerFoldTest NF-03 on CI run
+# 35838271235 (head bytes_out=137, client bodyLen=0) and HeadServerCompactCapTest's compact arm in the
+# local gate on aee915e4 (head bytes_out=568, client got 431, the 137-byte wall frame missing).
+#
+# SseResponse closes the channel CLEAN in a finally before the throw reaches `use`, so the engine's
+# cancel is a no-op and the reader drains everything (SseResponseTest pins it, with Ktor's own writer
+# as the arm that shows the loss). This wall keeps the raw writers from coming back: a new streaming
+# answer in the head written with respondTextWriter would carry the drop with it and pass every test
+# that runs on an idle machine.
+#
+# Matched on the identifier, so the import and the call are each a finding. The one writer that may run is the one
+# SseResponse builds inside the try whose own finally closes the channel clean; the rule checks that per writer, not
+# per file or per path (2026-10-09). Every daemon stream answers through SseResponse since then: the head's turns, and
+# the control plane's events and MCP streams through SseChannelResponse.
+id: kt-head-sse-drains-on-exit
+language: kotlin
+severity: error
+message: "The head streams only through SseResponse — Ktor's raw writers cancel the channel when the body throws and drop the frames the engine has not read yet, the seal's error frame last."
+ignores:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
+rule:
+  all:
+    - kind: simple_identifier
+      regex: ^(respondTextWriter|respondBytesWriter|respondOutputStream|WriterContent|ChannelWriterContent|OutputStreamContent)$
+    # A writer passes only when IT runs inside a try whose own finally closes the channel clean (flushAndClose). The
+    # search stops at the nearest try, lambda, function, finally or catch, so a flushAndClose anywhere else in the
+    # file (an unrelated cleanup, an outer try around a lambda, the finally or catch of the same try) counts for
+    # nothing. Every other stream answers through SseResponse or SseChannelResponse and names no writer at all.
+    - not:
+        inside:
+          stopBy:
+            any:
+              - kind: function_declaration
+              - kind: lambda_literal
+              - kind: try_expression
+              - kind: finally_block
+              - kind: catch_block
+          kind: try_expression
+          has:
+            kind: finally_block
+            has:
+              stopBy: end
+              kind: simple_identifier
+              regex: ^flushAndClose$

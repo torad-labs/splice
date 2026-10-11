@@ -1,0 +1,119 @@
+# THE LAW. The control plane is the daemon's ADMIN surface: it reads every head's config, mints and
+# hands out launch specs, streams logs, and can shut the daemon down. Its only defence is the
+# management key, and that defence is applied per-route, by wrapping the handler in `guarded(call)`.
+# A route registered without that wrapper is not "less protected" — it is UNAUTHENTICATED, reachable
+# by anything that can open a socket to the control port, and nothing about its declaration says so.
+# Authorization by convention is authorization that a five-line diff removes by accident.
+#
+# THE SCAR (ARCH-AUDIT 2026-09-17, audit D row 6). `post("/statusline/{head}")` and its `get` twin
+# (ControlServer.kt:158-159) are registered bare, with the reason carried only in a trailing
+# comment — "stdin-piped per tick; no bearer". Whatever the merit of that decision, it is invisible
+# to the build: the 20 guarded routes and these 2 are the same shape to every tool in the repo, and
+# the next route added next to them inherits whichever spelling the author's eye landed on.
+#
+# THE REMEDY. Wrap the handler: `get("/api/x") { guarded(call) { … } }` — 20 of the 25 routes
+# already read exactly that way, so the compliant form is the local majority, not an invention. A
+# route that genuinely must stay open takes a DATED entry in the allowlist regex below, which turns
+# "someone forgot" into "someone decided, on this date, for this reason".
+#
+# THE CENSUS (measured 2026-09-17, daemon/control/src/main). Denominator from the source: 25 route
+# registrations, 20 carrying `guarded(`, 5 bare, 1 of those allowlisted, 4 RED:
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:128  get("/")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:129  get("/dashboard")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:158  post("/statusline/{head}")
+#   daemon/control/src/main/kotlin/splice/control/ControlServer.kt:159  get("/statusline/{head}")
+#
+# `/` AND `/dashboard` ARE A PREMISE CORRECTION, not a widening: the audit row named `/statusline`
+# as the only unguarded route and allowlisted only `/health`. The matcher finds two more, both
+# serving `dashboardHtml()`. They are probably deliberate — ControlServer.kt:122 mints the mgmt key
+# eagerly "BEFORE the port opens — a dashboard load must not race it", which only makes sense if the
+# dashboard page itself is fetched without a bearer. That is an argument for a dated allowlist entry
+# and it is NOT a wall row's call to make: deciding a route may stay unauthenticated is the fix
+# row's (and the operator's) decision, so both stay red with their reasoning recorded here.
+#
+# ALLOWLIST (dated; each entry is a route that may be reached with no management key):
+#   2026-09-17: `/health` — the unauthenticated liveness probe the launch shim polls to tell a
+#     running daemon from a cold start. It MUST NOT need the mgmt key (that is the whole point of the
+#     probe) and it returns no head or config detail: ControlServer.kt:126-127 states both halves.
+#   2026-09-18 to 2026-10-07: `/` and `/dashboard`, the web console page. Removed with the console
+#     UI by the operator's order on Oct 7, 2026; an unguarded route at either path is red again.
+#   2026-10-10: `/` and `/{asset...}`, the console's pages, back by the operator's order of Oct 10 (Marlin's
+#     console lead brief). They serve only the packaged drawing (HTML, CSS, JS, fonts) by a plain name
+#     (ConsoleMount's ASSET pattern) and carry no data: every number on a page comes from the keyed /api/* rows,
+#     with the management key `splice console` hands the page in its address fragment. `/dashboard` stays red.
+# The allowlist is a PATH regex, so it is anchored per route and cannot be widened by accident; an
+# entry admits exactly the path it spells.
+#
+# WIDENED 2026-09-23 (LAYOUT-01): a registration with a RECEIVER — `route.get("/api/x") { … }`, the
+# plain-function-taking-the-route form kt-no-extension-functions requires — was INVISIBLE. Its
+# call_expression's text starts `route.get(`, so the `^(get|…)\(` regex never matched: the wall read
+# 25 of ControlServer's 68 registrations, and a bare `route.get("/api/x") { respond(call) }` on a
+# scratch tree reported nothing while its receiverless twin was red. The regex, the patterns and the
+# allowlist all admit one optional `name.` receiver now, and the wall reads all 68 (0 unguarded).
+#
+# WHAT THIS RULE DOES NOT CHECK. `guarded(` appearing anywhere in the handler satisfies it — the
+# rule cannot prove the guard WRAPS the privileged work rather than sitting beside it. The remaining
+# hazard is a handler that calls `guarded(call) { }` and then does the real work outside it. That is
+# a shape no route in this tree has, and closing it needs the guard to become the route registrar
+# (a `guardedGet("/api/x")` helper) rather than a wrapper — a design change, not a matcher.
+# WIDENED 2026-10-09 (coverage burndown): the rule binds every production root, so it no longer names files or
+# leans on coverage exclusions. Across all of them it found four registrations, all on a head's own port
+# (HeadEngine): /v1/models, /wire, /v1/messages and /v1/messages/count_tokens. Each authenticated, but as
+# the first line of a helper, so the registration read exactly like an open route. A head's door is its
+# ClientAuth, not the management key's guarded(call), so each check moved to its registration. The head's
+# /health is the same open liveness probe the allowlist already names.
+# NARROWED 2026-10-09 (review of 40d05c6d0): two holes in that widening. A path passed by NAME, `get(path = "/x")`,
+# was not a registration to the regex, so an unguarded one passed where its positional twin failed: the path is
+# matched either way now. And `clientAuth.authorize…(call)` satisfied the rule even as a bare statement whose
+# Boolean nobody read, so the handler ran on a refused call. That is closed by structure, not by a cleverer
+# pattern: ClientAuth.guarded(call, door) { … } runs the handler only for an authorized call, the authorize
+# functions are private to ClientAuth, and the rule accepts `guarded(` alone, on either plane.
+id: kt-control-route-guarded
+language: kotlin
+severity: error
+message: "Unauthenticated route: wrap a control-plane handler in `guarded(call) { … }`, and a head's handler in `clientAuth.guarded(call, door) { … }`. A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
+note: >
+  The control port reads every head's config, hands out launch specs, streams logs and can stop the
+  daemon; the management key is its only defence and it is applied per route. A bare registration is
+  reachable by anything that can open a socket to that port, and looks identical to a guarded one in
+  every tool in this repo. Compliant form: `post("/api/x") { guarded(call) { handler(call) } }`, or
+  `guarded(call, mcp = true) { … }` for the MCP access key, or on a head
+  `clientAuth.guarded(call, Door.UPSTREAM) { handler(call) }`.
+ignores:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
+  - "**/src/lawFixtures/**"
+rule:
+  all:
+    # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path
+    # literal is the discriminator that keeps this off kotlinx's `put(key, value)` — deliberately
+    # NOT `inside: routing { … }`, which would miss any route registered in another function or
+    # file (measured: both forms report the same 25 today, so the stricter reading costs nothing
+    # and the looser one has a blind spot).
+    - kind: call_expression
+      regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"/'
+    - any:
+        - pattern: get($P) { $$$B }
+        - pattern: post($P) { $$$B }
+        - pattern: put($P) { $$$B }
+        - pattern: patch($P) { $$$B }
+        - pattern: delete($P) { $$$B }
+        - pattern: head($P) { $$$B }
+        - pattern: options($P) { $$$B }
+        - pattern: route($P) { $$$B }
+        - pattern: $R.get($P) { $$$B }
+        - pattern: $R.post($P) { $$$B }
+        - pattern: $R.put($P) { $$$B }
+        - pattern: $R.patch($P) { $$$B }
+        - pattern: $R.delete($P) { $$$B }
+        - pattern: $R.head($P) { $$$B }
+        - pattern: $R.options($P) { $$$B }
+        - pattern: $R.route($P) { $$$B }
+    # The handler names its door: the control plane's guarded(call), or a head's clientAuth.guarded(call, door).
+    - not:
+        has:
+          stopBy: end
+          regex: '\bguarded\s*\('
+    # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
+    - not:
+        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"(/health|/|/\{asset\.\.\.\})"'

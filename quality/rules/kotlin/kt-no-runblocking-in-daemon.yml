@@ -1,0 +1,11 @@
+# runBlocking wedges an event-loop thread, so it is legal nowhere in production code: the process entry
+# is `suspend fun main`, and the CLI verbs are suspend all the way down. No path is exempt.
+id: kt-no-runblocking-in-daemon
+language: kotlin
+severity: error
+message: "runBlocking is never called in production code: stay suspend; the process entry is `suspend fun main`."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
+rule:
+  pattern: runBlocking

@@ -1,0 +1,258 @@
+// NEW: v0.4.0 FEATURES.md §4 — a read-only view of Claude Code's own session registry,
+// ~/.claude/sessions/<pid>.json (one file per interactive session; headless `claude -p` runs
+// never register). Every field is optional because Claude Code owns the schema and may add,
+// rename or omit keys; a malformed file is skipped, never fatal. Availability is derived, never
+// trusted from the file: a registration whose pid is gone is GONE whatever its status says, and
+// one not heard from within the stale window is STALE (alive, but not heard from): heard is the later
+// of the file's updatedAt and when this daemon last heard from its session (SessionsHeard). The
+// pid is read in the DOMAIN the file names (PidIdentity): another namespace's pid, or a pid whose
+// start time moved since the registration, is GONE.
+package splice.sessions.registry
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import splice.core.util.JsonScalars
+import splice.core.util.PathProbe
+import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
+import java.io.IOException
+import java.nio.file.DirectoryIteratorException
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+
+private const val STALE_AFTER_MS = 30L * 60L * 1000L
+
+/** A registration is a few hundred bytes; the directory is shared by every head, so a runaway or
+ *  foreign file there is skipped rather than read whole on every poll. */
+private const val MAX_RECORD_BYTES = 64L shl 10
+
+public enum class SessionAvailability { LIVE, STALE, GONE }
+
+/** Every readable registration, and why the directory could not be enumerated when it could not:
+ *  a missing directory is genuinely no sessions, a permission failure or a file in its place is
+ *  not, and both callers say which (review 2026-09-14). */
+public data class SessionListing(val sessions: List<SessionRecord>, val error: String? = null)
+
+/** Claude Code's own word for what a session is doing, when that last changed, and what a waiting session waits for:
+ *  the status block of its registration, read as written. */
+public data class SessionStatus(
+    val state: String? = null,
+    val updatedAt: Long? = null,
+    /** What a waiting session waits for, as Claude Code words it (`input needed`, `permission prompt`). */
+    val waitingFor: String? = null,
+)
+
+/** The process behind a registration: its pid, working directory, start and last update, and the socket it takes
+ *  cross-session messages on. */
+public data class SessionProcess(
+    val pid: Long?,
+    val cwd: String?,
+    val startedAt: Long?,
+    val updatedAt: Long?,
+    val messagingSocketPath: String?,
+)
+
+/** Which Claude Code client the session runs: its kind and version, and how it was started. */
+public data class SessionClient(
+    val kind: String?,
+    val version: String?,
+    /** How the session was started (`cli` is a terminal), which is where a person answers it. */
+    val entrypoint: String? = null,
+    /** The cross-session protocol revision the client speaks, and the features it advertises on that socket. */
+    val peerProtocol: Long? = null,
+    val peerFeatures: List<String> = emptyList(),
+    /** The remote-control bridge the session is attached to, when it is. */
+    val bridgeSessionId: String? = null,
+    /** Who set the session's name: `user` for one the person chose, as Claude Code words it; else null. */
+    val nameSource: String? = null,
+)
+
+public data class SessionRecord(
+    val sessionId: String?,
+    val name: String?,
+    val status: SessionStatus,
+    /** How the session reaches its provider, as its process environment was read (a GONE pid is
+     *  never read, so it is [SessionRoute.Unknown]). */
+    val route: SessionRoute,
+    val availability: SessionAvailability,
+    val process: SessionProcess,
+    val client: SessionClient,
+) {
+    /** The cross-session address a SendMessage can use when the session carries no name. */
+    public val address: String? get() = process.messagingSocketPath?.let { "uds:$it" }
+
+    /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
+    public val head: String? get() = (route as? SessionRoute.Head)?.key
+}
+
+/** The registry view consumed by session queries. Implementations read on every call so callers never
+ *  freeze Claude Code's mutable registration files. */
+public interface SessionSource {
+    /** Every readable registration, newest activity first. */
+    public fun read(): List<SessionRecord>
+
+    /** [read] plus the directory enumeration failure, when there is one. */
+    public fun list(): SessionListing
+}
+
+/** Is the process alive? Seam so tests can decide without spawning. */
+public fun interface PidAlive {
+    public operator fun invoke(pid: Long): Boolean
+}
+
+/** The facts that tell a registration's pid from a stranger's process: this host's pid domain, a pid's
+ *  kernel start time and its wall-clock start. One seam, because [SessionRegistry] judges them together;
+ *  a test answers from a tree it wrote. Every fact is null when it is not readable. */
+public interface PidIdentity {
+    /** `linux:<machine-id>:pid:[<inode>]`, the domain a pid is meaningful in. */
+    public fun hostDomain(): String?
+
+    /** The kernel start time of [pid] as /proc/<pid>/stat spells it. */
+    public fun procStart(pid: Long): String?
+
+    /** When [pid] started (epoch ms). */
+    public fun startedAt(pid: Long): Long?
+}
+
+/** When this daemon last heard from each session id (epoch ms): now while a turn of it is live,
+ *  else when its latest turn started or ended. Claude Code rewrites a registration only when its
+ *  status changes, so a session busy for hours keeps an old updatedAt while its turns run; a turn
+ *  served here is the session being heard from too (V4-444). */
+public fun interface SessionsHeard {
+    public operator fun invoke(): Map<String, Long>
+}
+
+/** A process that started this long after its registration's startedAt is a reused pid, not the session. */
+private const val PID_REUSE_TOLERANCE_MS = 300_000L
+
+/** How this live pid reaches its provider (ProcessEnvironment.route in production). */
+public fun interface RouteOfPid {
+    public operator fun invoke(pid: Long): SessionRoute
+}
+
+public class SessionRegistry(
+    private val sessionsDir: Path,
+    private val routeOf: RouteOfPid,
+    private val pidAlive: PidAlive = PidAlive { pid ->
+        pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
+    },
+    private val clock: WallClock = WallClock { System.currentTimeMillis() },
+    private val identity: PidIdentity = ProcPidIdentity(),
+    private val heard: SessionsHeard = SessionsHeard { emptyMap() },
+    private val foreground: ForegroundTools? = null,
+) : SessionSource {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /** Every readable registration, newest activity first. */
+    override fun read(): List<SessionRecord> = list().sessions
+
+    /** [read] plus the enumeration failure, when the directory exists but could not be listed. */
+    override fun list(): SessionListing {
+        val (files, error) = registrations()
+        val heardAt = heard()
+        val records = files.mapNotNull { record(it, heardAt) }
+            .sortedByDescending { it.process.updatedAt ?: 0L }
+        val liveIds = records.filter { it.availability != SessionAvailability.GONE }.mapNotNull { it.sessionId }.toSet()
+        records.filter { it.availability == SessionAvailability.GONE }
+            .mapNotNull { it.sessionId }.filterNot(liveIds::contains).forEach { foreground?.forget(it) }
+        return SessionListing(records, error?.let { "$sessionsDir: ${SafeFailureText.render(it)}" })
+    }
+
+    /** The registration files, and the failure that listing them met. Only a missing directory reads as empty with no
+     *  failure; any other one becomes the listing's error. */
+    private fun registrations(): Pair<List<Path>, Throwable?> = try {
+        Files.newDirectoryStream(sessionsDir, "*.json").use { it.toList() } to null
+    } catch (_: NoSuchFileException) {
+        emptyList<Path>() to null
+    } catch (failure: IOException) {
+        emptyList<Path>() to failure
+    } catch (failure: DirectoryIteratorException) {
+        emptyList<Path>() to failure.cause
+    }
+
+    /** True when [file] is past the record cap, or its size cannot be read: either way it is no registration. */
+    private fun oversized(file: Path): Boolean = try {
+        Files.size(file) > MAX_RECORD_BYTES
+    } catch (_: IOException) {
+        true
+    }
+
+    private fun record(file: Path, heardAt: Map<String, Long>): SessionRecord? {
+        // An oversized, unreadable or malformed registration file names no session; it is left out of the listing.
+        val obj = (if (oversized(file)) null else PathProbe.text(file))?.let { JsonScalars.objectOrNull(json, it) }
+            ?: return null
+        val pid = JsonScalars.long(obj, "pid")
+        val sessionId = JsonScalars.str(obj, "sessionId")
+        val updatedAt = JsonScalars.long(obj, "updatedAt")
+        val availability = availability(
+            pid,
+            listOfNotNull(
+                updatedAt,
+                sessionId?.let(heardAt::get),
+                sessionId?.let { foreground?.heardAt(it) },
+            ).maxOrNull(),
+            JsonScalars.long(obj, "startedAt"),
+            JsonScalars.str(obj, "pidDomain"),
+            JsonScalars.str(obj, "procStart"),
+        )
+        return SessionRecord(
+            sessionId = sessionId,
+            name = JsonScalars.str(obj, "name"),
+            status = SessionStatus(
+                JsonScalars.str(obj, "status"),
+                JsonScalars.long(obj, "statusUpdatedAt"),
+                JsonScalars.str(obj, "waitingFor"),
+            ),
+            route = pid?.takeIf { availability != SessionAvailability.GONE }?.let(routeOf::invoke)
+                ?: SessionRoute.Unknown,
+            availability = availability,
+            process = SessionProcess(
+                pid = pid,
+                cwd = JsonScalars.str(obj, "cwd"),
+                startedAt = JsonScalars.long(obj, "startedAt"),
+                updatedAt = updatedAt,
+                messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
+            ),
+            client = SessionClient(
+                kind = JsonScalars.str(obj, "kind"),
+                version = JsonScalars.str(obj, "version"),
+                entrypoint = JsonScalars.str(obj, "entrypoint"),
+                peerProtocol = JsonScalars.long(obj, "peerProtocol"),
+                peerFeatures = (obj["peerFeatures"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.str(it) },
+                bridgeSessionId = JsonScalars.str(obj, "bridgeSessionId"),
+                nameSource = JsonScalars.str(obj, "nameSource"),
+            ),
+        )
+    }
+
+    /** Claude Code's own identity facts decide first: a domain that is not this host's (the pid is
+     *  another namespace's), or a start time that is not the running process's (the pid was reused).
+     *  Only a registration without them falls back to the start-time tolerance. */
+    private fun foreignPid(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean {
+        val hostDomain = identity.hostDomain()
+        val judged = domain != null && hostDomain != null
+        if (judged && domain != hostDomain) return true
+        val start = procStart?.let { identity.procStart(pid) }
+        if (procStart != null && start != null) return procStart != start
+        return startedAt != null && (identity.startedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+    }
+
+    private fun gone(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean =
+        !pidAlive(pid) || foreignPid(pid, domain, procStart, startedAt)
+
+    /** A pid that is absent or not a real process id (0, negative) is GONE for this one row only; so
+     *  is a live pid that is not the registered process (foreignPid). [heardAt] is the later of the
+     *  registration's updatedAt and the last turn this daemon served for its session. */
+    private fun availability(
+        pid: Long?,
+        heardAt: Long?,
+        startedAt: Long?,
+        domain: String?,
+        procStart: String?,
+    ): SessionAvailability = when {
+        pid == null || pid <= 0 || gone(pid, domain, procStart, startedAt) -> SessionAvailability.GONE
+        heardAt == null || clock() - heardAt > STALE_AFTER_MS -> SessionAvailability.STALE
+        else -> SessionAvailability.LIVE
+    }
+}

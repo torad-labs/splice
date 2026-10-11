@@ -1,0 +1,367 @@
+/* Settings, build 5, in the Models language: the jobs a person comes here for as cel cards on a rail, each with its
+   glyph in the socket and what it's set to now, and the open job beside them as a pane of label and control rows.
+   Built for 3828 first. Class names checked against console.css and sessions.css (.wait, .per, .when, .ended,
+   .mark, .flip, .failed and .head are theirs). */
+
+.page { container-type: inline-size; }
+.head .search { width: 34rem; }
+
+.spin { width: 1.5rem; height: 1.5rem; flex: none; animation: spin 1.1s linear infinite; }
+.spin circle { fill: none; stroke: var(--key-light); stroke-width: 5; stroke-dasharray: 60 200; stroke-linecap: round; }
+
+/* ---------- the jobs: the rail and the open one ---------- */
+.jobs .pane { display: none; }
+.jobs.open .list { display: none; }
+.jobs.open .pane { display: flex; }
+@container (min-width: 104rem) {
+  .jobs, .jobs.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
+  .jobs .list, .jobs.open .list { display: flex; flex: 0 0 44rem; }
+  .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; max-width: 142rem; position: sticky; top: 1.6rem; height: calc(100vh - 14rem); }
+  .pane .close { display: none; }
+}
+.lamp.sock { color: var(--text-body); }
+.lamp.sock svg { width: 1.3rem; height: 1.3rem; stroke-width: 2.1; }
+.lamp.sock.needs { color: var(--key-light); }
+.lamp.done i { background: var(--live); }
+.card.job { --c: var(--track-line); cursor: pointer; }
+.card.job:hover { background: var(--obj-high); }
+.card.job[aria-current="true"] { --c: var(--key-light); border-color: var(--key-light); }
+.card.job.news { background: color-mix(in oklab, var(--obj) 88%, var(--key-light)); }
+.jname { font: 500 1.35rem/1.15 var(--font-name); color: var(--text); }
+.card.job .meta { gap: .45rem .9rem; font-size: 1rem; color: var(--text-body); }
+.card.job .meta span + span::before { content: "·"; margin-right: .9rem; color: var(--text-mute); }
+.card.job .fix { margin-top: .95rem; }
+/* what the search found in a job, each a name he can read */
+.hits { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .85rem; }
+.hits span { font: 500 .98rem/1 var(--font-name); color: var(--text); background: var(--obj-sunk); border-radius: .35rem; padding: .4rem .55rem; }
+.hits .more { color: var(--text-mute); background: none; }
+mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, transparent); border-radius: .2rem; padding: 0 .06rem; }
+
+/* ---------- the open job ---------- */
+.pane { --c: var(--key-light); }
+.pane > header .lamp { position: static; flex: none; }
+.pane > header .meta { gap: .45rem .9rem; font-size: 1rem; color: var(--text-body); }
+.pane > header .meta span + span::before { content: "·"; margin-right: .9rem; color: var(--text-mute); }
+.pane .body { flex: 1; overflow-y: auto; padding: 2rem 2.4rem 2.6rem; display: flex; flex-direction: column; gap: 2.6rem; }
+
+/* the page's own: the kit's controls are in knobs.css, under .kn (the pane's body) */
+.act.danger { background: var(--limit); color: var(--on-limit); }
+.kn .fixed.quiet { font-family: var(--font-name); color: var(--text-body); }
+.kn .from svg { width: 1rem; height: 1rem; flex: none; }
+.kn .said .spin { width: 1.1rem; height: 1.1rem; }
+
+/* a door: the figure behind a setting, opened where it lives */
+.door {
+  display: flex; align-items: center; gap: .9rem; width: fit-content; padding: .95rem 1.2rem; text-decoration: none;
+  font: 500 1.12rem/1 var(--font-name); color: var(--text); border: .12rem solid var(--track-line); border-radius: var(--r-obj);
+}
+.doors { display: flex; flex-direction: column; gap: .9rem; }
+.door b { font: 500 1.15rem/1 var(--font-data); }
+.door > span + b { margin-left: .2rem; }
+.door em { font-style: normal; color: var(--text-body); margin-left: .6rem; }
+.door svg { width: 1.2rem; height: 1.2rem; color: var(--text-mute); }
+.door:hover { border-color: var(--key-light); }
+.door:hover em, .door:hover svg { color: var(--key-light); }
+.link { display: inline-flex; align-items: center; gap: .35rem; font: 500 .98rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
+.link svg { width: .95rem; height: .95rem; }
+.link:hover { color: var(--key-light); }
+.note { font: 500 .98rem/1 var(--font-name); color: var(--text-mute); }
+
+.sub h3 { display: flex; align-items: baseline; gap: .8rem; margin-bottom: 1.2rem; }
+.sub .hn { font: 500 1.1rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
+
+/* ---------- Your data: one row per thing splice saves ---------- */
+.dlist { display: flex; flex-direction: column; }
+.drow { display: grid; grid-template-columns: minmax(15rem, 1.6fr) minmax(8rem, 1fr) minmax(9rem, 1fr) 11rem 17.5rem; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
+.drow.dhead { padding: 0 0 .8rem; border-top: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.drow.lit { box-shadow: inset .3rem 0 0 var(--key-light); padding-left: 1.1rem; margin-left: -1.1rem; }
+.dname { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
+.dname .nm, .sname .nm { font: 500 1.2rem/1.2 var(--font-name); color: var(--text); }
+.drow.off .nm, .drow.off .amt { color: var(--text-mute); }
+.amt { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.amt b { font: 500 1.3rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.amt .mb { width: 100%; margin-top: .3rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+.amt .none { color: var(--text-mute); }
+.keep { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
+.keep .pickbtn { min-width: 10rem; }
+.count { display: inline-flex; align-items: center; gap: .45rem; padding: .3rem 0; font: 500 .98rem/1 var(--font-data); color: var(--text-body); background: none; border: 0; }
+button.count { cursor: pointer; }
+button.count:hover { color: var(--text); }
+.count svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
+.count[aria-expanded="true"] svg { transform: rotate(90deg); }
+/* the two heads: what holds conversation text, and what keeps only records, each with its size */
+.dgroup { display: flex; align-items: baseline; gap: .8rem; padding: 0 0 1rem; }
+.dgroup + .drow.dhead { margin-top: -.4rem; }
+.drow + .dgroup { margin-top: 2.6rem; }
+.dgroup .hn { font: 500 1.1rem/1 var(--font-data); color: var(--text-mute); }
+.ddel { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; }
+.fixed.need { max-width: 11rem; line-height: 1.3; }
+.armed { display: inline-flex; gap: .5rem; }
+.dmore { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+.form.tight { grid-template-columns: 18rem minmax(0, 1fr); }
+.taps { gap: .6rem 1.1rem; }
+.tap { display: inline-flex; align-items: center; gap: .5rem; }
+.tap .fixed { padding: 0; font-size: 1rem; }
+.tap .icon { width: 1.9rem; height: 1.9rem; }
+.cmdset { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.cchip {
+  display: inline-flex; align-items: center; gap: .42rem; padding: .4rem .6rem; cursor: pointer;
+  font: 500 .92rem/1 var(--font-data); color: var(--text-mute); background: transparent; border: .12rem dashed var(--track-line); border-radius: var(--r-in);
+}
+.cchip i { width: .6rem; height: .6rem; border-radius: 50%; box-shadow: inset 0 0 0 .12rem var(--c); }
+.cchip[aria-pressed="true"] { color: var(--text); background: var(--obj-high); border: .12rem solid var(--ink); box-shadow: .15rem .15rem 0 var(--c); }
+.cchip[aria-pressed="true"] i { background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+/* restart one command: a solid chip with the restart glyph */
+.cchip.rs { color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); box-shadow: .15rem .15rem 0 var(--c); padding: .5rem .7rem; }
+.cchip.rs svg { width: 1rem; height: 1rem; color: var(--text-body); }
+.cchip.rs:hover svg { color: var(--key-light); }
+.cchip.rs:disabled { cursor: default; opacity: .7; }
+.cchip .spin { width: 1rem; height: 1rem; }
+
+/* ---------- MCP servers ---------- */
+.srvs { display: flex; flex-direction: column; }
+.srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 9rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
+.srv:first-child { border-top: 0; }
+.srv.out { grid-template-columns: 2.6rem minmax(18rem, 1.4fr) minmax(0, 2fr) 10rem; }
+.srv.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
+.srv .lamp { position: static; }
+.sname { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }
+.fig { font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.fig b { font: 500 1.1rem/1 var(--font-data); color: var(--text); }
+.why { display: flex; flex-direction: column; gap: .45rem; }
+.why .w { display: inline-flex; align-items: center; gap: .7rem; font: 500 1.1rem/1 var(--font-name); color: var(--text); }
+.why .wl { font: 500 1rem/1.35 var(--font-name); color: var(--text-body); }
+.srv.off .nm, .srvs.dim .nm { color: var(--text-mute); }
+.srvs.dim { opacity: .55; }
+.srv .acts { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; flex-wrap: wrap; }
+/* what ended these turns, and the one control that governs it, under the figure */
+#st .fig3 .by { margin-top: 1.1rem; padding-top: 1rem; border-top: .12rem solid var(--track); display: flex; flex-direction: column; gap: .7rem; align-items: flex-start; }
+#st .fig3 .by .blabel { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+#st .fig3 .by .form { grid-template-columns: minmax(0, 1fr); row-gap: .8rem; }
+.srv .always { display: inline-flex; justify-content: center; min-width: 7.28rem; font: 500 1.02rem/1 var(--font-name); color: var(--text-body); }  /* a web server is shared by being one server: the word sits where the switch would */
+
+/* ---------- Version ---------- */
+.vform .v { font: 500 1.5rem/1 var(--font-data); color: var(--text); padding: .55rem 0; }
+.vform .v.new { color: var(--key-light); }
+[data-theme="day"] .vform .v.new { color: #8a5a12; }
+.run { padding: 1.3rem 1.5rem 1.4rem; background: var(--obj-sunk); border-radius: var(--r-obj); }
+.run header { display: flex; align-items: center; gap: 1rem; margin-bottom: .6rem; }
+.run header .lamp, .step .lamp { position: static; flex: none; }
+.run header .from { margin-left: auto; font-family: var(--font-data); }
+.steps { list-style: none; margin: 0; padding: 0; }
+.step { display: flex; align-items: center; gap: 1rem; min-height: 3.9rem; border-top: .12rem solid var(--track); font: 500 1.2rem/1 var(--font-name); color: var(--text); }
+.step:first-child { border-top: 0; }
+.step.pending .what { color: var(--text-mute); }
+.step .act { margin-left: auto; }
+/* the wait: the compaction it waits for, drawn as the running turn it is, with its stopwatch */
+.waitturn { display: inline-flex; align-items: center; gap: .7rem; margin-left: 1rem; padding: .45rem .9rem .45rem .45rem; background: var(--obj); border-radius: var(--r-in); }
+.wstate { font: 500 1.08rem/1 var(--font-name); color: var(--text); }
+.wfor { display: inline-flex; align-items: center; gap: .4rem; font: 500 1.05rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
+.wfor .watch { width: 1.25rem; height: 1.25rem; }
+.logbtn { display: inline-flex; align-items: center; gap: .45rem; margin-top: .9rem; padding: .3rem 0; cursor: pointer; background: none; border: 0; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.logbtn:hover { color: var(--text); }
+.logbtn svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
+.logbtn[aria-expanded="true"] svg { transform: rotate(90deg); }
+.rlog { list-style: none; margin: .7rem 0 0; padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: .45rem; background: var(--obj); border-radius: var(--r-in); font: 500 .98rem/1.4 var(--font-data); color: var(--text-body); }
+.rlog li { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---------- what happened: the figure a job opens on, opening those requests, then each command's share ---------- */
+.happened { display: flex; flex-direction: column; gap: 1.1rem; }
+.happened .lead { display: flex; align-items: baseline; gap: 1.1rem; width: fit-content; text-decoration: none; color: var(--text); }
+.happened .big { font: 400 4.6rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
+.happened .what { font: 500 1.3rem/1.2 var(--font-name); color: var(--text); }
+.happened em { display: inline-flex; align-items: center; gap: .4rem; margin-left: .8rem; font: 500 1.05rem/1 var(--font-name); font-style: normal; color: var(--text-body); }
+.happened em svg { width: 1.1rem; height: 1.1rem; }
+.happened .lead:hover em, .happened .lead:hover .big { color: var(--key-light); }
+.happened.none { flex-direction: row; align-items: baseline; gap: 1.1rem; }
+.happened.none .big, .happened.none .what { color: var(--text-mute); }
+.cdoors { display: flex; flex-wrap: wrap; gap: .6rem; }
+.cdoor { display: inline-flex; align-items: center; gap: .6rem; padding: .45rem .75rem .45rem .45rem; text-decoration: none; border: .12rem solid var(--track-line); border-radius: var(--r-in); }
+.cdoor b { font: 500 1.15rem/1 var(--font-data); color: var(--text); }
+.cdoor:hover { border-color: var(--key-light); }
+
+/* three figures side by side: what splice did this week when a model went quiet */
+.tally h3 { margin-bottom: 1.2rem; }
+.figs3 { display: flex; flex-wrap: wrap; gap: 1.4rem; }
+.fig3 { display: flex; flex-direction: column; gap: .7rem; min-width: 22rem; padding: 1.3rem 1.5rem 1.4rem; text-decoration: none; border: .12rem solid var(--track-line); border-radius: var(--r-obj); }
+.fig3 .big { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
+.fig3 .what { font: 500 1.25rem/1.2 var(--font-name); color: var(--text); }
+.fig3 em { display: inline-flex; align-items: center; gap: .4rem; font: 500 1rem/1 var(--font-name); font-style: normal; color: var(--text-body); }
+.fig3 em svg { width: 1.05rem; height: 1.05rem; }
+.fig3.none { border-style: dashed; }
+.fig3.none .big, .fig3.none .what { color: var(--text-mute); }
+
+/* groups of figures under one heading, each with its label */
+.fgroups { display: flex; flex-wrap: wrap; gap: 1.2rem 3rem; }
+.fgroup { display: flex; flex-direction: column; gap: .7rem; }
+.glabel { font: 500 1rem/1 var(--font-name); color: var(--text-body); min-height: 1rem; }
+.fig3 .lead { display: flex; flex-direction: column; gap: .7rem; text-decoration: none; }
+.fig3 .lead:hover em, .fig3 .lead:hover .big { color: var(--key-light); }
+.fig3:has(.lead:hover) { border-color: var(--key-light); }
+/* the one switch over every place that saves conversation text, on the group's head */
+.dgroup .gsw { display: inline-flex; align-items: center; gap: 1rem; margin-left: 1.6rem; }
+/* a row that holds his prompts word for word */
+.yours { display: inline-block; white-space: nowrap; margin-left: .8rem; padding: .25rem .5rem; font: 500 .85rem/1 var(--font-name); color: var(--text-body); border: .12rem solid color-mix(in oklab, var(--key-light) 55%, transparent); border-radius: .35rem; vertical-align: .1rem; }
+
+/* ---------- room for the rows (Marcos, Oct 9: "rows look a bit cramped but overall good"): more air between the setting
+   rows, the stores and the servers, every element, word and size kept. Scoped to Settings (#st), since the kit's form is
+   also the gear on Requests and a command's settings on Models. ---------- */
+#st .kn .form { row-gap: 2.2rem; }
+#st .kn .ctl.col { gap: 1rem; }
+#st .sub h3 { margin-bottom: 1.7rem; }
+#st .pane .body { gap: 3.2rem; }
+#st .drow { padding: 1.65rem 0; }
+#st .drow.dhead { padding: 0 0 1rem; }
+#st .srv { padding: 1.5rem 0; }
+/* ---------- whose limit it was: the provider's line and splice's own, side by side, each card headed by whose it is.
+   The side whose requests failed keeps its edge in the limit's colour, as a failed request's own row does
+   (requests.css .rq.fail); the side that only held them in line keeps the live colour, and its mark says they ran. ---------- */
+.whose { display: flex; flex-wrap: wrap; gap: 2rem 2.4rem; align-items: stretch; }  /* one frame each, the same size, so the pair is read at once */
+.wcard { --c: var(--limit); flex: 1 1 44rem; display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem 1.8rem 1.9rem; }
+.wcard.done { --c: var(--live); }
+.wcard > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .8rem 1.6rem; }
+.wcard .who { font: 400 2rem/1 var(--font-lead); color: var(--text); }
+.wcard .lead { display: flex; align-items: baseline; gap: 1.1rem; width: fit-content; text-decoration: none; color: var(--text); }
+.wcard .big { font: 400 5rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
+.wcard .what { font: 500 1.35rem/1.2 var(--font-name); color: var(--text); }
+.wcard em { display: inline-flex; align-items: center; gap: .4rem; margin-left: .7rem; font: 500 1.05rem/1 var(--font-name); font-style: normal; color: var(--text-body); }
+.wcard em svg { width: 1.1rem; height: 1.1rem; }
+.wcard .lead:hover em, .wcard .lead:hover .big { color: var(--key-light); }
+.wcard .lead.none .big, .wcard .lead.none .what { color: var(--text-mute); }
+/* the outcome as an element, in the socket a request's own row gives it, with the longest wait beside it */
+.wcard .outc { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem 1.4rem; min-height: 2.9rem; margin-top: -.3rem; }  /* the door's own height, so both cards' lines sit level */
+.wcard .outc .door { padding: .75rem 1.1rem; }
+.wcard .outc .lamp { position: static; flex: none; }
+.wcard .outc .state { font-size: 1.25rem; }
+.lamp.fail { color: var(--limit); }
+.lamp.fail svg { width: 1.3rem; height: 1.3rem; }
+.state.ok { color: var(--live); }
+/* the settings this side owns, under a line */
+.wcard .fix { margin-top: .5rem; padding-top: 1.9rem; border-top: .12rem solid var(--track); }
+#st .wcard .fix .form { grid-template-columns: 20rem minmax(0, 1fr); row-gap: 1.9rem; }
+/* ---------- what each wait does when it fires: one silence as a rail, left to right, the waits as lamps on it
+   (settings.js waitsHtml). The console's own rail and lamps, laid flat: a working lamp's running trace for a wait that
+   only asks whether the model is alive, the way back mirrored for the one that resumes the answer, a stop square in the
+   limit's colour for the one wall. The rail keeps the cards' own colour up to that mark and turns var(--limit) after it,
+   so only the last mark reads as an end. --lane and --top are set by packWaits after the draw. ---------- */
+.wline { position: relative; padding-top: var(--top, 10rem); }
+.wrail { position: relative; height: .95rem; border-radius: .35rem; background: var(--rail); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.wgone { position: absolute; left: var(--x); right: 0; top: 0; bottom: 0; background: var(--limit); border-radius: 0 .35rem .35rem 0; }
+.wmark { position: absolute; left: var(--x); bottom: 50%; width: 0; height: 0; }
+.wmark .lamp { position: absolute; left: 0; top: auto; bottom: 0; transform: translate(-50%, 50%); }
+.wmark .wstem { position: absolute; left: -.08rem; bottom: 1.35rem; width: .16rem; height: calc(var(--lane, 0) * 3.6rem + 1.5rem); background: var(--track-line); }
+.wmark .wtag { position: absolute; left: 1.5rem; bottom: calc(var(--lane, 0) * 3.6rem + 2.85rem); display: flex; flex-direction: column; align-items: flex-start; gap: .5rem; white-space: nowrap; }
+.wmark.lft .wtag { left: auto; right: 1.5rem; align-items: flex-end; }
+.wtag .did { display: inline-flex; align-items: baseline; gap: .6rem; font: 500 1.12rem/1 var(--font-name); color: var(--live); }
+.wtag .did b { font: 500 1.22rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.wmark.ends .did { color: var(--limit); }
+.wmark.ends .lamp { color: var(--limit); }
+.wmark.ends .lamp i { width: 1.15rem; height: 1.15rem; border-radius: .18rem; }
+/* a command's own value: an outline of the shared mark, so the rail reads one wall and one command's exception */
+.wmark.own .lamp i { background: none; box-shadow: inset 0 0 0 .18rem currentColor; }
+.wmark.own .wstem { background: repeating-linear-gradient(to bottom, var(--track-line) 0 .22rem, transparent .22rem .44rem); }
+.wtag .only .part { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.wticks { position: relative; height: 1.1rem; margin-top: .95rem; }
+.wtick { position: absolute; left: var(--x); transform: translateX(-50%); font: 500 .92rem/1 var(--font-data); color: var(--text-mute); }
+.wtick.zero { transform: none; }
+.wtick::before { content: ""; position: absolute; left: 50%; top: -.65rem; width: .12rem; height: .48rem; background: var(--track-line); }
+.wtick.zero::before { left: 0; }
+
+
+/* the rail's two stretches, named as the tile groups are: Kept going up to the give-up mark, Ended early past it */
+.wspans { position: relative; height: 2.2rem; margin-top: .9rem; }
+.wspan { position: absolute; left: var(--a); width: calc(var(--b) - var(--a)); top: 0; padding-top: .55rem; text-align: center; font: 500 1rem/1 var(--font-name);
+  border-top: .14rem solid currentColor; }
+.wspan.kept { color: var(--live); }
+.wspan.ended { color: var(--limit); }
+
+/* the latest refusal's tries: each try a bar its length, splice's wait between them bare track with its seconds under it */
+.wcard .tries { display: flex; flex-direction: column; gap: .9rem; text-decoration: none; color: var(--text-body); }
+.wcard .trail { display: flex; align-items: flex-start; height: 3.4rem; }
+.wcard .ttry { flex: 1 1 0; min-width: 2.4rem; height: 1.7rem; border-radius: .25rem; background: color-mix(in oklab, var(--limit) 55%, transparent);
+  display: flex; align-items: center; padding-left: .55rem; }
+.wcard .ttry b { font: 600 1rem/1 var(--font-data); color: var(--ink); }
+.wcard .twait { flex: 1 1 0; min-width: 3.6rem; position: relative; height: 1.7rem; }
+.wcard .twait::before { content: ""; position: absolute; left: .25rem; right: .25rem; top: 50%; border-top: .12rem dashed var(--track); }
+.wcard .twait i { position: absolute; top: 2.15rem; left: 50%; transform: translateX(-50%); font: 400 .95rem/1 var(--font-data); font-style: normal; color: var(--text-mute); white-space: nowrap; }
+/* today's peak at once per command: what splice did with his agents, before any control */
+.peaks { --c: var(--live); display: flex; flex-direction: column; gap: .2rem; padding: 1.4rem 1.8rem 1.5rem; }
+.peaks > header { display: flex; align-items: center; gap: .9rem; margin-bottom: .9rem; }
+.peaks > header .lamp { position: static; flex: none; }
+.peaks > header .state { font-size: 1.25rem; }
+.peaks .pall { margin-left: auto; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); }
+.peaks .pall b { font: 600 1.1rem/1 var(--font-data); color: var(--text); }
+.peak { display: grid; grid-template-columns: 16rem minmax(10rem, 1fr) 21rem 26rem; align-items: center; gap: 1.4rem; min-height: 2.9rem; border-top: .12rem solid var(--track); }
+.peak .pbar { height: .9rem; border-radius: .45rem; background: var(--track); overflow: hidden; }
+.peak .pbar b { display: block; height: 100%; background: color-mix(in oklab, var(--c) 70%, transparent); }
+.peak.full .pbar b { background: var(--c); }
+.peak .pnum { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.peak .pnum b { font: 600 1.15rem/1 var(--font-data); color: var(--text); }
+.peak .door { justify-self: start; padding: .4rem .9rem; }
+.wcard .refs { display: inline-flex; flex-wrap: wrap; gap: .5rem; }
+.wcard .ref { font: 500 1.05rem/1 var(--font-data); color: var(--text); text-decoration: none; padding: .45rem .7rem; border: .12rem solid var(--track-line); border-radius: .35rem; }
+.wcard .ref:hover { color: var(--key-light); border-color: var(--key-light); }
+.pnote { display: flex; align-items: center; gap: .8rem; margin: -.4rem 0 1.4rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); }
+.pnote b { font: 600 1.1rem/1 var(--font-data); color: var(--text); }
+.pnote span:last-child { font: 500 1rem/1 var(--font-data); color: var(--text-mute); }
+.peak > .chip { justify-self: start; }
+.waitturn .wlead { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); }
+/* a provider's refusals on one command: who, the command and its models, the times, how many ran at once on it then,
+   splice's tries, and what the next send did */
+.rcard > header { justify-content: flex-start; }
+.rcard .rmodel { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); }
+.rcard .ronce { display: grid; grid-template-columns: minmax(10rem, 1fr) 14rem; align-items: center; gap: 1.4rem; }
+.rcard .ronce .pbar { height: .9rem; border-radius: .45rem; background: var(--track); overflow: hidden; }
+.rcard .ronce .pbar b { display: block; height: 100%; background: color-mix(in oklab, var(--c) 70%, transparent); }
+.rcard .ronce .pnum { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.rcard .ronce .pnum b { font: 600 1.15rem/1 var(--font-data); color: var(--text); }
+.rcard .trail .tnote { align-self: center; margin-left: 1.1rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.rcard .trail:has(.tnote) .ttry { flex: 0 0 4.8rem; }
+.rcard .rof { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); }
+.rcard .rof b { font: 600 1.15rem/1 var(--font-data); color: var(--text); }
+.pcells { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1.6rem)); gap: .25rem; margin: -.6rem 0 1.6rem; }
+.pcells i { height: 1.1rem; border-radius: .2rem; background: color-mix(in oklab, var(--c, var(--live)) 70%, transparent); }
+.pcells i.q { background: repeating-linear-gradient(135deg, var(--key-light) 0 .18rem, transparent .18rem .42rem); outline: .1rem solid color-mix(in oklab, var(--key-light) 55%, transparent); outline-offset: -.1rem; }
+.pcells .pq { grid-row: 2; justify-self: center; margin-top: .45rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pcells .pq b { font: 600 1.05rem/1 var(--font-data); color: var(--text); }
+.rcard .rlbl { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
+.rcard .ragents { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; }
+.rcard .ragents .rlbl { margin-right: .3rem; }
+.rcard .ragent { display: inline-flex; align-items: center; gap: .5rem; padding: .4rem .7rem; border: .12rem solid var(--track-line); border-radius: .35rem;
+  font: 500 1rem/1 var(--font-data); color: var(--text-body); text-decoration: none; }
+.rcard .ragent.hit { color: var(--text); border-color: color-mix(in oklab, var(--limit) 60%, var(--track-line)); }
+.rcard .ragent b { font: 600 .95rem/1 var(--font-data); color: var(--limit); }
+.rcard a.ragent:hover { color: var(--key-light); border-color: var(--key-light); }
+.peak .pnum i { margin-left: .8rem; font: 500 1rem/1 var(--font-data); font-style: normal; color: var(--text-mute); }
+/* the history row: since when, and under the picker what a month of it takes at his current rate (from the last 7 days) */
+.amt .mb + .mb { margin-top: .2rem; }
+.keep .hrate { width: 100%; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+/* a shorter window, held until he says yes: the question, the days as one bar with the ones that go hatched, the figures */
+.dmore.hask { flex-direction: row; align-items: center; gap: 2.4rem; padding: .9rem 0 .9rem 1.4rem; box-shadow: inset .25rem 0 0 var(--limit); }
+.hask .hacts { display: flex; align-items: center; gap: .7rem; margin-left: auto; }
+.hbar { flex: 1 1 auto; display: flex; align-items: center; gap: 1.2rem; max-width: 66rem; min-width: 0; }
+.hbar .hend { flex: none; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.hdays { position: relative; flex: 1 1 auto; min-width: 0; display: flex; height: .7rem; }
+.hdays i { flex: var(--mb) 1 0; min-width: 0; background: var(--text-mute); }
+.hdays .hgone { position: absolute; top: 0; bottom: 0; left: 0; width: var(--w); background: repeating-linear-gradient(135deg, var(--limit) 0 .18rem, transparent .18rem .42rem), linear-gradient(color-mix(in oklab, var(--limit) 14%, transparent), color-mix(in oklab, var(--limit) 14%, transparent)) var(--obj); }
+.hfreed { position: absolute; top: 50%; left: 0; width: max(var(--w), 6rem); display: flex; justify-content: center; transform: translateY(-50%); pointer-events: none; }
+.hfreed span { padding: .3rem .6rem; font: 500 .95rem/1 var(--font-data); color: var(--text); white-space: nowrap; background: var(--obj); border-radius: var(--r-in); box-shadow: inset 0 0 0 .1rem var(--limit); }
+.hcut { position: absolute; left: var(--at); top: -.35rem; bottom: -.35rem; width: .14rem; margin-left: -.07rem; background: var(--text); }
+.hcut em { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: .35rem; font: 500 .95rem/1 var(--font-data); font-style: normal; color: var(--text); white-space: nowrap; }
+
+/* fin, Oct 10: while splice reads what a shorter window would delete, the bar's track is empty with a slow sweep, Cancel
+   shows at once and Delete waits, with no count, until the number arrives */
+.hbar.reading .hdays { position: relative; overflow: hidden; background: var(--track-line); opacity: .5; }
+.hbar.reading .hdays::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: linear-gradient(90deg, transparent, var(--track-line), transparent); animation: reading 1.8s ease-in-out infinite; }
+@keyframes reading { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .hbar.reading .hdays::after { animation: none; width: 100%; opacity: .4; } }
+
+/* the setting that answers a figure sits apart from its card */
+#st .tally > .fix { margin-top: 1.8rem; }
+
+/* one On/Off per command under "Prompts and answers": the chip, then its switch, then what the change did */
+.dmore .cmdsw { display: flex; flex-wrap: wrap; gap: .55rem 3rem; }
+.dmore .cs { display: flex; align-items: center; justify-content: flex-start; gap: .8rem; padding: .3rem 0; }
+.dmore .cs .said { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.dmore .cs .said.limit { color: var(--bad, #e0584a); }
+.dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }

@@ -1,0 +1,31 @@
+# Controller, Presenter and Contract are layers other frameworks invented. This tree names a type by what it DOES: a
+# policy decides, a renderer writes text, a port is a seam, a plan is data. A type named for a layer says where it
+# sits in a diagram and nothing about its behavior, and the next author adds a sibling to match it.
+#
+# THE SCAR. Eight declarations carried the suffixes at the time the rule was written (FoldController,
+# ToolSearchController, PassthroughReanchorController, ResponsesReanchorController, ResponsesToolSearchController,
+# ResponsesFoldController, FailurePresenter, and the Provider members that exposed them). All eight were renamed by what
+# they do in the same change, and the rule landed at zero hits tree-wide.
+#
+# COMPLIANT FORMS: `FoldPolicy`, `FailureRenderer`, `ReanchorPolicy`. Wire names, serial names, log keys and config keys
+# are strings, not declarations, and this rule never reads them.
+#
+# The suffix may be followed by the closing backtick, so a backtick-quoted `SessionController` is caught, and there is no
+# files: filter, so language: kotlin covers .kts scripts as well as .kt.
+#
+# Derived from the toolkit's no-invented-layer rule, which skips tests. This one reads them too: a test double named for
+# a layer teaches the next author the layer.
+id: kt-no-invented-layer
+language: kotlin
+severity: error
+message: "Controller/Presenter/Contract are invented layers. Name the type by what it does: a Policy, a Renderer, a Port, a Plan."
+rule:
+  any:
+    - kind: class_declaration
+      has:
+        kind: type_identifier
+        regex: "(Controller|Presenter|Contract)`?$"
+    - kind: object_declaration
+      has:
+        kind: type_identifier
+        regex: "(Controller|Presenter|Contract)`?$"

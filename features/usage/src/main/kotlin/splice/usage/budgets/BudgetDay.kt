@@ -1,0 +1,67 @@
+// NEW: V4-133 review — one head's spend for one UTC day, and the budget it is weighed against.
+// BudgetLedger owns the lock both are read and mutated under; neither type locks anything itself.
+package splice.usage.budgets
+
+/** A head's budget as enforcement reads it: only a row with a daily_usd is a budget at all. */
+internal data class Limit(val usd: Double, val action: String)
+
+/** One UTC day's spend on one head: the priced USD, and the turns that had no price. */
+internal class DayTally(val day: Long) {
+    var usd: Double = 0.0
+        private set
+    var unpriced: Long = 0L
+        private set
+
+    /** Rows whose usage was incomplete, so a refusal must not attribute every missing price to a rate card. */
+    var inexactRows: Long = 0
+        private set
+
+    /** False when any usage or pre-boot history could not be read, so the displayed amount cannot claim completeness. */
+    var historyReadable: Boolean = true
+
+    /** True once the spend recorded before this daemon's boot has been folded in. */
+    var seeded: Boolean = false
+        private set
+
+    /** Claimed under the ledger lock before launching the one historical read for this day. */
+    var seeding: Boolean = false
+
+    /** The limit the operator was last told about today, or null before the first warning. */
+    private var warnedAt: Double? = null
+
+    /** The unpriced models already named in the log today. */
+    private val unpricedModels: MutableSet<String> = HashSet()
+
+    /** One turn at [usd], or an unpriced one when [usd] is null. */
+    fun add(usd: Double?) {
+        if (usd != null) this.usd += usd else unpriced += 1
+    }
+
+    /** A reported charge still enforces the budget, but cannot claim the whole day's spend. */
+    fun addLowerBound(usd: Double?) {
+        add(usd)
+        inexactRows++
+        historyReadable = false
+    }
+
+    /** Folds [before] in, once: the second fold of a racing pair is a no-op. */
+    fun seed(before: DayTally) {
+        if (seeded) return
+        usd += before.usd
+        unpriced += before.unpriced
+        inexactRows += before.inexactRows
+        historyReadable = historyReadable && before.historyReadable
+        seeded = true
+        seeding = false
+    }
+
+    /** True the first time today [model] could not be priced. */
+    fun firstUnpriced(model: String): Boolean = unpricedModels.add(model)
+
+    /** True when [limit] has not been told today, which it now has. */
+    fun firstWarning(limit: Double): Boolean {
+        if (warnedAt == limit) return false
+        warnedAt = limit
+        return true
+    }
+}

@@ -1,0 +1,321 @@
+// NEW (2026-09-05): a compaction outlives its client. Claude Code aborts an auto-compaction at 600 s
+// of wall clock and retries the same bytes minutes later; before this, every abort cancelled a 600 s
+// upstream read. Driven through the REAL production path: a real HeadServer, a raw client socket
+// closed mid-turn (a real FIN, as in HeadServerCollectDisconnectTest), an upstream parked on
+// SCENARIO:hold, then the byte-identical retry served from the recording with no second upstream
+// turn — and the gate slot travelling with the detached drive, not with the dead call.
+package splice.head
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
+import splice.head.admission.RequestMaterializationGate
+import splice.head.wire.FrameRecording
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
+import java.net.Socket
+import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+
+private val HANG_BACKSTOP = 5.minutes
+private const val POLL_MS = 25L
+
+private class CompactionReplayAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok-cr", "acct-cr")
+    override suspend fun refresh(): Credentials = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
+
+    private val mock = MockChatGptUpstream()
+
+    // A getter: the head binds port 0, and a stop/start rebinds a fresh one the tests must follow.
+    private val port: Int get() = head.port
+    private val gate = InflightGate({ 0 })
+    private val heap = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+    private val lines = CopyOnWriteArrayList<String>()
+    private lateinit var head: HeadServer
+    private val client = HttpClient(CIO) {
+        defaultRequest { bearerAuth("test-inference-token") }
+    }
+
+    @BeforeAll
+    fun setUp() = runBlocking {
+        head = buildHead()
+        head.start()
+        awaitListening(port)
+    }
+
+    /** A head over [tmp]: a second one built after a stop is the next daemon process, a fresh
+     *  replay over the same state root (V4-216). */
+    private fun buildHead(): HeadServer =
+        HeadServer(
+            provider = TestResponsesProvider(
+                tuning = ProviderTuning(
+                    name = ProviderName(key = "codex", label = "claudex"),
+                    catalog = ModelCatalog(
+                        discoveryPrefix = "claude-codex--",
+                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                        defaultContextWindow = 272_000,
+                    ),
+                    pinnedModel = "gpt-5.6-sol",
+                    auth = CompactionReplayAuth(),
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
+                    // Enormous on purpose: nothing in this test may end the turn but the hold release.
+                    watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),
+                ),
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+            ),
+            listenPort = 0,
+            deps = headDeps(
+                tmp = tmp,
+                upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
+                gate = gate,
+                log = { lines += it },
+                seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(heap = heap)),
+            ),
+        )
+
+    @AfterAll
+    fun tearDown() = runBlocking {
+        mock.releaseHold() // never leave a parked upstream thread behind
+        head.stop()
+        mock.stop()
+        client.close()
+    }
+
+    // Claude Code's verbatim summarizer marker makes this a compaction (CompactClassifier); the
+    // scenario parks the upstream after its first delta ("held") until the test releases it.
+    private val body = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,""" +
+        """"system":"SCENARIO:hold You are tasked with summarizing conversations for another agent.",""" +
+        """"messages":[{"role":"user","content":"compact"}]}"""
+
+    /** A real client whose close() is a real FIN — no HTTP-client pool or cancellation semantics. */
+    private fun openCompaction(): Socket {
+        val socket = Socket("127.0.0.1", port)
+        val request = "POST /v1/messages HTTP/1.1\r\n" +
+            "Host: 127.0.0.1:$port\r\n" +
+            "Authorization: Bearer test-inference-token\r\n" +
+            "Content-Type: application/json\r\n" +
+            "x-claude-code-session-id: sess-compaction\r\n" +
+            "Content-Length: ${body.toByteArray().size}\r\n" +
+            "Connection: close\r\n\r\n" + body
+        socket.getOutputStream().write(request.toByteArray())
+        socket.getOutputStream().flush()
+        return socket
+    }
+
+    // Waits for the work itself: the log lines, the gate and the mock change server-side (a detached drive
+    // outlives its call) and none of them offers a signal to await, so this polls the CONDITION and takes as long
+    // as the work takes. The only clock is a hang backstop, five minutes against a wait that is normally
+    // milliseconds: a 20 s bound per step failed once under a 17-minute loaded gate with the behavior correct.
+    // A behavior that is wrong never makes the condition true, and fails at the backstop with its assertion message.
+    private suspend fun waitFor(cond: () -> Boolean): Boolean =
+        withTimeoutOrNull(HANG_BACKSTOP) {
+            while (!cond()) delay(POLL_MS)
+            true
+        } ?: cond()
+
+    /** [since]: lines are shared across the class's tests; a fragment one test also logs is only
+     *  evidence when it appears after the mark the caller took. */
+    private fun logged(fragment: String, since: Int = 0): Boolean =
+        lines.drop(since).any { it.contains(fragment) }
+
+    /** RED before the fix (review 2026-09-05, splice-astra): stop() cancelled the detached scope and
+     *  start() reused the same driver, so the first compaction after a head restart launched into a
+     *  dead scope — an empty 200 with the slot handed off to nobody. The mock's happy path (no
+     *  SCENARIO marker) streams a whole answer; only the restart is under test here. */
+    @Test
+    fun `a compaction after a head stop and start is still driven whole and its slot comes back`() = runBlocking {
+        head.stop()
+        head.start()
+        awaitListening(port)
+        val upstreamBefore = mock.upstreamBodies.size
+        val sse = post(body.replace("SCENARIO:hold ", ""))
+        assertTrue(
+            sse.contains("event: message_stop"),
+            "a whole answer after the restart: $sse\n${lines.joinToString("")}",
+        )
+        assertTrue(!sse.contains("event: error"), "no error frame after the restart: $sse")
+        assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "the compaction went upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the slot must come back: ${gate.snapshot()}")
+    }
+
+    @Test
+    fun `a detached head recording charges the head ledger rather than the process default`() = runBlocking {
+        mock.resetHold()
+        val mark = lines.size
+        val before = mock.upstreamBodies.size
+        openCompaction().use { socket ->
+            try {
+                assertTrue(waitFor { mock.upstreamBodies.size > before })
+                socket.close()
+                assertTrue(waitFor { logged("compaction continues detached", mark) })
+                val recording = runningRecording()
+                val framesBefore = recording.size
+                val held = checkNotNull(heap.reserve(heap.available.value))
+                try {
+                    assertThrows(HeapCapacityException::class.java) { recording.append("head-ledger-control") }
+                    assertEquals(framesBefore, recording.size, "refusal preserves the recorded answer")
+                } finally {
+                    held.close()
+                }
+            } finally {
+                mock.releaseHold()
+            }
+        }
+        assertTrue(waitFor { logged("held for a byte-identical retry", mark) })
+        assertTrue(waitFor { gate.snapshot().inflight == 0 })
+        val sse = post(body)
+        assertTrue(sse.contains("held") && sse.contains("event: message_stop"))
+        assertEquals(before + 1, mock.upstreamBodies.size, "the ledger refusal never reruns the source")
+        // The replay spends its entry after the response is written; the next test must not begin under a consumption in flight.
+        assertTrue(waitFor { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
+    }
+
+    private fun runningRecording(): FrameRecording = head.compactionReplay.held().single()
+
+    private suspend fun post(json: String): String =
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            header("x-claude-code-session-id", "sess-compaction")
+            setBody(json)
+        }.bodyAsText()
+
+    @Test
+    fun `a compaction whose client hangs up finishes detached and its answer is replayed to the retry`() = runBlocking {
+        mock.resetHold()
+        // V4-139: every wait below reads only lines logged AFTER this mark. The in-flight follower
+        // test runs first in this class and logs both fragments; unmarked, the detach wait passed on
+        // ITS line, the hold was released before this compaction had detached, the turn finished
+        // attached with nothing recorded, and the retry went upstream (4 bodies, not 3).
+        val mark = lines.size
+        val upstreamBefore = mock.upstreamBodies.size
+        val socket = openCompaction()
+        assertTrue(waitFor { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        socket.close()
+        // Either detach path may notice the FIN first (Ktor cancelling the call, or the keepalive
+        // pinger's failed write, a real race in this run: review of PR 137); both log the shared
+        // DETACHED_NOTE, which is the fact under test. The slot assertion below holds for both.
+        assertTrue(waitFor { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+        assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: nothing here has finished")
+        assertEquals(1, gate.snapshot().inflight, "the slot travels with the detached drive, not the dead call")
+
+        mock.releaseHold()
+        assertTrue(waitFor { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
+        val upstreamAfterFirst = mock.upstreamBodies.size
+
+        val sse = post(body)
+        val again = if (sse.contains("held")) "" else "\nsecond try: ${post(body)}"
+        assertTrue(
+            sse.contains("held"),
+            "the retry must receive the recorded answer: $sse$again\n${lines.joinToString("")}",
+        )
+        assertTrue(sse.contains("event: message_stop"), "the recorded answer must be whole: $sse")
+        assertEquals(upstreamAfterFirst, mock.upstreamBodies.size, "the retry must not start a second upstream turn")
+        assertTrue(logged("replaying its answer, no upstream turn", mark), lines.drop(mark).joinToString())
+    }
+
+    /** V4-216, RED before the store: the answer lived only in the replay's memory, so a daemon restart
+     *  between a detached compaction's answer and its retry lost the answer, and the retry paid for a
+     *  second upstream compaction. The head is replaced, not restarted: a new HeadServer over the
+     *  same state root is what the next daemon process builds. */
+    @Test
+    fun `a compaction answer kept before a restart is replayed by the next head over the same state`() = runBlocking {
+        mock.resetHold()
+        val mark = lines.size
+        val upstreamBefore = mock.upstreamBodies.size
+        val socket = openCompaction()
+        assertTrue(waitFor { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        socket.close()
+        assertTrue(waitFor { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+        mock.releaseHold()
+        assertTrue(waitFor { logged("held for a byte-identical retry", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the slot comes back when the upstream turn ends")
+
+        head.stop()
+        head = buildHead()
+        head.start()
+        awaitListening(port)
+        val upstreamAfterFirst = mock.upstreamBodies.size
+
+        val sse = post(body)
+        assertEquals(
+            upstreamAfterFirst,
+            mock.upstreamBodies.size,
+            "the retry after the restart must not start a second upstream turn\n${lines.drop(mark).joinToString("")}",
+        )
+        assertTrue(sse.contains("held"), "the retry must receive the kept answer: $sse")
+        assertTrue(sse.contains("event: message_stop"), "the kept answer must be whole: $sse")
+        assertTrue(logged("replaying its answer, no upstream turn", mark), lines.drop(mark).joinToString())
+    }
+
+    /** Review of PR 137: a retry that arrives while the compaction is still driving follows the live
+     *  recording. It must not hold a second gate slot for the wait (the drive holds one), and it
+     *  receives the whole answer from the one upstream turn. */
+    @Test
+    fun `a retry that arrives while the compaction is still in flight follows it on the drive's slot`() = runBlocking {
+        mock.resetHold()
+        val mark = lines.size
+        val upstreamBefore = mock.upstreamBodies.size
+        val socket = openCompaction()
+        assertTrue(waitFor { mock.upstreamBodies.size > upstreamBefore }, "the compaction must reach upstream")
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "the compaction must hold a gate slot")
+        socket.close()
+        assertTrue(waitFor { logged("compaction continues detached", mark) }, lines.drop(mark).joinToString())
+
+        val retry = async { post(body) }
+        assertTrue(waitFor { logged("still running", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 1 }, "one compaction, one slot: ${gate.snapshot()}")
+        assertEquals(1L, mock.holdRelease.count, "the upstream must still be parked: the retry is following it")
+        assertEquals(1, gate.snapshot().inflight, "the follower rides the drive's slot, it does not hold its own")
+
+        mock.releaseHold()
+        val sse = retry.await()
+        assertTrue(sse.contains("held"), "the follower gets the recorded answer: $sse")
+        assertTrue(sse.contains("event: message_stop"), "the follower gets the whole answer: $sse")
+        assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "one upstream turn served both attempts")
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "every slot comes back: ${gate.snapshot()}")
+        // Logged after the response is written: the client can be back before the server gets there.
+        assertTrue(waitFor { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
+        assertTrue(waitFor { logged("compaction answer replayed") }, lines.joinToString())
+        assertTrue(waitFor { gate.snapshot().inflight == 0 }, "the replay releases its own slot")
+    }
+}

@@ -1,0 +1,52 @@
+id: kt-usage-reports-observations
+language: kotlin
+severity: error
+message: Usage must state which token buckets were observed; numeric wire defaults are not observations.
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
+rule:
+  any:
+    - all:
+        - kind: call_expression
+        - any:
+            - has:
+                kind: simple_identifier
+                regex: ^`?Usage`?$
+            - has:
+                kind: navigation_expression
+                has:
+                  kind: navigation_suffix
+                  regex: ^\.\s*`?Usage`?$
+        - not:
+            has:
+              kind: call_suffix
+              has:
+                kind: value_arguments
+                has:
+                  kind: value_argument
+                  regex: ^`?reported`?\s*=
+    - all:
+        - kind: import_header
+        - has:
+            kind: import_alias
+        - has:
+            kind: identifier
+            has:
+              kind: simple_identifier
+              regex: ^`?Usage`?$
+              stopBy: end
+    - all:
+        - kind: type_alias
+        - has:
+            kind: type_identifier
+            regex: ^`?Usage`?$
+            stopBy: end
+    - all:
+        - kind: callable_reference
+        - has:
+            kind: simple_identifier
+            regex: ^`?Usage`?$
+    - all:
+        - kind: navigation_suffix
+        - regex: ^::\s*`?Usage`?$

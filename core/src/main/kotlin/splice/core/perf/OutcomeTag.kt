@@ -1,0 +1,102 @@
+// NEW: V4-102 (arch-audit, 2026-09-17) — every outcome tag, defined ONCE.
+//
+// These strings are written to the perf JSONL and read back by the window summary, the doctor and
+// the statusline, so a tag is a CONTRACT between a writer and a reader in different modules. Before
+// this file that contract was 18 string literals scattered across gateway and control — each one a
+// chance for a writer to spell a tag the reader never matches, which fails as a silently missing
+// row rather than as a compile error. The single-source wall exists for exactly that class.
+//
+// WHY THE LITERALS LIVE HERE AND NOWHERE ELSE: the wall scopes itself to gateway/** and control/**
+// (see kt-outcome-tag-single-source.yml files:), so core is the one place a literal is legal. That
+// is not a loophole — it is the point. One file owns the spelling, everything else refers to it,
+// and a new tag is added here rather than retyped at a call site.
+//
+// COMPARISON, NOT JUST CONSTRUCTION: a reader that compares `row.outcome == "empty_model"` is the
+// same defect one hop later, which is why the rule matches bare literals as well as put() arguments.
+// PREFER THE CONSTANT for both directions.
+//
+// The `object` below is deliberate rather than a companion: the walls forbid companion objects, and
+// the parameterised tags (failure:<wire>, error:<kind>) cannot be enum constants because their
+// suffix is not known until the call site.
+package splice.core.perf
+
+import splice.core.turn.ErrorType
+
+/** Every fixed outcome tag. [wire] is what the JSONL and the journal carry verbatim. */
+public enum class OutcomeTag(public val wire: String) {
+    OK("ok"),
+    CLIENT_ABORT("client_abort"),
+    EMPTY_MODEL("empty_model"),
+    EMPTY_COMPACT("empty_compact"),
+    EMPTY_MESSAGE("empty_message"),
+    CANCELLED("error:cancelled"),
+
+    /** V4-444: splice GAVE UP on this turn after the no-progress limit passed with nothing from the model. Its own
+     *  tag, not [CANCELLED]: a turn nobody cancelled, and the one ending whose cause is the model going quiet
+     *  rather than a provider under load. The console reads it as "Given up" and lists these apart from a
+     *  provider's own overload (console BUILD row 46, hitstop). The client still sees an overloaded error type,
+     *  because that is the retryable shape, so this changes what splice RECORDS and not what it answers. */
+    TURN_CAP("error:turn-cap"),
+
+    /** The head interrupted an unfinished turn during its own shutdown, not a client hang-up. A request that ARRIVED
+     *  while the head was stopping is recorded under this tag too (V4-444): splice turned it away for the same reason
+     *  and the operator reads one word for both. */
+    RESTARTED("error:restarted"),
+
+    /** V4-444: splice turned a request away because its inflight gate and queue were full. Its own tag, so the
+     *  console can list splice's own refusals beside the requests it served instead of the client alone knowing. */
+    AT_CAPACITY("error:at-capacity"),
+    UNEXPECTED("error:unexpected"),
+    RATE_LIMITED("error:rate-limited"),
+
+    /** V4-419: the upstream named a PLAN window spent until a reset that is still ahead (a 429 body or the
+     *  unified headers), and the turn ended on that: the one that met it, and every one held behind it. A burst
+     *  429 with no named reset is [RATE_LIMITED] or [UPSTREAM_FAILED], never this. */
+    PLAN_LIMIT("error:plan-limit"),
+    ALL_ACCOUNTS_EXHAUSTED("error:all-accounts-exhausted"),
+
+    /** V4-133 review: the head's daily spend budget is reached and its action is `block`. */
+    BUDGET_BLOCKED("error:budget-blocked"),
+    AUTH_MISSING("error:auth-missing"),
+    UPSTREAM_FAILED("error:upstream-failed"),
+    UPSTREAM_FRAME_TOO_LARGE("error:upstream-frame-too-large"),
+
+    /** Size preflight refused before an upstream send; the client has prior exchanges to compact. */
+    COMPACTION_PREFLIGHT_COMPACTABLE("error:compaction-preflight-compactable"),
+
+    /** Same refusal on a first exchange: the installed client cannot compact a single exchange. */
+    COMPACTION_PREFLIGHT_FIRST_EXCHANGE("error:compaction-preflight-first-exchange"),
+
+    /** The measured compact input alone exceeds the model's window. */
+    COMPACTION_PREFLIGHT_COMPACT_OVERFLOW("error:compaction-preflight-compact-overflow"),
+}
+
+/** The parameterised tags, whose suffix only the call site knows.
+ *
+ *  A separate `object` rather than a companion on [OutcomeTag]: the walls forbid companions, and a
+ *  member function would need an instance of an enum constant to call, which reads as though the
+ *  choice of constant mattered when it does not. */
+public object OutcomeTags {
+
+    /** `failure:<wire>` — a turn that ended on a typed Failure. */
+    public fun failure(type: ErrorType): String = FAILURE_PREFIX + type.wireName
+
+    /** `error:<kind>` — a locally-classified refusal whose kind is a fixed string. */
+    public fun error(kind: String): String = ERROR_PREFIX + kind
+
+    /** Read-side only: operator stop and client abandon, never the watchdog failure [OutcomeTag.CANCELLED]. */
+    public fun isStopped(tag: String): Boolean =
+        tag == OutcomeTag.CLIENT_ABORT.wire || tag == error("stopped")
+
+    /** Read-side only: an ending the client received clean. That is an answer, or an empty message the model closed
+     *  itself, which StreamPromote ends clean. */
+    public fun isClean(tag: String): Boolean = tag == OutcomeTag.OK.wire || tag == OutcomeTag.EMPTY_MESSAGE.wire
+
+    /** Unknown attribution is not failure; an unfamiliar recorded ending still is. */
+    public fun isFailed(tag: String): Boolean =
+        !isClean(tag) && tag != "?" && !isStopped(tag)
+}
+
+// The two prefixes, kept private so the only way to build a tag is through the helpers above.
+private const val FAILURE_PREFIX = "failure:"
+private const val ERROR_PREFIX = "error:"

@@ -1,0 +1,815 @@
+// Teams: a team is his. Members on different models, each a role on a command, with a goal; splice carries the
+// members' sessions and reports what they do. Create one and start its members; track each member's state, their
+// messages to each other, what each is doing and what it has cost.
+//
+// WHERE EVERY VALUE COMES FROM. The page carries no data of its own and keeps no copy of one:
+//   GET  /api/teams                        the teams and their slots, archived included
+//   GET  /api/sessions                     each bound session's own state, as its client registered it
+//   GET  /api/heads · /api/models · /api/auth   the commands, the models each serves and its accounts
+//   GET  /api/teams/{id}/economics         turns, tokens and dollars per slot, over every session it held
+//   GET  /api/teams/{id}/chat?from=&to=    the day's messages between members, from the sender's own transcript
+//   GET  /api/teams/{id}/activity?from=&to=   the day's tool work per member, each a tool and its object
+//   PUT  /api/teams · /api/teams/{id} · /api/teams/{id}/sessions · .../slots/{slot}/instructions
+//   POST /api/teams/{id}/archive · .../slots/{slot}/start · .../slots/{slot}/stop
+// The day panels take the VIEWER's own day in epoch milliseconds, so the board turns over at his midnight.
+//
+// A REFUSAL IS SHOWN WHERE IT HAPPENED, in the words the daemon used. A start that does not come up puts its own
+// sentence on the member's card beside Try again, because "the terminal is still showing a trust prompt" is the
+// only thing that tells him what to do next.
+"use strict";
+
+// ---------- the marks this page adds to the kit's own (kit.js holds esc, G, COLORS, colorOf, clock) ----------
+const GLYPH = {
+  Edit: G('<path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5z"/><path d="M13.5 7l3 3"/>', 'aria-hidden="true"'),
+  Read: G('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>', 'aria-hidden="true"'),
+  Bash: G('<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15.5h4.5"/>', 'aria-hidden="true"'),
+  Grep: G('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>', 'aria-hidden="true"'),
+  msg: G('<path d="M4 12h15M14 6.5l5.5 5.5-5.5 5.5"/>', 'aria-hidden="true"'),
+  Agent: G('<circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="7" r="2.2"/><path d="M6 7.2v9.6M18 9.2c0 4.5-6 3.6-11.3 7.4"/>', 'aria-hidden="true"'),
+  tool: G('<path d="M14.5 6.5a4 4 0 1 0 3 6.8L21 17l-2 2-3.7-3.5A4 4 0 0 1 8.5 9"/><path d="M3 20l6-6"/>', 'aria-hidden="true"'),
+  folder: G('<path d="M3 6.5h6l2 2h10v10.5H3z"/>', 'aria-hidden="true"'),
+  more: G('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>', 'aria-hidden="true"'),
+  back: G('<path d="M15 5l-7 7 7 7"/>', 'aria-hidden="true"'),
+  next: G('<path d="M9 5l7 7-7 7"/>', 'aria-hidden="true"'),
+  caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
+  trace: '<svg class="wave" viewBox="0 0 40 40" aria-hidden="true"><polyline class="base" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/><polyline class="beat" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/></svg>',
+  ask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M12 13.2h0"/><path d="M10 9.2a2 2 0 1 1 2.6 1.9"/></svg>',
+};
+// Write and the notebook editor draw the same mark as their neighbours; a tool with no mark of its own gets the wrench.
+GLYPH.Write = GLYPH.Edit;
+GLYPH.MultiEdit = GLYPH.Edit;
+GLYPH.NotebookEdit = GLYPH.Edit;
+GLYPH.Glob = GLYPH.Grep;
+GLYPH.Task = GLYPH.Agent;
+GLYPH.SendMessage = GLYPH.msg;
+
+// A slot names its HEAD; the kit colours a PROVIDER, and /api/models says which head runs which.
+const headColor = (head) => colorOf(state.providerOf[head]);
+// Every time on this page is epoch millis, as its routes report them; the kit's clock reads a Date.
+const hhmm = (ms) => clock(new Date(ms));
+const monthDay = (ms) => {
+  const d = new Date(ms);
+  return `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+};
+const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n ?? 0));
+
+// ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
+const state = {
+  teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {},
+  economics: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
+  // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
+  // its transcript, which is a permission prompt, since those choices belong to the client's own version.
+  screens: {},
+  error: null, loading: true,
+};
+const ui = { team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
+// From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
+// Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
+const ANSWER_HOLD_MS = 30_000;
+const root = document.getElementById("teams");
+const sheet = document.getElementById("sheet");
+
+const team = () => state.teams.find((t) => t.id === ui.team) || null;
+const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || null;
+const sessOf = (slot) => (slot.session ? state.sessions[slot.session] : null);
+// ONE ACTIVE TEAM PER SESSION is what PUT refuses (Marlin), but older data may hold a session on two. Never pick one
+// silently: a session that looks single-homed when it is not is the worse failure, so each team that holds it names
+// the other. Archived teams do not count, they have let go.
+const alsoOn = (tm, session) => state.teams
+  .filter((t) => t.id !== tm.id && !t.archived && t.slots.some((y) => y.session === session))
+  .map((t) => t.name);
+
+// The day the panels are asked for, as the VIEWER's own: midnight to midnight here, [from, to).
+function dayWindow(back) {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  from.setDate(from.getDate() - back);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 1);
+  return { from: +from, to: +to };
+}
+const dayName = (back) => (back === 0 ? "Today" : back === 1 ? "Yesterday" : monthDay(dayWindow(back).from));
+
+// ---------- reading ----------
+/** The turns running now, by session: what a Stalled or Resumes line is read from (kit stallOf). */
+async function readLive() {
+  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
+  state.live = {};
+  state.heads.forEach((h, i) => {
+    for (const turn of lives[i].body?.turns || []) if (turn.session && !turn.stopped) state.live[turn.session] = { head: h.key, ...turn };
+  });
+}
+
+async function read() {
+  state.loading = true;
+  render();
+  const [teams, sessions, heads, models, auth] = await Promise.all([
+    API.get("/api/teams"), API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"), API.get("/api/auth"),
+  ]);
+  state.error = teams.ok ? null : refusalOf(teams, "The teams could not be read");
+  state.teams = teams.body?.teams || [];
+  state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
+  await readLive();
+  state.models = {};
+  state.providerOf = {};
+  for (const row of models.body?.heads || []) {
+    state.providerOf[row.head] = row.provider;
+    state.models[row.head] = (row.models || []).filter((m) => m.resolved !== false).map((m) => ({ id: m.id, label: m.label || m.id }));
+  }
+  // /api/auth answers one row per ACCOUNT, each naming the heads that can send as it; a slot picks by head.
+  state.accounts = {};
+  for (const account of auth.body?.accounts || []) {
+    for (const head of account.heads || []) {
+      if (account.label) (state.accounts[head] ??= []).push(account.label);
+    }
+  }
+  if (!state.teams.some((t) => t.id === ui.team)) ui.team = state.teams.find((t) => !t.archived)?.id ?? state.teams[0]?.id ?? null;
+  state.loading = false;
+  render();
+  await readTeam();
+}
+
+/** The selected team's own three reads, each of which can refuse on its own. */
+async function readTeam() {
+  const tm = team();
+  if (!tm) return;
+  // Cleared before the first draw, not after: slot ids repeat across teams ("lead", "builder"), so a screen
+  // left over from the team before would draw its choices on this team's card for one frame.
+  state.screens = {};
+  const { from, to } = dayWindow(ui.day);
+  const day = `from=${from}&to=${to}`;
+  const [economics, chat, activity, perHead] = await Promise.all([
+    API.get(`/api/teams/${tm.id}/economics`),
+    API.get(`/api/teams/${tm.id}/chat?${day}`),
+    API.get(`/api/teams/${tm.id}/activity?${day}`),
+    API.get("/api/economics"),
+  ]);
+  // why a command's turns with no price have none, decided by the daemon once (as Accounts reads it): "plan" or not
+  state.priceWhy = Object.fromEntries((perHead.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
+  state.economics[tm.id] = economics.ok ? economics.body : { error: refusalOf(economics, "The figures could not be read") };
+  state.chat = chat.ok ? chat.body : { error: refusalOf(chat, "The messages could not be read") };
+  state.activity = activity.ok ? activity.body : { error: refusalOf(activity, "The activity could not be read") };
+  state.today = ui.day === 0 ? state.activity : await readToday(tm);
+  render();
+  await readScreens(tm);
+}
+
+/** Today's activity, read on its own when the page shows another day, so a card's line is never a stepped day's. */
+async function readToday(tm) {
+  const { from, to } = dayWindow(0);
+  const today = await API.get(`/api/teams/${tm.id}/activity?from=${from}&to=${to}`);
+  return today.ok ? today.body : null;
+}
+
+/** The choices a waiting member is showing, for the asks its transcript does not carry: a permission prompt's
+ *  words belong to the client's version, so they are read off the screen or not drawn at all. A screen that
+ *  offers nothing leaves the card on its fallback, because "splice could not read a choice" is not "nothing is
+ *  pending", and the two must never look alike. */
+async function readScreens(tm) {
+  const waiting = tm.slots.filter((slot) => {
+    const s = sessOf(slot);
+    return s?.waiting_for && !(s.last?.asks || []).length;
+  });
+  if (!waiting.length) return;
+  const read = await Promise.all(waiting.map((slot) => API.get(`/api/teams/${tm.id}/slots/${slot.id}/screen`)));
+  waiting.forEach((slot, i) => {
+    if (read[i].ok && read[i].body?.choices?.length) state.screens[slot.id] = read[i].body;
+  });
+  render();
+}
+
+/** The daemon's own sentence for a refused call, or a plain one when it sent none. */
+function refusalOf(answer, fallback) {
+  if (answer.status === 0) return "splice did not answer. It may not be running.";
+  return answer.body?.error || `${fallback} (${answer.status}).`;
+}
+
+// ---------- a member's state, in the words its own client registered ----------
+const WAITING = { "input needed": "Needs you", "permission prompt": "Needs you" };
+/** What the member's running turn says about its silence: Stalled with the retries or the silence counter, or the resume
+ *  countdown, drawn by the kit's own look() so Teams and Sessions say it alike. Null when nothing is wrong.
+ *  An idle member whose newest request was turned away reads At limit or Signed out from the row's ended_by. */
+function stallLook(slot, session) {
+  if (!session || session.waiting_for || session.availability === "gone") return null;
+  const running = session.status === "working" || session.status === "busy";
+  // with no request in flight, the row's ended_by says how the newest one ended: At limit, or Signed out
+  const turn = running ? state.live[slot.session] : undefined;
+  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, running ? undefined : session.ended_by);
+  if (!stall) return null;
+  state.stalls[slot.id] = stall;
+  return look({ id: slot.id, state: running ? "working" : "idle", stall });
+}
+function stateOf(session) {
+  if (!session) return { cls: "ended", lamp: "<i></i>", word: "Gone", detail: "" };
+  if (session.availability === "gone") return { cls: "ended", lamp: "<i></i>", word: "Ended", detail: "" };
+  // No detail beside the word: the card's own ask, right below it, says what is wanted better than
+  // Claude Code's "input needed" does, and the drawing has nothing there for the same reason.
+  if (session.waiting_for) {
+    // the two asks keep their own glyphs, as Sessions draws them: a permission is the shield, a question the bubble
+    const lamp = session.waiting_for === "permission prompt" ? ICON.dialog : ICON.input;
+    return { cls: "needs", lamp, word: WAITING[session.waiting_for] || "Needs you", detail: "" };
+  }
+  if (session.status === "working" || session.status === "busy") return { cls: "working", lamp: GLYPH.trace, word: "Working", detail: "" };
+  const word = session.status ? session.status[0].toUpperCase() + session.status.slice(1) : "Idle";
+  return { cls: session.availability === "stale" ? "stopped" : "idle", lamp: "<i></i>", word, detail: "" };
+}
+const liveNow = (session) => Boolean(session) && session.availability === "live" && !session.waiting_for &&
+  (session.status === "working" || session.status === "busy");
+
+// ---------- the figures: turns, tokens and dollars, and the turns no rate card priced ----------
+function useOf(tm, slotId) {
+  const row = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId);
+  if (!row) return null;
+  // The tokens figure is everything the slot's turns moved, the two cache counts included, as the route reports them.
+  const t = row.tokens || {};
+  const tokens = (t.input || 0) + (t.cache_read || 0) + (t.cache_write || 0) + (t.output || 0);
+  // a request that moved no tokens is in no money share (the route counts the ones that did, and the priced of those)
+  const priced = row.priced_moved_turns ?? 0, unpriced = (row.moved_turns ?? 0) - priced, head = tm.slots.find((x) => x.id === slotId)?.head;
+  const onPlan = state.priceWhy[head] === "plan" ? unpriced : 0;
+  return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, priced, unpriced, onPlan };
+}
+function figures(u, since) {
+  if (!u) return "";
+  // One money form on every page (Marlin, Oct 10): dollars first, tied to the requests that were priced when some were
+  // not, then each count of the unpriced above nothing, the bigger first. A cost is never summed over some as though it
+  // were the whole, so "≈$0.92 for 55 · 322 on your plan"; "≈$0.92" alone means every request was priced.
+  const priced = u.priced;
+  const shares = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
+    .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
+  const spent = u.usd != null && priced > 0 ? [`${dollars(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
+  const money = [...spent, ...shares].join(" · ");
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money ? `<span>${money}</span>` : ""}` +
+    `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
+}
+function totals(tm) {
+  const us = tm.slots.map((s) => useOf(tm, s.id)).filter(Boolean);
+  if (!us.length) return null;
+  const priced = us.filter((u) => u.usd != null);
+  return {
+    turns: us.reduce((a, u) => a + u.turns, 0),
+    tokens: us.reduce((a, u) => a + u.tokens, 0),
+    usd: priced.length ? priced.reduce((a, u) => a + u.usd, 0) : null,
+    priced: us.reduce((a, u) => a + u.priced, 0),
+    unpriced: us.reduce((a, u) => a + u.unpriced, 0),
+    onPlan: us.reduce((a, u) => a + u.onPlan, 0),
+  };
+}
+/** The oldest turn the perf files still hold, named only when it is after the team was made. */
+function sinceOf(tm) {
+  const oldest = state.economics[tm.id]?.oldest_turn_epoch_millis;
+  return oldest && oldest > (tm.created_epoch_millis || 0) ? oldest : null;
+}
+
+// ---------- the tabs: one per team, its members' colours on it ----------
+function tabHtml(tm) {
+  const needs = tm.slots.some((s) => sessOf(s)?.waiting_for);
+  const blots = tm.slots.map((s) => `<i style="--c:${headColor(s.head)}"${sessOf(s) ? "" : ' class="open"'}></i>`).join("");
+  return `<button class="tab${needs ? " needs" : ""}" data-act="team" data-t="${esc(tm.id)}" aria-current="${ui.team === tm.id}">` +
+    `<span class="tname">${esc(tm.name)}</span><span class="blots" aria-hidden="true">${blots}</span></button>`;
+}
+function tabsHtml() {
+  const on = state.teams.filter((t) => !t.archived);
+  const off = state.teams.filter((t) => t.archived);
+  const fold = off.length ? `<button class="act quiet fold" data-act="archived" aria-expanded="${ui.archived}">${off.length} archived</button>` : "";
+  const newT = `<button class="act quiet new" data-act="new" aria-pressed="${ui.compose?.id === null}"><span class="plus" aria-hidden="true">+</span>New team</button>`;
+  const offTabs = ui.archived ? `<span class="rule" aria-hidden="true"></span>${off.map(tabHtml).join("")}` : "";
+  return `<nav class="tabs" aria-label="Teams">${on.map(tabHtml).join("")}${newT}${offTabs}${fold}</nav>`;
+}
+
+// ---------- a member: the slot's role on its command, its session's state as the lamp ----------
+function memberHtml(tm, slot) {
+  const s = sessOf(slot);
+  const key = `${tm.id}/${slot.id}`;
+  const ro = tm.archived;
+  const lead = slot.lead ? `<span class="lead">Lead</span>` : "";
+  const command = commandOf(slot.head);
+  const chip = `<span class="chip">${s && liveNow(s) ? "<i></i>" : ""}${esc(command)}</span>`;
+  // the model its session runs, which the sessions route carries; the slot's own only until the session says
+  const model = s?.model ? modelLabel(slot.head, s.model) : modelLabel(slot.head, slot.model);
+  if (!s) return vacantHtml(tm, slot, { key, ro, lead, chip, model });
+  state.stalls[slot.id] = null;
+  const L = stallLook(slot, s) ?? stateOf(s);
+  const stop = !liveNow(s) || ro ? ""
+    : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
+    : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
+  // a refused Stop leaves the card where it is, Stop back in its place, and the refusal beside it
+  const refused = ui.failed.get(`stop:${key}`);
+  const refusal = refused ? `<span class="refusal" role="status">${esc(refused)}</span>` : "";
+  const now = L.cls === "ended" ? null : lastActivity(slot.id);
+  const body = L.cls === "needs" ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
+  // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
+  const folder = s.repo?.root || s.cwd || "";
+  const where = s.name || folder.split("/").pop();
+  const heard = s.updated_at || s.status_updated_at;
+  const also = alsoOn(tm, slot.session).join(", ");
+  const opens = slot.session ? ` go" tabindex="0" data-go="${esc(slot.session)}` : "";
+  return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
+    `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
+    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +
+    `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span>${esc(model)}</span>` +
+    `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
+    `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
+}
+
+// ---------- what a waiting member is asking, and answering it where it waits ----------
+// The question is a READ: /api/sessions carries each session's last transcript line, and an AskUserQuestion call
+// brings its question and option labels with it (`last.asks`). Answering is the key the person would press — the
+// option's own number, 1 to 9 as the screen lists them — sent to the member's pane by POST .../answer.
+// A PERMISSION PROMPT carries no labels splice may spell: its choices belong to the client's version, and only the
+// screen says which this one offers. So the card shows what is being asked and leaves the answer to the terminal.
+// (This whole block moves to kit.js with Sessions, which draws the same ask on its own cards.)
+function askHtml(session, slotId, readOnly, key) {
+  const asked = (session.last?.asks || [])[0];
+  const held = ui.answered.get(key);
+  const going = held && Date.now() - held.at < ANSWER_HOLD_MS ? held : null;
+  const busy = going ? " disabled" : "";
+  // the pressed answer keeps its words with the ring; the rest wait disabled
+  const pick = (choice, label, i) => going?.choice === choice
+    ? `<button class="act answering" disabled>${ICON.wait}${esc(label)}</button>`
+    : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
+  const failed = ui.failed.get(key);
+  const why = failed ? `<p class="why limit">${esc(failed)}</p>` : "";
+  if (!asked) {
+    const offer = going?.offer ?? state.screens[slotId];
+    const what = prompted(session.last, offer);
+    // The choices the client itself drew, each pressing the digit beside it on the screen. When splice could
+    // not read one, the card says where the answer is given rather than offering an act it cannot carry —
+    // the second half of the sentence the answer route returns for a pane it cannot drive.
+    if (!offer || readOnly) {
+      return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in.</p>${why}</div>`;
+    }
+    const acts = offer.choices.map((c, i) => pick(c.choice, c.label, i)).join("");
+    return `<div class="ask">${what}<div class="answers">${acts}</div>${why}</div>`;
+  }
+  const buttons = readOnly || asked.multi ? "" :
+    `<div class="answers">${asked.options.map((o, i) => pick(i + 1, o, i)).join("")}</div>`;
+  const chips = asked.multi
+    ? `<div class="answers">${asked.options.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`
+    : "";
+  return `<div class="ask"><p class="q">${esc(asked.question)}</p>${buttons}${chips}${why}</div>`;
+}
+
+/** What is being asked, in the client's own words when the screen could be read: its first line is the call, as
+ *  Bash(npm test) — the person approving a command has to see the command — and what follows is what it is for.
+ *  Without a screen it is the transcript's own line, which names the tool and what it is for but never a command. */
+function prompted(call, offer) {
+  const said = (offer?.asked || "").split("\n").filter((line) => line.trim());
+  if (!said.length) {
+    return call?.tool ? `<p class="cmd"><span class="tname">${esc(call.tool)}</span>${esc(call.text || "")}</p>` : "";
+  }
+  const why = said.slice(1).join(" ") || call?.text || "";
+  return `<p class="cmd">${esc(said[0])}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
+}
+
+/** How many turns a session has run, beside its name in the "Add existing" menu: a name does not say which of two quiet
+ *  sessions is the one meant, the count does (fin). The row carries `turns` only when it was measured, so an absent key
+ *  draws nothing, never a zero or a dash: a count nobody watched must not read as "ran nothing". A real 0 is drawn,
+ *  because "0 turns" is what tells a reader this is not the session they meant. */
+const turnsOf = (session) => {
+  if (!Number.isInteger(session.turns)) return "";
+  // `turns_partial` is the server's own comparison of where counting began against where the session began: true
+  // means the count is a floor (and an unknown session start reads true), so it is drawn "12+". The client never
+  // compares the two timestamps itself, because `started_at` carries no unit on the wire.
+  const floor = session.turns_partial === true ? "+" : "";
+  return ` · ${session.turns}${floor} ${session.turns === 1 && !floor ? "request" : "requests"}`;
+};
+
+/** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
+function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
+  const failed = ui.failed.get(key);
+  let word = `<span class="word">No session</span>`;
+  let acts = "";
+  let why = "";
+  if (ui.starting.has(key)) {
+    word = `<span class="word starting">${ICON.wait}Starting</span>`;
+  } else if (failed) {
+    word = `<span class="word limit">Not started</span>`;
+    why = `<p class="why limit">${esc(failed)}</p>`;
+    acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
+  } else if (!ro) {
+    const bindFailed = ui.failed.get(`bind:${key}`);
+    if (bindFailed) why = `<p class="why limit">${esc(bindFailed)}</p>`;
+    const free = Object.values(state.sessions).filter((x) =>
+      x.head === slot.head && x.availability !== "gone" && !state.teams.some((t) => !t.archived && t.slots.some((y) => y.session === x.session_id)));
+    acts = `<button class="act primary" data-act="start" data-s="${esc(slot.id)}">Start new</button>` +
+      (free.length ? `<button class="act" data-act="use" data-s="${esc(slot.id)}" aria-expanded="${ui.menu === key}">Add existing</button>` : "");
+    if (ui.menu === key) {
+      acts += `<div class="menu use">${free.map((x) =>
+        `<button data-act="bind" data-s="${esc(slot.id)}" data-to="${esc(x.session_id)}"><span>${esc(x.name || x.repo?.root?.split("/").pop() || x.session_id.slice(0, 8))}</span>` +
+        `<span class="mmeta">${esc(x.model ? modelLabel(x.head, x.model) : commandOf(x.head))}${turnsOf(x)}</span></button>`).join("")}</div>`;
+    }
+  }
+  return `<article class="card m vacant" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
+    `<span class="lamp open" aria-hidden="true"></span>` +
+    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}</div>` +
+    `<div class="meta">${word}<span>${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
+    `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
+}
+
+const commandOf = (head) => state.heads.find((h) => h.key === head)?.command || head;
+const modelLabel = (head, id) => {
+  const rows = state.models[head] || [];
+  return (id ? rows.find((m) => m.id === id)?.label || id : rows[0]?.label) || "";
+};
+
+// ---------- what a member did: the tool's mark and its object, never splice's sentence ----------
+const activityRows = () => (state.activity?.entries || []);
+// the card's line is TODAY's latest tool work, whatever day the chat is showing (readTeam keeps today's own read)
+const todayRows = () => (state.today?.entries || []);
+const lastActivity = (slotId) => todayRows().filter((a) => a.slot === slotId && a.tool).at(-1) || null;
+const activityHtml = (a) => `${GLYPH[a.tool] || GLYPH.tool}<span class="obj">${esc(a.object || a.tool)}</span>`;
+
+// ---------- the room: members, their messages to each other, what each did ----------
+/** A panel the history window no longer holds says so in the daemon's own words, at its own moment. */
+function keptHtml(panel) {
+  if (!panel) return "";
+  if (panel.error) return `<p class="empty limit">${esc(panel.error)}</p>`;
+  if (panel.state === "not_kept" || panel.state === "deleted" || panel.state === "off") {
+    return `<p class="empty">${esc(panel.reason || "Not kept")}</p>`;
+  }
+  if (panel.state === "partially_kept") {
+    return `<p class="cut"><span>Kept from ${hhmm(panel.oldest_kept_epoch_millis)}</span></p>`;
+  }
+  return "";
+}
+const gone = (panel) => Boolean(panel?.error) || ["not_kept", "deleted", "off"].includes(panel?.state);
+
+function chatHtml(tm) {
+  const panel = state.chat;
+  if (!panel) return `<p class="empty">Reading…</p>`;
+  if (gone(panel)) return keptHtml(panel);
+  const msgs = panel.messages || [];
+  if (!msgs.length) return `<p class="empty">No messages</p>`;
+  return keptHtml(panel) + msgs.map((m) => {
+    const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
+    const body = m.text == null
+      ? `<div class="body none">${esc(m.missing_reason || "No text")}</div>`
+      : `<div class="body">${md(m.text)}</div>`;
+    return `<div class="tm${from ? "" : " outside"}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
+      `<div class="who">${party(tm, m.from_slot, m.from)}${GLYPH.msg}${party(tm, m.to_slot, m.to)}<time>${hhmm(m.at)}</time></div>${body}</div>`;
+  }).join("");
+}
+
+/** A member or a session outside the team, as the chat and the feed name it: its role in its command's colour. */
+function party(tm, slotId, address) {
+  const s = slotId ? slotOf(tm, slotId) : null;
+  if (s) return `<span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span>`;
+  const name = String(address || "").replace(/^uds:.*$/, "");
+  return `<span class="party out">${esc(name || "Outside")}</span>`;
+}
+
+function feedHtml(tm) {
+  const panel = state.activity;
+  if (!panel) return `<p class="empty">Reading…</p>`;
+  if (gone(panel)) return keptHtml(panel);
+  const rows = activityRows().filter((a) => a.slot);
+  if (!rows.length) return `<p class="empty">No activity</p>`;
+  return keptHtml(panel) + `<ol>${rows.map((a) => {
+    const s = slotOf(tm, a.slot);
+    return `<li style="--c:${s ? headColor(s.head) : "var(--track-line)"}"><time>${hhmm(a.at)}</time>${party(tm, a.slot, null)}` +
+      `<span class="what">${activityHtml(a)}</span></li>`;
+  }).join("")}</ol>`;
+}
+
+function boardHtml(tm) {
+  const T = totals(tm);
+  const ro = tm.archived;
+  const more = ro ? "" : `<button class="act" data-act="edit">Edit</button>` +
+    `<button class="icon" data-act="more" aria-label="More" aria-expanded="${ui.menu === "more"}">${GLYPH.more}</button>` +
+    (ui.menu === "more" ? `<div class="menu"><button data-act="archive">Archive</button></div>` : "");
+  const day = `<div class="day"><button class="icon" data-act="day" data-d="1" aria-label="Earlier day"${ui.day >= 6 ? " disabled" : ""}>${GLYPH.back}</button>` +
+    `<span class="dname">${dayName(ui.day)}</span>` +
+    `<button class="icon" data-act="day" data-d="-1" aria-label="Later day"${ui.day === 0 ? " disabled" : ""}>${GLYPH.next}</button></div>`;
+  return `<section class="team${ro ? " archived" : ""}" data-key="team:${esc(tm.id)}">` +
+    `<header class="team-head"><div class="who"><h2>${esc(tm.name)}</h2>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
+    `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm)) : ""}</div></div>` +
+    `<div class="acts">${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
+    `<div class="room"><div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}</div>` +
+    `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +
+    `<section class="feed"><header><h3>Activity</h3><span class="dname">${dayName(ui.day)}</span></header>` +
+    `<div class="flow">${feedHtml(tm)}</div></section></div></section>`;
+}
+
+// ---------- the composer: name, goal, repo, and the members as rows ----------
+const blank = () => ({ role: "", head: null, model: null, account: null, lead: false, instructions: "", open: false });
+function composeFrom(tm) {
+  return {
+    id: tm ? tm.id : null, name: tm?.name || "", goal: tm?.goal || "", repo: tm?.repo || "", error: null,
+    slots: tm ? tm.slots.map((s) => ({ ...blank(), ...s, open: false })) : [{ ...blank(), lead: true }, blank()],
+  };
+}
+const ready = (c) => c.name.trim() && c.slots.length && c.slots.every((s) => s.head);
+
+function pickHtml(c, i) {
+  const p = ui.pick;
+  const s = c.slots[i];
+  if (!p || p.i !== i) return "";
+  if (p.what === "head") {
+    return `<div class="menu pick-menu" data-what="head">${state.heads.map((h) =>
+      `<button data-act="set" data-i="${i}" data-what="head" data-v="${esc(h.key)}"><span class="blot" style="--c:${headColor(h.key)}"></span>${esc(h.command)}</button>`).join("")}</div>`;
+  }
+  if (p.what === "model") {
+    const rows = state.models[s.head] || [];
+    if (!rows.length) return `<div class="menu pick-menu" data-what="model"><p class="empty">This command declares no models.</p></div>`;
+    return `<div class="menu pick-menu" data-what="model">${rows.map((m) =>
+      `<button data-act="set" data-i="${i}" data-what="model" data-v="${esc(m.id)}">${esc(m.label)}</button>`).join("")}</div>`;
+  }
+  return `<div class="menu pick-menu" data-what="account">${(state.accounts[s.head] || []).map((a) =>
+    `<button data-act="set" data-i="${i}" data-what="account" data-v="${esc(a)}">${esc(a)}</button>`).join("")}</div>`;
+}
+
+function slotRowHtml(c, s, i) {
+  const btn = (what, val, label) => `<button class="pickbtn${val ? "" : " unset"}" data-act="pick" data-i="${i}" data-what="${what}" ` +
+    `aria-expanded="${ui.pick?.i === i && ui.pick.what === what}">${val ? label : what === "head" ? "Command" : what === "model" ? "Model" : "Account"}${GLYPH.caret}</button>`;
+  const head = btn("head", s.head, `<span class="blot" style="--c:${headColor(s.head)}"></span>${esc(commandOf(s.head) || "")}`);
+  const model = s.head ? btn("model", s.model, esc(modelLabel(s.head, s.model))) : "";
+  const account = s.head && (state.accounts[s.head] || []).length ? btn("account", s.account, esc(s.account || "")) : "";
+  return `<article class="card slot-row" style="--c:${s.head ? headColor(s.head) : "var(--track-line)"}" data-key="row:${i}">` +
+    `<div class="top"><input class="field role-in" data-i="${i}" value="${esc(s.role)}" placeholder="Role" aria-label="Role" list="roles" autocomplete="off" spellcheck="false">` +
+    `${head}${model}${account}<button class="leadtog" data-act="lead" data-i="${i}" aria-pressed="${s.lead}">Lead</button>` +
+    `<button class="act quiet small" data-act="instr" data-i="${i}" aria-expanded="${s.open}">Instructions</button>` +
+    `<button class="act quiet small" data-act="rm" data-i="${i}"${c.slots.length < 2 ? " disabled" : ""}>Remove</button>${pickHtml(c, i)}</div>` +
+    (s.open ? `<textarea class="field instr" data-i="${i}" rows="4" aria-label="Instructions">${esc(s.instructions || "")}</textarea>` : "") +
+    `</article>`;
+}
+
+function composerHtml() {
+  const c = ui.compose;
+  const ok = ready(c);
+  const word = c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "";
+  // only a refusal of the repo outlines Repo; any other refusal's word still sits on its row
+  const repoRefused = c.error && /^repo\b/i.test(c.error);
+  return `<section class="compose" data-key="compose" role="dialog" aria-modal="true" aria-labelledby="t-title">` +
+    `<h2 id="t-title">${c.id ? esc(state.teams.find((t) => t.id === c.id)?.name) : "New team"}</h2>` +
+    `<div class="frow"><label for="t-name">Name</label><input class="field" id="t-name" value="${esc(c.name)}" autocomplete="off" spellcheck="false"></div>` +
+    `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="2">${esc(c.goal)}</textarea></div>` +
+    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><input class="field" id="t-repo" value="${esc(c.repo)}" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}>${word}</div></div>` +
+    `<h3>Members</h3><div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
+    `<button class="add" data-act="add-slot"><span class="plus" aria-hidden="true">+</span>Add member</button></div>` +
+    `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
+    `<footer><button class="act quiet" data-act="cancel">Cancel</button>` +
+    `<button class="act quiet" data-act="save"${ok ? "" : " disabled"}>Save</button>` +
+    `<button class="act primary" data-act="start-team"${ok ? "" : " disabled"}>Start team</button></footer></section>`;
+}
+
+// ---------- render ----------
+function render() {
+  const a = document.activeElement;
+  const kind = a?.closest?.(".compose") && ["#t-name", "#t-goal", "#t-repo", ".role-in", ".instr"].find((k) => a.matches(k));
+  const focus = kind ? { sel: kind.startsWith("#") ? kind : `${kind}[data-i="${a.dataset.i}"]`, pos: a.selectionStart } : null;
+  const shown = state.teams.filter((t) => !t.archived || ui.archived);
+  if (!shown.some((t) => t.id === ui.team)) ui.team = state.teams.find((t) => !t.archived)?.id ?? null;
+  const tm = team();
+  root.innerHTML = state.error
+    ? `<p class="empty limit">${esc(state.error)}</p>`
+    : state.loading
+      ? `<p class="empty">Reading…</p>`
+      : !state.teams.length
+        ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
+        : tabsHtml() + (tm ? boardHtml(tm) : "");
+  sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";
+  document.querySelector(".app").inert = Boolean(ui.compose);
+  for (const log of root.querySelectorAll(".log.chat, .feed .flow")) log.scrollTop = log.scrollHeight;
+  const el = focus && sheet.querySelector(focus.sel);
+  if (el) { el.focus(); if (focus.pos != null) el.setSelectionRange(focus.pos, focus.pos); }
+  (sheet.querySelector(".menu button") || root.querySelector(".menu button"))?.focus();
+}
+
+// ---------- the acts ----------
+// A new slot's id comes from its role: builder, then builder-2. A slot that exists keeps its id, so its messages and
+// its usage stay its own when he renames the role.
+function slugs(slots) {
+  const taken = new Set(slots.map((s) => s.id).filter(Boolean));
+  return slots.map((s) => {
+    if (s.id) return s.id;
+    const base = (s.role.trim() || commandOf(s.head)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "member";
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+    taken.add(id);
+    return id;
+  });
+}
+
+/** Saves the composer. The store judges the repo and the composition; its refusal is what the person reads. */
+async function save(startAfter) {
+  const c = ui.compose;
+  const ids = slugs(c.slots);
+  const body = {
+    name: c.name.trim(),
+    goal: c.goal.trim(),
+    repo: c.repo.trim(),
+    slots: c.slots.map((s, i) => ({
+      id: ids[i], role: s.role.trim() || ids[i], head: s.head,
+      model: s.model || undefined, account: s.account || undefined,
+      lead: s.lead, instructions: s.instructions?.trim() || undefined,
+    })),
+  };
+  const answer = c.id ? await API.put(`/api/teams/${c.id}`, { ...body, id: c.id }) : await createTeam(body);
+  if (!answer.ok) {
+    c.error = refusalOf(answer, "The team was not saved");
+    render();
+    sheet.querySelector("#t-repo")?.focus(); // the refusal's word is on Repo's row, so Save leaves the person there
+    return;
+  }
+  const saved = answer.body;
+  ui.compose = null;
+  ui.pick = null;
+  ui.team = saved?.id || ui.team;
+  await read();
+  if (startAfter && saved) {
+    const fresh = state.teams.find((t) => t.id === saved.id);
+    for (const slot of fresh?.slots.filter((s) => !s.session) || []) await startSlot(fresh, slot);
+  }
+}
+
+/** A create needs an Idempotency-Key, so a retried create cannot make a second team, and api.js sends no custom
+ *  header: this one call is made here, with the key minted once per create. */
+async function createTeam(body) {
+  const mgmt = localStorage.getItem("splice-console-key") || "";
+  const once = `console-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  try {
+    const res = await fetch("/api/teams", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${mgmt}`, "Content-Type": "application/json", "Idempotency-Key": once },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+    return { ok: res.ok, status: res.status, body: parsed };
+  } catch {
+    return { ok: false, status: 0, body: null };
+  }
+}
+
+/** Starting a member opens a Claude Code session on its command, bound to the slot. */
+async function startSlot(tm, slot) {
+  const key = `${tm.id}/${slot.id}`;
+  ui.failed.delete(key);
+  ui.starting.add(key);
+  render();
+  const answer = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/start`);
+  ui.starting.delete(key);
+  if (!answer.ok) {
+    const screen = answer.body?.screen;
+    ui.failed.set(key, [refusalOf(answer, "The member did not start"), screen].filter(Boolean).join("\n"));
+  }
+  await read();
+}
+
+/** Answering presses the option's own number in the member's terminal; a refusal stays on its card. */
+async function answerSlot(tm, slot, choice) {
+  const key = `${tm.id}/${slot.id}`;
+  ui.failed.delete(key);
+  ui.answered.set(key, { at: Date.now(), choice, offer: state.screens[slot.id] });
+  render();
+  const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice });
+  if (!answered.ok) {
+    ui.answered.delete(key);
+    ui.failed.set(key, refusalOf(answered, "The answer did not reach the member"));
+  }
+  await read();
+}
+
+/** A refused act keeps the board: its word sits by the control that was refused, [where] in ui.failed. */
+async function act(answer, whenRefused, where) {
+  if (!answer.ok) {
+    ui.failed.set(where, refusalOf(answer, whenRefused));
+    render();
+    return false;
+  }
+  await read();
+  return true;
+}
+
+sheet.addEventListener("input", (e) => {
+  const c = ui.compose;
+  if (!c) return;
+  const el = e.target;
+  if (el.id === "t-name") c.name = el.value;
+  else if (el.id === "t-goal") c.goal = el.value;
+  else if (el.id === "t-repo") {
+    c.repo = el.value;
+    if (c.error) { // typing in Repo answers the refusal: its word and outline go, the field keeps its focus
+      c.error = null;
+      el.removeAttribute("aria-invalid");
+      sheet.querySelector(".withword .state")?.remove();
+    }
+    return;
+  }
+  else if (el.matches(".role-in")) c.slots[+el.dataset.i].role = el.value;
+  else if (el.matches(".instr")) { c.slots[+el.dataset.i].instructions = el.value; return; }
+  const ok = Boolean(ready(c));
+  for (const b of sheet.querySelectorAll('[data-act="save"], [data-act="start-team"]')) b.disabled = !ok;
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
+  else if (ui.compose) { ui.compose = null; ui.pick = null; render(); }
+});
+
+/** A member card bound to a session opens it in Sessions, which reads its door from the hash. */
+function openSession(card) {
+  location.href = `sessions.html#${encodeURIComponent(card.dataset.go)}`;
+}
+document.addEventListener("keydown", (e) => {
+  const card = e.target.closest?.(".card[data-go]");
+  if (card && e.target === card && e.key === "Enter") openSession(card);
+});
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-act]");
+  const card = e.target.closest(".card[data-go]");
+  if (!b && card && !e.target.closest("a, button, input, textarea, select")) { openSession(card); return; }
+  if (!b) {
+    if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
+    return;
+  }
+  const tm = team();
+  const c = ui.compose;
+  const i = +b.dataset.i;
+  const slot = tm && b.dataset.s ? slotOf(tm, b.dataset.s) : null;
+  switch (b.dataset.act) {
+    case "theme": {
+      const h = document.documentElement;
+      h.dataset.theme = h.dataset.theme === "night" ? "day" : "night";
+      break;
+    }
+    case "read": await read(); break;
+    case "team": Object.assign(ui, { team: b.dataset.t, compose: null, pick: null, menu: null, day: 0 }); render(); await readTeam(); break;
+    case "archived": ui.archived = !ui.archived; render(); break;
+    case "new": Object.assign(ui, { compose: composeFrom(null), menu: null, pick: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
+    case "edit": Object.assign(ui, { compose: composeFrom(tm), menu: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
+    case "more": ui.menu = ui.menu === "more" ? null : "more"; render(); break;
+    case "archive":
+      ui.menu = null; ui.failed.delete("archive");
+      await act(await API.post(`/api/teams/${tm.id}/archive`), "The team was not archived", "archive");
+      break;
+    case "day": ui.day = Math.max(0, Math.min(6, ui.day + +b.dataset.d)); render(); await readTeam(); break;
+    case "start": await startSlot(tm, slot); break;
+    case "use": { const k = `${tm.id}/${slot.id}`; ui.menu = ui.menu === k ? null : k; render(); break; }
+    case "bind":
+      ui.menu = null;
+      ui.failed.delete(`bind:${tm.id}/${slot.id}`);
+      await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }),
+        "The session was not bound", `bind:${tm.id}/${slot.id}`);
+      break;
+    case "stop": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
+      const key = `${tm.id}/${slot.id}`;
+      ui.failed.delete(`stop:${key}`); ui.stopping.add(key); render();
+      const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
+      ui.stopping.delete(key);
+      const refused = stopRefusal(res);
+      if (refused) { ui.failed.set(`stop:${key}`, refused); render(); } else await read();
+      break;
+    }
+    case "answer": await answerSlot(tm, slot, Number(b.dataset.i)); break;
+    // the composer
+    case "pick": ui.pick = ui.pick?.i === i && ui.pick.what === b.dataset.what ? null : { i, what: b.dataset.what }; render(); break;
+    case "set": {
+      const s = c.slots[i];
+      if (b.dataset.what === "head" && s.head !== b.dataset.v) Object.assign(s, { head: b.dataset.v, model: null, account: null });
+      else s[b.dataset.what] = b.dataset.v;
+      ui.pick = null;
+      render();
+      break;
+    }
+    case "lead": c.slots[i].lead = !c.slots[i].lead; render(); break;
+    case "instr":
+      c.slots[i].open = !c.slots[i].open;
+      render();
+      if (c.slots[i].open) sheet.querySelector(`.instr[data-i="${i}"]`)?.focus();
+      break;
+    case "rm": c.slots.splice(i, 1); ui.pick = null; render(); break;
+    case "add-slot": c.slots.push(blank()); render(); sheet.querySelectorAll(".role-in")[c.slots.length - 1]?.focus(); break;
+    case "cancel": Object.assign(ui, { compose: null, pick: null }); render(); break;
+    case "save": await save(false); break;
+    case "start-team": await save(true); break;
+  }
+});
+
+read();
+
+// A countdown or a silence is only true as of the read it came from, so the turns and the sessions are read again every
+// five seconds while the page is shown and nothing is being edited; without it Resumes in sat at 0:00 and a turn that
+// had ended stayed Working until he pressed Read again (desk walk, Oct 10).
+setInterval(async () => {
+  if (document.hidden || state.loading || ui.compose || ui.pick || ui.menu) return;
+  const sessions = await API.get("/api/sessions");
+  if (sessions.ok) state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
+  await readLive();
+  render();
+}, 5000);
+
+// the silence counter and the resume countdown move each second between reads, from when the turn was read
+setInterval(() => {
+  for (const el of root.querySelectorAll("[data-silent], [data-resume]")) {
+    const st = state.stalls[el.dataset.silent || el.dataset.resume];
+    if (!st) continue;
+    const gone = Date.now() - st.at, ms = el.dataset.silent ? st.ms + gone : Math.max(0, st.resumeMs - gone);
+    el.lastElementChild.textContent = el.dataset.silent ? counter(ms) : `Resumes in ${counter(ms)}`;
+    el.querySelector(".hand")?.style.setProperty("transform", `rotate(${Math.floor(ms / 1000) * 6}deg)`);
+  }
+}, 1000);

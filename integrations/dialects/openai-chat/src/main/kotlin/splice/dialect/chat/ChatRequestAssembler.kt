@@ -1,0 +1,58 @@
+// NEW: (HD-24) the closed-DTO request assembly lifted out of ChatRequestBuilder.kt. This code
+// serializes the exact ChatRequest field set and then splices in the vendor-dynamic max_tokens
+// key, which is precisely what ChatRequest.kt's own header says "ChatRequestBuilder" does —
+// pairing the DTO field set with the code that assembles it puts the TIER-1 closed-DTO invariant
+// in two adjacent files instead of two distant ones.
+package splice.dialect.chat
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.core.wire.AnthropicRequest
+import splice.core.wire.ToolChoiceMapping
+
+/** The per-request knob pair threaded to [ChatRequestAssembler.chatRequestObject] (LongParameterList budget). */
+/** The one spelling of the stream option that makes an OpenAI-compatible chat stream carry a usage frame. */
+internal const val INCLUDE_USAGE: String = "include_usage"
+
+internal data class ChatKnobs(val effort: String?, val cacheKey: String?, val idSlot: Int? = null)
+
+internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val wire: ChatWireMapper) {
+
+    fun chatRequestObject(
+        upstreamModel: String,
+        messages: JsonArray,
+        emitTools: Boolean,
+        body: AnthropicRequest,
+        knobs: ChatKnobs,
+    ): JsonObject {
+        val effort = knobs.effort
+        val dto = ChatRequest(
+            model = upstreamModel,
+            messages = messages,
+            stream = true,
+            tools = if (emitTools) wire.toolsArray(body) else null,
+            toolChoice = if (emitTools) ToolChoiceMapping.openAiToolChoice(body.toolChoice) else null,
+            parallelToolCalls = serialToolCallsAsked(body, emitTools),
+            reasoningEffort = if (quirks.reasoning.emitReasoningEffort) effort else null,
+            reasoning = effort?.takeIf { quirks.reasoning.emitReasoningEffort }
+                ?.let { buildJsonObject { put("effort", it) } },
+            promptCacheKey = knobs.cacheKey,
+            idSlot = knobs.idSlot,
+            streamOptions = if (quirks.emitUsageInStream) {
+                buildJsonObject { put(INCLUDE_USAGE, true) }
+            } else {
+                null
+            },
+        )
+        val fields = (chatRequestJson.encodeToJsonElement(ChatRequest.serializer(), dto) as JsonObject).toMutableMap()
+        body.maxTokens?.takeIf { it > 0 }?.let { fields[quirks.maxTokensField] = JsonPrimitive(it) }
+        return JsonObject(fields)
+    }
+
+    /** parallel_tool_calls false only when the client asked for serial tool calls and tools ride the request. */
+    private fun serialToolCallsAsked(body: AnthropicRequest, emitTools: Boolean): Boolean? =
+        if (emitTools && body.toolChoice?.disableParallelToolUse == true) false else null
+}

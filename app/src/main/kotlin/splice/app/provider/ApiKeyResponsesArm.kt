@@ -1,0 +1,70 @@
+// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.apiKeyResponsesProvider) @ ed5c868 — invariants
+// unchanged: api-key + responses: GrokProvider vs OpenAiResponsesProvider. Registry ids xai/grok
+// plus the dated session-id cache_key arm. Reasoning display knobs come from ConfigService.
+package splice.app.provider
+
+import splice.core.config.StatePaths
+import splice.core.topology.ApiKeyProviderRegistry
+import splice.provider.grok.GrokProvider
+import splice.provider.grok.GrokQuirks
+import splice.provider.openai.ApiKeyAuthProvider
+import splice.provider.openai.OpenAiQuirks
+import splice.provider.openai.OpenAiResponsesProvider
+import splice.topology.TopologyLoader
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
+import splice.upstream.ProviderTuning
+import java.nio.file.Paths
+
+/** [statePaths] names each head's own directory (V4-334: its reasoning outlives a restart). */
+internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
+    private val quirksOverlay = QuirksOverlay()
+
+    // api-key + responses: GrokProvider vs OpenAiResponsesProvider. Reasoning display knobs come
+    // from ConfigService (TOML [daemon] / env / state).
+    internal fun apiKeyResponsesProvider(ctx: ProviderBuild, label: String): Wired {
+        val key = ctx.key
+        val head = ctx.head
+        val providerCfg = ctx.providerCfg
+        val catalog = ctx.catalog
+        val watchdog = ctx.faultPlan.watchdog
+        val cfg = ctx.cfg
+        val auth = ApiKeyAuthProvider(
+            envVar = providerCfg.auth.effectiveApiKeyEnv(key),
+            keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+        )
+        // Identical in both branches — factored out so adding loginCommand didn't push this past
+        // detekt's LongMethod ceiling with a second duplicated ProviderTuning block.
+        val tuning = ProviderTuning(
+            name = ProviderName(key = key, label = label),
+            catalog = catalog,
+            pinnedModel = head.pinnedModel,
+            auth = auth,
+            locations = ProviderLocations(
+                baseUrl = providerCfg.baseUrl,
+                stateDir = statePaths.headsDir.resolve(key),
+            ),
+            watchdog = watchdog,
+            loginCommand = ctx.faultPlan.loginCommand,
+        )
+        // Registry ids xai and grok mean this vendor. 2026-09-15 compatibility: pre-V4-21 this arm
+        // selected GrokProvider by quirks.cache_key == session-id, not by the table name. Keep that
+        // trigger so a table not named xai/grok that already set session-id still gets GrokProvider.
+        val grok = ApiKeyProviderRegistry.row(head.provider)?.id == "xai" ||
+            providerCfg.quirks.cacheKey == "session-id"
+        val provider = if (grok) {
+            GrokProvider(
+                tuning = tuning,
+                reasoning = ReasoningWiring.settingsOf(cfg),
+                quirks = quirksOverlay.responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),
+            )
+        } else {
+            OpenAiResponsesProvider(
+                tuning = tuning,
+                reasoning = ReasoningWiring.settingsOf(cfg),
+                quirks = quirksOverlay.responsesQuirks(providerCfg, OpenAiQuirks().defaultQuirks(), cfg),
+            )
+        }
+        return Wired(provider, auth)
+    }
+}

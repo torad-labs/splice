@@ -1,4 +1,0 @@
-# campaign work logs, diffs and per-item reports stay local; only the milestone report is tracked
-*
-!.gitignore
-!hd-m5-report.md

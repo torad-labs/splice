@@ -1,0 +1,43 @@
+# State-root protection — splice's state root resolves in ONE place (StatePaths.kt); a second
+# literal is a drift seed. TWO roots are guarded, not one: `~/.splice` (the default since V4-177)
+# and `~/.claude-codex` (the pre-0.4 root, still adopted in place on a box that only has that one).
+# Both must stay inside StatePaths, because a literal elsewhere would pick ONE of them and so would
+# silently read the wrong root on exactly half the installs — the failure this wall exists to make
+# impossible, now with two ways to spell it.
+#
+# Widened from `\.claude-codex` to `\.claude-` (walls audit 2026-07-26): the narrower regex is a
+# PER-NODE substring check, so it is trivially evaded by splitting the literal across concatenation
+# or a string template (`".claude-" + "codex"`, or `"~/.claude-$head"` when head == "codex") — no
+# single string_content node then contains the full substring. Do NOT narrow it back; that reopens
+# the concatenation evasion.
+#
+# The other `.claude-` literals are not this root and are declared as their own const val, exempt by shape:
+# LaunchSpecFactory's `~/.claude-` is the per-head CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code (a different
+# external contract, one dir per head), and McpSources' `.claude-plugin` is Claude Code's own plugin-manifest dirname.
+id: kt-state-paths-single-source
+language: kotlin
+severity: error
+message: "State paths resolve only in StatePaths.kt — no `.splice` or `.claude-` state-root literals, concatenated or templated, elsewhere."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
+rule:
+  all:
+    # every literal this wall guards is declared once, as a const val, and a const val is exempt by that shape
+    # (single-source-declaration), not by the file that holds it: StatePaths' two roots, LaunchSpecFactory's
+    # per-head config prefix and McpSources' plugin-manifest dirname each name their one literal that way
+    - not:
+        inside:
+          matches: single-source-declaration
+          stopBy: end
+    - any:
+        - kind: string_content
+          regex: \.claude-
+        # The `.splice` root is matched as a whole PATH SEGMENT, not as a substring, because main sources
+        # legitimately spell dot-prefixed splice TEMP names that share the prefix and are not state roots
+        # (`.splice-doctor-write-probe.`, `.splice-exec-probe.`, `.splice-link-`, `.splice-wrap-`). Requiring a `/`
+        # or end-of-node after the segment separates the root from all of them, and still matches the template
+        # chunks a string interpolation leaves behind (`"~/.splice/$leaf"` gives `~/.splice/`). The regex sits on
+        # the inner string_content node because a raw string has different delimiters.
+        - kind: string_content
+          regex: (?:^|/)\.splice(?:/|$)

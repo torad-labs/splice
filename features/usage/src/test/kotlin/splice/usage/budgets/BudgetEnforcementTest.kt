@@ -1,0 +1,325 @@
+// NEW: V4-133 review — the budgets the console saves are ENFORCED, per head and per local day.
+//
+// The console's own contract (console/src/entities/budget/model/types.ts): "`warn` tells the
+// operator, `block` refuses the turn". Before this row a PUT /api/budgets with `block` answered 200
+// and every turn on that head kept being served. Each test drives the ledger a head is handed the way
+// the head drives it — admit() before a turn, spent() after its perf row — and asserts on the refusal,
+// the alert and the arithmetic, never only that something happened.
+package splice.usage.budgets
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.model.DiscoveredModel
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
+import splice.core.perf.PerfKeys
+import splice.core.topology.AuthConfig
+import splice.core.topology.Dialect
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
+import splice.core.util.WallClock
+import splice.upstream.Ticker
+import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
+import java.nio.file.Path
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.concurrent.CopyOnWriteArrayList
+
+private const val DAY_MS = 86_400_000L
+private const val HOUR_MS = 3_600_000L
+
+/** 2024-10-04 00:00 UTC — any UTC midnight; the tests only move relative to it. */
+private const val DAY_START = 20_000L * DAY_MS
+private const val TOKENS_PER_USD = 1_000_000.0
+private const val MODEL = "m1"
+
+/** One USD per million fresh input tokens, a tenth of that for a cache read. */
+private val CATALOG = ModelCatalog(
+    discoveryPrefix = "claude-test--",
+    models = listOf(ModelEntry(MODEL, contextWindow = 200_000, rates = ModelRates(1.0, 0.1, 4.0))),
+    defaultContextWindow = 200_000,
+)
+
+/** A turn's counters worth [usd] of fresh input at [CATALOG]'s rate. */
+private fun turnOf(usd: Double): Map<String, Long> = mapOf(
+    PerfKeys.IN_TOKENS to (usd * TOKENS_PER_USD).toLong(),
+    PerfKeys.OUT_TOKENS to 0L,
+    PerfKeys.CACHED_TOKENS to 0L,
+    PerfKeys.CACHE_WRITE_TOKENS to 0L,
+)
+
+private class FakeHistory(private val rows: List<PerfRow> = emptyList()) : HeadPerfHistory {
+    val asked = CopyOnWriteArrayList<Long>()
+
+    override fun rowsFor(head: String): PerfRowsSource = PerfRowsSource { since ->
+        asked.add(since)
+        PerfRowsWindow(rows.filter { it.ts >= since })
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private class Rig(
+    tmp: Path,
+    history: FakeHistory = FakeHistory(),
+    startMs: Long = DAY_START + 10 * HOUR_MS,
+    zone: ZoneId = ZoneOffset.UTC,
+) {
+    var now: Long = startMs
+    val store = BudgetStore(tmp.resolve("budgets.json"))
+    val alerts = CopyOnWriteArrayList<Pair<String, String>>()
+    val logs = CopyOnWriteArrayList<String>()
+    private val scope = TestScope()
+    val enforcement = BudgetEnforcement(
+        store,
+        BudgetAlert { head, text -> alerts.add(head to text) },
+        history,
+        { logs.add(it) },
+        WallClock { now },
+        BudgetSeedRuntime(scope, UnconfinedTestDispatcher(scope.testScheduler), Ticker { false }),
+        zone,
+    )
+
+    fun budget(head: String, dailyUsd: Double?, action: String) {
+        store.replace(listOf(Budget(head, dailyUsd, action)))
+    }
+}
+
+class BudgetEnforcementTest {
+
+    @Test
+    fun `a block budget admits turns under the limit and refuses them once today's spend reaches it`(
+        @TempDir tmp: Path,
+    ) {
+        val rig = Rig(tmp)
+        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", CATALOG)
+
+        assertNull(head.admit(), "nothing spent yet")
+        head.spent(rig.now, MODEL, turnOf(1.0))
+        assertNull(head.admit(), "$1.00 of a $2.00 budget is under it")
+        head.spent(rig.now, MODEL, turnOf(1.0))
+
+        assertNotNull(head.admit(), "$2.00 spent reaches a $2.00 block budget: the turn is refused")
+        assertEquals(emptyList<Pair<String, String>>(), rig.alerts.toList(), "block refuses; it does not alert")
+    }
+
+    @Test
+    fun `the refusal names the head, the spend, the limit and when it lifts, and a new day lifts it`(
+        @TempDir tmp: Path,
+    ) {
+        val rig = Rig(tmp)
+        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", CATALOG)
+        head.spent(rig.now, MODEL, turnOf(2.5))
+
+        val block = head.admit()
+        assertNotNull(block)
+        val message = block!!.message
+        assertTrue(message.contains("'h'"), message)
+        assertTrue(message.contains("an estimated $2.50 in API cost today"), message)
+        assertTrue(message.contains("$2.00 daily budget"), message)
+        assertTrue(message.contains("until midnight, local time"), message)
+        assertEquals("spent_usd=2.50 limit_usd=2.00 unpriced_turns=0", block.detail)
+
+        rig.now = DAY_START + DAY_MS + 1
+        assertNull(head.admit(), "the next day starts from nothing")
+    }
+
+    @Test
+    fun `the budget day runs midnight to midnight where the daemon runs, not UTC's`(@TempDir tmp: Path) {
+        // 05:00 in Chicago on Oct 4, 2024, when Chicago is five hours behind UTC.
+        val rig = Rig(tmp, zone = ZoneId.of("America/Chicago"))
+        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", CATALOG)
+        head.spent(rig.now, MODEL, turnOf(2.5))
+
+        rig.now = DAY_START + DAY_MS + HOUR_MS
+        assertNotNull(head.admit(), "8 PM in Chicago is still the day the budget was spent, though UTC has rolled")
+        rig.now = DAY_START + DAY_MS + 5 * HOUR_MS
+        assertNull(head.admit(), "Chicago's midnight lifts it")
+    }
+
+    @Test
+    fun `a head with no budget, or a null daily_usd, is never refused and never reads its history`(
+        @TempDir tmp: Path,
+    ) {
+        val history = FakeHistory(
+            listOf(PerfRow(DAY_START + 1, "ok", turnOf(50.0), facts = PerfTurnFacts(model = MODEL))),
+        )
+        val rig = Rig(tmp, history)
+        rig.budget("other", 0.0, BudgetActions.BLOCK)
+        val unbudgeted = rig.enforcement.forHead("h", CATALOG)
+        unbudgeted.spent(rig.now, MODEL, turnOf(100.0))
+        assertNull(unbudgeted.admit(), "a head with no row has no budget")
+
+        rig.budget("h", null, BudgetActions.BLOCK)
+        assertNull(unbudgeted.admit(), "a null daily_usd is no budget, not zero")
+        assertEquals(emptyList<Long>(), history.asked.toList(), "an unbudgeted head must never pay for a history read")
+    }
+
+    @Test
+    fun `spend a previous daemon recorded today counts once, and yesterday's does not count`(@TempDir tmp: Path) {
+        val boot = DAY_START + 10 * HOUR_MS
+        val history = FakeHistory(
+            listOf(
+                PerfRow(DAY_START - HOUR_MS, "ok", turnOf(50.0), facts = PerfTurnFacts(model = MODEL)),
+                PerfRow(DAY_START + HOUR_MS, "ok", turnOf(1.5), facts = PerfTurnFacts(model = MODEL)),
+                // Written by THIS daemon after boot: it reaches the ledger through spent(), below.
+                PerfRow(boot + HOUR_MS, "ok", turnOf(1.0), facts = PerfTurnFacts(model = MODEL)),
+            ),
+        )
+        val rig = Rig(tmp, history, startMs = boot)
+        rig.budget("h", 3.0, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", CATALOG)
+
+        rig.now = boot + HOUR_MS
+        head.spent(rig.now, MODEL, turnOf(1.0))
+        assertNull(head.admit(), "1.50 before boot + 1.00 since = 2.50, under 3.00; counting a row twice reads 3.50")
+        assertEquals(listOf(DAY_START), history.asked.toList(), "today's rows are read once, from the UTC day start")
+
+        head.spent(rig.now, MODEL, turnOf(0.5))
+        assertNotNull(head.admit(), "3.00 reached, the pre-boot spend included")
+    }
+
+    @Test
+    fun `a warn budget tells the operator once when reached, never refuses, and tells again on a new limit or day`(
+        @TempDir tmp: Path,
+    ) {
+        val rig = Rig(tmp)
+        rig.budget("h", 1.0, BudgetActions.WARN)
+        val head = rig.enforcement.forHead("h", CATALOG)
+
+        head.spent(rig.now, MODEL, turnOf(0.5))
+        assertNull(head.admit())
+        assertEquals(0, rig.alerts.size, "under the budget nothing is said")
+
+        head.spent(rig.now, MODEL, turnOf(0.5))
+        assertNull(head.admit(), "warn never refuses a turn")
+        head.spent(rig.now, MODEL, turnOf(0.5))
+        assertNull(head.admit())
+        assertEquals(1, rig.alerts.size, "reaching the budget is told ONCE, not per turn: ${rig.alerts}")
+        val (alertedHead, text) = rig.alerts.single()
+        assertEquals("h", alertedHead)
+        assertTrue(text.contains("'h'"), text)
+        assertTrue(text.contains("an estimated $1.00 in API cost today"), text)
+        assertTrue(rig.logs.any { it.startsWith("[h][budget]") && it.contains("limit_usd=1.00") }, "${rig.logs}")
+
+        rig.budget("h", 2.0, BudgetActions.WARN)
+        head.spent(rig.now, MODEL, turnOf(0.5))
+        assertEquals(2, rig.alerts.size, "a raised limit that is reached again is a new fact: ${rig.alerts}")
+
+        rig.now = DAY_START + DAY_MS + HOUR_MS
+        head.spent(rig.now, MODEL, turnOf(2.0))
+        assertEquals(3, rig.alerts.size, "a new UTC day reached again is told again: ${rig.alerts}")
+    }
+
+    @Test
+    fun `cached input bills at the read rate, and a turn with no rate card is not counted but is named`(
+        @TempDir tmp: Path,
+    ) {
+        val rig = Rig(tmp)
+        rig.budget("h", 0.25, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", CATALOG)
+
+        // in_tokens INCLUDES the cached portion (SessionCost.bucketsFor): 2M cached is $0.20, not $2.20.
+        head.spent(
+            rig.now,
+            MODEL,
+            mapOf(
+                PerfKeys.IN_TOKENS to 2_000_000L,
+                PerfKeys.CACHED_TOKENS to 2_000_000L,
+                PerfKeys.OUT_TOKENS to 0L,
+                PerfKeys.CACHE_WRITE_TOKENS to 0L,
+            ),
+        )
+        assertNull(head.admit(), "a cache read billed as fresh input would refuse this turn")
+
+        head.spent(rig.now, "no-card", turnOf(100.0))
+        assertNull(head.admit(), "a model with no rate card has no price to count")
+        assertTrue(rig.logs.any { it.startsWith("[h][budget]") && it.contains("no-card") }, "${rig.logs}")
+
+        head.spent(rig.now, MODEL, turnOf(0.1))
+        val block = head.admit()
+        assertNotNull(block)
+        assertTrue(block!!.message.contains("1 turn today ran on a model with no rate card"), block.message)
+    }
+
+    // V4-438: a model priced only by the provider's list counts against a budget like a declared one, and one
+    // the list gives no price is named, never guessed.
+    @Test
+    fun `a budget counts the turns of a model only the provider's list prices, and names one it does not`(
+        @TempDir tmp: Path,
+    ) {
+        val provider = ProviderConfig(
+            dialect = Dialect.OPENAI_CHAT,
+            baseUrl = "https://openrouter.ai/api/v1",
+            auth = AuthConfig("api-key", env = "OPENROUTER_API_KEY"),
+        )
+        val catalog = provider.catalogFor(
+            HeadConfig("openrouter", 4104, "claude-openrouter--", "acme/listed"),
+            discovered = listOf(
+                DiscoveredModel("acme/listed", rates = ModelRates(1.0, 0.1, 4.0)),
+                DiscoveredModel("acme/router"),
+            ),
+        )
+        val rig = Rig(tmp)
+        rig.budget("h", 0.25, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", catalog)
+
+        head.spent(rig.now, "acme/router", turnOf(100.0))
+        assertNull(head.admit(), "the list gives the router no price, so there is nothing to count")
+        assertTrue(rig.logs.any { it.startsWith("[h][budget]") && it.contains("acme/router") }, "${rig.logs}")
+
+        head.spent(rig.now, "acme/listed", turnOf(0.3))
+        val block = head.admit()
+        assertNotNull(block, "a turn on the listed model counts at the price its provider lists")
+        assertTrue(block!!.message.contains("1 turn today ran on a model with no rate card"), block.message)
+    }
+
+    // Oct 10, 2026 review: a cache written for an HOUR bills above a five-minute one, and the shipped list
+    // carried only the five-minute price. Opus 5.5 charges $5 per million five-minute write tokens and $8
+    // hourly, so 100k hourly writes cost $0.80 — but the budget was shown $0.50 and admitted the next turn.
+    @Test
+    fun `a budget blocks on an hourly cache write, which bills above a five-minute one`(@TempDir tmp: Path) {
+        val forwarded = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("client"),
+            models = listOf(ModelEntry("claude-opus-5-5", label = "Claude Opus 5.5", contextWindow = 1_000_000)),
+        )
+        val catalog = forwarded.catalogFor(HeadConfig("claude-splice", 3098, "claude-splice--", "claude-opus-5-5"))
+        val rig = Rig(tmp)
+        rig.budget("h", 0.6, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", catalog)
+
+        head.spent(rig.now, "claude-opus-5-5", writeTurn(tokens = 100_000, hourly = 100_000))
+        assertNotNull(head.admit(), "$0.80 of hourly writes reaches a $0.60 budget: the next turn is refused")
+
+        val fiveMinute = Rig(tmp.resolve("5m").also { it.toFile().mkdirs() })
+        fiveMinute.budget("h", 0.6, BudgetActions.BLOCK)
+        val cheaper = fiveMinute.enforcement.forHead("h", catalog)
+        cheaper.spent(fiveMinute.now, "claude-opus-5-5", writeTurn(tokens = 100_000, hourly = 0))
+        assertNull(cheaper.admit(), "the same tokens written for five minutes are $0.50, which is under it")
+    }
+}
+
+/** One turn that wrote [tokens] tokens to the prompt cache, [hourly] of them at the 1-hour TTL. The write is
+ *  a disjoint part of in_tokens, so a turn that wrote only cache reports no fresh input of its own. */
+private fun writeTurn(tokens: Long, hourly: Long): Map<String, Long> = buildMap {
+    put(PerfKeys.IN_TOKENS, tokens)
+    put(PerfKeys.OUT_TOKENS, 0L)
+    put(PerfKeys.CACHED_TOKENS, 0L)
+    put(PerfKeys.CACHE_WRITE_TOKENS, tokens)
+    if (hourly > 0) put(PerfKeys.CACHE_WRITE_1H_TOKENS, hourly)
+}

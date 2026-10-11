@@ -1,0 +1,46 @@
+id: kt-no-silent-result-collapse
+valid:
+  - 'val x = runCatchingCancellable { read() }.onFailure { log(it) }.getOrNull()'
+  - 'val y = runCatching { read() }.onFailure { System.err.println(it) }.getOrDefault(false)'
+  - 'val z = mapOf("a" to 1).getOrDefault("a", 0)'
+  - 'val w = listOf(1, 2).getOrNull()'
+  - |
+    val result = runCatching { read() }.onFailure { log(it) }
+    val token = result.getOrNull()
+  - |
+    val other = compute()
+    val list = mapOf("a" to 1)
+    val w = list.getOrDefault("a", 0)
+    val v = other.getOrNull()
+  # 2026-09-24: a comment inside a chain that DOES consume the failure stays compliant.
+  - |
+    val x = runCatching { read() }
+        // logged, then collapsed
+        .onFailure { log(it) }
+        .getOrNull()
+invalid:
+  - 'val x = runCatchingCancellable { read() }.getOrNull()'
+  - 'val y = runCatching { read() }.getOrDefault(false)'
+  - 'val z = runCatchingCancellable { parse(s) }.getOrNull() ?: return null'
+  - |
+    val result = runCatching { read() }
+    val token = result.getOrNull()
+  # 2026-07-27 review: the same collapse behind a `var` binding — branch B required `val`.
+  - |
+    var result = runCatching { read() }
+    val token = result.getOrNull()
+  # 2026-09-24: a comment inside the chain used to hide the collapse from pattern A entirely.
+  - |
+    val x = runCatching { read() }
+        // not a number is fine here
+        .getOrNull()
+  - |
+    val y = runCatchingCancellable { read() }
+        /* default on any failure */
+        .getOrDefault(false)
+  # and from branch B's split form
+  - |
+    val result = runCatching { read() }
+    val token = result
+        // nothing to log
+        .getOrNull()

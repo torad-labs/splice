@@ -1,0 +1,677 @@
+# checks/config/role-registry.toml — the DISPOSITIONS for checks/role-registry.ts (V4-89,
+# ARCH-AUDIT 2026-09-17, audit B row 5).
+#
+# ONE ROLE, ONE INTERFACE. Several hundred `fun interface` declarations in main sources normalise to
+# far fewer single-abstract-method signatures, and dozens of those signatures are carried by two or
+# more NAMES. The exact three numbers are NOT written here, deliberately: this header claimed "200
+# declarations over 132 signatures, 26 shared" from the Sept 17 audit and was never recounted, and by
+# Oct 10 the tree held 458 declarations — a census in prose goes stale silently, which is the failure
+# this whole file exists to prevent. The live count is RoleRegistryLawTest's own, printed with every
+# group when the law fails, and kept honest by its second test, which recounts the denominator through
+# Konsist's AST and fails when the two disagree. Read it from a run, never from a line here.
+# Sharing a shape is not a defect — kt-no-lambda-seam.yml's header is explicit that collapsing
+# distinct roles into a shared `BooleanSupplier` would be STRICTLY WORSE than the lambdas it
+# replaced, and its canonical example lives in this file: ClientGone (the client hung up — abandon
+# the turn) and ClientFrameEmitted (the client already saw output — too late to retry) are read a
+# few lines apart on the same retry path and drive OPPOSITE decisions. Swapping them compiled
+# before that wave and produced either an abandoned healthy turn or duplicate output on the wire.
+#
+# So the wall cannot decide; it can only insist the decision be WRITTEN. Every name in a shared
+# group must appear in this file under its signature, with a non-empty reason. Absence is not a
+# disposition: an unlisted name fails BY NAME, which is how ADDING a lambda-shaped port costs one
+# sentence, and a name listed here that no longer exists fails as STALE, which is how a fix is
+# detected.
+#
+# THREE NAMES WERE DELIBERATELY ABSENT, and V4-122 RECONCILED ALL THREE rather than disposing of
+# them — which is what this file said the fix row would have to do:
+#   ElapsedNow    (upstream/RuntimeSeams.kt)          -> typealias of ElapsedClock  (core/util/RuntimePorts.kt)
+#   AccountNow    (upstream/credentials/AccountSelection.kt) -> typealias of WallClock     (core/util/RuntimePorts.kt)
+#   HeaderLookup  (gateway/usage/RateLimitHeaders.kt) -> typealias of QuotaHeaderRead (core/usage/QuotaHeaders.kt)
+# They were never distinct roles, and the evidence was in the declarations rather than the audit:
+# ElapsedNow's KDoc said "a monotonic now-reading in milliseconds … retry deadlines and the shared
+# 429 cooldown", which is ElapsedClock's contract verbatim; AccountNow's said "epoch time seam used to
+# compare provider reset timestamps", exactly WallClock's "compared against a foreign epoch"; and
+# QuotaHeaderRead's KDoc ADMITTED the duplication — "the gateway's own HeaderLookup lives a module
+# above this one". The honest fix was to make each pair ONE declaration, not to write a reason for
+# two names of one role: listing them here would have closed the wall without merging anything, which
+# is what the note above meant by calling that a lie. A typealias merges them and keeps every call
+# site and SAM conversion compiling, so the names are gone from this file because they are gone from
+# the tree — a disposition may not outlive its subject, and these subjects were fixed.
+#
+# WHAT IS STILL LISTED, AND WHY: every remaining name in a shared group is a role that genuinely
+# differs from its siblings, and each carries a reason saying what it IS. The wall stays useful
+# because ADDING a lambda-shaped port still costs one sentence.
+#
+# HOW TO ADD AN ENTRY. The census comes from the law itself — `./gradlew :quality-architecture:test
+# --tests 'splice.quality.RoleRegistryLawTest'` computes it on every run and prints it under the
+# failure that sent you here. (Until 2026-09-21 this line named `bun checks/role-registry.ts report
+# .`; that script was deleted with the port to Kotlin, so the remedy named a command nobody could
+# run, which is an absence wearing a label.) Then write the signature verbatim, today's date, the
+# names, and a reason that says what each role IS. A reason a reviewer cannot check is worse than
+# none, because it looks like work.
+
+[[groups]]
+signature = "(Usage?)->Unit"
+dated = "2026-10-04"
+names = ["RowRelease", "RowWrite"]
+reason = """RowRelease ends ONE hold a source round has on its posting turn's perf row: the provider calls it once per round, it writes nothing, and only the last release lets the row go. RowWrite writes the row itself, once, with the usage every settled round left. A RowWrite passed as a release would write one row per round; a RowRelease passed as the write would never write the row."""
+
+[[groups]]
+signature = "suspend (WireSink)->Unit"
+dated = "2026-10-04"
+names = ["BufferedSinkWrite", "SourceFrameAction"]
+reason = """BufferedSinkWrite retains tentative client output until certification releases it. SourceFrameAction delivers one validated native event immediately inside an opaque-field scope that always unwinds; delaying that scope would lose source ordering."""
+
+[[groups]]
+signature = "(MessageEdge)->Boolean"
+dated = "2026-10-10"
+names = ["EdgeWanted", "SparedEdges"]
+reason = """SparedEdges is asked by a deletion: an edge it names survives a cut, so a wrong yes keeps data the person asked to remove. EdgeWanted is asked by a read: an edge it names is returned to a caller, so a wrong yes shows an edge that is not theirs. The two decide opposite things about the same row, and a team that is active would be shown every edge or lose none of them if one stood for the other."""
+
+[[groups]]
+signature = "(Path)->Boolean"
+dated = "2026-10-02"
+names = ["DayFileRemoval", "PluginFileMatch"]
+reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
+
+# ── 20 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Unit"
+dated = "2026-10-05"
+names = [
+    "AccountMembershipRefresh",
+    "AuthRefreshObserver",
+    "ClaudePoolChange",
+    "CodeModeCleanup",
+    "FileIoTask",
+    "HaltJvm",
+    "HandoffMark",
+    "HoldChange",
+    "ListingReturned",
+    "MuseMintWriteGuard",
+    "ProtocolAnomaly",
+    "PulseTick",
+    "RawSseFlush",
+    "RecordingCompleted",
+    "RestoreStep",
+    "ShutdownDaemon",
+    "StopControl",
+    "StreamStart",
+    "TurnEnd",
+    "UpstreamBytes",
+    "WorkerExited",
+    "WsRoundAbort",
+]
+reason = """A nullary effect is the widest shape in the language and the one that says the least: \
+every one of these is an EVENT or an ACTION with its own lifecycle owner, and no two are wired \
+from the same place. HoldChange mutates credential-owned refusal state under its generation monitor; \
+it is neither a stream-start notification nor dispatched file IO. ClaudePoolChange publishes current stored membership into one booted head, \
+retaining session choices and captured credentials. AccountMembershipRefresh reconciles externally written \
+credentials before the upstream selector captures a generation; unlike app-only mutation publication, \
+it cannot complete an account withdrawal. ShutdownDaemon ends that head instead; swapping \
+these roles would stop serving on login edits or fail to release resources on shutdown. \
+Notifications the caller only observes: AuthRefreshObserver (a credential \
+refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \
+(a WS frame arrived that the protocol does not allow), StreamStart (the upstream began emitting), \
+PulseTick (the spinner's next frame is due), UpstreamBytes (a provider body chunk or WebSocket JSON \
+event arrived; stamp the live turn's silence clock before parsing or client output, never on \
+headers, watchdog touch, socket pings or client keep-alives), TurnEnd (a built turn is over, on whatever path — the \
+provider gives back what it held for it, a llama-server slot lease since V4-165). Actions the caller commands: HaltJvm (exit the \
+process), StopControl (shut the control plane down), ShutdownDaemon \
+(the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \
+(release the worker's cell), RawSseFlush (push buffered bytes to the client socket), RecordingCompleted (FrameRecording.complete returned \
+successfully, so the detached drive may keep its recording only if its terminal also ended cleanly; \
+this acknowledgement never runs after failed completion, unlike the earlier HandoffMark or the \
+provider resource release at TurnEnd, proved by TurnStreamerCleanupTest), RestoreStep \
+(undo one already-applied upgrade step), FileIoTask (the body to run on the file-IO dispatcher), \
+MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), ListingReturned (a hosted \
+child's tools/list answer is back and the cache has not kept it yet: the one instant a change notification can \
+land, which the cache's own test uses to force that interleaving), HandoffMark (the \
+turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \
+its own rather than folded onto one of the observers above: an observer is subscribed to, a mark \
+is set). Substituting any for any other is not a type error and would be silent: HaltJvm for \
+StopControl kills the process \
+where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
+middle of a turn. These need MORE naming than a shared shape, not less."""
+
+# ── 17 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Boolean"
+dated = "2026-09-27"
+names = [
+    "ClientFrameEmitted",
+    "ClientGone",
+    "ConfigRepair",
+    "ConsolePresence",
+    "ContentReached",
+    "DaemonRestart",
+    "DaemonSuccessor",
+    "DaemonSupervised",
+    "KeyPresenceProbe",
+    "ProgressLineOn",
+    "SessionTranscriptViewEnabled",
+    "StderrEcho",
+    "TerminalSeen",
+    "TopologyStale",
+    "TranscriptReadBudget",
+    "WatchdogTripped",
+]
+reason = """THE CANONICAL GROUP, documented in kt-no-lambda-seam.yml's own header. ClientGone (the \
+client hung up, so abandon the turn) and ClientFrameEmitted (the client already saw output, so a \
+retry would duplicate it) are read a few lines apart on the same retry path and drive OPPOSITE \
+decisions; swapping them compiled before HD-22 and produced either an abandoned healthy turn or \
+duplicate bytes on the wire. The remaining names describe distinct decisions about different \
+subjects: ContentReached (has any content frame left the emitter yet — the question the pre-content \
+wire-type rule turns on), WatchdogTripped (did the turn watchdog fire), TerminalSeen (has the WS \
+stream produced its terminal event), TopologyStale (has splice.toml changed under the running \
+daemon), KeyPresenceProbe (is a management key present right now), ConsolePresence (is a TTY \
+attached), DaemonRestart (restart the daemon \
+and report whether it came back), DaemonSuccessor (arm the detached CLI before this unsupervised \
+daemon drains; false keeps it serving), and DaemonSupervised (V4-137: was this process started \
+under systemd — read from INVOCATION_ID, which systemd sets on every process it starts). \
+DaemonSupervised ASKS whether the unit brings it back; DaemonSuccessor ACTS only when it does \
+not, while DaemonRestart is the external command that waits for the new health response. \
+Swapping their Boolean signatures would start a competing daemon under systemd or drain an \
+unsupervised daemon with no successor. \
+SessionTranscriptViewEnabled (V4-354, 2026-09-27) reads the live global transcript-view knob \
+before either the sessions or turns route opens a Claude Code transcript; one port owned by \
+sessions serves both routes, and confusing it with a client disconnect or daemon-state probe \
+would silently expose private conversation text or hide it despite the operator's switch. \
+TranscriptReadBudget (2026-10-04) asks whether this request has time left across every root and \
+metadata chunk, not whether private transcript viewing is enabled or a client has disconnected. \
+Swapping those roles could scan past the deadline, stop a healthy read, or bypass its view guard. \
+StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
+until the daemon is up) is a logging decision read per line; read as any of the others it would either \
+re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \
+shared BooleanSupplier would make every one of those substitutions compile. ConfigRepair (2026-10-10) offers the \
+fix session for a splice.toml boot refuses and answers whether every finding was fixed: its true lets `splice \
+restart` read the file again and go on to stop and start a daemon, so wired where a probe is wanted it would \
+restart on a read, and a probe wired here would restart on a file still broken. \
+ProgressLineOn (2026-10-10) asks, at every heartbeat of a quiet turn, whether splice may write its own status line \
+to the client; it says nothing about the client being gone or the transcript being viewable, and swapped with either it \
+would write the line to a hung-up socket or hide the wait from a user who left it on."""
+
+# ── 11 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
+[[groups]]
+signature = "()->Long"
+dated = "2026-09-17"
+names = [
+    "ElapsedClock",
+    "HeadPerfSkipSource",
+    "HostClock",
+    "MaterializationBudgetBytes",
+    "MaterializedByteCap",
+    "QuotaIntervalMs",
+    "RemainingTurnWait",
+    "RequestReadBudgetMs",
+    "WallClock",
+    "WriteBoundMs",
+    "WsPathPulse",
+]
+reason = """Five KINDS of long, none interchangeable: three clocks, an age, a count, the budget left of a \
+deadline already running, and the ceilings and cadence an operator configures (the last group arrived through \
+the live-read work of Oct 10 and is why this entry grew). WallClock reads UNIX \
+epoch milliseconds — a real point in calendar time, persisted as a perf row's `ts`, minted into \
+MgmtKey.mintedAtMs, and compared against a token's `exp` and a file mtime this process did not \
+author. ElapsedClock reads a MONOTONIC timebase whose origin is arbitrary and per-process: a \
+single reading means nothing, only a difference does, and it exists precisely so an NTP step or a \
+suspend/resume cannot abort a healthy turn or pin a gate slot forever. Substituting either for the \
+other is the incident MonoClock was introduced for, and both KDocs forbid it in writing. HostClock \
+is the MCP host's own injected epoch reading, scoped to that subsystem's config so host session \
+ages are testable without a process-global clock. RemainingTurnWait is a BUDGET — how much of the \
+turn deadline is left — not a clock reading at all. WsPathPulse is an AGE, milliseconds since the \
+last WS ping, which is a derived difference rather than either clock. HeadPerfSkipSource is not a \
+time at all: it is a COUNT of perf rows that could not be attributed. RequestReadBudgetMs (Oct 10) is a \
+CONFIGURED CEILING, the first of the three an operator sets rather than a reading of anything: how long ONE \
+client body read may take, read fresh at every read so a PATCH bounds the next one without a restart. It is \
+not a reading of either clock, and it is not RemainingTurnWait, which is what is left of a deadline already \
+running — wiring that budget in here would bound every body read by the remainder of one turn, and wiring \
+this one there would restart the turn's deadline at every read. The other two are BYTES rather than \
+milliseconds, and they are the pair most easily swapped, because one DERIVES from the other (Oct 10). \
+MaterializationBudgetBytes is what the operator configured — materializationHeapBytes, in which 0 means \
+'derive it from spare JVM heap' — and only SpliceConfig and the gate's own default produce one. \
+MaterializedByteCap is the EFFECTIVE ceiling that budget becomes once the materialization gate caps it by \
+the process heap ledger, so it is always positive, and the gate is its only producer: the ingress guard in \
+front of the head asks the gate's own reader rather than deriving a second copy, so the 413 the transport \
+writes names the number the gate would have refused on. Swap them and an untouched install, whose budget \
+reads 0, answers 413 to every request — a ceiling of zero bytes where the budget meant 'take the ledger' — \
+while the reverse swap caps a configured budget at itself and reads as correct forever. \
+WriteBoundMs (Oct 10) is the second CONFIGURED CEILING in milliseconds, and the one most easily taken for the \
+first: how long the upstream may take none of ONE request's bytes before the write is cut, read fresh at \
+each request so a PATCH of firstByteTimeoutMs bounds the next one. It is not RequestReadBudgetMs, which bounds \
+a CLIENT's body read on the way in — this bounds splice's own write on the way out — and it is not \
+RemainingTurnWait, which is what is left of a turn deadline already running: wiring that here would cut every \
+write by the remainder of one turn, and wiring this one there would restart the turn's deadline at every write. \
+QuotaIntervalMs (Oct 10) is the one CADENCE among them: how long a quota poller waits between two looks at an \
+account's usage endpoint, read at every wait so a PATCH of quotaPollIntervalMs governs the next one. A cadence \
+is not a ceiling on one operation and not what is left of a deadline — it is how often something REPEATS, and \
+its floor is 30 s where the ceilings are measured against a single request. Wired where any of the three \
+ceilings is expected it would give that operation five minutes to finish by default, and a ceiling wired here \
+would poll the provider's usage endpoint as often as one request is allowed to take, which is the hammering \
+ConfigCoercion's floor exists to prevent. \
+DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
+second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
+by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""
+
+# ── 3 names, () -> Duration ───────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Duration"
+dated = "2026-10-10"
+names = [
+    "McpHandshakeBudget",
+    "McpIdleBudget",
+    "McpRequestBudget",
+]
+reason = """THREE BUDGETS ON ONE HOST, and the whole group was born on Oct 10 when the MCP host's \
+lifecycle values stopped being numbers: each is read at its OWN enforcement point off the operator's config as \
+it stands then, so a PATCH moves the next one without a daemon restart. They are not interchangeable and the \
+compiler cannot tell them apart. McpRequestBudget bounds how long ONE FORWARDED REQUEST may wait for a child's \
+answer (30 min by default, because a long tool call is a legitimate request). McpHandshakeBudget bounds how long \
+a STARTING CHILD may take to answer initialize (1 min, because a server that cannot handshake in a minute is not \
+hostable). McpIdleBudget is not a bound on an operation at all: it is how long a server with no stream and no \
+request is KEPT before the sweep closes it (30 min). Swap the request budget and the handshake budget and every \
+tool call dies after a minute while a hung child is waited on for half an hour; wire the idle budget where either \
+belongs and a request waits as long as an unused server is kept, which is the same number by default and so \
+would pass every test that does not move one of them. That default coincidence is exactly why the disposition is \
+written: they agree today and mean different things. A fourth name on this shape that is not one host's budget \
+needs its own sentence here before it compiles into the tree."""
+
+# ── 10 names, () -> String ────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->String"
+dated = "2026-10-02"
+names = [
+    "ClaudeVersionRead",
+    "ClaudeWrap",
+    "FieldText",
+    "McpBearer",
+    "NoteIds",
+    "SupervisorUnitName",
+    "TopologyDigest",
+    "TurnIdMint",
+    "UpgradeStatus",
+    "WallClockIso",
+]
+reason = """Ten distinct string roles. SupervisorUnitName (added 2026-09-26, V4-243) is the NAME of the systemd unit a cold start sends `systemctl restart` to: the operator's SPLICE_SUPERVISOR_UNIT, splice.service by default, read when a route is asked for. It is an ADDRESS FOR A SIDE EFFECT, which is why it keeps its own port: wiring TopologyDigest or ClaudeVersionRead where the unit is wanted compiles and sends `systemctl restart` a hash or a version, and a name read from the wrong seam can restart another service on the host, while the reverse prints a unit name where a status, a page or a bearer is expected. ClaudeWrap (added 2026-09-20, V4-175) is the only one here that is not a READ at all: it POSTS /api/claude-head/wrap and returns the single line the setup wizard prints about what happened — "wrapped: …", or the daemon's own refusal sentence. Its return is a REPORT OF AN ACTION ALREADY TAKEN, which is why sharing a port with any name below would be a live hazard rather than a tidiness one: wiring UpgradeStatus where the wizard expects ClaudeWrap compiles, prints a plausible sentence, and silently never wraps anything — the operator reads a confident answer about a side effect that did not happen, and their `claude` command is untouched while the summary says otherwise. The reverse substitution is worse: calling ClaudeWrap where a status string is wanted REWRITES two files in ~/.claude as a side effect of rendering a panel. (TurnIdMint added 2026-09-20, V4-174: it MINTS the id every record of one traced turn carries — a fresh random value per call, injectable so a test can pin it; sharing it with any of the eight below would let a version string or a bearer become a turn id with both compiling). Eight unrelated strings, and the pair that proves the UNIT is part of the role. WallClockIso renders wall time as an ISO-8601 instant, and its KDoc records why it is not a String alias for WallClock: both call sites are `put(FIELD_LAST_REFRESH, JsonPrimitive(nowIso()))`, where a WallClock would also compile and would silently persist `1755400000000` where an operator, and every `last_refresh` ever written, expects `2026-08-17T…Z`. The others share nothing but the return: McpBearer is a SECRET — "the MCP-scoped bearer at plan time; generated client configs must not carry management authority"; ClaudeVersionRead is the client's reported version; TopologyDigest (V4-162, 2026-09-19) is the sha-256 of the splice.toml version the daemon RUNS, read per /health request because a window-only edit moves it with no restart, and `splice doctor` compares it byte-for-byte with its own hash of the file. UpgradeStatus (V4-127) is a VERSION question about the artifact on disk (installed, latest, whether a rollback is available), assembled by the upgrade surface. Its closest twin, DoctorReport, a DIAGNOSIS of the running daemon, left this group on 2026-09-25 (V4-230): it now takes the daemon's in-process answers, (DaemonAnswers)->String, so wiring the upgrade payload into the doctor route no longer compiles, and the healthy-looking report about the wrong subject this group kept visible is now a type error. ProgressLine, the client-visible status line composed at the instant the wire takes it, left this group on 2026-10-01 (V4-451): it is told whether a notice block is open and may stay silent, (Boolean)->String?, so no string read here can be wired in as a status line. NoteIds (added 2026-09-30, V4-444) mints the id of ONE peer note the console writes to another session's inbox socket: a fresh random value per call, injectable so a test can fix it, and returned to the console as the note's message_id. It keeps its own port because wiring TurnIdMint or TopologyDigest in its place compiles, and then a turn id or a file hash becomes the id of a note sent to another session. FieldText (added 2026-10-02, V4-457) encodes exactly one captured record field only after that field differs from its durable snapshot. It is a deferred value encoding, not a version, address, bearer, report or identifier. Substitution would persist unrelated text as a record value or encode unchanged history before the store has decided that it needs writing."""
+
+# ── 6 names, (String) -> Boolean ──────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String)->Boolean"
+dated = "2026-09-17"
+names = [
+    "BrowserOpener",
+    "CodeModeStatementSyntax",
+    "CredentialPresenceProbe",
+    "DayLineKeep",
+    "DirectoryProbe",
+    "VersionedRestart",
+    "WrapperLinked",
+]
+reason = """CodeModeStatementSyntax certifies JavaScript syntax in the executing Graal isolate before streamed source is dispatched. Its false withholds execution, not a browser launch, credential admission, filesystem classification or restart, so substituting any of those roles authorizes an unparsed statement or prevents valid execution. Three ask and two ACT, which is the distinction that matters when the answer is a bare Boolean. DirectoryProbe asks whether a path is a directory; CredentialPresenceProbe asks whether a head's credential is configured; WrapperLinked (added 2026-09-26, V4-320) asks whether a head's command is a link where `splice install` puts it (doctor's wrapper check), and its false is what the resume recipe refuses with the install that fixes it, so wiring DirectoryProbe there would call every installed wrapper unlinked, since a link to a file is not a directory. BrowserOpener LAUNCHES a browser at a URL and reports whether the launch succeeded; VersionedRestart "restarts the daemon the plain way (stop, then cold start from this shell), waiting for a daemon that reports [expectedVersion]" — a multi-second side effect whose false means "it did not come back", not "no". A probe's double wired where an actor was meant reports a clean skip for work that never ran, which is the shape of a green upgrade that never upgraded. (HeadAccountPinSource sat here from 2026-09-20, V4-132, until 2026-09-24, when it gained unpin() and stopped being a fun interface. LineVisit sat here on 2026-09-26, from V4-338 until V4-343 the same day, when it began taking a DayLine that its reader reads only as far as it needs.) (DayLineKeep, added 2026-10-10, is the only one here whose String is not a name, a path or a URL but one STORED LINE, and the only one whose false DELETES: the cut on Settings > Your data asks it per row and drops every row it refuses. Wiring any of the others in its place would read a record as a path or a command and answer about the filesystem instead of about the row, which with this role's consequence means deleting history the person never asked to lose, or keeping history they did; and wiring DayLineKeep where a probe was meant would answer a question about a path from whatever that path's text happens to contain.)"""
+
+# ── 4 names, (String) -> String ───────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String)->String"
+dated = "2026-09-17"
+names = [
+    "AuthJsonFromResponse",
+    "DeviceAuthForm",
+    "ExchangeForm",
+    "GitBranchReader",
+]
+reason = """Three codecs on different sides of the OAuth wire, plus one unrelated reader. ExchangeForm builds the x-www-form-urlencoded token-EXCHANGE body for a real authorization code, per-provider because codex and grok disagree on which of client_id, code_verifier and redirect_uri they require, and the ENCODING happens inside it — an unencoded `code` on the wire is an opaque 400 to the operator. DeviceAuthForm builds the RFC 8628 device-authorization REQUEST body. AuthJsonFromResponse runs the other way entirely: a token RESPONSE in, the credential JSON out, and the result is written through SecureFile.writeAtomic0600 — what comes out of one of these is a credential at rest. Two request builders and one response parser sharing a type would let a credential-shaped string be posted upstream, or a form body be written to auth.json. GitBranchReader reads the current git branch for a working directory and shares this shape by coincidence, which is the hazard the naming answers."""
+
+# ── 10 names, (String) -> Unit ─────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String)->Unit"
+dated = "2026-10-03"
+names = [
+    "CodeModeQueryPreparation",
+    "CodeModeSourceCommit",
+    "LogSink",
+    "MalformedLine",
+    "NativeAuthAnnouncement",
+    "RawSseWrite",
+    "RetryNotice",
+    "RigProgress",
+    "TerminalOutput",
+    "CodeModeSessionEnd",
+]
+reason = """CodeModeQueryPreparation sweeps and saves exactly the conversation a query is about to read while holding its key. It neither reports text nor releases that conversation. A diagnostic sink here would leave stale owners available to a retry, and a session-end callback would dispose the engine during an ownership query. NativeAuthAnnouncement carries only a validated native authorization URL to login progress, never raw child output or credentials; a diagnostic or client-wire sink in that role would publish the URL to the wrong audience. CodeModeSourceCommit makes an accumulated executable source prefix durable before a cursor can hand it to the worker. It is a persistence ordering boundary, not a diagnostic or wire sink. Wiring LogSink there would let uncommitted bytes execute, and wiring the commit where a text report belongs would persist diagnostic text as source. CodeModeSessionEnd releases the native engine for one expired conversation key, never renders or logs that key; wiring a diagnostic sink there would leak engines and wiring a release callback where LogSink belongs would close active guest state. Six text destinations plus that lifecycle command share the string shape, and the split that must not compile is diagnostic plane versus client wire. TerminalOutput (core/terminal, 2026-09-23, LAYOUT-01) writes one operator-facing line to the terminal a CLI verb runs in — model listings and the sign-in flows' progress both leave through it, which is why it replaced the two per-feature copies (ModelReportOutput, LoginOutput) that had the same role under two names; it is not daemon diagnostics and not client protocol frames. LogSink writes a DIAGNOSTIC to the daemon log and stderr, head-scoped so every line carries its `[<headKey>]` prefix. MalformedLine reports one unparseable upstream SSE line, and its contract is that it is "a REPORT and not a throw" — a malformed frame must never crash the stream. RawSseWrite puts BYTES ON THE CLIENT SOCKET (the bottom rung of the write-port ladder). RetryNotice is client- and operator-facing text about a retry already decided — "a NOTICE, not a decision", and the only account an operator gets of a 429 cooldown or a stream re-issue. A LogSink wired where RawSseWrite was meant sends the client nothing and the turn hangs; the inverse writes daemon diagnostics into a transcript. RigProgress (app/cli/setup, 2026-09-24) carries one line `rig up` wrote to its stderr into the setup wizard's spinner as the line arrives — PROGRESS for a redraw, never a result, never logged, never written to a client; wired where TerminalOutput was meant it would print rig's whole build log over the wizard, and wired where LogSink was meant it would bury the only sign a 7 GB download is moving in a daemon log nobody is reading during setup."""
+
+# ── 4 names, suspend () -> T ──────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "suspend ()->#1"
+dated = "2026-09-17"
+names = [
+    "CoalescedWork",
+    "CredentialRefresh",
+    "MaterializedRequest",
+    "TimedWork",
+]
+reason = """Four generic suspend producers whose contracts are about DUPLICATION and OWNERSHIP, which a type parameter cannot say. CoalescedWork "runs EXACTLY ONCE per wave however many callers pile up and however many of them are cancelled mid-wait", in a scope SingleFlight owns rather than any caller's — so it must not close over one caller's cancellation or deadline. CredentialRefresh is "the whole indivisible unit" run under the credential-file lock, where anything split out leaves the race open, and it may deliberately run WITHOUT the lock once the bounded wait expires (SH-06: bounded beats hung). MaterializedRequest produces the turn's request body under the materialization gate and must NOT hold its lease across the upstream call, or it starves every other head; its `T : Any` bound makes null mean CONTENTION and nothing else. TimedWork is the body TurnPerf wraps to measure, charged to its counter even when it throws, and deliberately not inlined. Collapsing any two would make "run this at most once" and "run this and time it" the same seam."""
+
+# ── 7 names, () -> Int ────────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Int"
+dated = "2026-09-17"
+names = [
+    "FailedHeads",
+    "LiveLimit",
+    "McpServerCeiling",
+    "OpenSockets",
+    "LiveRetries",
+    "RequestByteCap",
+    "RetentionDays",
+]
+reason = """Two GAUGES and a CAP, and InflightGate's own KDoc draws the line: LiveLimit is "a concurrency limit READ FRESH at every admission decision, never captured at construction" — the freshness is why kotlinx Semaphore is banned there, since a live PATCH of maxInflight must change the next admission without a head restart — and it is "distinct from a GAUGE (ControlServer.failedHeads), which is also `() -> Int` but reports what IS rather than bounding what may happen next". FailedHeads is that gauge, counting heads that failed to start, which the control plane turns into `ok:false`. OpenSockets counts live WS sockets on the responses path. A gauge wired where the limit was expected admits traffic against the current occupancy, so the gate stops gating — and both are non-negative Ints, so nothing complains. RetentionDays (Oct 10) is a fourth role: the days of history the operator chose (historyRetentionDays), read fresh so a live change moves the trace window on the next day asked. It counts days to keep, not live things. RequestByteCap (Oct 10) is a fifth role and the second cap: the largest request BODY the gateway will decode, in bytes, read fresh at every request by the head path and by the ingress guard in front of it — two layers, one knob, which is why its type sits in core rather than beside either enforcer. It bounds ONE request's size where LiveLimit bounds HOW MANY requests run at once, so swapping them would cap a body at the inflight ceiling and admit as many concurrent turns as a body has bytes, and neither is a gauge of what is happening now. McpServerCeiling (Oct 10) is a sixth role and the SECOND concurrency ceiling in the group, which is the dangerous pairing here: LiveLimit bounds how many REQUESTS run at once on one head, McpServerCeiling bounds how many child PROCESSES the shared MCP host owns at once (32 by default, past which the longest-idle streamless server is evicted). Swapped, splice would cap hosted children at the inflight ceiling and admit as many concurrent turns as there are hosted servers, and both are small non-negative Ints so nothing would complain until a user noticed their turns queueing behind a process count. It is also read ONCE per spawn attempt and carried into the eviction path, because the refusal names the ceiling and a second reading could print a number that never applied. LiveRetries (Oct 10) is a seventh role: the re-POST bound for ONE upstream request (upstreamRetries), read once as the request begins so a request in flight keeps the bound it started with. It is an attempt count where LiveLimit counts concurrent requests, so swapped, a head would admit as many turns as it retries or retry as often as it admits, and both are small Ints that nothing would complain about. RequestByteCap, RetentionDays, LiveLimit, McpServerCeiling and LiveRetries are the five a config PATCH changes while the daemon runs; the two gauges answer to nothing but what is running."""
+
+# ── 2 names, (Path) -> Long ───────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Path)->Long"
+dated = "2026-10-10"
+names = [
+    "DayVolumeSpace",
+    "FileStamp",
+]
+reason = """Two measures of a path that no caller may swap. DayVolumeSpace answers how many bytes a day's volume has free, which a retention budget compares its trace bodies against; FileStamp answers when a file was last used, in epoch milliseconds, which a history cut compares against its moment. Both take a Path and return a Long, so a stamp wired where free space was expected would read as a volume that is full or empty and cut or keep a day's bodies for no reason, and nothing complains."""
+
+# ── 4 names, (Path, Path) -> Unit ─────────────────────────────────────────────────────────────────
+# Oct 1 CT: original-copy failure injection requires forced bytes, never a link activation or claim.
+[[groups]]
+signature = "(Path,Path)->Unit"
+dated = "2026-10-01"
+names = [
+    "LinkPointer",
+    "SymlinkOp",
+    "WrapperClaim",
+    "TranscriptOriginalCopy",
+]
+reason = """Three link operations at three levels, each a seam for a DIFFERENT safety property that only a fault-injecting test can reach. SymlinkOp creates one symbolic link, and is a seam because "the swap's whole safety property — that a failure NEVER destroys the operator's pre-existing file — is only testable on the production path if the create can be made to fail on demand", the ENOSPC/LSM-EPERM case DR-11 was opened for. LinkPointer "repoints one symlink atomically" (UpgradeLayout.point), which is the upgrade ACTIVATION: its failure must leave the previous release live. WrapperClaim is "the one wrapper name-claiming primitive", whose DR-67 property is that a foreign file appearing AFTER the precheck wins and never gets eaten. One shared port would let the claim's refuse-on-conflict semantics be served by the primitive's plain create, which is how an unrelated binary on PATH gets clobbered. TranscriptOriginalCopy streams and forces transcript bytes into an already private staged file; its failure must prevent every live rewrite. It neither creates a symbolic pointer nor claims an executable name, so serving it with a link operation would retain mutable live history instead of an immutable copy."""
+
+# ── 4 names, (String) -> String? (ONE MORE IS A DUPLICATE AND IS NOT LISTED) ─────────────────────
+[[groups]]
+signature = "(String)->String?"
+dated = "2026-09-17"
+names = [
+    "CredentialAccountNames",
+    "EnvReader",
+    "HistoryWindowStore",
+    "QuotaHeaderRead",
+    "SessionAddress",
+    "SliceMemoryCap",
+]
+reason = """CredentialAccountNames resolves a PRIVATE EFFECTIVE-CREDENTIAL DIGEST to a proved account name. \
+Its miss means no account identity was proved, not a missing environment variable or response header. \
+Substituting another lookup would attribute a turn to an unrelated string and leak the join key. \
+EnvReader reads a PROCESS ENVIRONMENT VARIABLE by name; QuotaHeaderRead reads one \
+UPSTREAM RESPONSE HEADER by name. Same shape, and the two sources could not be further apart in \
+trust: the environment is this machine's, the headers are a remote's. EnvReader exists threaded \
+rather than global so a caller can pin a hermetic environment — the first CI run of \
+`splice install` failed on the runner's ambient XDG_CONFIG_HOME — and the kt-no-system-getenv wall \
+keeps every other site off System.getenv. A shared port would put an upstream-controlled string \
+where a config lookup is expected. \
+SessionAddress (V4-131) is a THIRD source with the same shape and no more in common: a session id \
+to the address its peers SendMessage to, answered from the daemon's own registry. Its miss is \
+ordinary — a session the registry does not know yet — where EnvReader's miss means unset and \
+QuotaHeaderRead's means the upstream sent no such header. Three ports whose null means three \
+different things cannot be one port: a caller that merged them would have to ask which of the three \
+it was holding before it could read the answer. \
+DELIBERATELY ABSENT: HeaderLookup (gateway/usage/RateLimitHeaders.kt:22) is QuotaHeaderRead's role \
+in the module above it, and QuotaHeaderRead's own KDoc says so — \"the gateway's own HeaderLookup \
+lives a module above this one, so the header families are decoded against this port\". It is red by \
+name until the fix row reconciles the two. \
+SliceMemoryCap (V4-147) is a FOURTH source: a systemd slice name to that slice's memory ceiling, \
+read from the service manager. Its answer is not a lookup result at all but a MEASUREMENT of the \
+box's own configuration, and its null means "systemd could not be asked", which no other member's \
+null means — while its non-null "infinity" is a present value that the caller must treat as absence \
+of a cap, the inverse of every lookup here. Merging it into a config lookup would put a value that \
+decides whether hosted MCP servers are contained where an unset environment variable is expected. \
+HistoryWindowStore (Oct 10, 2026) is the one WRITER in this group, and that is the whole of the \
+distinction: every other member answers a lookup, where a null means "there is nothing there". \
+This one PERSISTS the history window a person chose on Settings > Your data, and its null means \
+"it landed"; a non-null string is the refusal the row shows them as "Not saved", and the save then \
+deletes records at the moment they were shown. Serving it with any reader in this group would \
+report a save that never happened and then delete on it, which is the exact error this law exists \
+to catch: one shape, opposite directions, and a person told their setting was applied when their \
+config file never changed."""
+
+# ── 3 names, () -> T ──────────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->#1"
+dated = "2026-10-05"
+names = [
+    "DayDirectoryAction",
+    "RawBlock",
+    "StoreEdit",
+]
+reason = """RawBlock is "the work done while the terminal is in raw mode — run exactly once, raw or not"; it is the BODY the raw-mode bracket wraps, and the bracket's own ShutdownHookAdd / ShutdownHookRemove pair is what guarantees the restore. StoreEdit is "one read-modify-write of `keys.toml`, performed while the sibling `.lock` is held", and its KDoc is explicit that the type IS the boundary of the lost-update fix rather than a formatting of braces: a `set` that read outside the section and wrote inside it would still lose an update. It is also `private`, because the lock is KeyStore's own and nothing outside that file may claim to run under it. DayDirectoryAction is "one operation under the directory-wide day mutation fence", held before a head's lock through body admission, eviction and index publication. Confusing it with a store edit would allow cross-head eviction between a trace body's append and its metadata publication. The three scoped bodies protect a TTY, one key store and the shared trace directory, respectively."""
+
+# ── 3 names, () -> String? ────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->String?"
+dated = "2026-09-17"
+names = [
+    "ClientUserAgent",
+    "DaemonVersionRead",
+    "ManagerEnvironmentBlock",
+]
+reason = """DaemonVersionRead asks the RUNNING daemon for its version and is null when no daemon \
+answers; the upgrade path branches on that null. (ClasspathHtml, the bundled dashboard read, left \
+with the console UI on 2026-10-07.) ADDED 2026-09-28 (V4-395): ManagerEnvironmentBlock is the systemd user manager's environment block as text (`systemctl --user show-environment`), which SystemdUnitDaemon parses to learn the HOME and control port a supervisor unit's daemon runs under, so `splice restart` never acts on another home's unit. Null there means \"no manager answered\", and the restart refuses on it. DaemonVersionRead reads a version; it cannot answer that question, and substituting it would let a restart judge ownership from the wrong string. ClientUserAgent (added 2026-10-04) is the whole User-Agent header splice has SEEN this daemon's Claude Code send, read at probe time and presented to Anthropic's subscription usage endpoint, which buckets that endpoint's rate limit by User-Agent and answers a caller that sends none with a 429 that does not recover (anthropics/claude-code#30930). It keeps its own port because the two reads above are a running daemon version and a unit manager environment block: wiring either of them here would present the vendor an identity that never spoke to splice, and wiring this one into the upgrade path would compare a client header against a release version."""
+
+# ── 2 names, () -> TurnOutcome ────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->TurnOutcome"
+dated = "2026-09-17"
+names = [
+    "FinishedOutcome",
+    "UnfinishedOutcome",
+]
+reason = """Declared twenty-two lines apart in TerminalStates.kt, and the split is the L3 honesty rule expressed in the type system. FinishedOutcome's own KDoc says it: this branch is the ONLY one entitled to build a clean success, UnfinishedOutcome is the branch that must not, "they were adjacent parameters of the same call with the same type, so transposing them was a two-token edit that compiled — and it would have reported a truncated stream as a completed turn." This is the group a shape-based reconciliation would merge first and the one where merging costs the most."""
+
+# ── 2 names, (Credentials) -> Map<String, String> ─────────────────────────────────────────────────
+[[groups]]
+signature = "(Credentials)->Map<String,String>"
+dated = "2026-09-17"
+names = [
+    "HandshakeHeaders",
+    "WsExtraHeaders",
+]
+reason = """Both build headers for the responses-WebSocket handshake, and they are two LAYERS of it rather than two moments. HandshakeHeaders is the full handshake set — `Authorization` plus the `OpenAI-Beta: responses_websockets=…` opt-in the v2 backend gates on — and its KDoc records why it is not splice.upstream.CredentialHeaders despite the identical shape: it is read ONCE PER CONNECTION and is non-suspending, because a WebSocket handshake cannot be re-run without dropping the per-connection server context, whereas CredentialHeaders is rebuilt per ATTEMPT so a post-401 refresh reaches the wire. WsExtraHeaders is the per-handshake EXTRA set layered on top of that Authorization set — "the same role Provider.extraHeaders plays on the SSE path". The SEPARATION law keeps both in the dialect module that owns them; collapsing them would erase the once-per-connection contract that the whole WS path's session reuse depends on."""
+
+# ── 3 names, (Int) -> Boolean ─────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Int)->Boolean"
+dated = "2026-09-28"
+names = [
+    "DaemonUpProbe",
+    "HeadPortBindable",
+    "PeerProbe",
+]
+reason = """All take a PORT and answer Boolean, but their roles differ: DaemonUpProbe asks whether a splice daemon responds at the control port before an add offers restart. PeerProbe asks whether a lock-winning peer is LIVE so startup may yield rather than race its teardown. HeadPortBindable opens and closes a TCP listener on IPv4 loopback to test a NEW head port before an add writes its topology; false means a foreign listener or unbindable port, not that a daemon is down. Substituting liveness for bindability would assign a new head the local runtime's occupied port, while substituting a bind probe for peer liveness would mistake a closing daemon for a fresh one."""
+
+# ── 2 names, (Int) -> Unit ────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Int)->Unit"
+dated = "2026-09-17"
+names = [
+    "BytesRead",
+    "SearchRoundCounter",
+]
+reason = """Two observers whose Int is a different quantity in a different unit. BytesRead "reports the SIZE of one chunk lifted off the socket, before any decoding" — wire bytes, which is what `sse_bytes_in` on the perf row means, and it is a seam because after decode the chunk boundary is gone. SearchRoundCounter records how many search-continuation rounds the turn ran, stamped as an ABSOLUTE count rather than incremented, precisely so an unmoved counter is evidence rather than ambiguity — it is the expected-delta instrument the bring-up ritual reads. A swap would stamp a byte count as a round count, and the perf summary would render it without complaint."""
+
+# ── 2 names, (JsonObject) -> String? ──────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(JsonObject)->String?"
+dated = "2026-09-17"
+names = [
+    "OAuthAccountIdentity",
+    "ReasoningEnvelopeEncoder",
+]
+reason = """OAuthAccountIdentity is the "stable provider identity used only to recognize an existing credential, never printed" — it reads a secret-bearing auth.json and its null means the file's shape carries no identity. It has a sibling in the same file, OAuthAccountLabel, for the operator-visible label, which is exactly why the identity must not double as one. ReasoningEnvelopeEncoder mints a `redacted_thinking` envelope FOR THE WIRE; its KDoc makes the separateness deliberate — it is the inverse of ReasoningEnvelopeDecoder, the two are wired at different seams by different components, and "only the stream translator is entitled to mint an envelope". One reads credential material, the other writes a value that goes upstream: a shared port is the shape that puts the first into the second."""
+
+# ── 2 names, (Long) -> Long ───────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Long)->Long"
+dated = "2026-09-17"
+names = [
+    "OutputClamp",
+    "SynthesizeExpiry",
+]
+reason = """OutputClamp clamps a turn's output-token figure to what the client asked for, because a client that sees `output > max_tokens` mis-draws its context bar. Its KDoc is itself a record of this wall's doctrine working: OutputClampPolicy.makeOutputClamp and TurnPipeline.clampOutput "were two declarations of the same `(Long) -> Long` with no type in common… so this is ONE role and now one type." SynthesizeExpiry derives a credential expiry for a provider whose token response omitted one, in that provider's own module. A token count and an epoch millisecond, both Long — the widest unit confusion available, and one the perf plane and the auth plane would each accept in silence. SynthesizeExpiry is declared once per vendor (codex at CodexAuthJson.kt:31, kimi at KimiRefreshedTokens.kt:42) under the 2026-09-15 SEPARATION law, which is why one name appears at two paths; the registry reports same-name declarations rather than grading them, for that reason."""
+
+# ── 2 names, (Path) -> String ─────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Path)->String"
+dated = "2026-09-17"
+names = [
+    "CompactionFileRead",
+    "SystemPromptFileRead",
+]
+reason = """Two file reads whose CONTENT goes into two different parts of the request, both of them \
+prompt-cache-prefix critical. CompactionFileRead reads the operator's compaction-instructions file; \
+SystemPromptFileRead reads a head's system-prompt file. The v0.4.0 laws make the request prefix an \
+invariant — no row may change it — so a swap would put compaction instructions into the system \
+prompt, silently busting every session's cache prefix while both reads still \"succeed\"."""
+
+# ── 3 names, (String, String) -> String ───────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String,String)->String"
+dated = "2026-10-03"
+names = [
+    "AddPrompter",
+    "IngressErrorBody",
+    "TokenPollForm",
+]
+reason = """AddPrompter is INTERACTIVE and has a terminal-absent contract: it "answers a question with the operator's line, or [default] when there is no terminal", which is what makes `splice add --yes` non-interactive without a second code path. TokenPollForm is a pure encoder: the RFC 8628 token-poll request body (`client_id` + `device_code` + grant_type). A seam that may block on a human and a seam that formats bytes cannot share a type — the prompter wired into the device-flow poll loop would block on stdin nobody is watching, and the encoder wired into the wizard would answer every question with a form body. IngressErrorBody renders the canonical pre-turn HTTP error envelope from an error type and message; neither human input nor OAuth form encoding can implement that wire contract."""
+
+# ── 2 names, (String, String) -> Unit ─────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String,String)->Unit"
+dated = "2026-09-24"
+names = [
+    "BudgetAlert",
+    "HeadAudit",
+]
+reason = """Two records of two different events, read by two different audiences. HeadAudit \
+(features/heads HeadContracts.kt) records a lifecycle request that already SUCCEEDED — (name, action) \
+is the head the caller named and what was done to it — as the control plane's audit line \
+(ControlAudit.headAction: `[control] head <key> -> <action>` in the daemon log). BudgetAlert \
+(features/usage budgets, V4-133) tells the OPERATOR that a `warn` budget was reached — (head, text) \
+is the head and the sentence to show — and its contract is that it returns at once, because it runs \
+on the turn path, and that it is best-effort. Swapped, a budget warning is logged as a `[control] head` \
+action that never happened (and the operator is never told), while every start/stop posts a \
+free-text line to the operator's webhook."""
+
+# ── 2 names, (Thread) -> Unit ─────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Thread)->Unit"
+dated = "2026-09-17"
+names = [
+    "ShutdownHookAdd",
+    "ShutdownHookRemove",
+]
+reason = """Declared five lines apart and exact INVERSES: one registers a JVM shutdown hook, the \
+other unregisters it. The shape cannot tell them apart and the consequence of a swap is asymmetric \
+— an add where a remove was meant leaves the hook installed after the prompt is gone, so the \
+terminal is restored twice and a later, unrelated exit path runs code belonging to a finished \
+prompt. Two names is the only thing keeping the pair readable at the call site."""
+
+# ── 5 names, suspend () -> Unit ───────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "suspend ()->Unit"
+dated = "2026-09-17"
+names = [
+    "HeadRestart",
+    "Heartbeat",
+    "MgmtRoute",
+    "RouteBody",
+    "Teardown",
+]
+reason = """Heartbeat is "the one frame the pinger may write for the turn: a `ping` event, after message_start only" — a PERIODIC write, bounded to a single legal frame type because the wire must stay legal, and it exists against the client's 600 s stream watchdog (two 11-12 minute compactions on 2026-09-05 hung at exactly 600 s without it). MgmtRoute is "the body of one authenticated `/mgmt` route, run only AFTER the bearer key matched", and its KDoc says that ordering IS the type's content: everything mutating on the control plane is wrapped in one, so a route responding outside one would be reachable without the management key. A repeating one-frame-only writer and an authorization-gated route body are the two seams whose confusion either breaks the wire or removes the auth gate. ADDED 2026-09-20 (V4-132): HeadRestart restarts ONE head so a switched account takes effect, and its failure means the operator's switch silently did not apply. Heartbeat is a periodic liveness tick whose individual failure is tolerable by design; MgmtRoute serves a request. Collapsing HeadRestart into either would put an account switch on a best-effort path. ADDED 2026-10-08: Teardown is the daemon's ordered stop body, suspend now that main owns the stop path, run once under the halt watchdog with the process halted if it overruns. It is neither a tick nor a route nor a head restart; a Teardown run as a Heartbeat would stop the daemon on a ping, and a HeadRestart run as a Teardown would restart one head where the whole stop was meant. ADDED 2026-10-09: RouteBody is the work of one HEAD route (a turn, a models answer, GET /wire), run by ClientAuth.guarded only AFTER the route's door opened and a refused call was already answered. MgmtRoute is the same promise for the control plane's /mgmt key, in another module that turns cannot see; RouteBody is the head listener's, and its three doors (caller, upstream credential, operator key) are the head's own. It is not a tick, a stop or a restart: a RouteBody run as a Heartbeat would serve a request on a timer, and a Heartbeat passed as a RouteBody would let a route answer with a ping frame."""
+
+# ── 2 names, suspend (String) -> Boolean ──────────────────────────────────────────────────────────
+[[groups]]
+signature = "suspend (String)->Boolean"
+dated = "2026-09-17"
+names = [
+    "HeadSignIn",
+    "ProfileAdd",
+]
+reason = """Both are wizard steps taking a name and reporting success, and they differ in what they touch. HeadSignIn "signs ONE head in, answering whether it ended up authenticated" and is described in its own KDoc as the heaviest seam in the wizard: production opens a browser, binds a loopback port, and blocks until the vendor redirects back. ProfileAdd is "one `splice add profile --yes` call; production is AddCommand with a no-op restart", which ends in an atomic write to splice.toml. A swap either asks for a sign-in against a profile that does not exist yet, or appends a head for a key the operator only meant to authenticate."""
+
+# ── 2 names, suspend (String) -> Unit ─────────────────────────────────────────────────────────────
+[[groups]]
+signature = "suspend (String)->Unit"
+dated = "2026-09-17"
+names = [
+    "FrameWrite",
+    "SseWrite",
+]
+reason = """Two frame writers on two different planes. FrameWrite "writes one already-serialized frame to the client" on the L3 turn stream, and its KDoc names its place: "the third rung of this file's write-port ladder: FrameWrite -> ImmediateSseWriter.write -> RawSseWrite + RawSseFlush". Suspending is its contract, not a detail — the write back-pressures on the client socket and a failure out of it is how the head learns the client is gone. SseWrite writes one frame on the MCP transport's own SSE channel (control/api/McpRoutes.kt), read by an MCP client, never by the turn. Sharing a port would let management-plane frames into a client turn — the leak the L3 wire walls exist for — and turn frames into an MCP session."""
+
+# ── 2 names, () -> List<String> ───────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->List<String>"
+dated = "2026-09-24"
+names = [
+    "GpuProbe",
+    "TurnPathStalled",
+]
+reason = """Two reads that answer with names, where the EMPTY list means opposite things. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles."""
+
+# ── 2 names, () -> Path? ──────────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Path?"
+dated = "2026-09-26"
+names = [
+    "RunningJar",
+    "TraceDirPort",
+]
+reason = """Two paths whose null means different things and that no caller may substitute. RunningJar (core/config) is the jar this process runs from, null when it runs from classes: doctor's install probes, status's jar line and the cold start that relaunches the same build read it. TraceDirPort (features/turns TraceRoute.kt, V4-239) is the directory every head's TraceStore writes day files under, null when the control plane was never handed it, which GET /api/heads/{head}/trace answers with a named 503. Wired the wrong way round, the trace route would list the jar's directory as a trace dir and the cold start would relaunch a directory, so they stay two roles."""
+
+[[groups]]
+signature = "(ProcessBuilder)->Process"
+dated = "2026-10-03"
+names = ["NativeAuthStart", "WorkerSpawn"]
+reason = """NativeAuthStart starts an interactive native Claude browser login with destination-local credentials and open fallback-code stdin. WorkerSpawn starts the daemon-archive code-mode worker with framed protocol pipes. Swapping them would run authentication in a worker protocol or an executable worker under the native account replacement lease."""
+
+# ── 2 names, () -> Map<String,String> ─────────────────────────────────────────────────────────────
+[[groups]]
+signature = "()->Map<String,String>"
+dated = "2026-09-28"
+names = [
+    "IdentityHeaders",
+    "RuntimeNotAnswering",
+]
+reason = """Two maps of strings that are never interchangeable. IdentityHeaders (integrations/dialects/anthropic PassthroughQuirks.kt) computes the header name to value pairs a vendor requires on every upstream call, such as Kimi's X-Msh-* set, and an empty map means the head sends none. RuntimeNotAnswering (app/control ControlPorts.kt, V4-417) names each local head whose runtime did not answer the daemon's last background probe, head key to the endpoint it was asked on (`:8099`), and an empty map means no claim either way, which /health and the heads route leave out of their bodies. Wired the wrong way round, a request to a vendor would carry head keys as headers and /health would report header values as silent runtimes, so they stay two roles."""
+
+# ── 2 names, (Path,String) -> Unit ────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Path,String)->Unit"
+dated = "2026-09-30"
+names = [
+    "CodeModeStateWrite",
+    "ProbeWrite",
+]
+reason = """CodeModeStateWrite durably appends an immutable changed-cell snapshot, or atomically replaces a retention checkpoint, in one conversation's owner-only 0600 journal. It runs after the registry releases its head-wide monitor, and completion is required before its callback is exposed to the client. ProbeWrite writes a disposable byte to a diagnostics probe path to test whether a volume can accept data; failure is a diagnostic result, never a code-mode durability verdict. Substituting either compiles but could turn an unsaved callback into a falsely durable one or turn a diagnostic probe into persisted state."""
+
+[[groups]]
+signature = "(String)->Boolean?"
+dated = "2026-09-30"
+names = ["CodeModeSessionAlive", "SessionLive"]
+reason = """CodeModeSessionAlive protects a parked code-mode worker from reclamation until its client process is positively dead; null preserves the worker for an unregistered headless client or an unavailable registry. SessionLive decides whether a resume recipe can attach to an already running interactive session, where absence permits a new launch. Both read process liveness but have separate module boundaries and consumers with opposite actions on unknown evidence. The provider cannot depend on the launch feature; the app supplies each boundary its own registry adapter."""
+
+# ── 2 names, (Long) -> Boolean ────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Long)->Boolean"
+dated = "2026-10-03"
+names = ["CurrentUpstreamAttempt", "PidAlive"]
+reason = """CurrentUpstreamAttempt takes a turn's upstream ATTEMPT number and answers whether that attempt is still the live one, so a read or hold interval reported by a retired attempt's late callback is dropped instead of overwriting the current attempt's perf maxima. PidAlive takes an operating-system PROCESS id and answers whether that process still runs, for the session registry's liveness. An attempt counter and a pid are both Long: a swap would ask the kernel about attempt 2, or keep a dead attempt's intervals because some process with that number happens to exist, and both compile in silence."""
+
+[[groups]]
+signature = "(Boolean)->Unit"
+dated = "2026-10-10"
+names = ["ReanchorSpentHook", "WsRoundAnswer"]
+reason = """ReanchorSpentHook stamps one spent re-anchor on the turn's perf row, with a flag saying whether the re-anchor restarted the request from scratch; it is called once per continuation the loop spends and writes only a count. WsRoundAnswer reports whether the upstream accepted one websocket round, so the transport's consumers can learn the outcome without seeing a credential. Wiring an acceptance report where the re-anchor count belongs would charge a healthy round as a restart, and the inverse would hide a rejected round from the transport."""

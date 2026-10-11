@@ -1,0 +1,78 @@
+// NEW: V4-444 — the compact, redacted transcript projection for session cards.
+package splice.sessions.transcript
+
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import java.nio.file.Path
+
+// why: a card shows one activity line, never a transcript body.
+private const val ACTIVITY_TEXT_CHARS = 160
+
+internal object SessionActivity {
+    private val whitespace = Regex("[\\s\\p{Z}]+")
+
+    fun last(
+        sessionId: String?,
+        cwd: String?,
+        roots: List<Path>,
+        source: SessionTranscripts,
+        viewEnabled: SessionTranscriptViewEnabled,
+    ): JsonElement {
+        if (!viewEnabled()) return JsonNull
+        return json(sessionId?.let { source.last(it, roots, cwd) })
+    }
+
+    /** The model that wrote the session's newest assistant message, or JSON null when the view is off or no model is
+     *  recorded. */
+    fun model(
+        sessionId: String?,
+        cwd: String?,
+        roots: List<Path>,
+        source: SessionTranscripts,
+        viewEnabled: SessionTranscriptViewEnabled,
+    ): JsonElement {
+        if (!viewEnabled()) return JsonNull
+        val model = sessionId?.let { source.tail(it, roots, cwd)?.model } ?: return JsonNull
+        return JsonPrimitive(model)
+    }
+
+    /** What an idle session last said: its newest message that is not the person's, so a message of his that was taken
+     *  back, or never answered, does not stand in for the reply before it. Falls back to [last] when there is none. */
+    fun answered(
+        sessionId: String?,
+        cwd: String?,
+        roots: List<Path>,
+        source: SessionTranscripts,
+        viewEnabled: SessionTranscriptViewEnabled,
+    ): JsonElement {
+        if (!viewEnabled()) return JsonNull
+        val reply = sessionId?.let { source.tail(it, roots, cwd)?.answered ?: source.last(it, roots, cwd) }
+        return json(reply)
+    }
+
+    /** A call is shown as what it was for, read from its whole input before any clip, so a long command in front of its
+     *  description cannot push the description out; what was said is shown as it was said. */
+    private fun shown(message: TranscriptMessage): String {
+        val tool = message.toolUse.name
+        if (message.role != TranscriptRole.ASSISTANT || tool == null) return message.text
+        return CallSummary.of(tool, message.text)
+    }
+
+    /** The port supplies redacted text; collapse and clip only after that redaction. */
+    private fun json(message: TranscriptMessage?): JsonElement {
+        if (message == null) return JsonNull
+        return buildJsonObject {
+            put("role", message.role.name.lowercase())
+            put("tool", message.toolUse.name)
+            put("text", shown(message).replace(whitespace, " ").trim().take(ACTIVITY_TEXT_CHARS))
+            put("ts", message.ts)
+            message.source.from?.let { put("from", it) }
+            val asked = message.role == TranscriptRole.ASSISTANT
+            val asks = if (asked) AskedQuestions.of(message.toolUse.name, message.text) else null
+            if (asks != null) put("asks", asks)
+        }
+    }
+}

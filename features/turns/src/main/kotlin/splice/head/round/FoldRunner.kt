@@ -1,0 +1,115 @@
+// PORT-OF: splice/gateway/head/TurnDriver.kt (FoldRunner.run, the class shell) @ 86f1411 —
+// invariants unchanged: the reasoning-continuation fold state machine, split from
+// splice.gateway.head (HD-24, the round subsystem's own package). Drives rounds via [postRound],
+// BUFFERING each round's tentative final output while reasoning streams live; a truncated round's
+// output is DISCARDED and the next round re-POSTed with its reasoning replayed; the terminal
+// round's output is FLUSHED and [finish] called exactly ONCE with usage summed across every round —
+// one honest terminal downstream (L3). The fold-continuation/re-anchor/search checks live in
+// [FoldRounds] (detekt's own extraction, now its own file); this class keeps only the loop.
+package splice.head.round
+
+import kotlinx.serialization.json.JsonObject
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.perf.TurnPerfTiming
+import splice.core.turn.TurnOutcome
+import splice.head.wire.BufferingWireSink
+import splice.upstream.FoldPolicy
+import splice.upstream.RetryBackoff
+import splice.upstream.RoundBody
+import splice.upstream.RoundResult
+import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamEnding
+
+internal class FoldRunner(
+    // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [FoldRounds.finalize]).
+    private val emitter: WireSink,
+    private val postRound: PostRoundToSink,
+    private val foldRounds: FoldRounds,
+    private val backoff: RetryBackoff,
+) {
+    suspend fun run(initialBody: JsonObject, fold: FoldPolicy): UpstreamEnding? = run(initialBody, fold, null)
+
+    /** Null when the turn finished; the ending of a round that had no outcome, which the turn's boundary writes. */
+    suspend fun run(initialBody: JsonObject, fold: FoldPolicy, perf: TurnPerf?): UpstreamEnding? {
+        var body = initialBody
+        var acc = RoundUsage()
+        var roundIndex = 0
+        var reanchorAttempt = 0
+        var searchIndex = 0
+        val salvaged = mutableListOf<TurnOutcome.PartialRound>()
+        val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
+        while (true) {
+            val buffer = BufferingWireSink(emitter)
+            val outcome = when (val posted = postRound(RoundBody.Tree(body), buffer)) {
+                is RoundResult.Outcome -> posted.outcome
+                is RoundResult.Ended -> return posted.ending
+            }
+            acc = withRound(acc, outcome)
+
+            // Fold-continuation and search are two of this loop's three continuation triggers,
+            // tried in that fixed precedence (a truncated round re-runs and re-emits its own
+            // search call next round, so this ordering is unchanged from before the extraction —
+            // detekt 2026-07-24: inlined here the loop carried 2 `continue`s + CC 11 + 50 lines).
+            val cursor = RoundCursor(body, roundIndex, searchIndex)
+            val nextRound = foldRounds.nextRoundBody(fold, outcome, buffer, salvaged, cursor)
+            if (nextRound != null) {
+                body = nextRound.body
+                roundIndex = nextRound.roundIndex
+                searchIndex = nextRound.searchIndex
+                continue
+            }
+
+            // Trigger B (code-review 2026-07-24: fold-eligible models — the truncation-prone
+            // ones — previously had NO re-anchor cover). The round's final output was BUFFERED,
+            // never forwarded, so bodyText is stripped from the salvage: replaying
+            // never-forwarded prose as "already written" would desync the client's wire; the
+            // retried round re-answers cleanly from its reasoning envelopes. Live thinking
+            // already on the wire stays (append-only).
+            val retry = foldRounds.continuationForFailedRound(outcome, body, reanchorAttempt)
+            // V4-106: `outcome !is TurnOutcome.Failure` joins the guard so the narrowing below is a
+            // SMART CAST rather than an unchecked `as`. continuationForFailedRound only ever returns
+            // a non-null retry for a Failure, so the added arm cannot fire in practice — but if that
+            // invariant ever breaks, this takes the honest null path instead of throwing a
+            // ClassCastException on the turn path, which is the whole point of the wall.
+            if (retry == null || outcome !is TurnOutcome.Failure) {
+                endTurn(outcome, absorbedFailures, acc, buffer, salvaged)
+                return null
+            }
+            val failure = outcome
+            absorbedFailures.add(failure)
+            failure.partial?.let { p ->
+                // Strip BOTH buffered-text signals: the prose never reached the client, so the
+                // salvage must not let the discarded round vouch for text in the merge either
+                // (emittedText=true over empty content would defeat the empty-model honesty
+                // gate — review-pr 2026-07-24). thinkingText STAYS: fold-mode reasoning streams
+                // LIVE to the wire, so it legitimately belongs in the mirror merge.
+                // emittedThinking rides along with thinkingText for the same reason.
+                salvaged.add(p.copy(text = p.text.copy(bodyText = "", emittedText = false)))
+                acc = acc.plusRound(p.usage)
+            }
+            buffer.discard()
+            foldRounds.noteReanchor(reanchorAttempt, failure)
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(reanchorAttempt, 0) }
+            body = retry
+            reanchorAttempt++
+        }
+    }
+
+    /** [acc] with a finished round's usage added; only a Success carries usage here. */
+    private fun withRound(acc: RoundUsage, outcome: TurnOutcome): RoundUsage =
+        if (outcome is TurnOutcome.Success) acc.plusRound(outcome.usage) else acc
+
+    /** The turn's last step once no round follows. Health for absorbed rounds is reported unless the final outcome
+     *  is itself a Failure (attributed once by finishTurn) — see ReanchorRunner; DR-125 added abandoned. */
+    private suspend fun endTurn(
+        outcome: TurnOutcome,
+        absorbedFailures: List<TurnOutcome.Failure>,
+        acc: RoundUsage,
+        buffer: BufferingWireSink,
+        salvaged: List<TurnOutcome.PartialRound>,
+    ) {
+        if (outcome !is TurnOutcome.Failure) foldRounds.reportAbsorbed(absorbedFailures)
+        foldRounds.finalize(foldRounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
+    }
+}

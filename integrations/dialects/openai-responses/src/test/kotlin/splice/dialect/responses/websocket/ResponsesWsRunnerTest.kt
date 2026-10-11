@@ -1,0 +1,676 @@
+// WALLS for the Responses side of the WS seam (review of #72). Three classes of finding are
+// pinned here, each one a silent-corruption path rather than an error:
+//
+//  * THE TERMINAL VOCABULARY. Six event names decide whether a round completes, hangs, or falls
+//    back. A typo in any of them is invisible to every other test, so all six are parameterized.
+//  * THE CHAIN CLEARS ON FAILURE. A chain committed from a round that did not cleanly finish
+//    would anchor the next turn onto context the server never built.
+//  * THE ISOLATION KEY. Without a session id there is no safe chain identity, and substituting an
+//    empty string re-opens the cross-conversation collision the two-part key exists to close.
+package splice.dialect.responses.websocket
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import splice.core.auth.Credentials
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamAttemptTiming
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
+import splice.core.util.LogSink
+import splice.dialect.responses.request.responsesRequestJson
+import splice.upstream.NEVER_PINGED_MS
+import java.io.IOException
+import java.net.URI
+import java.net.http.WebSocket
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicLong
+
+private const val BODY = """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"}]}"""
+
+private fun meta(session: String? = "sess-1", conversation: String? = "splice-abc") = TurnMeta(
+    compact = false,
+    reasoning = TurnReasoning(
+        showReasoning = ReasoningDisplay.TEXT,
+        effort = "high",
+        summary = "detailed",
+        budgetTokens = null,
+    ),
+    route = TurnRoute(
+        stream = true,
+        originalModel = "claude-codex--gpt-5.6-sol",
+        upstreamModel = "gpt-5.6-sol",
+        clientMaxTokens = null,
+    ),
+    scope = TurnScope(conversationKey = conversation, sessionId = session),
+)
+
+/** A scripted socket: every send replies with the frames the script returns for that round. */
+private class Rig(private val script: (Int) -> List<String>) {
+    var rounds = 0
+    var socket: WebSocket? = null
+    var sendFuture: (WebSocket) -> CompletableFuture<WebSocket> = { CompletableFuture.completedFuture(it) }
+    val sent = mutableListOf<String>()
+
+    /** The headers of every handshake, in connection order (2026-09-05: the WS-only request id). */
+    val handshakes = mutableListOf<Map<String, String>>()
+
+    /** Which SOCKETS were aborted, in creation order. kill() calls abort(), so this is how a test
+     *  observes "the round's connection was torn down" and, more importantly, WHICH one. */
+    val aborted = mutableListOf<Int>()
+    private var sockets = 0
+    private val transport = WsUpstream(connector = ::connect)
+    val session = ResponsesWsSession()
+    val logs = mutableListOf<String>()
+    val runner = ResponsesWsRunner(
+        transport = transport,
+        session = session,
+        wssUrl = "wss://example.invalid/responses",
+        handshakeHeaders = { emptyMap() },
+        log = LogSink { logs += it },
+    )
+
+    /** The live socket's listener, so a test can deliver a server ping the way the JDK would. */
+    var listener: WebSocket.Listener? = null
+
+    /** The URI the runner last connected to. */
+    var connectedUri: URI? = null
+
+    private fun connect(uri: URI, headers: Map<String, String>, l: WebSocket.Listener): WebSocket {
+        connectedUri = uri
+        listener = l
+        handshakes += headers
+        // Its OWN listener, not the shared field: a rig with two live sockets would otherwise feed
+        // every frame to whichever connected last.
+        val index = sockets++
+        val socket = object : WebSocket {
+            override fun sendText(data: CharSequence, last: Boolean): CompletableFuture<WebSocket> {
+                sent += data.toString()
+                val frames = script(rounds++)
+                frames.forEach { l.onText(this, it, true) }
+                return sendFuture(this)
+            }
+            override fun sendBinary(
+                d: java.nio.ByteBuffer,
+                l2: Boolean,
+            ) = CompletableFuture.completedFuture<WebSocket>(this)
+            override fun sendPing(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+            override fun sendPong(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+            override fun sendClose(c: Int, r: String) = CompletableFuture.completedFuture<WebSocket>(this)
+            override fun request(n: Long) = Unit
+            override fun getSubprotocol() = ""
+            override fun isOutputClosed() = false
+            override fun isInputClosed() = false
+            override fun abort() {
+                aborted += index
+            }
+        }
+        this.socket = socket
+        l.onOpen(socket)
+        return socket
+    }
+
+    suspend fun accept(m: TurnMeta = meta(), body: String = BODY, headers: Map<String, String> = emptyMap()) =
+        runner.attempt(body, m, headers, Credentials.Bearer("tok", "acct"))
+
+    suspend fun round(
+        m: TurnMeta = meta(),
+        body: String = BODY,
+        headers: Map<String, String> = emptyMap(),
+    ): List<JsonObject>? =
+        accept(m, body, headers)?.let { r ->
+            mutableListOf<JsonObject>().also { out -> r.events.collect { out += it } }
+        }
+
+    fun lastSentChained(): Boolean =
+        (responsesRequestJson.parseToJsonElement(sent.last()) as JsonObject)["previous_response_id"] != null
+}
+
+private fun completed(id: String) = """{"type":"response.completed","response":{"id":"$id"}}"""
+
+/** A tool call closing as a streamed output item — how this backend delivers it; its terminal's
+ *  `output` array is EMPTY (the live shape, 2026-09-05), so the call must be gathered here. */
+private fun itemDoneCall(callId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"function_call","call_id":"$callId","name":"read","arguments":"{}"}}"""
+
+private fun completedEmptyOutput(id: String) =
+    """{"type":"response.completed","response":{"id":"$id","output":[]}}"""
+
+/** A tool search the BACKEND executed: it carries a call_id, but nothing will ever answer it. */
+private fun itemDoneServerSearch(callId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"tool_search_call","call_id":"$callId","execution":"server","status":"completed"}}"""
+
+/** A function_call whose call_id is EMPTY: the fold hands the client the item id instead. */
+private fun itemDoneCallByItemId(itemId: String) =
+    """{"type":"response.output_item.done","output_index":1,""" +
+        """"item":{"type":"function_call","id":"$itemId","call_id":"","name":"read","arguments":"{}"}}"""
+
+private const val BODY_ANSWERED_BY_ITEM_ID =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call","call_id":"fc_9","name":"read","arguments":"{}"},""" +
+        """{"type":"function_call_output","call_id":"fc_9","output":"file"}]}"""
+
+private const val BODY_COMPACT =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"summarize"}]}"""
+
+private const val BODY_ANSWERED =
+    """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call","call_id":"call_9","name":"read","arguments":"{}"},""" +
+        """{"type":"function_call_output","call_id":"call_9","output":"file"}]}"""
+
+/** The socket argument onPing hands the listener; it only re-arms request(1) on it. */
+private object FakeSocketForPing : WebSocket {
+    override fun sendText(data: CharSequence, last: Boolean) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendBinary(d: java.nio.ByteBuffer, l: Boolean) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendPing(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendPong(m: java.nio.ByteBuffer) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun sendClose(c: Int, r: String) = CompletableFuture.completedFuture<WebSocket>(this)
+    override fun request(n: Long) = Unit
+    override fun getSubprotocol() = ""
+    override fun isOutputClosed() = false
+    override fun isInputClosed() = false
+    override fun abort() = Unit
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ResponsesWsTimingTest {
+    @Test
+    fun `send completion and the first decoded fragment bracket only their named clocks`() = runTest {
+        val now = AtomicLong(100)
+        val perf = TurnPerf { now.get() }
+        perf.recordArrival(70)
+        val rig = Rig { emptyList() }
+        val future = CompletableFuture<WebSocket>()
+        rig.sendFuture = { future }
+        val pending = async { rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("tok", "acct"), perf) }
+        runCurrent()
+        assertNull(perf.snapshot().counters["arrival_to_ws_send_accepted_ms"])
+        val socket = requireNotNull(rig.socket)
+        now.set(140)
+        future.complete(socket)
+        runCurrent()
+        assertEquals(70L, perf.snapshot().counters["arrival_to_ws_send_accepted_ms"])
+        now.set(160)
+        rig.listener?.onText(socket, """{"type":"response.""", false)
+        assertEquals(20L, perf.snapshot().counters["ws_send_accepted_to_first_fragment_ms"])
+        now.set(300)
+        rig.listener?.onText(socket, """created"}""", true)
+        rig.listener?.onText(socket, completed("timed"), true)
+        val round = requireNotNull(pending.await())
+        assertEquals(2, round.events.toList().size)
+        assertEquals(20L, perf.snapshot().counters["ws_send_accepted_to_first_fragment_ms"])
+        assertNoSocketTimes(perf)
+    }
+
+    @Test
+    fun `a decoded fragment before send acceptance never invents a post-accept wait`() = runTest {
+        val now = AtomicLong(100)
+        val perf = TurnPerf { now.get() }
+        val rig = Rig {
+            now.set(110)
+            listOf(completed("early"))
+        }
+        val future = CompletableFuture<WebSocket>()
+        rig.sendFuture = { future }
+        val pending = async { rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("tok", "acct"), perf) }
+        runCurrent()
+        now.set(140)
+        future.complete(requireNotNull(rig.socket))
+        val round = requireNotNull(pending.await())
+        assertEquals(1, round.events.toList().size)
+        assertEquals(40L, perf.snapshot().counters["arrival_to_ws_send_accepted_ms"])
+        assertNull(perf.snapshot().counters["ws_send_accepted_to_first_fragment_ms"])
+        assertNoSocketTimes(perf)
+    }
+
+    private fun assertNoSocketTimes(perf: TurnPerf) {
+        assertNull(perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+        assertNull(perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+    }
+}
+
+class ResponsesWsRunnerProtocolTest {
+    @Test
+    fun `lite websocket requests preserve metadata and stamp the full and chained frames`() = runTest {
+        val rig = Rig { round -> listOf(completed("protocol-$round")) }
+        val turn = meta()
+        val metadata = responsesRequestJson.parseToJsonElement(
+            """{"client":"splice","session_id":"sess-1","thread_id":"splice-abc"}""",
+        ) as JsonObject
+        val headers = mapOf("x-openai-internal-codex-responses-lite" to "true")
+        for (body in listOf(BODY, BODY_COMPACT)) {
+            val original = responsesRequestJson.parseToJsonElement(body) as JsonObject
+            val request = JsonObject(original + ("client_metadata" to metadata))
+            assertNotNull(rig.round(turn, request.toString(), headers))
+            val frame = responsesRequestJson.parseToJsonElement(rig.sent.last()) as JsonObject
+            val sent = frame["client_metadata"] as JsonObject
+            assertEquals(
+                "\"true\"",
+                sent["ws_request_header_x_openai_internal_codex_responses_lite"].toString(),
+                "every lite frame carries the string-valued protocol marker",
+            )
+            metadata.forEach { (key, value) -> assertEquals(value, sent[key], key) }
+            assertEquals(original, responsesRequestJson.parseToJsonElement(body))
+            assertFalse(request.toString().contains("ws_request_header_x_openai_internal_codex_responses_lite"))
+        }
+        val initialFrame = responsesRequestJson.parseToJsonElement(rig.sent.first()) as JsonObject
+        assertFalse(initialFrame.containsKey("previous_response_id"))
+        assertTrue(rig.lastSentChained(), "metadata stamping must not defeat continuation chaining")
+    }
+
+    @Test
+    fun `non-lite websocket requests keep their existing metadata unchanged`() = runTest {
+        val rig = Rig { listOf(completed("non-lite")) }
+        val metadata = responsesRequestJson.parseToJsonElement("""{"client":"splice"}""") as JsonObject
+        val original = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
+        val request = JsonObject(original + ("client_metadata" to metadata))
+        assertNotNull(rig.round(body = request.toString()))
+        val frame = responsesRequestJson.parseToJsonElement(rig.sent.single()) as JsonObject
+        assertEquals(metadata, frame["client_metadata"])
+    }
+}
+
+class ResponsesWsTurnStateTest {
+    @Test
+    fun `metadata captures the first backend turn state and echoes it only on later frames`() = runTest {
+        val rig = Rig { round ->
+            listOf(
+                """{"type":"response.created","headers":{"x-codex-turn-state":"not-metadata"}}""",
+                """{"type":"response.metadata","headers":{"X-Codex-Turn-State":["state-$round"]}}""",
+                completed("routing-$round"),
+            )
+        }
+        val turn = meta()
+        assertNotNull(rig.round(turn))
+        assertNull(state(rig.sent.first()), "nothing is sent before the backend supplies turn state")
+        assertNotNull(rig.round(turn, BODY_COMPACT))
+        assertEquals("\"state-0\"", state(rig.sent.last()))
+        assertTrue(rig.lastSentChained(), "ephemeral turn metadata must not invalidate the logical request prefix")
+        assertNotNull(rig.round(turn, BODY_COMPACT))
+        assertEquals("\"state-0\"", state(rig.sent.last()), "first capture wins, like codex's OnceLock")
+        assertNotNull(rig.round(meta(), BODY))
+        assertNull(state(rig.sent.last()), "a fresh turn in the same session starts without state")
+    }
+
+    @Test
+    fun `concurrent sessions never receive another turn's captured routing state`() = runTest {
+        lateinit var rig: Rig
+        rig = Rig { round ->
+            val request = responsesRequestJson.parseToJsonElement(rig.sent.last()) as JsonObject
+            val metadata = request["client_metadata"] as JsonObject
+            val session = metadata["session_id"].toString().trim('"')
+            listOf(
+                """{"type":"response.metadata","headers":{"x-codex-turn-state":"state-$session"}}""",
+                completed("isolated-$round"),
+            )
+        }
+        val turns = listOf(meta(session = "first"), meta(session = "second"))
+        val bodies = turns.map { turn ->
+            val original = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
+            val metadata = responsesRequestJson.parseToJsonElement(
+                """{"client":"splice","session_id":"${turn.scope.sessionId}"}""",
+            ) as JsonObject
+            JsonObject(original + ("client_metadata" to metadata)).toString()
+        }
+        val initial = turns.mapIndexed { index, turn -> async { rig.round(turn, bodies[index]) } }
+        initial.forEach { assertNotNull(it.await()) }
+        assertTrue(rig.sent.all { state(it) == null }, "both initial requests have fresh state")
+        val continued = turns.mapIndexed { index, turn -> async { rig.round(turn, bodies[index]) } }
+        continued.forEach { assertNotNull(it.await()) }
+        for (frameJson in rig.sent.drop(2)) {
+            val frame = responsesRequestJson.parseToJsonElement(frameJson) as JsonObject
+            val session = (frame["client_metadata"] as JsonObject)["session_id"].toString().trim('"')
+            assertEquals("\"state-$session\"", state(frameJson))
+        }
+    }
+
+    @Test
+    fun `metadata header values follow codex's string-or-first-array-element contract`() = runTest {
+        for (value in listOf("null", "0", "false", "{}", "[]", "[false,\"not-the-first-element\"]")) {
+            val rig = Rig { round ->
+                listOf(
+                    """{"type":"response.metadata","headers":{"x-codex-turn-state":$value}}""",
+                    completed("invalid-$round"),
+                )
+            }
+            val turn = meta()
+            assertNotNull(rig.round(turn))
+            assertNotNull(rig.round(turn, BODY_COMPACT))
+            assertNull(state(rig.sent.last()), "unsupported header shape $value cannot initialize turn state")
+        }
+    }
+
+    @Test
+    fun `metadata accepts string headers and recursively the first array element`() = runTest {
+        val supported = mapOf(
+            "\"\"" to "\"\"",
+            "[[\"nested\"],\"ignored\"]" to "\"nested\"",
+            "\"raw\\nstate\"" to "\"raw\\nstate\"",
+        )
+        for ((value, expected) in supported) {
+            val rig = Rig { round ->
+                listOf(
+                    """{"type":"response.metadata","headers":{"x-codex-turn-state":$value}}""",
+                    completed("supported-$round"),
+                )
+            }
+            val turn = meta()
+            assertNotNull(rig.round(turn))
+            assertNotNull(rig.round(turn, BODY_COMPACT))
+            assertEquals(expected, state(rig.sent.last()))
+        }
+    }
+
+    private fun state(frame: String): String? =
+        ((responsesRequestJson.parseToJsonElement(frame) as JsonObject)["client_metadata"] as? JsonObject)
+            ?.get("x-codex-turn-state")?.toString()
+}
+
+class ResponsesWsRunnerTest {
+    @Test
+    fun `a missing websocket identity followed by SSE retains only the SSE transport start`() = runTest {
+        val rig = Rig { error("an ineligible websocket must not send") }
+        val perf = TurnPerf { 0L }
+        assertNull(
+            rig.runner.attempt(
+                BODY,
+                meta(session = null, conversation = null),
+                emptyMap(),
+                Credentials.Bearer("synthetic", "synthetic"),
+                perf,
+            ),
+        )
+        assertTrue(rig.handshakes.isEmpty(), "eligibility declined before connecting")
+        assertEquals(0, rig.rounds, "no websocket request was sent")
+        // The SSE producer begins at the same constructor used by UpstreamRequest.
+        val sse = UpstreamAttemptTiming(perf)
+        sse.written()
+        sse.firstByte()
+        assertEquals(1L, perf.snapshot().counters["transport_attempt_starts"])
+        assertNull(perf.snapshot().counters[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS])
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a first-event timeout retains the started websocket attempt without a size refusal`() = runTest {
+        val rig = Rig { emptyList() }
+        val perf = TurnPerf { testScheduler.currentTime }
+        val before = testScheduler.currentTime
+        assertNull(rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("synthetic", "synthetic"), perf))
+        assertEquals(15_000L, testScheduler.currentTime - before, "the actual first-event budget expired")
+        assertEquals(1, rig.rounds, "the request frame was sent once")
+        assertEquals(1L, perf.snapshot().counters["transport_attempt_starts"])
+        assertNull(perf.snapshot().counters[PerfKeys.WS_REFUSED_TOO_LARGE])
+        assertNull(perf.snapshot().counters[PerfKeys.ATTEMPTS], "no round reached the head's accept point")
+    }
+
+    @Test
+    fun `source item completion never commits a response id before the response terminal`() {
+        val session = ResponsesWsSession()
+        val identity = ResponsesWsIdentity(session, {})
+        val request = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
+        val next = responsesRequestJson.parseToJsonElement(
+            """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},
+                {"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"return 1;"},
+                {"type":"custom_tool_call_output","call_id":"source-call","output":"done"}]}""",
+        ) as JsonObject
+        val built = session.frameAndEpoch("source-chain", request, 1)
+        val pending = ResponsesWsIdentity.PendingCommit(request, 1, built.epoch)
+        val item = responsesRequestJson.parseToJsonElement(
+            """{"type":"response.output_item.done","output_index":0,"item":{
+                "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec",
+                "input":"return 1;"}}""",
+        ) as JsonObject
+        identity.observeTerminal("source-chain", pending, item)
+        val waiting = session.frameAndEpoch("source-chain", next, 1).frame.json
+        assertFalse(waiting.contains("previous_response_id"))
+        val terminal = responsesRequestJson.parseToJsonElement(completedEmptyOutput("response-terminal")) as JsonObject
+        identity.observeTerminal("source-chain", pending, terminal)
+        val resumed = session.frameAndEpoch("source-chain", next, 1).frame
+        assertTrue(resumed.chained)
+        val frame = responsesRequestJson.parseToJsonElement(resumed.json) as JsonObject
+        assertEquals("\"response-terminal\"", frame["previous_response_id"].toString())
+    }
+
+    /** codex-rs names its thread a second time on the WS handshake, as the client request id —
+     *  derived from the provider's per-turn `thread-id` at the handshake, so an SSE POST never
+     *  carries it and a turn without a thread id sends none (2026-09-05). */
+    @Test
+    fun `the handshake carries the thread id as x-client-request-id and nothing without one`() = runTest {
+        val rig = Rig { listOf("""{"type":"response.created"}""", completed("r1")) }
+        checkNotNull(rig.round(headers = mapOf("thread-id" to "t-1"))) { "round one" }
+        assertEquals("t-1", rig.handshakes.last()["x-client-request-id"])
+        assertEquals("t-1", rig.handshakes.last()["thread-id"])
+        // A different header set is a different connection: the second handshake carries none.
+        checkNotNull(rig.round(headers = mapOf("x-splice-probe" to "two"))) { "round two" }
+        assertEquals(2, rig.handshakes.size, "a changed per-turn header set opens a new connection")
+        assertFalse(rig.handshakes.last().containsKey("x-client-request-id"), rig.handshakes.last().toString())
+    }
+
+    /** The terminal's output is read for the calls it leaves open: a next turn that answers none
+     *  of them full-sends (the 2026-09-05 compaction class), one that answers them chains. */
+    @Test
+    fun `a held tool call from the terminal gates the next round's chaining`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_COMPACT)
+        assertFalse(rig.lastSentChained(), "call_9 is unanswered by a compaction body — must full-send")
+        val answered = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCall("call_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        answered.round()
+        answered.round(body = BODY_ANSWERED)
+        assertTrue(answered.lastSentChained(), "the tool round answers call_9 — chains as before")
+    }
+
+    /** A server-executed call is NOT held: the backend answered it itself, so a next turn that
+     *  answers nothing still chains (review 2026-09-05: it was held, and cost a full send with a
+     *  reason line blaming a call the server would never have refused). */
+    @Test
+    fun `a server-executed tool search is not held against the next round`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneServerSearch("ts_7"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_COMPACT)
+        assertTrue(rig.lastSentChained(), "ts_7 was answered by the server — nothing to hold")
+    }
+
+    /** An empty call_id is held under the ITEM id, which is what the client answers with
+     *  (ResponsesItemFold's fallback) — never under "", which nothing could answer. */
+    @Test
+    fun `a call with an empty call_id is held under the item id the client answers with`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCallByItemId("fc_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        rig.round()
+        rig.round(body = BODY_ANSWERED_BY_ITEM_ID)
+        assertTrue(rig.lastSentChained(), "the tool round answers fc_9 — the call the client was handed")
+        val unanswered = Rig { round ->
+            when (round) {
+                0 -> listOf("""{"type":"response.created"}""", itemDoneCallByItemId("fc_9"), completedEmptyOutput("r1"))
+                else -> listOf("""{"type":"response.created"}""", completed("r${round + 1}"))
+            }
+        }
+        unanswered.round()
+        unanswered.round(body = BODY_COMPACT)
+        assertFalse(unanswered.lastSentChained(), "fc_9 is still a held call a compaction never answers")
+    }
+
+    /** Every SUCCESS variant must END the round — otherwise the flow never completes, the
+     *  connection never returns to the pool, and the turn HANGS (worse than any error). */
+    @ParameterizedTest
+    @ValueSource(strings = ["response.completed", "response.done", "response.incomplete"])
+    fun `each success terminal completes the round`(type: String) = runTest {
+        val rig = Rig { listOf("""{"type":"response.created"}""", """{"type":"$type","response":{"id":"r1"}}""") }
+        val seen = rig.round()
+        assertNotNull(seen, "$type must be recognised as a terminal")
+        assertEquals(listOf("response.created", type), seen!!.map { it["type"]!!.toString().trim('"') })
+    }
+
+    /** Every FAILED variant must be recognised as a failure terminal — that predicate is what lets
+     *  the head bail to SSE while the client has seen nothing, keeping retry/refresh/cooldown. */
+    @ParameterizedTest
+    @ValueSource(strings = ["response.failed", "response.error", "error"])
+    fun `each failure terminal is recognised as a failure`(type: String) = runTest {
+        val rig = Rig { listOf("""{"type":"$type"}""") }
+        val event = responsesRequestJson.parseToJsonElement("""{"type":"$type"}""") as JsonObject
+        assertTrue(rig.runner.isFailureTerminal(event), "$type must be a FAILURE terminal, not a success")
+    }
+
+    /** A clean terminal commits the chain, so the NEXT round is a delta. */
+    @Test
+    fun `a clean terminal commits the chain and the next round chains`() = runTest {
+        val rig = Rig { i -> listOf(completed("resp_$i")) }
+        rig.round()
+        assertFalse(rig.lastSentChained(), "the first round has nothing to chain onto")
+        val grown =
+            """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"more"}]}"""
+        rig.round(body = grown)
+        assertTrue(rig.lastSentChained(), "a committed chain must produce a previous_response_id delta")
+    }
+
+    /** THE REVIEW'S CONCERN: a FAILURE terminal must clear the chain, so the next attempt sends a
+     *  FULL request. Without this a future terminal-handling change could leave an incomplete chain
+     *  committed while the success-oriented tests above stayed green. */
+    @ParameterizedTest
+    @ValueSource(strings = ["response.failed", "response.error", "error"])
+    fun `a failure terminal clears the chain and the next round full-sends`(type: String) = runTest {
+        val rig = Rig { i -> if (i == 0) listOf(completed("resp_0")) else listOf("""{"type":"$type"}""") }
+        rig.round() // commits resp_0
+        val grown = """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"b"}]}"""
+        rig.round(body = grown) // ends in $type -> must CLEAR
+        val grownMore =
+            """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"b"},""" +
+                """{"role":"user","content":"c"}]}"""
+        rig.round(body = grownMore)
+        assertFalse(rig.lastSentChained(), "after a $type terminal the next round must FULL-send")
+    }
+
+    /** A round the overlay did not serve still advanced the conversation. */
+    @Test
+    fun `roundBypassed clears the chain`() = runTest {
+        val rig = Rig { i -> listOf(completed("resp_$i")) }
+        rig.round()
+        rig.runner.roundBypassed(meta())
+        val grown = """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},{"role":"user","content":"b"}]}"""
+        rig.round(body = grown)
+        assertFalse(rig.lastSentChained(), "an SSE-served turn is invisible to the server chain; do not chain over it")
+    }
+
+    /** THE ISOLATION BLOCKER: no session id means NO safe chain identity. Substituting an empty
+     *  string would fuse every conversation whose first message hashes the same. */
+    @Test
+    fun `a missing session id refuses the ws path entirely`() = runTest {
+        val rig = Rig { i -> listOf(completed("resp_$i")) }
+        assertNull(rig.round(meta(session = null)), "no session id => ride SSE, never chain on a fusable key")
+        assertNull(rig.round(meta(session = "")), "an empty session id is absent, not a value")
+        assertNull(rig.round(meta(conversation = null)), "no conversation key => same refusal")
+        assertEquals(0, rig.rounds, "not one frame may reach the wire without an isolation identity")
+    }
+
+    /** DR-7: the abort kills THIS round's socket and its events end as an IOException — the shape
+     *  the head depends on, because a torn read is what the translator folds into an honest
+     *  terminal. A cancellation instead would take the collector down and lose the salvage. */
+
+    /** 2026-09-06: the accepted round carries its OWN socket's ping pulse for the idle watchdog —
+     *  never pinged reads as never, a server ping read by the listener reads as its age. */
+    @Test
+    fun `an accepted round reads the server pings on its own socket`() = runTest {
+        val rig = Rig { listOf(created("resp_1")) }
+        val round = checkNotNull(rig.accept()) { "the scripted round must be accepted" }
+
+        assertEquals(NEVER_PINGED_MS, round.pathPulse.lastPingAgoMs(), "no ping yet reads as never")
+        val socket = checkNotNull(rig.listener)
+        socket.onPing(FakeSocketForPing, java.nio.ByteBuffer.allocate(0))
+        val age = round.pathPulse.lastPingAgoMs()
+        assertTrue(age in 0..5_000, "a ping just delivered is seconds old at most, got $age ms")
+    }
+
+    @Test
+    fun `aborting a live round tears its own socket and ends the flow as a torn read`() = runTest {
+        val rig = Rig { listOf(created("resp_1")) }
+        val round = checkNotNull(rig.accept()) { "the scripted round must be accepted" }
+
+        round.abort.abort()
+
+        assertEquals(listOf(0), rig.aborted, "the round's own socket must be torn down")
+        assertThrows(IOException::class.java) {
+            runBlocking { round.events.collect { } }
+        }
+    }
+
+    /** DR-7, THE IDENTITY HOLE the first draft had (grok-splice, before it shipped). The chaining
+     *  identity is (session, conversation), but a CONNECTION is keyed by that plus the model and a
+     *  digest of the per-turn headers — on purpose, because a compact turn must not reuse a socket
+     *  opened with the lite marker. So ONE conversation can hold two live rounds on two sockets,
+     *  and an abort looked up by chain would tear down whichever registered last. The abort rides
+     *  the round instead, so it cannot reach a sibling. */
+    @Test
+    fun `aborting one round of a conversation never touches its sibling on another socket`() = runTest {
+        val rig = Rig { listOf(created("resp_1")) }
+        val first = checkNotNull(rig.accept(headers = mapOf("x-splice-probe" to "one"))) { "round one" }
+        val second = checkNotNull(rig.accept(headers = mapOf("x-splice-probe" to "two"))) { "round two" }
+
+        first.abort.abort()
+
+        assertEquals(listOf(0), rig.aborted, "only the aborted round's socket may be torn")
+        second.abort.abort()
+        assertEquals(listOf(0, 1), rig.aborted, "and the sibling's abort still reaches its own")
+    }
+
+    /** DR-7, THE REUSE HOLE, and the reason the guard is a LEASE and not terminalSeen. A finished
+     *  round returns its connection to the pool; the next round acquires the SAME object, and
+     *  acquire RESETS terminalSeen to false. A stale abort gated on that flag would look at the
+     *  reused connection, see "no terminal yet", and kill the round that had just taken it over —
+     *  the cross-turn tear, bought while closing the harmless idle-pool case. The lease is bumped
+     *  by acquire, so a stale abort simply does not match. */
+    @Test
+    fun `an abort from a finished round cannot kill the round that reused its connection`() = runTest {
+        val rig = Rig { i -> if (i == 0) listOf(completed("resp_1")) else listOf(created("resp_2")) }
+        val finished = checkNotNull(rig.accept()) { "the first round must be accepted" }
+        finished.events.collect { }
+        val reusing = checkNotNull(rig.accept()) { "the reusing round must be accepted" }
+
+        finished.abort.abort()
+
+        assertTrue(rig.aborted.isEmpty(), "a stale abort must not tear the connection its successor now holds")
+        reusing.abort.abort()
+        assertEquals(listOf(0), rig.aborted, "the round that actually holds it can still abort it")
+    }
+}
+
+private fun created(id: String) = """{"type":"response.created","response":{"id":"$id"}}"""

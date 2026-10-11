@@ -1,0 +1,158 @@
+// NEW: a local refusal is owned by the effective credential, never by aggregate head pressure.
+package splice.head.admission
+
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.header
+import splice.core.auth.ClientAuthProvider
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
+import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
+import splice.core.usage.PlanLimit
+import splice.core.util.WallClock
+import splice.head.HeadDeps
+import splice.head.turn.OutcomeSentences
+import splice.head.turn.Preparation
+import splice.head.turn.TurnDriver
+import splice.head.wire.ClientAnswer
+import splice.head.wire.TurnTrace
+import splice.upstream.Provider
+import splice.upstream.credentials.AccountResetText
+import splice.upstream.credentials.AccountSelection
+import splice.upstream.credentials.Selection
+import splice.upstream.retry.RateLimitCooldown
+
+/** Admission owns the HTTP status until the turn drive starts. Native refusals retain their wire reply. */
+internal class CredentialHoldAdmission(
+    private val provider: Provider,
+    private val deps: HeadDeps,
+    private val responses: AdmissionResponses,
+    private val driver: TurnDriver,
+    private val wallClock: WallClock,
+    private val keyAccounts: KeyAccount,
+) {
+    sealed class Outcome {
+        class Allowed(val account: AccountSelection?) : Outcome()
+        data object Refused : Outcome()
+    }
+
+    suspend fun admit(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        trace: TurnTrace?,
+        account: AccountSelection?,
+    ): Outcome {
+        // No hold means no early auth work. Credential failures still belong to the turn's honest ending boundary.
+        val cooldown = when {
+            account != null -> account.account.cooldown
+            deps.traffic.upstream.rateLimitedForMs > 0L -> resolve(prepared)
+            else -> null
+        }
+        if (cooldown == null || cooldown.remainingMs() <= 0L) return Outcome.Allowed(account)
+        val next = freeAccount(prepared, account, cooldown)
+        if (next != null) {
+            account?.releaseCredentialProbe()
+            return Outcome.Allowed(next)
+        }
+        // A held key head has no pooled login to name, so the refusal records the key that would have sent it.
+        val named = accountName(prepared, account) ?: keyAccounts.label()
+        respond(call, prepared, admitted, trace, HeldCredential(cooldown, named))
+        return Outcome.Refused
+    }
+
+    private fun freeAccount(
+        prepared: Preparation.Ready,
+        account: AccountSelection?,
+        cooldown: RateLimitCooldown,
+    ): AccountSelection? {
+        if (account == null) return null
+        val pool = deps.quotaBundle.activePool
+            ?.takeIf { provider.relayRateLimitReplies && cooldown.rateLimitReply != null } ?: return null
+        return when (val next = pool.select(prepared.built.meta.scope.sessionId, setOf(account.account.label))) {
+            is Selection.Chosen -> next.account
+            is Selection.Exhausted -> null
+        }
+    }
+
+    private suspend fun resolve(prepared: Preparation.Ready): RateLimitCooldown? {
+        val credentials = provider.auth.credentials() ?: return null
+        val headers = CredentialKey.headers(
+            credentials,
+            provider.extraHeaders(credentials) + prepared.built.extraHeaders,
+        )
+        return deps.traffic.upstream.credentialCooldown(headers, (credentials as? Credentials.ApiKey)?.header)
+    }
+
+    private data class HeldCredential(val cooldown: RateLimitCooldown, val accountName: String?)
+
+    private fun accountName(prepared: Preparation.Ready, account: AccountSelection?): String? {
+        val chosen = account?.account
+        // Naming a held login must not acquire or proactively refresh its credential.
+        if ((chosen?.auth ?: provider.auth) !is ClientAuthProvider) return chosen?.label
+        val key = CredentialKey.fromHeaders(prepared.built.extraHeaders)
+        return key?.let(deps.quotaBundle.credentialAccountNames::forCredential) ?: chosen?.label
+    }
+
+    /** V4-444: the held turn speaks the spent window on the trace and counts both facts of it on its row, the instant
+     *  it comes back and how long it is, so a refused turn's row names the window the way a turn the upstream itself
+     *  refused does. One fact, one spelling, on every ending that has it. */
+    private fun countSpentWindow(plan: PlanLimit, admitted: AdmittedTurn, trace: TurnTrace?) {
+        trace?.failureSentence(OutcomeSentences.planLimit(plan))
+        admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, plan.resetEpochSeconds)
+        plan.windowSeconds?.let { admitted.perf.setCount(PerfKeys.LIMIT_WINDOW_SECONDS, it) }
+    }
+
+    private suspend fun respond(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        trace: TurnTrace?,
+        held: HeldCredential,
+    ) {
+        val cooldown = held.cooldown
+        val standby = deps.turnQuota.standbyRefusal(null)
+        val native = deps.turnQuota.withStandby(cooldown.rateLimitReply, standby)
+        native?.let { reply -> trace?.collectedAnswer { ClientAnswer(reply.status, reply.body) } }
+        val plan = cooldown.planHold.live()
+        val armedMs = cooldown.remainingMs()
+        val now = wallClock()
+        val reset = cooldown.providerUnavailableForMs().takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
+        // V4-444: the held turn speaks the window on the trace AND counts its reset, so the row says when the window
+        // comes back to a surface that reads only the perf file.
+        plan?.let { countSpentWindow(it, admitted, trace) }
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            LocalRefusal(
+                (if (plan == null) OutcomeTag.RATE_LIMITED else OutcomeTag.PLAN_LIMIT).wire,
+                "provider_reset=${AccountResetText.format(reset)} gateway_hold=${armedMs}ms",
+                trace,
+                held.accountName,
+            ),
+        )
+        admitted.close()
+        if (native != null) {
+            responses.respondProviderRateLimited(call, native)
+        } else {
+            val retryEpochSeconds = plan?.resetEpochSeconds ?: (now + armedMs) / MILLIS_PER_SECOND
+            deps.turnQuota
+                .forSession(prepared.built.meta.scope.sessionId, null)
+                ?.clientHeadersRejected(retryEpochSeconds)
+                ?.forEach { (name, value) -> call.response.header(name, value) }
+            val message = message(armedMs, reset, plan) + standby?.let { " $it" }.orEmpty()
+            responses.respondRateLimited(call, message, retryEpochSeconds)
+        }
+    }
+
+    private fun message(armedMs: Long, reset: Long?, plan: PlanLimit?): String {
+        if (plan != null) return plan.refusal()
+        val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
+        val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
+            "limited, so it is holding new turns for ${waitS}s. Retry after that."
+        if (reset == null) return base
+        return "$base The upstream reports its quota window resets at " +
+            "${AccountResetText.forPerson(reset)}; if this keeps happening, that is the real deadline."
+    }
+}

@@ -1,0 +1,79 @@
+{
+  "recorded": "2026-09-21",
+  "max_params": 12,
+  "max_subsystems": 6,
+  "law": "V4-93 ratchet. One entry per primary constructor already over a width on the recorded date, with the numbers MEASURED that day. The gate fails when an unrecorded constructor crosses 12 parameters or 6 subsystems, when a recorded one gets WIDER than its entry, when an entry is recorded ABOVE the measurement (padding), and when an entry stops offending or names a class that is gone. The entry is edited by hand and graded by ConstructorWidthLawTest; the diff is the record of what moved.",
+  "offenders": {
+    "core/src/main/kotlin/splice/core/topology/HeadConfig.kt HeadConfig": {
+      "params": 13,
+      "subsystems": 2,
+      "reason": "model_slots, V4-254, 2026-09-30: tier map split from the models allowlist"
+    },
+    "features/configuration/src/main/kotlin/splice/configuration/add/AddProfiles.kt AddProfile": {
+      "params": 13,
+      "subsystems": 0,
+      "reason": "V4-254, 2026-09-30: models supplies provider rows, pinned ids and cards in AddProfiles.toml; discoverRoster selects independent tier mappings versus an allowlist in headExtras"
+    },
+    "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughQuirks.kt PassthroughQuirks": {
+      "params": 13,
+      "subsystems": 0,
+      "reason": "V4-456, 2026-10-02: eagerToolInputs selects the streaming custom-tool input policy on its own; generic profiles stay neutral"
+    },
+    "integrations/claude-code/src/main/kotlin/splice/client/ClaudeMaterializeTypes.kt MaterializeSpec": {
+      "params": 13,
+      "subsystems": 1
+    },
+    "features/sessions/src/main/kotlin/splice/sessions/registry/SessionRegistry.kt SessionRecord": {
+      "params": 13,
+      "subsystems": 0
+    },
+    "core/src/main/kotlin/splice/core/turn/Turn.kt TurnMeta": {
+      "params": 19,
+      "subsystems": 0
+    },
+    "features/accounts/src/main/kotlin/splice/accounts/pool/HeadAccountPool.kt HeadAccountView": {
+      "params": 15,
+      "subsystems": 0
+    },
+    "features/launch/src/main/kotlin/splice/launch/LaunchTypes.kt LaunchSpec": {
+      "params": 21,
+      "subsystems": 2
+    },
+    "features/turns/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
+      "params": 8,
+      "subsystems": 7
+    },
+    "features/turns/src/main/kotlin/splice/head/turn/TurnDrive.kt TurnDrive": {
+      "params": 17,
+      "subsystems": 10
+    },
+    "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesQuirks.kt ResponsesQuirks": {
+      "params": 23,
+      "subsystems": 3
+    },
+    "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequest.kt ResponsesRequest": {
+      "params": 15,
+      "subsystems": 0
+    },
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecord": {
+      "params": 21,
+      "subsystems": 0
+    },
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecordSnapshot": {
+      "params": 22,
+      "subsystems": 0
+    },
+    "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt AccountView": {
+      "params": 15,
+      "subsystems": 0
+    },
+    "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt EconomicsBucket": {
+      "params": 14,
+      "subsystems": 0
+    },
+    "features/usage/src/main/kotlin/splice/usage/economics/HeadEconomicsSource.kt EconomicsRow": {
+      "params": 14,
+      "subsystems": 0
+    }
+  }
+}

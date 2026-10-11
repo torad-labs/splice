@@ -1,0 +1,44 @@
+// NEW: Success-path honesty / promote-to-text / L2 mirror for TurnPipeline
+// (concentration, 2026-08-19). Named StreamFinish so it does not collide with
+// splice.head.turn.TurnFinish (the terminal-then-stats collaborator).
+package splice.head.pipeline
+
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
+import splice.head.usage.OutputClamp
+import splice.head.wire.TurnTerminal
+
+internal class StreamFinish(
+    compact: StreamCompact,
+    log: LogSink,
+    private val clampOutput: OutputClamp,
+    private val honesty: StreamHonesty,
+) {
+    private val promote = StreamPromote(compact, log, honesty)
+
+    suspend fun finishSuccess(
+        emitter: TurnTerminal,
+        outcome: TurnOutcome.Success,
+        meta: TurnMeta,
+        elapsedMs: Long,
+    ): String {
+        val verdict = promote.apply(emitter, outcome, meta, elapsedMs)
+        verdict.endedTag?.let { return it }
+
+        // Reasoning mirror (L2): one mirrorInto for both paths; tools stay on.
+        honesty.mirrorGated(emitter, outcome.text.thinkingText, meta)
+
+        // The whole usage with only the output clamped: the payload builder also reads the cache write
+        // (V4-248) and a code-mode step's client context, and a three-field rebuild dropped both.
+        emitter.emitTerminal(
+            hasToolUse = outcome.hasToolUse,
+            incomplete = outcome.incomplete,
+            usage = outcome.usage.copy(outputTokens = clampOutput(outcome.usage.outputTokens)),
+        )
+        // DR-87: the collect-path terminal can downgrade this emit into an error envelope
+        // (malformed-tool/capacity). A literal "ok" here is what blinded perf/health/log to a
+        // turn whose client saw a 502.
+        return emitter.degradedReason ?: verdict.cleanTag
+    }
+}

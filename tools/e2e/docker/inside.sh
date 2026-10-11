@@ -1,0 +1,383 @@
+#!/usr/bin/env bash
+# tools/e2e/docker/inside.sh — the fresh-machine e2e, run INSIDE the container by run.sh.
+#
+# A new operator's first hour, as a script: bring up mock upstreams, write a topology, install from
+# release-style artifacts (install.sh: checksum → init → install --all → doctor), let doctor grade
+# the machine, cold-start the daemon, drive a real streaming turn through every head at the wire
+# (stream_probe.ts, the live e2e's contract oracle), count tokens, launch the REAL Claude Code
+# wrapper for one print-mode turn, restart, read logs, uninstall. Every upstream is a mock inside
+# the container and the container has no network, so a byte that leaves is a failure.
+#
+# Every step lands in /out/receipt.json with its verdict, duration and evidence; a failed step does
+# not stop the run (later steps are evidence too) but fails the exit code. Nothing here is skipped
+# silently: a head that cannot be probed is a FAIL with a reason, never a green.
+set -uo pipefail
+
+# The receipt plumbing, the mocks, the topology and the checks this scenario shares with upgrade.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+TOPOLOGY_CHECKS="$(dirname "${BASH_SOURCE[0]}")/topology_checks.ts"
+trap finish EXIT
+
+echo "fresh-machine e2e: user=$(id -un) home=$HOME artifacts=$ARTIFACTS"
+
+step "Claude Code version matches the splice tested pin" client_version_receipt
+
+# ── 1. the two mock upstreams (loopback only) ───────────────────────────────────────────────────
+step "mock upstreams up" start_mocks
+read_mock_ports
+
+# ── 2. topology: two heads, two dialects, every upstream a mock ──────────────────────────────
+step "topology written" write_topology
+export_mock_env
+
+# ── 3. install from the artifacts, exactly as a release install verifies them ─────────────────
+step "install.sh from artifacts: jar+shim verified, wrappers linked" install_step
+
+# ── 4. doctor grades the machine: every prerequisite must be a ✓ ─────────────────────────────
+doctor_prereqs() {
+  local out bin
+  out="$(splice doctor 2>&1 | strip_ansi)"
+  printf '%s\n' "$out"
+  for bin in java claude node curl bash; do
+    grep -qE "^\s*✓\s+$bin\b" <<<"$out" || { echo "prerequisite $bin is not ✓"; return 1; }
+  done
+  [ "$(grep -v '^splice doctor' <<<"$out" | grep -c '✗')" = 0 ]
+}
+step "doctor: prerequisites ✓, no ✗ anywhere" doctor_prereqs
+
+# ── 5. cold start: `splice restart` is the CLI's boot verb (`status` only reports) ──────────────
+step "daemon cold start: /health ok, every head ready" cold_start
+step "/api/heads lists all three heads running" api_heads
+
+# ── 6. the wire contract, per head, through the real translators ───────────────────────────────
+probe() { # head port model
+  SPLICE_PROBE_BEARER="$(mgmt)" bun "$REPO/tools/e2e/probes/stream_probe.ts" \
+    --head "$1" --port "$2" --model "$3" --prompt "Count from 1 to 3 then say END." \
+    --ttfb-ms 10000 --first-delta-ms 10000 --total-ms 30000 --gap-ms 10000
+}
+step "wire probe: claudex (openai-responses over mock)" probe claudex "$CODEX_HEAD_PORT" "claude-codex--gpt-5-codex"
+step "wire probe: mockchat (openai-chat over mock)" probe mockchat "$CHAT_HEAD_PORT" "claude-mockchat--mock-chat"
+
+count_tokens() { # port model
+  curl_mgmt "http://127.0.0.1:$1/v1/messages/count_tokens" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$2\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}" \
+    | bun "$TOPOLOGY_CHECKS" count-tokens
+}
+step "count_tokens: claudex" count_tokens "$CODEX_HEAD_PORT" "claude-codex--gpt-5-codex"
+step "count_tokens: mockchat" count_tokens "$CHAT_HEAD_PORT" "claude-mockchat--mock-chat"
+
+# ── 7. the launch recipe the shim execs, then the real wrapper ─────────────────────────────────
+# The recipe is the contract between daemon and Claude Code: the head's loopback base URL, and the
+# client request cap raised past the daemon's 900s upstream wall (v0.3.0-beta.1 shipped without
+# it, so a compaction that legitimately runs 500-600s upstream died client-side at 300s/600s).
+launch_recipe() { # head port
+  curl_mgmt -X POST -H 'Content-Type: application/json' \
+    --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
+    | bun "$TOPOLOGY_CHECKS" launch-recipe "$2"
+}
+step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"
+step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CHAT_HEAD_PORT"
+
+# ── 7b. per-head model roster + window, packaging, the turn key (head_contract in lib.sh) ─────
+step "head contract + packaging: claudex (gpt-5-codex @272k, status line, /login)" head_contract claudex gpt-5-codex 272000 "gpt-5-codex:272000"
+step "head contract + packaging: mockchat (mock-chat @128k, status line, /login)" head_contract mockchat mock-chat 128000 "mock-chat:128000"
+step "head contract + packaging: mockchat2 (mock-chat-2 @64k + a 128k row, status line, /login)" head_contract mockchat2 mock-chat-2 64000 "mock-chat-2:64000,mock-chat-2-big:128000"
+
+# ── 7c. the daemon's status line on a SCALED row ─────────────────────────────────────────────
+# Claude Code fixes its context window per process (the pinned row's) and splice scales the counts
+# it reports so any other row compacts at its own window, so the blob Claude Code pipes back is in
+# client units. On the 128k row of the 64k mockchat2 session, 32000 reported tokens are 64000
+# real ones: the bar must read the row's label and "64k/128k", not "32k/64k". The pinned row is the
+# control: nothing changes. Posted with the management bearer, as the installed status-line command does.
+statusline_row() { # head model expected-fragment...
+  local head="$1" model="$2" line; shift 2
+  line="$(curl_mgmt --data-binary @- "http://127.0.0.1:$CONTROL_PORT/statusline/$head" <<EOF | strip_ansi
+{"model":{"id":"$model","display_name":"$model"},
+ "context_window":{"context_window_size":64000,"used_percentage":50,
+   "current_usage":{"input_tokens":2000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":0}}}
+EOF
+)"
+  printf '%s\n' "$line"
+  local frag
+  for frag in "$@"; do
+    grep -qF -- "$frag" <<<"$line" || { echo "status line lacks '$frag'"; return 1; }
+  done
+}
+step "status line: the scaled 128k row shows its label and real window" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "64k/128k" "50%"
+step "status line: the pinned 64k row is untouched" statusline_row mockchat2 mock-chat-2 "Chat 2 (mock)" "32k/64k" "50%"
+
+# ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────
+daemon_down() {
+  pkill -u "$(id -un)" -f 'splice.jar daemon' || true
+  for _ in $(seq 1 100); do
+    if ! pgrep -u "$(id -un)" -f 'splice.jar daemon' >/dev/null &&
+       ! curl -sf -m 1 "http://127.0.0.1:$CONTROL_PORT/health" >/dev/null 2>&1; then
+      echo "daemon process gone, :$CONTROL_PORT closed"; return 0
+    fi
+    sleep 0.2
+  done
+  echo "daemon still alive 20s after pkill"; pgrep -a -f 'splice.jar daemon'; return 1
+}
+step "daemon stopped (the shim must boot it on first launch)" daemon_down
+# The vendored codex mock answers every basic turn with "ok after auth"; the chat mock ends in END.
+step "wrapper turn: claudex -p boots the daemon and completes" wrapper_turn claudex "ok after auth"
+step "wrapper turn: claude-mockchat -p through the head" wrapper_turn claude-mockchat "END"
+
+# ── 8a. plan usage: the head's 5h/7d windows ride every response and draw the bars ───────────
+# The daemon polls the provider's usage endpoint (the mock's wham/usage: 14% of 5h, 42% of 7d),
+# stamps every response with the anthropic-ratelimit-unified-* headers Claude Code reads into its
+# rate_limits, and draws the same windows on the status line beside effort and session spend.
+quota_bars() {
+  local log hdrs line frag
+  log="$(resolve_state_dir)/../logs/daemon.log"
+  for _ in $(seq 1 30); do grep -q '\[claudex\]\[quota\]' "$log" 2>/dev/null && break; sleep 0.5; done
+  grep '\[claudex\]\[quota\]' "$log" | tail -1 || { echo "the codex usage probe never reported (read $log)"; return 1; }
+  hdrs="$(curl_mgmt -D - -o /dev/null -X POST "http://127.0.0.1:$CODEX_HEAD_PORT/v1/messages" \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"claude-codex--gpt-5-codex","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"hi"}]}')"
+  grep -i 'anthropic-ratelimit-unified' <<<"$hdrs" | tr -d '\r'
+  grep -qi '^anthropic-ratelimit-unified-5h-utilization: 0.1400' <<<"$hdrs" ||
+    { echo "the head's response carries no 5h utilization header"; return 1; }
+  grep -qi '^anthropic-ratelimit-unified-7d-utilization: 0.4200' <<<"$hdrs" ||
+    { echo "the head's response carries no 7d utilization header"; return 1; }
+  line="$(curl_mgmt --data-binary '{"model":{"id":"gpt-5-codex"},"effort":{"level":"high"},"cost":{"total_cost_usd":1.5}}' \
+    "http://127.0.0.1:$CONTROL_PORT/statusline/claudex" | strip_ansi)"
+  printf '%s\n' "$line"
+  # V4-240: this head has no rate card, and the blob's 1.50 is Claude Code's own figure, priced at
+  # Anthropic's card; under a ChatGPT model it is said in words, never shown as the figure.
+  for frag in "Codex (mock)·high" 'no rate card' "5h █░░░░░░░ 14%" "7d ███░░░░░ 42%"; do
+    grep -qF -- "$frag" <<<"$line" || { echo "status line lacks '$frag'"; return 1; }
+  done
+  ! grep -qF -- '1.50' <<<"$line" || { echo "status line shows the client's Anthropic-priced 1.50"; return 1; }
+}
+step "plan usage: 5h/7d windows on every claudex response and on its status line" quota_bars
+
+# ── 8a'. `<wrapper> login`: the sign-in verb every head installs with its wrapper ────────────
+# claudex is an OAuth head: `claudex login` must start the ChatGPT browser flow — bind the loopback
+# callback, print the authorize URL (no browser here) and wait for the callback. The paste
+# fallback only shows on a terminal, and there is none here. With no network and stdin closed it
+# waits out its callback timeout, so the run is bounded by `timeout`.
+login_oauth() { # wrapper expected-host
+  local out
+  out="$(timeout 10 "$1" login </dev/null 2>&1)" || true
+  printf '%s\n' "$out" | head -8
+  grep -q 'open this URL to sign in' <<<"$out" || { echo "$1 login did not print the sign-in URL"; return 1; }
+  grep -q "https://$2" <<<"$out" || { echo "$1 login URL is not on $2"; return 1; }
+}
+# claude-mockchat is an api-key head: with no terminal, `login` names the pipe alternative
+# verbatim, and that command stores the key in ~/.config/splice/keys.toml (0600).
+login_apikey() {
+  local out
+  out="$(claude-mockchat login </dev/null 2>&1)" || true
+  printf '%s\n' "$out"
+  grep -qF 'splice key set MOCK_CHAT_API_KEY --stdin' <<<"$out" || { echo "login did not name the pipe path"; return 1; }
+  printf '%s' "mock-chat-key" | splice key set MOCK_CHAT_API_KEY --stdin || { echo "splice key set failed"; return 1; }
+  local store="$HOME/.config/splice/keys.toml"
+  [ -f "$store" ] || { echo "no $store after key set"; return 1; }
+  grep -q '^MOCK_CHAT_API_KEY' "$store" || { echo "key not stored"; cat "$store"; return 1; }
+  [ "$(stat -c %a "$store")" = "600" ] || { echo "keys.toml mode is $(stat -c %a "$store"), not 600"; return 1; }
+  echo "MOCK_CHAT_API_KEY stored in $store (0600)"
+}
+step "claudex login: the ChatGPT OAuth flow starts from the installed wrapper" login_oauth claudex "auth.openai.com"
+step "claude-mockchat login: the api-key path names its pipe, and the pipe stores the key" login_apikey
+
+# ── 8b. cross-head sessions: every head's sessions/ IS the operator's global registry ─────────
+# Claude Code discovers peer sessions by listing $CLAUDE_CONFIG_DIR/sessions (the message sockets
+# are machine-global already), so per-head config isolation is the only thing that could hide one
+# head's sessions from another's ListAgents. On first launch the daemon links each head's dir at
+# ~/.claude/sessions — CREATING it here, because plain `claude` has never run on this machine —
+# which is what lets claudex, claude-mockchat and plain claude sessions see and message each other.
+# The proof is the mechanism itself: a registration written under one head is read under the other.
+sessions_shared() {
+  local global="$HOME/.claude/sessions" cfg probe
+  [ -d "$global" ] || { echo "global registry $global was not created"; ls -la "$HOME/.claude" 2>&1; return 1; }
+  for cfg in "$HOME/.claude-claudex" "$HOME/.claude-mockchat"; do
+    [ -L "$cfg/sessions" ] || { echo "$cfg/sessions is not a link"; ls -la "$cfg" 2>&1; return 1; }
+    [ "$(readlink -f "$cfg/sessions")" = "$(readlink -f "$global")" ] ||
+      { echo "$cfg/sessions -> $(readlink "$cfg/sessions"), not the global registry"; return 1; }
+  done
+  probe="e2e-probe-$$.json"
+  echo '{"probe":true}' > "$HOME/.claude-claudex/sessions/$probe"
+  if [ ! -f "$HOME/.claude-mockchat/sessions/$probe" ] || [ ! -f "$global/$probe" ]; then
+    rm -f "$global/$probe"
+    echo "a registration written under claudex is invisible from mockchat or the global registry"; return 1
+  fi
+  rm -f "$global/$probe"
+  echo "claudex and mockchat both resolve sessions/ to $global; a claudex registration is visible from mockchat"
+}
+step "cross-head sessions: both heads share ~/.claude/sessions, created on first launch" sessions_shared
+
+# ── 8c. cross-head ListAgents: a session on one head lists a live session held on another ────
+# The thing the announcement claims, run for real. claude-mockchat holds a turn (the mock sleeps
+# on it) from a directory named heldpeer; claude-mockchat2, a different head with a different
+# CLAUDE_CONFIG_DIR, is told to call ListAgents. The mock answers that turn with one ListAgents
+# call, then echoes the tool result back as "PEERS: …", so the caller's printed output IS what
+# ListAgents returned inside the second head. It must name the session held under the first.
+cross_head_listagents() {
+  local registry="$HOME/.claude/sessions" before held_pid held_json out rc
+  mkdir -p "$HOME/heldpeer"
+  before="$(ls "$registry" 2>/dev/null | sort)"
+  ( cd "$HOME/heldpeer" && DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+      timeout 120 claude-mockchat -p "SCENARIO:hold Say END." --output-format text </dev/null >"$OUT/held-session.txt" 2>&1 ) &
+  held_pid=$!
+  for _ in $(seq 1 60); do
+    held_json="$(comm -13 <(printf '%s\n' "$before") <(ls "$registry" 2>/dev/null | sort) | head -1)"
+    [ -n "$held_json" ] && break
+    sleep 0.5
+  done
+  if [ -z "$held_json" ]; then
+    echo "the held claude-mockchat session never registered"; cat "$OUT/held-session.txt"
+    pkill -f 'SCENARIO:hold' 2>/dev/null || true; return 1
+  fi
+  echo "held session registered under claude-mockchat: $(cat "$registry/$held_json")"
+  out="$(cd "$HOME" && DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    timeout 120 claude-mockchat2 -p "SCENARIO:listagents Call ListAgents and reply with its output." \
+      --allowed-tools ListAgents --output-format text </dev/null 2>&1)"
+  rc=$?
+  pkill -f 'SCENARIO:hold' 2>/dev/null || true; wait "$held_pid" 2>/dev/null || true
+  printf '%s\n' "$out" | tail -c 2000
+  [ $rc -eq 0 ] || { echo "claude-mockchat2 exit $rc"; return 1; }
+  grep -qF 'PEERS:' <<<"$out" || { echo "the mock never received a ListAgents tool result: the tool was not called"; return 1; }
+  grep -q 'heldpeer' <<<"$out" || { echo "ListAgents inside claude-mockchat2 does not list the session held under claude-mockchat"; return 1; }
+  echo "ListAgents inside claude-mockchat2 listed the claude-mockchat session held from ~/heldpeer"
+}
+step "cross-head ListAgents: claude-mockchat2 lists a session held on claude-mockchat" cross_head_listagents
+
+# ── 8d. the shipped example topology, on this machine, without a single credential ───────────
+# app/src/main/resources/splice.example.toml is what a fresh install starts from. Boot it here: every head it
+# declares must install, list, and hand out a launch recipe whose model and window are the ones
+# the example promises, with its sessions registry linked and its wrapper on PATH. No provider is
+# reachable and no auth exists, which is a fresh machine before the operator's first login: the
+# daemon must still stand. The e2e topology is put back (and its wrappers relinked) afterwards.
+example_heads() { # example.toml
+  for _ in $(seq 1 60); do curl -sf -m 3 "http://127.0.0.1:$CONTROL_PORT/health" >/dev/null 2>&1 && break; sleep 1; done
+  curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
+  curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" > "$OUT/example-heads.json" || return 1
+  MGMT_KEY="$(mgmt)" bun "$TOPOLOGY_CHECKS" example-heads "$1" "$OUT/example-heads.json" "$CONTROL_PORT" "$HOME"
+}
+example_topology() {
+  local example="$REPO/app/src/main/resources/splice.example.toml" live="$HOME/.config/splice/splice.toml" rc=0
+  cp "$live" "$OUT/e2e-topology.toml"
+  cp "$example" "$live"
+  # install --all links every wrapper the topology declares; the running daemon still serves the
+  # old topology (/health says topologyStale) until `splice restart`, exactly as on a real machine.
+  splice install --all </dev/null || { echo "install --all failed on the example topology"; rc=1; }
+  [ $rc -eq 0 ] && { splice restart </dev/null || { echo "restart failed on the example topology"; rc=1; }; }
+  [ $rc -eq 0 ] && { example_heads "$example" || rc=1; }
+  # Back to the e2e topology the same way (never `uninstall` here: it removes the splice command).
+  cp "$OUT/e2e-topology.toml" "$live"
+  splice install --all </dev/null >/dev/null || { echo "could not reinstall the e2e topology"; return 1; }
+  return $rc
+}
+step "shipped example topology: every head installs, boots and launches to the example's model and window" example_topology
+
+# ── 8b. the 0.4.0 verbs a user runs on a clean machine, against the mocks already up ───────────────
+doctor_json_step() {
+  local out file="$OUT/doctor-report.json" mode
+  out="$(splice doctor --json </dev/null 2>/dev/null)"; local rc=$?
+  printf '%s\n' "$out" | head -c 600
+  printf '%s' "$out" | bun -e 'JSON.parse(await Bun.stdin.text())' || { echo "doctor --json is not JSON"; return 1; }
+  rm -f "$file"
+  splice doctor --json --out "$file" </dev/null >/dev/null 2>&1
+  [ -s "$file" ] || { echo "doctor --out wrote nothing"; return 1; }
+  bun -e "JSON.parse(await Bun.file('$file').text())" || { echo "the report file is not JSON"; return 1; }
+  mode="$(stat -c %a "$file")"
+  [ "$mode" = 600 ] || { echo "report file mode $mode, want 600"; return 1; }
+  [ $rc -eq 0 ] || { echo "doctor --json exit $rc on a healthy machine"; return 1; }
+}
+step "splice doctor --json prints JSON, and --out writes the same report 0600" doctor_json_step
+
+sessions_verb_step() {
+  local out
+  out="$(splice sessions </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out" | head -20
+  [ -n "$out" ] || { echo "splice sessions printed nothing"; return 1; }
+}
+step "splice sessions lists what the earlier launches created" sessions_verb_step
+
+add_second_step() {
+  local out
+  export MOCKCHAT3_API_KEY="k3"
+  out="$(splice add api-key --name mockchat3 --base-url "http://127.0.0.1:$CHAT_MOCK_PORT" --model mock-chat:128000 --yes </dev/null 2>&1 | strip_ansi)" || {
+    printf '%s\n' "$out" | tail -20; return 1; }
+  printf '%s\n' "$out" | tail -12
+  grep -q '^\[heads\.mockchat3\]' "$HOME/.config/splice/splice.toml" || { echo "no mockchat3 head saved"; return 1; }
+  grep -q '^\[heads\.mockchat\]' "$HOME/.config/splice/splice.toml" || { echo "the first mockchat head was lost"; return 1; }
+  [ -x "$HOME/.local/bin/claude-mockchat3" ] || { echo "claude-mockchat3 wrapper not linked"; return 1; }
+}
+step "splice add api-key --name <second> on a provider that already has a head" add_second_step
+
+key_list_step() {
+  local out
+  out="$(splice key list </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out"
+  grep -q 'MOCK_CHAT_API_KEY' <<<"$out" || { echo "key list does not name the stored key"; return 1; }
+  grep -q 'mock-chat-key' <<<"$out" && { echo "key list printed a key value"; return 1; }
+  return 0
+}
+step "splice key list names the stored key and never its value" key_list_step
+
+upgrade_noop_step() {
+  local rel="$OUT/release" ver out before after
+  ver="$(splice --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
+  [ -n "$ver" ] || ver="$(splice status </dev/null 2>&1 | strip_ansi | grep -oE 'splice [0-9][^ ]*' | head -1 | cut -d' ' -f2)"
+  rm -rf "$rel"; mkdir -p "$rel"
+  cp "$ARTIFACTS/splice.jar" "$ARTIFACTS/splice-launch" "$rel/"
+  (cd "$rel" && sha256sum splice.jar splice-launch > sha256sums.txt)
+  before="$(sha256sum "$HOME/.local/share/splice/splice.jar" 2>/dev/null | cut -d' ' -f1)"
+  out="$(SPLICE_RELEASE_BASE_URL="file://$rel" splice upgrade --to "v$ver" --now </dev/null 2>&1 | strip_ansi)"; local rc=$?
+  printf '%s\n' "$out" | tail -12
+  [ $rc -eq 0 ] || { echo "upgrade to the installed release exited $rc"; return 1; }
+  grep -q 'already installed' <<<"$out" || { echo "upgrade did not say the release is already installed"; return 1; }
+  after="$(sha256sum "$HOME/.local/share/splice/splice.jar" 2>/dev/null | cut -d' ' -f1)"
+  [ "$before" = "$after" ] || { echo "the installed jar changed"; return 1; }
+  curl -fsS "http://127.0.0.1:$CONTROL_PORT/health" >/dev/null || { echo "daemon not healthy after the no-op upgrade"; return 1; }
+}
+step "splice upgrade to the installed release changes nothing" upgrade_noop_step
+
+# ── 8b. pin a head to an account, see the pin in `splice status`, release it ────────────────
+# The topology's claudex reads the mock codex credential. A second credential in its pool directory, declaring its kind
+# and its label as splice writes them, makes a two-account pool at the next daemon start, so `work` is an account the
+# daemon holds a credential for. The pin goes through the route the console uses, with the management key the suite reads.
+pin_step() {
+  local pool url out
+  pool="$(dirname "$CODEX_AUTH_PATH")/chatgpt-oauth/$(basename "$CODEX_AUTH_PATH")"
+  url="http://127.0.0.1:$CONTROL_PORT/api/auth/claudex/switch"
+  mkdir -p "$pool" || return 1
+  bun -e 'const a = JSON.parse(await Bun.file(process.argv[1]).text()); a.splice_auth_kind = "chatgpt-oauth"; a.splice_account_label = "work"; await Bun.write(process.argv[2], JSON.stringify(a))' "$CODEX_AUTH_PATH" "$pool/work.json" || return 1
+  chmod 600 "$pool/work.json"
+  splice restart </dev/null >/dev/null 2>&1 || return 1
+  wait_health 60 >/dev/null || return 1
+  out="$(curl_mgmt -X POST -H 'Content-Type: application/json' -d '{"label":"work"}' "$url")" || return 1
+  printf 'pin: %s\n' "$out"
+  grep -q '"ok":true' <<<"$out" || { echo "the pin was refused"; return 1; }
+  out="$(splice status </dev/null 2>&1 | strip_ansi)"
+  printf '%s\n' "$out" | grep -E 'claudex|pinned' | head -4
+  grep -q 'pinned to work' <<<"$out" || { echo "splice status does not say pinned to work"; return 1; }
+  out="$(curl_mgmt -X DELETE "$url")" || return 1
+  printf 'unpin: %s\n' "$out"
+  grep -q '"ok":true' <<<"$out" || { echo "the unpin was refused"; return 1; }
+  out="$(splice status </dev/null 2>&1 | strip_ansi)"
+  ! grep -q 'pinned to' <<<"$out" || { printf '%s\n' "$out" | grep 'pinned'; echo "the pin is still shown after DELETE"; return 1; }
+}
+step "pin claudex to an account: splice status says pinned to <label>, and DELETE removes the line" pin_step
+
+# ── 9. restart, logs, status, uninstall ────────────────────────────────────────────────────────
+restart_step() {
+  splice restart </dev/null || return 1
+  wait_health 60
+}
+step "splice restart: healthy again" restart_step
+# Exit status alone is not a verdict for reporting commands (a status that reports a dead daemon
+# still exits 0): assert the content the step name promises.
+logs_step() {
+  local out
+  out="$(splice logs --tail 5 </dev/null 2>&1)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out"
+  [ "$(printf '%s\n' "$out" | grep -c .)" -ge 1 ] || { echo "empty log tail"; return 1; }
+}
+step "splice logs --tail 5: non-empty tail" logs_step
+step "splice status: daemon running, every head listed" status_step
+step "splice uninstall removes the wrappers" uninstall_step

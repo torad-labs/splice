@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Requests · splice</title>
+<link rel="stylesheet" href="console.css">
+<link rel="stylesheet" href="sessions.css">
+<link rel="stylesheet" href="reqview.css">
+<link rel="stylesheet" href="requests.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="mark">splice</div>
+    <!-- The nav is drawn by kit.js from its one PAGES list: which pages exist, in which order, and the
+         rule that a link appears only with its page (Marlin) and that one page draws no nav (hitstop). -->
+
+    <div class="foot">
+      <button class="icon" data-act="theme" aria-label="Day or night">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </aside>
+  <main class="page">
+    <header class="head">
+      <h1>Requests</h1>
+      <div class="tools">
+        <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg><input class="field" id="q" placeholder="Search" aria-label="Search requests" autocomplete="off"></label>
+      </div>
+    </header>
+    <div class="filters-row" id="filters"></div>
+    <div class="requests" id="requests" aria-live="polite"></div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script src="api.js"></script>
+<script src="reqview.js"></script>
+<script src="requests.js"></script>
+</body>
+</html>

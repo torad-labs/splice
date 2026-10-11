@@ -1,0 +1,432 @@
+// NEW (review 2026-07-23): HTTP-level integration coverage the PR review flagged as missing —
+//   E: a waiter promoted from the InflightGate queue DURING a stop/restart drain is bounced with
+//      the 529 "head is stopping; retry" shape (never starts a doomed upstream turn);
+//   G: count_tokens fast-fails 529 "gateway busy; retry" when the materialization gate is saturated
+//      (proves the HTTP route is wired to tryWithLease, not just the primitive);
+//   I: upstream x-ratelimit-* headers survive to durable UsageStore state through TurnDriver.
+// Each test builds an ISOLATED head so it can stop/restart/hold without disturbing a shared one.
+package splice.head
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.readLine
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.WatchdogBudget
+import splice.core.util.ElapsedClock
+import splice.dialect.responses.ReasoningSettings
+import splice.head.admission.RequestMaterializationGate
+import splice.head.usage.UsageStore
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
+import splice.upstream.ProviderTuning
+import splice.upstream.Ticker
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.memory.JvmHeap
+import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.seconds
+
+private class ReviewFakeAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok-rev", "acct-rev")
+    override suspend fun refresh(): Credentials = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class HeadServerReviewTest {
+
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+    private lateinit var tmp: Path
+
+    private val catalog = ModelCatalog(
+        discoveryPrefix = "claude-codex--",
+        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+        defaultContextWindow = 272_000,
+    )
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
+    }
+
+    @AfterAll
+    fun tearDown() {
+        client.close()
+        mock.stop()
+    }
+
+    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
+     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
+    private var built = 0
+
+    private fun buildHead(
+        gate: InflightGate,
+        matGate: RequestMaterializationGate,
+        ratelimitFile: Path,
+        seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
+    ): HeadServer {
+        val provider = TestResponsesProvider(
+            tuning = ProviderTuning(
+                name = ProviderName(key = "codex", label = "claudex"),
+                catalog = catalog,
+                pinnedModel = "gpt-5.6-sol",
+                auth = ReviewFakeAuth(),
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                loginCommand = "claudex login",
+            ),
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+        )
+        val id = ++built
+        return HeadServer(
+            provider = provider,
+            listenPort = 0,
+            deps = headDeps(
+                tmp = tmp,
+                upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+                gate = gate,
+                log = {},
+                seams = seams.copy(requestMaterializationGate = matGate),
+            ).copy(
+                // This rig keys its store files per head and points the RATE-LIMIT store at a file the
+                // assertions read directly, so the default stores would not be the ones under test.
+                stores = headStores(tmp, suffix = "-$id")
+                    .copy(usageStore = UsageStore(tmp.resolve("usage-$id.json"), ratelimitFile)),
+            ),
+        )
+    }
+
+    @Test
+    fun `visible progress opens a silent ordinary and compact stream before the hold bound`() = runBlocking {
+        for (compact in listOf(false, true)) {
+            val tickGate = CompletableDeferred<Unit>()
+            val elapsed = AtomicLong(0)
+            val ticker = Ticker {
+                tickGate.await()
+                yield() // cooperative virtual ticks until the upstream has opened the message
+                true
+            }
+            val head = buildHead(
+                InflightGate(maxInflight = { 4 }),
+                RequestMaterializationGate(),
+                tmp.resolve("rl-progress-$compact.json"),
+                HeadDeps.HeadSeams(ticker = ticker, clock = ElapsedClock(elapsed::get)),
+            )
+            head.start()
+            mock.resetStartHold()
+            val progressSeen = CompletableDeferred<Unit>()
+            val opened = CompletableDeferred<Long>()
+            try {
+                val before = mock.upstreamBodies.count { it.first == "holdstart" }
+                val scenario = if (compact) "holdstart tasked with summarizing conversations" else "holdstart"
+                val turn = async(Dispatchers.IO) { readTurn(head.port, scenario, opened, 0L, progressSeen) }
+                assertTrue(waitFor(5_000) { mock.upstreamBodies.count { it.first == "holdstart" } > before })
+                assertTrue(!opened.isCompleted, "the structural opener is still staged")
+                elapsed.set(29_000L)
+                tickGate.complete(Unit)
+                withTimeout(5_000) { progressSeen.await() }
+                assertTrue(opened.isCompleted, "the first visible progress line commits the opener")
+                assertEquals(1L, mock.startHoldRelease.count, "no model item arrived before progress")
+                mock.startHoldRelease.countDown()
+                val body = turn.await()
+                assertTrue(body.contains("[splice] holding this turn open"), body)
+                assertTrue(body.contains("event: message_stop"), body)
+            } finally {
+                tickGate.complete(Unit)
+                mock.startHoldRelease.countDown()
+                head.stop()
+            }
+        }
+    }
+
+    // An upstream overflow can become HTTP 400 only until the first model frame commits SSE.
+    // The structural opener waits beside the upstream while it is silent, but a model that
+    // starts answering must open the response immediately, well before the 120s hold bound.
+    @Test
+    fun `first model frame opens SSE before the precommit deadline`() = runBlocking {
+        val head = buildHead(
+            InflightGate(maxInflight = { 4 }),
+            RequestMaterializationGate(),
+            tmp.resolve("rl-hs.json"),
+        )
+        head.start()
+        val port = head.port
+        mock.resetStartHold()
+        val opened = CompletableDeferred<Long>()
+        try {
+            val before = mock.upstreamBodies.count { it.first == "holdstart" }
+            val t0 = System.currentTimeMillis()
+            val turn = async(Dispatchers.IO) { readTurn(port, "holdstart", opened, t0) }
+            assertTrue(waitFor(5_000) { mock.upstreamBodies.count { it.first == "holdstart" } > before })
+            assertTrue(!opened.isCompleted, "the structural opener waits for model content")
+            mock.startHoldRelease.countDown()
+            val openedAtMs = withTimeout(20_000) { opened.await() }
+            assertTrue(openedAtMs < 20_000, "a producing turn must not wait for the 120s deadline")
+            val body = turn.await()
+            assertTrue(body.contains("event: message_start"), "expected message_start in: $body")
+            assertTrue(body.contains("\"late\""), "expected the post-release content in: $body")
+            assertTrue(body.contains("event: message_stop"), "turn must still end cleanly: $body")
+            // message_start precedes the first content block on the wire (order unchanged).
+            assertTrue(
+                body.indexOf("event: message_start") < body.indexOf("event: content_block_start"),
+                "message_start must precede content: $body",
+            )
+            println("message_start reached client at ${openedAtMs}ms after the model began responding")
+        } finally {
+            mock.startHoldRelease.countDown()
+            head.stop()
+        }
+    }
+
+    /** Stream a turn line-by-line, completing [opened] the instant message_start lands. */
+    private suspend fun readTurn(
+        port: Int,
+        scenario: String,
+        opened: CompletableDeferred<Long>,
+        t0: Long,
+        progressSeen: CompletableDeferred<Unit>? = null,
+    ): String {
+        val sb = StringBuilder()
+        client.preparePost("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    "system":"You are a test. SCENARIO:$scenario",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }.execute { resp ->
+            val ch = resp.bodyAsChannel()
+            while (true) {
+                val line = ch.readLine() ?: break
+                sb.append(line).append('\n')
+                if (!opened.isCompleted && line.contains("event: message_start")) {
+                    opened.complete(System.currentTimeMillis() - t0)
+                }
+                if (progressSeen?.isCompleted == false && line.contains("[splice] holding this turn open")) {
+                    progressSeen.complete(Unit)
+                }
+            }
+        }
+        return sb.toString()
+    }
+
+    // A deadline poll, the rule's sanctioned shape: gate state changes server-side, with no signal
+    // to await.
+    private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
+        val pollMs = 50L
+        val deadline = System.currentTimeMillis() + capMs
+        while (System.currentTimeMillis() < deadline) {
+            if (cond()) return true
+            delay(pollMs)
+        }
+        return cond()
+    }
+
+    private suspend fun turn(port: Int, scenario: String): HttpResponse =
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    "system":"You are a test. SCENARIO:$scenario",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+
+    private suspend fun countTokens(port: Int): HttpResponse =
+        client.post("http://127.0.0.1:$port/v1/messages/count_tokens") {
+            header("Content-Type", "application/json")
+            setBody("""{"model":"claude-codex--gpt-5.6-sol","messages":[{"role":"user","content":"estimate"}]}""")
+        }
+
+    @Test
+    fun `a waiter promoted during the stop drain is bounced with 529 head-is-stopping`() = runBlocking {
+        val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
+        // The stop drain's FIRST wait is the event "accepting is already false": HeadServer.stopLocked
+        // closes the window before its drain loop ever waits. Armed only for the restart, because the
+        // same seam paces every backoff on the turn path; the wait itself stays real.
+        val drainArmed = AtomicBoolean(false)
+        val draining = CompletableDeferred<Unit>()
+        val processWaiter = ProcessWaiter()
+        val drainWaiter = Waiter { ms ->
+            if (drainArmed.get()) draining.complete(Unit)
+            processWaiter.wait(ms)
+        }
+        val head = buildHead(
+            gate,
+            RequestMaterializationGate(),
+            tmp.resolve("rl-e.json"),
+            HeadDeps.HeadSeams(waiter = drainWaiter),
+        )
+        head.start()
+        // Read once, before the restart below rebinds a fresh OS-assigned port: both turns go to this one.
+        val port = head.port
+        try {
+            // req1 holds the one inflight slot until we release the mock latch.
+            val req1 = async(Dispatchers.IO) { turn(port, "hold").bodyAsText() }
+            assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "req1 should hold the slot")
+            // req2 passes the accepting front-door (still accepting), then queues on the full gate.
+            val req2 = async(Dispatchers.IO) { turn(port, "basic") }
+            assertTrue(waitFor(5_000) { gate.snapshot().queued == 1 }, "req2 should fill the queue")
+
+            // Restart flips accepting=false and drains; once the drain is WAITING (the flag is set),
+            // release req1 so req2 is promoted DURING the drain — it must be bounced, not run.
+            drainArmed.set(true)
+            val restart = async(Dispatchers.IO) { head.restart() }
+            withTimeout(10_000) { draining.await() }
+            mock.holdRelease.countDown()
+
+            val resp = req2.await()
+            assertEquals(529, resp.status.value)
+            val body = resp.bodyAsText()
+            assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
+            assertTrue(body.contains("head is stopping"), "expected 'head is stopping; retry' in: $body")
+
+            req1.await()
+            restart.await()
+        } finally {
+            head.stop()
+        }
+    }
+
+    @Test
+    fun `count_tokens 529s with the busy shape when the materialization gate is saturated`() = runBlocking {
+        val matGate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 208 * 1024 * 1024L))
+        val head = buildHead(InflightGate(maxInflight = { 4 }), matGate, tmp.resolve("rl-g.json"))
+        head.start()
+        val port = head.port
+        try {
+            // Reserve the whole heap budget so count_tokens fast-fails without reading its body.
+            val acquired = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val holding = async(Dispatchers.IO) {
+                matGate.withLease(32 * 1024 * 1024L) {
+                    acquired.complete(Unit)
+                    release.await()
+                }
+            }
+            acquired.await()
+
+            val resp = countTokens(port)
+            assertEquals(529, resp.status.value)
+            val body = resp.bodyAsText()
+            assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
+            assertTrue(body.contains("gateway busy"), "expected 'gateway busy; retry' in: $body")
+
+            release.complete(Unit)
+            holding.await()
+            // Permit free again → count_tokens succeeds.
+            assertEquals(200, countTokens(port).status.value)
+        } finally {
+            head.stop()
+        }
+    }
+
+    @Test
+    fun `upstream rate-limit headers survive to durable UsageStore state`() = runBlocking {
+        val ratelimitFile = tmp.resolve("rl-i.json")
+        val head = buildHead(InflightGate(maxInflight = { 4 }), RequestMaterializationGate(), ratelimitFile)
+        head.start()
+        val port = head.port
+        try {
+            // A successful turn whose response carries x-ratelimit-* headers.
+            assertEquals(200, turn(port, "ratelimit").status.value)
+            // head.stop() flushes pending rate-limit state durably to the file.
+        } finally {
+            head.stop()
+        }
+        // A FRESH store reading the same file must see the persisted headers — proves the TurnDriver
+        // call site, not just persistRateLimit() in isolation.
+        val reread = UsageStore(tmp.resolve("usage-reread.json"), ratelimitFile).readRateLimit()
+        assertNotNull(reread, "rate-limit state should be durable across a fresh store")
+        assertEquals(5000, reread!!.limitTokens)
+        assertEquals(1200, reread.remainingTokens)
+        assertEquals("6m0s", reread.resetTokens)
+    }
+
+    @Test
+    fun `a stream torn before any client frame ends as one honest error, not a truncated 200`() =
+        runBlocking {
+            val head = buildHead(
+                InflightGate(maxInflight = { 4 }),
+                RequestMaterializationGate(),
+                tmp.resolve("rl-h.json"),
+            )
+            head.start()
+            val port = head.port
+            try {
+                val before = mock.upstreamBodies.count { it.first == "tear" }
+                val resp = turn(port, "tear")
+                val body = resp.bodyAsText()
+                // A non-size upstream tear commits SSE when its error arrives. It MUST become an
+                // honest `event: error` frame (StreamTornBeforeClient -> emitConnReset in
+                // TurnDriver), never an escaped/truncated 200 with no terminal.
+                assertEquals(200, resp.status.value)
+                assertTrue(body.contains("event: error"), "expected an error event in: $body")
+                assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
+                assertEquals(1, body.split("event: error").size - 1, "exactly one error event: $body")
+                assertTrue(!body.contains("message_stop"), "a torn turn must NOT emit message_stop: $body")
+                // An upstream handoff may stage message_start before the tear, so the torn
+                // stream can still reach the client as message_start THEN an error frame.
+                //
+                // Asserting message_start is always PRESENT here is wrong, and shipping that
+                // assertion turned CI red (2026-07-27) while passing 3/3 locally. Whether the turn
+                // opens at all depends on where the premature EOF surfaces — during upstream
+                // response setup (pre-handoff: ensureStarted never runs, no message_start) or during
+                // the body stream (post-handoff: it does). That is environment timing, not a
+                // contract, so a test that demands one of the two outcomes is a flake.
+                //
+                // What IS invariant, and what a regression would break: message_start must never
+                // arrive AFTER the error frame. Ordering is the contract; presence is a race.
+                // The healthy holdstart test above pins delivery of the staged opener as soon as
+                // the model starts producing, without waiting for the bounded status hold.
+                val startAt = body.indexOf("event: message_start")
+                assertTrue(
+                    startAt == -1 || startAt < body.indexOf("event: error"),
+                    "message_start must never follow the error frame on the torn path: $body",
+                )
+                // Upstream was hit (the request handed off before tearing). NB: this premature-EOF
+                // tear is not classed as a retryable transport reset, so it does not consume the
+                // stream-reissue budget — a real connection RST (which the in-process mock cannot
+                // force) would reissue up to MAX_STREAM_REISSUES; the honest-terminal mapping under
+                // test here is identical either way.
+                assertTrue(mock.upstreamBodies.count { it.first == "tear" } > before, "upstream was attempted")
+            } finally {
+                head.stop()
+            }
+        }
+}

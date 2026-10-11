@@ -1,0 +1,278 @@
+// The production log path: persistentLogger's output shape (daemon.log is split on "\n" by /mgmt/logs, so
+// one message is exactly one line), its owner-only directory, its dated fixed-width stamp, its
+// self-healing rotation, and where each line is copied (daemon.log, and the boot log's stderr until up).
+package splice.app
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.util.AsyncFileIo
+import splice.lifecycle.start.BOOT_LOG_FLAG
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+import java.time.LocalDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
+import kotlin.io.path.readText
+
+class DaemonLogTest {
+
+    private val process = DaemonProcess()
+
+    private fun drainToDisk() = assertTrue(AsyncFileIo.drain(), "async file lane did not drain")
+
+    @Test
+    fun `each message becomes exactly one daemon-log line, with or without a trailing newline`(
+        @TempDir logs: Path,
+    ) {
+        val log = process.persistentLogger(logs)
+        // The two conventions that now coexist: pre-existing callers terminate their own message,
+        // the 14 converted kt-no-println sites do not (System.err.println used to do it for them).
+        log("[a] caller that terminates its own line\n")
+        log("[b] converted site, no terminator")
+        log("[c] another converted site")
+        drainToDisk()
+
+        val lines = Files.readAllLines(logs.resolve("daemon.log"))
+        assertEquals(3, lines.size, "one message must be one line — a missing terminator used to merge them")
+        assertTrue(lines[0].endsWith("[a] caller that terminates its own line"), lines[0])
+        assertTrue(lines[1].endsWith("[b] converted site, no terminator"), lines[1])
+        assertTrue(lines[2].endsWith("[c] another converted site"), lines[2])
+    }
+
+    // v0.4.0: the logs dir is an owner-only boundary (SecureFile.ownerOnlyDirectory), so its files
+    // need no mode of their own. Under a 775 home and state root, daemon.log and the per-head logs
+    // sat at 664 for every local user to read. A dir an older splice or the umask left open is
+    // tightened on the next daemon start, not only when it is first created.
+    @Test
+    fun `the logs dir is owner-only, and an existing open one is tightened`(@TempDir tmp: Path) {
+        val fresh = tmp.resolve("fresh-logs")
+        process.persistentLogger(fresh)
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(fresh)))
+        val open = Files.createDirectories(tmp.resolve("open-logs"))
+        Files.setPosixFilePermissions(open, PosixFilePermissions.fromString("rwxrwxr-x"))
+        process.persistentLogger(open)
+        assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(open)))
+    }
+
+    // v0.4.0 review round 2: a logs dir that cannot be MADE is not an owner-only failure. It was said as
+    // "other local users can read what splice keeps there" — about a directory that does not exist —
+    // while the real loss, no daemon.log at all, went unsaid.
+    @Test
+    fun `a logs dir that cannot be made is said as a lost daemon log, not as an open one`(@TempDir tmp: Path) {
+        val boundary = DaemonBoundary()
+        val blocker = Files.writeString(tmp.resolve("a-file"), "")
+        val unmakeable = blocker.resolve("logs")
+
+        val said = boundary.logsDirProblem(unmakeable)
+
+        assertTrue(said?.contains("could not be created") == true, said.toString())
+        assertTrue(said!!.contains("no daemon.log is kept"), said)
+        assertTrue(!said.contains("other local users"), said)
+        assertEquals(null, boundary.logsDirProblem(tmp.resolve("makeable")), "a dir it can make and hold says nothing")
+    }
+
+    @Test
+    fun `a message is never double-terminated`(@TempDir logs: Path) {
+        process.persistentLogger(logs)("[x] already terminated\n")
+        drainToDisk()
+        val raw = logs.resolve("daemon.log").readText()
+        assertTrue(raw.endsWith("\n"), "must end with a terminator")
+        assertTrue(!raw.endsWith("\n\n"), "must not double-terminate a caller that supplied one")
+    }
+
+    // 3. The STAMP. daemon.log rotates by size, so one file spans days with no marker between them,
+    // and a line lifted out of it — a grep hit, a quote in a report — has to say which day it is.
+    // Audit 2026-09-02: 265,321 lines over four days, and a reader attributed one day's watchdog
+    // stalls to the next day's build because nothing on the line said otherwise.
+    @Test
+    fun `a written line dates itself, so a line read alone names its day`(@TempDir logs: Path) {
+        process.persistentLogger(logs)("[claudex] turn compact=true latency=336431ms ok")
+        drainToDisk()
+
+        val line = Files.readAllLines(logs.resolve("daemon.log")).single()
+        assertTrue(
+            Regex("""^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}] \[claudex]""").containsMatchIn(line),
+            "a log line must carry a full date and a fixed-width clock, got: $line",
+        )
+    }
+
+    // Width is fixed, not merely dated: LocalTime/LocalDateTime.toString() OMIT the seconds field
+    // when it is zero, which stamped 4,339 live lines "[13:47]" and broke every column-oriented
+    // read. Pinned at a zero second because that is the only instant that used to differ.
+    @Test
+    fun `a zero second keeps its field, so every stamp is the same width`() {
+        assertEquals("2026-09-02 13:47:00", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 0)))
+        assertEquals("2026-09-02 13:47:12", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 12)))
+    }
+
+    // SH-14 (V4-123): the wall sh_14_daemon_log_rotate_selfheals.py guards that a FAILED rotate
+    // reconciles `written` from disk so the logger self-heals instead of wedging forever. This
+    // test pins the behaviour at runtime: an external logrotate removes daemon.log, the next
+    // line's rotate Files.move throws NoSuchFileException, onFailure reconciles written to 0 (the
+    // file is absent), and the line after that lands in a fresh file. On the pre-fix shape —
+    // onFailure reset only `writer` and left `written` >= the cap — every later line re-entered
+    // the throwing rotate branch and daemon.log went silent for the daemon's lifetime.
+    @Test
+    fun `a failed rotate on a removed file reconciles written so the next line still lands`(
+        @TempDir logs: Path,
+    ) {
+        val log = process.persistentLogger(logs, maxBytes = 64L)
+        log("first line long enough that written now sits at or past the cap")
+        drainToDisk()
+        val file = logs.resolve("daemon.log")
+        assertTrue(Files.exists(file), "the first line must have created daemon.log")
+        Files.delete(file) // external logrotate removed the file
+
+        log("second line whose rotate now fails because the source is gone")
+        drainToDisk()
+        log("third line must land")
+        drainToDisk()
+
+        assertTrue(
+            Files.exists(logs.resolve("daemon.log")),
+            "a reconciled written must let the next line reopen and recreate daemon.log",
+        )
+        val content = Files.readString(logs.resolve("daemon.log"))
+        assertTrue(
+            content.contains("third line must land"),
+            "the logger self-healed and wrote the third line, got: $content",
+        )
+    }
+
+    // SH-14, second half: a wedged logger must not be silent about being wedged. stderr is the one
+    // lane still alive inside the logger's own failure branch, so the announcement lands there,
+    // naming the failure and the size it reconciled to.
+    @Test
+    fun `a failed rotate is announced on stderr with the reconciled size - SH-14`(@TempDir logs: Path) {
+        val log = process.persistentLogger(logs, maxBytes = 64L)
+        log("first line long enough that written now sits at or past the cap")
+        drainToDisk()
+        Files.delete(logs.resolve("daemon.log")) // external logrotate removed the file
+
+        val captured = java.io.ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(java.io.PrintStream(captured, true))
+        try {
+            log("second line whose rotate now fails because the source is gone")
+            drainToDisk()
+        } finally {
+            System.setErr(realErr)
+        }
+        val stderr = captured.toString()
+        assertTrue(stderr.contains("[daemon-log] write/rotate failed"), "the failure is announced, got: $stderr")
+        assertTrue(stderr.contains("size reconciled to 0"), "the reconciled size is named, got: $stderr")
+    }
+
+    // V4-258: both cold-start launchers send the daemon's stderr into daemon-boot.log, and the daemon
+    // printed every daemon.log line there too, so the boot log was a second, unbounded copy of
+    // daemon.log (a live one: 15,276 of 15,280 lines). Told so with BOOT_LOG_FLAG, the daemon keeps
+    // its lines in daemon.log alone; stderr keeps what only it can carry.
+    @Test
+    fun `a daemon told its stderr is the boot log writes each line to daemon-log alone - V4-258`(@TempDir logs: Path) {
+        val stderr = capturingStderr {
+            val served = DaemonProcess(listOf("daemon", BOOT_LOG_FLAG)).also { it.bootEnded() }
+            served.persistentLogger(logs)("[v4-258] a turn line")
+            drainToDisk()
+        }
+
+        assertTrue(Files.readString(logs.resolve("daemon.log")).contains("[v4-258] a turn line"), "daemon.log keeps it")
+        assertFalse(stderr.contains("[v4-258] a turn line"), "the line was copied into the boot log: $stderr")
+    }
+
+    // V4-353: V4-258's bound starts once the daemon is up. Before that the boot log is the only place the cold start
+    // reads (DaemonSpawn.printBootLogTail), so a boot that fails, a control port another process holds (F1 walk p6),
+    // leaves its reason there instead of an empty "last boot output".
+    @Test
+    fun `a daemon told its stderr is the boot log copies boot lines there until up - V4-353`(@TempDir logs: Path) {
+        val process = DaemonProcess(listOf("daemon", BOOT_LOG_FLAG))
+        val log = process.persistentLogger(logs)
+        val booting = capturingStderr {
+            log("[daemon] control plane could not bind :47360 (Address already in use); another owns it, exiting")
+            drainToDisk()
+        }
+        process.bootEnded()
+        val serving = capturingStderr {
+            log("[v4-353] a turn line")
+            drainToDisk()
+        }
+
+        assertTrue(booting.contains("Address already in use"), "the boot's reason missed the boot log: $booting")
+        assertFalse(serving.contains("[v4-353] a turn line"), "a line after the boot reached the boot log: $serving")
+        val kept = Files.readString(logs.resolve("daemon.log"))
+        assertTrue(kept.contains("Address already in use"), "daemon.log keeps it")
+    }
+
+    @Test
+    fun `a daemon on a terminal or under its unit still prints each line to stderr`(@TempDir logs: Path) {
+        val stderr = capturingStderr {
+            DaemonProcess(listOf("daemon")).persistentLogger(logs)("[v4-258] a turn line")
+            drainToDisk()
+        }
+
+        assertTrue(stderr.contains("[v4-258] a turn line"), "stderr is the only view there: $stderr")
+    }
+
+    @Test
+    fun `a line daemon-log could not take still reaches the boot log`(@TempDir tmp: Path) {
+        val notADir = tmp.resolve("logs").also { Files.writeString(it, "a file where the logs dir belongs") }
+
+        val stderr = capturingStderr {
+            DaemonProcess(listOf("daemon", BOOT_LOG_FLAG)).persistentLogger(notADir)("[v4-258] nowhere else")
+            drainToDisk()
+        }
+
+        assertTrue(stderr.contains("[v4-258] nowhere else"), "a line daemon.log refused is not lost: $stderr")
+    }
+
+    private fun capturingStderr(block: () -> Unit): String {
+        val captured = java.io.ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(java.io.PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            block()
+        } finally {
+            System.setErr(realErr)
+        }
+        return captured.toString(Charsets.UTF_8)
+    }
+
+    // A full lane refuses the line that would report its own drops, so the worker that owns daemon.log writes the
+    // episode itself, before its next task, instead of submitting it back into the lane that dropped the work.
+    @Test
+    fun `work a full lane dropped is said in daemon-log by the lane's own worker`(@TempDir logs: Path) {
+        process.persistentLogger(logs)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        assertTrue(
+            AsyncFileIo.submit {
+                started.countDown()
+                release.await()
+            },
+        )
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS), "the worker never picked up the blocking task")
+            val ran = Semaphore(0)
+            val accepted = (1..LANE_FILL_ATTEMPTS).count { AsyncFileIo.submit { ran.release() } }
+            assertTrue(accepted < LANE_FILL_ATTEMPTS, "the lane never filled, so nothing was dropped")
+            release.countDown()
+            // Every accepted task must have run before drain() asks for its own slot: at the cap, drain() is refused.
+            assertTrue(ran.tryAcquire(accepted, 10, TimeUnit.SECONDS), "the accepted tasks never all ran")
+        } finally {
+            release.countDown()
+        }
+        drainToDisk()
+
+        val said = Files.readAllLines(logs.resolve("daemon.log")).filter { "task(s) dropped while the lane" in it }
+        assertEquals(1, said.size, "the episode is said once: $said")
+    }
+
+    private companion object {
+        // Above the lane's pending cap (2_048), which is private to AsyncFileIo.
+        const val LANE_FILL_ATTEMPTS = 2_200
+    }
+}

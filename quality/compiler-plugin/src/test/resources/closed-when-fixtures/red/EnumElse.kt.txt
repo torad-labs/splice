@@ -1,0 +1,6 @@
+enum class Color { RED, GREEN }
+
+fun name(c: Color): String = when (c) {
+    Color.RED -> "red"
+    else -> "other"
+}

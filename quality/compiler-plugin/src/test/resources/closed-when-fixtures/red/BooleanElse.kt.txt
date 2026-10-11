@@ -1,0 +1,4 @@
+fun name(b: Boolean): String = when (b) {
+    true -> "yes"
+    else -> "no"
+}

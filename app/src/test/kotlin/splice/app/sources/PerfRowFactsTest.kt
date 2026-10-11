@@ -1,0 +1,123 @@
+// The reader's string-and-flag facts (session tag, account label, flags, failure cause), read by name off real JSONL
+// bytes, distinct per field so a positional mix-up fails; a legacy row reads them as absent, never as empty.
+package splice.app.sources
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
+
+class PerfRowFactsTest {
+
+    @Test
+    fun `each fact is read by name, and an absent flag stays absent`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            """{"ts":1000,"model":"m-1000","outcome":"ok","compact":true,"session":"sess-1000",""" +
+                """"account":"acct-1000","cache_cold":true,"total":5}""" + "\n" +
+                // No account and no session: the writer emits cache_cold ONLY alongside an account
+                // (PerfStats.record), so for this row the question was never asked.
+                """{"ts":2000,"model":"m-2000","outcome":"ok","compact":false,"total":7}""" + "\n",
+        )
+        val rows = PerfRowsFileSource(file).window(0).rows
+        assertEquals(listOf(1000L, 2000L), rows.map { it.ts })
+
+        val full = rows[0]
+        assertEquals("m-1000", full.facts.model)
+        assertEquals("sess-1000", full.facts.session)
+        assertEquals("acct-1000", full.facts.account)
+        assertEquals(true, full.facts.cacheCold)
+        assertEquals(true, full.facts.compact)
+        assertEquals("ok", full.outcome, "the outcome is unchanged by the widening")
+
+        // A RECORDED false is a fact; an absent flag is not a false. The writer emits `compact`
+        // unconditionally, so false here is real — and cache_cold, never written for this row, must
+        // come back as null. Reading it as false would report "the cache was warm" about a turn where
+        // nothing looked, the did-not-run-wearing-a-legitimate-answer class this row keeps finding.
+        val bare = rows[1]
+        assertEquals(false, bare.facts.compact)
+        assertNull(bare.facts.cacheCold, "an unrecorded cache_cold is null, never false")
+        assertEquals("m-2000", bare.facts.model, "model is unrelated to the account and must still be read")
+        assertNull(bare.facts.session)
+        assertNull(bare.facts.account)
+    }
+
+    @Test
+    fun `a legacy row without the facts reads them as absent, never as empty`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        // The row shape before these keys existed: ts, outcome and the numeric marks only.
+        Files.writeString(file, """{"ts":1500,"outcome":"ok","total":9}""" + "\n")
+        val row = PerfRowsFileSource(file).window(0).rows.single()
+        assertNull(row.facts.model, "an absent model is null — an empty string would be a value the file never held")
+        assertNull(row.facts.session)
+        assertNull(row.facts.account)
+        assertNull(row.facts.cacheCold)
+        assertNull(row.facts.compact)
+        assertEquals(9L, row.fields["total"], "and the numeric half is untouched by the widening")
+    }
+
+    @Test
+    fun `only the exact legacy probe shape is removed from command work`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val probe = """{"ts":1000,"model":"","outcome":"error:upstream-failed","req_bytes":30}"""
+        val work = listOf(
+            probe.replace("\"model\":\"\"", "\"model\":\"real\""),
+            probe.replace("\"req_bytes\":30", "\"req_bytes\":31"),
+            probe.replace("\"outcome\":\"error:upstream-failed\"", "\"outcome\":\"ok\""),
+            probe.dropLast(1) + ""","session":"real-session"}""",
+            probe.dropLast(1) + ""","session_id":"real-session"}""",
+            probe.dropLast(1) + ""","in_tokens":0}""",
+            probe.dropLast(1) + ""","out_tokens":0}""",
+            probe.dropLast(1) + ""","cached_tokens":0}""",
+            probe.dropLast(1) + ""","cache_write_tokens":0}""",
+            probe.dropLast(1) + ""","account":"real-account"}""",
+            probe.dropLast(1) + ""","compact":true}""",
+            probe.dropLast(1) + ""","local_step":1}""",
+            probe.replace("\"model\":\"\"", "\"model\":null"),
+            probe.replace("\"req_bytes\":30", "\"req_bytes\":\"30\""),
+        )
+        Files.writeString(file, (work + List(60) { probe }).joinToString("\n") + "\n")
+        val window = PerfRowsFileSource(file).window(0)
+        assertEquals(work.size, window.rows.size)
+        assertEquals(0, window.skipped, "excluded probes are not corrupt rows")
+        Files.writeString(
+            file,
+            """{"ts":100,"model":"real","outcome":"ok"}""" + "\n" +
+                List(60) { probe }.joinToString("\n") + "\n",
+        )
+        val idle = PerfRowsFileSource(file).window(2000)
+        assertEquals(100L, idle.newestHeldTs, "pre-cutoff probes cannot hide the newest real work")
+    }
+
+    @Test
+    fun `failure causes survive streaming fallback and cached reads without inventing legacy causes`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            """{"ts":1000,"outcome":"failure:api_error","cause":"CONTENT_FILTERED"}""" + "\n" +
+                // A nested scalar forces the tree-reader path without changing the named cause.
+                """{"ts":2000,"outcome":"failure:invalid_request_error","cause":"MODEL_REFUSED","extra":{}}""" + "\n" +
+                """{"ts":3000,"outcome":"failure:api_error"}""" + "\n",
+        )
+        val source = PerfRowsFileSource(file)
+        repeat(2) {
+            assertEquals(listOf("CONTENT_FILTERED", "MODEL_REFUSED", null), source.window(0).rows.map { it.cause })
+        }
+    }
+
+    @Test
+    fun `a torn fact reads absent rather than carrying a replacement character`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        // A torn multi-byte char inside the model. The reader decodes with REPLACE, so the value is
+        // present as text — it is just not what was written, and a payload the operator is meant to
+        // trust must not carry U+FFFD as if it were a model name.
+        Files.writeString(file, """{"ts":1000,"model":"m�del","outcome":"ok","total":5}""" + "\n")
+        val row = PerfRowsFileSource(file).window(0).rows.single()
+        assertNull(row.facts.model, "a torn value is absent, never the replacement character")
+    }
+}

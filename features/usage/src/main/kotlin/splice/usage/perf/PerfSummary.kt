@@ -1,0 +1,221 @@
+// NEW: v0.4.0 FEATURES.md §3 — the windowed performance summary — one object per head per
+// window (1h / 24h / 7d) computed from the perf JSONL rows. Labels name WHAT was measured, never
+// a cause: "time before first byte" is the wait until the upstream's first byte, "time streaming"
+// is first byte to stream end. Empty data is reported as empty (count 0, no percentiles), never
+// as zero-latency traffic; a window the files cannot fill says so (clamped + covers_ms), no rows
+// at all says THAT, and a generation that could not be read is carried as read_error, never as
+// short retention, and while a generation is unread the coverage is UNKNOWN, never a clamp.
+// telemetry_dropped is the count of rows during which the counter rose; io_drops_in_window is a LOWER BOUND on the async file-io writes the daemon dropped during the
+// window: the per-row counter is cumulative per process and the rows carry no process identity,
+// so a restart is only visible as a decrease, and a new process whose count catches the old one
+// up hides its drops. A dropped perf row is absent from the file, so this is the evidence that
+// something is missing, not a count of missing rows.
+package splice.usage.perf
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
+import splice.core.perf.OutcomeTags
+import splice.core.perf.PerfKeys
+import splice.core.util.WallClock
+import kotlin.math.ceil
+
+private const val P50 = 0.50
+private const val P95 = 0.95
+private const val MS_PER_MINUTE = 60_000L
+private const val MS_PER_HOUR = 3_600_000L
+private const val HOURS_PER_DAY = 24L
+private const val DAYS_PER_WEEK = 7L
+
+/** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
+internal const val UNATTRIBUTED_OUTCOME: String = "?"
+
+/** A row written before the model rode along: shown under this name, never dropped. */
+private const val UNATTRIBUTED_MODEL: String = "?"
+
+internal enum class PerfWindow(val label: String, val ms: Long) {
+    H1("1h", MS_PER_HOUR),
+    H24("24h", HOURS_PER_DAY * MS_PER_HOUR),
+    D7("7d", DAYS_PER_WEEK * HOURS_PER_DAY * MS_PER_HOUR),
+}
+
+internal class PerfSummary(private val clock: WallClock = WallClock { System.currentTimeMillis() }) {
+
+    /** The window named by [label], or null when it is not one of 1h / 24h / 7d. */
+    fun window(label: String?): PerfWindow? = PerfWindow.entries.firstOrNull { it.label == label }
+
+    fun summarize(source: PerfRowsSource?, window: PerfWindow): JsonObject {
+        val now = clock()
+        return json(source?.window(now - window.ms) ?: PerfRowsWindow(emptyList()), window, now)
+    }
+
+    /** [read].rows = the window's rows (older ones are ignored). [PerfRowsWindow.oldestHeldTs] = the
+     *  oldest row the files hold at all: coverage is measured from it, so a quiet week over files that
+     *  reach past the window is NOT reported clamped; without it the oldest returned row is the only
+     *  evidence. No row anywhere is "no perf rows recorded yet", not a clamp. A read error rides
+     *  through as is and makes the coverage UNKNOWN (coverage_known false, never clamped): the unread
+     *  generation may hold the rest of the window.
+     *
+     *  `last_ts` is the head's newest row, NOT the window's: [PerfRowsWindow.newestHeldTs] is read
+     *  across every generation the source opens, so a head idle for two days still names its last
+     *  turn under a 1h window. It is the row's own `ts` (epoch ms, the number /api/perf/turns prints
+     *  per row), and null when no row exists. A source that cannot say falls back to the newest row
+     *  it RETURNED, which is bounded by the window it was asked for: that is the only case where
+     *  `last_ts` reads null over a head whose newest row predates the window. */
+    fun json(read: PerfRowsWindow, window: PerfWindow, now: Long, firstBytes: MutableList<Long>? = null): JsonObject {
+        val inWindow = read.rows.filter { it.ts >= now - window.ms }
+        val (localSteps, turns) = inWindow.partition { it.fields[PerfKeys.LOCAL_STEP] == 1L }
+        val (activity, codeSteps) = localSteps.partition { it.fields[PerfKeys.ACTIVITY_QUERY] == 1L }
+        val coverage = coverage(read, window, now)
+        return buildJsonObject {
+            put("window", window.label)
+            put("count", turns.size)
+            put("local_steps", localSteps.size)
+            put("kinds", kinds(turns, activity.size, codeSteps.size))
+            put("empty", turns.isEmpty())
+            put("last_ts", read.newestHeldTs ?: read.rows.maxOfOrNull { it.ts })
+            put("coverage_known", coverage.known)
+            put("clamped", coverage.clamped)
+            put("covers_ms", minOf(coverage.coveredMs, window.ms))
+            coverage.note()?.let { put("note", it) }
+            read.readError?.let { put("read_error", it) }
+            if (read.skipped > 0) put("skipped_lines", read.skipped)
+            if (turns.isNotEmpty()) metrics(turns, firstBytes).forEach { (k, v) -> put(k, v) }
+            if (inWindow.isNotEmpty()) ioDrops(inWindow, read.dropsBefore).forEach { (k, v) -> put(k, v) }
+        }
+    }
+
+    private fun coverage(read: PerfRowsWindow, window: PerfWindow, now: Long): Coverage {
+        val oldest = read.oldestHeldTs ?: read.rows.minOfOrNull { it.ts }
+        // A row stamped in the future (a clock step) covers nothing; coverage never reads negative.
+        val covered = oldest?.let { (now - it).coerceAtLeast(0L) } ?: 0L
+        val known = read.readError == null
+        val clamped = known && oldest != null && covered < window.ms
+        return Coverage(oldest != null, covered, known, clamped, read.skipped)
+    }
+
+    private inner class Coverage(
+        val held: Boolean,
+        val coveredMs: Long,
+        val known: Boolean,
+        val clamped: Boolean,
+        val skipped: Int,
+    ) {
+        fun note(): String? = when {
+            !known && !held -> "no perf rows read; a generation could not be read, coverage unknown"
+            !known -> "a generation could not be read: ${span(coveredMs)} of rows read, coverage unknown"
+            // Every line was rejected: the file is broken (or written by something else), not idle.
+            !held && skipped > 0 -> "no valid perf rows read; $skipped unparseable lines skipped"
+            !held -> "no perf rows recorded yet"
+            clamped -> "the perf files hold ${span(coveredMs)} of rows, less than the window"
+            else -> null
+        }
+    }
+
+    /** Whole hours once there are any, minutes below that: a 45-minute reach is "45m", never "0h". */
+    private fun span(ms: Long): String =
+        if (ms >= MS_PER_HOUR) "${ms / MS_PER_HOUR}h" else "${ms / MS_PER_MINUTE}m"
+
+    private fun metrics(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
+        latencies(rows, firstBytes).forEach { (k, v) -> put(k, v) }
+        val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
+        putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
+        // Stopped and unattributed rows stay in outcomes and the denominator, never the failure count.
+        val failures = byOutcome.filterKeys(OutcomeTags::isFailed)
+        put("failure_share", failures.values.sum().toDouble() / rows.size)
+        // Per failing tag, with the same classification as the Failed request filter.
+        putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
+        put("unattributed", byOutcome[UNATTRIBUTED_OUTCOME] ?: 0)
+        counters(rows).forEach { (k, v) -> put(k, v) }
+        put("models", JsonObject(byModel(rows)))
+    }
+
+    private fun latencies(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
+        val first = rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] }
+        // The fleet reuses the same recorded facts gathered for each command, never another read or decode.
+        firstBytes?.addAll(first)
+        stats(first)?.let { put("time_before_first_byte_ms", it) }
+        stats(rows.mapNotNull(::streaming))?.let { put("time_streaming_ms", it) }
+        stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
+    }
+
+    private fun counters(rows: List<PerfRow>): JsonObject = buildJsonObject {
+        put("retries", rows.sumOf { it.fields[PerfKeys.RETRIES] ?: 0L })
+        put("refreshes", rows.sumOf { it.fields[PerfKeys.REFRESHES] ?: 0L })
+        val measured = rows.filter { PerfKeys.IN_TOKENS in it.fields && PerfKeys.CACHED_TOKENS in it.fields }
+        val inTokens = measured.sumOf { it.fields.getValue(PerfKeys.IN_TOKENS) }
+        val cached = measured.sumOf { it.fields.getValue(PerfKeys.CACHED_TOKENS) }
+        put("cache_hit_ratio", if (inTokens > 0) cached.toDouble() / inTokens else null)
+        put("peak_inflight", rows.maxOfOrNull { it.fields[PerfKeys.INFLIGHT] ?: 0L })
+    }
+
+    /** The per-row counter is cumulative for the daemon process: the drops that happened inside the
+     *  window are the increases between consecutive rows in FILE order (the sampling order; the
+     *  wall clock may step), the first one measured against the last row before the cutoff when the
+     *  source kept it. A decrease is a restart: the new process's count is taken whole. A restart
+     *  whose new count catches the old one up is invisible, so the total is a lower bound. The
+     *  "telemetry dropped" count is the spec's: rows whose own cumulative counter is positive. */
+    private fun ioDrops(rows: List<PerfRow>, dropsBefore: Long?): JsonObject {
+        var previous: Long? = dropsBefore
+        var writes = 0L
+        var droppedRows = 0
+        rows.forEach { row ->
+            val current = row.fields[PerfKeys.ASYNC_IO_DROPS] ?: return@forEach
+            val before = previous
+            val lost = when {
+                before == null -> 0L
+                current < before -> current
+                else -> current - before
+            }
+            writes += lost
+            if (current > 0L) droppedRows += 1
+            previous = current
+        }
+        return buildJsonObject {
+            put("io_drops_in_window", writes)
+            put("telemetry_dropped", droppedRows)
+        }
+    }
+
+    /** What each row in the window was: an ordinary turn, a compaction, the head's own activity answer, or a
+     *  code-mode step the head synthesized. */
+    private fun kinds(turns: List<PerfRow>, activity: Int, codeSteps: Int): JsonObject = buildJsonObject {
+        put("turn", turns.count { it.facts.compact != true })
+        put("compaction", turns.count { it.facts.compact == true })
+        put("activity_query", activity)
+        put("local_step", codeSteps)
+    }
+
+    /** Per model: its turns, its failure share, and its total latency, so a slow or failing model is named. */
+    private fun byModel(turns: List<PerfRow>): Map<String, JsonObject> =
+        turns.groupBy { it.facts.model ?: UNATTRIBUTED_MODEL }.toSortedMap().mapValues { (_, rows) ->
+            buildJsonObject {
+                put("count", rows.size)
+                put("failure_share", rows.count { OutcomeTags.isFailed(it.outcome) }.toDouble() / rows.size)
+                stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
+            }
+        }
+
+    /** First byte to stream end; absent when either mark is missing (a failed turn has no stream). */
+    private fun streaming(row: PerfRow): Long? {
+        val end = row.fields[PerfKeys.STREAM_END] ?: return null
+        return row.fields[PerfKeys.FIRST_BYTE]?.let { end - it }
+    }
+
+    /** {count, p50, p95, max} of [values], or null when there are none: the one implementation
+     *  both /api/perf and /api/perf/summary print. */
+    internal fun stats(values: List<Long>): JsonObject? {
+        val sorted = values.sorted().takeIf { it.isNotEmpty() } ?: return null
+        return buildJsonObject {
+            put("count", sorted.size)
+            put("p50", percentile(sorted, P50))
+            put("p95", percentile(sorted, P95))
+            put("max", sorted.last())
+        }
+    }
+
+    /** Nearest-rank percentile on a pre-sorted list. */
+    private fun percentile(sorted: List<Long>, q: Double): Long =
+        sorted[ceil(q * sorted.size).toInt().coerceIn(1, sorted.size) - 1]
+}

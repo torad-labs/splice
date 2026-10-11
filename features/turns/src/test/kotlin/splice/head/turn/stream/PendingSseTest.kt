@@ -1,0 +1,301 @@
+// NEW: V4-446 — stream status is one decision, with only delivered frames counted.
+package splice.head.turn.stream
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.util.ElapsedClock
+import splice.core.wire.RateLimitReply
+import splice.head.wire.FrameRecording
+import java.io.IOException
+import java.io.StringWriter
+import java.io.Writer
+
+class PendingSseTest {
+    private fun gate(holdMs: Long = 1L): PendingSse = PendingSse(
+        TurnPerf { 0L },
+        ElapsedClock { 0L },
+        null,
+        null,
+        holdMs,
+    )
+
+    private fun overflowFrame(message: String): String = "event: error\ndata: " +
+        """{"type":"error","error":{"type":"invalid_request_error","message":"$message"}}""" +
+        "\n\n"
+
+    private fun progressLine(): String = "event: content_block_delta\ndata: " +
+        """{"delta":{"type":"thinking_delta","thinking":"[splice] holding this turn open"}}""" +
+        "\n\n"
+
+    @Test
+    fun `only the first attached successful flush records arrival to client byte`() = runTest {
+        var now = 100L
+        val clock = ElapsedClock { now }
+        val perf = TurnPerf(clock = clock)
+        perf.recordArrival(10L)
+        now = 105L
+        perf.markOnce(PerfKeys.FIRST_BYTE)
+        val pending = PendingSse(perf, clock, null, null, 120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in perf.snapshot().counters)
+        pending.finish()
+        now = 150L
+        pending.attach(StringWriter())
+        assertEquals(140L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
+        now = 200L
+        pending.model("event: content_block_start\ndata: {}\n\n")
+        assertEquals(140L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
+        assertEquals(5L, perf.snapshot().marks[PerfKeys.FIRST_BYTE], "the legacy origin stays unchanged")
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `failed or cancelled attached flush has no first client byte`(cancelled: Boolean) = runTest {
+        val perf = TurnPerf { 0L }
+        val pending = PendingSse(perf, ElapsedClock { 0L }, null, null, 120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.finish()
+        val broken = object : Writer() {
+            override fun write(buffer: CharArray, offset: Int, length: Int) = Unit
+            override fun flush(): Unit = if (cancelled) {
+                throw CancellationException("synthetic cancelled flush")
+            } else {
+                throw IOException("synthetic failed flush")
+            }
+            override fun close() = Unit
+        }
+        val failure = try {
+            pending.attach(broken)
+            null
+        } catch (cancelled: CancellationException) {
+            cancelled
+        } catch (failed: IOException) {
+            failed
+        }
+        assertTrue(failure != null, "the downstream flush failure must be exercised")
+        assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in perf.snapshot().counters)
+    }
+
+    @Test
+    fun `native refusal outranks staged progress and never records a compaction answer`() = runTest {
+        val recording = FrameRecording()
+        val pending = PendingSse(
+            TurnPerf { 0L },
+            ElapsedClock { 0L },
+            null,
+            recording,
+            120_000L,
+            commitProgress = false,
+        )
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress(progressLine())
+        val reply = RateLimitReply("synthetic refusal", mapOf("retry-after" to listOf("86400")))
+        assertTrue(pending.refuse(reply))
+        pending.model("event: error\ndata: {}\n\n")
+        pending.finish()
+        assertEquals(PendingSse.Decision.Refused(reply), pending.decide())
+        assertTrue(pending.detachForRecording())
+        assertTrue(recording.frames().isEmpty(), "an HTTP refusal is not a replayable SSE answer")
+        assertEquals(0L, pending.channel.socketFrames.get())
+    }
+
+    @Test
+    fun `accepted native HTTP restores liveness progress while an unanswered request cannot commit`() = runTest {
+        val pending = PendingSse(TurnPerf { 0L }, ElapsedClock { 0L }, null, null, commitProgress = false)
+        pending.progress(progressLine())
+        pending.accepted()
+        val writing = async { pending.progress(progressLine()) }
+        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
+        pending.attach(StringWriter())
+        writing.await()
+    }
+
+    @Test
+    fun `native refusal cannot replace an already committed stream`() = runTest {
+        val pending = gate()
+        pending.finish()
+        pending.attach(StringWriter())
+        assertFalse(pending.refuse(RateLimitReply("synthetic refusal", emptyMap())))
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
+    }
+
+    @Test
+    fun `upstream size error before commitment discards the undelivered opening`() = runTest {
+        val perf = TurnPerf { 0L }
+        val pending = PendingSse(perf, ElapsedClock { 0L }, null, null, 1L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.model("event: ping\ndata: {}\n\n")
+        pending.progress(": ping\n\n")
+        pending.model(overflowFrame("prompt is too long: 210000 tokens > 200000 maximum"))
+        val selected = pending.decide()
+        assertTrue(selected is PendingSse.Decision.Overflow)
+        assertTrue((selected as PendingSse.Decision.Overflow).body.contains("prompt is too long"))
+        assertFalse(pending.channel.socketFrames.get() > 0, "staged opener did not reach a client")
+        assertEquals(null, perf.snapshot().marks[PerfKeys.FIRST_FRAME])
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.FRAMES_OUT] ?: 0L)
+    }
+
+    @Test
+    fun `a silent deadline commits SSE and a later size error stays in band`() = runTest {
+        val pending = gate()
+        pending.model("event: message_start\ndata: {}\n\n")
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
+        val writer = StringWriter()
+        pending.attach(writer)
+        pending.model(overflowFrame("prompt is too long"))
+        assertTrue(writer.toString().contains("event: message_start"))
+        assertTrue(writer.toString().contains("event: error"))
+    }
+
+    @Test
+    fun `the first visible progress delta commits before the silent deadline`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress("event: content_block_start\ndata: {}\n\n")
+        val writing = async { pending.progress(progressLine()) }
+        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
+        val wire = StringWriter()
+        pending.attach(wire)
+        writing.await()
+        assertTrue("[splice] holding this turn open" in wire.toString())
+    }
+
+    @Test
+    fun `overflow before the first visible line still returns HTTP 400`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress("event: ping\ndata: {}\n\n")
+        pending.model(overflowFrame("prompt is too long"))
+        assertTrue(pending.decide() is PendingSse.Decision.Overflow)
+        assertEquals(0L, pending.channel.socketFrames.get())
+    }
+
+    @Test
+    fun `overflow after a visible line stays inside committed SSE`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress("event: content_block_start\ndata: {}\n\n")
+        val writing = async { pending.progress(progressLine()) }
+        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
+        val wire = StringWriter()
+        pending.attach(wire)
+        writing.await()
+        pending.model(overflowFrame("prompt is too long"))
+        assertTrue(wire.toString().contains("[splice] holding this turn open"))
+        assertTrue(wire.toString().contains("event: error"))
+    }
+
+    @Test
+    fun `a first model frame commits before the silent deadline`() = runTest {
+        val perf = TurnPerf { 0L }
+        val pending = PendingSse(perf, ElapsedClock { 0L }, null, null, 120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        val firstModelFrame = async { pending.model("event: content_block_start\ndata: {}\n\n") }
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
+        val writer = StringWriter()
+        pending.attach(writer)
+        firstModelFrame.await()
+        assertTrue(writer.toString().indexOf("message_start") < writer.toString().indexOf("content_block_start"))
+        assertEquals(2L, perf.snapshot().counters[PerfKeys.FRAMES_OUT])
+    }
+
+    @Test
+    fun `a cancelled compaction records its opener and first model frame`() = runTest {
+        val perf = TurnPerf { 0L }
+        val recording = FrameRecording()
+        val pending = PendingSse(perf, ElapsedClock { 0L }, null, recording, 120_000L)
+        val opener = "event: message_start\ndata: {}\n\n"
+        val first = "event: content_block_start\ndata: {}\n\n"
+        pending.model(opener)
+        val writing = async { pending.model(first) }
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
+        assertTrue(pending.detachForRecording())
+        writing.await()
+        assertEquals(listOf(opener, first), recording.frames())
+        assertEquals(0L, pending.channel.socketFrames.get())
+    }
+
+    @Test
+    fun `client cancellation before headers releases the unwritable model frame`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        val writing = async {
+            try {
+                pending.model("event: content_block_start\ndata: {}\n\n")
+                false
+            } catch (_: IOException) {
+                true
+            }
+        }
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
+        pending.abortClient()
+        assertTrue(pending.channel.clientGone.get())
+        assertTrue(withTimeout(1_000) { writing.await() })
+        assertEquals(0L, pending.channel.socketFrames.get())
+    }
+
+    @Test
+    fun `cancelled attachment records the staged remainder before later model frames`() = runTest {
+        val recording = FrameRecording()
+        val pending = PendingSse(TurnPerf { 0L }, ElapsedClock { 0L }, null, recording, 120_000L)
+        val opener = "event: message_start\ndata: {}\n\n"
+        val ping = "event: ping\ndata: {}\n\n"
+        val progress = ": progress\n\n"
+        val first = "event: content_block_start\ndata: {}\n\n"
+        pending.model(opener)
+        pending.model(ping)
+        pending.progress(progress)
+        val writing = async { pending.model(first) }
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
+        val broken = object : Writer() {
+            override fun write(buffer: CharArray, offset: Int, length: Int): Unit =
+                throw CancellationException("client cancelled during opener")
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        try {
+            pending.attach(broken)
+        } catch (_: CancellationException) {
+            // Cancellation is the reproduction; the detached drive must still receive all frames.
+        }
+        assertTrue(pending.detachForRecording())
+        writing.await()
+        assertEquals(listOf(opener, ping, progress, first), recording.frames())
+    }
+
+    @Test
+    fun `a failed staged opener unblocks the model frame awaiting attachment`() = runTest {
+        val pending = gate()
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.finish()
+        val broken = object : Writer() {
+            override fun write(buffer: CharArray, offset: Int, length: Int): Unit = throw IOException("closed")
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        val attachFailed = try {
+            pending.attach(broken)
+            false
+        } catch (_: IOException) {
+            true
+        }
+        assertTrue(attachFailed)
+        val modelUnblocked = try {
+            withTimeout(1_000) { pending.model("event: content_block_start\ndata: {}\n\n") }
+            false
+        } catch (_: IOException) {
+            true
+        }
+        assertTrue(modelUnblocked, "a failed opener cannot strand the upstream drive")
+    }
+}

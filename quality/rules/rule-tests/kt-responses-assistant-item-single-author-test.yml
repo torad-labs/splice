@@ -1,0 +1,40 @@
+# V4-342: the red/green pins for kt-responses-assistant-item-single-author.
+#
+# Every `invalid` case is a spelling the census found or one a copy would take: the constant pair
+# (ResponsesToolSearchPolicy), the bare literals (the re-anchor and fold markers), the phase
+# written by hand, and a raw string. Every `valid` case keeps one half of the shape and must stay
+# silent: the factory itself, a call to it, another role, and a key named `assistant`.
+id: kt-responses-assistant-item-single-author
+valid:
+  # THE ONE AUTHOR: the factory's own body.
+  - |
+    public object ResponsesAssistantText {
+        public fun item(text: String, phase: AssistantPhase?): JsonObject = buildJsonObject {
+            put("role", ROLE_ASSISTANT)
+            if (phase != null) put("phase", phase.wire)
+            put("content", text)
+        }
+    }
+  # THE COMPLIANT FORM: a call to it.
+  - 'private fun reanchorMarker(): JsonObject = ResponsesAssistantText.item(MARKER_TEXT, AssistantPhase.COMMENTARY)'
+  # Another role is not an assistant item.
+  - 'val u = buildJsonObject { put("role", "user"); put("content", text) }'
+  - 'val d = buildJsonObject { put(FIELD_ROLE, ROLE_DEVELOPER); put(FIELD_CONTENT, text) }'
+  # A KEY named assistant is not the role's value.
+  - 'val counts = buildJsonObject { put("assistant", 1); put("user", 2) }'
+invalid:
+  # CENSUS: ResponsesToolSearchPolicy.assistantText, both halves constants.
+  - |
+    private fun assistantText(text: String): JsonObject = buildJsonObject {
+        put(FIELD_ROLE, ROLE_ASSISTANT)
+        put(FIELD_CONTENT, text)
+    }
+  # CENSUS: the re-anchor and fold markers, bare literals with the phase by hand.
+  - |
+    private fun continuationMarker(): JsonObject = buildJsonObject {
+        put("role", "assistant")
+        put("phase", "commentary")
+        put("content", config.markerText)
+    }
+  # A raw string spells the same word.
+  - 'val m = buildJsonObject { put("role", """assistant"""); put("content", t) }'

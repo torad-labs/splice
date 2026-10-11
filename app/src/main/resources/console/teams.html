@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teams · splice</title>
+<link rel="stylesheet" href="console.css">
+<link rel="stylesheet" href="sessions.css">
+<link rel="stylesheet" href="teams.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="mark">splice</div>
+    <!-- kit.js draws the nav from its one PAGES list, into this column before .foot. -->
+    <div class="foot">
+      <button class="icon" data-act="theme" aria-label="Day or night">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </aside>
+  <main class="page">
+    <header class="head">
+      <h1>Teams</h1>
+      <div class="read">
+        <button class="act quiet small" data-act="read">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Read again
+        </button>
+      </div>
+    </header>
+    <div class="teams" id="teams" aria-live="polite"></div>
+  </main>
+</div>
+<div id="sheet"></div>
+<script src="kit.js"></script>
+<script src="api.js"></script>
+<script src="teams.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "about": "The typecheck wall (tools/gate/src/lib/typecheck.ts): every program tsc runs, every tracked .ts that no program loads (excused, by name, with a reason), and the per-file type-error DEBT that predates the wall (baseline). The baseline may only SHRINK. The compiler is TypeScript 7, retained as the root @typescript/native alias after retiring the old console workspace.",
+  "compiler": "node_modules/@typescript/native/bin/tsc",
+  "programs": [
+    "tools/gate/tsconfig.json",
+    "tools/release/tsconfig.json",
+    "tools/e2e/tsconfig.json",
+    ".github/scripts/tsconfig.json",
+    "tools/probes/tsconfig.json",
+    "tools/screen-review/tsconfig.json",
+    ".claude/hooks/tsconfig.json"
+  ],
+  "excused": {},
+  "baseline": {}
+}

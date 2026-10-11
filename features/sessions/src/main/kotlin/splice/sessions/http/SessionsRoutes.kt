@@ -1,0 +1,293 @@
+// NEW: v0.4.0 FEATURES.md §4 — `/api/sessions` — the registry as JSON, read on every request
+// (Claude Code rewrites the files as sessions come and go). Read-only: no socket is ever opened.
+//
+// V4-130 (FEATURES.md 4.4, 6) adds, per row:
+//   repo   the git root of the row's cwd (RepoResolver: trusted roots only, worktrees folded into their
+//          shared repo, an outside cwd reported as itself with the reason). The key is left off a row
+//          with no cwd, because the console types it optional and non-nullable.
+//   team   the id of the first unarchived team the session is bound in, by created time then id
+//          (V4-131, TeamStore.bindingsOf), or null when it is bound in none or the team store is
+//          unwired. Always present, so the console groups every row.
+//   edges  `{sent, received, last_at}` from the message edge store (ActivityRoutes), left off every
+//          row when the stores are unwired, never reported as zero sends nobody watched.
+//   route  `head` | `direct` | `unknown`: the registry's SessionRoute, decided where the process
+//          environment is read. `head` itself is unchanged and still folds the last two into
+//          "unknown head".
+//   resumable  V4-421: whether a transcript with conversation bytes sits in some head's tree, which is
+//          what GET /api/sessions/{id}/resume needs. A registry entry can exist with none (a
+//          messaging bridge registers and never writes one). Left off a row when nothing was measured:
+//          no id, no head tree, or the transcript view is off.
+//   last   V4-444: the last main-thread message's role, tool, one-line redacted text and epoch-ms ts;
+//          null without an available transcript message, session id, or enabled transcript view.
+//   turns  how many turns the session has run, from the daemon's per-session accumulator, with
+//          `turns_from_ms` naming the moment the count covers from (SessionTurnsOf, which says why the
+//          pair never travels apart and why an absent `turns` is not a zero). Both keys are left off
+//          together when nothing counted the session.
+// and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
+//
+// WHICH TREES THE TRANSCRIPT ROUTE SEARCHES, in order: the head's own CLAUDE_CONFIG_DIR (the registry
+// names the head of a session splice launched), the vanilla ~/.claude tree (sessions splice did not
+// launch, and history written before V4-115 un-linked the trees), then every other head's tree. A
+// session whose head is unknown starts at the vanilla tree. The page reports the path it read, and a
+// miss reports every projects dir it searched.
+package splice.sessions.http
+
+import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.http.JsonReply
+import splice.sessions.note.PeerNoteAbi
+import splice.sessions.registry.RepoOrigin
+import splice.sessions.registry.RepoResolver
+import splice.sessions.registry.RepoRoot
+import splice.sessions.registry.SessionRecord
+import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionSource
+import splice.sessions.registry.TrustedRoot
+import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
+import splice.sessions.transcript.ModelMove
+import splice.sessions.transcript.SKIPPED_SIDECHAIN
+import splice.sessions.transcript.SKIPPED_UNPARSEABLE
+import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionActivity
+import splice.sessions.transcript.SessionTranscriptViewEnabled
+import splice.sessions.transcript.SessionTranscripts
+import splice.sessions.transcript.TranscriptLookup
+import splice.sessions.transcript.TranscriptMessage
+import splice.sessions.transcript.TranscriptPage
+import java.util.concurrent.ConcurrentHashMap
+
+internal const val UNKNOWN_HEAD = "unknown head"
+
+/** One transcript message as the route sends it. */
+private object MessageWire {
+    fun json(m: TranscriptMessage): JsonObject = buildJsonObject {
+        put("index", m.index)
+        m.messageId?.let { put("message_id", it) }
+        put("role", m.role.name.lowercase())
+        m.ts?.let { put("ts", it) }
+        put("text", m.text)
+        m.toolUse.name?.let { put("tool", it) }
+        m.toolUse.result?.let { put("result", it) }
+        m.toolUse.id?.let { put("tool_use_id", it) }
+        m.source.kind?.let { put("kind", it) }
+        m.source.from?.let { put("from", it) }
+        m.source.model?.let { put("model", it) }
+    }
+}
+
+private object MoveWire {
+    fun json(move: ModelMove): JsonObject = buildJsonObject {
+        put("message_id", move.messageId)
+        put("model", move.model)
+        move.command?.let { put("command", it) }
+        put("moved_at", move.movedAt)
+    }
+}
+
+/** `before=end` on the transcript route: read from the last message. */
+private const val FROM_END = "end"
+internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; gone = the process exited; " +
+    "stale = alive but no registry update inside the stale window"
+
+public class SessionsRoutes(
+    private val registry: SessionSource,
+    private val transcripts: SessionTranscripts,
+    private val roots: TranscriptRoots = TranscriptRoots(),
+    private val settings: SessionSettings = NoSessionSettings,
+    private val activity: ActivitySource = ActivitySource { null },
+    /** V4-131: the team store the `team` key reads, per request. */
+    private val teams: TeamSource = TeamSource { null },
+    /** The daemon-supplied per-session facts each row carries, each writing its own keys: the session's
+     *  own proved login and its turn count (SessionRowFacts, which says why they travel as one). */
+    private val facts: SessionRowFacts = SessionRowFacts(),
+) {
+    /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
+    public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
+
+    /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
+    private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()
+
+    private val viewEnabled = SessionTranscriptViewEnabled(settings::transcriptView)
+
+    /** V4-421: the head trees a resume searches, asked once per listing and held (ResumableSessions). */
+    private val resumableSessions = ResumableSessions(
+        transcripts,
+        roots.headTrees(),
+    )
+
+    public fun sessionsJson(): String = buildJsonObject {
+        val listing = registry.list()
+        val rowFacts = facts.forRecords(listing.sessions)
+        // A read that refused leaves the rows without their edges summary and says so once, beside the
+        // store's own state: the edges are a hint ON a row and the listing is the page.
+        val edgeRead = edgeRoutes.read()
+        val edges = edgeRead.summaries
+        // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
+        val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
+        val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
+        addEdgeState(this, edgeRead.reason)
+        put("note", HEADLESS_NOTE)
+        val noteVersions = PeerNoteAbi.AUDITED_VERSIONS.sorted()
+        put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
+        // An unreadable directory is not an empty one: the error rides beside the (empty) list.
+        listing.error?.let { put("error", it) }
+        put(
+            "sessions",
+            buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable, rowFacts)) } },
+        )
+    }.toString()
+
+    /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages
+     *  instead: `end`, or the `earlier` cursor the page before handed back (V4-444: a session opens at its newest). */
+    public fun transcript(sessionId: String, cursor: String?, limit: Int?, before: String? = null): JsonReply {
+        if (!viewEnabled()) return SessionTranscriptOff.reply
+        val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
+        val trees = roots.treesFor(head)
+        val size = limit ?: DEFAULT_TRANSCRIPT_PAGE
+        return when (
+            val lookup = if (before == null) {
+                transcripts.page(sessionId, trees, cursor, size)
+            } else {
+                transcripts.pageBefore(sessionId, trees, before.takeUnless { it == FROM_END }, size)
+            }
+        ) {
+            is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null))
+            is TranscriptLookup.Missing -> JsonReply(
+                HttpStatusCode.NotFound,
+                buildJsonObject {
+                    put("error", "no transcript for this session id")
+                    put("searched", buildJsonArray { lookup.searched.forEach { add(JsonPrimitive(it)) } })
+                }.toString(),
+            )
+            is TranscriptLookup.Refused -> JsonReply(
+                HttpStatusCode.BadRequest,
+                buildJsonObject { put("error", lookup.reason) }.toString(),
+            )
+        }
+    }
+
+    /** The exact same row projection for a durable-history entry after the live overlay. */
+    public fun historyRow(record: SessionRecord): JsonObject = row(record, null, Resumability(null))
+
+    /** History pages snapshot only their selected records, never shared mutable per-listing state. */
+    public val historyRows: SessionHistoryRowOf = object : SessionHistoryRowOf {
+        override fun invoke(record: SessionRecord): JsonObject = historyRow(record)
+        override fun forRecords(records: List<SessionRecord>): SessionHistoryRowOf {
+            val snapped = facts.forRecords(records)
+            return SessionHistoryRowOf { row(it, null, Resumability(null), snapped) }
+        }
+    }
+
+    /** The edge store's own state, and why a row carries no edges. [unread] is the refusal of THIS
+     *  read, which is a different fact from the store being off or deleted and does not replace it:
+     *  a store that is on and could not be read reports both, so neither reading is a lie. */
+    private fun addEdgeState(body: JsonObjectBuilder, unread: String? = null) {
+        val state = edgeRoutes.state() ?: return
+        body.put("edges_state", state.wire)
+        (unread ?: state.reason("edges"))?.let { body.put("edges_reason", it) }
+    }
+
+    private fun row(
+        s: SessionRecord,
+        edges: EdgeSummaries?,
+        resumable: Resumability,
+        rowFacts: SessionRowFacts = facts,
+    ): JsonObject = buildJsonObject {
+        put("pid", s.process.pid)
+        put("session_id", s.sessionId)
+        put("name", if (viewEnabled()) s.name else null)
+        val trees = roots.treesFor(s.head)
+        // A session that is not running shows the reply before a message of his that was taken back or never answered.
+        val running = s.status.state == "working" || s.status.state == "busy"
+        val said = if (running) SessionActivity::last else SessionActivity::answered
+        put("last", said(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
+        put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
+        put("kind", s.client.kind)
+        put("version", s.client.version)
+        put("cwd", s.process.cwd)
+        put("status", s.status.state)
+        put("waiting_for", s.status.waitingFor)
+        put("entrypoint", s.client.entrypoint)
+        put("peer_protocol", s.client.peerProtocol)
+        put("peer_features", JsonArray(s.client.peerFeatures.map(::JsonPrimitive)))
+        put("bridge_session_id", s.client.bridgeSessionId)
+        put("name_source", s.client.nameSource)
+        put("status_updated_at", s.status.updatedAt)
+        put("started_at", s.process.startedAt)
+        put("updated_at", s.process.updatedAt)
+        put("address", s.address)
+        put("head", s.head ?: UNKNOWN_HEAD)
+        put("route", routeName(s.route))
+        put("availability", JsonPrimitive(s.availability.name.lowercase()))
+        resumable.mark(this, s.sessionId)
+        repoOf(s)?.let { put("repo", repoJson(it)) }
+        put("team", s.sessionId?.let { teamOf(it) })
+        rowFacts.write(s, this)
+        val id = s.sessionId
+        addEdgeState(this)
+        if (edges != null && id != null) put("edges", edges.summary(id, s.address))
+    }
+
+    /** The wire name of the route the registry carried: `head` beside a real `head` key, `direct` for a
+     *  session that never went through splice, `unknown` for one splice cannot place. `head` keeps
+     *  printing "unknown head" for both of the last two; `route` is what tells them apart. */
+    private fun routeName(route: SessionRoute): String = when (route) {
+        is SessionRoute.Head -> "head"
+        SessionRoute.Direct -> "direct"
+        SessionRoute.Unknown -> "unknown"
+    }
+
+    /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
+    public fun repoOf(record: SessionRecord): RepoRoot? =
+        record.process.cwd?.let { resolverFor(record.head).resolve(it) }
+
+    /** The trusted root [head]'s statusline would probe [path] under, through the SAME per-head root
+     *  set [repoOf] walks with (statuslineGitRoots is per-head overridable), or null outside all. */
+    public fun statuslineRootOf(path: String, head: String?): TrustedRoot? = resolverFor(head).trustedRootOf(path)
+
+    /** V4-131: a sender's SendMessage texts, from the transcript trees this route already searches. */
+    public fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts {
+        if (!viewEnabled()) return SentTexts(null, emptyMap(), ids)
+        return transcripts.sentTexts(session, roots.treesFor(head), ids)
+    }
+
+    private fun teamOf(session: String): String? =
+        teams()?.bindingsOf(session)?.firstOrNull { (team, _) -> !team.archived }?.first?.id
+
+    private fun repoJson(repo: RepoRoot) = buildJsonObject {
+        put("root", repo.root)
+        if (repo.reason == null) RepoOrigin.of(repo.root)?.let { put("remote", it) }
+        repo.worktree?.let { put("worktree", it) }
+        repo.reason?.let { put("reason", it) }
+    }
+
+    private fun resolverFor(head: String?): RepoResolver {
+        return resolvers.computeIfAbsent(settings.gitRoots(head)) { RepoResolver(it) }
+    }
+
+    private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {
+        put("session_id", page.sessionId)
+        put("path", page.path)
+        put("messages", buildJsonArray { page.messages.forEach { add(MessageWire.json(it)) } })
+        put("next", page.next)
+        if (fromEnd) put("earlier", page.earlier)
+        put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
+        // Declared additions (V4-130, routed to splice-design): the page's denominator. What it read
+        // past, by kind, with the two kinds the orchestrator asked for named on their own.
+        put("unparseable_lines", page.skipped[SKIPPED_UNPARSEABLE] ?: 0)
+        put("sidechain_records", page.skipped[SKIPPED_SIDECHAIN] ?: 0)
+        put(
+            "skipped_records",
+            buildJsonObject {
+                page.skipped.filterKeys { it != SKIPPED_UNPARSEABLE && it != SKIPPED_SIDECHAIN }
+                    .forEach { (kind, n) -> put(kind, n) }
+            },
+        )
+    }.toString()
+}

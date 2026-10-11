@@ -1,0 +1,531 @@
+// NEW: V4-132 — a real ControlServer under the bearer, same rig as ConsoleRoutesTest, for the
+// console's new /api/auth/{head}/login[/{id}], /api/auth/{head}/switch,
+// DELETE/PATCH /api/auth/{head}/accounts/{label} and GET /api/accounts. Two facts this family
+// exists to pin: NULL MEANS UNWIRED (ports.accounts stays null on a head with no console-accounts
+// port, so those routes answer a named 5xx rather than an empty or confident-negative payload), and
+// the EXPLICIT constant segments in authAndAccountRoutes route ahead of the `{action}` catch-all —
+// a POST to .../login that fell through to authAction would answer its generic
+// `{"ok":false,"note":"not supported in-process"}` instead of a real login id, so one test below
+// pins that shape apart from the other.
+package splice.app.control
+
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.expectSuccess
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.patch
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginCredential
+import splice.accounts.claude.ClaudeLoginIdentity
+import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.claude.ClaudeLoginPlaceView
+import splice.accounts.claude.ClaudeLoginPlaces
+import splice.accounts.claude.ClaudeLoginStanding
+import splice.accounts.pool.HeadAccountPinSource
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.signin.AccountMutation
+import splice.accounts.signin.ConsoleAccounts
+import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginPrompt
+import splice.accounts.signin.LoginStart
+import splice.accounts.signin.LoginState
+import splice.accounts.signin.LoginStatus
+import splice.core.auth.AuthDescription
+import splice.core.auth.AuthProvider
+import splice.core.config.ConfigService
+import splice.core.config.MgmtKey
+import splice.core.config.StatePaths
+import splice.core.head.Head
+import splice.core.head.HeadHealth
+import splice.diagnostics.logs.HeadLogSource
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.RateLimitView
+import splice.usage.quota.UsageView
+import java.net.ServerSocket
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicReference
+
+private const val TIMEOUT_MS = 10_000L
+private const val POLL_MS = 25L
+private const val WIRED = "wired"
+private const val NO_POOL = "no-pool"
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class AuthAndAccountsRoutesTest {
+
+    // The server binds port 0 and reports what it got: no leased port can be taken before the bind.
+    private val port: Int get() = control.listeningPort
+    private val url: String get() = "http://127.0.0.1:$port"
+    private val client = HttpClient(CIO) { expectSuccess = false }
+    private val json = Json { ignoreUnknownKeys = true }
+    private lateinit var control: ControlServer
+    private lateinit var key: String
+    private val accounts = FakeConsoleAccounts()
+    private val pin = FakePin()
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
+        val mgmt = MgmtKey(paths)
+        key = mgmt.get()
+        control = controlServerFor(
+            port = 0,
+            heads = mapOf(WIRED to head(WIRED, pin), NO_POOL to head(NO_POOL, null)),
+            config = ConfigService(paths),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
+        )
+        control.ports.accounts = accounts
+        runBlocking { control.start() }
+    }
+
+    @AfterAll
+    fun tearDown() {
+        control.stop()
+        client.close()
+    }
+
+    @Test
+    fun `startLogin answers the started status, and login beats the action catch-all`() = runBlocking {
+        awaitPort()
+        accounts.onStart = { LoginStart.Started(LoginStatus("login-1", WIRED, LoginState.STARTING)) }
+
+        val response = post("/api/auth/$WIRED/login", "{}")
+
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
+        assertEquals("login-1", body["id"]!!.jsonPrimitive.content)
+        assertEquals("starting", body["state"]!!.jsonPrimitive.content)
+        assertFalse(
+            body.containsKey("note"),
+            "a route falling through to the {action} catch-all would answer authAction's " +
+                "'not supported in-process' shape instead: ${response.bodyAsText()}",
+        )
+    }
+
+    @Test
+    fun `startLogin on an unwired accounts port answers a named 503, never an empty login`() = runBlocking {
+        awaitPort()
+        control.ports.accounts = null
+        try {
+            val response = post("/api/auth/$WIRED/login", "{}")
+            assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
+            assertTrue(response.bodyAsText().contains("wired no accounts port"), response.bodyAsText())
+        } finally {
+            control.ports.accounts = accounts
+        }
+    }
+
+    @Test
+    fun `startLogin on an unsupported auth kind is a 400 naming the kind`() = runBlocking {
+        awaitPort()
+        accounts.onStart = { LoginStart.UnsupportedAuthKind("api-key") }
+
+        val response = post("/api/auth/$WIRED/login", "{}")
+
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("api-key"), response.bodyAsText())
+    }
+
+    @Test
+    fun `startLogin on an unknown head is a 404, not the accounts port`() = runBlocking {
+        awaitPort()
+        val response = post("/api/auth/no-such-head/login", "{}")
+        assertEquals(HttpStatusCode.NotFound, response.status, response.bodyAsText())
+    }
+
+    @Test
+    fun `pollLogin answers the full announcement shape for a known id`() = runBlocking {
+        awaitPort()
+        accounts.onPoll = { id ->
+            LoginStatus(
+                id,
+                WIRED,
+                LoginState.WAITING,
+                prompt = LoginPrompt(userCode = "ABCD-EFGH", verificationUri = "https://x/verify"),
+            )
+        }
+
+        val response = get("/api/auth/$WIRED/login/login-9")
+
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
+        assertEquals("waiting", body["state"]!!.jsonPrimitive.content)
+        assertEquals("ABCD-EFGH", body["user_code"]!!.jsonPrimitive.content)
+        assertEquals("https://x/verify", body["verification_uri"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `pollLogin on an unknown id is a 404`() = runBlocking {
+        awaitPort()
+        accounts.onPoll = { null }
+
+        val response = get("/api/auth/$WIRED/login/no-such-id")
+
+        assertEquals(HttpStatusCode.NotFound, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("unknown login id"), response.bodyAsText())
+    }
+
+    @Test
+    fun `switchAccount pins a known label and answers ok true`() = runBlocking {
+        awaitPort()
+        pin.result = true
+
+        val response = post("/api/auth/$WIRED/switch", """{"label":"plus-a"}""")
+
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        assertEquals("plus-a", pin.lastLabel)
+        assertEquals("true", json.parseToJsonElement(response.bodyAsText()).jsonObject["ok"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `switchAccount on an unknown label is a 400 naming it, and never pins anything`() = runBlocking {
+        awaitPort()
+        pin.result = false
+
+        val response = post("/api/auth/$WIRED/switch", """{"label":"no-such-label"}""")
+
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("no-such-label"), response.bodyAsText())
+    }
+
+    @Test
+    fun `switchAccount with a blank body is a 400, never a silent no-op`() = runBlocking {
+        awaitPort()
+        val response = post("/api/auth/$WIRED/switch", "{}")
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("label"), response.bodyAsText())
+    }
+
+    @Test
+    fun `switchAccount on a head with no pin source is a 400 naming the head`() = runBlocking {
+        awaitPort()
+        val response = post("/api/auth/$NO_POOL/switch", """{"label":"plus-a"}""")
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains(NO_POOL), response.bodyAsText())
+    }
+
+    @Test
+    fun `a session id in the switch body pins that session alone, and the same id on DELETE drops it`() = runBlocking {
+        awaitPort()
+        pin.result = true
+
+        val pinned = post("/api/auth/$WIRED/switch", """{"label":"plus-a","session":"sess-1"}""")
+        assertEquals(HttpStatusCode.OK, pinned.status, pinned.bodyAsText())
+        assertEquals("sess-1", pin.lastSession)
+
+        val dropped = delete("/api/auth/$WIRED/switch?session=sess-1")
+        assertEquals(HttpStatusCode.OK, dropped.status, dropped.bodyAsText())
+        assertEquals("sess-1", pin.lastSession)
+
+        post("/api/auth/$WIRED/switch", """{"label":"plus-a"}""")
+        assertEquals(null, pin.lastSession, "no session in the body is the head-wide pin")
+    }
+
+    @Test
+    fun `unpinAccount drops the pin and answers ok true, and again when nothing is pinned`() = runBlocking {
+        awaitPort()
+        val before = pin.unpinned
+
+        val first = delete("/api/auth/$WIRED/switch")
+        val second = delete("/api/auth/$WIRED/switch")
+
+        for (response in listOf(first, second)) {
+            assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+            val ok = json.parseToJsonElement(response.bodyAsText()).jsonObject["ok"]!!.jsonPrimitive.content
+            assertEquals("true", ok)
+        }
+        assertEquals(before + 2, pin.unpinned, "each DELETE reaches the pool's unpin; POST is not the only verb")
+    }
+
+    @Test
+    fun `unpinAccount on a head with no pin source is the pin's 400 naming the head`() = runBlocking {
+        awaitPort()
+        val response = delete("/api/auth/$NO_POOL/switch")
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("head '$NO_POOL' has no account pool"), response.bodyAsText())
+    }
+
+    @Test
+    fun `removeAccount reports ok, unknown head and a refusal through the same mutation shape`() = runBlocking {
+        awaitPort()
+        accounts.onRemove = { _, _ -> AccountMutation.Ok }
+        assertEquals(HttpStatusCode.OK, delete("/api/auth/$WIRED/accounts/plus-a").status)
+
+        accounts.onRemove = { _, _ -> AccountMutation.Refused("the primary account cannot be removed") }
+        val refused = delete("/api/auth/$WIRED/accounts/primary")
+        assertEquals(HttpStatusCode.BadRequest, refused.status)
+        assertTrue(refused.bodyAsText().contains("primary account cannot be removed"))
+
+        // A head whose accounts are not in the OAuth account file is a bad request ABOUT that head, never a 404 on
+        // a head the console has drawn: the Claude arm answers exactly this refusal for its own kind.
+        accounts.onRemove = { _, _ -> AccountMutation.UnsupportedAuthKind("client") }
+        val byKind = delete("/api/auth/$WIRED/accounts/plus-a")
+        assertEquals(HttpStatusCode.BadRequest, byKind.status, byKind.bodyAsText())
+        assertTrue(byKind.bodyAsText().contains("auth kind 'client'"), byKind.bodyAsText())
+    }
+
+    @Test
+    fun `a native login name cannot remove or rename a pooled login with that same name`() = runBlocking {
+        awaitPort()
+        var removals = 0
+        var renames = 0
+        accounts.onRemove = { _, _ ->
+            removals++
+            AccountMutation.Ok
+        }
+        accounts.onRelabel = { _, _, _ ->
+            renames++
+            AccountMutation.Ok
+        }
+        control.ports.claudeLogins = object : ClaudeLoginPlaces {
+            override fun places(): List<ClaudeLoginPlaceView> = listOf(
+                ClaudeLoginPlaceView(
+                    ClaudeLoginPlaceId.NATIVE,
+                    WIRED,
+                    ClaudeLoginCredential("/synthetic/.claude/.credentials.json", true),
+                    ClaudeLoginIdentity(ClaudeAccountIdentity("native-account", "native@synthetic.test")),
+                    null,
+                    ClaudeLoginStanding(null, null),
+                ),
+            )
+            override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
+            override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single()
+            override fun poll(id: String): LoginStatus? = null
+            override suspend fun submit(id: String, code: String): Boolean = false
+        }
+        try {
+            val removed = delete("/api/auth/$WIRED/accounts/claude")
+            val renamed = patch("/api/auth/$WIRED/accounts/claude", """{"label":"new-name"}""")
+            val removedBody = removed.bodyAsText()
+            val renamedBody = renamed.bodyAsText()
+            assertAll(
+                { assertEquals(HttpStatusCode.Conflict, removed.status, removedBody) },
+                { assertEquals(HttpStatusCode.Conflict, renamed.status, renamedBody) },
+                { assertEquals(0, removals, "a place label is not a pooled-login deletion target") },
+                { assertEquals(0, renames, "a place label is not a pooled-login rename target") },
+            )
+        } finally {
+            control.ports.claudeLogins = null
+        }
+    }
+
+    @Test
+    fun `explicit targets isolate native and pool edits and reject mismatched ids before mutation`() = runBlocking {
+        awaitPort()
+        val nativeEdits = mutableListOf<String>()
+        val poolEdits = mutableListOf<String>()
+        accounts.onRemove = { _, id ->
+            poolEdits += "remove:$id"
+            AccountMutation.Ok
+        }
+        accounts.onRelabel = { _, id, name ->
+            poolEdits += "rename:$id:$name"
+            AccountMutation.Ok
+        }
+        control.ports.claudeLogins = object : ClaudeLoginPlaces {
+            override fun places(): List<ClaudeLoginPlaceView> = listOf(
+                ClaudeLoginPlaceView(
+                    ClaudeLoginPlaceId.NATIVE,
+                    WIRED,
+                    ClaudeLoginCredential("/synthetic/native", true),
+                    ClaudeLoginIdentity(null),
+                    null,
+                    ClaudeLoginStanding(null, null),
+                ),
+            )
+            override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
+            override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single()
+            override fun poll(id: String): LoginStatus? = null
+            override suspend fun submit(id: String, code: String): Boolean = false
+            override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation {
+                nativeEdits += "remove:${place.wire}"
+                return AccountMutation.Ok
+            }
+            override suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation {
+                nativeEdits += "rename:${place.wire}:$label"
+                return AccountMutation.Ok
+            }
+        }
+        val base = "/api/auth/$WIRED/accounts/claude"
+        val body = """{"label":"new-name"}"""
+        try {
+            for (query in listOf("target_kind=unknown&target_id=claude", "target_kind=pool&target_id=other")) {
+                assertEquals(HttpStatusCode.BadRequest, delete("$base?$query").status)
+                assertEquals(HttpStatusCode.BadRequest, patch("$base?$query", body).status)
+            }
+            assertTrue(nativeEdits.isEmpty())
+            assertTrue(poolEdits.isEmpty())
+            assertEquals(HttpStatusCode.OK, delete("$base?target_kind=pool&target_id=claude").status)
+            assertEquals(HttpStatusCode.OK, patch("$base?target_kind=pool&target_id=claude", body).status)
+            control.ports.accounts = null
+            assertEquals(HttpStatusCode.OK, delete("$base?target_kind=native&target_id=claude").status)
+            assertEquals(HttpStatusCode.OK, patch("$base?target_kind=native&target_id=claude", body).status)
+            assertEquals(listOf("remove:claude", "rename:claude:new-name"), nativeEdits)
+            assertEquals(listOf("remove:claude", "rename:claude:new-name"), poolEdits)
+            val missing = "/api/auth/$WIRED/accounts/claude-splice?target_kind=native&target_id=claude-splice"
+            assertEquals(HttpStatusCode.Conflict, delete(missing).status)
+            assertEquals(HttpStatusCode.Conflict, patch(missing, body).status)
+            assertEquals(2, nativeEdits.size)
+            assertEquals(2, poolEdits.size)
+        } finally {
+            control.ports.claudeLogins = null
+            control.ports.accounts = accounts
+        }
+    }
+
+    @Test
+    fun `relabelAccount requires a new label in the body and reports the mutation`() = runBlocking {
+        awaitPort()
+        val noBody = patch("/api/auth/$WIRED/accounts/plus-a", "{}")
+        assertEquals(HttpStatusCode.BadRequest, noBody.status, noBody.bodyAsText())
+
+        accounts.onRelabel = { _, _, _ -> AccountMutation.Ok }
+        val ok = patch("/api/auth/$WIRED/accounts/plus-a", """{"label":"plus-b"}""")
+        assertEquals(HttpStatusCode.OK, ok.status, ok.bodyAsText())
+        assertEquals("plus-a" to "plus-b", accounts.lastRelabel.get())
+    }
+
+    @Test
+    fun `GET api-accounts joins the wired heads' accounts into one payload`() = runBlocking {
+        awaitPort()
+        val response = get("/api/accounts")
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        assertTrue(response.bodyAsText().contains("\"accounts\""), response.bodyAsText())
+    }
+
+    // ── rig ─────────────────────────────────────────────────────────────────────────────────────
+
+    private fun head(key: String, pinSource: HeadAccountPinSource?): ManagedHead = ManagedHead(
+        head = object : Head {
+            override val key: String = key
+            override val label: String = key
+            override val port: Int = 0
+            override suspend fun start() = Unit
+            override suspend fun stop() = Unit
+            override fun healthSnapshot(): HeadHealth = HeadHealth(true, true, port, "test")
+        },
+        auth = object : AuthProvider {
+            override suspend fun credentials() = null
+            override suspend fun describe() = AuthDescription(false, "test", emptyMap())
+        },
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarningSource { UsageWarning(warnPct = 80, warnTokens5h = 0) },
+        authSurface = HeadAuthSurface(accountPool = pinSource?.let { source -> PinnedPoolSource(source) }),
+    )
+
+    /** [HeadAccountPoolSource] AND [HeadAccountPinSource] on the same object, the same checked-cast
+     *  shape [splice.accounts.pool.SwitchRoute.switchAccount] discovers in production
+     *  (`head.pool as? HeadAccountPinSource`). */
+    private class PinnedPoolSource(
+        private val pinner: HeadAccountPinSource,
+    ) : HeadAccountPoolSource, HeadAccountPinSource by pinner {
+        override fun view(sessionId: String?): HeadAccountPoolView = HeadAccountPoolView(null, emptyList(), null)
+    }
+
+    private class FakePin : HeadAccountPinSource {
+        var result: Boolean = true
+        var lastLabel: String? = null
+        var lastSession: String? = null
+        var unpinned = 0
+
+        override fun pin(label: String, sessionId: String?): Boolean {
+            lastLabel = label
+            lastSession = sessionId
+            return result
+        }
+
+        override fun unpin(sessionId: String?) {
+            lastSession = sessionId
+            unpinned++
+        }
+    }
+
+    private class FakeConsoleAccounts : ConsoleAccounts {
+        var onStart: () -> LoginStart = { LoginStart.UnknownHead }
+        var onPoll: (String) -> LoginStatus? = { null }
+        var onRemove: (String, String) -> AccountMutation = { _, _ -> AccountMutation.UnknownHead }
+        var onRelabel: (String, String, String) -> AccountMutation = { _, _, _ -> AccountMutation.UnknownHead }
+        val lastRelabel = AtomicReference<Pair<String, String>?>(null)
+
+        override suspend fun startLogin(headKey: String, label: String?, restart: HeadRestart): LoginStart =
+            onStart()
+
+        override fun pollLogin(id: String): LoginStatus? = onPoll(id)
+
+        override suspend fun removeAccount(headKey: String, label: String): AccountMutation = onRemove(headKey, label)
+
+        override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
+            lastRelabel.set(label to newLabel)
+            return onRelabel(headKey, label, newLabel)
+        }
+    }
+
+    private suspend fun get(path: String): HttpResponse = withTimeout(TIMEOUT_MS) {
+        client.get("$url$path") { header("Authorization", "Bearer $key") }
+    }
+
+    private suspend fun post(path: String, body: String): HttpResponse = withTimeout(TIMEOUT_MS) {
+        client.post("$url$path") {
+            header("Authorization", "Bearer $key")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+    }
+
+    private suspend fun patch(path: String, body: String): HttpResponse = withTimeout(TIMEOUT_MS) {
+        client.patch("$url$path") {
+            header("Authorization", "Bearer $key")
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+    }
+
+    private suspend fun delete(path: String): HttpResponse = withTimeout(TIMEOUT_MS) {
+        client.delete("$url$path") { header("Authorization", "Bearer $key") }
+    }
+
+    private suspend fun awaitPort() {
+        val deadline = System.nanoTime() + TIMEOUT_MS * 1_000_000
+        while (System.nanoTime() < deadline) {
+            if (runCatching { ServerSocket(port).close() }.isFailure) return
+            delay(POLL_MS)
+        }
+        error("the control server never bound :$port")
+    }
+}

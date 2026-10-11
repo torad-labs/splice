@@ -64,6 +64,8 @@ async function readKept() {
   if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = { state: "running", to: ui.ver?.rollback_target, output: upgradeRun.body.run.output || [] }; pollRun(ui.run.to); }
   ks.cmds = ui.heads;
   ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
+  // the fold set is ChatGPT models, so only the commands that reach that provider offer theirs
+  ks.models = [...new Map((models.body?.heads || []).filter((r) => r.provider === "codex").flatMap((r) => r.models || []).map((m) => [m.id, { id: m.id, label: m.label || m.id }])).values()];
   // the bodies each tapped command holds in memory now, counted and never read out (GET /api/heads/{head}/wire)
   const tapped = ui.heads.filter((h) => tapOf(h) > 0);
   const wires = await Promise.all(tapped.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/wire`)));
@@ -293,8 +295,8 @@ function peaksHtml() {
       + `<span class="pnum"><b>${p.peak}</b> of ${lim || "Unlimited"} requests at once${p.peak ? `<i>${clockOf(p.at)}</i>` : ""}</span>`
       + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${p.queued}</b><em>Open on Requests</em></a>` : "<span></span>") + `</div>`;
   };
-  const all = rows.reduce((a, p) => a + (p.n || 0), 0);
-  return `<section class="tally"><h3>Today</h3><div class="card peaks"><header><span class="pall"><b>${fmt(all)}</b> requests</span></header>${rows.map(row).join("")}</div></section>`;
+  const waited = rows.reduce((a, p) => a + (p.queued || 0), 0);
+  return `<section class="tally"><h3>Today</h3><div class="card peaks">${waited ? `<header><a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued" })}">${SV.open}<span>Waited in line</span><b>${fmt(waited)}</b><em>Open on Requests</em></a></header>` : ""}${rows.map(row).join("")}</div></section>`;
 }
 const busyHtml = () => `<section class="tally"><h3>Who refused</h3>${figHtml({ why: "overloaded", what: "Overloaded today" })}`
   + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`

@@ -43,7 +43,6 @@ class SettingsCoverageTest {
             "retryBackoffBaseMs" to NOT_DRAWN,
             "retryBackoffCapMs" to NOT_DRAWN,
             "retryBackoffJitterPct" to NOT_DRAWN,
-            "foldReasoningModels" to NOT_DRAWN,
             "foldMarkerText" to NOT_DRAWN,
             "foldMaxTier" to NOT_DRAWN,
         )

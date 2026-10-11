@@ -52,6 +52,7 @@ const KNOBS = (() => {
     K("showReasoning", "Show reasoning in Claude Code", { k: "pick", opts: [["text", "As text"], ["thinking", "As thinking"], ["off", "Off"]] }, "text", { home: "reasoning", also: "display thinking" }),
     K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, false, { home: "reasoning", also: "thinking replay" }),
     K("progressLine", "Progress line while it thinks", { k: "flag" }, true, { home: "reasoning", also: "waiting status" }),
+    K("foldReasoningModels", "Keep thinking on", { k: "models" }, "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5", { home: "reasoning", also: "continue fold" }),
     K("foldMaxContinue", "Keep thinking at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3, { home: "reasoning", also: "continue" }),
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
     K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { home: "busy", also: "too large image size 413" }),
@@ -86,7 +87,7 @@ const KNOBS = (() => {
   // `providerOf` maps a command to its provider, which is all kit.js knows a colour by; a page fills it from GET /api/models.
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
-    cfg: null, providerOf: {}, perCommand: false, cmds: [], said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    cfg: null, models: [], providerOf: {}, perCommand: false, cmds: [], said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -118,6 +119,10 @@ const KNOBS = (() => {
     return { v: k.key in effective ? effective[k.key] : k.def, src: "default" };
   }
   const val = (key) => valueOf(KNOB[key]).v;
+  // A models setting is a comma list of the ids a command serves; the page names each by the label GET /api/models gives it.
+  // `st.models` is every model the commands that take this setting serve, a page fills it from that route.
+  const idsOf = (v) => String(v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  const labelOf = (id) => st.models.find((m) => m.id === id)?.label ?? id;
   function word(k, v) {
     const c = k.c;
     if (c.k === "dur") return v === 0 && c.none ? c.none : dur(Number(v));
@@ -128,7 +133,7 @@ const KNOBS = (() => {
     }
     if (c.k === "pick") return (c.opts.find(([o]) => String(o) === String(v)) || [, String(v)])[1];
     if (c.k === "flag") return v === true || v === "true" ? "On" : "Off";
-    if (c.k === "models") return (Array.isArray(v) ? v : []).join(", ");
+    if (c.k === "models") return idsOf(v).map(labelOf).join(", ");
     return v === null || v === undefined ? (c.none || "") : String(v);
   }
 
@@ -156,6 +161,12 @@ const KNOBS = (() => {
       const opts = c.k === "flag" ? [[true, "On"], [false, "Off"]] : c.opts;
       const now = c.k === "flag" ? v === true || v === "true" : v;
       return `<span class="switch">${opts.map(([o, w]) => `<button data-kpick="${id}" data-v='${esc(JSON.stringify(o))}' aria-pressed="${String(o) === String(now)}">${esc(w)}</button>`).join("")}</span>`;
+    }
+    if (c.k === "models") {
+      const ids = idsOf(v), left = st.models.filter((m) => !ids.includes(m.id)), mopen = st.menu === `model:${id}`;
+      return `<span class="mlist">${ids.map((m) => `<span class="mchip">${esc(labelOf(m))}<button class="icon" data-kact="unmodel" data-key="${k.key}" data-m="${esc(m)}" aria-label="Remove ${esc(labelOf(m))}">${ICON.close}</button></span>`).join("")}`
+        + (left.length ? `<span class="menuwrap"><button class="act quiet small" data-kmenu="model:${id}" aria-expanded="${mopen}">${PLUS}Add model</button>`
+          + (mopen ? `<div class="menu" role="menu">${left.map((m) => `<button role="menuitem" data-kact="model" data-key="${k.key}" data-m="${esc(m.id)}">${esc(m.label)}</button>`).join("")}</div>` : "") + "</span>" : "") + "</span>";
     }
     return "";
   }
@@ -233,6 +244,11 @@ const KNOBS = (() => {
       const v = JSON.parse(d.v);
       if (v === "__custom") st.custom = d.kpick;
       else sent(d.kpick, v, render);
+      return true;
+    }
+    if (d.kact === "model" || d.kact === "unmodel") {
+      const ids = idsOf(valueOf(KNOB[d.key]).v);
+      sent(d.key, (d.kact === "model" ? [...ids, d.m] : ids.filter((x) => x !== d.m)).join(","), render);
       return true;
     }
     if (d.kact === "over" || d.kact === "unover") { st.bad[`${d.key}@${d.cmd}`] = "Not saved: one command's own value is a splice.toml change"; return true; }

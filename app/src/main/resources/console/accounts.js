@@ -87,7 +87,8 @@ async function load() {
   // number beside it, never guessed into either day.
   const HOUR = 3600000;
   const wholeFrom = Math.ceil(dayStart / HOUR) * HOUR;
-  const sumOf = (rows) => rows.reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0) }), { usd: 0, unpriced: 0 });
+  // economics counts only requests that moved tokens, so turns less the unpriced ones are the priced share (fin, Oct 10)
+  const sumOf = (rows) => rows.reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0), turns: t.turns + (b.turns || 0) }), { usd: 0, unpriced: 0, turns: 0 });
   const spendToday = new Map((ec.body?.heads || []).map((h) => {
     const rows = h.buckets || [];
     const opening = wholeFrom > dayStart ? sumOf(rows.filter((b) => b.hour < wholeFrom && b.hour + HOUR > dayStart)) : null;
@@ -104,8 +105,9 @@ async function load() {
     const fam = FAMILY[h.family] || { id: h.family || h.key, name: h.family || h.key };
     const kind = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
     if (!provs.has(fam.id)) provs.set(fam.id, { id: fam.id, name: fam.name, kind, cmds: [], accounts: [] });
-    const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0 };
+    const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, turns: 0 };
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : today.usd, unpriced: b ? b.unpriced_turns : today.unpriced,
+      priced: Math.max(0, today.turns - today.unpriced),
       opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
       local: kind === "local", // nothing bills it per token, so no figure and no line
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
@@ -251,7 +253,7 @@ const GLYPH = {
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
 };
-const money = (v) => `≈$${v.toFixed(2)}`; // priced from the rate card, so an estimate on every command
+const money = (v) => `≈$${v > 0 && v < 0.01 ? v.toFixed(4) : v.toFixed(2)}`; // priced from the rate card, so an estimate on every command; under a cent to four places (fin)
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
 const locked = (pop = false) => `<span class="state limit" role="img" aria-label="At limit"><span class="lockico${pop ? " lock-pop" : ""}">${GLYPH.lock}</span></span>`;
@@ -318,28 +320,31 @@ function meterHtml(c, pick = null) {
   const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${c.cmd}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
     : `<span class="chip tag">${esc(c.cmd)}</span>`;
   if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
-  // A figure that leaves out a turn is no figure: until every turn has a price, the day shows only how many lack one
-  // (Marlin, Oct 10), never "$0.00" over turns that cost something.
+  // Marlin's mixed form (fin, Oct 10): with every request priced, the figure alone; with some, the figure for the priced
+  // ones, "≈$0.84 for 50 requests", and the rest by why under it; with none, only the count. Never "$0.00" over all.
   // a spend splice is still reading (spend_pending, used_usd null after a restart) is no figure yet: it once threw here
   // and left the whole board empty on the first open after a restart
-  const spent = c.unpriced || c.local || c.spent == null ? "" : money(c.spent);
+  const spent = c.local || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
+  const share = spent && c.unpriced ? `for ${reqs(c.priced)}` : "";
   if (!c.budget) {
-    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${unpriced(c)}</span>`
+    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${openingRow(c)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
-  const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${noPrice(c)}` : ""}`;
+  const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${[share, noPrice(c)].filter(Boolean).join(", ")}` : ""}`;
   // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
   const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${refills(day)}</div>`;
+    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c, share)}</button>${refills(day)}</div>`;
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
 // here the words take their own line under the figure, with no dot (fin)
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
 // Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
-const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "request" : "requests"} ${c.onPlan ? "on your plan" : "with no price"}`;
-const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
+const reqs = (n) => `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"}`;
+const noPrice = (c) => `${reqs(c.unpriced)} ${c.onPlan ? "on your plan" : "with no price"}`;
+// with a budget the priced share leads the line under the meter, since "≈$0.84 for 50 requests of $20" misreads (fin)
+const unpriced = (c, lead = "") => (c.unpriced && !c.local ? `<span class="unpriced own">${[lead, noPrice(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
 // The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
 // the hourly totals cannot split them, so they are said once, apart from the day's figure.
 //

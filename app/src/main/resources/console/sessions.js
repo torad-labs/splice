@@ -21,7 +21,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {} };
+const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Set() };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
@@ -281,13 +281,15 @@ function paneHtml() {
   if (!s) return "";
   const L = look(s);
   const stop = stopHtml(s, "act", ICON.stop);
+  const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Moving</button>`
+    : `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>${ui.menu === s.id ? choicesHtml(s) : ""}`) : "";
   const close = `<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`;
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s, "pane")}</div>` : "";
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
-    + `<div class="acts">${stop}${close}</div></header>${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
+    + `<div class="acts">${stop}${cont}${close}</div></header>${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
 }
 
 /** The choice on a permission's screen that refuses it ("No, and tell Claude what to do differently"), or null. */
@@ -371,28 +373,43 @@ async function readUsage(s) {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const reads = await Promise.all(state.heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
     head: h.key, since: String(+from), time_zone: zone, n: "1", local: "0", session: s.id.slice(0, 8) })}`)));
-  let seen = false; const used = { requests: 0, tin: 0, tout: 0, noIn: 0, noOut: 0, cost: 0, unpriced: 0, from: +from };
+  let seen = false; const used = { requests: 0, tin: 0, tout: 0, noIn: 0, noOut: 0, cost: 0, priced: 0, plan: 0, noPrice: 0, from: +from };
   reads.forEach((r, i) => {
     const t = (r.body?.heads || []).find((x) => x.key === state.heads[i].key)?.usage?.totals;
     if (!t) return;
     seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0;
     used.noIn += t.missing_input_requests || 0; used.noOut += t.missing_output_requests || 0;
-    used.cost += t.cost_usd || 0; used.unpriced += (t.unpriced_requests || 0) + (t.requests && t.cost_usd == null ? 1 : 0);
+    // a request that moved no tokens (refused, cut) is no money fact, and a local model's costs nothing: neither is counted
+    const plan = t.unpriced_plan_requests || 0, local = t.unpriced_local_requests || 0;
+    const moved = Math.max(0, (t.requests || 0) - (t.unanswered_requests || 0) - local);
+    const unpriced = Math.max(0, (t.unpriced_requests || 0) - local), priced = Math.max(0, moved - unpriced);
+    used.plan += plan; used.noPrice += unpriced - plan;
+    if (t.cost_usd == null) used.noPrice += priced; else { used.cost += t.cost_usd; used.priced += priced; }
   });
   state.usage[s.id] = seen ? used : null;
   if (ui.open === s.id) render({ stick: false });
 }
 /** Today's use, one quiet line whose whole length opens its requests on Requests from midnight (hitstop 47fa7e9).
- *  A figure no request reported is left out, never summed to 0, and a cost is said only when every request is priced:
- *  a cost over some of them would read as the whole session's. */
+ *  A figure no request reported is left out, never summed to 0. Money is Marlin's mixed form (fin, Oct 10): "≈$1.20"
+ *  alone when every request that moved tokens is priced, else the priced share tied to its count, "≈$1.20 for 8", then
+ *  the rest by why they have no price, biggest first, each only when above 0. Under a cent reads to four places. */
 function usageHtml(s) {
   const u = state.usage[s.id];
   if (!u?.requests) return "";
   const num = (v) => `<span class="num">${v}</span>`;
   const figs = [`${num(u.requests.toLocaleString("en-US"))} ${u.requests === 1 ? "request" : "requests"}`,
     u.noIn < u.requests ? `${num(kTok(u.tin))} tokens in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} ${u.noIn < u.requests ? "" : "tokens "}out` : "",
-    u.unpriced === 0 ? num(`≈${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`) : ""].filter(Boolean);
+    ...moneyOf(u)].filter(Boolean);
   return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}</a>`;
+}
+
+function moneyOf(u) {
+  const num = (v) => `<span class="num">${v}</span>`;
+  const rest = [[u.plan, "on your plan"], [u.noPrice, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
+    .map(([n, w]) => `${num(n.toLocaleString("en-US"))} ${w}`);
+  if (!u.priced) return rest;
+  const usd = num(`≈$${u.cost < 0.01 ? u.cost.toFixed(4) : u.cost.toFixed(2)}`);
+  return rest.length ? [`${usd} for ${num(u.priced.toLocaleString("en-US"))}`, ...rest] : [usd];
 }
 
 /** One session's screen, read the moment it opens, so its Message field is there without waiting for the next read. */
@@ -415,6 +432,67 @@ async function stop(s) {
   ui.stopping.delete(s.id);
   const refused = stopRefusal(res);
   if (refused) ui.failed.set(s.id, refused);
+  await reload();
+}
+
+// ---------- Continue on ----------
+// The session goes on under another command's model: the same id and transcript, resumed there (POST .../continue,
+// SessionContinue). A session waiting on an answer can't move, since the move types into its prompt; one splice can't
+// reach can't either, except one whose client already exited, which goes on in a new terminal.
+const movable = (s) => s.state !== "needs" && (s.state === "ended" || drivable(s)) && state.heads.some((h) => h.key !== s.head);
+
+/** One line per model on each other command, on the account that command would send as now (its pool's next pick,
+ *  else its one account), with that account's nearest-full window as Accounts draws it (the mock's choicesOf, fin).
+ *  Commands with room first, the soonest week to reset first and the 5 hours breaking a tie (his Oct 4 rule); keys,
+ *  which report no quota, after them; then a command at its limit or signed out, disabled. */
+async function readChoices(s) {
+  const [ac, md, ks] = await Promise.all(["/api/accounts", "/api/models", "/api/keys"].map((p) => API.get(p)));
+  const rows = ac.body?.accounts || [], keys = ks.body?.keys || [];
+  const groups = await Promise.all((md.body?.heads || []).filter((h) => h.head !== s.head && h.models?.length).map(async (h) => {
+    const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }));
+    if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
+      const key = keys.find((k) => (k.heads || []).some((x) => x.head === h.head));
+      const missing = !key || key.heads.find((x) => x.head === h.head).source === "missing";
+      return { head: h.head, names, kind: missing ? "signedout" : "key", acct: key?.name ?? null, rank: missing ? 3 : 2 };
+    }
+    const mine = rows.filter((r) => (r.heads || []).includes(h.head));
+    const next = mine.length > 1 ? (await API.get(`/api/auth/${encodeURIComponent(h.head)}/order`)).body?.next_target : null;
+    const row = mine.find((r) => (r.account_labels?.[h.head] || r.label) === next) || mine.find((r) => r.credential_present) || mine[0];
+    const near = [[row?.five_hour_used_percent, row?.five_hour_reset_epoch_seconds], [row?.seven_day_used_percent, row?.seven_day_reset_epoch_seconds]]
+      .filter(([pct]) => pct != null).reduce((a, w) => (!a || w[0] > a[0] ? w : a), null);
+    const kind = !row || !row.credential_present || row.refusal ? "signedout" : near && near[0] >= 100 ? "limit" : "room";
+    return { head: h.head, names, kind, acct: row?.display_name ?? null, plan: row?.plan ? row.plan.charAt(0).toUpperCase() + row.plan.slice(1) : null,
+      used: near ? Math.round(near[0]) : null, until: near?.[1] ? new Date(near[1] * 1000) : null, rank: kind === "room" ? 0 : 3,
+      long: row?.seven_day_reset_epoch_seconds ?? Infinity, short: row?.five_hour_reset_epoch_seconds ?? Infinity };
+  }));
+  return groups.sort((x, y) => x.rank - y.rank || x.long - y.long || x.short - y.short);
+}
+function choicesHtml(s) {
+  const groups = ui.choices[s.id];
+  if (!groups) return "";
+  const acctOf = (g) => (!g.acct ? "<span></span>" : g.kind === "key" || (g.kind === "signedout" && !g.plan && /^[A-Z0-9_]+$/.test(g.acct))
+    ? `<span class="acct"><span class="var">${esc(g.acct)}</span></span>` : acctPlanHtml(g.acct, g.plan));
+  return `<div class="menu models" role="menu">${groups.map((g, gi) => g.names.map((n, i) => {
+    const room = g.kind === "room" && g.used != null ? `<span class="room"><span class="bar sub"><b style="width:${g.used}%"></b></span><span class="pct">${g.used}%<span class="used">used</span></span></span>`
+      : g.kind === "limit" ? `<span class="room out"><span class="pct limit">100%<span class="used">used</span></span>${g.until ? `${ICON.lock}Resets ${backWord(g.until)}` : ""}</span>`
+      : g.kind === "signedout" ? `<span class="room out">Signed out</span>` : `<span class="room"></span>`;
+    const off = g.kind === "limit" || g.kind === "signedout";
+    return `<button role="menuitem" class="line${gi && !i ? " plan" : ""}" style="--c:${colorOf(state.providerOf[g.head])}" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(g.head)}" data-model="${esc(n.id)}"${off ? " disabled" : ""}>`
+      + `<span class="blot"></span><span class="mname">${esc(n.label)}</span>${acctOf(g)}${room}</button>`;
+  }).join("")).join("")}</div>`;
+}
+async function openChoices(s) {
+  if (ui.menu === s.id) { ui.menu = null; render({ stick: false }); return; }
+  ui.menu = s.id; ui.choices[s.id] = await readChoices(s);
+  if (ui.menu === s.id) render({ stick: false });
+}
+/** Move it, then read the session again: it comes back Idle on the new command, and his next message runs there. */
+async function continueOn(s, head, model) {
+  ui.menu = null; ui.moving.add(s.id); ui.failed.delete(s.id); render({ stick: false });
+  const res = await API.post(sessionPath(s, "continue"), { head, model });
+  ui.moving.delete(s.id);
+  if (!res.ok) ui.failed.set(s.id, refusalOf(res, "It could not be moved"));
+  else ui.focusSay = true;
   await reload();
 }
 
@@ -448,6 +526,7 @@ async function send(s, text, clear = false) {
 }
 // Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.menu) { ui.menu = null; render({ stick: false }); return; }
   if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
   delete ui.leftover[ui.open]; ui.focusSay = true; render({ stick: false });
 });
@@ -468,6 +547,8 @@ document.getElementById("q").addEventListener("input", (e) => {
   render();
 });
 document.addEventListener("click", (e) => {
+  // a press anywhere but the menu or its button closes Continue on's menu, as a console menu does
+  if (ui.menu && !e.target.closest(".menu.models, [data-act=menu]")) { ui.menu = null; render({ stick: false }); }
   const el = e.target.closest("[data-act], [data-open]");
   if (!el) return;
   if (!el.dataset.act) { // a card: open it
@@ -481,6 +562,8 @@ document.addEventListener("click", (e) => {
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.auto = false; render(); break;
     case "stop": if (s) stop(s); break;
+    case "menu": if (s) openChoices(s); break;
+    case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model); break;
     case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;
     case "keep": if (s) { delete ui.leftover[s.id]; ui.focusSay = true; render({ stick: false }); } break;
     case "answer": if (s && !ui.sending.has(s.id)) answer(s, Number(el.dataset.i)); break;

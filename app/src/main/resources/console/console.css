@@ -247,6 +247,8 @@ button { font: inherit; color: inherit; }
 .money { font: 500 1.1rem/1 var(--font-data); white-space: nowrap; }
 .money em { font-style: normal; color: var(--text-mute); }
 .unpriced.own { display: block; margin: .4rem 0 0; white-space: normal; line-height: 1.3; text-wrap: balance; }  /* its own line under the figure, no dot */
+.unpriced .part { white-space: nowrap; }  /* a narrow meter breaks the line at its dot, never inside "3 requests with no price" */
+.money .unpriced.own { width: min-content; min-width: 100%; }  /* wraps to the figure above it, so it never takes the bar's room */
 /* A window whose reset has passed: the same cell, without the ring that would hold its place. It reads as the
    quieter of the two, because it describes a window that has ended rather than one that is running. */
 /* a reset that has gone by: muted, and carrying the ring's 2rem plus the row's .55rem gap so its time still starts

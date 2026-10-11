@@ -133,6 +133,33 @@ class SessionsActivityTest {
     }
 
     @Test
+    fun `a line cut short drops the stop or comma before its ellipsis`(@TempDir tmp: Path) {
+        val whole = "Today and tonight, on the desk and on the live daemon alike, the build is green and the branch " +
+            "is pushed, so the lamp moves up with the cards that need you."
+        assertEquals(whole.dropLast(1) + "\u2026", textOf(tmp, "$whole Afterwards the reviewer reads the range."))
+    }
+
+    @Test
+    fun `markdown is read, not shown, so headings, bullets, quotes, bold, italic, code and links keep only their words`(
+        @TempDir tmp: Path,
+    ) {
+        val said = "## Done\n- **The fix.** Each _card_ reads *whole*.\n" +
+            "> See `sessions.js` and [the spec](docs/spec.md)."
+        assertEquals("Done The fix. Each card reads whole. See sessions.js and the spec.", textOf(tmp, said))
+    }
+
+    @Test
+    fun `a star or underscore inside a word or a sum is left alone`(@TempDir tmp: Path) {
+        val said = "Set max_tokens_per_turn to 5 * 3 and glob *.kt files"
+        assertEquals(said, textOf(tmp, said))
+    }
+
+    private fun textOf(tmp: Path, said: String): String {
+        val last = row(tmp, LastSource(TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, said))).getValue("last")
+        return last.jsonObject.getValue("text").jsonPrimitive.content
+    }
+
+    @Test
     fun `what a person or the model said is passed through as text`(@TempDir tmp: Path) {
         val said = TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "I built it. {\"command\":\"x\"}")
         val last = row(tmp, LastSource(said)).getValue("last").jsonObject

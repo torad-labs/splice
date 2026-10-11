@@ -14,6 +14,18 @@ private const val ACTIVITY_TEXT_CHARS = 160
 internal object SessionActivity {
     private val whitespace = Regex("[\\s\\p{Z}]+")
 
+    // Markdown the card has no place to draw (splice-lead, Oct 11): a heading, bullet or quote mark at a line's start,
+    // a link's target, and the marks around bold, italic and code. The words between the marks stay.
+    private val lineMarks = Regex("(?m)^[ \\t]*(?:#{1,6}[ \\t]+|[-*+][ \\t]+|>[ \\t]+)+")
+    private val link = Regex("\\[([^\\]\\n]+)]\\([^)\\s]+\\)")
+    private val strong = Regex("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1")
+    private val starred = Regex("(?<![*\\w])\\*(?=\\S)(.+?)(?<=\\S)\\*(?![*\\w])")
+    private val underscored = Regex("(?<![_\\w])_(?=\\S)(.+?)(?<=\\S)_(?![_\\w])")
+
+    // what a line cut short never ends on before its ellipsis, so it reads "fin…", never "fin.…" or "fin,…"
+    private fun trailing(c: Char): Boolean =
+        c.isWhitespace() || c in ".,;:!?" || Character.getType(c) == Character.DASH_PUNCTUATION.toInt()
+
     fun last(
         sessionId: String?,
         cwd: String?,
@@ -63,17 +75,25 @@ internal object SessionActivity {
      *  description cannot push the description out; what was said is shown as it was said. */
     private fun shown(message: TranscriptMessage): String {
         val tool = message.toolUse.name
-        if (message.role != TranscriptRole.ASSISTANT || tool == null) return message.text
+        if (message.role != TranscriptRole.ASSISTANT || tool == null) return plain(message.text)
         return CallSummary.of(tool, message.text)
     }
 
+    /** What was said, with its markdown read rather than shown: a call's summary keeps its marks, where a star can be a
+     *  glob. */
+    private fun plain(said: String): String {
+        val unmarked = said.replace(lineMarks, "").replace(link, "$1").replace("`", "")
+        return unmarked.replace(strong, "$2").replace(starred, "$1").replace(underscored, "$1")
+    }
+
     /** A line past the cap ends on its last whole word and an ellipsis, so a card never shows a word cut in half
-     *  (splice-lead, Oct 11: "If fin give"); one word longer than the cap is cut, and says so with the ellipsis. */
+     *  (splice-lead, Oct 11: "If fin give"), and on no stop or comma before it; one word longer than the cap is cut,
+     *  and says so with the ellipsis. */
     private fun clipped(line: String): String {
         if (line.length <= ACTIVITY_TEXT_CHARS) return line
         val room = line.take(ACTIVITY_TEXT_CHARS - 1)
         val word = if (line[room.length] == ' ') room else room.substringBeforeLast(' ', "")
-        return (word.trimEnd().ifEmpty { room }) + "\u2026"
+        return (word.trimEnd(::trailing).ifEmpty { room }) + "\u2026"
     }
 
     /** The port supplies redacted text; collapse and clip only after that redaction. */

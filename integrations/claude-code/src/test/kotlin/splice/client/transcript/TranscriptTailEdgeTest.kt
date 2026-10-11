@@ -139,4 +139,38 @@ class TranscriptTailEdgeTest {
         assertEquals(last, fixture.reader.last(ACTIVITY_ID, listOf(tmp)))
         assertEquals(read, fixture.bytes, "the large record is a one-time read per snapshot")
     }
+
+    @Test
+    fun `a background task's notification is never the line, so the card keeps what was said before it`(
+        @TempDir tmp: Path,
+    ) {
+        val fixture = ActivityTranscript(tmp)
+        val notice = """{"type":"user","origin":{"kind":"task-notification"},"message":{"role":"user","content":""" +
+            """"<task-notification>\n<task-id>synthetic-task</task-id>\n<status>completed</status>\n""" +
+            """<summary>Monitor event: synthetic watch</summary>\n<event>[Monitor] synthetic</event>\n""" +
+            """</task-notification>"}}"""
+        fixture.write(
+            listOf(
+                ACTIVITY_USER,
+                """{"type":"assistant","message":{"id":"synthetic-said","content":[""" +
+                    """{"type":"text","text":"Watching the build."}]}}""",
+                notice,
+            ),
+        )
+        val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
+        assertEquals(TranscriptRole.ASSISTANT, last?.role)
+        assertEquals("Watching the build.", last?.text)
+    }
+
+    @Test
+    fun `a transcript holding only notifications has no line`(@TempDir tmp: Path) {
+        val fixture = ActivityTranscript(tmp)
+        fixture.write(
+            listOf(
+                """{"type":"user","message":{"role":"user","content":""" +
+                    """"<task-notification><task-id>synthetic-task</task-id></task-notification>"}}""",
+            ),
+        )
+        assertEquals(null, fixture.reader.last(ACTIVITY_ID, listOf(tmp)))
+    }
 }

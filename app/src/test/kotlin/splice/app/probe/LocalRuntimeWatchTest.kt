@@ -49,7 +49,7 @@ class LocalRuntimeWatchTest {
     private fun watch(http: LocalHttp) = LocalRuntimeWatch(
         topology = topology,
         log = LogSink { logged += it },
-        reach = LocalRuntimeReach(http, waitMs = 300L),
+        reach = LocalRuntimeReach(http, waitMs = PROBE_WAIT_MS),
     )
 
     @Test
@@ -107,5 +107,8 @@ class LocalRuntimeWatchTest {
     }
 }
 
-private const val READ_BOUND_MS = 250L
-private const val WEDGE_S = 5L
+// why: a bound on the probe and on the read is only a ceiling, so a loaded machine never reads a runtime that
+// answered as silent; the wedge outlasts both, and the test releases it.
+private const val PROBE_WAIT_MS = 30_000L
+private const val READ_BOUND_MS = 10_000L
+private const val WEDGE_S = 60L

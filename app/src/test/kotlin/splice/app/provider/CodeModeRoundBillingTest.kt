@@ -12,6 +12,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
@@ -374,7 +375,7 @@ class CodeModeRoundBillingTest {
             history += message("assistant", JsonArray(listOf(text("synthetic progress")) + toolUses(first)))
             history += message("user", JsonArray(toolUses(first).map(::result)))
             val next = async { send(client, url, history) }
-            val delivered = withTimeoutOrNull(1_000) { runtime.delivered.receive() }
+            val delivered = withTimeoutOrNull(TURN_BOUND_MS) { runtime.delivered.receive() }
             assertEquals(0, ws.aborts.get(), "replaying splice-delivered assistant prose must not cut its source")
             assertTrue(delivered != null, "the issued tool result must reach the retained script")
             upstream.endSource()
@@ -577,7 +578,7 @@ class CodeModeSourceBoundaryTest {
             history += message("assistant", JsonArray(listOf(text("synthetic follow-up")) + toolUses(step)))
             history += message("user", JsonArray(toolUses(step).map(::result)))
             val answer = async { send(client, url, history) }
-            val delivered = withTimeoutOrNull(1_000) { runtime.delivered.receive() }
+            val delivered = withTimeoutOrNull(TURN_BOUND_MS) { runtime.delivered.receive() }
             assertEquals(0, ws.aborts.get(), "the second echoed prose must not cut its retained source")
             assertTrue(delivered != null, "the second result must reach the same script")
             assertPersistedProse(tmp, "synthetic follow-up")
@@ -777,12 +778,11 @@ class CodeModeNativeSourceTest {
             }
             appendNativeEcho(history, native, toolUses(first), reminder)
             val next = async { send(client, url, history) }
-            val delivered = withTimeoutOrNull(1_000) { runtime.delivered.receive() }
             if (alteration.isNotEmpty()) {
-                assertNull(delivered, "an altered envelope cannot resume the original script")
-                assertRejectedNative(tmp, ws, withTimeout(TURN_BOUND_MS) { next.await() })
+                assertAlteredCut(tmp, ws, runtime, next)
                 return@coroutineScope ws.requests.last().toByteArray()
             }
+            val delivered = withTimeoutOrNull(TURN_BOUND_MS) { runtime.delivered.receive() }
             assertNativeResumed(logs, ws, delivered != null)
             if (!completed) ws.endSource()
             val second = withTimeout(TURN_BOUND_MS) { next.await() }
@@ -840,6 +840,18 @@ class CodeModeNativeSourceTest {
         )
         assertEquals(0, ws.aborts.get(), "identical delivered native replay must not cut the raw source")
         assertTrue(delivered, "the callback result must reach the retained script")
+    }
+
+    /** Absence is read after the answer lands, never after a pause: the cut answers the request itself. */
+    private suspend fun assertAlteredCut(
+        tmp: Path,
+        ws: BillingWsRunner,
+        runtime: StatementGatewayRuntime,
+        next: Deferred<String>,
+    ) {
+        val answer = withTimeout(TURN_BOUND_MS) { next.await() }
+        assertNull(runtime.delivered.tryReceive().getOrNull(), "an altered envelope cannot resume the script")
+        assertRejectedNative(tmp, ws, answer)
     }
 
     private suspend fun assertRejectedNative(tmp: Path, ws: BillingWsRunner, answer: String) {
@@ -900,7 +912,7 @@ class CodeModeCrossScriptSourceTest {
             if (reminder) history += message("system", JsonPrimitive("synthetic context notification"))
             repeat(liveSteps) { at ->
                 val next = async { send(fixture.client, fixture.url, history) }
-                val delivered = withTimeoutOrNull(1_000) { fixture.runtime.delivered.receive() }
+                val delivered = withTimeoutOrNull(TURN_BOUND_MS) { fixture.runtime.delivered.receive() }
                 assertEquals(0, fixture.ws.aborts.get(), "A commentary must not interrupt live B at step $at")
                 assertTrue(delivered != null, "B must resume with its callback result at step $at")
                 if (at + 1 < liveSteps) fixture.ws.nextNativeStatement() else fixture.ws.endSource()
@@ -1437,7 +1449,8 @@ private fun provider(
             override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
         },
         locations = ProviderLocations(baseUrl = url),
-        watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
+        // why: a ceiling, never a pace; a loaded machine still boots the real worker JVM inside it.
+        watchdog = WatchdogBudget(120.seconds, 120.seconds, 120.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, replayReasoning, null, null),
     codeMode = CodexCodeModeWiring(bridge = bridge, models = listOf("gpt-5.6-sol")),

@@ -58,6 +58,9 @@
   --shaft: rgba(255, 246, 220, .35);
   color-scheme: light;
 }
+/* the lamp's socket is a dark disc in both themes, so a glyph in it takes the night's text colours: the day's own are dark
+   on dark and the icons vanished (console walk, 4d85f22) */
+[data-theme="day"] .lamp { --text-mute: #9c8f70; --text-body: #cbbd9d; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }

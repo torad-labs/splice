@@ -200,7 +200,8 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .pick-menu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 30rem; overflow: auto; grid-row: 1; }
 .pick-menu button { display: flex; align-items: center; gap: .6rem; }
 .pick-menu .empty { margin: 0; padding: .7rem .9rem; font: 500 1rem/1.35 var(--font-name); color: var(--text-mute); }
-.compose footer { display: flex; justify-content: flex-end; gap: .8rem; margin-top: 1.8rem; }
+.compose footer { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; margin-top: 1.8rem; }
+.compose .foothint { margin: 0 auto 0 0; max-width: 32rem; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); }
 
 /* ---------- nothing to show yet ---------- */
 .no-teams { display: flex; align-items: center; gap: 1.6rem; max-width: 50rem; min-height: 6rem; padding: 1.4rem 1.8rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }

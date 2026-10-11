@@ -409,10 +409,13 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
     `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
 
-const commandOf = (head) => state.heads.find((h) => h.key === head)?.command || head;
+// a head key no configured command has (one removed from config) names nothing; the sessions route's own "unknown head" still prints
+const commandOf = (head) => state.heads.find((h) => h.key === head)?.command || (head === "unknown head" ? head : "");
 const modelLabel = (head, id) => {
   const rows = state.models[head] || [];
-  return (id ? rows.find((m) => m.id === id)?.label || id : rows[0]?.label) || "";
+  // a session reports its model as the command's prefix, two dashes, then the model's id: the label is under the id
+  const bare = id?.includes("--") ? id.slice(id.indexOf("--") + 2) : id;
+  return (id ? rows.find((m) => m.id === id || m.id === bare)?.label || bare : rows[0]?.label) || "";
 };
 
 // ---------- what a member did: the tool's mark and its object, never splice's sentence ----------

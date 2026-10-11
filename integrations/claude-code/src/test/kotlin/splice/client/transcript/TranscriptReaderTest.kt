@@ -148,6 +148,22 @@ class TranscriptReaderTest {
     }
 
     @Test
+    fun `a reply Claude Code wrote itself stays hidden after an old move rewrote its synthetic mark`() {
+        val said = """{"type":"user","message":{"role":"user","content":"hold silent"}}"""
+        val rewritten = """{"type":"assistant","isApiErrorMessage":false,"message":{""" +
+            """"id":"214d7588-8edc-43ce-b378-3aff5f2496f4","role":"assistant","model":"claude-fable-5-1",""" +
+            """"stop_reason":"stop_sequence","stop_sequence":"","usage":{"input_tokens":0,"output_tokens":0},""" +
+            """"content":[{"type":"text","text":"No response requested."}]}}"""
+        // a real reply that used nothing still shows: its id is the API's
+        val empty = """{"type":"assistant","message":{"id":"msg_0","role":"assistant","model":"claude-fable-5-1",""" +
+            """"stop_sequence":"","usage":{"input_tokens":0,"output_tokens":0},""" +
+            """"content":[{"type":"text","text":"ok"}]}}"""
+        transcript(home.resolve(".claude"), listOf(said, rewritten, empty))
+        val page = found(TranscriptReader().page(ID, listOf(home.resolve(".claude")), null, 100))
+        assertEquals(listOf("hold silent", "ok"), page.messages.map { it.text })
+    }
+
+    @Test
     fun `pages continue where the last one stopped and never split a message`() {
         transcript(home.resolve(".claude"))
         val reader = TranscriptReader()

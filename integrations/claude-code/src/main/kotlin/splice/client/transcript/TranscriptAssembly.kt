@@ -22,6 +22,30 @@ private const val UNTYPED = "untyped"
  *  turn nobody answered. Nobody said it, so it is counted, not shown; its real API errors are read before this. */
 private const val SYNTHETIC = "<synthetic>"
 
+// why: Claude Code mints its own replies an id that is a bare UUID; every API reply id has a prefix (msg_)
+private val CLIENT_MINTED_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+/** A reply Claude Code wrote itself: marked `<synthetic>`, or, where an old move rewrote that mark (0.3.x, and 0.4.0
+ *  before p176), a client-minted id with nothing used and an empty stop sequence. Its API errors are not. */
+private object ClientReplies {
+    fun synthetic(record: JsonObject, message: JsonObject?): Boolean = when {
+        message == null -> false
+        message["model"] == JsonPrimitive(SYNTHETIC) -> true
+        record["isApiErrorMessage"] == JsonPrimitive(true) -> false
+        else -> rewritten(message)
+    }
+
+    /** The shape Claude Code gives its own reply, which a model rewrite leaves alone. */
+    private fun rewritten(message: JsonObject): Boolean {
+        val usage = message["usage"] as? JsonObject
+        val nothingUsed = usage != null && listOf("input_tokens", "output_tokens").all {
+            usage[it] == JsonPrimitive(0)
+        }
+        return nothingUsed && JsonScalars.str(message, "stop_sequence") == "" &&
+            JsonScalars.str(message, "id")?.let(CLIENT_MINTED_ID::matches) == true
+    }
+}
+
 /** How Claude Code opens the text it files when a turn is stopped or a tool call refused, whether or not it goes on to
  *  say "for tool use". */
 private const val INTERRUPTED_MARKER = "[Request interrupted by user"
@@ -87,7 +111,7 @@ internal class PageAssembly(
         val message = record[MESSAGE] as? JsonObject
         val ts = records.timestamp(record)
         return when {
-            message?.get("model") == JsonPrimitive(SYNTHETIC) -> count("synthetic")
+            ClientReplies.synthetic(record, message) -> count("synthetic")
             type == "assistant" && message != null -> assistant(message, messageId, ts)
             type == "user" && message != null -> user(record, message, ts)
             type == "system" -> system(record, ts)

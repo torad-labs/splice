@@ -11,6 +11,7 @@
 // this record real equality rather than assume it has some.
 package splice.control.mcp
 
+import splice.core.config.Knob
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -45,16 +46,12 @@ public fun interface McpServerCeiling {
     public operator fun invoke(): Int
 }
 
-/** The ceiling's default, named because a bare literal in the reader's body is a magic number where the same
- *  number as a property default was not. It mirrors Knob.MCP_MAX_SERVERS, which is the operator-facing source. */
-private const val DEFAULT_MAX_SERVERS = 32
-
 public data class McpHostConfig(
     /** A server with no open notification stream and no request for this long is closed (see [McpIdleBudget]). */
     val idleTimeout: McpIdleBudget = McpIdleBudget { 30.minutes },
     /** Hosted processes at most; past it the longest-idle streamless server is evicted first
      *  (see [McpServerCeiling]). */
-    val maxServers: McpServerCeiling = McpServerCeiling { DEFAULT_MAX_SERVERS },
+    val maxServers: McpServerCeiling = McpServerCeiling { Knob.MCP_MAX_SERVERS.count().toInt() },
     /** How long one forwarded request may wait for the child's answer before it fails in words
      *  (see [McpRequestBudget]). */
     val requestTimeout: McpRequestBudget = McpRequestBudget { 30.minutes },

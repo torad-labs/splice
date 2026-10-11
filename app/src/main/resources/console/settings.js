@@ -198,12 +198,14 @@ function dataHtml() {
   const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")) });
   // what each tapped command holds in memory right now: counted, never shown, and no Delete since the daemon has none
   const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
-  const memory = drow({
-    cls: taps.length ? "" : " off", name: "Last requests, in memory", yours: true,
+  // The row draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and
+  // offers nothing (the tap is restart-only and has no control here), so it is not drawn at all (fin, Oct 11).
+  const memory = taps.length || heldN ? drow({
+    name: "Last requests, in memory", yours: true,
     amount: taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<b>${fmt(heldN)}</b> ${heldN === 1 ? "request" : "requests"}` : `<span class="none">Nothing held</span>`,
     keep: `<span class="taps">${taps.map((h) => `<span class="tap">${cmdChip(h)}<span class="fixed">Last ${tapOf(h)}</span></span>`).join("")}</span>`,
     sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
-  });
+  }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
   const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}</span></div>`;
   const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;

@@ -77,7 +77,6 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 .drow.lit { box-shadow: inset .3rem 0 0 var(--key-light); padding-left: 1.1rem; margin-left: -1.1rem; }
 .dname { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
 .dname .nm, .sname .nm { font: 500 1.2rem/1.2 var(--font-name); color: var(--text); }
-.drow.off .nm, .drow.off .amt { color: var(--text-mute); }
 .amt { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
 .amt b { font: 500 1.3rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 .amt .mb { width: 100%; margin-top: .3rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }

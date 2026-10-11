@@ -36,7 +36,7 @@ class DoctorFixIdTest {
             pathFix(underHome, env = mapOf("HOME" to home.toString())),
         )
         val fallback = "add to your shell rc: export PATH=\"" +
-            "\$(node -p 'require(\"node:os\").userInfo().homedir')/.local/bin:\$PATH\""
+            "\$(getent passwd \$(id -un) | cut -d: -f6)/.local/bin:\$PATH\""
         assertEquals(fallback, pathFix(underHome, env = emptyMap()), "a blank HOME must survive report redaction")
         // A bin dir outside home (SPLICE_BIN_DIR) is splice's own directory to the redaction, but
         // only when the quote ends the path: `/opt/splice/bin:$PATH` was one foreign token.

@@ -13,8 +13,7 @@ internal const val CLAUDE_NOT_FOUND = "not found on PATH"
 // allows verbatim (DoctorRedaction). A URL's `//host/path` is path-shaped to that pass, so
 // `install it: https://…` reached the console as `install it: https:<redacted:path>`.
 private const val CLAUDE_CODE_DOCS = "https://docs.anthropic.com/en/docs/claude-code"
-private const val NODE_DOWNLOAD = "https://nodejs.org"
-internal val doctorLinks = listOf(CLAUDE_CODE_DOCS, NODE_DOWNLOAD)
+internal val doctorLinks = listOf(CLAUDE_CODE_DOCS)
 
 // Strings only — DoctorCheck is built on the miss path, not pre-allocated for every binary.
 internal data class BinarySpec(
@@ -33,15 +32,9 @@ internal val binaries = listOf(
         "install it: $CLAUDE_CODE_DOCS",
     ),
     BinarySpec(
-        "node",
-        listOf("-v"),
-        "not found on PATH; Claude Code and the launch shim run on it (Node 24)",
-        "install Node 24: $NODE_DOWNLOAD",
-    ),
-    BinarySpec(
         "curl",
         listOf(FLAG_VERSION),
-        "not found on PATH; install.sh downloads releases with it",
+        "not found on PATH; the launch shim and install.sh talk to splice and download releases with it",
         "install curl with your package manager",
     ),
     BinarySpec(

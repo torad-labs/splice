@@ -43,7 +43,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
     // line read `export PATH="~/.local/bin:$PATH"` after DoctorRedaction, which takes everything up to
     // the quote as ONE path token, finds no allowed prefix for `~/.local/bin:$PATH`, and masks it —
     // the console showed `export PATH="<redacted:path>"`. `$HOME` survives redaction when set.
-    // Without it a default JVM and Node both fall back to the passwd home; resolve that at paste time
+    // Without it a default JVM and the shell both fall back to the passwd home; resolve that at paste time
     // instead of printing an absolute home path that the report masks to a quoted, inert `~`.
     // The test-only UserHome.within override cannot cross into a shell command.
     private fun rcLine(binDir: Path, envReader: EnvReader): String {
@@ -52,7 +52,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
             val shellHome = if (UserHome.environmentHome(envReader) != null) {
                 "\$HOME"
             } else {
-                "\$(node -p 'require(\"node:os\").userInfo().homedir')"
+                "\$(getent passwd \$(id -un) | cut -d: -f6)"
             }
             "export PATH=\"$shellHome/${home.relativize(binDir)}:\$PATH\""
         } else {

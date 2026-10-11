@@ -121,7 +121,7 @@ class DoctorPathCheckTest {
                 val env = EnvReader { name -> if (name == "HOME") value else null }
                 val fix = pathCheck.check(bin, env).fix
                 val expected = "add to your shell rc: export PATH=\"" +
-                    "\$(node -p 'require(\"node:os\").userInfo().homedir')/.local/bin:\$PATH\""
+                    "\$(getent passwd \$(id -un) | cut -d: -f6)/.local/bin:\$PATH\""
                 assertEquals(expected, fix, "HOME=$value must not appear in the pasted command")
                 assertEquals(expected, DoctorRedaction(home).text(checkNotNull(fix)))
             }

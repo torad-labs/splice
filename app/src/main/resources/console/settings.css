@@ -18,6 +18,8 @@
   .jobs .list, .jobs.open .list { display: flex; flex: 0 0 44rem; }
   .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; max-width: 142rem; position: sticky; top: 1.6rem; height: calc(100vh - 14rem); }
   .pane .close { display: none; }
+  /* the lit card is the one beside it; with no pane beside the list, none is lit */
+  .card.job[aria-current="true"] { --c: var(--key-light); border-color: var(--key-light); }
 }
 .lamp.sock { color: var(--text-body); }
 .lamp.sock svg { width: 1.3rem; height: 1.3rem; stroke-width: 2.1; }
@@ -25,7 +27,6 @@
 .lamp.done i { background: var(--live); }
 .card.job { --c: var(--track-line); cursor: pointer; }
 .card.job:hover { background: var(--obj-high); }
-.card.job[aria-current="true"] { --c: var(--key-light); border-color: var(--key-light); }
 .card.job.news { background: color-mix(in oklab, var(--obj) 88%, var(--key-light)); }
 .jname { font: 500 1.35rem/1.15 var(--font-name); color: var(--text); }
 .card.job .meta { gap: .45rem .9rem; font-size: 1rem; color: var(--text-body); }

@@ -487,7 +487,18 @@ start_through_unit() {
   # start_through_unit UNIT MANAGER_HOME PRESENT
   [ -z "$HEALTH_JSON" ] && [ "$3" = 1 ] && same_home "$2" && unit_defaults || return 0
   warn "splice: starting $1…"
-  user_systemctl start "$1" >/dev/null 2>&1 || true # the wait below reports the outcome; a failed start never answers
+  # The line below is the literal unit-first form a host's launcher check looks for: a line that begins
+  # `systemctl --user start "$SUPERVISOR_UNIT"`. tools/release/test/launcher.test.ts holds the shipped shim to it. The
+  # user-bus fallback of user_systemctl is kept in the subshell, so the XDG_RUNTIME_DIR it sets never reaches the program
+  # this shim execs.
+  SUPERVISOR_UNIT=$1
+  (
+    if [ -z "${XDG_RUNTIME_DIR-}" ] && [ -z "${DBUS_SESSION_BUS_ADDRESS-}" ] && [ -d "/run/user/$(id -u)" ]; then
+      XDG_RUNTIME_DIR=/run/user/$(id -u)
+      export XDG_RUNTIME_DIR
+    fi
+    systemctl --user start "$SUPERVISOR_UNIT" >/dev/null 2>&1
+  ) || true # the wait below reports the outcome; a failed start never answers
   # Wall clock, not iterations: health() itself may block up to its timeout per probe, so a probe count is not a
   # deadline. SPLICE_UNIT_WAIT_SECONDS raises it on a box whose JVM boots slowly.
   stu_wait=${SPLICE_UNIT_WAIT_SECONDS:-30}

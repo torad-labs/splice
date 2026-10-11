@@ -130,4 +130,16 @@ describe("the launch shim", () => {
     expect(code.filter((line) => /\bnode\b/i.test(line))).toEqual([]);
     expect(code.some((line) => /\bcurl\b/.test(line))).toBe(true);
   });
+
+  // hostshield's scheduled verify runs its cold-start classifier (hostshield src/install/splice-shape.ts) on the installed
+  // launcher, and a shape it does not recognise is drift. These are its unit-first patterns, copied; the shipped shim
+  // must match one on a line of real code, not in a comment.
+  test("the shipped shim carries the unit-first cold start hostshield's classifier recognises", () => {
+    const BASH_UNIT_START = /^[ \t\n\v\f\r]*(if ! )?systemctl --user start (splice\.service|"\$SUPERVISOR_UNIT")([ \t\n\v\f\r]|$)/m;
+    const text = readFileSync(shipped, "utf8");
+    expect(BASH_UNIT_START.test(text)).toBe(true);
+    const line = text.split("\n").find((l) => /^\s*systemctl --user start "\$SUPERVISOR_UNIT"/.test(l));
+    expect(line, "an executable unit-first line").toBeDefined();
+    expect(text).toContain("SUPERVISOR_UNIT=$1");
+  });
 });

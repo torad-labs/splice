@@ -419,8 +419,8 @@ function filtersHtml() {
   // Started over happens during a request that can still end clean, so it is not an outcome (fin) but a door of its
   // own beside the switch (Marlin, p157; hitstop f80553d): the why filter, pressed when a door brings it, and it
   // combines with Failed and Stopped. Its toggle is its chip, so no second chip is drawn for it.
-  const over = `<button class="ftog" data-act="why" data-v="startedover" aria-pressed="${ui.why === "startedover"}"><i></i>${WHY.startedover.word}</button>`;
-  const tog = (key, label, on) => `<button class="ftog" data-act="toggle" data-m="${key}" aria-pressed="${on}"><i></i>${label}</button>`;
+  const over = `<button class="ftog" data-act="why" data-v="startedover" aria-pressed="${ui.why === "startedover"}"><i class="tick"></i>${WHY.startedover.word}</button>`;
+  const tog = (key, label, on) => `<button class="ftog" data-act="toggle" data-m="${key}" aria-pressed="${on}">${GLYPH.compact}${label}</button>`; // each toggle draws its rows' mark (fin; hitstop d91f182)
   const acct = ui.account && ui.account !== "none" ? state.facets.accounts.find(([k]) => k === ui.account) : null;
   return `<div class="filters">${pickBtn("win", WINDOWS[ui.win][0], false)}`
     + pickBtn("cmd", ui.cmd ? `<i class="blot" style="--c:${colorOf(providerOfCmd(ui.cmd))}"></i>${esc(ui.cmd)}` : "Command", Boolean(ui.cmd))

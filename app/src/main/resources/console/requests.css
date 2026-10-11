@@ -46,10 +46,10 @@
   display: inline-flex; align-items: center; gap: .6rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap;
   background: none; border: .12rem dashed var(--track-line); border-radius: var(--r-in); padding: .72rem .9rem; cursor: pointer;
 }
-.ftog i { width: 1rem; height: 1rem; border-radius: .22rem; box-shadow: inset 0 0 0 .13rem var(--text-mute); flex: none; }
+.ftog svg { width: 1.35rem; height: 1.35rem; flex: none; fill: none; stroke: var(--key-light); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }  /* the rows' own marks, drawn as the lamp draws them */
+.ftog i.tick { width: .22rem; height: 1.35rem; margin: 0 .3rem; border-radius: .1rem; background: var(--key-light); flex: none; }
 .ftog:hover { color: var(--text); }
 .ftog[aria-pressed="true"] { color: var(--text); border-style: solid; border-color: var(--key-light); }
-.ftog[aria-pressed="true"] i { background: var(--key-light); box-shadow: inset 0 0 0 .13rem var(--ink); }
 
 /* ---------- the list and the open request, side by side when both fit ---------- */
 .requests { display: block; }

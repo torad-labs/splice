@@ -56,7 +56,9 @@ public class ModelMoves(private val dir: Path) {
         val launched = all.lastOrNull()?.takeIf {
             it.fromCommand == null && it.command == move.command && it.movedAt >= move.movedAt
         }
+        // the model he picked names the move; the launch may have moved leftover rows onto another one (p176)
         val kept = launched?.copy(
+            model = move.model.ifBlank { launched.model },
             movedAt = move.movedAt,
             fromCommand = move.fromCommand,
             fromModel = move.fromModel,

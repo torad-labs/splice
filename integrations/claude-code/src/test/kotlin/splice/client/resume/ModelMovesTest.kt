@@ -80,4 +80,19 @@ class ModelMovesTest {
         assertEquals(listOf("m1", null), moves.of("s1").map { it.messageId })
         assertEquals(listOf("claude-splice", "claudex"), moves.of("s1").map { it.fromCommand })
     }
+
+    @Test
+    fun `another model on the same command is named by his pick, though its launch moved leftover rows elsewhere`(
+        @TempDir home: Path,
+    ) {
+        val moves = ModelMoves(home)
+        // the resume moved a leftover GPT row onto the newest Claude model the transcript used
+        moves.record("s1", ModelMove("m1", "claude-fable-5-1", "claude-splice", 2_000L))
+        val picked = ModelMove(null, "claude-opus-5-5", "claude-splice", 1_000L, "claude-splice", "claude-fable-5-1")
+        moves.moved("s1", picked)
+        assertEquals(
+            listOf(ModelMove("m1", "claude-opus-5-5", "claude-splice", 1_000L, "claude-splice", "claude-fable-5-1")),
+            moves.of("s1"),
+        )
+    }
 }

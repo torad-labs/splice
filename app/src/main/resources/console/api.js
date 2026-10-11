@@ -10,8 +10,8 @@ const API = (() => {
     history.replaceState(history.state, "", `${location.pathname}${location.search}`); // not left in view or history
   }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
-  async function call(method, path, body) {
-    const init = { method, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}` } };
+  async function call(method, path, body, extra) {
+    const init = { method, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
     if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
     try {
       const res = await fetch(path, init);
@@ -25,6 +25,8 @@ const API = (() => {
   }
   return {
     get: (p) => call("GET", p),
+    // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
+    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }),
     post: (p, b) => call("POST", p, b ?? {}),
     put: (p, b) => call("PUT", p, b),
     patch: (p, b) => call("PATCH", p, b),

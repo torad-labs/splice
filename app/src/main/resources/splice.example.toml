@@ -775,7 +775,7 @@ command = "claude-splice"
 # is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
 # needs a restart whatever its marking, which is also why a `[heads.<key>.overrides]` example below
 # carries no marker even for a HOT knob. The marker is not a habit: KnobLivenessDocumentedLawTest
-# pairs every knob here against its restart flag in Knob.kt and fails on either mismatch, so
+# pairs every knob here against its restartRequired flag in Knob.kt and fails on either mismatch, so
 # what you read below is what /api/config will answer.
 # `[daemon]` spells these with underscores (`show_reasoning`);
 # everywhere else a key is spelled as the name shown below. Both name the same knob. Defaults sit

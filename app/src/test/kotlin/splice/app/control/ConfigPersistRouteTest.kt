@@ -90,8 +90,8 @@ class ConfigPersistRouteTest {
 
     @Test
     fun `config patch flags a restart-only knob as restart_required and not a live knob`() = runBlocking<Unit> {
-        val restartOnly = patchConfig("""{"summary":"auto"}""")
-        assertEquals(listOf("summary"), restartOnly["restart_required"]!!.jsonArray.map { it.jsonPrimitive.content })
+        val restartOnly = patchConfig("""{"effort":"low"}""")
+        assertEquals(listOf("effort"), restartOnly["restart_required"]!!.jsonArray.map { it.jsonPrimitive.content })
         val live = patchConfig("""{"maxInflight":7,"maxQueued":99}""")
         assertEquals(2, live["applied"]!!.jsonObject.size, live.toString())
         assertEquals(0, live["restart_required"]!!.jsonArray.size, live.toString())

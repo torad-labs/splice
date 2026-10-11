@@ -173,6 +173,22 @@ class SessionsActivityTest {
         assertEquals(said, textOf(tmp, said))
     }
 
+    @Test
+    fun `a fenced code block leaves the line, so the prose around it never ends on the block's first word`(
+        @TempDir tmp: Path,
+    ) {
+        val said = "The lamp is on and the new reader is healthy.\n\n```\nopen jar 51ab check\nsha 7c0e\n```\n" +
+            "Both shots are saved.\n~~~kotlin\nval x = 1\n~~~\nThat is all.\n```sh\nunclosed tail"
+        val read = "The lamp is on and the new reader is healthy. Both shots are saved. That is all."
+        assertEquals(read, textOf(tmp, said))
+    }
+
+    @Test
+    fun `a message that is only a code block has no line`(@TempDir tmp: Path) {
+        val said = TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "```\nopen jar 51ab check\n```")
+        assertEquals(JsonNull, row(tmp, LastSource(said))["last"])
+    }
+
     private fun textOf(tmp: Path, said: String): String {
         val last = row(tmp, LastSource(TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, said))).getValue("last")
         return last.jsonObject.getValue("text").jsonPrimitive.content

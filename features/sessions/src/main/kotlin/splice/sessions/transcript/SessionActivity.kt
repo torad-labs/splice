@@ -15,7 +15,10 @@ internal object SessionActivity {
     private val whitespace = Regex("[\\s\\p{Z}]+")
 
     // Markdown the card has no place to draw (splice-lead, Oct 11): a heading, bullet or quote mark at a line's start,
-    // a link's target, and the marks around bold, italic and code. The words between the marks stay.
+    // a link's target, and the marks around bold, italic and code. The words between the marks stay. A fenced code
+    // block is code, never prose: the fence and all inside it leave the line, an unclosed one to the end (splice-lead,
+    // Oct 11: "the new daemon is healthy. open…" read a block's first word as the sentence's last).
+    private val fenced = Regex("(?ms)^[ \\t]*(```|~~~).*?(?:^[ \\t]*\\1[^\\n]*$|\\z)")
     private val lineMarks = Regex("(?m)^[ \\t]*(?:#{1,6}[ \\t]+|[-*+][ \\t]+|>[ \\t]+)+")
     private val itemMark = Regex("^[ \\t]*(?:#{1,6}|[-*+])[ \\t]+\\S")
     private val tableRule = Regex("\\|[ \\t:|-]*-[ \\t:|-]*")
@@ -84,7 +87,8 @@ internal object SessionActivity {
     /** What was said, with its markdown read rather than shown: a call's summary keeps its marks, where a star can be a
      *  glob. */
     private fun plain(said: String): String {
-        val unmarked = said.lines().mapNotNull(::untabled).joinToString("\n", transform = ::stopped)
+        val unmarked = said.replace(fenced, "").lines().mapNotNull(::untabled)
+            .joinToString("\n", transform = ::stopped)
             .replace(lineMarks, "").replace(link, "$1").replace("`", "")
         return unmarked.replace(strong, "$2").replace(starred, "$1").replace(underscored, "$1")
     }
@@ -121,10 +125,13 @@ internal object SessionActivity {
     /** The port supplies redacted text; collapse and clip only after that redaction. */
     private fun json(message: TranscriptMessage?): JsonElement {
         if (message == null) return JsonNull
+        val text = clipped(shown(message).replace(whitespace, " ").trim())
+        // what said only code says nothing a card can show: no line, as for a transcript of only notifications
+        if (text.isEmpty() && message.toolUse.name == null) return JsonNull
         return buildJsonObject {
             put("role", message.role.name.lowercase())
             put("tool", message.toolUse.name)
-            put("text", clipped(shown(message).replace(whitespace, " ").trim()))
+            put("text", text)
             put("ts", message.ts)
             message.source.from?.let { put("from", it) }
             val asked = message.role == TranscriptRole.ASSISTANT

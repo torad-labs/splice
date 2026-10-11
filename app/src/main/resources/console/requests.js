@@ -77,11 +77,15 @@ const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", 
 // its own account and the one it replaced keeps its own history, marked Replaced — on Requests as on Accounts
 // (Marcos, Oct 8). A plan's label has no colon and no key behind it, and prints as it stands.
 const keyNameOf = (account) => { const s = String(account ?? ""), at = s.lastIndexOf(":"); return at < 0 ? s : s.slice(0, at); };
+// A key reads as its provider, the heading Accounts draws over it and the name Continue on uses; its variable joins
+// only when two keys of that provider feed the same command, so the line says which one it sent (fin).
 const acctHtml = (r) => {
-  const key = state.keySeen[r.account];
-  if (!key) return esc(keyNameOf(r.account) || r.account);
-  const was = key.replaced ? `<span class="detail">Replaced</span>` : "";
-  return `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${was}`;
+  const key = state.keySeen[r.account], name = key?.name ?? keyNameOf(r.account), provider = PROVIDER_NAME[r.provider];
+  const isKey = Boolean(key) || /^[A-Z0-9_]+$/.test(name);
+  if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(name || r.account);
+  const both = (state.keysOfHead[r.head] ?? 0) > 1 ? ` · <span class="var">${esc(name)}</span>` : "";
+  const when = key ? ` · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : "";
+  return `${esc(provider)}${both}${when}`;
 };
 const costText = (r) => (r.cost != null ? money(r.cost) : REASON[r.reason] ?? "");
 const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
@@ -96,7 +100,7 @@ const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the 
 const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.kt)
 
 let state = {
-  loading: true, error: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {},
+  loading: true, error: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
   rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
   // what Start saving answered, per command: { word, failed }, the word that stands beside "Not saved" once pressed
   saving: {},
@@ -145,8 +149,10 @@ async function readStanding() {
   // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
   // the row with its variable alone, which is what the row itself proves.
   state.keySeen = {};
+  state.keysOfHead = {};
   for (const k of keys.body?.keys || []) {
     if (!k.name) continue;
+    for (const x of k.heads || []) state.keysOfHead[x.head] = (state.keysOfHead[x.head] ?? 0) + 1;
     const seen = (print, at, replaced) => {
       if (print && at) state.keySeen[`${k.name}:${print}`] = { name: k.name, seen: new Date(at * 1000), replaced };
     };
@@ -397,7 +403,7 @@ function menuHtml(key) {
   if (key === "model") return `<div class="menu fmenu" role="menu">${item("", "Every model", !ui.model)}${state.facets.models.map(([id, label]) => item(id, esc(label), ui.model === id)).join("")}${item("none", "No model", ui.model === "none")}</div>`;
   if (key === "account") { // an account on two commands is two accounts: a key's own variable and day, a plan's label
     return `<div class="menu fmenu" role="menu">${item("", "Every account", !ui.account)}`
-      + state.facets.accounts.map(([k, { head, account }]) => item(k, `<span class="aname">${acctHtml({ account })}<span class="aprov">${esc(head.command)}</span></span>`, ui.account === k)).join("")
+      + state.facets.accounts.map(([k, { head, account }]) => item(k, `<span class="aname">${acctHtml({ account, head: head.key, provider: state.providerOf[head.key] })}<span class="aprov">${esc(head.command)}</span></span>`, ui.account === k)).join("")
       + `${item("none", "No account", ui.account === "none")}</div>`;
   }
   if (key === "sid") { // the sessions with requests in the window, the latest first, each with its command's colour
@@ -426,7 +432,7 @@ function filtersHtml() {
     + pickBtn("cmd", ui.cmd ? `<i class="blot" style="--c:${colorOf(providerOfCmd(ui.cmd))}"></i>${esc(ui.cmd)}` : "Command", Boolean(ui.cmd))
     + pickBtn("sid", ui.sid ? esc(sessTitle(ui.sid)) : "Session", Boolean(ui.sid))
     + pickBtn("model", ui.model ? (ui.model === "none" ? "No model" : esc(state.modelLabel[ui.model] ?? ui.model)) : "Model", Boolean(ui.model))
-    + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : acctHtml({ account: acct?.[1].account ?? "" })) : "Account", Boolean(ui.account))
+    + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : acctHtml({ account: acct?.[1].account ?? "", head: acct?.[1].head.key, provider: state.providerOf[acct?.[1].head.key] })) : "Account", Boolean(ui.account))
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")

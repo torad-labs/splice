@@ -443,3 +443,12 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .ask .why .door svg, .log .empty .door svg { flex: none; width: 1rem; height: 1rem; transition: transform var(--t-snap) var(--e-out); }
 .ask .why .door:hover, .log .empty .door:hover { color: var(--text); }
 .ask .why .door:hover svg, .log .empty .door:hover svg { transform: translate(.1rem, -.1rem); }
+/* the split Day line: its phrases joined by dots, each kept whole with the dot that leads it, so a break never leaves a
+   dot hanging at a line's end; the line takes the whole first row and the button and the reset go under it, so a
+   one-line reading stays one line beside "Day", as a figure with a count does above */
+.meter.windows.spend > .money.line { line-height: 1.5; }
+.meter.windows.spend > .money.line .part { white-space: nowrap; }
+.meter.windows.spend:has(> span.money.line) { row-gap: .9rem; }
+.meter.windows.spend:has(> span.money.line) > .money { grid-column: 2 / -1; }
+.meter.windows.spend:has(> span.money.line) > .act { grid-row: 2; grid-column: 3; }
+.meter.windows.spend:has(> span.money.line) > .when { grid-row: 2; grid-column: 4; }

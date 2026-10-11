@@ -108,7 +108,16 @@ async function load({ asks = true } = {}) {
   const HOUR = 3600000;
   const wholeFrom = Math.ceil(dayStart / HOUR) * HOUR;
   // economics counts only requests that moved tokens, so turns less the unpriced ones are the priced share (fin, Oct 10)
-  const sumOf = (rows) => rows.reduce((t, b) => ({ usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0), turns: t.turns + (b.turns || 0) }), { usd: 0, unpriced: 0, turns: 0 });
+  // A daemon that splits plan from key (all_accounts_on_plan on the head) says per hour how many requests were on a plan
+  // and their value at API prices; cost_usd and unpriced_turns are then the key's alone. An hour recorded before the split
+  // has its plan fields null, and its cost and count still mix the two, so it is summed apart (old) and never read as key.
+  const sumOf = (rows) => rows.reduce((t, b) => {
+    const old = b.plan_turns == null;
+    return { usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0), turns: t.turns + (b.turns || 0),
+      plan: t.plan + (old ? 0 : b.plan_turns), planUsd: t.planUsd + (old ? 0 : b.plan_value_usd || 0),
+      old: t.old + (old ? b.turns || 0 : 0), oldUsd: t.oldUsd + (old ? b.cost_usd || 0 : 0), oldUnpriced: t.oldUnpriced + (old ? b.unpriced_turns || 0 : 0) };
+  }, { usd: 0, unpriced: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 });
+  const splitOf = new Map((ec.body?.heads || []).filter((h) => typeof h.all_accounts_on_plan === "boolean").map((h) => [h.key, h.all_accounts_on_plan]));
   const spendToday = new Map((ec.body?.heads || []).map((h) => {
     const rows = h.buckets || [];
     const opening = wholeFrom > dayStart ? sumOf(rows.filter((b) => b.hour < wholeFrom && b.hour + HOUR > dayStart)) : null;
@@ -133,13 +142,22 @@ async function load({ asks = true } = {}) {
     const fam = FAMILY[h.family] || { id: h.family || h.key, name: h.family || h.key };
     const kind = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
     if (!provs.has(fam.id)) provs.set(fam.id, { id: fam.id, name: fam.name, kind, cmds: [], accounts: [] });
-    const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, turns: 0 };
+    const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 };
+    const allPlan = splitOf.get(h.key);
+    // with the split: an all-plan command counts every request as on the plan, its old hours too, and names their value
+    // at API prices; a mixed one shows the key's money, the plan's count, and an old hour's requests as not split (fin,
+    // Marlin 5:52 PM, splice-lead on null hours, Oct 11)
+    const split = allPlan === undefined || kind === "local" ? null : allPlan
+      ? { allPlan: true, plan: today.plan + today.old, planUsd: today.planUsd + today.oldUsd }
+      : { allPlan: false, keyUsd: today.usd - today.oldUsd, keyUnpriced: today.unpriced - today.oldUnpriced, plan: today.plan, old: today.old,
+        keyPriced: Math.max(0, today.turns - today.old - today.plan - (today.unpriced - today.oldUnpriced)) };
     const counted = !unread.has(h.key);
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
       unread: b ? null : unread.get(h.key) ?? null,
       priced: Math.max(0, today.turns - today.unpriced),
       opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
       local: kind === "local", // nothing bills it per token, so no figure and no line
+      split,
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [] });
   }
@@ -353,6 +371,7 @@ function meterHtml(c, pick = null) {
   const tag = pick ? `<button class="chip tag" data-act="lane" data-p="${pick.p.id}" data-c="${c.cmd}" aria-pressed="${pick.on}">${esc(c.cmd)}</button>`
     : `<span class="chip tag">${esc(c.cmd)}</span>`;
   if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
+  if (c.split && !c.unread) return splitMeterHtml(c, tag, day);
   // Marlin's mixed form (fin, Oct 10): with every request priced, the figure alone; with some, the figure for the priced
   // ones, "≈$0.84 for 50 requests", and the rest by why under it; with none, only the count. Never "$0.00" over all.
   // a spend splice is still reading (spend_pending, used_usd null after a restart) is no figure yet: it once threw here
@@ -371,6 +390,38 @@ function meterHtml(c, pick = null) {
   const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
     + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c, share)}</button>${refills(day)}</div>`;
+}
+// The Day row once splice splits plan from key (fin's words, Marlin's 5:52 PM ruling, Oct 11). A bare "≈$" is money at the
+// rate card on a key and nothing else; a plan's share is a count "on your plan", and a dollar on it says "at API prices".
+// All on a plan: "23,559 requests on your plan · ≈$1,512.40 at API prices", and no Set budget, since his limits there are
+// the account's own windows; a budget set before keeps its button so he can see and remove it. Key and plan mixed:
+// "≈$12.40 for 300 requests · 23,259 on your plan", the budget capping the key's money alone. An hour recorded before the
+// split, on a mixed command, cannot say which side its requests were on, so they are counted as not split, never as money.
+function splitMeterHtml(c, tag, day) {
+  const s = c.split, n0 = (n) => n.toLocaleString("en-US"), parts = [];
+  const line = (lead) => `<span class="money line">${lead}${parts.map((p, i) => `<span class="part">${i || lead ? "· " : ""}${p}</span>`).join(" ")}</span>`;
+  if (s.allPlan) {
+    if (s.plan) parts.push(`${reqs(s.plan)} on your plan`);
+    if (s.planUsd) parts.push(`${money(s.planUsd)} at API prices`);
+    const keep = c.budget ? `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">${c.budget.block ? GLYPH.stop : GLYPH.bell}Budget ${cap(c.budget.cap)}</button>` : "";
+    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${parts.length ? line("") : `<span class="money"><em>No requests</em></span>`}${keep}${refills(day)}</div>`;
+  }
+  const spent = c.budget ? c.spent : s.keyUsd, priced = s.keyPriced;
+  const lead = priced && spent != null ? `${money(spent)}${s.plan || s.keyUnpriced || s.old ? ` <em>for ${reqs(priced)}</em>` : ""}` : "";
+  const many = (n, words) => (lead || parts.length ? `${n0(n)} ${words}` : `${reqs(n)} ${words}`);
+  if (s.plan) parts.push(many(s.plan, "on your plan"));
+  if (s.keyUnpriced) parts.push(many(s.keyUnpriced, "with no price"));
+  if (s.old) parts.push(many(s.old, "not split into plan and key"));
+  const body = lead ? `${lead} ` : parts.length ? "" : `<em>No requests</em>`;
+  if (!c.budget) {
+    return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${line(body)}`
+      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}</div>`;
+  }
+  const pct = Math.min(100, Math.round(((spent || 0) / c.budget.cap) * 100));
+  const fill = spent ? `<div class="capbox">${bar(pct, spent >= c.budget.cap ? "full" : "")}</div>` : "<span></span>";
+  return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
+    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${money(spent)} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}`
+    + `${parts.length ? `<span class="unpriced own">${parts.map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : ""}</button>${refills(day)}</div>`;
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
 // here the words take their own line under the figure, with no dot (fin)
@@ -397,7 +448,8 @@ function editorHtml(c, tag) {
   return `${tag}<div class="editor"><span class="money-in">$<input class="field" id="cap-in" inputmode="decimal" value="${ed.cap}" aria-label="Budget cap"></span>`
     + `<span class="presets">${presets}</span>`
     + `<span class="mode"><button data-act="bmode" data-v="warn" aria-pressed="${!ed.block}">${GLYPH.bell}Warn</button><button data-act="bmode" data-v="block" aria-pressed="${ed.block}">${GLYPH.stop}Block</button></span>`
-    + `<button class="act primary" data-act="save-budget" data-c="${c.cmd}">Set budget</button><button class="act quiet" data-act="cancel-budget">Cancel</button></div>`;
+    + `<button class="act primary" data-act="save-budget" data-c="${c.cmd}">Set budget</button>`
+    + `${c.budget ? `<button class="act quiet" data-act="remove-budget" data-c="${c.cmd}">Remove budget</button>` : ""}<button class="act quiet" data-act="cancel-budget">Cancel</button></div>`;
 }
 
 // ---------- sign-in: one element wherever an account signs in, with the step its provider really asks for ----------
@@ -955,6 +1007,14 @@ document.addEventListener("click", async (e) => {
       const v = Number(document.getElementById("cap-in").value), cap = v > 0 ? v : ui.editor.cap, block = ui.editor.block;
       const set = data.flatMap((x) => x.cmds).filter((c) => c.budget && c.cmd !== k.cmd).map((c) => ({ head: c.head, daily_usd: c.budget.cap, action: c.budget.block ? "block" : "warn" }));
       set.push({ head: k.head, daily_usd: cap, action: block ? "block" : "warn" });
+      const res = await API.put("/api/budgets", { budgets: set });
+      ui.editor = null;
+      if (res.ok) await refresh(k.cmd); else render();
+      break;
+    }
+    // a budget goes by sending the set without it, as saving one sends the set with it (BudgetRoutes.kt:71)
+    case "remove-budget": {
+      const set = data.flatMap((x) => x.cmds).filter((c) => c.budget && c.cmd !== k.cmd).map((c) => ({ head: c.head, daily_usd: c.budget.cap, action: c.budget.block ? "block" : "warn" }));
       const res = await API.put("/api/budgets", { budgets: set });
       ui.editor = null;
       if (res.ok) await refresh(k.cmd); else render();

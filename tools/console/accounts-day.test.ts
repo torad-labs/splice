@@ -151,7 +151,10 @@ for (const width of [3828, 1440]) {
       await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
       const meter = page.locator(`[data-meter="big-day"]`);
       await expect(meter).toContainText("≈$1,512.40", { timeout: 15_000 });
-      const shape = await meter.evaluate((el) => {
+      // read in one step from the live document: the page redraws its rows when a poll answers, and a row it replaced
+      // between finding it and measuring it is detached and measures as nothing
+      const shape = await page.evaluate(() => {
+        const el = document.querySelector('[data-meter="big-day"]')!;
         const box = el.getBoundingClientRect();
         const lines = (e: Element | null) => (e ? e.getClientRects().length : 0);
         const phrases = [el.querySelector(".money > em"), el.querySelector(".unpriced.own .part")];

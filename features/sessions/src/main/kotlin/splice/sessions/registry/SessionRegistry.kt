@@ -10,6 +10,7 @@
 package splice.sessions.registry
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
@@ -58,6 +59,13 @@ public data class SessionClient(
     val version: String?,
     /** How the session was started (`cli` is a terminal), which is where a person answers it. */
     val entrypoint: String? = null,
+    /** The cross-session protocol revision the client speaks, and the features it advertises on that socket. */
+    val peerProtocol: Long? = null,
+    val peerFeatures: List<String> = emptyList(),
+    /** The remote-control bridge the session is attached to, when it is. */
+    val bridgeSessionId: String? = null,
+    /** Who set the session's name: `user` for one the person chose, as Claude Code words it; else null. */
+    val nameSource: String? = null,
 )
 
 public data class SessionRecord(
@@ -210,6 +218,10 @@ public class SessionRegistry(
                 kind = JsonScalars.str(obj, "kind"),
                 version = JsonScalars.str(obj, "version"),
                 entrypoint = JsonScalars.str(obj, "entrypoint"),
+                peerProtocol = JsonScalars.long(obj, "peerProtocol"),
+                peerFeatures = (obj["peerFeatures"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.str(it) },
+                bridgeSessionId = JsonScalars.str(obj, "bridgeSessionId"),
+                nameSource = JsonScalars.str(obj, "nameSource"),
             ),
         )
     }

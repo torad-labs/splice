@@ -224,4 +224,28 @@ class SessionRegistryTest {
         assertNull(rows.getValue(12L).status.waitingFor)
         assertNull(rows.getValue(12L).client.entrypoint)
     }
+
+    @Test
+    fun `the peer protocol, its features, the bridge and who named the session are read as Claude Code wrote them`(
+        @TempDir dir: Path,
+    ) {
+        write(
+            dir,
+            21,
+            """{"pid":21,"updatedAt":$now,"peerProtocol":1,"peerFeatures":["notify_idle","artifact_yield"],""" +
+                """"bridgeSessionId":"bridge-1","name":"notes","nameSource":"user"}""",
+        )
+        write(dir, 22, """{"pid":22,"updatedAt":$now}""")
+        val rows = registry(dir, alive = setOf(21L, 22L)).read().associateBy { it.process.pid }
+        val named = rows.getValue(21L)
+        assertEquals(1L, named.client.peerProtocol)
+        assertEquals(listOf("notify_idle", "artifact_yield"), named.client.peerFeatures)
+        assertEquals("bridge-1", named.client.bridgeSessionId)
+        assertEquals("user", named.client.nameSource)
+        val bare = rows.getValue(22L)
+        assertNull(bare.client.peerProtocol)
+        assertTrue(bare.client.peerFeatures.isEmpty())
+        assertNull(bare.client.bridgeSessionId)
+        assertNull(bare.client.nameSource)
+    }
 }

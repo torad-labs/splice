@@ -33,6 +33,7 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -213,6 +214,10 @@ public class SessionsRoutes(
         put("status", s.status.state)
         put("waiting_for", s.status.waitingFor)
         put("entrypoint", s.client.entrypoint)
+        put("peer_protocol", s.client.peerProtocol)
+        put("peer_features", JsonArray(s.client.peerFeatures.map(::JsonPrimitive)))
+        put("bridge_session_id", s.client.bridgeSessionId)
+        put("name_source", s.client.nameSource)
         put("status_updated_at", s.status.updatedAt)
         put("started_at", s.process.startedAt)
         put("updated_at", s.process.updatedAt)

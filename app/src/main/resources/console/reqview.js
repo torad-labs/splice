@@ -188,8 +188,9 @@ const REQVIEW = (() => {
       const quiet = r.silent ? `<span class="quiet${r.silentFrom / total > .6 ? " late" : ""}" style="left:${pct(r.silentFrom)};width:${pct(r.silent)}"><span>Waited out ${secs(r.silent)}</span></span>` : "";
       // the wait for a free slot, before splice sent it (admit_wait_ms)
       const line = r.queued ? `<span class="quiet" style="left:0;width:${pct(r.queued)}"><span>Waited in line ${secs(r.queued)}</span></span>` : "";
-      const resumed = r.resumed ? `<span class="resume${r.resumedAt / total > .6 ? " late" : ""}" style="left:${pct(r.resumedAt)}"><span>${r.resumedFresh ? "Started over" : "Resumed"}</span></span>` : "";
-      return `<div class="trail"><div class="rail-t">${sends}${line}${quiet}${resumed}${mark(r.ttfb, "First byte", "fb")}${mark(r.ftok, "First token", "ft")}</div>`
+      // a resume ends the silence before it, so both labels would stand at one place: the resume's goes a line higher
+      const resumed = r.resumed ? `<span class="resume${r.resumedAt / total > .6 ? " late" : ""}${r.silent ? " stack" : ""}" style="left:${pct(r.resumedAt)}"><span>${r.resumedFresh ? "Started over" : "Resumed"}</span></span>` : "";
+      return `<div class="trail${r.resumed && r.silent ? " tall" : ""}"><div class="rail-t">${sends}${line}${quiet}${resumed}${mark(r.ttfb, "First byte", "fb")}${mark(r.ftok, "First token", "ft")}</div>`
         + `<div class="ends"><span>${clockS(new Date(+r.ts - total))}</span><span class="tot">${secs(total)}</span><span>${clockS(r.ts)}</span></div></div>`;
     }
     // the figures the request has: cells names which, in order (in, write, out, cost, attempts); cost is its text

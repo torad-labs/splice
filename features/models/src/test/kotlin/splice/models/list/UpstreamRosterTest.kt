@@ -15,6 +15,7 @@ import splice.core.model.ModelTierSuffix
 import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
 import splice.core.topology.ModelDiscoveryConfig
+import splice.core.topology.UpstreamRosterUrl
 
 /** The Codex backend's base, named once: two cases assert against it and a wrapped call would put
  *  the same literal on two lines apiece. */

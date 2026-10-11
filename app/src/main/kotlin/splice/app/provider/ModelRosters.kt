@@ -23,6 +23,7 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.ProviderConfig
+import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
@@ -31,7 +32,6 @@ import splice.models.discovery.Discovery
 import splice.models.discovery.KeptRoster
 import splice.models.discovery.ModelDiscovery
 import splice.models.discovery.RosterCache
-import splice.models.list.UpstreamRosterUrl
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker

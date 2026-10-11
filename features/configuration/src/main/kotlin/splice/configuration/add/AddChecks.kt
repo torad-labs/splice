@@ -6,6 +6,7 @@ package splice.configuration.add
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -18,6 +19,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -42,7 +44,18 @@ internal data class AddCheck(val name: String, val ok: Boolean, val detail: Stri
 /** What GET /models yielded: the dialect has no list, the endpoint could not serve it, or the ids. */
 internal sealed class ListedModels {
     data object Absent : ListedModels()
-    data class Unreadable(val detail: String) : ListedModels()
+
+    /** [blocking] false is a list the add could not read but goes on without (the models the person entered stand). */
+    data class Unreadable(val detail: String, val blocking: Boolean = true) : ListedModels() {
+        fun asCheck(): AddCheck = if (blocking) {
+            AddCheck(MODELS_CHECK, false, "$detail; the model list could not be checked")
+        } else {
+            AddCheck(MODELS_CHECK, true, "WARNING: $detail; the models you entered are used as given")
+        }
+    }
+
+    /** The dialect has a list but splice holds no credential of its own to ask for it with. */
+    data object NoCredential : ListedModels()
     data class Listed(val ids: List<String>, val windows: Map<String, Long> = emptyMap()) : ListedModels()
 }
 
@@ -116,33 +129,43 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
         return AddCheck("base url", reply != null, detail)
     }
 
-    /** The endpoint's model list where the dialect publishes one (openai-chat: GET /models). A list the
-     *  dialect has but the endpoint cannot serve is [ListedModels.Unreadable], never "trusted". */
+    /** The endpoint's model list where the dialect publishes one and splice can read it: openai-chat and openai-responses
+     *  (the Codex backend with its client_version query, or an API-key endpoint), at the one URL `splice models` asks.
+     *  A passthrough head forwards the person's own login, so splice holds nothing to ask with. A list the endpoint
+     *  cannot serve is [ListedModels.Unreadable]; on openai-responses it does not stop the add. */
     fun listedModels(provider: ProviderConfig, key: String, env: EnvReader): ListedModels {
-        if (provider.dialect != Dialect.OPENAI_CHAT) return ListedModels.Absent
-        val url = provider.baseUrl.trimEnd('/') + "/models"
-        val reply = http("GET", url, apiKey(provider, key, env), null)
+        if (provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH) return ListedModels.NoCredential
+        val blocking = provider.dialect == Dialect.OPENAI_CHAT
+        val url = UpstreamRosterUrl.of(provider)
+        val reply = http("GET", url, credentials.bearer(provider, key, env), null)
         return when {
-            reply == null -> ListedModels.Unreadable("nothing answers at $url")
-            reply.status != HTTP_OK -> ListedModels.Unreadable("HTTP ${reply.status} from $url")
-            else -> parsedList(reply.body, url)
+            reply == null -> ListedModels.Unreadable("nothing answers at $url", blocking)
+            reply.status != HTTP_OK -> ListedModels.Unreadable("HTTP ${reply.status} from $url", blocking)
+            else -> parsedList(reply.body, url, blocking)
         }
     }
 
-    private fun parsedList(body: String, url: String): ListedModels = Cancellables.runCatchingCancellable {
-        val entries = (json.parseToJsonElement(body).jsonObject["data"] as? JsonArray).orEmpty()
-        val windows = entries.mapNotNull { element ->
-            val row = element.jsonObject
-            val id = JsonScalars.str(row, "id") ?: return@mapNotNull null
-            val window = (JsonScalars.long(row, "context_length") ?: JsonScalars.long(row, "context_window"))
-                ?.takeIf { it > 0 } ?: return@mapNotNull null
-            id to window
-        }.toMap()
-        ListedModels.Listed(entries.mapNotNull { JsonScalars.str(it.jsonObject, "id") }, windows)
-    }.fold(
-        onSuccess = { it },
-        onFailure = { ListedModels.Unreadable("$url did not answer with a model list") },
-    )
+    /** Both envelopes in the wild: `{"data": [...]}` (OpenAI-compatible) and `{"models": [...]}` (the Codex backend,
+     *  which names a row by `slug`). */
+    private fun parsedList(body: String, url: String, blocking: Boolean): ListedModels =
+        Cancellables.runCatchingCancellable {
+            val root = json.parseToJsonElement(body).jsonObject
+            val entries = ((root["data"] ?: root["models"]) as? JsonArray).orEmpty()
+            val windows = entries.mapNotNull { element ->
+                val row = element.jsonObject
+                val id = rowId(row) ?: return@mapNotNull null
+                val window = (JsonScalars.long(row, "context_length") ?: JsonScalars.long(row, "context_window"))
+                    ?.takeIf { it > 0 } ?: return@mapNotNull null
+                id to window
+            }.toMap()
+            ListedModels.Listed(entries.mapNotNull { rowId(it.jsonObject) }, windows)
+        }.fold(
+            onSuccess = { it },
+            onFailure = { ListedModels.Unreadable("$url did not answer with a model list", blocking) },
+        )
+
+    private fun rowId(row: JsonObject): String? =
+        JsonScalars.str(row, "id") ?: JsonScalars.str(row, "slug")
 
     /** [authoritative] false is a server that answers any model id: its list still has to ANSWER
      *  (an unreadable one fails as before), but an unlisted row is trusted and said to be. */
@@ -154,8 +177,12 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
                 val why = "this provider publishes no list to check them against"
                 AddCheck(MODELS_CHECK, true, "$count from splice's catalog; $why")
             }
-            is ListedModels.Unreadable ->
-                AddCheck(MODELS_CHECK, false, "${listed.detail}; the model list could not be checked")
+            ListedModels.NoCredential -> {
+                val why = "this provider forwards your own login, " +
+                    "so splice holds no credential to read its model list with"
+                AddCheck(MODELS_CHECK, true, "${models.size} model(s) as entered; $why")
+            }
+            is ListedModels.Unreadable -> listed.asCheck()
             is ListedModels.Listed -> {
                 val missing = models.filterNot { it in listed.ids }
                 val shown = listed.ids.take(LISTED_SHOWN)

@@ -15,10 +15,10 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelRates
 import splice.core.topology.ProviderConfig
+import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
-import splice.models.list.UpstreamRosterUrl
 import java.nio.file.Files
 import java.nio.file.Path
 

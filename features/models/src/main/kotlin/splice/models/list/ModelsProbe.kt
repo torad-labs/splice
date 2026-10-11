@@ -15,6 +15,7 @@ package splice.models.list
 import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
+import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus

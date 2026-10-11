@@ -264,35 +264,27 @@ function dataHtml() {
 // ---------- what happened this week ----------
 // Counted from the requests Usage and Requests read (GET /api/perf/turns, one read per command and word), never kept
 // here: a count is the daemon's `count` for the filter a door opens on Requests, so the figure and the page it opens
-// agree. Three words need the rows themselves, because the daemon filters a superset of what they mean (kit.js WHY).
+// agree. Six words are tested on the daemon over every row (TurnsTest.kt), never over the newest 2,000 the route would send.
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const SEC = 1000, MIN = 60000;
 const MAX_ROWS = 2000; // PerfRoutes.kt MAX_TURNS
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
 const reqUrl = (f) => `requests.html?${new URLSearchParams(f)}`;
 const rowId = (head, row) => `${head}:${row.turn || row.turn_id || row.ts}`;
-/** The silence a request held mid-answer at or past its command's tier, or 0 (requests.js mapRow, same rule). */
-const silenceOf = (row, tier) => {
-  const gap = row.up_gap_max_ms ?? 0, at = row.up_gap_max_start_epoch_ms ?? null;
-  const firstByteAt = row.first_byte != null ? row.ts - (row.total ?? 0) + row.first_byte : null;
-  return at && gap >= tier && (firstByteAt == null || at >= firstByteAt) ? gap : 0;
-};
-/** The words the daemon cannot filter exactly: what else a row must say, given its command's silence tier. */
-const ROW_CHECK = { gaveup: (row) => WHY.gaveup.has({ outcome: row.outcome, cause: row.cause }), overloaded: (row) => row.cause !== "UPSTREAM_TRUNCATED" && row.cause !== "UPSTREAM_STALLED", cutoff: (row) => row.cause === "UPSTREAM_TRUNCATED", waited: (row, tier) => silenceOf(row, tier) > 0, silentresume: (row) => !!row.stall_ms, silentover: (row) => !!row.stall_ms };
-/** One figure's question of the daemon: the filter its word means, its floor in time, and whether the count is the whole answer. */
+/** The words whose test of a row the daemon applies itself, over every row of the window (TurnsTest.kt). */
+const ROW_TEST = { gaveup: "gaveup", overloaded: "overloaded", cutoff: "cutoff", waited: "waited", silentresume: "silent", silentover: "silent" };
+/** One figure's question of the daemon: the filter its word means and its floor in time. The daemon counts; no row is sent back
+ *  but the newest, so a busy command's figure is its true count and never the size of a read. */
 function askWeek(head, why, from) {
   const ask = why === "failed" ? { outcome: "failed" } : { ...WHY_ASKS[why] }, tier = idleTierOf(ks.cfg, head.key);
+  if (ROW_TEST[why]) ask.test = ROW_TEST[why];
   if (why === "waited") { if (!Number.isFinite(tier)) return { head, why, err: "no silence setting answered" }; ask.silence_ms = String(Math.round(tier)); }
-  const exact = !ROW_CHECK[why];
-  return { head, why, tier, exact, query: new URLSearchParams({ n: String(exact ? 1 : MAX_ROWS), from: String(from), local: "0", usage: "0", ...ask }).toString() };
+  return { head, why, query: new URLSearchParams({ n: "1", from: String(from), local: "0", usage: "0", ...ask }).toString() };
 }
 /** The figure one question's answer makes, or why it makes none. */
-function countOf({ head, why, tier, exact }, answer) {
-  if (!answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || "splice did not answer" };
-  const rows = exact ? (answer.rows || []) : (answer.rows || []).filter((r) => ROW_CHECK[why](r, tier));
-  const newest = rows.reduce((a, b) => (!a || b.ts > a.ts ? b : a), null);
-  const longest = why === "waited" ? rows.reduce((a, b) => (!a || silenceOf(b, tier) > silenceOf(a, tier) ? b : a), null) : null;
-  return { head, n: exact ? answer.count ?? 0 : rows.length, newest, longest, silence: longest ? silenceOf(longest, tier) : 0 };
+function countOf({ head, why }, answer) {
+  if (!answer || answer.error || answer.read_error || typeof answer.count !== "number") return { head, err: answer?.error || answer?.read_error || "splice did not answer" };
+  return { head, n: answer.count, newest: (answer.rows || [])[0] ?? null, longest: why === "waited" ? answer.longest ?? null : null, silence: why === "waited" ? answer.longest_silence_ms ?? 0 : 0 };
 }
 /** Every figure of one command from ONE read of its week: the daemon's cost is the file's, not the question's (about 3 s per
  *  read on a busy command), so nine questions one after another were half a minute. */

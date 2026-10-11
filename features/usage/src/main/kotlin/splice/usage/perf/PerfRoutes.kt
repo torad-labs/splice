@@ -246,11 +246,25 @@ public class PerfRoutes(
             // Over every row of the window the filters matched, never the newest n: a busy command's day is more than n rows.
             if (asked.peak) put("at_once", PerfPeak(matching).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
+            longestSilence(asked.filter, matching)?.let { (row, silence) ->
+                put("longest_silence_ms", silence)
+                put("longest", rowJson(row, gaps))
+            }
             // Each further question the request carried reads the window already in hand: the cost of a read is the
             // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).
             if (asked.asks.isNotEmpty()) {
                 putJsonArray("asks") { asked.asks.forEach { add(turnsJson(head, projection, it)) } }
             }
+        }
+    }
+
+    /** For `test=waited`: the matching request that sat through the longest silence, over every matching row. */
+    private fun longestSilence(filter: TurnsFilter, matching: List<PerfRow>): Pair<PerfRow, Long>? {
+        val floor = filter.waits.silenceMs
+        return if (filter.waits.test != TurnsTest.WAITED_OUT || floor == null) {
+            null
+        } else {
+            matching.map { it to TurnsTest.WAITED_OUT.silence(it, floor) }.maxByOrNull { it.second }
         }
     }
 

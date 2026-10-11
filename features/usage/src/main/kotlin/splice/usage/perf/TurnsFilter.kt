@@ -32,12 +32,14 @@ internal data class TurnsWaits(
     val queuedMs: Long? = null,
     val resumed: Boolean? = null,
     val startedOver: Boolean? = null,
+    val test: TurnsTest? = null,
 ) {
     fun matches(row: PerfRow): Boolean = listOf(
         silenceMs == null || counted(row, PerfKeys.UP_GAP_MAX_MS) >= silenceMs,
         queuedMs == null || counted(row, PerfKeys.ADMIT_WAIT_MS) >= queuedMs,
         resumed == null || (counted(row, PerfKeys.REANCHORS) > 0) == resumed,
         startedOver == null || (counted(row, PerfKeys.REANCHORS_FROM_SCRATCH) > 0) == startedOver,
+        test == null || test.matches(row, silenceMs),
     ).all { it }
 
     private fun counted(row: PerfRow, key: String): Long = row.fields[key] ?: 0L
@@ -107,6 +109,8 @@ internal class TurnsFilterReader {
         val until = untilText?.toLongOrNull()?.takeIf { it >= 0 }
         val unattributedText = params["unattributed"]
         val unattributed = Unattributed.entries.firstOrNull { it.wire == unattributedText }
+        val testText = params["test"]
+        val test = TurnsTest.entries.firstOrNull { it.wire == testText }
         val localText = params["local"]
         val compactText = params["compact"]
         val problem = listOfNotNull(
@@ -115,6 +119,8 @@ internal class TurnsFilterReader {
                 .takeIf { untilText != null && until == null },
             "unattributed must be model or account, got '$unattributedText'"
                 .takeIf { unattributedText != null && unattributed == null },
+            "test must be one of ${TurnsTest.entries.joinToString { it.wire }}, got '$testText'"
+                .takeIf { testText != null && test == null },
             "local must be 0 or 1, got '$localText'".takeIf { localText != null && switch(localText) == null },
             "compact must be 0 or 1, got '$compactText'".takeIf { compactText != null && switch(compactText) == null },
             waitProblem(params),
@@ -136,6 +142,7 @@ internal class TurnsFilterReader {
                 queuedMs = floor(params["queued_ms"]),
                 resumed = switch(params["resumed"]),
                 startedOver = switch(params["started_over"]),
+                test = test,
             ),
         )
         return if (problem == null) TurnsFilterRead.Read(filter) else TurnsFilterRead.Refused(problem)

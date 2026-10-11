@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
+import splice.core.turn.ErrorType
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -172,6 +173,54 @@ class PerfTurnsFilterTest {
             assertEquals(listOf(5_000L, 9_300L), stamps(asks[0]))
             assertEquals(listOf(9_300L), stamps(asks[1]), "from is a floor on the row's own time inside the window")
             assertEquals(1L, count(asks[2]), "the third question counts the one request that waited in line")
+        }
+
+    @Test
+    fun `a named test counts every row of a busy window, with the newest row and the longest silence`() =
+        testApplication {
+            val overloaded = OutcomeTags.failure(ErrorType.OVERLOADED)
+            fun failed(ts: Long, cause: String?) =
+                PerfRow(ts = ts, outcome = overloaded, fields = emptyMap(), cause = cause)
+            // why: more matching rows than the 2,000 a read can carry, so a count made over the rows sent is the cap.
+            val cut = (1..2_100).map { failed(1_000L + it, "UPSTREAM_TRUNCATED") }
+            val plain = (1..3).map { failed(5_000L + it, null) }
+            val stalled = failed(6_000L, "UPSTREAM_STALLED")
+            fun waited(ts: Long, gap: Long, began: Long) = PerfRow(
+                ts = ts,
+                outcome = "ok",
+                fields = mapOf(
+                    PerfKeys.UP_GAP_MAX_MS to gap,
+                    PerfKeys.UP_GAP_MAX_START_EPOCH_MS to began,
+                    PerfKeys.TOTAL to 100L,
+                    PerfKeys.FIRST_BYTE to 10L,
+                ),
+            )
+            val sat = (1..2_100).map { waited(10_000L + it, 70_000L, 10_000L + it - 50) } +
+                waited(20_000L, 90_000L, 19_950L)
+            // a silence that began BEFORE the first byte was not waited through mid-answer
+            val early = waited(21_000L, 95_000L, 20_000L)
+            val busy = cut + plain + stalled + sat + early
+            val busyHead = UsageHead(
+                key = "kimi",
+                label = "claude-kimi",
+                usage = HeadUsageSource { UsageView(0, 0, null) },
+                warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+                sinks = UsageHeadSinks(
+                    perfRows = PerfRowsSource { since -> PerfRowsWindow(busy.filter { it.ts >= since }) },
+                ),
+            )
+            val busyRoutes = PerfRoutes(UsageHeadLookup { listOf(busyHead) }, WallClock { 30_000 })
+            application { routing { get("/api/perf/turns") { busyRoutes.turns(call) } } }
+            val ask = "n=1&ask=test%3Dcutoff%26n%3D1&ask=test%3Doverloaded%26n%3D1&ask=test%3Dgaveup%26n%3D1" +
+                "&ask=test%3Dwaited%26silence_ms%3D60000%26n%3D1"
+            val asks = ask(client, ask).getValue("asks").jsonArray.map { it.jsonObject }
+            assertEquals(2_100L, count(asks[0]), "every cut-off row, past the 2,000 a read carries")
+            assertEquals(3L, count(asks[1]), "overloaded is what is neither cut off nor given up")
+            assertEquals(1L, count(asks[2]))
+            assertEquals(2_101L, count(asks[3]), "the early silence is not waited out")
+            assertEquals(listOf(3_100L), stamps(asks[0]), "the newest cut-off row")
+            assertEquals(90_000L, asks[3].getValue("longest_silence_ms").jsonPrimitive.long)
+            assertEquals(20_000L, asks[3].getValue("longest").jsonObject.getValue("ts").jsonPrimitive.long)
         }
 
     @Test

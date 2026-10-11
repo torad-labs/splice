@@ -121,7 +121,7 @@ public class TranscriptReader(
         tailOf(sessionId, roots, cwd)?.message
 
     override fun tail(sessionId: String, roots: List<Path>, cwd: String?): SessionTail? =
-        tailOf(sessionId, roots, cwd)?.let { SessionTail(it.model, it.answered) }
+        tailOf(sessionId, roots, cwd)?.let { SessionTail(it.model, it.answered, it.modelAt) }
 
     private fun tailOf(sessionId: String, roots: List<Path>, cwd: String?): TailReading? {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId, cwd) else null

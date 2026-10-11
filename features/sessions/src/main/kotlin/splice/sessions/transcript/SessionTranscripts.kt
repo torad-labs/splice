@@ -43,8 +43,13 @@ public data class TranscriptMessage(
     val source: TranscriptSource = TranscriptSource(),
 )
 
-/** [model] is null when none is recorded; [answered] is the newest message that is not the person's, null when there is none. */
-public data class SessionTail(val model: String?, val answered: TranscriptMessage?)
+/** [model] is null when none is recorded; [answered] is the newest message that is not the person's, null when there is none.
+ *  [modelAt] is when the reply that named [model] was written, which is what a later move is newer than. */
+public data class SessionTail(
+    val model: String?,
+    val answered: TranscriptMessage?,
+    val modelAt: Long? = null,
+)
 
 /** A session's move onto another model: the message it moved at (the first moved assistant message; null when no row
  *  changed model, as on a move between two commands that serve it), the model it went on, the command (the head's

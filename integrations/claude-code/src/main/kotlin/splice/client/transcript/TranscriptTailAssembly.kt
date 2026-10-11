@@ -17,6 +17,8 @@ internal data class TailSelection(
     val model: String? = null,
     /** The newest message that is not the person's, when the window holds it whole; else the last message. */
     val answered: TranscriptMessage? = message,
+    /** When the reply that named [model] was written: what a later move is newer than. */
+    val modelAt: Long? = null,
 )
 
 /** The first line of a non-origin window is incomplete and cannot contribute a partial message. */
@@ -40,7 +42,7 @@ internal class TranscriptTailAssembly(
         val complete = origin || ready
         val written = messages.lastOrNull { it.role == TranscriptRole.ASSISTANT && it.source.model != null }
         val model = written?.source?.model
-        return TailSelection(last, complete, model, answered(messages, origin) ?: last)
+        return TailSelection(last, complete, model, answered(messages, origin) ?: last, written?.ts)
     }
 
     /** The newest message that is not the person's, when the window holds it whole. */

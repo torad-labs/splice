@@ -390,6 +390,34 @@ class SessionsConsoleRoutesTest {
     }
 
     @Test
+    fun `a line Claude Code wrote itself after a move does not date the move away`() {
+        // what the walk met: the move back landed, then its first turn failed and Claude Code wrote the failure into
+        // the conversation. That line names no model, so the newest reply that does is still the one it left on.
+        val transcripts = object : SessionTranscripts {
+            override fun tail(sessionId: String, roots: List<Path>, cwd: String?): SessionTail = SessionTail(
+                model = "gpt-5.6",
+                answered = TranscriptMessage(5, TranscriptRole.ASSISTANT, 3_000L, "API error: Not logged in"),
+                modelAt = 1_000L,
+            )
+
+            override fun moves(sessionId: String): List<ModelMove> =
+                listOf(ModelMove(null, "claude-opus-5-5", "claude-splice", 2_000L, "claudex", "gpt-5.6"))
+
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+                error("a card never pages")
+
+            override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
+                SentTexts(null, emptyMap(), ids)
+        }
+        val dir = Files.createDirectories(tmp.resolve("sessions"))
+        Files.writeString(dir.resolve("11.json"), """{"pid":11,"sessionId":"$ALPHA","updatedAt":$NOW}""")
+        val registry = SessionRegistry(dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true }, clock = { NOW })
+        val roots = TranscriptRoots(vanilla = tmp.resolve(".claude"))
+        val rows = rowsOf(SessionsRoutes(registry, transcripts, roots = roots))
+        assertEquals("claude-opus-5-5", rows.getValue(ALPHA)["model"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun `the transcript page names each assistant message and where the session moved to another model`() {
         val reply = TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "hi", messageId = "m1")
         val transcripts = object : SessionTranscripts {

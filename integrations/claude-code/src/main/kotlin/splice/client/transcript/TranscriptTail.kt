@@ -26,6 +26,8 @@ internal data class TailReading(
     val message: TranscriptMessage?,
     val model: String?,
     val answered: TranscriptMessage? = message,
+    /** When the reply that named [model] was written. */
+    val modelAt: Long? = null,
 )
 
 /** Cache publication is synchronized; every filesystem operation runs outside that monitor. */
@@ -88,12 +90,16 @@ internal class TranscriptTail(
         selected.complete && (selected.model != null || offset == 0L || read >= TAIL_MODEL_BYTES)
 
     private fun reading(selected: TailSelection) =
-        TailReading(selected.message, selected.model, selected.answered)
+        TailReading(selected.message, selected.model, selected.answered, selected.modelAt)
 
     private fun unsettled(last: TailSelection?): TailReading {
         val settled = last?.takeIf { it.complete }
         return settled?.let(::reading)
-            ?: TailReading(last?.message?.takeIf { it.role == TranscriptRole.USER }, last?.model)
+            ?: TailReading(
+                last?.message?.takeIf { it.role == TranscriptRole.USER },
+                last?.model,
+                modelAt = last?.modelAt,
+            )
     }
 
     private fun join(chunks: ArrayDeque<ByteArray>, size: Int): ByteArray {

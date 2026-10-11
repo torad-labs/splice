@@ -36,9 +36,11 @@ internal object SessionActivity {
     ): JsonElement {
         if (!viewEnabled()) return JsonNull
         val tail = sessionId?.let { source.tail(it, roots, cwd) }
-        // a move with no reply since names the model the session goes on with: the newest reply is still the old one
+        // a move with no reply since names the model the session goes on with: the newest reply is still the old one.
+        // Judged against the reply that NAMED the model, never the newest message: a line Claude Code wrote itself
+        // after a move, such as an API error, carries no model and must not date the move away (Marlin, move check 5)
         val moved = sessionId?.let { source.moves(it).lastOrNull() }
-            ?.takeIf { it.model.isNotBlank() && it.movedAt > (tail?.answered?.ts ?: 0L) }
+            ?.takeIf { it.model.isNotBlank() && it.movedAt > (tail?.modelAt ?: tail?.answered?.ts ?: 0L) }
         val model = moved?.model ?: tail?.model ?: return JsonNull
         return JsonPrimitive(model)
     }

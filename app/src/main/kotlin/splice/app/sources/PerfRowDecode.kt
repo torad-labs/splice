@@ -13,8 +13,9 @@ import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts
 
-// why: 64 fields cover the synthetic 49-field shape with headroom and bound retained duplicate-name scratch.
-private const val PERF_STREAM_FIELD_LIMIT = 64
+// why: 128 fields cover the live rows (25 to 79 fields, a median of 66 to 69) with headroom and bound retained duplicate-name
+// scratch. At 64 every live row took the tree reader, an exception and a full parse per row, 10 to 26 s a query on 100 MB.
+private const val PERF_STREAM_FIELD_LIMIT = 128
 
 // why: 4 Ki characters cover the measured 1 KiB row with headroom and cap the source-owned recycler buffer.
 private const val PERF_STREAM_LINE_CHARS = 4_096

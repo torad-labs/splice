@@ -231,15 +231,16 @@ function useOf(tm, slotId) {
 }
 function figures(u, since) {
   if (!u) return "";
-  // As Sessions' Today line: a cost is said only when every request is priced and it is more than nothing, since a
-  // plan's requests carry no price and a sum over some of them would read as the whole. With no figure the count says why,
-  // as Accounts' Day row does: a plan's requests are "on your plan", the rest "with no price", the bigger count first.
-  const why = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
-    .map(([n, w]) => `<span>${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"} ${w}</span>`).join("");
-  const priced = u.usd != null && u.unpriced === 0 && u.usd > 0;
-  // every request unpriced: the reason is the count itself, so the line does not say the same number twice
-  const count = !priced && u.unpriced === u.turns ? "" : `<span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span>`;
-  return `<span class="figs">${count || why}<span>${big(u.tokens)} tokens</span>${priced ? `<span>${usd(u.usd)}</span>` : count ? why : ""}` +
+  // One money form on every page (Marlin, Oct 10): dollars first, tied to the requests that were priced when some were
+  // not, then each count of the unpriced above nothing, the bigger first. A cost is never summed over some as though it
+  // were the whole, so "≈$0.92 for 55 · 322 on your plan"; "≈$0.92" alone means every request was priced. The route does
+  // not say which requests moved no tokens, so "priced" here is every request that got an amount.
+  const priced = u.turns - u.unpriced;
+  const shares = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
+    .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
+  const dollars = u.usd != null && u.usd > 0 && priced > 0 ? [`${usd(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
+  const money = [...dollars, ...shares].join(" · ");
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money ? `<span>${money}</span>` : ""}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {

@@ -53,6 +53,23 @@ class EconomicsBackfillTest {
     )
 
     @Test
+    fun `a torn log is not read again at every call while its files are only appended to`(@TempDir dir: Path) {
+        val perf = dir.resolve("head-perf.jsonl")
+        val torn = rowAt(6 * HOUR_MS).dropLast(1)
+        Files.writeString(perf, rowAt(5 * HOUR_MS) + "\n" + torn + "\n" + rowAt(NOW_MS) + "\n")
+        val log = PerfRowsFileSource(perf)
+        val kept = KeptHistory { HistoryWindow(35) }
+        val backfill = EconomicsBackfill(log, TurnPrice(card), kept, WallClock { NOW_MS })
+        assertEquals(emptyList<Any>(), backfill.missing(emptyList()))
+        val parsed = log.parsedLines
+        assertTrue(parsed > 0)
+        assertEquals(emptyList<Any>(), backfill.missing(emptyList()))
+        Files.writeString(perf, rowAt(NOW_MS + 1) + "\n", java.nio.file.StandardOpenOption.APPEND)
+        assertEquals(emptyList<Any>(), backfill.missing(emptyList()))
+        assertEquals(parsed, log.parsedLines, "a refused log is not read again until it is rewritten")
+    }
+
+    @Test
     fun `an hour splice holds the turns for, and no total for, is built from those turns`(@TempDir dir: Path) {
         val perf = dir.resolve("head-perf.jsonl")
         // Three hours of turns on disk; the rollup holds only the newest. The OLDEST is left out: a

@@ -42,6 +42,7 @@ internal class EconomicsBackfill(
     private val clock: WallClock,
 ) {
     private val rows = EconomicsFromRows(price)
+    private val refusal = PerfRefusal(perf.files)
 
     /** The earliest cutoff a pass has already covered, or null when none has. A moment and not a
      *  flag: a pass closes the gap down to the window's edge AS IT STOOD, and widening the window
@@ -60,10 +61,20 @@ internal class EconomicsBackfill(
             cover(from)
             return emptyList()
         }
-        val evidence = perf.economicsEvidence(from)
-        if (evidence.work.readError != null || evidence.work.skipped != 0) return emptyList()
+        val evidence = exact(from) ?: return emptyList()
         cover(from)
         return built(evidence, from, oldestHeld)
+    }
+
+    /** The evidence from [from] when the log reads whole. A log refused for a torn row stays refused while its files are
+     *  only appended to, so it is not read again. */
+    private fun exact(from: Long): EconomicsPerfEvidence? {
+        if (refusal.stands(from)) return null
+        val before = perf.files.stamp()
+        val evidence = perf.economicsEvidence(from)
+        val tore = evidence.work.readError == null && evidence.work.skipped != 0
+        refusal.note(before, from, tore)
+        return evidence.takeIf { it.work.readError == null && !tore }
     }
 
     /**

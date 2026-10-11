@@ -20,6 +20,7 @@ private val REPRICE_BUCKET_MS = 1.hours.inWholeMilliseconds
 /** Prices an hour again from the perf rows behind it, with the rate cards this daemon holds now. */
 internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: TurnPrice) {
     private val rows = EconomicsFromRows(price)
+    private val refusal = PerfRefusal(perf.files)
 
     // WHICH rows an hour is made of is not answered here. The reconciliation this must agree with and the
     // backfill it grades beside both take it from EconomicsRows, which says why it cannot be two answers;
@@ -33,14 +34,24 @@ internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: Tur
     fun priced(buckets: List<EconomicsBucket>): List<EconomicsBucket> {
         val wanted = buckets.filter { it.unpricedTurns > 0L }
         if (wanted.isEmpty()) return buckets
-        val evidence = perf.economicsEvidence(wanted.minOf { it.hour })
-        if (evidence.work.readError != null || evidence.work.skipped != 0) return buckets
+        val evidence = exact(wanted.minOf { it.hour }) ?: return buckets
         val probes = evidence.probes.toSet()
         val byHour = selection.billed(evidence.work.rows).filterNot { it in probes }
             .groupBy { it.ts / REPRICE_BUCKET_MS * REPRICE_BUCKET_MS }
         return buckets.map { bucket ->
             if (bucket.unpricedTurns == 0L) bucket else repriced(bucket, byHour[bucket.hour].orEmpty())
         }
+    }
+
+    /** The evidence from [from] when the log reads whole. A log refused for a torn row stays refused while its files are
+     *  only appended to, so it is not read again. */
+    private fun exact(from: Long): EconomicsPerfEvidence? {
+        if (refusal.stands(from)) return null
+        val before = perf.files.stamp()
+        val evidence = perf.economicsEvidence(from)
+        val tore = evidence.work.readError == null && evidence.work.skipped != 0
+        refusal.note(before, from, tore)
+        return evidence.takeIf { it.work.readError == null && !tore }
     }
 
     /** The hour's cost from its own rows, or the hour unchanged when the rows are not the turns it counted. */

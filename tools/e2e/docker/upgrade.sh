@@ -134,7 +134,9 @@ start_subs_mock() {
   cat "$OUT/mock_subs.out"
 }
 read_subs_port() { # in the MAIN shell, after start_subs_mock
-  SUBS_PORT="$(mock_field mock_subs.out port 2>/dev/null)"
+  step "subscription mock port readable" mock_values subs mock_subs.out port
+  stop_if_failed
+  SUBS_PORT="$(mock_field mock_subs.out port)"
   echo "  subs mock :$SUBS_PORT (log $SUBS_LOG)"
 }
 

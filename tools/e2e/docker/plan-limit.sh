@@ -65,9 +65,11 @@ start_plan_mocks() {
   cat "$OUT/mock_anthropic_turn.out" "$OUT/mock_anthropic_probe.out" "$OUT/mock_anthropic_pool.out"
 }
 step "plan-limited Anthropic mocks up" start_plan_mocks
-TURN_MOCK_PORT="$(mock_field mock_anthropic_turn.out port 2>/dev/null)"
-PROBE_MOCK_PORT="$(mock_field mock_anthropic_probe.out port 2>/dev/null)"
-POOL_MOCK_PORT="$(mock_field mock_anthropic_pool.out port 2>/dev/null)"
+step "plan-limited mock ports readable" mock_values turn mock_anthropic_turn.out port probe mock_anthropic_probe.out port pool mock_anthropic_pool.out port
+stop_if_failed
+TURN_MOCK_PORT="$(mock_field mock_anthropic_turn.out port)"
+PROBE_MOCK_PORT="$(mock_field mock_anthropic_probe.out port)"
+POOL_MOCK_PORT="$(mock_field mock_anthropic_pool.out port)"
 
 # ── 2. topology: two claude-splice-shaped heads (anthropic-passthrough, the client's own login) ───
 write_plan_topology() {

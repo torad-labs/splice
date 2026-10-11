@@ -43,7 +43,9 @@ start_runtime() {
   cat "$OUT/mock_runtime.out"
 }
 step "llama-server-shaped runtime up" start_runtime
-RUNTIME_PORT="$(mock_field mock_runtime.out port 2>/dev/null)"
+step "runtime mock port readable" mock_values runtime mock_runtime.out port
+stop_if_failed
+RUNTIME_PORT="$(mock_field mock_runtime.out port)"
 
 # ── 2. topology: the row `splice setup` writes for a runtime rig describes ──────────────────────
 # Line for line AddProfiles' rendering of RuntimeHeadAdd's profile (RuntimeHeadAddTest pins the

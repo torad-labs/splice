@@ -158,10 +158,24 @@ start_mocks() {
   cat "$OUT/mock_codex.out" "$OUT/mock_chat.out"
 }
 mock_field() { bun "$LIB_TS" field "$OUT/$1" "$2"; }
+# <mock> <out file> <field> ... — each field of a mock's first line. A line that is cut off or renamed stops
+# here with the helper's own message beside the mock and the field, not later as an empty port in a config.
+mock_values() {
+  local value
+  while [ $# -ge 3 ]; do
+    value="$(mock_field "$2" "$3" 2>&1)" || { echo "$1 mock: cannot read '$3' from $2: $value"; return 1; }
+    echo "  $1 mock $3=$value"
+    shift 3
+  done
+}
+# A failed step already recorded its cause; the steps after it would only fail on the empty value it left.
+stop_if_failed() { [ "$FAILED" -eq 0 ] || exit 1; }
 read_mock_ports() { # in the MAIN shell, after start_mocks
-  CODEX_MOCK_PORT="$(mock_field mock_codex.out port 2>/dev/null)"
-  CODEX_AUTH_PATH="$(mock_field mock_codex.out auth_path 2>/dev/null)"
-  CHAT_MOCK_PORT="$(mock_field mock_chat.out port 2>/dev/null)"
+  step "mock ports readable" mock_values codex mock_codex.out port codex mock_codex.out auth_path chat mock_chat.out port
+  stop_if_failed
+  CODEX_MOCK_PORT="$(mock_field mock_codex.out port)"
+  CODEX_AUTH_PATH="$(mock_field mock_codex.out auth_path)"
+  CHAT_MOCK_PORT="$(mock_field mock_chat.out port)"
   echo "  codex mock :$CODEX_MOCK_PORT auth=$CODEX_AUTH_PATH; chat mock :$CHAT_MOCK_PORT"
 }
 

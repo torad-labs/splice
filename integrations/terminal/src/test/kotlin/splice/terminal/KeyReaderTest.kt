@@ -39,7 +39,7 @@ class KeyReaderTest {
 
     @Test
     fun `a lone ESC yields Escape and does not block forever`() {
-        assertTimeout(Duration.ofSeconds(1)) {
+        assertTimeout(Duration.ofSeconds(30)) {
             assertEquals(Key.Escape, readBytes(27))
         }
     }

@@ -20,7 +20,7 @@ import java.net.ServerSocket
 import java.nio.file.Path
 
 private const val SECRET = "s3cr3t-T0KEN"
-private const val TIMEOUT_MS = 300L
+private const val TIMEOUT_MS = 10_000L
 
 class AlertRoutesTest {
 

@@ -320,7 +320,7 @@ public class AccountPool(
             chosen.label == pinLabel -> AccountSwitchReason.PINNED
             chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
                 AccountSwitchReason.ORDERED
-            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous)
+            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
             AccountAvailability.fullReading(previous, at) -> AccountSwitchReason.USAGE_READING_FULL
             chosen.primary -> AccountSwitchReason.PRIMARY_RESET
             else -> AccountSwitchReason.RESET_SOONER

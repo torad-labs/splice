@@ -174,7 +174,7 @@ class AccountPoolTest {
 
         assertSame(backup, selected.account)
         assertEquals("primary", selected.switch?.from)
-        assertEquals("account unavailable", selected.switch?.reason)
+        assertEquals("previous login needs sign-in", selected.switch?.reason)
     }
 
     @Test

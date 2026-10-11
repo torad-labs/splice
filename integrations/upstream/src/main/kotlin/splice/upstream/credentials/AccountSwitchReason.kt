@@ -13,6 +13,7 @@ public object AccountSwitchReason {
     internal const val SEVEN_DAY_QUOTA = "7-day quota exhausted"
     internal const val USAGE_READING_FULL = "quota usage reading full"
     internal const val ACCOUNT_UNAVAILABLE_REASON = "account unavailable"
+    internal const val SIGN_IN_NEEDED = "previous login needs sign-in"
 
     private val reasons = setOf(
         PINNED,
@@ -25,6 +26,7 @@ public object AccountSwitchReason {
         SEVEN_DAY_QUOTA,
         USAGE_READING_FULL,
         ACCOUNT_UNAVAILABLE_REASON,
+        SIGN_IN_NEEDED,
         planLimit("5-hour"),
         planLimit("7-day"),
         "7d window exhausted",

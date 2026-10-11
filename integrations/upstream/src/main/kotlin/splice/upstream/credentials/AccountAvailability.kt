@@ -53,10 +53,14 @@ internal object AccountAvailability {
         exhausted(it.fiveHour, at) || exhausted(it.sevenDay, at)
     } == true
 
-    /** Why [account] stopped serving, the plan the provider named spent first. */
-    fun limitReason(account: PoolAccount): String {
+    /** Why [account] stopped serving: a login that is signed out or rejected first, since only the person can fix
+     *  it, then the plan the provider named spent. */
+    fun limitReason(account: PoolAccount, at: Long): String {
         val plan = account.cooldown.planHold.live()
+        val credential = account.credentialStatus(at)
+        val signedOut = !credential.credentialPresent || credential.excludedUntilEpochMillis != null
         return when {
+            signedOut -> AccountSwitchReason.SIGN_IN_NEEDED
             plan != null -> AccountSwitchReason.planLimit(plan.windowWords)
             account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L ->
                 AccountSwitchReason.PROVIDER_LIMIT

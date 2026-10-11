@@ -57,6 +57,8 @@ async function readKept() {
     API.get("/api/upgrade"), API.get("/api/upgrade/run"),
   ]);
   ui.hist = hist.ok ? hist.body : null;
+  const stores = await API.get("/api/kept/stores");
+  ui.stores = stores.ok ? stores.body.stores : null;
   ui.kept = { turns: turns.ok ? turns.body : null, edges: edges.ok ? edges.body : null, labels: labels.ok ? labels.body : null };
   ui.heads = (heads.body?.heads || []).map((h) => h.key);
   ui.headRows = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
@@ -112,15 +114,19 @@ const traceOn = (head) => ui.capture[head] ?? ks.cfg?.layers?.perHead?.[head]?.t
 // Each store, what it holds, how long, and its Delete now. A store with no route to count or delete it says so.
 const DATA_ROWS = [
   { id: "trace", g: "text", name: "Prompts and answers", unit: "requests", yours: true, door: ["requests.html", "Requests"] },
-  { id: "originals", g: "text", name: "Transcript copies", noRoute: true, yours: true, always: true },
-  { id: "recordings", g: "text", name: "Compaction summaries", noRoute: true, always: true },
-  { id: "journals", g: "text", name: "Code mode work", noRoute: true, always: true },
+  // the stores a person's prompts sit in that no feature runs without: counted and cleared by /api/kept/stores, each naming the
+  // feature that needs it in place of a switch, with the lifetime splice gives it (the history window, or its own)
+  { id: "originals", g: "text", name: "Transcript copies", unit: "files", yours: true, store: "transcript_copies", needs: "Needed to resume on another model" },
+  { id: "recordings", g: "text", name: "Compaction summaries", unit: "files", store: "compaction_summaries", needs: "Needed to retry a compaction", life: "2 hours" },
+  { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", needs: "Needed by code mode", life: "1 day unused" },
   { id: "reasoning", g: "text", name: "Reasoning between requests", noRoute: true },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
   { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"] },
   { id: "labels", g: "records", name: "What each agent is doing", unit: "lines", door: ["teams.html", "Teams"] },
 ];
 const EP = { trace: null, hist: "/api/kept/turns", edges: "/api/kept/edges", labels: "/api/kept/labels" };
+// a store behind /api/kept/stores is read from that one answer and cleared by its own name
+const storeOf = (r) => r.store && ui.stores && ui.stores[r.store];
 // what a store holds now: rows, bytes, since when. null when its route would not answer.
 function heldOf(r) {
   if (r.id === "hist") return ui.hist && { n: ui.hist.held.turns, bytes: ui.hist.held.bytes, since: ui.hist.held.oldest_epoch_ms };
@@ -128,6 +134,7 @@ function heldOf(r) {
     const t = ui.kept.trace;
     return t && { n: t.reduce((s, x) => s + x.records, 0), bytes: t.reduce((s, x) => s + x.bytes, 0), since: null };
   }
+  if (r.store) { const s = storeOf(r); return s && !s.error ? { n: s.files, bytes: s.bytes, since: s.oldest_epoch_ms ?? null } : null; }
   const k = ui.kept[r.id];
   return k && { n: k.rows, bytes: k.bytes, since: k.oldest ? Date.parse(`${k.oldest}T00:00:00`) : null };
 }
@@ -174,11 +181,12 @@ function dataRow(r) {
   const x = heldOf(r), id = `del:${r.id}`;
   if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
-  const keep = (r.id === "edges" || r.id === "trace") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
-    : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>` : "";
+  const keep = (r.id === "edges" || r.id === "trace" || r.id === "originals") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
+    : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
+    : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   return drow({
     name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep,
-    sw: on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
+    sw: r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
     more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
@@ -436,7 +444,8 @@ async function setCapture(head, on) {
 }
 async function remove(id) {
   const key = id.slice(4), bad = () => { ui.bad[id] = "Not deleted"; };
-  const paths = key === "trace" ? ui.heads.map((h) => `/api/heads/${encodeURIComponent(h)}/trace/kept`) : [EP[key]];
+  const store = DATA_ROWS.find((r) => r.id === key)?.store;
+  const paths = key === "trace" ? ui.heads.map((h) => `/api/heads/${encodeURIComponent(h)}/trace/kept`) : [store ? `/api/kept/stores/${store}` : EP[key]];
   const answers = await Promise.all(paths.map((p) => API.del(p)));
   if (answers.some((a) => !a.ok)) bad(); else delete ui.bad[id];
   await refresh();

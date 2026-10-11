@@ -9,8 +9,10 @@
 // last week's spend on Usage has been told something false.
 package splice.app.control.mount
 
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.put
 import kotlinx.coroutines.CoroutineDispatcher
@@ -30,6 +32,7 @@ import splice.head.perf.HistoryRoutes
 import splice.head.perf.HistoryStores
 import splice.head.perf.HistoryWindowStore
 import splice.head.usage.EconomicsStore
+import splice.http.JsonReply
 import splice.sessions.activity.SparedEdges
 
 /** Settings > Your data's history row: what is held, what a shorter window would delete, and the
@@ -135,7 +138,30 @@ internal class HistoryWiring(
                 withContext(fileIo) { routes().save(asked) }.send(call)
             }
         }
+        route.get("/api/kept/stores") {
+            guard.guarded(call) { withContext(fileIo) { storeRoutes()?.kept() ?: unwired }.send(call) }
+        }
+        route.delete("/api/kept/stores/{name}") {
+            guard.guarded(call) {
+                val name = call.parameters["name"].orEmpty()
+                withContext(fileIo) { storeRoutes()?.delete(name) ?: unwired }.send(call)
+            }
+        }
     }
+
+    /** The three stores no count reached before: the transcript copies, the parked compaction summaries and code mode
+     *  work, each cleared by its own call. */
+    private fun storeRoutes() = ports.turnStatistics?.let { state ->
+        StoreKeptRoutes(
+            mapOf(
+                "transcript_copies" to TranscriptCopiesKept(state),
+                "compaction_summaries" to CompactionSummariesKept(state),
+                "code_mode" to CodeModeKept(state),
+            ),
+        )
+    }
+
+    private val unwired = JsonReply(HttpStatusCode.ServiceUnavailable, """{"error":"the state paths are not wired"}""")
 
     private fun routes() = HistoryRoutes(ports.turnStatistics, window, stores, inventory = inventory)
 }

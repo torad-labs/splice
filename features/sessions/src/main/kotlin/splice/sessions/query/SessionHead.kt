@@ -13,7 +13,14 @@ public data class SessionHead(
     val perfRows: SessionPerfSource? = null,
     /** The rate cards used to price this head's rows. */
     val catalog: ModelCatalog? = null,
+    /** Whether a plan covers an account's requests, so a plan's requests are never counted as a key's cost. */
+    val plans: SessionAccountPlans = SessionAccountPlans { false },
 )
+
+/** Whether a plan covers the requests an account carried: the plan question, asked of the head's accounts. */
+public fun interface SessionAccountPlans {
+    public operator fun invoke(account: String?): Boolean
+}
 
 /** One turn row narrowed to the fields session projections consume. */
 public data class SessionPerfRow(
@@ -22,6 +29,8 @@ public data class SessionPerfRow(
     val fields: Map<String, Long>,
     val model: String? = null,
     val session: String? = null,
+    /** The account label that carried the request. */
+    val account: String? = null,
 )
 
 /** One coherent read of retained turn rows. */

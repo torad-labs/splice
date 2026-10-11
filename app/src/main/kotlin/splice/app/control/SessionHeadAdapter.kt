@@ -1,6 +1,7 @@
 // NEW: LAYOUT-01 — control-owned adapters from ManagedHead into the narrow sessions query contract.
 package splice.app.control
 
+import splice.sessions.query.SessionAccountPlans
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfRow
 import splice.sessions.query.SessionPerfSource
@@ -23,6 +24,7 @@ internal object SessionHeadAdapter {
                             fields = row.fields,
                             model = row.facts.model,
                             session = row.facts.session,
+                            account = row.facts.account,
                         )
                     },
                     oldestHeldTs = window.oldestHeldTs,
@@ -30,5 +32,6 @@ internal object SessionHeadAdapter {
             }
         },
         catalog = head.statusline.catalog,
+        plans = SessionAccountPlans { head.authSurface.plans(it) },
     )
 }

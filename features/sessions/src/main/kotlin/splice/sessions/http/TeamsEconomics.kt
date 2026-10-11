@@ -24,6 +24,7 @@ import splice.core.model.TokenCost
 import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
+import splice.sessions.query.SessionAccountPlans
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfRow
 import splice.sessions.teams.Team
@@ -101,8 +102,8 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
             if (row.fields[PerfKeys.LOCAL_STEP] == 1L) continue // No upstream turn to attribute to this team.
             if (row.session == null) unattributed += 1
             row.session?.let(slotOfTag::get)?.let { slot ->
-                bySlot.getValue(slot.id).add(row, head.catalog)
-                byRole.getValue(slot.role).add(row, head.catalog)
+                bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
+                byRole.getValue(slot.role).add(row, head.catalog, head.plans)
             }
         }
     }
@@ -149,11 +150,20 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     var lastOutcome: String? = null
         private set
 
+    /** Moved turns an account with a plan carried: they are counted in [unpricedTurns] and never in [pricedMovedTurns],
+     *  because a plan covered them (fin, Oct 11), and their API-rate value is [planValueUsd], no cost. */
+    var planTurns: Long = 0L
+        private set
+
+    /** What the plan turns that have a price would have cost at the API rates; null when none had one. */
+    var planValueUsd: Double? = null
+        private set
+
     /** The priced turns' dollars, or null when there are turns and none was priced. V4-264: one turn
      *  on a model with no card (the client's haiku call) left take 3's lead with no figure at all. */
     val costUsd: Double? get() = usd.takeUnless { turns > 0L && unpricedTurns == turns }
 
-    fun add(row: SessionPerfRow, catalog: ModelCatalog?) {
+    fun add(row: SessionPerfRow, catalog: ModelCatalog?, plans: SessionAccountPlans = SessionAccountPlans { false }) {
         // Every request the row billed: its final round and the rounds it absorbed (TurnBill).
         val buckets = TurnBill.total(row.fields)
         turns += 1
@@ -166,10 +176,25 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
         lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
         val amount = TurnBill.usd(row.fields, rates(row.model, catalog)?.at(row.ts), cost)
-        if (amount == null) unpricedTurns += 1 else usd += amount
-        if (buckets.input + buckets.cacheRead + buckets.cacheWrite + buckets.output > 0L) {
+        val moved = buckets.input + buckets.cacheRead + buckets.cacheWrite + buckets.output > 0L
+        val onPlan = plans(row.account)
+        file(amount, moved, onPlan)
+        if (moved) {
             movedTurns += 1
-            if (amount != null) pricedMovedTurns += 1
+            if (amount != null && !onPlan) pricedMovedTurns += 1
+        }
+    }
+
+    /** A plan covered the request: its dollars are a value, never a cost, and it stays out of the priced share. */
+    private fun file(amount: Double?, moved: Boolean, onPlan: Boolean) {
+        when {
+            onPlan -> {
+                unpricedTurns += 1
+                if (moved) planTurns += 1
+                if (moved && amount != null) planValueUsd = (planValueUsd ?: 0.0) + amount
+            }
+            amount == null -> unpricedTurns += 1
+            else -> usd += amount
         }
     }
 
@@ -187,6 +212,8 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         )
         put("cost_usd", costUsd)
         put("unpriced_turns", unpricedTurns)
+        put("plan_turns", planTurns)
+        put("plan_value_usd", planValueUsd)
         put("moved_turns", movedTurns)
         put("priced_moved_turns", pricedMovedTurns)
         put("unreported_usage_turns", unreportedUsageTurns)

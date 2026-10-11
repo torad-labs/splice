@@ -12,6 +12,8 @@ import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.HeadCompactSource
+import splice.head.usage.AccountOnPlan
+import splice.head.usage.NoPlans
 import splice.head.wire.TraceSwitch
 import splice.launch.KeyPresenceProbe
 import splice.launch.LaunchSpec
@@ -75,6 +77,8 @@ public data class HeadAuthSurface(
     val accountPool: HeadAccountPoolSource? = null,
     /** Per-account masked descriptions; never passed to the unauthenticated statusline. */
     val accountAuth: HeadAccountAuthSource? = null,
+    /** Whether a plan covers an account's requests: the answer the rollup files each request by. */
+    val plans: AccountOnPlan = NoPlans,
 )
 
 /** What the statusline route needs from one head to turn Claude Code's counts back into the row's units. */

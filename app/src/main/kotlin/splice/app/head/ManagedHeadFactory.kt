@@ -184,6 +184,7 @@ internal class ManagedHeadFactory(
                 keyPresence = keyPresence,
                 accountPool = accountPools.source(stores.accounts.pool, key, accountOrders),
                 accountAuth = accountPools.authSource(wired),
+                plans = stores.telemetry.economics.plans,
             ),
             launchSpec = launchSpecFactory.launchSpecFor(
                 ctx,

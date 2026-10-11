@@ -33,7 +33,7 @@ internal class ProjectEconomics(private val heads: Map<String, SessionHead>, now
         for ((head, window) in today) {
             // EconomicsStore counts local code-mode steps separately from turns; a project does too.
             window.rows.filter { it.session in tags && it.fields[PerfKeys.LOCAL_STEP] != 1L }
-                .forEach { tally.add(it, head.catalog) }
+                .forEach { tally.add(it, head.catalog, head.plans) }
         }
         val touched = sessions.flatMap {
             listOfNotNull(it.process.updatedAt, it.status.updatedAt, it.process.startedAt)
@@ -46,6 +46,8 @@ internal class ProjectEconomics(private val heads: Map<String, SessionHead>, now
             put("turns_today", tally.turns)
             put("cost_today_usd", tally.costUsd)
             put("unpriced_turns_today", tally.unpricedTurns)
+            put("plan_turns_today", tally.planTurns)
+            put("plan_value_today_usd", tally.planValueUsd)
             put("unreported_usage_turns_today", tally.unreportedUsageTurns)
             put("day_start", dayStart)
             put("last_activity", last?.let(::JsonPrimitive) ?: JsonNull)

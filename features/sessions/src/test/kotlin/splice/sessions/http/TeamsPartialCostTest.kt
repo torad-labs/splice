@@ -23,6 +23,7 @@ import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
+import splice.sessions.query.SessionAccountPlans
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfRow
 import splice.sessions.query.SessionPerfSource
@@ -117,10 +118,9 @@ class TeamsPartialCostTest {
         "muse" to head(rows(MEMBERS.getValue("muse"), "muse-spark-1.3" to 21), "muse-spark-1.3[1m]" to MUSE),
     )
 
-    private fun slotTallies(): Map<String, JsonObject> {
+    private fun slotTallies(heads: Map<String, SessionHead> = heads()): Map<String, JsonObject> {
         val store = TeamStore(tmp.resolve("state/teams.json"), WallClock { BOUND })
         val id = team(store)
-        val heads = heads()
         val routes = TeamsRoutes(
             teams = TeamSource { store },
             heads = heads,
@@ -165,6 +165,36 @@ class TeamsPartialCostTest {
             mapOf("claude" to 43L, "gpt" to 53L, "grok" to 38L, "muse" to 21L),
             slots.mapValues { (_, tally) -> tally.getValue("priced_moved_turns").jsonPrimitive.long },
         )
+    }
+
+    // Oct 11, fin: a plan covered the lead's requests, so they are a value and never a cost.
+    @Test
+    fun `a slot on a plan account keeps its requests out of the cost and counts them as plan turns`() {
+        val plan = heads().getValue("claude-splice")
+        val onPlan = plan.copy(
+            perfRows = SessionPerfSource { since ->
+                SessionPerfWindow(
+                    plan.perfRows!!.window(since).rows.map { it.copy(account = "plan") },
+                    BOUND,
+                )
+            },
+            plans = SessionAccountPlans { it == "plan" },
+        )
+        val slots = slotTallies(heads() + ("claude-splice" to onPlan))
+
+        val lead = slots.getValue("claude")
+        assertEquals(44L, lead.getValue("plan_turns").jsonPrimitive.long, "all 44 moved requests ran on the plan")
+        assertEquals(44L, lead.getValue("unpriced_turns").jsonPrimitive.long)
+        assertEquals(0L, lead.getValue("priced_moved_turns").jsonPrimitive.long)
+        assertEquals("null", lead.getValue("cost_usd").jsonPrimitive.content, "a plan billed nothing")
+        assertEquals(
+            43 * TokenCost().of(TURN, OPUS),
+            lead.getValue("plan_value_usd").jsonPrimitive.double,
+            1e-9,
+            "the API-rate value of the 43 requests the card prices",
+        )
+        assertEquals(0L, slots.getValue("gpt").getValue("plan_turns").jsonPrimitive.long)
+        assertEquals(53 * TokenCost().of(TURN, SOL), dollars(slots.getValue("gpt")), 1e-9)
     }
 
     private fun dollars(tally: JsonObject): Double {

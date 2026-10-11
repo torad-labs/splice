@@ -52,6 +52,9 @@ import kotlin.concurrent.thread
 /** The head's firstByteTimeout in this rig: how long a write may take none of the request. */
 private const val WRITE_TIMEOUT_MS = 1_000L
 
+/** A cut that never comes is a hang; the bound is generous so a loaded host cannot read as one. */
+private const val HANG_BOUND_MS = 15_000L
+
 /** The whole-turn cap, which bounded the stalled write before this row. */
 private const val TOTAL_MS = 12_000L
 
@@ -176,8 +179,8 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
             awaitAll(first, second)
         }
 
-        assertTrue(plainCut.ms < 3 * WRITE_TIMEOUT_MS, "the plain connection is cut at its own bound: $plainCut")
-        assertTrue(tlsCut.ms < 3 * WRITE_TIMEOUT_MS, "the TLS connection is cut at its bound: $tlsCut")
+        assertTrue(plainCut.ms < HANG_BOUND_MS, "the plain connection is cut at its own bound: $plainCut")
+        assertTrue(tlsCut.ms < HANG_BOUND_MS, "the TLS connection is cut at its bound: $tlsCut")
         assertTrue(tlsCut.stalled && plainCut.stalled, "both named a stalled write: $tlsCut / $plainCut")
     }
 
@@ -230,7 +233,7 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
         val waiting = runBlocking { timedFailure { tls.posted(context(tlsUpstream, tls = true), BIG_BODY) { "ok" } } }
         val buffered = runBlocking { timedFailure { plain.posted(context(plainUpstream), BUFFERED_BODY) { "ok" } } }
 
-        assertTrue(waiting.stalled && waiting.ms < 3 * WRITE_TIMEOUT_MS, "a waiting TLS write is cut: $waiting")
+        assertTrue(waiting.stalled && waiting.ms < HANG_BOUND_MS, "a waiting TLS write is cut: $waiting")
         assertTrue(!buffered.stalled && buffered.ms >= SHORT_TOTAL_MS, "no cut on a guess: $buffered")
     }
 

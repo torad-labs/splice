@@ -29,6 +29,7 @@ package splice.upstream.retry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -44,7 +45,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /** Long enough for several polls of a 300ms tier to have landed, and far below any budget here. */
-private const val POLLS_SETTLE_MS = 900L
+private const val POLL_MS = 10L
 
 class WatchdogLivenessTest {
 
@@ -77,7 +78,7 @@ class WatchdogLivenessTest {
                     PathEvidence.OPEN_CONNECTION,
                 ),
             )
-            delay(POLLS_SETTLE_MS)
+            withTimeout(15.seconds) { while (dog.held == null) delay(POLL_MS) }
 
             assertNull(dog.fired, "a round on an open connection was reaped by the tier")
             assertTrue(target.isActive, "a held round must still be running")
@@ -222,7 +223,7 @@ class WatchdogLivenessTest {
                     ProviderProbe { true },
                 ),
             )
-            delay(POLLS_SETTLE_MS)
+            withTimeout(15.seconds) { while (dog.held == null) delay(POLL_MS) }
 
             assertNull(dog.fired, "a probe that could not tell is not evidence of death")
             assertTrue(target.isActive, "the round must still be running")

@@ -23,6 +23,7 @@ package splice.upstream.retry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -35,6 +36,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /** Long enough for several polls of a 200ms tier to have happened, and ~1/300th of streamIdle. */
+private const val POLL_MS = 10L
 private const val SETTLE_MS = 900L
 
 /** The tier under test. Kept far below the polls' 250ms floor only in the sense that matters: the
@@ -67,7 +69,7 @@ class WatchdogStallTierTest {
                 }
             }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
-            delay(SETTLE_MS)
+            withTimeout(15.seconds) { while (dog.fired == null) delay(POLL_MS) }
 
             val fired = dog.fired
             assertTrue(

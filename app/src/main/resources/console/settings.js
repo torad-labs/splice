@@ -415,7 +415,17 @@ function render() {
   if (was) { const b = root.querySelector(".pane .body"); if (b) b.scrollTop = was; }
   KNOBS.focusCustom(root);
   root.querySelector(".pane .menu")?.scrollIntoView({ block: "nearest" });
+  moreBelow();
 }
+
+// An open card taller than its pane says so on its lower edge: "more" is on the pane while content waits below the fold,
+// and goes when the scroll reaches the end. Every card gets it, none draws it unless it overflows.
+function moreBelow() {
+  const body = root.querySelector(".pane .body");
+  if (body) body.parentElement.classList.toggle("more", body.scrollHeight - body.scrollTop - body.clientHeight > 6);
+}
+document.addEventListener("scroll", (e) => { if (e.target.classList?.contains("body")) moreBelow(); }, true);
+window.addEventListener("resize", moreBelow);
 
 // A shorter history window that would delete turns waits for the yes; the daemon says what the cut would take.
 ks.onAsk = (id, days) => {

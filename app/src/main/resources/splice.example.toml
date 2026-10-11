@@ -799,7 +799,7 @@ command = "claude-splice"
 #                                                           #     this false live; full request/response tracing
 #                                                           #     stays per-head and on by default (trace below).
 #                                                           #     No env alias can override the console's off switch.
-# upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing
+# upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing (HOT, per request)
 # wireTap = "0"                                             # bodies; how many of this head's most recent upstream
 #                                                           #     REQUEST BODIES to keep, in memory only, for
 #                                                           #     `splice wire <head>`. 0 (the default) keeps none.

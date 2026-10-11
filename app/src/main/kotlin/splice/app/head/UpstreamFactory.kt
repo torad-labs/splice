@@ -38,7 +38,7 @@ internal class UpstreamFactory {
         ),
         // V4-110 retry curve: read per head, at every retry, from the merged+normalized map (seeded with the Knob
         // defaults, so absent config keeps the generic 200ms/10s/±10% curve).
-        pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve),
+        pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve, liveRetries = ctx.faultPlan.liveRetries),
         holdStore = providerHold,
     )
 }

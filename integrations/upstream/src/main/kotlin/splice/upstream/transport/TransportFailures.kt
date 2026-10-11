@@ -191,6 +191,12 @@ public fun interface LiveRetryCurve {
     public operator fun invoke(): BackoffCurve
 }
 
+/** The tries a request gets (upstreamRetries) as the operator's knob says it is now, asked once as each request
+ *  begins, so a PATCH governs the next request and a request in flight keeps the bound it started with. */
+public fun interface LiveRetries {
+    public operator fun invoke(): Int
+}
+
 /** How one client sleeps between attempts: the [curve] its deadline check budgets against, and the two sleeps that
  *  follow it. HD-19: both sleeps go through [waiter], so a test replaces the WAIT without re-authoring the CURVE it
  *  is measuring, and a recording waiter turns the 200/400/800ms schedule into an assertion on a list. Known errors
@@ -203,7 +209,12 @@ public class RetryPacing(
     private val live: LiveRetryCurve = LiveRetryCurve { curve },
     private val backoff: RetryBackoff = UpstreamTransport().liveBackoff(waiter, live),
     private val dnsBackoff: DnsBackoff = UpstreamTransport().liveDnsBackoff(waiter, live),
+    /** The tries a request gets, read once as it begins; null keeps the client's own fixed bound. */
+    private val liveRetries: LiveRetries? = null,
 ) {
+    /** The bound a request that begins now runs under: the live knob, else the client's [fixed] one. */
+    internal fun triesFor(fixed: Int): Int = liveRetries?.invoke() ?: fixed
+
     /** The longest an ordinary retry can sleep: the curve ceiling, or the server minimum when that is larger. */
     internal fun ordinaryDelayMs(attempt: Int, serverMinMs: Long): Long = maxOf(serverMinMs, live().ceilingMs(attempt))
 

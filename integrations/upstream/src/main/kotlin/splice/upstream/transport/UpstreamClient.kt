@@ -74,6 +74,8 @@ public class UpstreamClient(
     /** V4-412: where this head's provider hold (its reset, the plan window it named spent) survives a
      *  restart; null keeps it in memory only. Pool accounts each carry their own. */
     holdStore: ProviderHoldStore? = null,
+    /** The tries a request gets, asked once as the request begins so it keeps one bound to its end; null keeps
+     *  [maxRetries], the number the client was built with. */
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
@@ -93,7 +95,6 @@ public class UpstreamClient(
     /** Resolves the actual credential's hold, never the aggregate head pressure reported by status. */
     public fun credentialCooldown(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? =
         credentialCooldowns.forHeaders(headers, declaredCarrier)
-    private val retryRules = RetryRules(maxRetries)
     private val budget = RetryBudget(totalTimeoutMs, clock)
     private val reissueRules = ReissueRules()
 
@@ -141,8 +142,8 @@ public class UpstreamClient(
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         var body = request.body(round)
         val t0 = clock()
-        val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0)
-        while (state.attempt < maxRetries) {
+        val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0, pacing.triesFor(maxRetries))
+        while (state.attempt < state.maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.result
                 is LoopStep.Amend -> body = request.body(RoundBody.Text(step.bodyJson))
@@ -150,7 +151,7 @@ public class UpstreamClient(
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return UpstreamPost.Ended(retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry))
+        return UpstreamPost.Ended(state.rules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry))
     }
 
     private enum class RetryKind { ORDINARY, POST_SEND }
@@ -158,7 +159,10 @@ public class UpstreamClient(
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
      *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). [t0] is when the
      *  post began, the start of its deadline. */
-    private class RetryState(var cooldown: RateLimitCooldown, val t0: Long) {
+    private class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val maxRetries: Int) {
+        /** The rules for THIS request's bound. */
+        val rules = RetryRules(maxRetries)
+
         /** The loop's own give-up: the last failure it saw, with the cooldown armed and followers protected. */
         fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> =
             LoopStep.Done(UpstreamPost.Ended(rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry)))
@@ -277,13 +281,13 @@ public class UpstreamClient(
         if (budget.deadlineExceeded(ctx, t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
-                    "${state.attempt + 1}/$maxRetries",
+                    "${state.attempt + 1}/${state.maxRetries}",
             )
-            return state.gaveUp(ctx, retryRules)
+            return state.gaveUp(ctx, state.rules)
         }
         if (!budget.turnWaitExhausted(ctx)) return null
-        ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries")
-        return if (state.lastErr != null) state.gaveUp(ctx, retryRules) else LoopStep.TurnWaitExhausted
+        ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/${state.maxRetries}")
+        return if (state.lastErr != null) state.gaveUp(ctx, state.rules) else LoopStep.TurnWaitExhausted
     }
 
     private suspend fun <T> attempt(
@@ -348,7 +352,7 @@ public class UpstreamClient(
     ): LoopStep<Nothing> {
         state.lastErr = failed
         return if (ctx.nativePool && failed.rateLimitReply != null) {
-            val failure = retryRules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
+            val failure = state.rules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
             LoopStep.Done(UpstreamPost.Refused(failure))
         } else {
             state.amendStep(ctx, failed, body.json) ?: planStep(ctx, failed, state, t0)
@@ -369,12 +373,12 @@ public class UpstreamClient(
         val phase = transportFailures.rethrowUnlessRetryableTransport(
             e,
             deadlineHit = streamHandedOff || budget.deadlineExceeded(ctx, t0),
-            lastAttempt = state.attempt == maxRetries - 1,
+            lastAttempt = state.attempt == state.maxRetries - 1,
         )
         val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
         ctx.onRetry(
             // V4-167: named like the ending names it — a refused connect's own message is empty.
-            "$label ${e::class.simpleName} attempt ${state.attempt + 1}/$maxRetries: " +
+            "$label ${e::class.simpleName} attempt ${state.attempt + 1}/${state.maxRetries}: " +
                 TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
         )
         if (!applyTransportBackoff(e, ctx, state.attempt, t0)) throw e
@@ -434,12 +438,12 @@ public class UpstreamClient(
         if (budget.deadlineExceeded(ctx, t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
-                    "attempt ${state.attempt + 1}/$maxRetries",
+                    "attempt ${state.attempt + 1}/${state.maxRetries}",
             )
-            return state.gaveUp(ctx, retryRules)
+            return state.gaveUp(ctx, state.rules)
         }
         val plannedDelayMs = pacing.ordinaryDelayMs(state.attempt, plan.minDelayMs)
-        if (!budget.backoffFits(ctx, t0, plannedDelayMs)) return state.gaveUp(ctx, retryRules)
+        if (!budget.backoffFits(ctx, t0, plannedDelayMs)) return state.gaveUp(ctx, state.rules)
         ctx.timedBackoff { pacing.pause(state.attempt, plan.minDelayMs) }
         state.pendingRetry = RetryKind.ORDINARY
         state.attempt += 1
@@ -462,7 +466,7 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<T> {
-        val plan = retryRules.planRetry(
+        val plan = state.rules.planRetry(
             ctx,
             outcome,
             state.attempt,
@@ -476,7 +480,7 @@ public class UpstreamClient(
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> state.gaveUp(ctx, retryRules)
+            RetryDecision.GIVE_UP -> state.gaveUp(ctx, state.rules)
         }
     }
 }

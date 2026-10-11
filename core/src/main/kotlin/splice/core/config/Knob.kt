@@ -19,7 +19,8 @@ package splice.core.config
 // MaterializedByteCap that same guard asks), historyRetentionDays (RetentionDays, per read),
 // firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
 // through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
-// sleep and deadline check). Away from the turn: quotaPollIntervalMs (QuotaIntervalMs, per wait between two looks at
+// sleep and deadline check), upstreamRetries (LiveRetries, once as each request begins, so a request in flight keeps
+// its bound). Away from the turn: quotaPollIntervalMs (QuotaIntervalMs, per wait between two looks at
 // an account's usage endpoint), all four MCP host knobs — mcpRequestTimeoutMs (McpRequestBudget, per forwarded
 // request), mcpIdleTimeoutMs (McpIdleBudget, per idle sweep), mcpMaxServers (McpServerCeiling, once per spawn
 // attempt and carried into the refusal so the ceiling named is the ceiling that refused) and
@@ -28,7 +29,7 @@ package splice.core.config
 // and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Two more are live
 // WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
-// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is twenty-one, which is every knob
+// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is twenty-two, which is every knob
 // here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
 // agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
@@ -225,7 +226,6 @@ public enum class Knob(
         // 4 attempts matches the surveyed harness floor (codex 4, gemini/Claude Code higher);
         // the old default of 2 with ~200ms total backoff still failed turns on 2-3s blips (G4b).
         KnobDefault.Count(4L),
-        restartRequired = true,
     ),
 
     // V4-110 retry curve, promoted beside upstreamRetries. The DEFAULT IS THE GENERIC BOUNDED

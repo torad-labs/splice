@@ -25,6 +25,7 @@ import splice.core.util.EnvReader
 import splice.provider.codex.CodexLegacyKnobs
 import splice.provider.grok.GrokLegacyKnobs
 import splice.upstream.transport.BackoffCurve
+import splice.upstream.transport.LiveRetries
 import splice.upstream.transport.LiveRetryCurve
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
@@ -142,6 +143,7 @@ internal class HeadBuildInputs(
                 watchdog = built,
                 liveWatchdog = LiveWatchdogBudget { liveBudget(key, resolvedProvider, built) },
                 liveRetryCurve = LiveRetryCurve { liveCurve(key) },
+                liveRetries = LiveRetries { config.getConfig(key).upstreamRetries },
                 loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
             ),
             cfg = headCfg,

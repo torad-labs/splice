@@ -117,8 +117,7 @@ class TeamsPartialCostTest {
         "muse" to head(rows(MEMBERS.getValue("muse"), "muse-spark-1.3" to 21), "muse-spark-1.3[1m]" to MUSE),
     )
 
-    @Test
-    fun `the team prices every member, and the lead's one haiku turn is counted, not a dash`() {
+    private fun slotTallies(): Map<String, JsonObject> {
         val store = TeamStore(tmp.resolve("state/teams.json"), WallClock { BOUND })
         val id = team(store)
         val heads = heads()
@@ -130,8 +129,13 @@ class TeamsPartialCostTest {
             texts = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) },
             clock = WallClock { BOUND + 3_600_000 },
         )
-        val slots = Json.parseToJsonElement(routes.economics(id).body).jsonObject.getValue("slots").jsonArray
+        return Json.parseToJsonElement(routes.economics(id).body).jsonObject.getValue("slots").jsonArray
             .map { it.jsonObject }.associateBy { it.getValue("slot").jsonPrimitive.content }
+    }
+
+    @Test
+    fun `the team prices every member, and the lead's one haiku turn is counted, not a dash`() {
+        val slots = slotTallies()
         val each = TokenCost()
         val expected = mapOf(
             "claude" to 43 * each.of(TURN, OPUS),
@@ -146,6 +150,20 @@ class TeamsPartialCostTest {
             mapOf("claude" to 1L, "gpt" to 0L, "grok" to 0L, "muse" to 0L),
             slots.mapValues { (_, tally) -> tally.getValue("unpriced_turns").jsonPrimitive.long },
             "the haiku turn is counted beside the lead's figure, not folded into it",
+        )
+    }
+
+    @Test
+    fun `a slot counts the requests that moved tokens and the priced ones, so a dollar share counts what it covers`() {
+        val slots = slotTallies()
+        // every turn here moves 1,100 tokens; the lead's haiku turn has no card, so it moved tokens, unpriced
+        assertEquals(
+            mapOf("claude" to 44L, "gpt" to 53L, "grok" to 38L, "muse" to 21L),
+            slots.mapValues { (_, tally) -> tally.getValue("moved_turns").jsonPrimitive.long },
+        )
+        assertEquals(
+            mapOf("claude" to 43L, "gpt" to 53L, "grok" to 38L, "muse" to 21L),
+            slots.mapValues { (_, tally) -> tally.getValue("priced_moved_turns").jsonPrimitive.long },
         )
     }
 

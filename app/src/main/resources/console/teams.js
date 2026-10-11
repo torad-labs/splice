@@ -225,17 +225,17 @@ function useOf(tm, slotId) {
   // The tokens figure is everything the slot's turns moved, the two cache counts included, as the route reports them.
   const t = row.tokens || {};
   const tokens = (t.input || 0) + (t.cache_read || 0) + (t.cache_write || 0) + (t.output || 0);
-  const unpriced = row.unpriced_turns ?? 0, head = tm.slots.find((x) => x.id === slotId)?.head;
+  // a request that moved no tokens is in no money share (the route counts the ones that did, and the priced of those)
+  const priced = row.priced_moved_turns ?? 0, unpriced = (row.moved_turns ?? 0) - priced, head = tm.slots.find((x) => x.id === slotId)?.head;
   const onPlan = state.priceWhy[head] === "plan" ? unpriced : 0;
-  return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, unpriced, onPlan };
+  return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, priced, unpriced, onPlan };
 }
 function figures(u, since) {
   if (!u) return "";
   // One money form on every page (Marlin, Oct 10): dollars first, tied to the requests that were priced when some were
   // not, then each count of the unpriced above nothing, the bigger first. A cost is never summed over some as though it
-  // were the whole, so "≈$0.92 for 55 · 322 on your plan"; "≈$0.92" alone means every request was priced. The route does
-  // not say which requests moved no tokens, so "priced" here is every request that got an amount.
-  const priced = u.turns - u.unpriced;
+  // were the whole, so "≈$0.92 for 55 · 322 on your plan"; "≈$0.92" alone means every request was priced.
+  const priced = u.priced;
   const shares = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
     .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
   const dollars = u.usd != null && u.usd > 0 && priced > 0 ? [`${usd(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
@@ -251,6 +251,7 @@ function totals(tm) {
     turns: us.reduce((a, u) => a + u.turns, 0),
     tokens: us.reduce((a, u) => a + u.tokens, 0),
     usd: priced.length ? priced.reduce((a, u) => a + u.usd, 0) : null,
+    priced: us.reduce((a, u) => a + u.priced, 0),
     unpriced: us.reduce((a, u) => a + u.unpriced, 0),
     onPlan: us.reduce((a, u) => a + u.onPlan, 0),
   };

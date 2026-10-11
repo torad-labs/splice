@@ -125,6 +125,14 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         private set
     var unreportedUsageTurns: Long = 0L
         private set
+
+    /** Counted turns that moved any tokens at all: a refused or cut turn moves none and belongs to no money share. */
+    var movedTurns: Long = 0L
+        private set
+
+    /** The moved turns that were priced, so "dollars for N" counts exactly the requests those dollars cover. */
+    var pricedMovedTurns: Long = 0L
+        private set
     private var input = 0L
     private var cacheRead = 0L
     private var cacheWrite = 0L
@@ -159,6 +167,10 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
         val amount = TurnBill.usd(row.fields, rates(row.model, catalog)?.at(row.ts), cost)
         if (amount == null) unpricedTurns += 1 else usd += amount
+        if (buckets.input + buckets.cacheRead + buckets.cacheWrite + buckets.output > 0L) {
+            movedTurns += 1
+            if (amount != null) pricedMovedTurns += 1
+        }
     }
 
     fun json(label: TallyLabel): JsonObject = buildJsonObject {
@@ -175,6 +187,8 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         )
         put("cost_usd", costUsd)
         put("unpriced_turns", unpricedTurns)
+        put("moved_turns", movedTurns)
+        put("priced_moved_turns", pricedMovedTurns)
         put("unreported_usage_turns", unreportedUsageTurns)
         put("last_turn_at_epoch_millis", lastAt)
     }

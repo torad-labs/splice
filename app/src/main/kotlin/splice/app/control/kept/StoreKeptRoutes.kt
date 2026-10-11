@@ -4,7 +4,7 @@
 // Marlin's rule for every store that holds the user's prompts: the row shows a count, Delete now works, and the
 // store is stopped by a switch or its feature is named. One pair of routes serves the three, so a row reads and
 // deletes them the same way.
-package splice.app.control.mount
+package splice.app.control.kept
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonObject
@@ -14,7 +14,7 @@ import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.http.JsonReply
 
-private const val ERROR = "error"
+private const val JSON_ERROR = "error"
 
 /** The kept stores by the name the page asks for them with. */
 internal class StoreKeptRoutes(private val stores: Map<String, KeptStore>) {
@@ -31,7 +31,7 @@ internal class StoreKeptRoutes(private val stores: Map<String, KeptStore>) {
                 put("bytes", it.bytes)
                 it.oldestMs?.let { at -> put("oldest_epoch_ms", at) }
             },
-            { put(ERROR, SafeFailureText.render(it)) },
+            { put(JSON_ERROR, SafeFailureText.render(it)) },
         )
     }
 
@@ -50,5 +50,5 @@ internal class StoreKeptRoutes(private val stores: Map<String, KeptStore>) {
     }
 
     private fun failed(status: HttpStatusCode, text: String) =
-        JsonReply(status, buildJsonObject { put(ERROR, text) }.toString())
+        JsonReply(status, buildJsonObject { put(JSON_ERROR, text) }.toString())
 }

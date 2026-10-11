@@ -1,5 +1,5 @@
 // NEW: Oct 11, 2026 — the kept stores Your data counts and clears: a real transcript-copy store, and one that cannot be read.
-package splice.app.control.mount
+package splice.app.control.kept
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json

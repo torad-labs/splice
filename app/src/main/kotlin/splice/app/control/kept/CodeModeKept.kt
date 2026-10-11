@@ -2,7 +2,7 @@
 // under `heads/<key>/code-mode`, and the single per-head file older versions wrote beside the state dir. A head that
 // has left splice.toml is counted too, since its files are still on the disk. A conversation's files are gone 24 hours
 // after it was last used (the head's own sweep); this is the count of what waits for that, and the clear before it.
-package splice.app.control.mount
+package splice.app.control.kept
 
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX

@@ -3,7 +3,7 @@
 // two hours for Claude Code's retry and swept at its head's start or next save; this counts what waits for that and
 // clears it before. A head writing at that moment loses a summary that its next retry would have fetched, which is
 // what a delete now asks for.
-package splice.app.control.mount
+package splice.app.control.kept
 
 import splice.core.config.StatePaths
 import splice.core.util.AgedFiles

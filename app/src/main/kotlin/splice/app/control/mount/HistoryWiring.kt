@@ -19,6 +19,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
+import splice.app.control.kept.CodeModeKept
+import splice.app.control.kept.CompactionSummariesKept
+import splice.app.control.kept.StoreKeptRoutes
+import splice.app.control.kept.TranscriptCopiesKept
 import splice.app.sources.EconomicsStoreSource
 import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService

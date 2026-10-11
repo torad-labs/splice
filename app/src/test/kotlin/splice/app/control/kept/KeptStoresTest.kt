@@ -1,6 +1,6 @@
 // The two kept stores Settings > Your data counts and clears: code mode work and parked compaction summaries.
 // Each is counted, cleared and counted again, on files written the way their stores write them.
-package splice.app.control.mount
+package splice.app.control.kept
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

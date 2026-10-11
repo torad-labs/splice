@@ -1,6 +1,6 @@
 // NEW: Oct 11, 2026 — the transcript copies as Settings > Your data counts and clears them: every copy the resume
 // rewrite kept before it moved a transcript onto another model, of any age.
-package splice.app.control.mount
+package splice.app.control.kept
 
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths

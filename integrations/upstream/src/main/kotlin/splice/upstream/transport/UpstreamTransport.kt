@@ -192,6 +192,19 @@ public class UpstreamTransport {
         waiter.wait(maxOf(jittered, minDelayMs))
     }
 
+    /** [defaultBackoff] over a curve read at every sleep, so a widened cap or base governs the next attempt. */
+    public fun liveBackoff(waiter: Waiter, curve: LiveRetryCurve): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
+        val now = curve()
+        val base = cappedExponentialBase(now.baseMs, now.capMs, attempt)
+        waiter.wait(maxOf((base * jitterMultiplier(now.jitterPct)).toLong(), minDelayMs))
+    }
+
+    /** [defaultDnsBackoff] with the jitter read at every sleep. */
+    public fun liveDnsBackoff(waiter: Waiter, curve: LiveRetryCurve): DnsBackoff = DnsBackoff { attempt ->
+        val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
+        waiter.wait((base * jitterMultiplier(curve().jitterPct)).toLong())
+    }
+
     /**
      * V4-125 fallback: an OUT-OF-BAND reachability probe for [Watchdog], used when a round has sat
      * past its idle tier and the socket itself cannot say whether anyone is still there.

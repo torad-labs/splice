@@ -14,6 +14,7 @@ import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.config.restartRequiredKnobKeys
 import splice.topology.TopologyLoader
+import splice.upstream.transport.BackoffCurve
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -70,9 +71,28 @@ class LiveWatchdogKnobsTest {
     }
 
     @Test
-    fun `neither knob is listed as restart only`() {
+    fun `a patched retry curve governs the next retry of the head that is already built`(@TempDir tmp: Path) {
+        val config = ConfigService(StatePaths(baseOverride = tmp), envReader = { null })
+        val head = build(config)
+        assertEquals(BackoffCurve(baseMs = 200, capMs = 10_000, jitterPct = 10), head.faultPlan.liveRetryCurve())
+
+        val patched = config.patch(
+            mapOf("retryBackoffBaseMs" to 500L, "retryBackoffCapMs" to 4_000L, "retryBackoffJitterPct" to 0L),
+        )
+
+        assertTrue(patched.restartRequired.isEmpty(), "all three are live: ${patched.restartRequired}")
+        assertEquals(BackoffCurve(baseMs = 500, capMs = 4_000, jitterPct = 0), head.faultPlan.liveRetryCurve())
+    }
+
+    @Test
+    fun `none of the live knobs is listed as restart only`() {
         val restartOnly = restartRequiredKnobKeys
-        assertTrue(Knob.FIRST_BYTE_TIMEOUT_MS.key !in restartOnly, "$restartOnly")
-        assertTrue(Knob.STALL_REANCHOR_MS.key !in restartOnly, "$restartOnly")
+        listOf(
+            Knob.FIRST_BYTE_TIMEOUT_MS,
+            Knob.STALL_REANCHOR_MS,
+            Knob.RETRY_BACKOFF_BASE_MS,
+            Knob.RETRY_BACKOFF_CAP_MS,
+            Knob.RETRY_BACKOFF_JITTER_PCT,
+        ).forEach { assertTrue(it.key !in restartOnly, "${it.key} in $restartOnly") }
     }
 }

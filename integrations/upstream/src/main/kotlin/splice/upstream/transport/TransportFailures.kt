@@ -185,28 +185,33 @@ public data class BackoffCurve(
     }
 }
 
+/** The retry curve as the operator's knobs (retryBackoffBaseMs, retryBackoffCapMs, retryBackoffJitterPct) say it is now,
+ *  asked at each sleep and each deadline check, so a PATCH governs the next retry and not only the next restart. */
+public fun interface LiveRetryCurve {
+    public operator fun invoke(): BackoffCurve
+}
+
 /** How one client sleeps between attempts: the [curve] its deadline check budgets against, and the two sleeps that
  *  follow it. HD-19: both sleeps go through [waiter], so a test replaces the WAIT without re-authoring the CURVE it
  *  is measuring, and a recording waiter turns the 200/400/800ms schedule into an assertion on a list. Known errors
  *  keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the bounded floor everything
  *  unpredicted falls on. */
 public class RetryPacing(
-    private val curve: BackoffCurve = BackoffCurve(),
+    curve: BackoffCurve = BackoffCurve(),
     waiter: Waiter = ProcessWaiter(),
-    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
-        waiter,
-        baseMs = curve.baseMs,
-        capMs = curve.capMs,
-        jitterPct = curve.jitterPct,
-    ),
-    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter, jitterPct = curve.jitterPct),
+    /** The curve read at every use; the fixed [curve] when no knob is live. */
+    private val live: LiveRetryCurve = LiveRetryCurve { curve },
+    private val backoff: RetryBackoff = UpstreamTransport().liveBackoff(waiter, live),
+    private val dnsBackoff: DnsBackoff = UpstreamTransport().liveDnsBackoff(waiter, live),
 ) {
     /** The longest an ordinary retry can sleep: the curve ceiling, or the server minimum when that is larger. */
-    internal fun ordinaryDelayMs(attempt: Int, serverMinMs: Long): Long = maxOf(serverMinMs, curve.ceilingMs(attempt))
+    internal fun ordinaryDelayMs(attempt: Int, serverMinMs: Long): Long = maxOf(serverMinMs, live().ceilingMs(attempt))
 
     /** The longest a transport failure can sleep: DNS failures follow their own 1s/2s/4s plan, the rest the curve. */
     internal fun transportDelayMs(attempt: Int, dns: Boolean): Long =
-        if (dns) curve.ceilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS) else curve.ceilingMs(attempt)
+        live().let { now ->
+            if (dns) now.ceilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS) else now.ceilingMs(attempt)
+        }
 
     /** Sleeps the ordinary retry delay: the curve for [attempt], or the server's own minimum when it asks for more. */
     internal suspend fun pause(attempt: Int, serverMinMs: Long) {

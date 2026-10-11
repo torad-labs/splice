@@ -4,11 +4,9 @@
 package splice.app.head
 
 import splice.app.provider.ProviderBuild
-import splice.core.config.Knob
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
 import splice.upstream.retry.ProviderHoldStore
-import splice.upstream.transport.BackoffCurve
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
@@ -38,16 +36,9 @@ internal class UpstreamFactory {
             requestWriteTimeoutMs = cfg.firstByteTimeoutMs,
             requestWriteBound = WriteBoundMs { ctx.faultPlan.liveWatchdog().firstByteTimeout.inWholeMilliseconds },
         ),
-        // V4-110 retry curve: read per head from the merged+normalized map (seeded with the Knob
-        // defaults, so absent config keeps the generic 200ms/10s/±10% curve). The map is always
-        // seeded, so `as Long` is safe.
-        pacing = RetryPacing(
-            BackoffCurve(
-                baseMs = cfg.asMap()[Knob.RETRY_BACKOFF_BASE_MS.key] as Long,
-                capMs = cfg.asMap()[Knob.RETRY_BACKOFF_CAP_MS.key] as Long,
-                jitterPct = (cfg.asMap()[Knob.RETRY_BACKOFF_JITTER_PCT.key] as Long).toInt(),
-            ),
-        ),
+        // V4-110 retry curve: read per head, at every retry, from the merged+normalized map (seeded with the Knob
+        // defaults, so absent config keeps the generic 200ms/10s/±10% curve).
+        pacing = RetryPacing(live = ctx.faultPlan.liveRetryCurve),
         holdStore = providerHold,
     )
 }

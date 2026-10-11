@@ -12,6 +12,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 import splice.app.auth.SignInPlanner
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.SpliceConfig
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
@@ -23,6 +24,8 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.EnvReader
 import splice.provider.codex.CodexLegacyKnobs
 import splice.provider.grok.GrokLegacyKnobs
+import splice.upstream.transport.BackoffCurve
+import splice.upstream.transport.LiveRetryCurve
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -138,10 +141,22 @@ internal class HeadBuildInputs(
             faultPlan = UpstreamFaultPlan(
                 watchdog = built,
                 liveWatchdog = LiveWatchdogBudget { liveBudget(key, resolvedProvider, built) },
+                liveRetryCurve = LiveRetryCurve { liveCurve(key) },
                 loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
             ),
             cfg = headCfg,
             roster = PublishedRoster(discovered = headModels, localRows = localRows),
+        )
+    }
+
+    /** The generic retry curve from head [key]'s own config as it stands now (ConfigCoercion already floors the cap to
+     *  the base), asked at each retry sleep and deadline check. */
+    private fun liveCurve(key: String): BackoffCurve {
+        val now = config.getConfig(key).asMap()
+        return BackoffCurve(
+            baseMs = now[Knob.RETRY_BACKOFF_BASE_MS.key] as Long,
+            capMs = now[Knob.RETRY_BACKOFF_CAP_MS.key] as Long,
+            jitterPct = (now[Knob.RETRY_BACKOFF_JITTER_PCT.key] as Long).toInt(),
         )
     }
 

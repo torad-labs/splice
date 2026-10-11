@@ -353,6 +353,13 @@ async function readSearch() {
   state.search = { hits, errors, backTo, stopped };
 }
 
+/** A hit the window's rows do not hold (they hold at most [MAX_HELD] per command) still answers to the filters the
+ *  daemon applied to those rows, here, so a search with Failed on lists no ok request (walk p180, shot 022). An account
+ *  filter cannot be judged from a hit, which names none, so it keeps only the rows the daemon matched. */
+const hitPasses = (r) => (ui.outcome === "all" || (ui.outcome === "fail" ? outcomeOf(r).cls === "fail" : outcomeOf(r).cls === "stopped"))
+  && (!ui.model || (ui.model === "none" ? !r.model : r.model === ui.model)) && !ui.account
+  && (!ui.sid || String(r.sid ?? "").startsWith(String(ui.sid).slice(0, 8))) && (!ui.compact || r.compact)
+  && (!ui.to || +r.ts <= ui.to) && !Object.keys(WHY_ASKS[ui.why] || {}).length;
 /** The list's rows: the window's requests, with a search's own hits folded in. A hit on a request already in the
  *  window marks that row; a hit on an older one is a row of its own, so a search reaches past what the rows hold. */
 function searched() {
@@ -361,13 +368,16 @@ function searched() {
   const out = [], seen = new Set();
   for (const hit of state.search.hits) {
     const known = byTurn.get(hit.id);
-    if (known) { known.said = hit.said; out.push(known); } else out.push(hit);
+    if (known) { known.said = hit.said; out.push(known); } else if (hitPasses(hit)) out.push(hit);
     seen.add(hit.id);
   }
   // an agent is searched for by its name too: every request of a session whose name holds the words (Marlin's walk:
-  // "infra" read No match with infra's rows in the list)
+  // "infra" read No match with infra's rows in the list), and a request by the ending its row shows: "restart" finds
+  // "splice restarted", "given up" finds Given up (walk p180: both walkers scrolled twenty screens for Saturday's restart)
   const q = ui.q.toLowerCase();
-  for (const r of state.rows) if (!seen.has(r.id) && state.sessions[r.sid]?.name?.toLowerCase().includes(q)) out.push(r);
+  for (const r of state.rows) {
+    if (!seen.has(r.id) && (state.sessions[r.sid]?.name?.toLowerCase().includes(q) || outcomeOf(r).word.toLowerCase().includes(q))) out.push(r);
+  }
   return out;
 }
 

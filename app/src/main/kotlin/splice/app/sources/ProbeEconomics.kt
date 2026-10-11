@@ -12,6 +12,10 @@ import kotlin.time.Duration.Companion.hours
 
 private val PROBE_BUCKET_MS = 1.hours.inWholeMilliseconds
 
+// why: the log is appended in time order but its writer lane can land a row seconds late, so an hour is settled only once
+// a row two hours later exists; the hours still inside that are judged again at every look.
+private val SETTLED_AFTER_MS = 2 * PROBE_BUCKET_MS
+
 /** Why one head's legacy probe deduction cannot be made, each a fixed sentence the console shows for that head. */
 internal enum class ProbeGap(val sentence: String) {
     UNREADABLE("Hourly history is not shown because this command's request log could not be read in full."),
@@ -20,86 +24,116 @@ internal enum class ProbeGap(val sentence: String) {
     EXCEEDS("Hourly history is not shown because the request log holds more probe requests than the history counted."),
 }
 
-/** What [ProbeEconomics] answers: the buckets without the probes, or the one gap that makes this head's view unavailable. */
+/** What [ProbeEconomics] answers: the hours it can show with their probes taken off and the hours it cannot show, or
+ *  the one gap that leaves no hour to show. */
 internal sealed class ProbeDeduction {
-    class Done(val buckets: List<EconomicsBucket>) : ProbeDeduction()
+    class Done(val buckets: List<EconomicsBucket>, val unread: List<Long> = emptyList()) : ProbeDeduction()
 
     class Unavailable(val gap: ProbeGap) : ProbeDeduction()
 }
 
-/** What reading the probe evidence gave: the deduction per hour, or the gap that stops it. */
-private sealed class ProbeRead {
-    class Deductions(val byHour: Map<Long, EconomicsBucket>) : ProbeRead()
-
-    class Gapped(val gap: ProbeGap) : ProbeRead()
-}
-
-/** A deduction must reconcile with the complete retained rollup and its affected hour.
- *  Perf and economics sampled different clocks: a boundary crossing cannot be guessed.
- *  Lost, torn or mismatched evidence makes this head's view unavailable, never falsely clean.
- *  New probes cannot dispatch, so successfully reconciled legacy deductions are immutable. */
+/** Each hour is judged on its own evidence. An hour the request log covers whole, with no torn line in it, whose rollup
+ *  agrees with that log, shows its figure with the legacy probes taken off. Any other hour is not read: lost, torn or
+ *  mismatched evidence makes that hour unavailable, never falsely clean. A line that cannot be placed in an hour makes
+ *  every hour unavailable. New probes cannot dispatch, so a settled hour stays judged while the log is only appended to
+ *  and the rollup for that hour is as it was. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
-    private var deductions: Map<Long, EconomicsBucket>? = null
+    /** The answer for one hour, and the rollup it was an answer for. */
+    private data class Judged(val signature: List<Long>, val probes: EconomicsBucket?, val gap: ProbeGap?)
+
+    private val judged = HashMap<Long, Judged>()
+    private var judgedStamp: PerfSourceStamp? = null
 
     // The one answer to "which rows is this hour made of", shared with the backfill that writes
     // hours this reconciliation then grades. EconomicsRows says why it cannot be two answers.
     private val rows = EconomicsRows()
 
-    fun withoutProbes(buckets: List<EconomicsBucket>): ProbeDeduction = synchronized(this) {
-        if (buckets.isEmpty()) return@synchronized ProbeDeduction.Done(buckets)
-        val held = deductions ?: when (val read = read(buckets)) {
-            is ProbeRead.Gapped -> return@synchronized ProbeDeduction.Unavailable(read.gap)
-            is ProbeRead.Deductions -> read.byHour.also { deductions = it }
-        }
-        val kept = buckets.map { bucket ->
-            val probes = held[bucket.hour] ?: return@map bucket
-            if (!fits(bucket, probes)) return@synchronized ProbeDeduction.Unavailable(ProbeGap.EXCEEDS)
-            subtract(bucket, probes)
-        }
-        ProbeDeduction.Done(kept.filter { it.turns != 0L || it.localSteps != 0L })
-    }
-
-    /** A request log refused for a row it could not parse stays refused while its files are only appended to, so it is
+    /** A request log refused for a line that has no place stays refused while its files are only appended to, so it is
      *  not read again (that read took 17 to 45 s on a live command, at every request). */
     private val refusal = PerfRefusal(perf.files)
 
-    /** The evidence the log gives for hours from [since], or null when the log is refused, now or by an earlier read. */
-    private fun evidence(since: Long): EconomicsPerfEvidence? {
-        if (refusal.stands(since)) return null
-        val before = perf.files.stamp()
-        val read = perf.economicsEvidence(since)
-        // A torn line that shows a model is a work row, so it cannot change a deduction; one cut before its model shows could
-        // still be a legacy probe, and refuses.
-        val probeEraTears = read.probeTears > 0
-        refusal.note(before, since, read.work.readError == null && probeEraTears)
-        return read.takeIf { it.work.readError == null && !probeEraTears }
-    }
-
-    private fun read(buckets: List<EconomicsBucket>): ProbeRead {
-        val evidence = evidence(buckets.minOf { it.hour }) ?: return ProbeRead.Gapped(ProbeGap.UNREADABLE)
-        val all = summarize(rows.recorded(evidence))
-        val probes = summarize(evidence.probes)
-        if (!reconciles(buckets, all, probes)) return ProbeRead.Gapped(ProbeGap.UNRECONCILED)
-        val recorded = buckets.associateBy { it.hour }
-        val split = probes.keys.any { hour ->
-            recorded[hour]?.let { signature(listOf(it)) } != all[hour]?.let { signature(listOf(it)) }
+    fun withoutProbes(buckets: List<EconomicsBucket>): ProbeDeduction = synchronized(this) {
+        if (buckets.isEmpty()) return@synchronized ProbeDeduction.Done(buckets)
+        val answers = judge(buckets) ?: return@synchronized ProbeDeduction.Unavailable(ProbeGap.UNREADABLE)
+        val unread = buckets.filter { answers.getValue(it.hour).gap != null }
+        if (unread.size == buckets.size) {
+            val why = unread.groupingBy { answers.getValue(it.hour).gap }.eachCount().maxBy { it.value }.key
+            return@synchronized ProbeDeduction.Unavailable(checkNotNull(why))
         }
-        return if (split) ProbeRead.Gapped(ProbeGap.SPLIT_HOUR) else ProbeRead.Deductions(probes)
+        val shown = (buckets - unread.toSet()).map { bucket ->
+            answers.getValue(bucket.hour).probes?.let { subtract(bucket, it) } ?: bucket
+        }
+        ProbeDeduction.Done(shown.filter { it.turns != 0L || it.localSteps != 0L }, unread.map { it.hour })
     }
 
-    private fun reconciles(
-        buckets: List<EconomicsBucket>,
-        all: Map<Long, EconomicsBucket>,
-        probes: Map<Long, EconomicsBucket>,
-    ): Boolean {
-        val latestProbe = probes.keys.maxOrNull()
-        return if (latestProbe == null) {
-            // Perf is recorded before economics: a live tail may be ahead of the sampled rollup.
-            signature(buckets).zip(signature(all.values)).all { (recorded, observed) -> recorded <= observed }
-        } else {
-            // Later live hours cannot authorize or invalidate a deduction from stable legacy hours.
-            signature(buckets.filter { it.hour <= latestProbe }) ==
-                signature(all.filterKeys { it <= latestProbe }.values)
+    /** An answer for every hour of [buckets], or null when the log cannot be read or holds a line with no place. */
+    private fun judge(buckets: List<EconomicsBucket>): Map<Long, Judged>? {
+        val before = perf.files.stamp()
+        // A settled hour that was read stays read, whatever happens to the files: its probes are retired and its rows were
+        // judged. An hour that was not read is judged again once the files are rewritten, which may have mended it.
+        if (judgedStamp?.let { !perf.files.unchanged(it) } == true) judged.values.removeIf { it.gap != null }
+        val signatures = buckets.associate { it.hour to signature(listOf(it)) }
+        val fresh = buckets.filter { judged[it.hour]?.signature != signatures[it.hour] }
+        val now = if (fresh.isEmpty()) emptyMap() else judgeFresh(fresh, signatures, before) ?: return null
+        return buckets.associate { it.hour to (now[it.hour] ?: judged.getValue(it.hour)) }
+    }
+
+    private fun judgeFresh(
+        fresh: List<EconomicsBucket>,
+        signatures: Map<Long, List<Long>>,
+        before: PerfSourceStamp?,
+    ): Map<Long, Judged>? {
+        val since = fresh.minOf { it.hour }
+        if (refusal.stands(since)) return null
+        val read = perf.economicsEvidence(since)
+        val unplaced = read.work.readError == null && read.probeTears.any { it == null }
+        refusal.note(before, since, unplaced)
+        if (read.work.readError != null || unplaced) return null
+        val log = LogHours(read)
+        val now = HashMap<Long, Judged>()
+        for (bucket in fresh) {
+            val gap = log.gap(bucket)
+            val probes = log.probes[bucket.hour].takeIf { gap == null }
+            now[bucket.hour] = Judged(signatures.getValue(bucket.hour), probes, gap)
+            // an hour the log still grows into is judged again at the next look; one settled stays judged
+            if (log.settled(bucket.hour)) {
+                judged[bucket.hour] = now.getValue(bucket.hour)
+            } else {
+                judged.remove(bucket.hour)
+            }
+        }
+        judgedStamp = before
+        return now
+    }
+
+    /** What one read of the log says about each hour: the rows it holds, its probes, where it ends, and the hours that
+     *  hold a line that could be a probe and cannot be read. An hour the log does not reach holds more turns in the rollup
+     *  than rows here, so grading it finds that without a rule of its own. */
+    private inner class LogHours(read: EconomicsPerfEvidence) {
+        private val all = summarize(rows.recorded(read))
+        val probes = summarize(read.probes)
+        private val torn = read.probeTears.filterNotNull().map { it / PROBE_BUCKET_MS * PROBE_BUCKET_MS }.toSet()
+        private val newest = read.work.rows.maxOfOrNull { it.ts }
+
+        /** A torn line is not mended by later rows and no new probe is ever written, so an hour that holds either is settled
+         *  at once; any other hour waits for the log to move on. */
+        fun settled(hour: Long): Boolean =
+            hour in torn || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
+
+        fun gap(bucket: EconomicsBucket): ProbeGap? =
+            if (bucket.hour in torn) ProbeGap.UNREADABLE else grade(bucket, all[bucket.hour], probes[bucket.hour])
+    }
+
+    /** Why this hour cannot be shown with its probes off, or null when its rollup and its rows agree. Perf is recorded
+     *  before economics, so a live hour may be ahead of the rollup; an hour holding probes must match to the row. */
+    private fun grade(bucket: EconomicsBucket, seen: EconomicsBucket?, probes: EconomicsBucket?): ProbeGap? {
+        val recorded = signature(listOf(bucket))
+        val observed = signature(listOfNotNull(seen))
+        return when {
+            probes == null -> ProbeGap.UNRECONCILED.takeUnless { recorded.zip(observed).all { (r, o) -> r <= o } }
+            recorded != observed -> ProbeGap.SPLIT_HOUR
+            !fits(bucket, probes) -> ProbeGap.EXCEEDS
+            else -> null
         }
     }
 

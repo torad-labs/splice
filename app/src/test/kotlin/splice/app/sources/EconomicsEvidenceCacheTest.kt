@@ -43,7 +43,7 @@ class EconomicsEvidenceCacheTest {
         source.window(0)
         for (cutoff in listOf(1L, 2L)) {
             assertEquals(1, source.economicsEvidence(cutoff).work.skipped)
-            val failure = ProbeEconomics(source).withoutProbes(listOf(EconomicsBucket(cutoff)))
+            val failure = ProbeEconomics(source).withoutProbes(listOf(EconomicsBucket(0L)))
             assertEquals(ProbeGap.UNREADABLE, (failure as ProbeDeduction.Unavailable).gap)
         }
     }
@@ -54,7 +54,7 @@ class EconomicsEvidenceCacheTest {
         write(file)
         val source = PerfRowsFileSource(file, cache = PerfRowsCache(32_768))
         val economics = ProbeEconomics(source)
-        val buckets = listOf(EconomicsBucket(1L))
+        val buckets = listOf(EconomicsBucket(0L))
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
         val parsed = source.parsedLines
         assertTrue(parsed > 0)
@@ -72,7 +72,7 @@ class EconomicsEvidenceCacheTest {
         write(file)
         val source = PerfRowsFileSource(file, cache = PerfRowsCache(32_768))
         val economics = ProbeEconomics(source)
-        val buckets = listOf(EconomicsBucket(1L))
+        val buckets = listOf(EconomicsBucket(0L))
         assertEquals(ProbeGap.UNREADABLE, (economics.withoutProbes(buckets) as ProbeDeduction.Unavailable).gap)
         val mended = Files.readAllLines(file).filterNot { it.startsWith("{\"ts\":2,") }
         Files.writeString(file, mended.joinToString("\n", postfix = "\n"))

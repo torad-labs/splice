@@ -126,11 +126,11 @@ class ProbeEconomicsTest {
             assertEquals(whole, read(shown).rows(), "a tear at $ts that shows its model is not a probe")
         }
         // the tear a 0.3.x daemon leaves when it is stopped for the upgrade: right after its own last probe, after Oct 1
-        val lastWrite = """{"ts":1791707160100,"model":"","outcome":"error:upstream-failed","req_bytes":30"""
+        val lastWrite = """{"ts":3630123,"model":"","outcome":"error:upstream-failed","req_bytes":30"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(lastWrite).gap())
-        val beforeModel = """{"ts":1791707160100,"mod"""
+        val beforeModel = """{"ts":3630123,"mod"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(beforeModel).gap())
-        val onlyTs = """{"ts":1791707160100,"""
+        val onlyTs = """{"ts":3630123,"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(onlyTs).gap())
         val unstamped = """{"model":"synthetic","outcome":"ok","cache_write_tokens"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped).gap())
@@ -273,7 +273,7 @@ class ProbeEconomicsTest {
         now = PROBE_HOUR
         store.record(turn("", 0, 30, 15, 2L to 1L))
         val original = store.read()
-        assertEquals(ProbeGap.UNRECONCILED.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
+        assertEquals(ProbeGap.SPLIT_HOUR.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
         assertEquals(original, store.read(), "uncertainty never mutates the genuine bucket")
     }
 
@@ -312,6 +312,73 @@ class ProbeEconomicsTest {
             "the other head's hour, whole",
         )
     }
+
+    // Each hour is judged on its own evidence: an hour of the rollup that predates the log reads Not read, and the
+    // hours the log covers still show their figure.
+    @Test
+    fun `a rollup older than the log shows the hours the log covers and reads the older ones as not read`(
+        @TempDir dir: Path,
+    ) {
+        val today = 20 * PROBE_HOUR + 123
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, atHour(today, MODELED_WORK_ROW, LOCAL_WORK_ROW))
+        var now = 5 * PROBE_HOUR + 10
+        val store = store(dir, WallClock { now })
+        store.record(turn("synthetic", 5, 100, 50, 3L to 2L))
+        now = today
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(5 * PROBE_HOUR), read.notRead)
+    }
+
+    @Test
+    fun `a mismatch inside the log's span refuses only its own hour`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(21 * PROBE_HOUR), read.notRead, "the log holds one request of the two the rollup counted")
+    }
+
+    @Test
+    fun `a torn line that could be a probe refuses only the hour it was written in`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val torn = """{"ts":${21 * PROBE_HOUR + 5},"model":"","outcome":"error:upstream-failed","req_bytes":30"""
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + torn + "\n",
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(21 * PROBE_HOUR), read.notRead)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val heads = UsageHeads { listOf(head("a", source)) }
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson())
+        val named = payload.jsonObject.getValue("heads").jsonArray.single().jsonObject.getValue("not_read_hours")
+        assertEquals(listOf(21 * PROBE_HOUR), named.jsonArray.map { it.jsonPrimitive.long }, "the route names them")
+    }
+
+    private fun shown(store: EconomicsStore, file: Path): EconomicsRead.Rows =
+        assertInstanceOf(EconomicsRead.Rows::class.java, EconomicsStoreSource(store, PerfRowsFileSource(file)).read())
+
+    private fun atHour(ts: Long, vararg rows: String): String =
+        rows.joinToString("") { it.replace("3600123", ts.toString()) + "\n" }
 
     private fun EconomicsStoreSource.rows(): List<EconomicsRow> =
         assertInstanceOf(EconomicsRead.Rows::class.java, read()).rows

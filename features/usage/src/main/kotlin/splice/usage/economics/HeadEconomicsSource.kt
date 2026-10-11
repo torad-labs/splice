@@ -13,8 +13,9 @@ public fun interface HeadEconomicsSource {
 /** One head's rollup as the control plane may show it. A head whose rows cannot be shown honestly answers
  *  [Unavailable] with a fixed sentence and never file content, and the other heads keep answering. */
 public sealed class EconomicsRead {
-    /** The hours, oldest first. */
-    public data class Rows(val rows: List<EconomicsRow>) : EconomicsRead()
+    /** The hours, oldest first, and the hours of the window this head could not read, which are in no row: a total over a
+     *  span that holds one of them is not a total. */
+    public data class Rows(val rows: List<EconomicsRow>, val notRead: List<Long> = emptyList()) : EconomicsRead()
 
     /** Why this head shows no hours, as one plain sentence the console prints as it is. */
     public data class Unavailable(val reason: String) : EconomicsRead()

@@ -114,8 +114,10 @@ async function load({ asks = true } = {}) {
   // a command whose hours splice has not read has no count, and its row says why, never zero, because "No requests" over
   // a day that had them is a false statement (Marlin, Oct 11): still being read just after a restart reads Reading, as
   // Requests does while it loads; a history it could not read, or no answer at all, reads Not read, as Settings does (fin)
-  const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable)
-    .map((h) => [h.key, h.unavailable ? DAY_NOT_READ : DAY_READING])
+  // a day that holds an hour the daemon could not read has no total, never the sum of the hours it could (not_read_hours)
+  const dayUnread = (h) => (h.not_read_hours || []).some((hour) => hour + HOUR > dayStart);
+  const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable || dayUnread(h))
+    .map((h) => [h.key, h.unavailable || dayUnread(h) ? DAY_NOT_READ : DAY_READING])
     : (st.body?.registry || []).map((h) => [h.key, DAY_NOT_READ]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));

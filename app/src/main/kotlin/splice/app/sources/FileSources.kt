@@ -121,12 +121,13 @@ public class EconomicsStoreSource(
         // The hours splice holds the turns for and the rollup has none for are written into the
         // rollup first, so every reader below sees one set of hours and the scan happens once.
         val whole = backfill?.missing(held)?.takeIf { it.isNotEmpty() }?.let { store.backfill(it) } ?: held
-        val kept = when (val deduction = probes?.withoutProbes(whole) ?: ProbeDeduction.Done(whole)) {
-            is ProbeDeduction.Unavailable -> return EconomicsRead.Unavailable(deduction.gap.sentence)
-            is ProbeDeduction.Done -> deduction.buckets
+        return when (val deduction = probes?.withoutProbes(whole) ?: ProbeDeduction.Done(whole)) {
+            is ProbeDeduction.Unavailable -> EconomicsRead.Unavailable(deduction.gap.sentence)
+            is ProbeDeduction.Done -> {
+                val current = reprice?.priced(deduction.buckets) ?: deduction.buckets
+                EconomicsRead.Rows(current.map { row(it) }, deduction.unread)
+            }
         }
-        val current = reprice?.priced(kept) ?: kept
-        return EconomicsRead.Rows(current.map { row(it) })
     }
 
     private fun row(it: EconomicsBucket): EconomicsRow =

@@ -18,6 +18,7 @@ package splice.usage.economics
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -70,7 +71,10 @@ public class EconomicsPayloads(
                         put("unavailable", "Reading saved request history before showing this command's hourly totals.")
                     } else {
                         when (val read = m.sinks.economics?.read() ?: EconomicsRead.Rows(emptyList())) {
-                            is EconomicsRead.Rows -> buckets(this, read.rows)
+                            is EconomicsRead.Rows -> {
+                                buckets(this, read.rows)
+                                putJsonArray("not_read_hours") { read.notRead.forEach { add(it) } }
+                            }
                             is EconomicsRead.Unavailable -> {
                                 buckets(this, emptyList())
                                 put("unavailable", read.reason)

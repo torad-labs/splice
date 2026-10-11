@@ -48,10 +48,14 @@ import java.nio.file.Path
 
 private enum class PerfSelection { WORK, ECONOMICS }
 
-/** One settled scan supplies the work and probe sides of historical economics reconciliation. [probeTears] counts the
- *  lines the scan could not read as a row that might still be a legacy liveness probe: one whose readable start does not
- *  show a model, since every probe row carries an empty one. */
-internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>, val probeTears: Int)
+/** One settled scan supplies the work and probe sides of historical economics reconciliation. [probeTears] holds, for
+ *  each line the scan could not read as a row that might still be a legacy liveness probe, its leading timestamp (null
+ *  where it names none): a line whose readable start does not show a model, since every probe row carries an empty one. */
+internal data class EconomicsPerfEvidence(
+    val work: PerfRowsWindow,
+    val probes: List<PerfRow>,
+    val probeTears: List<Long?>,
+)
 
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
@@ -237,8 +241,7 @@ public class PerfRowsFileSource internal constructor(
     ) : PerfLineVisit {
         val rows = ArrayList<PerfRow>()
         val probes = ArrayList<PerfRow>()
-        var probeTears = 0
-            private set
+        val probeTears = ArrayList<Long?>()
         val errors = ArrayList<String>()
         private var skipped = 0
         private var windowSkipped = 0
@@ -345,7 +348,7 @@ public class PerfRowsFileSource internal constructor(
             // Preserve the original baseline and economics proof, without giving this line a row time.
             if (!skipBefore(line)) {
                 skipped++
-                if (line.model != PerfModelHint.NAMED) probeTears++
+                if (line.model != PerfModelHint.NAMED) probeTears += line.leadingTs
             }
         }
 

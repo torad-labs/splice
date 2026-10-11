@@ -154,6 +154,19 @@ class ConfigLiveKnobsTest {
     }
 
     @Test
+    fun `the materialization budget is live, so no restart is named and a head reads it`() = runBlocking<Unit> {
+        val answer = json.parseToJsonElement(patch("""{"materializationHeapBytes":536870912}""")).jsonObject
+
+        assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+        val view = json.parseToJsonElement(read()).jsonObject
+        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        assertFalse("materializationHeapBytes" in restartOnly, "a live knob is not listed as restart-only")
+        // What the daemon's one materialization gate asks at every admission (MaterializationBudgetBytes), which it
+        // caps into the ceiling the ingress guard in front of each head asks for.
+        assertEquals(512 * 1024 * 1024L, config.getConfig().materializationHeapBytes)
+    }
+
+    @Test
     fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {
         patch("""{"maxInflight":9,"effort":"low"}""")
 

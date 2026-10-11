@@ -69,7 +69,7 @@ public class SessionContinue(
     private val busy = setOf("working", "busy")
 
     /** Where a move ends: back on the command he picked, or on the one it left. */
-    private val arrival = MoveArrival(commands, handover, ledger)
+    private val arrival = MoveArrival(commands, handover, ledger, registry)
 
     /** POST .../continue's body: the command (`head`) and, optionally, the model on it. */
     public suspend fun moveJson(session: String, body: String): JsonReply {

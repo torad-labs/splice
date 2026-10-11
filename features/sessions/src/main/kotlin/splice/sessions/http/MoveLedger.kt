@@ -25,7 +25,9 @@ import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.core.util.Cancellables
 import splice.http.JsonReply
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
+import splice.sessions.registry.SessionSource
 import java.nio.file.Path
 
 // why: the registry is read once a second while a move waits; arrival answers within a second of the client's
@@ -53,6 +55,8 @@ internal class MoveArrival(
     private val commands: StartCommands,
     private val handover: SessionHandover,
     private val ledger: MoveLedger?,
+    /** Who runs which session now: a client that came up in the attempt's own terminal is the move arriving. */
+    private val registry: SessionSource?,
 ) {
     /** One argv word a POSIX shell reads back as itself without quoting. */
     private val plainWord = Regex("[A-Za-z0-9._/:=@%+,-]+")
@@ -62,7 +66,7 @@ internal class MoveArrival(
 
     /** Wait for [move] to come back in [attempt]; when it does not, the session goes on where it was. */
     suspend fun await(driving: SessionDriver, attempt: Attempt, move: Move): JsonReply {
-        val missed = missed(driving, attempt.pane, move.session, move.head)
+        val missed = missed(driving, attempt.pane, move.session, move.head, move.pid)
         if (missed != null) return back(driving, attempt, move, missed)
         ledger?.arrived(move.session)
         return JsonReply(
@@ -75,16 +79,32 @@ internal class MoveArrival(
         )
     }
 
-    /** Null once [session] runs on [head]; else why it did not: its terminal closed, or the deadline passed. */
-    private suspend fun missed(driving: SessionDriver, pane: SessionPane, session: String, head: String): String? {
+    /** Null once [session] runs on [head], or under a new client in [pane]: a launch that could not record its
+     *  command leaves the registry no head to name, and it is still the move. Else why not: the terminal closed, or
+     *  time ran out. */
+    private suspend fun missed(
+        driving: SessionDriver,
+        pane: SessionPane,
+        session: String,
+        head: String,
+        left: Long?,
+    ): String? {
         var waited = 0L
         while (waited < ARRIVAL_SECONDS) {
-            if (handover.cameOn(session, head, ARRIVAL_SLICE_SECONDS)) return null
+            if (handover.cameOn(session, head, ARRIVAL_SLICE_SECONDS) || upIn(driving, pane, session, left)) return null
             if (!driving.terminal.isOpen(pane)) return MISSED_NO_START
             waited += ARRIVAL_SLICE_SECONDS
         }
         return MISSED_NO_ANSWER
     }
+
+    /** Whether [session] runs in [pane] under a client other than the one the move ended ([left]). */
+    private fun upIn(driving: SessionDriver, pane: SessionPane, session: String, left: Long?): Boolean =
+        registry?.read().orEmpty().any { record ->
+            val pid = record.process.pid
+            record.sessionId == session && record.availability == SessionAvailability.LIVE &&
+                pid != null && pid != left && driving.terminal.hosts(pane, pid)
+        }
 
     /** Close the attempt and resume the session on the command it left, when it was running before the move. */
     private suspend fun back(driving: SessionDriver, attempt: Attempt, move: Move, missed: String): JsonReply {
@@ -117,7 +137,7 @@ internal class MoveArrival(
         val ready = commands.forHead(move.from) as? StartCommand.Ready
         if (ready == null || move.pid == null) return null
         return reopen(driving, attempt, move, ready.argv + resume)
-            ?.takeIf { missed(driving, it, move.session, move.from) == null }
+            ?.takeIf { missed(driving, it, move.session, move.from, move.pid) == null }
     }
 
     /** The command he types to resume it: the name the command is linked as, else its head's key. */

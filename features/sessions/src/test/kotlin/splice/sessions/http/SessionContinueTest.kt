@@ -35,6 +35,9 @@ class SessionContinueTest {
 
     /** The commands a session registers on when it is started there: every command, unless a test says otherwise. */
     private var startsOn: (String) -> Boolean = { true }
+
+    /** What happens once the old client has exited, before the resume: a new client registering, in some tests. */
+    private var afterExit: () -> Unit = {}
     private val kept = mutableListOf<Pair<String, ModelMove>>()
     private var leaving: ModelMove? = null
 
@@ -45,6 +48,7 @@ class SessionContinueTest {
             handover = object : SessionHandover {
                 override suspend fun left(session: String, pid: Long, seconds: Long): Boolean = exits.also {
                     if (it && closesWithClient) terminal.live = false
+                    if (it) afterExit()
                 }
 
                 override suspend fun stopped(session: String, seconds: Long): Boolean = stops
@@ -169,6 +173,27 @@ class SessionContinueTest {
         val resume = "cd ${rig.repo} && claude-claude -r $LEAD --model claude-fable-5-1"
         assertEquals(resume, body.getValue("resume").jsonPrimitive.content)
         assertTrue(kept.isEmpty(), "a move that did not happen leaves no mark")
+    }
+
+    @Test
+    fun `a client that comes up in the attempt's terminal is the move, though its launch named no command`() {
+        panes.remember(LEAD, leadPane)
+        startsOn = { it != "codex" } // the registry never names codex: the launch could not record its command
+        closesWithClient = false
+        afterExit = {
+            // the old client's row goes with it, and the resumed one registers under a new pid, in front of his shell
+            Files.delete(rig.tmp.resolve("sessions/1.json"))
+            val row = """{"pid":7,"sessionId":"$LEAD","cwd":"${rig.repo}","updatedAt":${AT + 7}}"""
+            Files.writeString(rig.tmp.resolve("sessions/7.json"), row)
+            terminal.inFront[leadPane] = 7L
+        }
+
+        val reply = move(LEAD, """{"head":"codex"}""")
+
+        assertEquals(HttpStatusCode.OK, reply.status, "nothing is torn down: it came up where it was started")
+        assertTrue(terminal.pressed.none { it.second == SessionKey.INTERRUPT })
+        assertEquals(listOf(leadPane to "/exit", leadPane to "claude-codex -r $LEAD"), terminal.sent)
+        assertEquals(LEAD, kept.single().first)
     }
 
     @Test

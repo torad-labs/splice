@@ -32,7 +32,7 @@ import splice.upstream.WsRoundRunner
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
-    reasoning: ReasoningSettings,
+    private val reasoning: ReasoningSettings,
     protected val quirks: ResponsesQuirks,
     // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
     // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.

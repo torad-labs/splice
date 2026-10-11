@@ -272,7 +272,13 @@ public data class FailureTraits(
      *  no retry can change. Rendered as a readable ending the client shows verbatim rather than
      *  an SSE error event: Claude Code 2.1.x re-sends an `api_error` identically until it gives
      *  up when it arrives before content, and after content replaces the message with a fixed
-     *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07). */
+     *  "Server error mid-response" line (87 and 47 identical turns on 2026-09-07).
+     *
+     *  A cut AFTER content (a restart that outlasts the drain budget, a dead upstream) is unrecoverable in Claude Code
+     *  2.1.x BY DESIGN: it never retries once any content block has reached it, whatever the ending. The error event is
+     *  the chosen ending for that cut, on purpose. A clean stop with an explanatory text block was weighed and refused
+     *  (splice-lead, 2026-10-10): it makes a cut turn look finished to the agent, which is worse than the client's
+     *  "may be incomplete", which is true. The remedy is fewer restarts, not a prettier cut. */
     val deterministic: Boolean = false,
     /** V4-81: NO retry can change this verdict — an identical re-send reproduces it exactly.
      *

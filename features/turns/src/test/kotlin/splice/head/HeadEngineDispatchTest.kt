@@ -260,7 +260,7 @@ class HeadEngineDispatchTest {
 }
 
 /** Only the first dispatch is held; the route must stamp arrival before this runnable starts. */
-private class HeldCallDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+internal class HeldCallDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
     val entered = CountDownLatch(1)
     val release = CountDownLatch(1)
     private val first = AtomicBoolean(true)
@@ -331,7 +331,7 @@ private class DispatchProvider(private val base: Provider, private val blocker: 
     }
 }
 
-private fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
+internal fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
     tuning = ProviderTuning(
         name = ProviderName(key = "synthetic", label = "synthetic"),
         catalog = ModelCatalog(
@@ -348,7 +348,7 @@ private fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
 )
 
 // The real composition, with only the engine exposed so the call group has deterministic affinity.
-private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
+internal fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
     val replay = CompactionReplay(deps.stores.compaction.compactionRecordings)
     val driver = TurnDriver(provider, deps, replay)
     val window = AdmissionWindow().apply { open() }
@@ -464,7 +464,7 @@ private fun firstEventMs(port: Int): Long = Socket("127.0.0.1", port).use { sock
     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
 }
 
-private fun writePost(
+internal fun writePost(
     socket: Socket,
     port: Int,
     system: String,

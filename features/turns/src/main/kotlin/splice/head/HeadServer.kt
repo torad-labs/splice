@@ -240,11 +240,7 @@ public class HeadServer(
         driver.stopActive()
         driver.stopDetached()
         val sealDeadlineNs = System.nanoTime() + STOP_SEAL_NS
-        // The slot is released before the response's last chunk is written, so the gate reaching zero is not the end of
-        // a turn: wait for every call to leave its handler too, or the engine stop cuts the tail of a finished turn.
-        while (gate.snapshot().inflight + engine.activeCalls > 0 && System.nanoTime() < sealDeadlineNs) {
-            deps.seams.waiter.wait(STOP_DRAIN_POLL_MS)
-        }
+        StopSeal(gate, engine, deps.seams.waiter).settle(sealDeadlineNs)
         drainedWasRunning = wasRunning
     }
 

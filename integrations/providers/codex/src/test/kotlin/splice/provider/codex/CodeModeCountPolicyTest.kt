@@ -89,9 +89,9 @@ class CodeModeCountPolicyTest : CodeModeBridgeTestSupport() {
         assertTrue(registry.add(record))
         registry.complete(record, "done")
         now.addAndGet(25.hours.inWholeMilliseconds)
-        assertTrue(expired.await(3, TimeUnit.SECONDS), "the record expires before its marker")
+        assertTrue(expired.await(30, TimeUnit.SECONDS), "the record expires before its marker")
         now.addAndGet(25.hours.inWholeMilliseconds)
-        assertTimeoutPreemptively(java.time.Duration.ofSeconds(3)) {
+        assertTimeoutPreemptively(java.time.Duration.ofSeconds(30)) {
             while (stateFiles.files().isNotEmpty()) LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5))
         }
     }

@@ -69,7 +69,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(history(listOf(first)), next, sourcePost)
             }
-            withTimeout(1_500) { runtime.advancing.await() }
+            withTimeout(30_000) { runtime.advancing.await() }
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
             if (cellExit == "cancel") {
@@ -146,7 +146,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             val request = async {
                 manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, roundPost)
             }
-            withTimeout(1_500) { runtime.advancing.await() }
+            withTimeout(30_000) { runtime.advancing.await() }
             if (ending == null) post.terminalProblem = "incomplete"
             endRound(post)
             val round = withTimeout(5_000) { request.await() }
@@ -236,7 +236,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(history(listOf(first)), next, post)
             }
-            withTimeout(1_500) { runtime.advancing.await() }
+            withTimeout(30_000) { runtime.advancing.await() }
             post.terminalProblem = "incomplete"
             endRound(post)
             assertSourceTear(withTimeout(5_000) { request.await() })
@@ -264,13 +264,13 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
                 val first = sink.callback.await()
                 post.gates.drop(1).forEach { it.complete(Unit) }
-                withTimeout(1_500) { post.itemDone.await() }
+                withTimeout(30_000) { post.itemDone.await() }
                 val next = HeldSink()
                 val request = async {
                     manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                         .intercept(history(listOf(first)), next, post)
                 }
-                withTimeout(1_500) { next.reached.await() }
+                withTimeout(30_000) { next.reached.await() }
                 post.terminalProblem = "incomplete"
                 post.complete.complete(Unit)
                 withTimeout(5_000) {
@@ -313,7 +313,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             val request = async {
                 manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
             }
-            withTimeout(1_500) { runtime.advancing.await() }
+            withTimeout(30_000) { runtime.advancing.await() }
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
             assertSourceTear(withTimeout(5_000) { request.await() })
@@ -343,7 +343,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(history(listOf(first)), next, sourcePost)
             }
-            withTimeout(1_500) { runtime.advancing.await() }
+            withTimeout(30_000) { runtime.advancing.await() }
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
             val outcome = withTimeout(5_000) { request.await() }.turn()

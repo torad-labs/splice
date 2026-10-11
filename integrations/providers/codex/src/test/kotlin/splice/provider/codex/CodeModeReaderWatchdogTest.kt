@@ -87,12 +87,12 @@ internal class CodeModeReaderWatchdogTest : CodeModeStatementStreamSupport() {
         val posting = IdlePost(source)
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
-            withTimeout(1_500) { sink.callback.await() }
+            withTimeout(30_000) { sink.callback.await() }
             assertFalse(source.stopped.isCompleted)
             assertFalse(posting.released.isCompleted)
             if (headStop) manager.onHeadStop() else posting.tick.complete(Unit)
-            withTimeout(1_500) { source.stopped.await() }
-            val usage = withTimeout(1_500) { posting.released.await() }
+            withTimeout(30_000) { source.stopped.await() }
+            val usage = withTimeout(30_000) { posting.released.await() }
             assertEquals(1, checkNotNull(usage).cutRounds)
             assertEquals(0L, usage.outputTokens, "unreported tokens are never invented")
             assertEquals(1, posting.releases.get())

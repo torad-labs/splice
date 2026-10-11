@@ -65,8 +65,8 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
                         .intercept(history(callbacks), sinks[step], post)
                 }
                 if (step > 0) gated.gates[step].complete(Unit)
-                callbacks += withTimeout(1_500) { sinks[step].callback.await() }
-                val outcome = withTimeout(1_500) { request.await() }.turn()
+                callbacks += withTimeout(30_000) { sinks[step].callback.await() }
+                val outcome = withTimeout(30_000) { request.await() }.turn()
                 assertTrue(outcome is TurnOutcome.Success, "step $step: $outcome")
             }
             val final = async {

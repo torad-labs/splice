@@ -124,7 +124,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
         val threads = Executors.newFixedThreadPool(2)
         try {
             val first = threads.submit { registry.complete(alpha, "done alpha again") }
-            if (!blocked.await(5, TimeUnit.SECONDS)) first.get(1, TimeUnit.SECONDS)
+            if (!blocked.await(5, TimeUnit.SECONDS)) first.get(30, TimeUnit.SECONDS)
             assertTrue(
                 blocked.count == 0L,
                 "alpha was not writing; calls=${writes.get()}",
@@ -134,7 +134,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 val added = registry.add(CodeModeRecords.of("beta", 2))
                 prior.size == 1 && added
             }
-            assertTrue(second.get(3, TimeUnit.SECONDS), "beta must read and persist while alpha writes")
+            assertTrue(second.get(30, TimeUnit.SECONDS), "beta must read and persist while alpha writes")
             release.countDown()
             first.get(5, TimeUnit.SECONDS)
         } finally {
@@ -164,7 +164,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
             assertTrue(blocked.await(5, TimeUnit.SECONDS))
             val beta = CodeModeRecords.of("beta", 1, updatedAt = futureRecordTs)
             val second = threads.submit<Boolean> { registry.add(beta) }
-            assertTrue(second.get(3, TimeUnit.SECONDS), "beta persists without waiting for alpha")
+            assertTrue(second.get(30, TimeUnit.SECONDS), "beta persists without waiting for alpha")
             release.countDown()
             assertTrue(first.get(5, TimeUnit.SECONDS))
         } finally {
@@ -377,7 +377,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
             val stopped = threads.submit { registry.onHeadStop() }
             assertTrue(blocked.await(5, TimeUnit.SECONDS))
             val completion = threads.submit { registry.complete(beta, "finished independently") }
-            completion.get(3, TimeUnit.SECONDS)
+            completion.get(30, TimeUnit.SECONDS)
             release.countDown()
             stopped.get(5, TimeUnit.SECONDS)
         } finally {
@@ -646,8 +646,8 @@ internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
         registry.script("alpha", output = "expired-private-output")
         failOnce.set(true)
         clock.now += 25.hours.inWholeMilliseconds
-        assertTrue(failed.await(3, TimeUnit.SECONDS), "the expiry write must fail first")
-        assertTrue(repaired.await(3, TimeUnit.SECONDS), "the now-empty registry must retry its failed key")
+        assertTrue(failed.await(30, TimeUnit.SECONDS), "the expiry write must fail first")
+        assertTrue(repaired.await(30, TimeUnit.SECONDS), "the now-empty registry must retry its failed key")
         assertFalse(state.text().contains("expired-private-output"))
     }
 

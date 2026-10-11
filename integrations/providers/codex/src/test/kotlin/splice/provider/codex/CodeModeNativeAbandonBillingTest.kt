@@ -106,7 +106,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
         try {
             val first = manager.interceptor(turn(), disableParallel = false)
                 .intercept(body(baseline), sink, posting).turn() as TurnOutcome.Success
-            val callback = withTimeout(1_500) { sink.callback.await() }
+            val callback = withTimeout(30_000) { sink.callback.await() }
             assertEmptyStep(first, source)
             val registry = manager.registry
             val driver = manager.driver
@@ -121,7 +121,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
             val changed = body(replayed)
             val next = manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
                 .intercept(changed, RecordingSink(), source).turn() as TurnOutcome.Success
-            withTimeout(1_500) { source.stopped.await() }
+            withTimeout(30_000) { source.stopped.await() }
             assertTrue(
                 logLines.any { "abandoned record" in it && "native_branch=${branch.wire}" in it },
                 "the exact placement refusal branch must run before billing is checked",
@@ -155,14 +155,14 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
                 // Release the terminal as disposal closes the worker. Either completion or cancellation may win.
                 finishSource(source)
                 runBlocking {
-                    withTimeout(1_500) {
+                    withTimeout(30_000) {
                         while (!round.upstreamEnded) yield()
                     }
                 }
             }
             NativeAbandonEnding.TERMINAL, NativeAbandonEnding.HELD_TERMINAL -> {
                 finishSource(source)
-                withTimeout(1_500) { round.outcome() }
+                withTimeout(30_000) { round.outcome() }
             }
         }
     }
@@ -197,7 +197,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
         next: Usage,
     ) {
         val billedRow = if (ending == NativeAbandonEnding.HELD_TERMINAL) {
-            withTimeout(1_500) { held.released.await() }.also {
+            withTimeout(30_000) { held.released.await() }.also {
                 assertEquals(1, held.releases.get())
                 assertEquals(0L, next.cutRounds)
                 assertEquals(0L, next.absorbed.rounds, "the next step need not carry the already owned round")

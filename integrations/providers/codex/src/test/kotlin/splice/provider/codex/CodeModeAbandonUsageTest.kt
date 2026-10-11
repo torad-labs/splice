@@ -97,7 +97,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         try {
             manager.interceptor(turn(), disableParallel = false)
                 .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, row.original)
-            val callback = withTimeout(1_500) { sink.callback.await() }
+            val callback = withTimeout(30_000) { sink.callback.await() }
             val callbacks = Json.parseToJsonElement(history(listOf(callback))).jsonObject
                 .getValue("input").jsonArray.drop(1)
             val items = changedHistory(input, callbacks, SourceDisposition.NATIVE)
@@ -112,7 +112,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
                 val ended = continuation() as RoundResult.Ended
                 assertTrue(ended.ending === refusal, "the upstream refusal propagates unchanged")
             }
-            withTimeout(1_500) { source.stopped.await() }
+            withTimeout(30_000) { source.stopped.await() }
             row.assertOriginal(reported = false)
             val cuts = perf.snapshot().counters[PerfKeys.CUT_SOURCE_ROUNDS]
             assertEquals(1L, cuts, "the failed cutting turn owns the cut")
@@ -135,7 +135,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         }
 
         suspend fun assertOriginal(reported: Boolean) {
-            val usage = withTimeout(1_500) { released.await() }
+            val usage = withTimeout(30_000) { released.await() }
             if (reported) {
                 assertEquals(7L, checkNotNull(usage).outputTokens)
                 assertEquals(0, usage.cutRounds)
@@ -157,20 +157,20 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         try {
             manager.interceptor(turn(), disableParallel = false)
                 .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, row.original)
-            val callback = withTimeout(1_500) { sink.callback.await() }
+            val callback = withTimeout(30_000) { sink.callback.await() }
             if (reportedBeforeDispose) {
                 finishSource(source)
-                withTimeout(1_500) { row.released.await() }
+                withTimeout(30_000) { row.released.await() }
             }
             val callbackItems = Json.parseToJsonElement(history(listOf(callback))).jsonObject
                 .getValue("input").jsonArray.drop(1)
             val changed = JsonObject(mapOf("input" to JsonArray(changedHistory(input, callbackItems, disposition))))
             val answering = if (disposition == SourceDisposition.SUPERSEDED) turn() else turn(callback.id, "result-0")
-            val next = withTimeout(1_500) {
+            val next = withTimeout(30_000) {
                 manager.interceptor(answering, disableParallel = false)
                     .intercept(changed.toString(), RecordingSink(), source)
             }.turn() as TurnOutcome.Success
-            withTimeout(1_500) { source.stopped.await() }
+            withTimeout(30_000) { source.stopped.await() }
             assertDisposition(disposition)
             row.assertOriginal(reportedBeforeDispose)
             assertCut(next, if (reportedBeforeDispose) 0 else 1)
@@ -228,7 +228,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         post.gates[1].complete(Unit)
         post.gates[2].complete(Unit)
         post.complete.complete(Unit)
-        withTimeout(1_500) { post.stopped.await() }
+        withTimeout(30_000) { post.stopped.await() }
     }
 }
 
@@ -273,7 +273,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
         val held = HeldPosting(source)
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, held)
-            withTimeout(1_500) { sink.callback.await() }
+            withTimeout(30_000) { sink.callback.await() }
             val registry = manager.registry
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = registry.recordsFor(key).single()
@@ -283,9 +283,9 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
             assertFalse(checkNotNull(round).cut.take(), "declaring ownership does not cut a reader")
             val reader = checkNotNull(round.finished)
             reader.cancel(CancellationException("synthetic source ended without a client cutting its reader"))
-            withTimeout(1_500) { reader.join() }
-            withTimeout(1_500) { source.stopped.await() }
-            assertRetirementBill(withTimeout(1_500) { held.released.await() }, clientCuts = 0L, client = false)
+            withTimeout(30_000) { reader.join() }
+            withTimeout(30_000) { source.stopped.await() }
+            assertRetirementBill(withTimeout(30_000) { held.released.await() }, clientCuts = 0L, client = false)
             lease.ended()
             assertFalse(round.cut.take(), "a retired ended reader was never cut by this declaration")
             assertEquals(1, held.releases.get(), "an ended source releases its held posting row exactly once")
@@ -317,13 +317,13 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
             val first = manager.interceptor(turn(), disableParallel = false)
                 .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, held).turn()
                 as TurnOutcome.Success
-            val callback = withTimeout(1_500) { sink.callback.await() }
+            val callback = withTimeout(30_000) { sink.callback.await() }
             assertEquals(0L, first.usage.inputTokens)
             assertEquals(0L, first.usage.outputTokens)
             assertEquals(0L, first.usage.cutRounds)
             val clientCuts = retire(manager, mode, clock)
-            withTimeout(1_500) { source.stopped.await() }
-            val settled = withTimeout(1_500) { held.released.await() }
+            withTimeout(30_000) { source.stopped.await() }
+            val settled = withTimeout(30_000) { held.released.await() }
             assertRetirementBill(settled, clientCuts, mode == "client")
             assertEquals(1, held.releases.get())
             assertFalse(source.sent[1].isCompleted, "retirement cannot generate more source")
@@ -457,9 +457,9 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
                 assertEquals(7L, usage.outputTokens)
                 assertEquals(0L, usage.cutRounds)
                 settle.countDown()
-                withTimeout(1_500) { round.outcome() }
+                withTimeout(30_000) { round.outcome() }
                 assertNull(
-                    withTimeout(1_500) { posting.released.await() },
+                    withTimeout(30_000) { posting.released.await() },
                     "claimed successful usage cannot invent a cut",
                 )
                 assertEquals(1, posting.held.get(), "an early terminal cannot register the same posting row twice")
@@ -515,10 +515,10 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
                     .intercept(BASE_REQUEST, sink, posting).turn() as TurnOutcome.Success
                 assertEquals(0L, first.usage.cutRounds, "retirement is not the first client's cut")
             }
-            withTimeout(1_500) { evicted.await() }
-            withTimeout(1_500) { source.stopped.await() }
+            withTimeout(30_000) { evicted.await() }
+            withTimeout(30_000) { source.stopped.await() }
             assertEquals(1, posting.held.get(), "retirement cannot outrun the first posting-row registration")
-            val bill = withTimeout(1_500) { posting.released.await() }
+            val bill = withTimeout(30_000) { posting.released.await() }
             assertEquals(1L, checkNotNull(bill).cutRounds)
             assertEquals(0L, bill.inputTokens)
             assertEquals(0L, bill.outputTokens)

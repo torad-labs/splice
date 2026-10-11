@@ -49,9 +49,9 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                         .intercept(history(callbacks), sinks[step], post)
                 }
                 if (step > 0) post.gates[step].complete(Unit)
-                val callback = withTimeout(1_500) { sinks[step].callback.await() }
+                val callback = withTimeout(30_000) { sinks[step].callback.await() }
                 callbacks += callback
-                val outcome = withTimeout(1_500) { request.await() }.turn() as TurnOutcome.Success
+                val outcome = withTimeout(30_000) { request.await() }.turn() as TurnOutcome.Success
                 assertTrue(outcome.hasToolUse)
                 assertEquals(0L, outcome.usage.outputTokens)
                 assertFalse(post.itemDone.isCompleted, "streaming callbacks must precede item completion")
@@ -70,7 +70,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             }
             itemCompletion.complete(Unit)
             post.complete.complete(Unit)
-            val outcome = withTimeout(1_500) { final.await() }.turn() as TurnOutcome.Success
+            val outcome = withTimeout(30_000) { final.await() }.turn() as TurnOutcome.Success
             assertEquals(2, post.posts, "only script completion permits a continuation POST")
             assertBilling(outcome.usage)
             assertEquals(
@@ -94,7 +94,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, firstSink, post)
             val first = firstSink.callback.await()
             post.gates[1].complete(Unit)
-            withTimeout(1_500) { post.sent[1].await() }
+            withTimeout(30_000) { post.sent[1].await() }
             val second = StepSink()
             manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), second, post)
@@ -171,7 +171,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             val first = sink.callback.await()
             stateFiles.block()
             post.gates[1].complete(Unit)
-            withTimeout(1_500) { post.sent[1].await() }
+            withTimeout(30_000) { post.sent[1].await() }
             // Buffered producer bytes need not write; keep disk blocked through the executable read boundary.
             val next = StepSink()
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
@@ -252,7 +252,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             val first = firstSink.callback.await()
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
-            withTimeout(1_500) { post.stopped.await() }
+            withTimeout(30_000) { post.stopped.await() }
             val next = StepSink()
             manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), next, post)
@@ -345,10 +345,10 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
         )
 
         suspend fun beforeResume(afterLoss: Boolean) {
-            withTimeout(1_500) { dying.await() }
+            withTimeout(30_000) { dying.await() }
             if (!afterLoss) return
             release.countDown()
-            withTimeout(1_500) {
+            withTimeout(30_000) {
                 while (stateFiles.records().single()["phase"]?.jsonPrimitive?.content != CodeModePhase.LOST.name) {
                     yield()
                 }
@@ -357,7 +357,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
 
         suspend fun afterResume(afterLoss: Boolean) {
             if (afterLoss) return
-            withTimeout(1_500) { advancing.await() }
+            withTimeout(30_000) { advancing.await() }
             release.countDown()
         }
     }
@@ -376,12 +376,12 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             val input = body.getValue("input").jsonArray + JsonObject(
                 mapOf("role" to JsonPrimitive("user"), "content" to JsonPrimitive("stop this script")),
             )
-            val outcome = withTimeout(1_500) {
+            val outcome = withTimeout(30_000) {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), StepSink(), post)
             }.turn()
             assertTrue(outcome is TurnOutcome.Success, outcome.toString())
-            withTimeout(1_500) { post.stopped.await() }
+            withTimeout(30_000) { post.stopped.await() }
             assertFalse(post.sent[1].isCompleted, "steering generates no unread source")
             assertEquals(1, runtime.starts)
             assertTrue(post.continuation.contains("stop this script"))

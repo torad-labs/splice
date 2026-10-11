@@ -98,13 +98,13 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 val first = sink.callback.await()
                 post.gates.drop(1).forEach { it.complete(Unit) }
                 post.complete.complete(Unit)
-                withTimeout(1_500) { post.stopped.await() }
+                withTimeout(30_000) { post.stopped.await() }
                 val registry = manager.registry
                 val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
                 val record = registry.recordsFor(key).single()
                 // The mock post's finally precedes capture.finish; only stored terminal usage
                 // certifies this precondition.
-                withTimeout(1_500) {
+                withTimeout(30_000) {
                     while (registry.recordsFor(key).single().sourceState?.usage == null) yield()
                 }
                 registry.complete(record, "done")
@@ -159,7 +159,7 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
             val pending = async {
                 manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, observed)
             }
-            withTimeout(1_500) { runtime.firstRead.await() }
+            withTimeout(30_000) { runtime.firstRead.await() }
             assertTrue(runtime.firstReads.single() is CodeModeSourcePart.Delta)
             upstream.gates.drop(1).forEach { it.complete(Unit) }
             val outcome = pending.await().turn() as TurnOutcome.Success

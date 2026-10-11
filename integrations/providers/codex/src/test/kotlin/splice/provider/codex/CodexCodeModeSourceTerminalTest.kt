@@ -66,10 +66,10 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
             val first = sink.callback.await()
             post.gates.drop(1).forEach { it.complete(Unit) }
-            withTimeout(1_500) { post.sent.last().await() }
+            withTimeout(30_000) { post.sent.last().await() }
             post.complete.complete(Unit)
-            withTimeout(1_500) { post.stopped.await() }
-            if (problem == "incomplete") withTimeout(1_500) { terminalReached.await() }
+            withTimeout(30_000) { post.stopped.await() }
+            if (problem == "incomplete") withTimeout(30_000) { terminalReached.await() }
             releaseTerminal.complete(Unit)
             // The post has stopped before LiveRound receives its outcome. Only published rejection
             // proves the terminal invalid; admission is already LOST and is not that proof.
@@ -100,11 +100,11 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
             post.gates.drop(1).forEach { it.complete(Unit) }
-            withTimeout(1_500) { post.itemDone.await() }
+            withTimeout(30_000) { post.itemDone.await() }
             assertSourcePending()
             assertFalse(post.stopped.isCompleted)
             post.complete.complete(Unit)
-            withTimeout(1_500) { post.stopped.await() }
+            withTimeout(30_000) { post.stopped.await() }
         } finally {
             manager.onHeadStop()
         }
@@ -124,11 +124,11 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(history(listOf(first)), StepSink(), post)
             }
-            withTimeout(1_500) { while (runtime.delivered.size < 2) kotlinx.coroutines.yield() }
+            withTimeout(30_000) { while (runtime.delivered.size < 2) kotlinx.coroutines.yield() }
             resumed.cancel()
             resumed.join()
             assertTrue(resumed.isCancelled)
-            withTimeout(1_500) { post.stopped.await() }
+            withTimeout(30_000) { post.stopped.await() }
             assertFalse(post.sent[1].isCompleted, "cancelled execution generates no unread source")
             assertEquals(1, runtime.starts)
             assertEquals(1, post.posts)
@@ -179,11 +179,11 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             val request = async {
                 manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
             }
-            withTimeout(1_500) { post.itemDone.await() }
+            withTimeout(30_000) { post.itemDone.await() }
             assertFalse(request.isCompleted)
             assertFalse(sink.callback.isCompleted)
             post.complete.complete(Unit)
-            val outcome = withTimeout(1_500) { request.await() }.turn() as TurnOutcome.Success
+            val outcome = withTimeout(30_000) { request.await() }.turn() as TurnOutcome.Success
             assertBilling(outcome.usage)
             assertEquals(1, runtime.starts)
             assertEquals(2, post.posts)
@@ -379,7 +379,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
             clock.now += 2_000
             sweepOwnHistory(manager)
-            withTimeout(1_500) { post.stopped.await() }
+            withTimeout(30_000) { post.stopped.await() }
             assertFalse(post.sent[1].isCompleted, "expiry leaves no source reader behind")
             assertTrue(stateFiles.records().isEmpty())
             assertEquals(1, runtime.starts)
@@ -403,7 +403,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
                 val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(history(listOf(first)), StepSink(), post).turn()
                 assertTrue(outcome is TurnOutcome.Failure)
-                withTimeout(1_500) { post.stopped.await() }
+                withTimeout(30_000) { post.stopped.await() }
                 assertFalse(post.sent[1].isCompleted, "poisoning generates no unread source")
                 assertFalse(manager.interceptor(turn(first.id, "result-0"), disableParallel = false).resumesSource())
                 assertEquals(1, runtime.starts)

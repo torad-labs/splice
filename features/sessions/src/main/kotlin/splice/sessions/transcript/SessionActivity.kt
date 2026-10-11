@@ -18,6 +18,7 @@ internal object SessionActivity {
     // a link's target, and the marks around bold, italic and code. The words between the marks stay.
     private val lineMarks = Regex("(?m)^[ \\t]*(?:#{1,6}[ \\t]+|[-*+][ \\t]+|>[ \\t]+)+")
     private val itemMark = Regex("^[ \\t]*(?:#{1,6}|[-*+])[ \\t]+\\S")
+    private val tableRule = Regex("\\|[ \\t:|-]*-[ \\t:|-]*")
     private val link = Regex("\\[([^\\]\\n]+)]\\([^)\\s]+\\)")
     private val strong = Regex("(\\*\\*|__)(?=\\S)(.+?)(?<=\\S)\\1")
     private val starred = Regex("(?<![*\\w])\\*(?=\\S)(.+?)(?<=\\S)\\*(?![*\\w])")
@@ -83,9 +84,19 @@ internal object SessionActivity {
     /** What was said, with its markdown read rather than shown: a call's summary keeps its marks, where a star can be a
      *  glob. */
     private fun plain(said: String): String {
-        val unmarked = said.lines().joinToString("\n", transform = ::stopped)
+        val unmarked = said.lines().mapNotNull(::untabled).joinToString("\n", transform = ::stopped)
             .replace(lineMarks, "").replace(link, "$1").replace("`", "")
         return unmarked.replace(strong, "$2").replace(starred, "$1").replace(underscored, "$1")
+    }
+
+    /** A table row reads as its cells, comma-joined, as one sentence; the row under a table's header that only draws
+     *  its rule is dropped. Any other line is kept as it is. */
+    private fun untabled(line: String): String? {
+        val text = line.trim()
+        if (!text.startsWith("|")) return line
+        if (tableRule.matches(text)) return null
+        val cells = text.split("|").map(String::trim).filter(String::isNotEmpty).joinToString(", ")
+        return if (cells.isEmpty() || cells.last() in ".!?") cells else "$cells."
     }
 
     /** A heading or bullet is its own sentence once its marks are gone: with no stop of its own it gets one, so it

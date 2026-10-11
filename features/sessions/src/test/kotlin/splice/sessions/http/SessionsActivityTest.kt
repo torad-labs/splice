@@ -159,6 +159,15 @@ class SessionsActivityTest {
     }
 
     @Test
+    fun `a table reads as its cells, its rule row dropped, and a pipe inside a sentence is left alone`(
+        @TempDir tmp: Path,
+    ) {
+        val said = "The rate picked back up.\n\n| Time (CT) | Rows |\n|---|:--:|\n| 10:57 AM | 412 |\nPick a or | b."
+        val read = "The rate picked back up. Time (CT), Rows. 10:57 AM, 412. Pick a or | b."
+        assertEquals(read, textOf(tmp, said))
+    }
+
+    @Test
     fun `a star or underscore inside a word or a sum is left alone`(@TempDir tmp: Path) {
         val said = "Set max_tokens_per_turn to 5 * 3 and glob *.kt files"
         assertEquals(said, textOf(tmp, said))

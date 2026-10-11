@@ -131,7 +131,7 @@ function found(id) {
   return [...new Set(f)];
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
-const form = (keys, everyCommand = false) => `<div class="form">${keys.filter((key) => !needsRestart(key) && shownKnob(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand })).join("")}</div>`;
+const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key) && shownKnob(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })).join("")}</div>`;
 
 // the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
 const tapOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.wireTap) || 0;
@@ -341,7 +341,7 @@ const silentHtml = () => tallyHtml("This week", [
     { why: "silentresume", what: WHY.silentresume.word.replace(" after a silence", "") },
     { why: "silentover", what: WHY.silentover.word.replace(" after a silence", "") },
   ]),
-]) + `<section class="sub">${form(keysOf("silent"), true)}</section>`;
+]) + `<section class="sub">${form(keysOf("silent"))}</section>`;
 const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
 function peaksHtml() {
   if (ui.peaks === undefined) return `<section class="tally"><h3>Today</h3><div class="card peaks">${READING}</div></section>`;

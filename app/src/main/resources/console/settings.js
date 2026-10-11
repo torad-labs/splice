@@ -143,9 +143,11 @@ const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
   : `<button class="act quiet small" data-act="arm" data-id="${id}">Delete now</button>`);
 const ALWAYS = `<span class="fixed quiet">Always saved</span>`; // a store whose daemon has no off switch
 const YOURS = `<span class="yours">Your prompts</span>`;
-const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", more = "" }) =>
+// What Off costs, under the switch. Every row that has the line always draws it, hidden while On, so its room is held and a flip moves no row below (p179; hitstop e1f71b2). Wraps at a dot, never inside a part (fin).
+const costHtml = (off, shown) => (off ? `<p class="offcost${shown ? "" : " hold"}"${shown ? "" : ' aria-hidden="true"'}>${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
+const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "" }) =>
   `<div class="drow${cls}${lit(hay)}"><div class="dname"><span class="nm">${hl(name)}${yours ? YOURS : ""}</span>${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</div>`
-  + `<div class="amt">${amount}</div><div class="keep">${keep}</div><div class="dsw">${sw}</div><div class="ddel">${del}</div>${more}</div>`;
+  + `<div class="amt">${amount}</div><div class="keep">${keep}</div><div class="dsw">${sw}</div><div class="ddel">${del}</div>${costHtml(off, offShown)}${more}</div>`;
 const amountOf = (x, unit) => (x.n ? `<b>${fmt(x.n)}</b> ${unit}<span class="mb">${mbWord(x.bytes)}</span>${x.since ? `<span class="mb">Since ${atWord(x.since)}</span>` : ""}` : `<span class="none">Nothing saved</span>`);
 const unreadable = `<span class="none">splice did not answer</span>`;
 
@@ -187,15 +189,16 @@ function dataRow(r) {
   const keep = (r.id === "edges" || r.id === "trace" || r.id === "originals") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
+  const said = r.knob ? saidHtml(r.knob) : "";
   return drow({
-    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep,
-    sw: r.knob ? `${ctlHtml(KNOB[r.knob], val(r.knob))}${saidHtml(r.knob)}` : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
-    more: r.knob && !val(r.knob) ? `<div class="dcost">${esc(r.off)}</div>` : on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
+    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep: keep + said, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
+    sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob)) : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
+    more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
 }
 function dataHtml() {
-  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")), more: val("transcriptView") ? "" : `<div class="dcost">${["Sessions, Requests and Teams show no conversations", "Questions are answered in the terminal", "Nothing is deleted"].map((t) => `<span>${t}</span>`).join(" · ")}</div>` });
+  const read = drow({ name: "Read your Claude Code conversations", door: ["sessions.html", "Sessions"], amount: `<span class="none">Nothing saved</span>`, keep: saidHtml("transcriptView"), sw: ctlHtml(KNOB.transcriptView, val("transcriptView")), off: "Sessions, Requests and Teams show no conversations · Questions are answered in the terminal · Nothing is deleted", offShown: !val("transcriptView") });
   // what each tapped command holds in memory right now: counted, never shown, and no Delete since the daemon has none
   const taps = ui.heads.filter((h) => tapOf(h) > 0), heldN = taps.reduce((n, h) => n + (ui.held[h] ?? 0), 0);
   // The row draws when the fact exists: a command taps its requests or bodies are held. With neither it holds nothing and

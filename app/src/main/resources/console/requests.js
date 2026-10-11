@@ -88,7 +88,8 @@ const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
 // ---------- the filters, as /api/perf/turns takes them (TurnsFilter.kt), plus the search over bodies ----------
 const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h": ["24 hours", 24 * 3600e3], "7d": ["7 days", 7 * 24 * 3600e3] };
-const money = (usd) => `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`; // priced at the model's card
+// priced at the model's card, with kit's zero and floor (dollars): exactly 0 is "$0", under a hundredth of a cent "<$0.0001"
+const money = (usd) => (usd === 0 || usd < 0.0001 ? dollars(usd) : `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
 const MAX_HELD = 2000; // the most rows one read of a head can carry (PerfRoutes.kt MAX_TURNS); asking for more is clamped
 const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the rest are reached from Sessions

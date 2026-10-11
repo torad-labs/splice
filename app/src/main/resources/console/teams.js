@@ -57,7 +57,7 @@ const usd = (n) => `≈$${n.toFixed(2)}`;
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
   teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {},
-  economics: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
+  economics: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
   screens: {},
@@ -140,11 +140,14 @@ async function readTeam() {
   state.screens = {};
   const { from, to } = dayWindow(ui.day);
   const day = `from=${from}&to=${to}`;
-  const [economics, chat, activity] = await Promise.all([
+  const [economics, chat, activity, perHead] = await Promise.all([
     API.get(`/api/teams/${tm.id}/economics`),
     API.get(`/api/teams/${tm.id}/chat?${day}`),
     API.get(`/api/teams/${tm.id}/activity?${day}`),
+    API.get("/api/economics"),
   ]);
+  // why a command's turns with no price have none, decided by the daemon once (as Accounts reads it): "plan" or not
+  state.priceWhy = Object.fromEntries((perHead.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   state.economics[tm.id] = economics.ok ? economics.body : { error: refusalOf(economics, "The figures could not be read") };
   state.chat = chat.ok ? chat.body : { error: refusalOf(chat, "The messages could not be read") };
   state.activity = activity.ok ? activity.body : { error: refusalOf(activity, "The activity could not be read") };
@@ -222,14 +225,21 @@ function useOf(tm, slotId) {
   // The tokens figure is everything the slot's turns moved, the two cache counts included, as the route reports them.
   const t = row.tokens || {};
   const tokens = (t.input || 0) + (t.cache_read || 0) + (t.cache_write || 0) + (t.output || 0);
-  return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, unpriced: row.unpriced_turns ?? 0 };
+  const unpriced = row.unpriced_turns ?? 0, head = tm.slots.find((x) => x.id === slotId)?.head;
+  const onPlan = state.priceWhy[head] === "plan" ? unpriced : 0;
+  return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, unpriced, onPlan };
 }
 function figures(u, since) {
   if (!u) return "";
   // As Sessions' Today line: a cost is said only when every request is priced and it is more than nothing, since a
-  // plan's requests carry no price and a sum over some of them would read as the whole (Marlin, Oct 10).
-  const money = u.usd != null && u.unpriced === 0 && u.usd > 0 ? `<span>${usd(u.usd)}</span>` : "";
-  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money}` +
+  // plan's requests carry no price and a sum over some of them would read as the whole. With no figure the count says why,
+  // as Accounts' Day row does: a plan's requests are "on your plan", the rest "with no price", the bigger count first.
+  const why = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
+    .map(([n, w]) => `<span>${n.toLocaleString("en-US")} ${n === 1 ? "request" : "requests"} ${w}</span>`).join("");
+  const priced = u.usd != null && u.unpriced === 0 && u.usd > 0;
+  // every request unpriced: the reason is the count itself, so the line does not say the same number twice
+  const count = !priced && u.unpriced === u.turns ? "" : `<span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span>`;
+  return `<span class="figs">${count || why}<span>${big(u.tokens)} tokens</span>${priced ? `<span>${usd(u.usd)}</span>` : count ? why : ""}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
@@ -241,6 +251,7 @@ function totals(tm) {
     tokens: us.reduce((a, u) => a + u.tokens, 0),
     usd: priced.length ? priced.reduce((a, u) => a + u.usd, 0) : null,
     unpriced: us.reduce((a, u) => a + u.unpriced, 0),
+    onPlan: us.reduce((a, u) => a + u.onPlan, 0),
   };
 }
 /** The oldest turn the perf files still hold, named only when it is after the team was made. */

@@ -66,7 +66,7 @@ ARG BUN_VERSION=1.4.2
 ARG BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
 ARG UID=1000
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl bash iproute2 procps unzip \
+ && apt-get install -y --no-install-recommends ca-certificates curl bash iproute2 procps unzip tmux \
  && curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" -o /tmp/bun.zip \
  && echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c - \
  && unzip -p /tmp/bun.zip bun-linux-x64/bun > /usr/local/bin/bun \

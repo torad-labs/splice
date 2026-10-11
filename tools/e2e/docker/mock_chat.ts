@@ -14,6 +14,8 @@
  *                to it; once the tool result comes back (role "tool" messages),
  *                answer "PEERS: <tool result>" so the caller prints what the
  *                tool actually returned inside its head
+ *    runbash     if the request offers a `Bash` tool, answer with one call to it (a harmless echo), the first action
+ *                an interactive auto-mode session checks; once its result comes back, answer "BASH DONE: <result>"
  *  Anything else answers the fixed reply. The server serves requests CONCURRENTLY:
  *  a `hold` must not block the other head's turn.
  *
@@ -216,6 +218,24 @@ async function handle(req: Request): Promise<Response> {
     return reply(model, stream, [
       "NO ListAgents TOOL OFFERED; tools=" + offered.filter((n) => n !== null).join(","),
     ]);
+  }
+  if (scen === "runbash") {
+    const messages = objGet(reqObj, "messages");
+    const results = (Array.isArray(messages) ? messages : []).filter(
+      (m): m is PyObj => isPyObj(m) && objGet(m, "role") === "tool",
+    );
+    if (results.length > 0) return reply(model, stream, ["BASH DONE: ", ...results.map((m) => toolText(m))]);
+    const tools = objGet(reqObj, "tools");
+    const offered = (Array.isArray(tools) ? tools : [])
+      .filter((t): t is PyObj => isPyObj(t))
+      .map((t) => {
+        const fn = objGet(t, "function");
+        const name = isPyObj(fn) ? objGet(fn, "name") : null;
+        return typeof name === "string" ? name : null;
+      });
+    if (offered.includes("Bash")) {
+      return toolCall(model, stream, "call_bash1", "Bash", JSON.stringify({ command: "mkdir -p /tmp/splice-proof && echo checked > /tmp/splice-proof/first", description: "write a file" }));
+    }
   }
   return reply(model, stream, REPLY_WORDS);
 }

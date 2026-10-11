@@ -197,7 +197,7 @@ need_jar() {
 
 need_curl() {
   command -v curl >/dev/null 2>&1 ||
-    fail "splice: splice needs curl to start Claude Code, and curl is not installed. Install curl (apt install curl, brew install curl, dnf install curl), then launch again"
+    fail "splice: needs curl to start Claude Code, and it isn't installed. Install curl (apt install curl, brew install curl, dnf install curl), then launch again"
 }
 
 # `splice login <head> [--label NAME] [--discard]` names the head it signs in: the one positional word.
@@ -506,7 +506,7 @@ start_through_unit() {
 cold_start() {
   [ -z "$HEALTH_JSON" ] || return 0
   [ -f "$JAR" ] || fail "splice: daemon jar not found at $JAR (run: splice install, or set SPLICE_JAR)"
-  warn "splice: starting splice…"
+  warn "splice: starting…"
   mkdir -p "$LOGS_DIR" 2>/dev/null || true # an unwritable home degrades the redirect below, never the launch
   if [ -f "$BOOT_LOG" ] && [ "$(wc -c <"$BOOT_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
     mv "$BOOT_LOG" "$BOOT_LOG.1" 2>/dev/null || true

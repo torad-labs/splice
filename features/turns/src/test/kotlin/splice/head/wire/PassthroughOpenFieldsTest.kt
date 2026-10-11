@@ -149,14 +149,38 @@ class PassthroughOpenFieldsTest {
             rig.close()
         }
     }
+
+    @Test
+    fun `safeguards and the beta header reach the upstream as the client sent them`(@TempDir dir: Path) =
+        runBlocking {
+            val rig = OpenFieldsRig(dir)
+            try {
+                rig.head.start()
+                rig.turn(true)
+                assertAll(
+                    { assertTrue(SENT_SAFEGUARDS in rig.lastBody, "safeguards changed on the way: ${rig.lastBody}") },
+                    { assertEquals("safeguards-synthetic-2099-01-01", rig.lastBeta) },
+                )
+            } finally {
+                rig.close()
+            }
+        }
 }
+
+private const val SENT_SAFEGUARDS =
+    """"safeguards":[{"type":"dangerous_tool_use","future":{"keep":[1,null,false]}}]"""
 
 private fun openEvent(index: Int): JsonObject = Json.parseToJsonElement(OPEN_EVENTS[index]).jsonObject
 
 private class OpenFieldsRig(directory: Path) {
+    @Volatile var lastBody: String = ""
+
+    @Volatile var lastBeta: String? = null
+
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/v1/messages") { request ->
-            request.requestBody.use { it.readBytes() }
+            lastBody = request.requestBody.use { it.readBytes() }.decodeToString()
+            lastBeta = request.requestHeaders.getFirst("anthropic-beta")
             request.responseHeaders.add("Content-Type", "text/event-stream")
             val bytes = OPEN_EVENTS.joinToString("\n\n", postfix = "\n\n") { event ->
                 val type = Json.parseToJsonElement(event).jsonObject["type"]?.jsonPrimitive?.content
@@ -191,11 +215,12 @@ private class OpenFieldsRig(directory: Path) {
     suspend fun turn(stream: Boolean): Pair<HttpStatusCode, String> {
         val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Authorization", "Bearer synthetic-open-list")
+            header("anthropic-beta", "safeguards-synthetic-2099-01-01")
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"open--native","stream":$stream,"max_tokens":16,""" +
                     """"messages":[{"role":"user","content":"synthetic"}],""" +
-                    """"safeguards":[{"type":"dangerous_tool_use"}]}""",
+                    """"safeguards":[{"type":"dangerous_tool_use","future":{"keep":[1,null,false]}}]}""",
             )
         }
         return response.status to response.bodyAsText()

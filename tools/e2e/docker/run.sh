@@ -115,8 +115,9 @@ if [ -n "$SCENARIO_NAME" ]; then
   case "$SCENARIO_NAME" in
     plan-limit) SCENARIO="plan-limit.sh"; RECEIPT_NAME="plan-limit" ;;
     runtime-head) SCENARIO="runtime-head.sh"; RECEIPT_NAME="runtime-head" ;;
+    auto-mode) SCENARIO="auto-mode.sh"; RECEIPT_NAME="auto-mode"; IMAGE="splice-e2e-nonode:local"; IMAGE_TARGET="nonode" ;;
     no-node) SCENARIO="no-node.sh"; RECEIPT_NAME="no-node"; IMAGE="splice-e2e-nonode:local"; IMAGE_TARGET="nonode" ;;
-    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit, runtime-head, no-node)" >&2; exit 2 ;;
+    *) echo "run.sh: unknown scenario $SCENARIO_NAME (plan-limit, runtime-head, no-node, auto-mode)" >&2; exit 2 ;;
   esac
   [ -z "$PLAN_RESET_S" ] || MODE_ARGS+=(-e "PLAN_RESET_S=$PLAN_RESET_S")
   [ -z "$PROBE_MESSAGE" ] || MODE_ARGS+=(-e "PLAN_PROBE_MESSAGE=$PROBE_MESSAGE")

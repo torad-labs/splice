@@ -139,6 +139,8 @@ internal class SessionsWiring(
         override fun arrived(session: String) {
             pending.remove(session)?.let { moves.moved(session, it) }
         }
+
+        override fun failed(session: String): String? = pending.remove(session)?.fromModel
     }
 
     /** The stable label of the login [session]'s requests on [head] carry, the one the Accounts roster and the perf

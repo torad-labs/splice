@@ -25,13 +25,14 @@
 // The route waits for the client to exit and for the session to register on the new command, and answers:
 //   200  it runs on the new command: its id, the command, and what a person types to sit in front of it.
 //   400  no command named.   404  no such session.   409  refused, and why.
-//   502  the terminal did not take it.   503  no terminal.   504  it did not exit, or did not come back in time.
+//   502  the terminal did not take it, or the new command did not start.   503  no terminal.
+//   504  it did not exit, or did not come back in time.
+// A move that did not come back never leaves the agent ended: it goes on where it was, on the command and model it
+// left, and the answer says so (MoveArrival).
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.core.util.Cancellables
@@ -67,8 +68,8 @@ public class SessionContinue(
     /** The client's own words for a turn in flight. */
     private val busy = setOf("working", "busy")
 
-    /** One argv word a POSIX shell reads back as itself without quoting. */
-    private val plainWord = Regex("[A-Za-z0-9._/:=@%+,-]+")
+    /** Where a move ends: back on the command he picked, or on the one it left. */
+    private val arrival = MoveArrival(commands, handover, ledger)
 
     /** POST .../continue's body: the command (`head`) and, optionally, the model on it. */
     public suspend fun moveJson(session: String, body: String): JsonReply {
@@ -85,17 +86,6 @@ public class SessionContinue(
             is Plan.Refused -> plan.reply
             is Plan.Go -> go(plan.move)
         }
-
-    /** The session, the command it moves to, the argv that resumes it there, the folder it runs in, and the client
-     *  to end first: its pid (null when it already exited) and whether a turn is in flight. */
-    private data class Move(
-        val session: String,
-        val head: String,
-        val argv: List<String>,
-        val folder: String,
-        val pid: Long?,
-        val working: Boolean,
-    )
 
     /** A move ready to make, or the reply that refuses it. */
     private sealed class Plan {
@@ -119,6 +109,7 @@ public class SessionContinue(
                     Move(
                         session = session,
                         head = head,
+                        from = record.head ?: head,
                         argv = command.argv + resume,
                         folder = folder,
                         pid = record.process.pid?.takeIf { running },
@@ -182,9 +173,9 @@ public class SessionContinue(
         driving.panes.forget(move.session)
         if (!driving.terminal.isOpen(pane)) return openNew(move, beside = pane)
         // his own shell is in front again: the resume is typed there, the way he would type it
-        val line = move.argv.joinToString(" ", transform = ::shellWord)
+        val line = arrival.line(move.argv)
         val failure = Cancellables.runCatchingCleanup { driving.terminal.send(pane, line) }.exceptionOrNull()
-        return if (failure != null) refusedByTerminal(failure) else cameBack(driving, pane, move)
+        return if (failure != null) refusedByTerminal(failure) else arrival.await(driving, Attempt(pane, false), move)
     }
 
     private suspend fun openNew(move: Move, beside: SessionPane? = null): JsonReply {
@@ -193,33 +184,7 @@ public class SessionContinue(
             driving.terminal.open(move.session, move.argv, move.folder, beside)
         }.getOrElse { return refusedByTerminal(it) }
         driving.panes.remember(move.session, pane)
-        return cameBack(driving, pane, move)
-    }
-
-    private suspend fun cameBack(driving: SessionDriver, pane: SessionPane, move: Move): JsonReply {
-        if (!handover.cameOn(move.session, move.head, ARRIVAL_SECONDS)) {
-            // the bottom of the screen: the question a first-run prompt holds on is the last thing on it
-            val screen = Cancellables.runCatchingCleanup { driving.terminal.screen(pane) }.fold(
-                { it.lines().filter(String::isNotBlank).takeLast(SCREEN_TAIL_LINES).joinToString("\n") },
-                { "(the screen could not be read: ${it.message})" },
-            )
-            return JsonReply(
-                HttpStatusCode.GatewayTimeout,
-                buildJsonObject {
-                    put("error", "it had not come back on ${move.head} after ${ARRIVAL_SECONDS}s")
-                    put("screen", screen)
-                }.toString(),
-            )
-        }
-        ledger?.arrived(move.session)
-        return JsonReply(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put("session_id", move.session)
-                put("head", move.head)
-                put("how_to_open", driving.terminal.howToOpen(pane))
-            }.toString(),
-        )
+        return arrival.await(driving, Attempt(pane, true), move)
     }
 
     private fun unwired(): JsonReply =
@@ -230,11 +195,4 @@ public class SessionContinue(
         "the terminal did not take it: " + SafeFailureText.render(failure),
         Refusal.REFUSED,
     )
-
-    /** One argv word as a POSIX shell reads it back: as it is when plainly safe, single-quoted otherwise. */
-    private fun shellWord(word: String): String = if (plainWord.matches(word)) {
-        word
-    } else {
-        "'" + word.replace("'", "'\\''") + "'"
-    }
 }

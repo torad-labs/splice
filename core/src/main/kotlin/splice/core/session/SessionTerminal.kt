@@ -91,6 +91,9 @@ public enum class SessionKey {
 
     /** Empty what the prompt holds, on the person's say-so: never as part of sending a message. */
     CLEAR,
+
+    /** Interrupt the program in front of a shell: a move that did not come back is stopped where it was typed. */
+    INTERRUPT,
 }
 
 /** Where splice remembers which pane belongs to which session, so the console can find a session's terminal

@@ -32,6 +32,9 @@ class SessionContinueTest {
     /** A terminal splice opened runs the client alone and closes with it; his own shell stays in front. */
     private var closesWithClient = true
     private val cameOn = mutableListOf<Pair<String, String>>()
+
+    /** The commands a session registers on when it is started there: every command, unless a test says otherwise. */
+    private var startsOn: (String) -> Boolean = { true }
     private val kept = mutableListOf<Pair<String, ModelMove>>()
     private var leaving: ModelMove? = null
 
@@ -48,7 +51,7 @@ class SessionContinueTest {
 
                 override suspend fun cameOn(session: String, head: String, seconds: Long): Boolean {
                     cameOn += session to head
-                    return true
+                    return startsOn(head)
                 }
             },
             registry = rig.registry,
@@ -61,6 +64,8 @@ class SessionContinueTest {
                 override fun arrived(session: String) {
                     kept += session to checkNotNull(leaving)
                 }
+
+                override fun failed(session: String): String? = leaving?.fromModel.also { leaving = null }
             },
         )
     }
@@ -137,6 +142,68 @@ class SessionContinueTest {
         assertTrue(terminal.opened.isEmpty())
         assertEquals(listOf(leadPane to "/exit"), terminal.sent)
         assertTrue(kept.isEmpty(), "a move that did not happen leaves no mark")
+    }
+
+    @Test
+    fun `a command that does not start gives the session back where it was, on the command and model it left`() {
+        panes.remember(LEAD, leadPane)
+        startsOn = { it != "codex" } // the new command's terminal closes at once: it never registers
+
+        val reply = move(LEAD, """{"head":"codex","model":"gpt-6-sol"}""")
+
+        assertEquals(HttpStatusCode.BadGateway, reply.status)
+        val body = rig.json(reply.body)
+        assertEquals("no_start", body.getValue("reason").jsonPrimitive.content)
+        assertEquals("false", body.getValue("moved").jsonPrimitive.content)
+        assertEquals("true", body.getValue("back").jsonPrimitive.content, "the agent goes on: it is never left ended")
+        assertEquals(
+            listOf(
+                listOf("claude-codex", "-r", LEAD, "--model", "gpt-6-sol"),
+                listOf("claude-claude", "-r", LEAD, "--model", "claude-fable-5-1"),
+            ),
+            terminal.opened.map { it.command },
+            "the attempt, then the way back on the command and model it ran on",
+        )
+        assertEquals(listOf(SessionPane("%$LEAD")), terminal.closed, "what the attempt left is closed first")
+        assertEquals(listOf(LEAD to "codex", LEAD to "claude"), cameOn)
+        val resume = "cd ${rig.repo} && claude-claude -r $LEAD --model claude-fable-5-1"
+        assertEquals(resume, body.getValue("resume").jsonPrimitive.content)
+        assertTrue(kept.isEmpty(), "a move that did not happen leaves no mark")
+    }
+
+    @Test
+    fun `a move typed into his shell that never answers is interrupted there and the session resumed in that shell`() {
+        panes.remember(LEAD, leadPane)
+        closesWithClient = false
+        startsOn = { it != "codex" }
+
+        val reply = move(LEAD, """{"head":"codex"}""")
+
+        assertEquals(HttpStatusCode.GatewayTimeout, reply.status)
+        assertEquals("no_answer", rig.json(reply.body).getValue("reason").jsonPrimitive.content)
+        assertEquals(listOf(leadPane to SessionKey.INTERRUPT), terminal.pressed)
+        assertEquals(
+            listOf(
+                leadPane to "/exit",
+                leadPane to "claude-codex -r $LEAD",
+                leadPane to "claude-claude -r $LEAD --model claude-fable-5-1",
+            ),
+            terminal.sent,
+        )
+        assertTrue(terminal.opened.isEmpty(), "he keeps the one terminal he is in")
+    }
+
+    @Test
+    fun `when even the way back does not come up, the answer carries the line he would type to resume it`() {
+        panes.remember(LEAD, leadPane)
+        startsOn = { false }
+
+        val body = rig.json(move(LEAD, """{"head":"codex"}""").body)
+
+        assertEquals("false", body.getValue("back").jsonPrimitive.content)
+        val resume = "cd ${rig.repo} && claude-claude -r $LEAD --model claude-fable-5-1"
+        assertEquals(resume, body.getValue("resume").jsonPrimitive.content)
+        assertTrue(body.getValue("error").jsonPrimitive.content.contains("could not be resumed on claude"))
     }
 
     @Test

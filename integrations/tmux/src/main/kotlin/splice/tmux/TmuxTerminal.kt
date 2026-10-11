@@ -141,6 +141,7 @@ public class TmuxTerminal(
     private fun keyName(key: SessionKey): String = when (key) {
         SessionKey.CLEAR -> "C-u"
         SessionKey.STOP -> "Escape"
+        SessionKey.INTERRUPT -> "C-c"
         SessionKey.ACCEPT -> "Enter"
         SessionKey.NEXT -> "Down"
         SessionKey.PREVIOUS -> "Up"

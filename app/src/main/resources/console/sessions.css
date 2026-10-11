@@ -32,6 +32,12 @@
 .lamp i { width: .8rem; height: .8rem; border-radius: 50%; background: currentColor; }
 /* Working: a trace that runs, small and slow, because it repeats on every working card */
 .lamp.working { color: var(--live); }
+/* Continuing on: the wait ring in the live colour while a move runs (hitstop 899cb2e) */
+.lamp.moving { color: var(--live); }
+.lamp.moving .wait { width: 1.6rem; height: 1.6rem; }
+.lamp.moving .wait circle { stroke: var(--live); }
+/* Not running: Needs you's ring and glow around an empty socket, since nothing runs on either command (hitstop cd2bf9c) */
+.lamp.notrunning i { background: transparent; box-shadow: inset 0 0 0 .16rem currentColor; }
 .lamp svg.wave { width: 1.95rem; height: 1.95rem; stroke-width: 3.6; }
 .lamp.working .base { opacity: .32; }
 .lamp.working .beat { stroke-dasharray: 16 64; animation: trace 2.2s linear infinite; }
@@ -91,7 +97,7 @@
 /* what it waits on, verbatim, with an act for every answer it takes */
 .ask { margin-top: .85rem; }
 .ask .q { margin: 0; font: 500 1.2rem/1.4 var(--font-name); color: var(--text); }
-.ask .cmd { white-space: pre-wrap; margin: 0; font: 500 1.05rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .6rem .8rem; overflow-wrap: anywhere; }
+.ask .cmd, .unmoved .cmd { white-space: pre-wrap; margin: 0; font: 500 1.05rem/1.4 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .6rem .8rem; overflow-wrap: anywhere; }
 .ask .why { margin: .5rem 0 0; font: 400 1.02rem/1.4 var(--font-name); color: var(--text-body); }
 .answers { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .95rem; }
 .answers .act[aria-pressed="true"] { background: var(--limit); color: #fff7ea; }
@@ -125,6 +131,16 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 /* a refusal from an act in the pane (Stop, Continue on), read where the conversation starts */
 .pane > .why { margin: 0; padding: 1rem 2.2rem 0; }
 .sessions .pane > .why { padding: 1.2rem 3rem 0; }
+/* a move that did not happen: the state line, the attempt's last lines while reading is on (the evidence), then the way
+   forward: the resume command with Copy beside it when even the way back failed, then Try again (hitstop 899cb2e) */
+.pane > .unmoved { display: grid; justify-items: start; gap: 1rem; padding: 1rem 2.2rem 0; }
+.sessions .pane > .unmoved { padding: 1.2rem 3rem 0; }
+.why.unline { margin: .7rem 0 0; color: var(--limit); display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; font: 400 1.02rem/1.4 var(--font-name); }
+.why.unline .chip { color: var(--text); }
+.unmoved .why.unline { margin: 0; }
+.unmoved .screen { margin: 0; justify-self: stretch; max-height: 12rem; overflow: auto; white-space: pre-wrap; font: 400 .9rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: var(--r-in); padding: .6rem .8rem; }
+.unmoved .runline { justify-self: stretch; display: flex; align-items: flex-start; gap: .8rem; }
+.unmoved .runline .cmd { flex: 1; min-width: 0; }
 .log > * { max-width: 66rem; width: 100%; }
 .log .note { align-self: center; width: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 .log .note time { margin-left: .5rem; }

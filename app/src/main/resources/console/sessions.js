@@ -21,7 +21,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Set() };
+const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map() };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
@@ -117,7 +117,7 @@ const color = (s) => colorOf(s.provider);
 function metaHtml(s, L, inPane) {
   const chip = inPane && s.cmd === UNPLACED ? `<span class="state mute">${UNPLACED}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
   const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
-  const model = s.model ? `<span>${esc(s.model)}</span>` : "";
+  const model = s.model && !ui.moving.has(s.id) ? `<span>${esc(s.model)}</span>` : ""; // a move in flight names its target model in the word (hitstop)
   const repo = s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
   const past = s.at.toDateString() !== NOW.toDateString();
   const when = `<span class="when">${past ? `${s.at.toLocaleDateString("en-US", { weekday: "short" })} ` : ""}${clock(s.at)}</span>`;
@@ -175,7 +175,7 @@ const stopHtml = (s, cls, icon) => ui.stopping.has(s.id)
   : canStop(s) ? `<button class="${cls}" data-act="stop" data-s="${esc(s.id)}">${icon}Stop</button>` : "";
 const canStop = (s) => s.state === "working" && (s.live || drivable(s));
 function cardHtml(s) {
-  const L = look(s), last = lastOf(s);
+  const L = movingLook(s) || look(s), last = lastOf(s);
   const stop = stopHtml(s, "act quiet small", "");
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   let body = "";
@@ -187,14 +187,16 @@ function cardHtml(s) {
   return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${s.cmd === UNPLACED ? `<span class="state mute">${UNPLACED}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
-    + `${metaHtml(s, L, false)}${body}${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}</article>`;
+    + `${metaHtml(s, L, false)}${body}${failedHtml(s, failed, false)}</article>`;
 }
 
 // ---------- the list: what needs him first, then what runs, then what rests ----------
-const RANK = (s) => (s.state === "needs" ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
+// a session a failed move left with nothing running waits on him as Needs you does: ranked, coloured and listed with it (Marlin, 6:08 AM)
+const stranded = (s) => s.state === "ended" && ui.failed.get(s.id)?.unmoved === true && !ui.failed.get(s.id).back;
+const RANK = (s) => (s.state === "needs" || stranded(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
 const matches = (s) => !ui.q || [s.name, s.repo, s.cmd, s.row.repo?.root, s.row.cwd].some((v) => v && v.toLowerCase().includes(ui.q));
 function sorted() { // what waits on him: the longest waiting first; the rest: the latest first
-  const list = state.rows.filter((s) => s.state !== "ended" && matches(s))
+  const list = state.rows.filter((s) => (s.state !== "ended" || stranded(s)) && matches(s))
     .sort((a, b) => RANK(a) - RANK(b) || (RANK(a) <= 1 ? a.at - b.at : b.at - a.at));
   if (!ui.hold) return list;
   // while he works in the list it holds the order last drawn, so a card never moves under his pointer; a new one joins
@@ -206,7 +208,7 @@ function listHtml() {
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   const list = sorted(); ui.order = list.map((s) => s.id);
-  const ended = state.rows.filter((s) => s.state === "ended" && matches(s)).sort((a, b) => b.at - a.at);
+  const ended = state.rows.filter((s) => s.state === "ended" && !stranded(s) && matches(s)).sort((a, b) => b.at - a.at);
   if (!list.length && !ended.length) {
     return ui.q ? `<div class="list"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`
       : `<div class="list"><div class="nomatch"><span class="state">No sessions</span></div></div>`;
@@ -305,7 +307,7 @@ function jointHtml(mv) {
 function paneHtml() {
   const s = state.rows.find((x) => x.id === ui.open);
   if (!s) return "";
-  const L = look(s);
+  const L = movingLook(s) || look(s);
   const stop = stopHtml(s, "act", ICON.stop);
   const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Moving</button>`
     : `<button class="act" data-act="menu" data-s="${esc(s.id)}" aria-haspopup="menu" aria-expanded="${ui.menu === s.id}">Continue on</button>${ui.menu === s.id ? choicesHtml(s) : ""}`) : "";
@@ -315,7 +317,7 @@ function paneHtml() {
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
-    + `<div class="acts">${stop}${cont}${close}</div></header>${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
+    + `<div class="acts">${stop}${cont}${close}</div></header>${failedHtml(s, failed, true)}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
 }
 
 /** The choice on a permission's screen that refuses it ("No, and tell Claude what to do differently"), or null. */
@@ -347,6 +349,7 @@ function render({ stick = true, slide = false } = {}) {
   const say = document.activeElement?.id === "say" ? document.activeElement : null, caret = say ? [say.selectionStart, say.selectionEnd] : null;
   root.className = `sessions${ui.open ? " open" : ""}`;
   root.innerHTML = listHtml() + paneHtml();
+  for (const p of root.querySelectorAll(".unmoved .screen")) p.scrollTop = p.scrollHeight; // the cause is in its last lines (hitstop)
   const field = root.querySelector("#say");
   if (field && (caret || ui.focusSay)) { field.focus(); if (caret) field.setSelectionRange(...caret); ui.focusSay = false; }
   // the conversation he opened is in the address, on the door Teams and Requests use, so Back returns to it
@@ -516,7 +519,7 @@ function choicesHtml(s) {
       : g.kind === "unlinked" ? `<span class="room out">Not installed${g.fix ? ` · <code>${esc(g.fix)}</code>` : ""}</span>`
       : g.kind === "signedout" ? `<span class="room out">Signed out</span>` : `<span class="room"></span>`;
     const off = g.kind === "limit" || g.kind === "signedout" || g.kind === "unlinked";
-    return `<button role="menuitem" class="line${gi && !i ? " plan" : ""}" style="--c:${colorOf(state.providerOf[g.head])}" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(g.head)}" data-model="${esc(n.id)}"${off ? " disabled" : ""}>`
+    return `<button role="menuitem" class="line${gi && !i ? " plan" : ""}" style="--c:${colorOf(state.providerOf[g.head])}" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(g.head)}" data-model="${esc(n.id)}" data-label="${esc(n.label)}"${off ? " disabled" : ""}>`
       + `<span class="blot"></span><span class="mname">${esc(n.label)}</span>${acctOf(g)}${room}</button>`;
   }).join("")).join("")}</div>`;
 }
@@ -526,14 +529,42 @@ async function openChoices(s) {
   if (ui.menu === s.id) render({ stick: false });
 }
 /** Move it, then read the session again: it comes back Idle on the new command, and his next message runs there. */
-async function continueOn(s, head, model) {
-  ui.menu = null; ui.moving.add(s.id); ui.failed.delete(s.id); render({ stick: false });
+async function continueOn(s, head, model, label) {
+  ui.menu = null; ui.moving.set(s.id, { head, label: label || head }); ui.failed.delete(s.id); render({ stick: false });
   const res = await API.post(sessionPath(s, "continue"), { head, model });
   ui.moving.delete(s.id);
-  if (!res.ok) ui.failed.set(s.id, refusalOf(res, "It could not be moved"));
-  else ui.focusSay = true;
+  if (res.ok) ui.focusSay = true;
+  // a move that did not come back went on where it was (MoveArrival): its card says so, with Try again
+  else if (res.body?.moved === false) ui.failed.set(s.id, { ...res.body, unmoved: true, to: head, model, label: label || head, was: s.head, wasModel: s.model });
+  else ui.failed.set(s.id, refusalOf(res, "It could not be moved"));
   await reload();
 }
+/** A command as the move mark draws it: its chip, in its provider's colour. */
+const cmdChip = (head) => `<span class="chip" style="--c:${colorOf(state.providerOf[head])}">${esc(commandOf(head) ?? head)}</span>`;
+/** While a move is in flight its old client has exited, so the session reads as the move, never as Ended: one verb
+ *  family with the button and the mark, Continue on, Continuing on, Continued on (fin). */
+const movingLook = (s) => {
+  const m = ui.moving.get(s.id), f = ui.failed.get(s.id);
+  if (m) return { cls: "moving", lamp: ICON.wait, word: `Continuing on ${cmdChip(m.head)} ${esc(m.label)}` };
+  // when even the way back failed nothing runs on either command: not Idle (at its prompt), never Ended (fin, Marlin)
+  if (stranded(s)) return { cls: "needs notrunning", lamp: "<i></i>", word: "Not running" };
+  return null;
+};
+/** A move that did not happen, as a state: the command that did not start or answer, and where the session is now
+ *  (fin). Try again while it went on where it was; when even the way back failed, the resume command and Copy. Opened,
+ *  the attempt's last lines come first, the evidence before the ways forward, and only while reading is on (Marlin). */
+function unmovedHtml(s, f, pane) {
+  const missed = f.reason === "no_start" ? "didn't start" : `didn't answer in ${f.waited_s ?? 45} s`;
+  const where = f.back ? ` · Still on ${cmdChip(f.was)} ${esc(f.wasModel ?? "")}` : ` · ${cmdChip(f.was)} didn't restart`;
+  const why = `<p class="why unline">${cmdChip(f.to)} ${missed}${where}</p>`;
+  if (!pane) return why;
+  const screen = state.reading && f.screen ? `<pre class="screen">${esc(f.screen)}</pre>` : "";
+  const run = f.back || !f.resume ? ""
+    : `<div class="runline"><p class="cmd">${esc(f.resume)}</p><button class="act small" data-act="copy-resume" data-s="${esc(s.id)}">Copy</button></div>`;
+  const again = `<button class="act small" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(f.to)}" data-model="${esc(f.model ?? "")}" data-label="${esc(f.label)}">Try again</button>`;
+  return `<div class="unmoved">${why}${screen}${run}${again}</div>`;
+}
+const failedHtml = (s, f, pane) => (!f ? "" : f.unmoved ? unmovedHtml(s, f, pane) : `<p class="why limit">${esc(f)}</p>`);
 
 /** Press the numbered choice he picked, then read the session again: the card leaves Needs you once its client moves on. */
 async function answer(s, choice) {
@@ -602,7 +633,8 @@ document.addEventListener("click", (e) => {
     case "close": ui.open = null; ui.auto = false; render(); break;
     case "stop": if (s) stop(s); break;
     case "menu": if (s) openChoices(s); break;
-    case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model); break;
+    case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
+    case "copy-resume": if (s) { navigator.clipboard?.writeText(ui.failed.get(s.id)?.resume ?? "").catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;
     case "keep": if (s) { delete ui.leftover[s.id]; ui.focusSay = true; render({ stick: false }); } break;
     case "answer": if (s && !ui.sending.has(s.id)) answer(s, Number(el.dataset.i)); break;

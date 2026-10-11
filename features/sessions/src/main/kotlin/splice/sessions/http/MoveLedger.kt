@@ -11,4 +11,8 @@ public interface MoveLedger {
 
     /** [session] came back on the command it left for: the move read at [leaving] is kept. */
     public fun arrived(session: String)
+
+    /** [session] did not come back: the move read at [leaving] is dropped, and the model it left is answered, so it
+     *  goes on where it was on that model (null when its row named none). */
+    public fun failed(session: String): String?
 }

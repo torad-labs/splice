@@ -334,12 +334,29 @@ class HeadServerLoadTest {
         turns.forEach { it.cancel() }
 
         val slotsFreed = waitFor(30_000) { gate.snapshot().inflight == 0 }
-        assertTrue(slotsFreed, "gate slots leaked after client disconnects: ${gate.snapshot()}")
+        assertTrue(slotsFreed) {
+            "gate slots leaked after client disconnects: ${gate.snapshot()}; ${threadDumpFile()}"
+        }
         val upstreamTorn = waitFor(30_000) { mock.held.get() == 0 }
         assertTrue(upstreamTorn) {
             "upstream connections still parked: ${mock.held.get()} — cancel did not propagate; " +
-                mock.parkedAfterCancel(cancelledAtNanos, cancelledMarkers)
+                mock.parkedAfterCancel(cancelledAtNanos, cancelledMarkers) + "; ${threadDumpFile()}"
         }
+    }
+
+    /** Written only when an assertion above is about to fail, so a second failure brings its own cause: every thread,
+     *  virtual ones included (the upstream legs park on virtual threads), beside the test report. Returns the sentence
+     *  the failure message carries, naming the file or why none was written. */
+    private fun threadDumpFile(): String {
+        val file = java.nio.file.Path.of("build", "reports", "tests", "load-disconnect-threads.json").toAbsolutePath()
+        return runCatching {
+            java.nio.file.Files.createDirectories(file.parent)
+            java.nio.file.Files.deleteIfExists(file)
+            java.lang.management.ManagementFactory
+                .getPlatformMXBean(com.sun.management.HotSpotDiagnosticMXBean::class.java)
+                .dumpThreads(file.toString(), com.sun.management.HotSpotDiagnosticMXBean.ThreadDumpFormat.JSON)
+            "thread dump (all threads, JSON) at $file"
+        }.getOrElse { "no thread dump written: ${it::class.simpleName}" }
     }
 
     // A deadline poll, the rule's sanctioned shape: gate slots and parked upstream connections are

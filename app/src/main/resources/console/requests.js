@@ -520,7 +520,7 @@ function listHtml() {
   const rows = filtered().slice().sort((a, b) => +b.ts - +a.ts);
   const errs = state.headErrors.concat(state.search?.errors || [], state.sessionsError ? [state.sessionsError] : []);
   // a command splice is still reading is not trouble: a quiet line, gone once its rows join (asked again shortly)
-  const wait = (state.pending || []).map((cmd) => `<p class="list-wait">Still reading ${esc(cmd)}\u2019s saved requests</p>`).join("");
+  const wait = (state.pending || []).map((cmd) => `<p class="list-wait">${ICON.wait}${esc(cmd)} \u00b7 Reading</p>`).join("");
   const trouble = wait + (errs.length ? `<div class="list-err">${errs.map((e) => `<p>${esc(e)}</p>`).join("")}</div>` : "");
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;

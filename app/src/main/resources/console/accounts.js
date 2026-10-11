@@ -95,10 +95,12 @@ async function load() {
     const opening = wholeFrom > dayStart ? sumOf(rows.filter((b) => b.hour < wholeFrom && b.hour + HOUR > dayStart)) : null;
     return [h.key, { ...sumOf(rows.filter((b) => b.hour >= wholeFrom)), opening: opening && (opening.usd || opening.unpriced) ? opening : null }];
   }));
-  // a command whose hours splice has not read yet (just after a restart, or a history it cannot read) has no count:
-  // its row says so, never zero, because "No requests" over a day that had them is a false statement (Marlin, Oct 11)
-  const unread = new Set(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable).map((h) => h.key)
-    : (st.body?.registry || []).map((h) => h.key));
+  // a command whose hours splice has not read has no count, and its row says why, never zero, because "No requests" over
+  // a day that had them is a false statement (Marlin, Oct 11): still being read just after a restart reads Reading, as
+  // Requests does while it loads; a history it could not read, or no answer at all, reads Not read, as Settings does (fin)
+  const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable)
+    .map((h) => [h.key, h.unavailable ? DAY_NOT_READ : DAY_READING])
+    : (st.body?.registry || []).map((h) => [h.key, DAY_NOT_READ]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   // a local runtime splice could not reach on its port (/api/heads runtimeNotAnswering): its card says so, as a signed-out one does
@@ -113,7 +115,7 @@ async function load() {
     const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, turns: 0 };
     const counted = !unread.has(h.key);
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
-      counting: !b && !counted,
+      unread: b ? null : unread.get(h.key) ?? null,
       priced: Math.max(0, today.turns - today.unpriced),
       opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
       local: kind === "local", // nothing bills it per token, so no figure and no line
@@ -261,7 +263,8 @@ const GLYPH = {
   wait: '<svg class="wait" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15"/></svg>',
 };
 /** The Day row while splice is still reading the command's saved hours: the count is not known, so it says so. */
-const DAY_COUNTING = "Counting";
+const DAY_READING = "Reading";
+const DAY_NOT_READ = "Not read";
 const money = dollars; // priced from the rate card, so an estimate; nothing charged reads "$0" (kit.js)
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
@@ -336,7 +339,7 @@ function meterHtml(c, pick = null) {
   const spent = c.local || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
   const share = spent && c.unpriced ? `for ${reqs(c.priced)}` : "";
   // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
-  const none = c.counting ? `<em>${DAY_COUNTING}</em>` : !c.local && c.spent != null && !c.priced && !c.unpriced ? "<em>No requests</em>" : "";
+  const none = c.unread ? `<em>${c.unread}</em>` : !c.local && c.spent != null && !c.priced && !c.unpriced ? "<em>No requests</em>" : "";
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${openingRow(c)}</div>`;

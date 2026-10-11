@@ -85,6 +85,7 @@ internal class TurnStreamer(
             streaming = StreamWiring(
                 pending::progress,
                 ContentReached { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
+                perf.wire,
             ),
             model = meta.route.originalModel,
             usagePayload = wiring.usagePayloadBuilder(

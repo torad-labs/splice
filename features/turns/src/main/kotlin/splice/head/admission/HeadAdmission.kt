@@ -10,6 +10,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import splice.core.auth.CredentialKey
 import splice.core.perf.OutcomeTag
+import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.WallClock
 import splice.head.HeadDeps
 import splice.head.turn.Preparation
@@ -18,6 +19,7 @@ import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
+import splice.head.turn.WillResume
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
 import splice.upstream.credentials.Selection
@@ -95,7 +97,10 @@ internal class HeadAdmission(
                 // V4-319: a streaming turn is listed, and the operator can stop it, from here until
                 // the same release ends it. A collect has no open stream a stop could end with a frame.
                 if (prepared.stream) {
-                    deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash, admitted.perf)
+                    val provider = preparation.provider
+                    val budget = deps.traffic.watchdog ?: LiveWatchdogBudget { provider.watchdog }
+                    val resume = WillResume(provider.reanchorPolicy(meta), budget)
+                    deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash, admitted.perf, resume)
                 }
                 serveReady(call, prepared, admitted)
             }

@@ -38,7 +38,7 @@ const val RATE_LIMITED_STATUS: Int = 429
 
 /** A broken pipe mid-stream is these scenarios' EXPECTED client-abort exit. DR-7 adds foldstall: the head's idle
  *  watchdog reaps the stalled round, so the server thread wakes from its sleep onto a socket the head already hung up. */
-private val ABORT_EXPECTED = setOf("drip", "hold", "foldstall", "idlepre")
+private val ABORT_EXPECTED = setOf("drip", "hold", "holdtool", "foldstall", "idlepre")
 
 class MockChatGptUpstream(
     /** V4-111: the one wall-clock seam in this double. A METHOD REFERENCE to the real sleeper, not
@@ -80,6 +80,15 @@ class MockChatGptUpstream(
 
     fun releaseHold() {
         latches.hold.countDown()
+    }
+
+    /** Arm the second hold of SCENARIO:holdtool; [releaseTool] lets that turn finish. */
+    fun resetToolHold() {
+        latches.tool = CountDownLatch(1)
+    }
+
+    fun releaseTool() {
+        latches.tool.countDown()
     }
 
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)

@@ -5,6 +5,7 @@
 // this factory in the same module calls it unchanged.
 package splice.head.wire
 
+import splice.core.turn.WireFacts
 import java.util.concurrent.atomic.AtomicInteger
 
 /** The one construction seam for [SseEmitter] (its constructor stays `internal`) — injected as a
@@ -33,7 +34,7 @@ internal class SseEmitterFactory {
         val indexes = AtomicInteger(0)
         val progressFrames = SseFrameWriter(streaming.progressTo(write))
         val progress = ProgressWire(progressFrames, WireBlockWriter(progressFrames, start, indexes))
-        val blocks = WireBlockWriter(frames, start, indexes, notice = progress)
+        val blocks = WireBlockWriter(frames, start, indexes, notice = progress, facts = streaming.facts)
         return SseEmitter(frames, start, blocks, progress, usagePayload, streaming.contentReached)
     }
 }
@@ -51,6 +52,8 @@ internal class SseEmitterFactory {
 internal class StreamWiring(
     private val progressWrite: FrameWrite? = null,
     val contentReached: ContentReached = ContentReached { true },
+    /** What the client has been shown, kept for the live listing (the turn's writer fills it). */
+    val facts: WireFacts? = null,
 ) {
     /** The port the pinger's frames go through for an emitter that writes to [write]. */
     fun progressTo(write: FrameWrite): FrameWrite = progressWrite ?: write

@@ -111,6 +111,10 @@ public data class TurnSilence(
      *  waiting on capacity that is not ours, and a resumed turn is being carried by splice. A reader
      *  shown one under the other's name would act on the wrong one. */
     val retries: Int = 0,
+    /** Whether a failure of this round right now would still be carried on by splice: the head has a re-anchor tier,
+     *  the dialect has a rule, the continuation budget is not spent, and the round has not emitted a tool call. The
+     *  dialect decides (ReanchorPolicy.wouldContinue); false is the Stalled card's "Won't resume". */
+    val willResume: Boolean = false,
 )
 
 /** One live turn as the console lists it. [session] is the client's full session id when it sent one;
@@ -137,20 +141,20 @@ public class LiveTurns(
      *  comes second cancels the job, so a stop never misses a drive that was starting. */
     private class Live(
         val id: String,
-        val session: String?,
+        private val meta: TurnMeta,
         @Volatile var messages: String?,
-        private val model: String,
-        private val compact: Boolean,
         private val clock: ElapsedClock,
         /** This turn's own telemetry, the one admission minted and the drive records into, so the
          *  counters below are this turn's and no other's. Held for the row's life, which ends on the
          *  slot's release, so it is dropped with the row. */
         private val perf: TurnPerf,
+        private val resume: WillResume?,
     ) : InflightGate.Slot.UpstreamBytes {
         /** Read from [clock] here rather than taken as a parameter beside it: the two have to come
          *  from the same clock, because [TurnSilence.idleMs] is a difference against this origin, and
          *  a caller holding both could hand over an origin the idle is not measured against. */
         val since: Long = clock()
+        val session: String? get() = meta.scope.sessionId
         private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
         private val stopped = AtomicBoolean(false)
         private val lastByte = AtomicLong(since)
@@ -185,8 +189,8 @@ public class LiveTurns(
         fun view(now: Long): LiveTurn = LiveTurn(
             id,
             session,
-            model,
-            compact,
+            meta.route.upstreamModel,
+            meta.compact,
             now - since,
             stopped.get(),
             TurnSilence(
@@ -194,6 +198,7 @@ public class LiveTurns(
                 seenOutput = answered.get(),
                 resumes = perf.count(PerfKeys.REANCHORS).toInt(),
                 retries = perf.count(PerfKeys.RETRIES).toInt(),
+                willResume = resume?.now(perf) == true,
             ),
         )
     }
@@ -209,17 +214,22 @@ public class LiveTurns(
      *  [MessagesHash.of] the client's request, null when it sent no session (no re-send can be told).
      *  [perf] is the turn's own telemetry, which the row reads its resume and retry counts off: both
      *  are written where they happen, deeper than this seam can see (see [TurnSilence.resumes]). */
-    internal fun admitted(slot: InflightGate.Slot, meta: TurnMeta, messagesHash: String?, perf: TurnPerf) {
+    internal fun admitted(
+        slot: InflightGate.Slot,
+        meta: TurnMeta,
+        messagesHash: String?,
+        perf: TurnPerf,
+        resume: WillResume? = null,
+    ) {
         val counted = slot.countedSlot
         val turn = bySlot.computeIfAbsent(counted) {
             val created = Live(
                 ids.next(),
-                meta.scope.sessionId,
+                meta,
                 messagesHash,
-                meta.route.upstreamModel,
-                meta.compact,
                 clock,
                 perf,
+                resume,
             )
             live[created.id] = created
             counted.onReceived(created)

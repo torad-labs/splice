@@ -59,6 +59,7 @@ import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
+import splice.upstream.LiveRound
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
@@ -86,6 +87,12 @@ public class PassthroughReanchorPolicy(
             else -> prefillContinuation(round.requestBody, resume)
         }
     }
+
+    /** The same refusals as [continuationForFailure], read off a round still streaming: the budget is spent, a tool
+     *  call has opened, or prose has reached the client on an upstream that has not been measured to continue from a
+     *  prefill. A stall ends as a retryable failure, so the failure type is not a condition here. */
+    override fun wouldContinue(live: LiveRound): Boolean =
+        live.attempt < maxContinuations && !live.toolOpened && (prefill || !live.textWritten)
 
     /** Tool rounds end eligibility BOTH ways, exactly as the Responses twin argues it: an OPEN tear
      *  already committed partial argument JSON to the wire (a corrupt block, nothing to splice

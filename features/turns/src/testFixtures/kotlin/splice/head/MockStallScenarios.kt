@@ -14,6 +14,9 @@ internal class MockHoldLatches {
     @Volatile var hold = CountDownLatch(1)
 
     @Volatile var start = CountDownLatch(1)
+
+    /** The second hold of "holdtool": after its tool call has opened. */
+    @Volatile var tool = CountDownLatch(1)
 }
 
 internal class MockStallScenarios(private val wire: MockSseWire, private val latches: MockHoldLatches) {
@@ -26,6 +29,7 @@ internal class MockStallScenarios(private val wire: MockSseWire, private val lat
             "idle" -> partialThenSilence()
             "holdstart" -> heldBeforeFirstItem()
             "hold" -> heldAfterFirstDelta()
+            "holdtool" -> heldBeforeAndAfterToolCall()
             "prefill" -> slowPrefill()
             "drip" -> drip()
             else -> return false
@@ -68,6 +72,24 @@ internal class MockStallScenarios(private val wire: MockSseWire, private val lat
         latches.hold.await() // block until the test releases, then finish cleanly
         wire.sse(e.itemDone())
         wire.sse(e.completed("rhold", input = 1, output = 1))
+    }
+
+    // Prose first, a hold, then a tool call that has opened and not finished, a second hold, then a clean end: the
+    // round a live listing watches stream past a tool call.
+    private fun heldBeforeAndAfterToolCall() {
+        wire.sse(e.messageAdded())
+        wire.sse(e.textDelta("held"))
+        latches.hold.await()
+        wire.sse(
+            """{"type":"response.output_item.added","output_index":1,""" +
+                """"item":{"type":"function_call","call_id":"call_hold","name":"get_thing"}}""",
+        )
+        wire.sse("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"a\":"}""")
+        latches.tool.await()
+        wire.sse("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}""")
+        wire.sse("""{"type":"response.function_call_arguments.done","output_index":1}""")
+        wire.sse(e.itemDone())
+        wire.sse(e.completed("rholdtool", input = 1, output = 1))
     }
 
     private fun slowPrefill() {

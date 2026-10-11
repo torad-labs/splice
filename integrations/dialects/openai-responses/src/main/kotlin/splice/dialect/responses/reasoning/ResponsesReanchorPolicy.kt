@@ -22,6 +22,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.stream.ResponsesContinuation
+import splice.upstream.LiveRound
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
@@ -46,6 +47,10 @@ internal class ResponsesReanchorPolicy(
         // rejected an incoherent MARKER continuation mid-reasoning, not a clean restart.
         return if (!hasClientVisibleSalvage(partial)) round.requestBody else markerContinuation(round, partial)
     }
+
+    /** The same refusals as [continuationForFailure], read off a round still streaming: the budget is spent or a
+     *  tool call has opened. Prose never ends it: with none the request restarts whole, with some it carries on. */
+    override fun wouldContinue(live: LiveRound): Boolean = live.attempt < maxContinuations && !live.toolOpened
 
     // Tool blocks end eligibility both ways: an OPEN tear committed partial args JSON to the
     // wire (corrupt block, nothing to splice onto), and a COMMITTED tool_use means the

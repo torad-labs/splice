@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.turn.WireFacts
 import splice.core.util.JsonScalars
 import splice.upstream.sse.BlockDeltas
 import splice.upstream.sse.BlockEnding
@@ -46,8 +47,10 @@ internal class WireBlockWriter(
      *  points every open verb, present or added later, passes through. Null on the pinger's own
      *  writer, which is what ends the notice. */
     notice: ProgressWire? = null,
-    private val writes: WireBlockWrites = WireBlockWrites(frames, notice),
-    private val opens: WireBlockOpens = WireBlockOpens(frames, start, nextBlockIndex, notice, writes),
+    /** The TURN's writer only: what the client has been shown, for the live listing. Null on the pinger's. */
+    facts: WireFacts? = null,
+    private val writes: WireBlockWrites = WireBlockWrites(frames, notice, facts),
+    private val opens: WireBlockOpens = WireBlockOpens(frames, start, nextBlockIndex, notice, writes, facts),
 ) : WireSink, BlockOpening by opens, WholeBlocks by opens, BlockDeltas by writes, BlockEnding by writes {
     override fun deferMessageStart() = start.defer()
 
@@ -82,6 +85,7 @@ internal class WireBlockOpens(
     private val nextBlockIndex: AtomicInteger,
     private val notice: ProgressWire?,
     private val writes: WireBlockWrites,
+    private val facts: WireFacts? = null,
 ) : BlockOpening, WholeBlocks {
     private suspend fun openBlock(contentBlock: JsonObject): WireBlockIndex {
         notice?.endNoticeAtBoundary()
@@ -122,8 +126,9 @@ internal class WireBlockOpens(
             },
         )
 
-    override suspend fun openTool(id: String, name: String): WireBlockIndex =
-        openBlock(
+    override suspend fun openTool(id: String, name: String): WireBlockIndex {
+        facts?.noteTool()
+        return openBlock(
             buildJsonObject {
                 put(TYPE, "tool_use")
                 put("id", id)
@@ -131,6 +136,7 @@ internal class WireBlockOpens(
                 putJsonObject("input") {}
             },
         )
+    }
 
     // DR-119: the content_block payload rides VERBATIM (server_tool_use / web_search_tool_result).
     override suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex = openBlock(contentBlock)
@@ -162,6 +168,7 @@ internal class WireBlockOpens(
 internal class WireBlockWrites(
     private val frames: SseFrameWriter,
     private val notice: ProgressWire?,
+    private val facts: WireFacts? = null,
 ) : BlockDeltas, BlockEnding {
     val open = LinkedHashSet<Int>()
     val seen = LinkedHashSet<Int>()
@@ -188,6 +195,7 @@ internal class WireBlockWrites(
     }
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
+        if (text.isNotEmpty() && index.value in open) facts?.noteText()
         hotDelta(index, "text_delta", "text", text)
     }
 

@@ -44,6 +44,7 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
                             put("seen_output", turn.silence.seenOutput)
                             put("resumes", turn.silence.resumes)
                             put("retries", turn.silence.retries)
+                            put("will_resume", turn.silence.willResume)
                             put("stopped", turn.stopped)
                         },
                     )

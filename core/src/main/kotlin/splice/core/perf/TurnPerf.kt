@@ -7,6 +7,7 @@
 // orphans its history. Recording is best-effort telemetry: it must never throw into the turn.
 package splice.core.perf
 
+import splice.core.turn.WireFacts
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 
@@ -48,6 +49,9 @@ public class TurnPerf(
     private val counters = LinkedHashMap<String, Long>()
     private var arrivalOffsetMs = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
+
+    /** What the client has been shown so far: not a counter, so it never reaches the row. */
+    public val wire: WireFacts = WireFacts()
 
     /** The upstream attempts: each retry begins one, and only the current attempt publishes its timing pair. */
     public val upstream: UpstreamAttempts = UpstreamAttempts(lock, counters)

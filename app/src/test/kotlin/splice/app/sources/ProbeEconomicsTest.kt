@@ -103,9 +103,9 @@ class ProbeEconomicsTest {
         assertEquals(expected, source.rows())
     }
 
-    // A torn line cannot be a probe once no build writes probes, so it must not hide the hours counted before it.
+    // A torn line cannot be a probe once the older loop's probes have stopped, so it must not hide the hours counted before it.
     @Test
-    fun `a torn row written after probes retired leaves the day figure, and one from the probe era refuses it`(
+    fun `a torn row later than the last probe leaves the day figure, and one within the probe era refuses it`(
         @TempDir dir: Path,
     ) {
         val rows = listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW)
@@ -121,8 +121,15 @@ class ProbeEconomicsTest {
         recordWork(control)
         val after = """{"ts":1791707160100,"model":"synthetic","outcome":"ok","cache_write_tokens"""
         assertEquals(EconomicsStoreSource(control).rows(), read(after).rows())
+        val tenMinutesOn = """{"ts":4200123,"model":"synthetic","outcome":"ok","cache_write_tokens"""
+        assertEquals(EconomicsStoreSource(control).rows(), read(tenMinutesOn).rows())
         val before = """{"ts":3600200,"model":"synthetic","outcome":"ok","cache_write_tokens"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(before).gap())
+        // the tear a 0.3.x daemon leaves when it is stopped for the upgrade: right after its own last probe
+        val lastWrite = """{"ts":3630123,"model":"","outcome":"error:upstream-failed","req_bytes":30,"upstream_req_b"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(lastWrite).gap())
+        val earlier = """{"ts":3600100,"model":"synthetic","outcome":"ok","cache_write_tokens"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(earlier).gap())
         val unstamped = """{"model":"synthetic","outcome":"ok","cache_write_tokens"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped).gap())
     }

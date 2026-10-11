@@ -49,7 +49,7 @@ const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === i
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "splice did not answer".
 const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, err: null };
-const READING = `<span class="none">Reading…</span>`;
+const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
 /** The per-command reads and the week's counts are over a hundred requests, and a browser sends six at a time to one address: left to
@@ -247,7 +247,7 @@ function dataHtml() {
     sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
   }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
-  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading…" : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`}</span></div>`;
+  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading" : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`}</span></div>`;
   const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;
   const rows = (g) => DATA_ROWS.filter((r) => r.g === g).map(dataRow).join("");
   return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
@@ -373,7 +373,7 @@ const RELEASES = "https://github.com/torad-labs/splice/releases";
 const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" };
 function versionHtml() {
   const v = ui.ver;
-  if (v === undefined) return `<span class="state">Reading…</span>`;
+  if (v === undefined) return `<span class="state">Reading</span>`;
   if (!v) return `<span class="state limit">splice did not answer</span>`;
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
   const rows = `<div class="form vform"><div class="lbl">Running</div><div class="ctl"><b class="v">${esc(v.installed)}</b></div>`
@@ -415,20 +415,20 @@ const PANES = {
 
 // ---------- the rail ----------
 function summary(id) {
-  if (id === "silent" && weekReading("restarted", "gaveup", "waited")) return ["Reading…"];
-  if (id === "busy" && weekReading("overloaded", "queued")) return ["Reading…"];
+  if (id === "silent" && weekReading("restarted", "gaveup", "waited")) return ["Reading"];
+  if (id === "busy" && weekReading("overloaded", "queued")) return ["Reading"];
   if (id === "silent") {
     const early = ["restarted", "gaveup"].map(weekTotal), waited = weekTotal("waited");
     return early.includes(null) || waited === null ? [`Asks after ${word(KNOB.firstByteTimeoutMs, val("firstByteTimeoutMs"))}`]
       : [`${early[0] + early[1]} ended early this week`, `${waited} waited out`];
   }
-  if (id === "version") return [ui.ver === undefined ? "Reading…" : ui.ver ? ui.ver.installed : "Not read"];
+  if (id === "version") return [ui.ver === undefined ? "Reading" : ui.ver ? ui.ver.installed : "Not read"];
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
   if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${weekTotal("overloaded")} overloaded today`, `${weekTotal("queued")} waited in line`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
-  if (DATA_ROWS.some(stillReading)) return ["Reading…"];
+  if (DATA_ROWS.some(stillReading)) return ["Reading"];
   const h = DATA_ROWS.filter((r) => !(r.noRoute || r.own)).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute || r.own) ? "counted" : "kept"; // a total that leaves a store out says counted
   return h.some((x) => x === null) ? ["Some stores did not answer"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
 }

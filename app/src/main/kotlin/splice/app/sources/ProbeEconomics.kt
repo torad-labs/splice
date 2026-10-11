@@ -12,10 +12,9 @@ import kotlin.time.Duration.Companion.hours
 
 private val PROBE_BUCKET_MS = 1.hours.inWholeMilliseconds
 
-// why: 2026-10-01 23:42:54 CT, when the first build that refuses a liveness probe (959f83ed4, installed as be616ae58) started
-// serving. A probe row is written only by the older loop, so a torn line stamped after this cannot be one and cannot change a
-// deduction; one stamped before it, or naming no time, still could and keeps the head's hourly history refused.
-private const val PROBES_RETIRED_AT_MS = 1_790_916_174_000L
+// why: the older loop wrote a probe row every 30 s and a torn probe is the last write before its process ended, so a torn line
+// stamped later than two intervals past the newest intact probe row cannot be a probe: another intact one would have followed.
+private const val PROBE_TEAR_WINDOW_MS = 120_000L
 
 /** Why one head's legacy probe deduction cannot be made, each a fixed sentence the console shows for that head. */
 internal enum class ProbeGap(val sentence: String) {
@@ -73,7 +72,12 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         if (refusal.stands(since)) return null
         val before = perf.files.stamp()
         val read = perf.economicsEvidence(since)
-        val probeEraTears = read.tornAt.any { it == null || it < PROBES_RETIRED_AT_MS }
+        val lastProbe = read.probes.maxOfOrNull { it.ts }
+        // A line is cleared only when it is stamped later than the newest intact probe row can account for. One naming no
+        // time, or in a log with no intact probe row to place it against, could still be a probe and refuses.
+        val probeEraTears = read.tornAt.any {
+            it == null || lastProbe == null || it <= lastProbe + PROBE_TEAR_WINDOW_MS
+        }
         refusal.note(before, since, read.work.readError == null && probeEraTears)
         return read.takeIf { it.work.readError == null && !probeEraTears }
     }

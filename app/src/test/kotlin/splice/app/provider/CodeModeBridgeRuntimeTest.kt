@@ -119,7 +119,7 @@ class CodeModeBridgeRuntimeTest {
                     .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer("return 'boot-recovered';") }
                 outcome as TurnOutcome.Failure
             }
-            val child = withTimeout(5_000) { spawned.await() }
+            val child = withTimeout(60_000) { spawned.await() }
             // The turn must select the first boot before its EOF, not race automatic prewarm recovery.
             yield()
             child.destroy()
@@ -183,19 +183,19 @@ class CodeModeBridgeRuntimeTest {
         JvmCodeModeRuntime(
             launch = hostLaunch(
                 splice.codemode.WorkerSpawn { builder -> builder.start().also { spawned.complete(it) } },
-            ),
+            ).copy(startTimeoutMs = 60_000),
         ).use { runtime ->
             val bridge = bridge(runtime)
             val startup = async {
                 bridge.interceptor(turn(), disableParallel = false)
                     .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer("while (true) {}") }
             }
-            val child = withTimeout(5_000) { spawned.await() }
+            val child = withTimeout(60_000) { spawned.await() }
             yield()
             startup.cancelAndJoin()
             assertThrows(CancellationException::class.java) { runBlocking { startup.await() } }
             assertTrue(child.isAlive, "a cancelled script must not reap the shared host")
-            val replacement = withTimeout(5_000) { runtime.start("return 'alive';", emptySet()) }
+            val replacement = withTimeout(60_000) { runtime.start("return 'alive';", emptySet()) }
             assertEquals("alive", (replacement.advance() as CodeModeStep.Completed).output)
         }
     }

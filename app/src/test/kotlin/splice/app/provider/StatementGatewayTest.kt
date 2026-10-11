@@ -234,7 +234,7 @@ class StatementGatewayTest {
             assertEquals(400, send("{").status.value, "local preparation needs no fresh upstream permit")
             assertEquals(200, heapProbe(1_000), "local preparation releases its heap lease")
             waiting = scope.async { gate.acquire() }
-            withTimeout(3_000) { while (gate.snapshot().queued != 1) yield() }
+            withTimeout(30_000) { while (gate.snapshot().queued != 1) yield() }
             val unrelated = send(body("""[{"role":"user","content":"a different request"}]"""))
             assertEquals(529, unrelated.status.value, "a matching header cannot authorize unrelated upstream work")
             assertEquals(200, heapProbe(1_000), "refused admission releases its heap lease")

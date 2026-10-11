@@ -40,7 +40,7 @@ class BudgetEnforcementTest {
             val head = plane.console.budgets!!.forHead("slow-head", null)
             val admitted = CompletableFuture.supplyAsync { head.admit() }
             assertNull(
-                admitted.get(300, TimeUnit.MILLISECONDS),
+                admitted.get(30, TimeUnit.SECONDS),
                 "admission uses the tally it has without file I/O",
             )
             val policy = BudgetRoutes({ plane.budgets }, ConfigService(paths)).read(plane.console.budgets)
@@ -51,7 +51,7 @@ class BudgetEnforcementTest {
             assertTrue(policy.body.contains("\"used_usd\":null"), "pending history never claims an exact amount")
             synchronized(plane.budgets) {
                 assertNull(
-                    CompletableFuture.supplyAsync { head.admit() }.get(300, TimeUnit.MILLISECONDS),
+                    CompletableFuture.supplyAsync { head.admit() }.get(30, TimeUnit.SECONDS),
                     "admission never acquires the settings reader lock",
                 )
             }

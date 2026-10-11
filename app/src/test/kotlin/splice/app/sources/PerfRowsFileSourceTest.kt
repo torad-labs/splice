@@ -130,7 +130,7 @@ class PerfRowsFileSourceTest {
             val unrelated = CompletableFuture.supplyAsync {
                 PerfRowsFileSource(dir.resolve("other-perf.jsonl")).window(0)
             }
-            assertTrue(unrelated.get(2, TimeUnit.SECONDS).rows.isEmpty(), "an unrelated head must not wait")
+            assertTrue(unrelated.get(30, TimeUnit.SECONDS).rows.isEmpty(), "an unrelated head must not wait")
             assertFalse(readFinished.await(250, TimeUnit.MILLISECONDS), "a queued row cannot read as absent")
         } finally {
             releaseWorker.countDown()

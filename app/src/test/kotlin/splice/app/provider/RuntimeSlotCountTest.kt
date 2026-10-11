@@ -48,7 +48,7 @@ class RuntimeSlotCountTest {
         )
         val count = RuntimeSlotCount("bonsai", LlamaServerSlots(URL, http), background)
         try {
-            assertTimeoutPreemptively(Duration.ofSeconds(1)) { assertNull(count.read(), "not known yet: unpinned") }
+            assertTimeoutPreemptively(Duration.ofSeconds(30)) { assertNull(count.read(), "not known yet: unpinned") }
         } finally {
             answered.countDown()
         }

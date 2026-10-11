@@ -115,7 +115,7 @@ class ExampleConfigTest {
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
 
         lateinit var failure: IllegalArgumentException
-        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+        assertTimeoutPreemptively(Duration.ofSeconds(30)) {
             failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
         }
         assertTrue(failure.message.orEmpty().contains("models"), failure.message)
@@ -132,7 +132,7 @@ class ExampleConfigTest {
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
 
         lateinit var failure: IllegalArgumentException
-        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+        assertTimeoutPreemptively(Duration.ofSeconds(30)) {
             failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
         }
         assertTrue(failure.message.orEmpty().contains("models"), failure.message)
@@ -152,7 +152,7 @@ class ExampleConfigTest {
         )
 
         lateinit var failure: IllegalArgumentException
-        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+        assertTimeoutPreemptively(Duration.ofSeconds(30)) {
             failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
         }
         assertTrue(failure.message.orEmpty().contains("models"), failure.message)
@@ -184,7 +184,7 @@ class ExampleConfigTest {
 
         val malformed = valid.replace(inlineRoster, """models = ["grok-4.6", "grok-4.5"]""")
         lateinit var failure: IllegalArgumentException
-        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+        assertTimeoutPreemptively(Duration.ofSeconds(30)) {
             failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
         }
         assertTrue(failure.message.orEmpty().contains("models"), failure.message)

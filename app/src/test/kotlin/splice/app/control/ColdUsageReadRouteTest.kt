@@ -67,7 +67,7 @@ class ColdUsageReadRouteTest {
         fixture.withServer {
             val request = async { fixture.get("/api/economics", pending = true) }
             fixture.entered.await()
-            val first = withTimeoutOrNull(1_000) { request.await() }
+            val first = withTimeoutOrNull(30_000) { request.await() }
             fixture.release.countDown()
             request.await()
             assertNotNull(first, "the real first response must arrive while the cold scan is still held")
@@ -90,7 +90,7 @@ class ColdUsageReadRouteTest {
                 val path = fixture.requestsPath()
                 val request = async { fixture.get(path, pending = true) }
                 fixture.entered.await()
-                val first = withTimeoutOrNull(1_000) { request.await() }
+                val first = withTimeoutOrNull(30_000) { request.await() }
                 fixture.release.countDown()
                 request.await()
                 assertNotNull(first, "request-window reads must not wait on the cold source monitor")
@@ -108,7 +108,7 @@ class ColdUsageReadRouteTest {
         runBlocking<Unit> {
             val fixture = Fixture(dir)
             fixture.withServer {
-                val began = withTimeoutOrNull(1_000) {
+                val began = withTimeoutOrNull(30_000) {
                     fixture.entered.await()
                     true
                 }

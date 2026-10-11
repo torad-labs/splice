@@ -118,7 +118,7 @@ class IndependentSourceRoundTest {
                 "first-client loss must not abandon the live reader: $raw",
             )
             assertEquals(7L, (raw as TurnOutcome.Success).usage.outputTokens)
-            withTimeout(5_000) { while (gate.snapshot().inflight != 0) yield() }
+            withTimeout(5_000) { while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield() }
             assertEquals(1, provider.ended.get())
             assertEquals(1, upstream.posts.get())
             assertEquals(7L, deps.stores.usageStore.readState().outputTokens5h)

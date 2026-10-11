@@ -212,3 +212,4 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .pick-menu[data-what="head"] { grid-column: 2 / 3; }
 .pick-menu[data-what="model"] { grid-column: 3 / 4; }
 .pick-menu[data-what="account"] { grid-column: 4 / 5; }
+.card.m .meta .detail.noresume { color: var(--limit); flex: none; white-space: nowrap; }  /* nothing will re-send the silent answer: the stalled colour, words only (hitstop) */

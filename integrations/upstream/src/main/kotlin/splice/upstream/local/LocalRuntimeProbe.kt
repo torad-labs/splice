@@ -47,6 +47,9 @@ public data class LocalModel(
     val contextLength: Long?,
     val detail: String? = null,
     val ceiling: Long? = null,
+    /** What the runtime itself says about tool calling: true or false when it reports a capability list, null when
+     *  it reports none. Claude Code drives every turn through tools, so a model that says false cannot serve a row. */
+    val tools: Boolean? = null,
 )
 
 /** One declared row against the runtime's answer. */
@@ -95,7 +98,12 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                 data(body).map { m ->
                     val loaded = JsonScalars.long(m, "loaded_context_length")?.takeIf { it > 0 }
                     val max = JsonScalars.long(m, "max_context_length")?.takeIf { it > 0 }
-                    LocalModel(JsonScalars.strOrEmpty(m["id"]), loaded ?: max, JsonScalars.str(m, "state"))
+                    LocalModel(
+                        JsonScalars.strOrEmpty(m["id"]),
+                        loaded ?: max,
+                        JsonScalars.str(m, "state"),
+                        tools = shapes.reportsTool(m, "tool_use"),
+                    )
                 }
             }
             LocalRuntimeKind.OLLAMA -> get("$v1/models")?.let { body ->
@@ -145,7 +153,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                 LocalRowVerdict(id, false, "not listed by the runtime (listed: $ids)")
             }
         }
-        val refusal = window?.let { refusal(it, model) }
+        val refusal = shapes.noTools(model) ?: window?.let { refusal(it, model) }
         return if (refusal != null) {
             LocalRowVerdict(id, false, refusal)
         } else {
@@ -258,8 +266,22 @@ private class LocalRuntimeShapes {
         // num_ctx is the best unloaded window. Only an undeclared row falls back to the card.
         val fallback = numCtx?.takeIf { it > 0 }
             ?: max.takeIf { id in inferred || id.removeSuffix(":latest") in inferred }
-        return LocalModel(id, served ?: fallback?.takeIf { it > 0 }, detail.ifEmpty { null }, ceiling = max)
+        return LocalModel(
+            id,
+            served ?: fallback?.takeIf { it > 0 },
+            detail.ifEmpty { null },
+            ceiling = max,
+            tools = show?.let { reportsTool(it, "tools") },
+        )
     }
+
+    /** Claude Code drives every turn through tools; only a runtime that SAYS the model has none refuses a row. */
+    fun noTools(model: LocalModel): String? =
+        "the runtime reports no tool support for it, and every turn needs tools".takeIf { model.tools == false }
+
+    /** True or false when [body] carries a capability list ([name] in it or not); null when it carries none. */
+    fun reportsTool(body: JsonObject, name: String): Boolean? =
+        (body["capabilities"] as? JsonArray)?.any { JsonScalars.str(it) == name }
 
     fun pingTool(): JsonObject = buildJsonObject {
         put("type", "function")

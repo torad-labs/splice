@@ -30,6 +30,13 @@ private const val LISTED_SHOWN = 10
 private const val LIVE_MAX_TOKENS = 8
 private const val MODELS_CHECK = "models"
 
+/** Where the three runtimes v0.4.0 names serve their OpenAI-compatible API by default: Ollama, LM Studio, vLLM. */
+private val LOCAL_RUNTIME_ENDPOINTS = listOf(
+    "http://localhost:11434/v1",
+    "http://localhost:1234/v1",
+    "http://localhost:8000/v1",
+)
+
 internal data class AddCheck(val name: String, val ok: Boolean, val detail: String)
 
 /** What GET /models yielded: the dialect has no list, the endpoint could not serve it, or the ids. */
@@ -66,6 +73,11 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             modelWindows(c.provider.models, listed),
         ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null)
     }
+
+    /** The well-known local runtime endpoints that answer a model list right now, in the order they are probed.
+     *  A runtime the operator started elsewhere is not found; it still takes --base-url. */
+    fun localEndpoints(): List<String> =
+        LOCAL_RUNTIME_ENDPOINTS.filter { http("GET", "$it/models", null, null)?.status == HTTP_OK }
 
     /** The candidate file must parse as a topology before anyone is asked to sign in. */
     fun parses(text: String): Result<Topology> = Cancellables.runCatchingCancellable { TopologyLoader.parse(text) }

@@ -192,6 +192,40 @@ class LocalRuntimeProbeTest {
     }
 
     @Test
+    fun `a row on a model the runtime says cannot call tools is refused, an unreported one is not`() {
+        fun ollamaShowing(capabilities: String) = LocalRuntimeProbe(
+            "http://localhost:1/v1",
+            http(
+                mapOf(
+                    "GET /api/version" to """{"version":"0.30.5"}""",
+                    "GET /v1/models" to """{"data":[{"id":"qwen3:4b"}]}""",
+                    "POST /api/show" to """{"parameters":"num_ctx 8192"$capabilities}""",
+                ),
+            ),
+        )
+        fun verdict(probe: LocalRuntimeProbe) =
+            probe.validate(mapOf("qwen3:4b" to 8192L), probe.listed(checkNotNull(probe.detect()))).single()
+
+        assertTrue(verdict(ollamaShowing(""","capabilities":["completion","tools"]""")).ok)
+        val none = verdict(ollamaShowing(""","capabilities":["completion"]"""))
+        assertFalse(none.ok)
+        assertTrue(none.reason.contains("no tool support"), none.reason)
+        assertTrue(verdict(ollamaShowing("")).ok, "no capability list means the runtime said nothing")
+
+        val lmstudio = LocalRuntimeProbe(
+            "http://localhost:1/v1",
+            http(
+                mapOf(
+                    "GET /api/v0/models" to
+                        """{"data":[{"id":"phi","max_context_length":4096,"capabilities":["completion"]}]}""",
+                ),
+            ),
+        )
+        val phi = lmstudio.listed(checkNotNull(lmstudio.detect()))
+        assertFalse(lmstudio.validate(mapOf("phi" to 4096L), phi).single().ok)
+    }
+
+    @Test
     fun `a server answering the OpenAI list on every models path is generic, not LM Studio`() {
         val list = """{"object":"list","data":[{"id":"m","object":"model"}]}"""
         val lenient = LocalHttp { _, url, _ -> if (url.endsWith("/models")) LocalHttpReply(200, list) else null }

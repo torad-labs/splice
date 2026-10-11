@@ -93,8 +93,9 @@ internal class AddPrepare(
     }
 
     /** V4-220: the same decisions as a value, for a caller that answers them rather than prints them. */
-    fun prepare(args: AddArgs, env: EnvReader): AddPrepared {
-        val profile = args.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
+    fun prepare(asked: AddArgs, env: EnvReader): AddPrepared {
+        val profile = asked.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
+        val args = discovered(asked, profile)
         val key = args.name ?: profile.head.key
         return when (val rows = modelRows.resolve(args, profile)) {
             is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env)
@@ -148,6 +149,19 @@ internal class AddPrepare(
             head = profile.head.copy(command = args.command ?: profile.head.command.ifEmpty { "claude-$key" }),
             models = models,
         )
+
+    /** A local profile with no --base-url looks for the runtime instead of asking for its address: the one that
+     *  answers is used, and with none or several the add still asks for --base-url, naming what it found. */
+    private fun discovered(args: AddArgs, profile: AddProfile): AddArgs {
+        if (profile.name != "local" || args.baseUrl != null) return args
+        val found = checks.localEndpoints()
+        if (found.size > 1) {
+            output.line("splice add: several runtimes answer (${found.joinToString()}); pass --base-url")
+        }
+        val only = found.singleOrNull() ?: return args
+        output.line("splice add: found a local runtime at $only")
+        return args.copy(baseUrl = only)
+    }
 
     private fun usage(): AddCandidate? {
         output.line("splice add: which profile? one of:")

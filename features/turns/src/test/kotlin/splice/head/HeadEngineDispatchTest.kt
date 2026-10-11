@@ -61,9 +61,8 @@ import kotlin.time.Duration.Companion.seconds
 private const val BLOCK_MS = 2_000L
 
 // The release barrier stays closed until the test ends, so a starved next turn never starts while it is closed
-// and a loaded host only starts it late. The concurrent test asserts the event happens before the release, with a
-// deadline well under the hold; the gap it measures is published, not bounded.
-private const val STARVATION_DEADLINE_MS = 2_000L
+// and a loaded host only starts it late. The concurrent test waits for that event, with no deadline but the client
+// timeout; the timings it measures are published, not bounded.
 
 // The share of its pace a stream must keep while a sibling blocks: half, where a held stream keeps none.
 private const val MIN_PACE = 0.5
@@ -174,29 +173,23 @@ class HeadEngineDispatchTest {
     ) = coroutineScope {
         // Warm the real round, including lazy transport/class initialization, before measuring queueing.
         assertTrue(postAndRead(port, "warm", stream = false).contains("\"content\""))
+        // No wall-clock window: the barrier stays closed until the finally block, so the IO probe and the next turn
+        // can only complete if the 65 blocked preparations left shared IO and the call threads free.
         val replies = List(BLOCKED_PREPARATIONS) { postAsync(port, "block-$it", stream = true) }
         try {
-            val together = blocker.entered.await(1_000, TimeUnit.MILLISECONDS)
+            val together = blocker.entered.await(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
             reporter.publishEntry(
                 "concurrent_preparations_entered",
                 (BLOCKED_PREPARATIONS - blocker.entered.count).toString(),
             )
             val submitted = System.nanoTime()
             val fileLane = async(Dispatchers.IO) { TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - submitted) }
-            val probeMs = withTimeout(STARVATION_DEADLINE_MS) { fileLane.await() }
+            val probeMs = withTimeout(CLIENT_TIMEOUT_MS.toLong()) { fileLane.await() }
             reporter.publishEntry("shared_io_probe_ms", probeMs.toString())
             assertTrue(together, "all sixty five preparations must enter while the release barrier is closed")
-            assertTrue(
-                probeMs < STARVATION_DEADLINE_MS,
-                "shared_io_probe_ms=$probeMs; deadline=$STARVATION_DEADLINE_MS",
-            )
             assertTrue(blocker.finished.count == BLOCKED_PREPARATIONS.toLong(), "no blocked preparation may finish")
             val startMs = firstEventMs(port)
             reporter.publishEntry("next_turn_start_ms", startMs.toString())
-            assertTrue(
-                startMs < STARVATION_DEADLINE_MS,
-                "next_turn_start_ms=$startMs; deadline=$STARVATION_DEADLINE_MS",
-            )
             assertTrue(
                 blocker.finished.count == BLOCKED_PREPARATIONS.toLong(),
                 "the next turn must start before the barrier opens",
@@ -205,7 +198,8 @@ class HeadEngineDispatchTest {
         } finally {
             blocker.release.countDown()
         }
-        assertTrue(blocker.finished.await(3_000, TimeUnit.MILLISECONDS), "all preparations must leave the barrier")
+        val left = blocker.finished.await(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        assertTrue(left, "all preparations must leave the barrier")
         replies.forEach { reply ->
             assertTrue(reply.get(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS).contains("message_stop"))
         }

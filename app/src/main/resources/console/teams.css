@@ -36,7 +36,6 @@
 .repo { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .repo svg { width: 1.15rem; height: 1.15rem; }
 .figs { display: inline-flex; flex-wrap: wrap; gap: .4rem 1.1rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
-.figs > .unpriced { margin-left: 0; }
 .figs .since { color: var(--text-mute); }
 .team-head .acts { display: flex; align-items: center; gap: .7rem; position: relative; }
 .team-head .acts .menu { top: calc(100% + .5rem); right: 0; }

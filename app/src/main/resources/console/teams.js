@@ -226,8 +226,9 @@ function useOf(tm, slotId) {
 }
 function figures(u, since) {
   if (!u) return "";
-  const left = u.unpriced ? `<span class="unpriced">· leaves out ${u.unpriced} ${u.unpriced === 1 ? "request" : "requests"} with no price</span>` : "";
-  const money = u.usd == null ? (u.unpriced ? `<span class="unpriced">No price</span>` : "") : `<span>${usd(u.usd)}${left}</span>`;
+  // As Sessions' Today line: a cost is said only when every request is priced and it is more than nothing, since a
+  // plan's requests carry no price and a sum over some of them would read as the whole (Marlin, Oct 10).
+  const money = u.usd != null && u.unpriced === 0 && u.usd > 0 ? `<span>${usd(u.usd)}</span>` : "";
   return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}</span><span>${big(u.tokens)} tokens</span>${money}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }

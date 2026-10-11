@@ -67,13 +67,22 @@ internal object SessionActivity {
         return CallSummary.of(tool, message.text)
     }
 
+    /** A line past the cap ends on its last whole word and an ellipsis, so a card never shows a word cut in half
+     *  (splice-lead, Oct 11: "If fin give"); one word longer than the cap is cut, and says so with the ellipsis. */
+    private fun clipped(line: String): String {
+        if (line.length <= ACTIVITY_TEXT_CHARS) return line
+        val room = line.take(ACTIVITY_TEXT_CHARS - 1)
+        val word = if (line[room.length] == ' ') room else room.substringBeforeLast(' ', "")
+        return (word.trimEnd().ifEmpty { room }) + "\u2026"
+    }
+
     /** The port supplies redacted text; collapse and clip only after that redaction. */
     private fun json(message: TranscriptMessage?): JsonElement {
         if (message == null) return JsonNull
         return buildJsonObject {
             put("role", message.role.name.lowercase())
             put("tool", message.toolUse.name)
-            put("text", shown(message).replace(whitespace, " ").trim().take(ACTIVITY_TEXT_CHARS))
+            put("text", clipped(shown(message).replace(whitespace, " ").trim()))
             put("ts", message.ts)
             message.source.from?.let { put("from", it) }
             val asked = message.role == TranscriptRole.ASSISTANT

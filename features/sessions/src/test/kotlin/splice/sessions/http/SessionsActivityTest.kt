@@ -41,7 +41,7 @@ class SessionsActivityTest {
         assertEquals("7", last.getValue("ts").jsonPrimitive.content)
         val text = last.getValue("text").jsonPrimitive.content
         assertTrue(text.startsWith("redacted x x "))
-        assertEquals(160, text.length)
+        assertTrue(text.endsWith(" x\u2026") && text.length <= 160)
         assertFalse(text.any { it == '\n' || it == '\t' })
         assertEquals(1, source.calls)
         assertEquals(listOf(tmp.resolve("vanilla")), source.roots)
@@ -114,6 +114,22 @@ class SessionsActivityTest {
         val body = row(tmp, LastSource(null), record = waiting)
         assertEquals("permission prompt", body.getValue("waiting_for").jsonPrimitive.content)
         assertEquals("cli", body.getValue("entrypoint").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a long line ends on its last whole word and an ellipsis, never mid-word`(@TempDir tmp: Path) {
+        val said = "Go, as its own commit with the stub-page test. fin owns the words, so send fin the shot and " +
+            "\"No usage reported\" before you hand the sha to builder2. If fin gives the word, push it then."
+        val last = row(tmp, LastSource(TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, said))).getValue("last")
+        val text = last.jsonObject.getValue("text").jsonPrimitive.content
+        assertEquals(said.substringBefore(" If fin gives") + " If fin\u2026", text)
+    }
+
+    @Test
+    fun `one word longer than the line is cut and still ends in an ellipsis`(@TempDir tmp: Path) {
+        val said = "y".repeat(400)
+        val last = row(tmp, LastSource(TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, said))).getValue("last")
+        assertEquals("y".repeat(159) + "\u2026", last.jsonObject.getValue("text").jsonPrimitive.content)
     }
 
     @Test

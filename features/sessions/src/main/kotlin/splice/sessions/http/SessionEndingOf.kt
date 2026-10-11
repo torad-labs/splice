@@ -12,8 +12,15 @@ import kotlinx.serialization.json.put
 import splice.sessions.registry.SessionRecord
 
 /** How the session's newest request ended, when that ending holds it back: the outcome tag, the account it was on,
- *  when the spent window comes back (null when the provider named none), and when it ended. */
-public data class SessionEnding(val outcome: String, val account: String?, val resetMs: Long?, val atMs: Long)
+ *  when the spent window comes back (null when the provider named none), when it ended, and the head that turned it
+ *  away (null when unknown). */
+public data class SessionEnding(
+    val outcome: String,
+    val account: String?,
+    val resetMs: Long?,
+    val atMs: Long,
+    val head: String? = null,
+)
 
 /** The daemon's newest ending per session, read per row. Null = nothing holds the session back. */
 public fun interface SessionEndingOf {
@@ -22,6 +29,8 @@ public fun interface SessionEndingOf {
     /** `ended_by`, or nothing. */
     public fun write(record: SessionRecord, target: JsonObjectBuilder) {
         val ending = record.sessionId?.let { endingOf(it) } ?: return
+        // a head's limit holds the session only while it runs there: moved onto another command, it is that one's
+        if (record.head != (ending.head ?: record.head)) return
         target.put(
             "ended_by",
             buildJsonObject {

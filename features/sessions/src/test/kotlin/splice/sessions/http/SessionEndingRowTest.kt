@@ -40,6 +40,18 @@ class SessionEndingRowTest {
     }
 
     @Test
+    fun `a limit on the head a session moved off does not follow it onto the head it runs on now`() {
+        // the rig runs LEAD on claude and BUILDER on codex
+        val codexLimit = SessionEnding("error:plan-limit", "Primary", 1_791_700_000_000, 1_791_690_000_000, "codex")
+
+        val listed = rows(mapOf(LEAD to codexLimit, BUILDER to codexLimit))
+
+        assertFalse(listed.getValue(LEAD).containsKey("ended_by"), "moved onto claude, it is not at codex's limit")
+        val builder = listed.getValue(BUILDER).getValue("ended_by").jsonObject
+        assertEquals("Primary", builder.getValue("account").jsonPrimitive.content)
+    }
+
+    @Test
     fun `a signed-out session has no reset to name, and a session nothing holds carries no ending`() {
         val signedOut = SessionEnding("error:auth-missing", null, resetMs = null, atMs = 1_791_690_000_000)
 

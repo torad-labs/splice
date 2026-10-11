@@ -101,6 +101,8 @@ async function readLog(s, before = "end") {
   if (!res.ok) {
     state.logs[s.id] = held && before !== "end" ? { ...held, error: refusalOf(res, "The earlier messages could not be read") }
       : { messages: null, error: res.status === 404 ? null : refusalOf(res, "The conversation could not be read") };
+  } else if (res.body?.state === "off") {
+    state.logs[s.id] = { messages: null, off: true }; // reading off: splice does not read his conversations
   } else {
     const page = res.body;
     const messages = before === "end" || !held?.messages ? page.messages : [...page.messages, ...held.messages];
@@ -137,6 +139,7 @@ function runHtml(call, offer) {
   return `<p class="cmd"><span class="tname">${esc(call?.tool || panel[0].text)}</span>${esc(run)}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
 }
 const READING_OFF_ASK = "Answer it in the terminal it runs in";
+const READING_OFF_LOG = "The conversation stays in the terminal it runs in";
 function askHtml(s, where = "card") {
   // from his press until the session moves on, the answer he pressed keeps its words with the wait ring and the rest
   // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile (Marlin p165, hitstop 8a04273)
@@ -248,6 +251,7 @@ function takenBack(s, m) {
 function logHtml(s) {
   const held = state.logs[s.id];
   if (!held) return `<div class="log"><p class="empty">Reading</p></div>`;
+  if (held.off) return `<div class="log"><p class="empty">${READING_OFF_LOG} · <a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
   if (!held.messages) return `<div class="log"><p class="empty">${esc(held.error ?? "No transcript")}</p></div>`;
   const items = [];
   if (held.earlier) items.push(`<button class="act quiet earlier" data-act="earlier" data-s="${esc(s.id)}">Show earlier</button>`);

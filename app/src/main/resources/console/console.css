@@ -428,7 +428,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 /* reading off: a waiting card's quiet door to the switch, drawn as Sessions' "Open on Requests" door (fin, hitstop
    b5a39e3). In the line's own ink at rest; hover lifts the ink and nudges the arrow, which is what says it is a link. */
-.ask .why .door { display: inline-flex; align-items: center; gap: .3rem; color: var(--text-body); text-decoration: none; white-space: nowrap; }
-.ask .why .door svg { flex: none; width: 1rem; height: 1rem; transition: transform var(--t-snap) var(--e-out); }
-.ask .why .door:hover { color: var(--text); }
-.ask .why .door:hover svg { transform: translate(.1rem, -.1rem); }
+.ask .why .door, .log .empty .door { display: inline-flex; align-items: center; gap: .3rem; color: var(--text-body); text-decoration: none; white-space: nowrap; }
+.ask .why .door svg, .log .empty .door svg { flex: none; width: 1rem; height: 1rem; transition: transform var(--t-snap) var(--e-out); }
+.ask .why .door:hover, .log .empty .door:hover { color: var(--text); }
+.ask .why .door:hover svg, .log .empty .door:hover svg { transform: translate(.1rem, -.1rem); }

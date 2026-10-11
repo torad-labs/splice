@@ -29,12 +29,12 @@ function fixture(body: string): string {
   const dir = mkdtempSync(join(tmpdir(), "release-shim-"));
   workspaces.push(dir);
   const path = join(dir, "splice-launch");
-  writeFileSync(path, `#!${process.execPath}\n${body}`);
+  writeFileSync(path, `#!/bin/sh\n${body}`);
   chmodSync(path, 0o755);
   return path;
 }
 
-const MARKERS = 'const SPLICE_GATEWAY_VERSION = "0.0.0";\nconst SPLICE_SHIM_VERSION = "shim-0";\n';
+const MARKERS = 'SPLICE_GATEWAY_VERSION="0.0.0"\nSPLICE_SHIM_VERSION="shim-0"\n';
 
 describe("the launch shim", () => {
   test("the shipped shim is where the build stages it from, and carries both markers", () => {
@@ -48,8 +48,8 @@ describe("the launch shim", () => {
   // UF-04 and UF-05, V4-258's boot-log flag, V4-457's OOM flags, V4-218's three HOME arms, the wrapped-HOME arms,
   // the CLI console arm, and the two launch-busy arms (six concurrent launches, and a 529 tried again).
   test("the rehearsal is the script's arms, all of them", () => {
-    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 3 + 5 + 1 + 1 + 1 + 2);
-    expect(ARM_NAMES.length).toBe(34);
+    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 3 + 5 + 1 + 1 + 1 + 2 + 2);
+    expect(ARM_NAMES.length).toBe(36);
     expect(ARM_NAMES.filter((name) => name.startsWith("UF-03")).length).toBe(SELECTORS.length);
     expect(ARM_NAMES.filter((name) => name.startsWith("V4-218")).length).toBe(3);
     for (const marker of ["JW-01", "JW-04", "UF-01", "UF-02", "UF-04", "UF-05", "V4-258", "V4-457", "V4-218"]) {
@@ -88,7 +88,7 @@ describe("the launch shim", () => {
   }, 180_000);
 
   test("a shim with no readable markers is a refusal, not a pair of blanks", async () => {
-    expect(await launcherRehearsal(fixture('const VERSION = "0.0.0";\n'))).toContain("could not read version markers");
+    expect(await launcherRehearsal(fixture('VERSION="0.0.0"\n'))).toContain("could not read version markers");
   });
 
   test("a shim that does nothing fails the first arm", async () => {
@@ -104,30 +104,30 @@ describe("the launch shim", () => {
     // daemon to the shim it delegates to, and the rehearsal reds on the handshake instead.
     const real = shimMarkers(shipped) as Exclude<ReturnType<typeof shimMarkers>, Error>;
     const wrapper = fixture(
-      `const SPLICE_GATEWAY_VERSION = "${real.gateway}";\nconst SPLICE_SHIM_VERSION = "${real.shim}";\n` +
-        'import { spawnSync } from "node:child_process";\n' +
-        `const result = spawnSync(${JSON.stringify(shipped)}, process.argv.slice(2), {\n` +
-        '  stdio: "inherit",\n' +
-        '  env: { ...process.env, LAUNCHER_UNIT_PRESENT: "0" },\n' +
-        "});\n" +
-        "process.exit(result.status === null ? 1 : result.status);\n",
+      `SPLICE_GATEWAY_VERSION="${real.gateway}"\nSPLICE_SHIM_VERSION="${real.shim}"\n` +
+        `LAUNCHER_UNIT_PRESENT=0 exec ${JSON.stringify(shipped)} "$@"\n`,
     );
     expect(await launcherRehearsal(wrapper)).toContain("UF-01");
   }, 180_000);
 
   test.concurrent("dropping owner selectors exposes the selected-port collision before health", async () => {
     const source = readFileSync(shipped, "utf8");
-    const assignment = "if (value) profile[name] = value;";
-    expect(source).toContain(assignment);
+    const selectors = [...source.matchAll(/^ {2}OWNER_(?:SPLICE_CONFIG|XDG_CONFIG_HOME|SPLICE_CONTROL_PORT|CONTROL_PROXY_PORT)=.*$/gm)];
+    expect(selectors.length).toBe(4);
     const mutant = fixture("");
-    writeFileSync(mutant, source.replace(assignment, ""));
+    writeFileSync(mutant, selectors.reduce((text, line) => text.replace(line[0], "  true"), source));
     expect(await launcherRehearsal(mutant)).toContain("the owner's selected topology port must refuse");
   }, 180_000);
 
-  test("no fake curl survives: the shim speaks node:http, so PATH mocks are java and systemctl only", () => {
+  test("the shim needs no Node: POSIX sh and the real curl, so PATH mocks are java and systemctl only", () => {
     const source = readFileSync(join(repoRoot, "tools/release/src/lib/launcher.ts"), "utf8");
     const stubbed = [...source.matchAll(/writeStub\(\s*join\(bin, "([^"]+)"\)/g)].map((match) => match[1]);
     expect(stubbed).toEqual(["java", "systemctl"]);
-    expect(readFileSync(shipped, "utf8")).toContain('require("node:http")');
+    const shimSource = readFileSync(shipped, "utf8");
+    expect(shimSource.split("\n")[0]).toBe("#!/bin/sh");
+    // a comment may name Node, to say why it is gone; a line of code never runs it
+    const code = shimSource.split("\n").filter((line) => !line.trimStart().startsWith("#"));
+    expect(code.filter((line) => /\bnode\b/i.test(line))).toEqual([]);
+    expect(code.some((line) => /\bcurl\b/.test(line))).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
 //
 // checks/release/launcher-test.sh:11-12 and checks/release/accept.sh:28-30 each spelled their own
 // `awk -F'"' '/^SPLICE_GATEWAY_VERSION="/'`, which is two implementations of one rule; PR 6 moves the
-// shim to the application's dist layout as a NODE script, so the marker is a JS const and the old
+// shim to the application's dist layout, and a later release moved it again, so the old
 // awk would read nothing at all — silently, because `awk` prints an empty string for no match and
 // both callers then compared "" to "". One reader, and it refuses on no match.
 import { readFileSync } from "node:fs";
@@ -26,8 +26,8 @@ export function shimPath(repoRoot: string, env: Record<string, string | undefine
 }
 
 const MARKERS = {
-  gateway: /^const SPLICE_GATEWAY_VERSION = "([^"]+)";$/m,
-  shim: /^const SPLICE_SHIM_VERSION = "([^"]+)";$/m,
+  gateway: /^SPLICE_GATEWAY_VERSION="([^"]+)"$/m,
+  shim: /^SPLICE_SHIM_VERSION="([^"]+)"$/m,
 } as const;
 
 /** Both markers, or an Error naming the file — never a blank that compares equal to another blank. */

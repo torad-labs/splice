@@ -50,6 +50,8 @@ interface Daemon {
   /** flipped per arm, the way the curl stub read its env */
   topologyStale: boolean;
   injectEnvKey: boolean;
+  /** the recipe's lines between the header and the end marker, when an arm wants its own */
+  recipe?: string;
   pwnedFile: string;
   /** what the ingress stand-in holds charged right now */
   charged: number;
@@ -112,9 +114,10 @@ const ARMS: readonly Arm[] = [
       if (launch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/test`) {
         return `expected the TOML control port, got ${launch?.url ?? "<no request>"}`;
       }
-      const body = JSON.parse(launch.body) as { args?: unknown };
-      if (JSON.stringify(body.args) !== JSON.stringify(["", "line one\nline two"])) {
-        return `the argv must reach the daemon verbatim, got ${JSON.stringify(body.args)}`;
+      // curl --data-urlencode writes the request; every argv word is one `arg` field, in order, empty ones included.
+      const args = new URLSearchParams(launch.body).getAll("arg");
+      if (JSON.stringify(args) !== JSON.stringify(["", "line one\nline two"])) {
+        return `the argv must reach the daemon verbatim, got ${JSON.stringify(args)}`;
       }
       if (launch.authorization !== "Bearer test-key") {
         return `the launch must carry the mgmt-key, got ${JSON.stringify(launch.authorization)}`;
@@ -140,7 +143,7 @@ const ARMS: readonly Arm[] = [
     run: async (ctx) => {
       writeFileSync(ctx.daemonState, "old\n");
       ctx.daemon.forget();
-      await ctx.launch(ctx.harness);
+      const run = await ctx.launch(ctx.harness);
       const shutdown = ctx.daemon.lastShutdown;
       if (shutdown?.url !== `http://127.0.0.1:${ctx.daemon.state}/api/daemon/shutdown`) {
         return `a stale daemon must be shut down at the resolved port, got ${shutdown?.url ?? "<no request>"}`;
@@ -148,7 +151,7 @@ const ARMS: readonly Arm[] = [
       if (shutdown.authorization !== "Bearer test-key") {
         return `the shutdown must carry the mgmt-key, got ${JSON.stringify(shutdown.authorization)}`;
       }
-      return read(ctx.daemonState) === "new" ? null : "the stale daemon was not replaced";
+      return read(ctx.daemonState) === "new" ? null : `the stale daemon was not replaced: ${run.output}`;
     },
   },
   {
@@ -653,10 +656,10 @@ const ARMS: readonly Arm[] = [
     // passwd fallback, including when an explicit config and jar point into a test sandbox.
     name: "V4-218 an unset or blank HOME uses the JVM's fallback home",
     run: async (ctx) => {
-      // The shipped shim runs Node. Bun userInfo() can echo the sandbox HOME instead of the passwd home.
-      const fallback = execFileSync("node", ["-e", 'process.stdout.write(require("node:os").userInfo().homedir)'], {
-        env: ctx.env, encoding: "utf8",
-      });
+      // The passwd home, which the JVM's user.home falls back to. Bun's userInfo() can echo the sandbox HOME.
+      const user = execFileSync("id", ["-un"], { encoding: "utf8" }).trim();
+      const entry = execFileSync("getent", ["passwd", user], { encoding: "utf8" }).trim();
+      const fallback = entry.split(":")[5] ?? "";
       const expected = `-Duser.home=${fallback}`;
       for (const home of [undefined, "", "  "]) {
         rmSync(ctx.captures.javaArgv, { force: true });
@@ -702,6 +705,51 @@ const ARMS: readonly Arm[] = [
       if (run.code !== 0) return `a busy daemon must not fail the launch: ${run.output}`;
       if (received !== 3) return `two 529s must be two more tries, got ${received} launch requests`;
       return length === undefined || length === "" ? "the retried launch must still carry its Content-Length" : null;
+    },
+  },
+  {
+    // The recipe is read with `read`, one record per line, and a value's backslash, newline and carriage return are
+    // written \\, \n and \r (LaunchRecipeLines.kt). An empty word, a trailing newline, a word that curl would read as
+    // a file name and a word with spaces at both ends are the ones a shell loses first.
+    name: "a recipe's argv and environment reach the launched program byte for byte",
+    run: async (ctx) => {
+      const capture = join(ctx.dir, "exec-capture");
+      const stub = join(ctx.dir, "exec-stub");
+      writeStub(stub,
+        'import { writeFileSync } from "node:fs";\n' +
+        "writeFileSync(process.argv[2], JSON.stringify({ argv: process.argv.slice(3), foo: process.env.FOO ?? null, gone: process.env.GONE ?? null }));\n",
+      );
+      const escape = (value: string): string => value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\r", "\\r");
+      const words = ["", "back\\slash", "trailing\n", "line one\nline two", "@/etc/hostname", "  padded  ", "cr\rhere"];
+      rmSync(capture, { force: true });
+      ctx.daemon.forget();
+      ctx.daemon.recipe = ["U GONE", `E FOO=${escape("a\nb\\c")}`, ...[stub, capture, ...words].map((word) => `A ${escape(word)}`)].join("\n") + "\n";
+      const run = await ctx.launch({ ...ctx.harness, GONE: "set by the caller" });
+      ctx.daemon.recipe = undefined;
+      if (run.code !== 0) return `the recipe must launch: ${run.output}`;
+      const got = JSON.stringify(JSON.parse(read(capture)));
+      const want = JSON.stringify({ argv: words, foo: "a\nb\\c", gone: null });
+      return got === want ? null : `the launched program saw ${got}, wanted ${want}`;
+    },
+  },
+  {
+    // curl is the one tool the shim needs that the machine may not have; it says what to install instead of failing
+    // inside a request. The PATH holds only what the shim runs before it needs curl.
+    name: "a missing curl is named, with what to install",
+    run: async (ctx) => {
+      const bare = join(ctx.dir, "no-curl-bin");
+      mkdirSync(bare, { recursive: true });
+      for (const tool of ["awk", "sed", "head", "tr", "cat", "dirname", "id"]) {
+        const found = execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim();
+        if (found) symlinkSync(found, join(bare, tool), "file");
+      }
+      copyFileSync(join(ctx.dir, "bin", "systemctl"), join(bare, "systemctl"));
+      ctx.daemon.forget();
+      const run = await ctx.launch({ ...ctx.harness, PATH: bare });
+      if (run.code !== 1 || !run.stderr.includes("curl is not installed") || !run.stderr.includes("Install curl")) {
+        return `a missing curl must exit 1 and say what to install, got ${run.code}: ${run.output}`;
+      }
+      return ctx.daemon.lastLaunch === undefined ? null : "a launch was sent with no curl";
     },
   },
   {
@@ -905,8 +953,9 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
         await Bun.sleep(150);
         daemon.charged -= cost;
       }
-      const env = daemon.injectEnvKey ? `{"X$(touch ${daemon.pwnedFile})":"v"}` : "{}";
-      return new Response(`{"env":${env},"unset":[],"argv":["true"]}\n`);
+      // the daemon's line form (LaunchRecipeLines.kt), as the shim asks for it in Accept
+      const hostile = daemon.injectEnvKey ? `E X$(touch ${daemon.pwnedFile})=v\n` : "";
+      return new Response(`splice-launch 1\n${hostile}${daemon.recipe ?? "A true\n"}end\n`, { headers: { "content-type": "text/x-splice-launch" } });
     }
     return new Response(`unexpected daemon URL: ${request.url}\n`, { status: 404 });
   };

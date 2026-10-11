@@ -117,6 +117,12 @@ public data class TurnSilence(
     val willResume: Boolean = false,
 )
 
+/** Whether splice would carry on a turn's round if it failed now, read when the console lists the turn. The
+ *  reading belongs to the dialect's re-anchor rule (see the admission's WillResume); the listing only asks. */
+internal fun interface ResumeReading {
+    fun now(perf: TurnPerf): Boolean
+}
+
 /** One live turn as the console lists it. [session] is the client's full session id when it sent one;
  *  [stopped] is true between the stop and the slot's release, which is the seal's few milliseconds. */
 public data class LiveTurn(
@@ -148,7 +154,7 @@ public class LiveTurns(
          *  counters below are this turn's and no other's. Held for the row's life, which ends on the
          *  slot's release, so it is dropped with the row. */
         private val perf: TurnPerf,
-        private val resume: WillResume?,
+        private val resume: ResumeReading?,
     ) : InflightGate.Slot.UpstreamBytes {
         /** Read from [clock] here rather than taken as a parameter beside it: the two have to come
          *  from the same clock, because [TurnSilence.idleMs] is a difference against this origin, and
@@ -219,7 +225,7 @@ public class LiveTurns(
         meta: TurnMeta,
         messagesHash: String?,
         perf: TurnPerf,
-        resume: WillResume? = null,
+        resume: ResumeReading? = null,
     ) {
         val counted = slot.countedSlot
         val turn = bySlot.computeIfAbsent(counted) {

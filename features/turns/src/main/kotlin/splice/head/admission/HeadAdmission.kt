@@ -19,7 +19,6 @@ import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
-import splice.head.turn.WillResume
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
 import splice.upstream.credentials.Selection

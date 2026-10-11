@@ -154,7 +154,7 @@ internal class DaemonProcess(
 
     // Run [teardown] under a hard deadline: a daemon watchdog thread [halt]s the JVM if teardown overruns
     // [deadlineMs]. A cancel (withTimeoutOrNull) can't kill a thread stuck in uninterruptible blocking work
-    // (a wedged engine stop), so halt(0) is the floor that guarantees termination. On a clean finish the
+    // (a wedged engine stop), so halt is the floor that guarantees termination, and it ends with STOP_OVERRAN_EXIT_CODE so a stop that was cut off never reports a clean exit. On a clean finish the
     // watchdog is disarmed via [halted] so halt never fires. [halt] is injected so tests exercise both paths.
     internal suspend fun runBoundedTeardown(deadlineMs: Long, halt: HaltJvm, teardown: Teardown) {
         val halted = AtomicBoolean(false)
@@ -173,7 +173,7 @@ internal class DaemonProcess(
             Runnable {
                 if (halted.compareAndSet(false, true)) {
                     System.err.println("[daemon] stop exceeded ${deadlineMs}ms; halting")
-                    halt()
+                    halt(STOP_OVERRAN_EXIT_CODE)
                 }
             },
             deadlineMs,
@@ -281,6 +281,10 @@ internal data class StartState(
 // so the next person who raises one link gets a red instead of a silently ineffective constant.
 internal const val STOP_DEADLINE_MS = 55_000L
 internal const val TEARDOWN_TAIL_GRACE_MS = 2_000L
+
+// The exit status of a stop the halt watchdog cut off. Not 0 (a clean exit) and not 143 (the unit's SuccessExitStatus),
+// so systemd and anything else reading the status can tell a forced halt from a stop that finished.
+internal const val STOP_OVERRAN_EXIT_CODE = 70
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 // Held here so DaemonProcess.persistentLogger keeps the same default the tests pass past.

@@ -165,11 +165,13 @@ class DaemonStopDeadlineTest {
     @Test
     fun `the halt watchdog force-terminates a teardown that overruns the deadline`() {
         val halts = AtomicInteger(0)
+        val exitCode = AtomicInteger(-1)
         val halted = CountDownLatch(1)
         runBlocking {
             process.runBoundedTeardown(
                 deadlineMs = 150,
-                halt = {
+                halt = { code ->
+                    exitCode.set(code)
                     halts.incrementAndGet()
                     halted.countDown()
                 },
@@ -180,6 +182,10 @@ class DaemonStopDeadlineTest {
             }
         }
         assertEquals(1, halts.get(), "the watchdog halts exactly once when teardown overruns")
+        assertTrue(
+            exitCode.get() !in setOf(0, 143),
+            "a cut-off stop must not exit 0 or 143 (the unit's success status), got ${exitCode.get()}",
+        )
     }
 
     @Test

@@ -67,7 +67,7 @@ internal class DaemonRun(
         } finally {
             try {
                 withContext(NonCancellable) {
-                    val halt = HaltJvm { Runtime.getRuntime().halt(0) }
+                    val halt = HaltJvm { exitCode -> Runtime.getRuntime().halt(exitCode) }
                     process.runBoundedTeardown(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, halt) {
                         startup.cancel()
                         shutdown(daemon, lock, startup)
@@ -82,7 +82,7 @@ internal class DaemonRun(
     // The ordered stop, run once by main after the signal inside runBoundedTeardown. The watchdog is the guarantee
     // SIGTERM lacked: gating JVM exit purely on stop() returning let one wedged head / non-daemon Netty thread turn
     // SIGTERM into a no-op (the operator then reached for SIGKILL, and the racing restart it invited — BS-4).
-    // withTimeoutOrNull caps the cooperative stop; halt(0) is the floor for the uninterruptible case a cancel can't
+    // withTimeoutOrNull caps the cooperative stop; halt is the floor for the uninterruptible case a cancel can't
     // reach. The halt floor sits ABOVE the cooperative cap by a grace window: a stop that times out cooperatively at
     // exactly STOP_DEADLINE_MS must still get its drain() + lock.close() tail before the watchdog fires
     // (orchestrator review 2026-07-24 — equal deadlines raced the tail).

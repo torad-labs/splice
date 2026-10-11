@@ -8,11 +8,10 @@
 // process/HTTP edges; the OAuth flows' own ports moved with them to integrations/oauth (LAYOUT-01).
 //
 // WHY BY ROLE AND NEVER BY SHAPE, the cleanest example in the tree: [HaltJvm] and [Teardown] are
-// `() -> Unit` and `suspend () -> Unit` (Teardown suspends), a shape apart only by that one keyword, are
-// adjacent parameters of the SAME function, and are exact opposites — one is the orderly shutdown,
-// the other is the guillotine that fires when the orderly shutdown overruns its deadline. Transposing
-// them was a two-token edit that compiled, and it would have made every clean stop a `halt(0)`. It is
-// now a type error.
+// function types, both returning Unit, that sit as adjacent parameters of the SAME function, and are exact
+// opposites — one is the orderly shutdown, the other is the guillotine that fires when the orderly shutdown
+// overruns its deadline. Transposing them was a two-token edit that once compiled, and it would have made
+// every clean stop a halt. It is now a type error.
 package splice.app
 
 import splice.app.control.ManagedHead
@@ -62,12 +61,13 @@ public fun interface StopControl {
  *
  * The floor under teardown and nothing else. A cancel cannot kill a thread stuck in uninterruptible
  * blocking work (a wedged engine stop), so this is the only thing that GUARANTEES the process ends.
- * Injected so a test can exercise the overrun path without ending the test JVM.
+ * Injected so a test can exercise the overrun path without ending the test JVM. It is given the exit status the
+ * process ends with, so a stop that was cut off is never reported as a clean exit.
  *
  * NEVER [Teardown]. See this file's header — same shape, opposite meaning, adjacent parameters.
  */
 public fun interface HaltJvm {
-    public operator fun invoke()
+    public operator fun invoke(exitCode: Int)
 }
 
 /**

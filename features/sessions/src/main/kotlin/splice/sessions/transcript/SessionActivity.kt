@@ -146,7 +146,8 @@ internal object SessionActivity {
     private fun json(message: TranscriptMessage?): JsonElement {
         if (message == null) return JsonNull
         val text = clipped(shown(message).replace(whitespace, " ").trim())
-        // what said only code says nothing a card can show: no line, as for a transcript of only notifications
+        // a message with nothing left to show, whether it was only code or empty, leaves no line, as a transcript
+        // of only notifications does
         if (text.isEmpty() && message.toolUse.name == null) return JsonNull
         return buildJsonObject {
             put("role", message.role.name.lowercase())

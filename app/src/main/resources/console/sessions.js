@@ -139,7 +139,6 @@ function runHtml(call, offer) {
   return `<p class="cmd"><span class="tname">${esc(call?.tool || panel[0].text)}</span>${esc(run)}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
 }
 const READING_OFF_ASK = "Answer it in the terminal it runs in";
-const READING_OFF_LOG = "The conversation stays in the terminal it runs in";
 function askHtml(s, where = "card") {
   // from his press until the session moves on, the answer he pressed keeps its words with the wait ring and the rest
   // wait disabled, drawn from the choices he saw: never "answer it in the terminal" meanwhile (Marlin p165, hitstop 8a04273)
@@ -147,7 +146,8 @@ function askHtml(s, where = "card") {
   // reading off: he told splice not to read his conversations, and a question and its choices are the conversation, so
   // the card says only that it waits and where to answer it (Marlin, 5:12 AM CT)
   // the line ends on a quiet door to the switch: the cause, and the way back (fin)
-  if (!state.reading) return `<div class="ask"><p class="why">${READING_OFF_ASK} · <a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
+  // one door per pane: an open pane's log carries it, so its foot names only where to answer (fin)
+  if (!state.reading) return `<div class="ask"><p class="why">${READING_OFF_ASK}${where === "pane" ? "" : ` · <a class="door" href="settings.html#data">Reading off${ICON.door}</a>`}</p></div>`;
   const a = s.ask, offer = going?.offer ?? state.screens[s.id], can = going ? true : drivable(s);
   const busy = going || ui.sending.has(s.id) ? " disabled" : "";
   const pick = (choice, label, i) => going?.choice === choice
@@ -251,7 +251,7 @@ function takenBack(s, m) {
 function logHtml(s) {
   const held = state.logs[s.id];
   if (!held) return `<div class="log"><p class="empty">Reading</p></div>`;
-  if (held.off) return `<div class="log"><p class="empty">${READING_OFF_LOG} · <a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
+  if (held.off) return `<div class="log"><p class="empty"><a class="door" href="settings.html#data">Reading off${ICON.door}</a></p></div>`;
   if (!held.messages) return `<div class="log"><p class="empty">${esc(held.error ?? "No transcript")}</p></div>`;
   const items = [];
   if (held.earlier) items.push(`<button class="act quiet earlier" data-act="earlier" data-s="${esc(s.id)}">Show earlier</button>`);

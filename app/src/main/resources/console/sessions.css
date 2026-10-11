@@ -139,8 +139,8 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .why.unline .chip { color: var(--text); }
 .unmoved .why.unline { margin: 0; }
 .unmoved .screen { margin: 0; justify-self: stretch; max-height: 12rem; overflow: auto; white-space: pre-wrap; font: 400 .9rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border-radius: var(--r-in); padding: .6rem .8rem; }
-.unmoved .runline { justify-self: stretch; display: flex; align-items: flex-start; gap: .8rem; }
-.unmoved .runline .cmd { flex: 1; min-width: 0; }
+.unmoved .runline { justify-self: start; max-width: 100%; display: flex; align-items: flex-start; gap: .8rem; }
+.unmoved .runline .cmd { flex: 0 1 auto; min-width: 0; }
 .log > * { max-width: 66rem; width: 100%; }
 .log .note { align-self: center; width: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 .log .note time { margin-left: .5rem; }

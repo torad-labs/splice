@@ -36,7 +36,7 @@ async function read() {
   tick();
   const [sessions, heads, models] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models")]);
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = PROVIDER_FAMILY[row.provider] ?? row.provider;
     for (const m of row.models || []) if (m.id) state.modelLabel[m.id] = m.label || m.id;
@@ -86,7 +86,7 @@ function sessionOf(row) {
   return {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
-    model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model), // a running turn's model is the one in use now
+    model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
     team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
@@ -474,6 +474,9 @@ async function readChoices(s) {
     const names = h.models.map((m) => ({ id: m.id, label: m.label || m.id }))
       .filter((n) => h.head !== s.head || (n.id !== now && n.label !== s.model));
     if (!names.length) return null;
+    // a command splice cannot start says so, with its fix, before the press: a move onto it would only be refused
+    const unstartable = state.heads.find((x) => x.key === h.head)?.cannotStart;
+    if (unstartable) return { head: h.head, own: h.head === s.head, names, kind: "unlinked", fix: unstartable.match(/(splice install \S+?)\.?$/)?.[1] ?? null, rank: 4 };
     if (state.heads.find((x) => x.key === h.head)?.authKind === "api-key") {
       // a key reads as its provider, the heading Accounts draws over it; its variable joins only when two keys of
       // that provider feed this command, so the line says which one it sends (fin)
@@ -504,8 +507,9 @@ function choicesHtml(s) {
   return `<div class="menu models" role="menu">${groups.map((g, gi) => g.names.map((n, i) => {
     const room = g.kind === "room" && g.used != null ? `<span class="room"><span class="bar sub"><b style="width:${g.used}%"></b></span><span class="pct">${g.used}%<span class="used">used</span></span></span>`
       : g.kind === "limit" ? `<span class="room out"><span class="pct limit">100%<span class="used">used</span></span>${g.until ? `${ICON.lock}Resets ${backWord(g.until)}` : ""}</span>`
+      : g.kind === "unlinked" ? `<span class="room out">Not installed${g.fix ? ` · <code>${esc(g.fix)}</code>` : ""}</span>`
       : g.kind === "signedout" ? `<span class="room out">Signed out</span>` : `<span class="room"></span>`;
-    const off = g.kind === "limit" || g.kind === "signedout";
+    const off = g.kind === "limit" || g.kind === "signedout" || g.kind === "unlinked";
     return `<button role="menuitem" class="line${gi && !i ? " plan" : ""}" style="--c:${colorOf(state.providerOf[g.head])}" data-act="continue" data-s="${esc(s.id)}" data-head="${esc(g.head)}" data-model="${esc(n.id)}"${off ? " disabled" : ""}>`
       + `<span class="blot"></span><span class="mname">${esc(n.label)}</span>${acctOf(g)}${room}</button>`;
   }).join("")).join("")}</div>`;

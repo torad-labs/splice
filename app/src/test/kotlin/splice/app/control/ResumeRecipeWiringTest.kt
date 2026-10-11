@@ -19,7 +19,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -103,6 +105,26 @@ class ResumeRecipeWiringTest {
             } finally {
                 client.close()
             }
+        }
+    }
+
+    @Test
+    fun `the heads route says before any press that a command is not linked, with its fix - walk p180`() {
+        serve { get, _ ->
+            val codex = Json.parseToJsonElement(get("/api/heads").bodyAsText()).jsonObject
+                .getValue("heads").jsonArray.single().jsonObject
+            val said = codex.getValue("cannotStart").jsonPrimitive.content
+            assertEquals("The $UNLINKED command is not linked; run splice install codex.", said)
+        }
+    }
+
+    @Test
+    fun `a linked command carries no warning on the heads route - walk p180`() {
+        val command = Files.createSymbolicLink(tmp.resolve("linked"), tmp.resolve("linked-target")).toString()
+        serve(command) { get, _ ->
+            val codex = Json.parseToJsonElement(get("/api/heads").bodyAsText()).jsonObject
+                .getValue("heads").jsonArray.single().jsonObject
+            assertNull(codex["cannotStart"], "a linked command starts, so nothing warns")
         }
     }
 

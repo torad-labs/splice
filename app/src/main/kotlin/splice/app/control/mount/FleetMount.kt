@@ -5,6 +5,8 @@ package splice.app.control.mount
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -16,11 +18,13 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.fleet.HeadRoutes
 import splice.core.GATEWAY_VERSION
+import splice.core.util.JsonScalars
 import splice.core.wire.ControlFields.HEADS
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
+import splice.sessions.http.StartCommand
 
 // why: the log lines /api/logs/{head} returns when the request names no ?tail — the recent end of the
 // file the console shows first, never the whole file.
@@ -35,7 +39,20 @@ internal class FleetMount(
     private val ports: ConsolePorts,
 ) {
     private val headRoutes = HeadRoutes(resolver, audit)
-    private val listHeads = ListHeads(HeadStatusListing(resolver::headStatuses))
+    private val starts = HeadStartCommands(heads)
+
+    /** Each head's status, and for a launchable head whose command cannot start a session the refusal as `cannotStart`,
+     *  so Continue on and a team start say it before the press rather than after it (walk p180). */
+    private val listHeads = ListHeads(
+        HeadStatusListing {
+            resolver.headStatuses().map { status ->
+                val key = JsonScalars.str(status, KEY)
+                val managed = key?.let(heads::get)?.takeIf { it.launchSpec != null }
+                val refused = managed?.let { starts.forHead(it.head.key) as? StartCommand.Refused }
+                if (refused == null) status else JsonObject(status + ("cannotStart" to JsonPrimitive(refused.reason)))
+            }
+        },
+    )
 
     /** The /api/heads body, for the daemon's own doctor (V4-230). */
     fun headsJson(): String = listHeads.json()

@@ -1,4 +1,3 @@
-  state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
 // Teams: a team is his. Members on different models, each a role on a command, with a goal; splice carries the
 // members' sessions and reports what they do. Create one and start its members; track each member's state, their
 // messages to each other, what each is doing and what it has cost.
@@ -109,6 +108,7 @@ async function read() {
   ]);
   state.error = teams.ok ? null : refusalOf(teams, "The teams could not be read");
   state.teams = teams.body?.teams || [];
+  state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
   state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
   await readLive();

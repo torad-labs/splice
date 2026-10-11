@@ -40,6 +40,7 @@ import splice.http.ingress.HeapIngress
 import splice.http.listen.AdoptedBootstrap
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 // Grace/timeout for Netty engine.stop after HeadServer's drain window.
 private const val STOP_GRACE_MS = 500L
@@ -85,6 +86,13 @@ internal class HeadEngine(
     private var boundPort: Int? = null
 
     val isRunning: Boolean get() = server != null
+
+    // Calls still INSIDE a route handler. A turn's gate slot is released while its response is still being written, so
+    // a drain that waited on the gate alone could tear the engine down between the slot and the final chunk, and
+    // Ktor's stop cancels the application's calls: the client then reads a chunked body that never ends (observed in
+    // CodeModeDrainTest under a load near 90). The drain waits for this to reach zero too.
+    private val calls = AtomicInteger()
+    val activeCalls: Int get() = calls.get()
 
     /** The port a client reaches this head on: the one the connector BOUND while running — the
      *  OS-assigned one when [HeadListen.port] is 0 — and the configured [HeadListen.port] otherwise. */
@@ -163,15 +171,25 @@ internal class HeadEngine(
         route.get("/wire") { clientAuth.guarded(call, Door.OPERATOR) { wire(call) } }
         route.post("/v1/messages") {
             val arrivalAt = admission.arrivalTime()
-            withContext(callDispatcher) {
-                clientAuth.guarded(call, Door.UPSTREAM) { admission.handleMessages(call, arrivalAt) }
+            calls.incrementAndGet()
+            try {
+                withContext(callDispatcher) {
+                    clientAuth.guarded(call, Door.UPSTREAM) { admission.handleMessages(call, arrivalAt) }
+                }
+            } finally {
+                calls.decrementAndGet()
             }
         }
         // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
         // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.
         route.post("/v1/messages/count_tokens") {
-            withContext(callDispatcher) {
-                clientAuth.guarded(call, Door.CALLER) { countTokens.handleCountTokens(call) }
+            calls.incrementAndGet()
+            try {
+                withContext(callDispatcher) {
+                    clientAuth.guarded(call, Door.CALLER) { countTokens.handleCountTokens(call) }
+                }
+            } finally {
+                calls.decrementAndGet()
             }
         }
     }

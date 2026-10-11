@@ -173,6 +173,22 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // A daemon of the same release number from before this launcher's line form answers the handshake and then
+    // cannot read the launch request. The launcher says so and how to fix it; it never sends the request.
+    name: "a daemon older than this launcher is named and the launch is not sent",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "earlier\n");
+      ctx.daemon.forget();
+      const sentBefore = ctx.daemon.launches;
+      const run = await ctx.launch(ctx.harness);
+      writeFileSync(ctx.daemonState, "new\n");
+      ctx.daemon.forget();
+      if (run.code === 0) return "the launch must stop when the daemon is older than the launcher";
+      if (!run.stderr.includes("splice restart")) return `the launch must tell the user to run splice restart, got: ${run.stderr}`;
+      return ctx.daemon.launches === sentBefore ? null : "the launch request was sent to a daemon that cannot read it";
+    },
+  },
+  {
     // Only a clean answer permits the stop: a check that cannot give a verdict (no such verb, a crash) keeps the
     // serving daemon exactly as a refusal does, and the launch says why.
     name: "a stale daemon is left running when the new jar's config check cannot answer",
@@ -949,6 +965,8 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
         );
       }
       if (state === "old") return new Response('{"ok":true,"version":"0.0.9","wantShimVersion":"shim-1"}\n');
+      // The same release number from an earlier build: it answers a version handshake but not the line form.
+      if (state === "earlier") return new Response(`{"ok":true,"version":"${gateway}","wantShimVersion":"shim-1"}\n`);
       return new Response(""); // down
     }
     if (url.pathname === "/api/daemon/shutdown") {

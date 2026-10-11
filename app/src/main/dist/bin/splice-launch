@@ -550,9 +550,27 @@ cold_start_java() {
   fi
 }
 
+# The shim generation as a number: shim-19 is 19. Empty when the text is not that shape.
+shim_number() {
+  case $1 in
+    shim-*[!0-9]* | shim-) ;;
+    shim-*) echo "${1#shim-}" ;;
+  esac
+}
+
+# A daemon of the same release number can still be an earlier build that cannot read this launcher's launch request
+# (the line form arrived with shim-19). The daemon reports the shim generation it serves; an older one than this
+# launcher is named and the launch stops, instead of sending a request the daemon would answer with an error body.
+require_daemon_current() {
+  rdc_want=$(shim_number "$(health_field wantShimVersion)")
+  rdc_mine=$(shim_number "$SPLICE_SHIM_VERSION")
+  [ -n "$rdc_want" ] && [ -n "$rdc_mine" ] && [ "$rdc_want" -lt "$rdc_mine" ] || return 0
+  fail "splice: the running daemon is an earlier build than this launcher (it serves shim-$rdc_want, this is $SPLICE_SHIM_VERSION). Restart it so it serves the installed build, then launch again:  splice restart"
+}
+
 handshake() {
   hs_running=$(health_field version)
-  [ "$hs_running" = "$SPLICE_GATEWAY_VERSION" ] && return 0
+  [ "$hs_running" = "$SPLICE_GATEWAY_VERSION" ] && { require_daemon_current; return 0; }
   warn "splice: daemon failed version handshake (expected $SPLICE_GATEWAY_VERSION, got ${hs_running:-<none>})"
   # JW-01: the answer to "why?" is in the boot log — show it instead of making the operator know to hand-run the jar.
   hs_boot=$(tail -n 15 "$BOOT_LOG" 2>/dev/null)

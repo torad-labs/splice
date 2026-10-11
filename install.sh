@@ -457,6 +457,10 @@ else
 fi
 rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
 
+if [ "$HAD_JAR" = 1 ]; then
+  echo "splice: a splice that is already running keeps the old build until it restarts; run:  splice restart"
+fi
+
 echo
 echo "splice: installed  (jar: $JAR_DST)"
 if [ -n "$PROVENANCE_DEFERRED" ]; then

@@ -13,6 +13,7 @@ import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.LastHttpContent
 import io.netty.util.ReferenceCountUtil
+import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
@@ -28,7 +29,8 @@ internal class IngressHandler(
     private val heap: HeapReservations,
     /** Read once per admitted request, not once per connection: this handler outlives a cap change. */
     private val cap: RequestByteCap,
-    private val requestLimit: Long,
+    /** Read once per admitted request too: the gate behind this guard derives it from a live knob. */
+    private val requestLimit: MaterializedByteCap,
     private val ownership: IngressOwnership,
 ) : SimpleChannelInboundHandler<HttpObject>(false) {
     override fun channelRead0(ctx: ChannelHandlerContext, msg: HttpObject) {
@@ -50,19 +52,20 @@ internal class IngressHandler(
     }
 
     private fun admit(request: HttpRequest): IngressRequest {
-        // ONE reading for this request, so the cap that sizes an unknown-length body is the same cap it is then
-        // judged against even if an operator changes the knob between the two.
+        // ONE reading of each for this request, so the cap that sizes an unknown-length body is the same cap it is
+        // then judged against even if an operator changes the knob between the two.
         val capBytes = cap().toLong()
+        val limitBytes = requestLimit()
         val bytes = bodyBytes(request, capBytes)
         val bodyWeight = HeapWeights.request(bytes)
         val weight = HeapWeights.ingress(bytes)
         val capacity = (heap.limitBytes - HeapWeights.CONNECTION_BYTES).coerceAtLeast(0L)
         return when {
             bytes > capBytes -> IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE)
-            bodyWeight > requestLimit -> IngressRequest(
+            bodyWeight > limitBytes -> IngressRequest(
                 null,
                 HttpStatus.CONTENT_TOO_LARGE,
-                "request body requires $bodyWeight bytes; materialization heap limit is $requestLimit bytes",
+                "request body requires $bodyWeight bytes; materialization heap limit is $limitBytes bytes",
             )
             weight > capacity -> IngressRequest(
                 null,

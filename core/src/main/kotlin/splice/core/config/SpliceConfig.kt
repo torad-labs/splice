@@ -64,6 +64,11 @@ public class SpliceConfig internal constructor(
      *  the reader's type lives here in core rather than beside either of them. */
     public val maxRequestBytes: Int get() = long(Knob.MAX_REQUEST_BYTES).toInt()
 
+    /** The heap bytes one request's materialized tree may spend, 0 meaning "derive from spare JVM heap". Read LIVE,
+     *  per admission, through a [MaterializationBudgetBytes]; the coercion floors a set budget at the materialized
+     *  weight of [maxRequestBytes], so moving either knob leaves the pair consistent. */
+    public val materializationHeapBytes: Long get() = long(Knob.MATERIALIZATION_HEAP_BYTES)
+
     /** Live console switch for reading Claude Code's already-written redacted transcript (V4-354). */
     public val transcriptView: Boolean get() = bool(Knob.TRANSCRIPT_VIEW)
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()

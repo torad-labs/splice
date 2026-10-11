@@ -867,15 +867,15 @@ command = "claude-splice"
 #   asking systemd for its MemoryMax; a slice with no ceiling is reported as no containment, never
 #   treated as some. Supply either host resource yourself if you use it, and change its name here
 #   only if your unit or slice is called something else.
-# maxRequestBytes = "33554432"                              # bytes; largest request body the gateway decodes (413 past this); the Messages API's own 32 MiB
-# requestReadTimeoutMs = "30000"                            # ms; how long one client request body read may take
-# materializationHeapBytes = "0"                           # heap bytes; 0 = JVM max heap minus 384 MiB resident; shared decode/translate budget (6.5 x body bytes)
+# maxRequestBytes = "33554432"                              # bytes; largest request body the gateway decodes (413 past this); the Messages API's own 32 MiB (HOT)
+# requestReadTimeoutMs = "30000"                            # ms; how long one client request body read may take (HOT)
+# materializationHeapBytes = "0"                           # heap bytes; 0 = JVM max heap minus 384 MiB resident; shared decode/translate budget (6.5 x body bytes) (HOT)
 # activityRetentionDays = "90"                              # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
 # messageEdges = "true"                                    # bool; keep SendMessage edges; false stops new writes after restart, retained days stay until delete/retention
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
 # perfArchiveRetentionDays = "90"                            # days; SUPERSEDED by historyRetentionDays, read only as its carry-over
-# historyRetentionDays = "35"                                # days, or "forever"; how far back splice keeps BOTH the hourly totals and the
+# historyRetentionDays = "35"                                # days, or "forever" (HOT); how far back splice keeps BOTH the hourly totals and the
 #                                                            #   request records. A fresh install's splice.toml carries 35. An install that
 #                                                            #   predates this key keeps the window it had (perfArchiveRetentionDays, 90):
 #                                                            #   an upgrade never shortens history on its own. 0 keeps nothing past the

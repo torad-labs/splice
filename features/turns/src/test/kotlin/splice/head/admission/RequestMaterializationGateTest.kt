@@ -135,7 +135,7 @@ class RequestMaterializationGateTest {
     @Test
     fun `sixteen full bodies stay bounded by spare heap not request count`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(heap = HeapBudget(DAEMON_HEAP))
-        assertEquals(1024 * MIB, gate.limitBytes)
+        assertEquals(1024 * MIB, gate.limitBytes())
         val bodyBytes = 32 * MIB
         assertEquals(208 * MIB, HeapWeights.request(bodyBytes))
         val release = CompletableDeferred<Unit>()
@@ -160,7 +160,7 @@ class RequestMaterializationGateTest {
             rounding.close()
         }
         assertEquals(16, entered, "queued full bodies eventually enter")
-        assertEquals(gate.limitBytes, gate.heap.available.value)
+        assertEquals(gate.limitBytes(), gate.heap.available.value)
     }
 
     @Test
@@ -301,12 +301,12 @@ class RequestMaterializationGateTest {
     @Test
     fun `a configured budget cannot exceed spare JVM heap`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(
-            heapBudgetBytes = Long.MAX_VALUE,
+            heapBudgetBytes = { Long.MAX_VALUE },
             heap = HeapBudget(DAEMON_HEAP, Long.MAX_VALUE),
         )
-        assertEquals(1024 * MIB, gate.limitBytes)
-        val bodyBytes = largestFittingBody(gate.limitBytes, DAEMON_HEAP)
-        val rounding = requireNotNull(gate.heap.reserve(gate.limitBytes - HeapWeights.request(bodyBytes)))
+        assertEquals(1024 * MIB, gate.limitBytes())
+        val bodyBytes = largestFittingBody(gate.limitBytes(), DAEMON_HEAP)
+        val rounding = requireNotNull(gate.heap.reserve(gate.limitBytes() - HeapWeights.request(bodyBytes)))
         val release = CompletableDeferred<Unit>()
         val full = async { gate.withLease(bodyBytes) { release.await() } }
         try {
@@ -319,8 +319,27 @@ class RequestMaterializationGateTest {
         }
         assertEquals("fits", gate.tryWithLease(bodyBytes) { "fits" })
         assertEquals("tiny fits", gate.tryWithLease(1) { "tiny fits" })
-        assertEquals(gate.limitBytes, gate.heap.available.value)
+        assertEquals(gate.limitBytes(), gate.heap.available.value)
     }
+
+    @Test
+    fun `a budget raised while the daemon runs admits the next body the old one refused`() =
+        runTest(UnconfinedTestDispatcher()) {
+            // The daemon passes a reader over the live config, so this test moves what an operator's PATCH moves.
+            var budget = HeapWeights.request(MIB)
+            val gate = RequestMaterializationGate(
+                heapBudgetBytes = { budget },
+                heap = HeapBudget(DAEMON_HEAP, 512 * MIB),
+            )
+            assertEquals(budget, gate.limitBytes(), "the configured budget is under the ledger, so it is the ceiling")
+            assertNull(gate.tryWithLease(2 * MIB) { "too large for the configured budget" })
+
+            budget = HeapWeights.request(2 * MIB)
+
+            assertEquals("admitted", gate.tryWithLease(2 * MIB) { "admitted" })
+            assertEquals(budget, gate.limitBytes(), "the gate's ceiling followed the knob, on the gate already built")
+            assertEquals(512 * MIB, gate.heap.available.value, "the admitted body's charge was refunded")
+        }
 
     private fun largestFittingBody(limit: Long, maximum: Long): Long {
         var lower = 0L

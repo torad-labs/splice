@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.memory.HeapBudget
+import splice.core.memory.HeapWeights
 import splice.http.ingress.HeapIngress
 import java.io.ByteArrayInputStream
 import java.net.Socket
@@ -132,6 +133,39 @@ class HeapIngressTest {
         } finally {
             server.stop(0, 1000)
             hold.close()
+        }
+    }
+
+    @Test
+    fun `a materialization budget raised while the listener runs admits the next request it refused`() = runBlocking {
+        // The OTHER live ceiling this guard reads per request: the gate's own, which the daemon derives from
+        // materializationHeapBytes. The body is well under the byte cap, so only the materialization arm can refuse
+        // it — its 413 names the weight and the limit, and the same listener carries the body once the limit moves.
+        val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 8 * 1024 * 1024)
+        val body = "x".repeat(64)
+        val weight = HeapWeights.request(body.length.toLong())
+        var limit = weight - 1
+        val server = testServer(HeapIngress(heap, { 1024 }, AdmissionErrorBody, { limit })) {
+            routing { post("/") { call.respondText(call.receiveText()) } }
+        }
+        server.start(false)
+        try {
+            val port = server.engine.resolvedConnectors().single().port
+            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/"))
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build()
+            HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build().use { client ->
+                val refused = client.send(request, HttpResponse.BodyHandlers.ofString())
+                assertEquals(413, refused.statusCode(), refused.body())
+                assertTrue(refused.body().contains("materialization heap limit is $limit bytes"), refused.body())
+
+                limit = weight
+
+                val admitted = client.send(request, HttpResponse.BodyHandlers.ofString())
+                assertEquals(200, admitted.statusCode(), admitted.body())
+                assertEquals(body, admitted.body(), "the raised budget let the same body through the same listener")
+            }
+        } finally {
+            server.stop(0, 1000)
         }
     }
 

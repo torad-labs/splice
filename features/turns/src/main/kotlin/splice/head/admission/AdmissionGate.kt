@@ -135,7 +135,7 @@ internal class AdmissionGate(
             null -> {
                 how.refused()
                 val want = materialization.requestBytes(bytes)
-                responses.respondHeapRefusal(call, want, materialization.limitBytes)
+                responses.respondHeapRefusal(call, want, materialization.limitBytes())
                 null
             }
             is Materialized.Done -> leased.value

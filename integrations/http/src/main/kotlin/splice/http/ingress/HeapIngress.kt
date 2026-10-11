@@ -13,6 +13,7 @@ import io.ktor.util.AttributeKey
 import io.netty.channel.ChannelPipeline
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
+import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
@@ -39,7 +40,10 @@ public class HeapIngress(
     /** The listener's body cap, asked for at every request: a raised cap admits the next one (RequestByteCap). */
     private val maxBodyBytes: RequestByteCap,
     private val errorBody: IngressErrorBody,
-    private val requestLimit: Long = heap.limitBytes,
+    /** The materialization gate's own ceiling, asked for at every request so a raised budget admits the next body
+     *  this guard would have refused (MaterializedByteCap). The default is the whole process ledger, for a listener
+     *  with no gate behind it. */
+    private val requestLimit: MaterializedByteCap = MaterializedByteCap { heap.limitBytes },
 ) {
     private val requests = NettyIngressRequest()
     private val stopping = AtomicBoolean()

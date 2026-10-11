@@ -706,6 +706,18 @@ read_launcher_owner() {
   return 0
 }
 
+# True when the launcher itself was installed inside this HOME (`splice install` puts it at ~/.local/share/splice): a
+# launcher its own HOME holds is owned by that HOME even before the first daemon start has minted a management key and
+# before any wrapped claude has written an owner record. A launcher outside this HOME is still unproven.
+launcher_under_home() {
+  luh_real=$(real_path "$SELF")
+  luh_dir=$(cd "$(dirname "$luh_real")" 2>/dev/null && pwd -P) || return 1
+  luh_home=$(canonical_dir "$HOME_FOR_SAME")
+  [ -n "$luh_home" ] || return 1
+  case $luh_dir in "$luh_home"/*) return 0 ;; esac
+  return 1
+}
+
 main() {
   if read_launcher_owner; then has_owner=1; else has_owner=0; fi
   if [ "$has_owner" = 1 ] && [ "$HEAD" = claude ] && ! same_home "$OWNER_HOME"; then
@@ -718,7 +730,7 @@ main() {
     present=1
     read_unit_environment && managed=1
   fi
-  if [ "$managed" = 0 ] && { [ "$has_owner" = 0 ] || ! same_home "$OWNER_HOME"; } && [ -z "$(read_key)" ]; then
+  if [ "$managed" = 0 ] && { [ "$has_owner" = 0 ] || ! same_home "$OWNER_HOME"; } && [ -z "$(read_key)" ] && ! launcher_under_home; then
     fail "splice: cannot establish this launcher's owning HOME or this HOME's splice state; no daemon was contacted"
   fi
   # The profile that owns this launcher: its recorded owner, else the unit manager's own environment.

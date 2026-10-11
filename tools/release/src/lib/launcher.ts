@@ -605,6 +605,30 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // A new user's first claudex: `splice install` put the launcher inside this HOME, no daemon has ever run (no
+    // mgmt-key) and no wrapped claude has written an owner record. The launcher's own HOME owns it, so the launch goes
+    // on to start the daemon; the refusal above is for a launcher that is NOT inside the HOME it is run under.
+    name: "a launcher installed inside the HOME starts the first launch before any key or owner record exists",
+    run: async (ctx) => {
+      const home = join(ctx.dir, "first-launch-home");
+      const installed = join(home, ".local", "share", "splice", "splice-launch");
+      mkdirSync(join(home, ".local", "share", "splice"), { recursive: true });
+      mkdirSync(join(home, ".config", "splice"), { recursive: true });
+      writeFileSync(join(home, ".config", "splice", "splice.toml"), `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      copyFileSync(ctx.shim, installed);
+      chmodSync(installed, 0o755);
+      ctx.cold();
+      const reads = ctx.daemon.healthReads;
+      const run = await ctx.launch(
+        { HOME: home, SPLICE_HEAD: "test", LAUNCHER_UNIT_PRESENT: "0", XDG_RUNTIME_DIR: join(home, "no-bus"), DBUS_SESSION_BUS_ADDRESS: undefined },
+        ["--version"],
+        installed,
+      );
+      if (run.stderr.includes("cannot establish")) return `a launcher inside its HOME must not be refused: ${run.output}`;
+      return ctx.daemon.healthReads > reads || existsSync(ctx.captures.javaArgv) ? null : `the first launch never reached for the daemon: ${run.output}`;
+    },
+  },
+  {
     name: "no user manager or owner locator still launches this HOME's existing splice state",
     run: async (ctx) => {
       // Includes the first plain-claude launch after upgrade, before reconcile backfills its locator.

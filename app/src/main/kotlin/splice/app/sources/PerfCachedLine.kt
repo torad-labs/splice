@@ -13,17 +13,22 @@ internal const val PERF_CHAR_BYTES = 2L
 // Covers the facts, row, entry, boxed scalars, linked queue node and 32-byte identity value with 64-bit references.
 internal const val PERF_RECORD_OVERHEAD_BYTES = 352L
 
+/** What a line's text shows of its model: a legacy probe row has an empty one, a work row names one. */
+internal enum class PerfModelHint { EMPTY, NAMED, UNSEEN }
+
 /** Parsed facts plus the original skip hints; window selection never changes timestamp authority. */
 internal data class PerfCachedLine(
     val row: PerfRow?,
     val numericBytes: Long,
     val leadingTs: Long?,
-    val emptyModel: Boolean,
+    val model: PerfModelHint,
     val drops: PerfDropsHint,
     val probe: Boolean,
     /** Projected descriptions are charged once in the source's bounded sharing pool. */
     val retainedTextBytes: Long? = null,
 ) {
+    val emptyModel: Boolean get() = model == PerfModelHint.EMPTY
+
     /** Upper-bound charge for object/queue overhead, primitive field storage and descriptive strings. */
     val retainedBytes: Long
         get() {

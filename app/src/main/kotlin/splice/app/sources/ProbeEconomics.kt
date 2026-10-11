@@ -12,12 +12,6 @@ import kotlin.time.Duration.Companion.hours
 
 private val PROBE_BUCKET_MS = 1.hours.inWholeMilliseconds
 
-// why: the older loop wrote a probe row every 30 s and a torn probe is the last write before its process ended, so a torn line
-// stamped later than two intervals past the newest intact probe row cannot be a probe: another intact one would have followed.
-// Known edge: a torn probe written within two minutes of a daemon start, after a stop longer than that, is skipped and
-// overstates the figure by one probe at most.
-private const val PROBE_TEAR_WINDOW_MS = 120_000L
-
 /** Why one head's legacy probe deduction cannot be made, each a fixed sentence the console shows for that head. */
 internal enum class ProbeGap(val sentence: String) {
     UNREADABLE("Hourly history is not shown because this command's request log could not be read in full."),
@@ -74,12 +68,9 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         if (refusal.stands(since)) return null
         val before = perf.files.stamp()
         val read = perf.economicsEvidence(since)
-        val lastProbe = read.probes.maxOfOrNull { it.ts }
-        // A line is cleared only when it is stamped later than the newest intact probe row can account for. One naming no
-        // time, or in a log with no intact probe row to place it against, could still be a probe and refuses.
-        val probeEraTears = read.tornAt.any {
-            it == null || lastProbe == null || it <= lastProbe + PROBE_TEAR_WINDOW_MS
-        }
+        // A torn line that shows a model is a work row, so it cannot change a deduction; one cut before its model shows could
+        // still be a legacy probe, and refuses.
+        val probeEraTears = read.probeTears > 0
         refusal.note(before, since, read.work.readError == null && probeEraTears)
         return read.takeIf { it.work.readError == null && !probeEraTears }
     }

@@ -103,9 +103,10 @@ class ProbeEconomicsTest {
         assertEquals(expected, source.rows())
     }
 
-    // A torn line cannot be a probe once the older loop's probes have stopped, so it must not hide the hours counted before it.
+    // Every legacy probe row has an empty model, so a torn line that shows a model is a work row and must not hide the hours
+    // counted before it; one cut before its model shows, or with an empty model, could be a probe and refuses.
     @Test
-    fun `a torn row later than the last probe leaves the day figure, and one within the probe era refuses it`(
+    fun `a torn row that shows a model leaves the day figure, and one that could be a probe refuses it`(
         @TempDir dir: Path,
     ) {
         val rows = listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW)
@@ -119,17 +120,18 @@ class ProbeEconomicsTest {
         }
         val control = store(dir.resolve("control"))
         recordWork(control)
-        val after = """{"ts":1791707160100,"model":"synthetic","outcome":"ok","cache_write_tokens"""
-        assertEquals(EconomicsStoreSource(control).rows(), read(after).rows())
-        val tenMinutesOn = """{"ts":4200123,"model":"synthetic","outcome":"ok","cache_write_tokens"""
-        assertEquals(EconomicsStoreSource(control).rows(), read(tenMinutesOn).rows())
-        val before = """{"ts":3600200,"model":"synthetic","outcome":"ok","cache_write_tokens"""
-        assertEquals(ProbeGap.UNREADABLE.sentence, read(before).gap())
-        // the tear a 0.3.x daemon leaves when it is stopped for the upgrade: right after its own last probe
-        val lastWrite = """{"ts":3630123,"model":"","outcome":"error:upstream-failed","req_bytes":30,"upstream_req_b"""
+        val whole = EconomicsStoreSource(control).rows()
+        for (ts in listOf(1791707160100L, 4200123L, 3600200L, 3630123L)) {
+            val shown = """{"ts":$ts,"model":"synthetic","outcome":"ok","cache_write_tokens"""
+            assertEquals(whole, read(shown).rows(), "a tear at $ts that shows its model is not a probe")
+        }
+        // the tear a 0.3.x daemon leaves when it is stopped for the upgrade: right after its own last probe, after Oct 1
+        val lastWrite = """{"ts":1791707160100,"model":"","outcome":"error:upstream-failed","req_bytes":30"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(lastWrite).gap())
-        val earlier = """{"ts":3600100,"model":"synthetic","outcome":"ok","cache_write_tokens"""
-        assertEquals(ProbeGap.UNREADABLE.sentence, read(earlier).gap())
+        val beforeModel = """{"ts":1791707160100,"mod"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(beforeModel).gap())
+        val onlyTs = """{"ts":1791707160100,"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(onlyTs).gap())
         val unstamped = """{"model":"synthetic","outcome":"ok","cache_write_tokens"""
         assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped).gap())
     }

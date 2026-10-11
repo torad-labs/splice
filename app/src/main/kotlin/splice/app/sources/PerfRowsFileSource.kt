@@ -48,9 +48,10 @@ import java.nio.file.Path
 
 private enum class PerfSelection { WORK, ECONOMICS }
 
-/** One settled scan supplies the work and probe sides of historical economics reconciliation. [tornAt] is the leading
- *  timestamp of each line the scan could not read as a row (null where the line names none). */
-internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>, val tornAt: List<Long?>)
+/** One settled scan supplies the work and probe sides of historical economics reconciliation. [probeTears] counts the
+ *  lines the scan could not read as a row that might still be a legacy liveness probe: one whose readable start does not
+ *  show a model, since every probe row carries an empty one. */
+internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>, val probeTears: Int)
 
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
@@ -77,11 +78,21 @@ public class PerfRowsFileSource internal constructor(
     /** The writer's own row shape: ts first, unquoted. Only a rejection hint, never row authority. */
     private val ownRow = Regex("""^\{"ts":(\d+)[,}]""")
 
+    /** The writer's row start with a model that is not empty: ts, model and outcome come first in every released shape,
+     *  and a legacy probe row has the empty model its body gives (v0.3.0 to v0.3.2, PerfStats.record, AnthropicRequest.model). */
+    private val namedModel = Regex("""^\{"ts":\d+,"model":"[^"]""")
+
     /** A skipped line that carries the cumulative drops counter (any JSON spacing): a candidate. */
     private val dropsField = Regex(""""${PerfKeys.ASYNC_IO_DROPS}"\s*:\s*-?\d""")
 
     // Only empty-model candidates pay for parsing before the cutoff; JSON remains the authority.
     private val emptyModel = Regex(""""model"\s*:\s*""""")
+
+    private fun modelOf(line: String): PerfModelHint = when {
+        emptyModel.containsMatchIn(line) -> PerfModelHint.EMPTY
+        namedModel.containsMatchIn(line) -> PerfModelHint.NAMED
+        else -> PerfModelHint.UNSEEN
+    }
 
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)
 
@@ -143,7 +154,7 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val scan = settledRead(sinceMs, PerfSelection.ECONOMICS)
-        return EconomicsPerfEvidence(scan.window(), scan.probes, scan.tornAt)
+        return EconomicsPerfEvidence(scan.window(), scan.probes, scan.probeTears)
     }
 
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
@@ -226,7 +237,8 @@ public class PerfRowsFileSource internal constructor(
     ) : PerfLineVisit {
         val rows = ArrayList<PerfRow>()
         val probes = ArrayList<PerfRow>()
-        val tornAt = ArrayList<Long?>()
+        var probeTears = 0
+            private set
         val errors = ArrayList<String>()
         private var skipped = 0
         private var windowSkipped = 0
@@ -282,7 +294,7 @@ public class PerfRowsFileSource internal constructor(
                     row = decoded.row,
                     numericBytes = decoded.numericBytes,
                     leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                    emptyModel = emptyModel.containsMatchIn(line),
+                    model = modelOf(line),
                     drops = PerfDropsHint(candidate = dropsField.containsMatchIn(line), count = decoded.drops),
                     probe = false,
                 )
@@ -297,7 +309,7 @@ public class PerfRowsFileSource internal constructor(
                 row = null,
                 numericBytes = 0L,
                 leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                emptyModel = emptyModel.containsMatchIn(line),
+                model = modelOf(line),
                 drops = PerfDropsHint(candidate = dropsField.containsMatchIn(line), count = obj?.let(::drops)),
                 probe = false,
             )
@@ -333,7 +345,7 @@ public class PerfRowsFileSource internal constructor(
             // Preserve the original baseline and economics proof, without giving this line a row time.
             if (!skipBefore(line)) {
                 skipped++
-                tornAt += line.leadingTs
+                if (line.model != PerfModelHint.NAMED) probeTears++
             }
         }
 

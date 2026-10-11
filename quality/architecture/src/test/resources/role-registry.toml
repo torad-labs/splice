@@ -696,3 +696,9 @@ signature = "(Boolean)->Unit"
 dated = "2026-10-10"
 names = ["ReanchorSpentHook", "WsRoundAnswer"]
 reason = """ReanchorSpentHook stamps one spent re-anchor on the turn's perf row, with a flag saying whether the re-anchor restarted the request from scratch; it is called once per continuation the loop spends and writes only a count. WsRoundAnswer reports whether the upstream accepted one websocket round, so the transport's consumers can learn the outcome without seeing a credential. Wiring an acceptance report where the re-anchor count belongs would charge a healthy round as a restart, and the inverse would hide a rejected round from the transport."""
+
+[[groups]]
+signature = "(SessionRecord)->String?"
+dated = "2026-10-11"
+names = ["MovingSessionModel", "SessionRepoNameOf"]
+reason = """MovingSessionModel reads the MODEL the session's row reported, at the one moment Continue on needs it: before the move ends that client, because afterwards the row reports the model it moved to and the mark would name its destination as its origin. SessionRepoNameOf reads the FOLDER a session's row belongs to, for the history route's rows, and is read whenever a row is written. Passing the repo name where the model belongs would write a folder into the transcript's move mark; passing the model where the repo name belongs would group a session's history under its model."""

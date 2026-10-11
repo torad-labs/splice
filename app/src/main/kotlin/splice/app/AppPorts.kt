@@ -8,10 +8,11 @@
 // process/HTTP edges; the OAuth flows' own ports moved with them to integrations/oauth (LAYOUT-01).
 //
 // WHY BY ROLE AND NEVER BY SHAPE, the cleanest example in the tree: [HaltJvm] and [Teardown] are
-// both `() -> Unit`, are adjacent parameters of the SAME function, and are exact opposites — one is
-// the orderly shutdown, the other is the guillotine that fires when the orderly shutdown overruns
-// its deadline. Transposing them was a two-token edit that compiled, and it would have made every
-// clean stop a `halt(0)`. It is now a type error.
+// `() -> Unit` and `suspend () -> Unit` (Teardown suspends), a shape apart only by that one keyword, are
+// adjacent parameters of the SAME function, and are exact opposites — one is the orderly shutdown,
+// the other is the guillotine that fires when the orderly shutdown overruns its deadline. Transposing
+// them was a two-token edit that compiled, and it would have made every clean stop a `halt(0)`. It is
+// now a type error.
 package splice.app
 
 import splice.app.control.ManagedHead

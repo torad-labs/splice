@@ -203,7 +203,8 @@ public class PerfStats(
     public val totals: SessionTotals? = null,
 ) {
     /** Each session's newest ending, noted by [record] as the row is appended (SessionEndings): how Sessions
-     *  and Teams learn a request was turned away at a limit or for want of a credential. Memory only. */
+     *  and Teams learn a request was turned away at a limit or for want of a credential. Memory, seeded at boot from
+     *  the file's tail so a restart does not turn a session at its limit into an idle one. */
     public val endings: SessionEndings = SessionEndings()
 
     private val archiveName = PerfArchiveName(file.fileName.toString())
@@ -461,5 +462,9 @@ public class PerfStats(
                     if (Files.getLastModifiedTime(entry).toMillis() < oldest) Files.deleteIfExists(entry)
                 }
         }
+    }
+
+    init {
+        endings.restore(tailRows())
     }
 }

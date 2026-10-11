@@ -5,6 +5,7 @@ package splice.app.control
 
 import splice.app.sources.PerfStatsSource
 import splice.core.perf.OutcomeTag
+import splice.core.util.WallClock
 import splice.sessions.http.SessionEnding
 import splice.sessions.http.SessionEndingOf
 import splice.sessions.http.SessionTurnCount
@@ -12,7 +13,11 @@ import splice.sessions.http.SessionTurnsOf
 import java.util.concurrent.TimeUnit
 
 /** [ports] is read at CALL time, the SessionsWiring rule. */
-internal class SessionPerfFacts(private val heads: Map<String, ManagedHead>, private val ports: ConsolePorts) {
+internal class SessionPerfFacts(
+    private val heads: Map<String, ManagedHead>,
+    private val ports: ConsolePorts,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
     /** Every head's per-session accumulator, summed, because a session that moved heads has rows on
      *  both and one head's count would read as the whole of it. The combined start is the LATEST of
      *  the heads that contributed (SessionTurnCount): the sum covers the session only where every one
@@ -35,7 +40,8 @@ internal class SessionPerfFacts(private val heads: Map<String, ManagedHead>, pri
 
     /** How the session's newest request ended, newest across every head, and only when that ending holds the session
      *  back until something changes: a plan window or every account spent (At limit), or no credential (Signed
-     *  out). A burst 429 passes on its own, so it is not one. */
+     *  out). A burst 429 passes on its own, so it is not one, and neither is a spent window whose reset has already
+     *  come: the limit it names is over, so the session reads as it is, not At limit. */
     private val holdingEndings =
         setOf(OutcomeTag.PLAN_LIMIT, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.AUTH_MISSING)
             .mapTo(HashSet()) { it.wire }
@@ -52,5 +58,6 @@ internal class SessionPerfFacts(private val heads: Map<String, ManagedHead>, pri
                 val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
                 SessionEnding(ended.outcome, account, resetMs, ended.ts)
             }
+            ?.takeIf { ending -> ending.resetMs?.let { it > clock() } != false }
     }
 }

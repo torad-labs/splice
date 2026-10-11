@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # splice-lead: install a judged sha on this machine and restart splice (repo/CLAUDE.md, steps 1-7).
-# Usage: tools/release/lead-install.sh <sha> [urgent]
+# Usage: tools/release/lead-install.sh <sha> milestone "<what shipped>"
+#        tools/release/lead-install.sh <sha> live-fix "<what is broken on the running daemon>"
 #
-# CADENCE (Eli, President, deciding for Marcos — 2026-10-10, TEMPORARY):
-#   Until a restart refuses no connection, at most ONE restart an hour.  A build that fixes
-#   something broken in the LIVE daemon installs at once: pass "urgent" as the second argument.
-#   When the zero-refusal handover is installed and seen to refuse nothing, this guard is deleted
-#   and Marcos's rule applies as written again (repo/CLAUDE.md: install every verified sha, at any
-#   time, without asking).
+#
+# WHEN (Marcos, 2026-10-10): splice is installed and restarted only at a major milestone,
+#   because every restart resets his sessions.  The one exception is a fix for something that is
+#   broken on the running daemon right now.  Without one of the two reasons the script refuses
+#   before it builds anything.  This replaces the hourly cadence and "install every verified sha".
 set -euo pipefail
-sha=$1; urgent=${2:-}; R=/home/marcos/Documents/dev/projects/mythos/repo; T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice
+sha=$1; why=${2:-}; what=${3:-}
+case "$why" in milestone|live-fix) [ -n "$what" ] || { echo "REFUSED: say what the $why is"; exit 10; } ;;
+  *) echo "REFUSED $sha: splice installs only at a major milestone or for a live fix (Marcos, 2026-10-10)"; exit 10 ;; esac
+R=/home/marcos/Documents/dev/projects/mythos/repo; T=/tmp/splice-build-$sha-lead; D=~/.local/share/splice
 M=~/.local/state/splice-lead/last-restart-epoch
 ct(){ TZ=America/Chicago date '+%-I:%M %p CT'; }
-echo "start $(ct)"
+echo "start $(ct) — $why: $what"
 cd $R
 [ -d $T ] && git worktree remove --force $T 2>/dev/null || true
 git worktree add --detach $T $sha
@@ -29,18 +32,6 @@ if [ -n "$rp" ]; then
   echo "running  $ro (pid $rp)"
   if [ "$a" = "$ro" ]; then echo "ALREADY RUNNING $sha at $(ct)"; cd $R && git worktree remove --force $T && echo "tree removed"; exit 0; fi
 fi
-# --- cadence guard (see header) ---
-if [ "$urgent" != urgent ] && [ -f $M ]; then
-  last=$(cat $M); now=$(date +%s); age=$(( now - last ))
-  if [ $age -lt 3600 ]; then
-    opens=$(TZ=America/Chicago date -d "@$(( last + 3600 ))" '+%-I:%M %p CT')
-    echo "HELD $sha — last restart was $(( age / 60 ))m ago; the window opens $opens."
-    echo "HELD: pass 'urgent' only for a fix to something broken in the live daemon."
-    cd $R && git worktree remove --force $T && echo "tree removed"
-    exit 10
-  fi
-fi
-[ "$urgent" = urgent ] && echo "URGENT: cadence guard bypassed — a fix to something broken live."
 stamp=$(TZ=America/Chicago date +%Y%m%d-%H%M)
 cp -p $D/splice.jar $D/splice.jar.bak-$stamp-pre-$sha
 cp -p $D/splice-launch $D/splice-launch.bak-$stamp-pre-$sha

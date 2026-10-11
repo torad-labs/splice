@@ -7,15 +7,25 @@ conduct rules the operator has had to repeat to sessions.
 
 Operator: "as an engineer when I code and I have a long build, I'm gonna start coding other things ... I don't keep staring at the screen." Every gradle, gate, test or push command runs in the background, never in the foreground and never in a `sleep` or poll loop. While it runs, the seat edits the next item in its queue. A lock, a peer's file or a red build is never a reason to stop: take the next item and come back when the result arrives. A seat that waits is a splice defect, not a pause.
 
-## A verified build gets installed and the daemon restarted — without asking (2026-09-16)
+## splice is installed and restarted only at a major milestone (2026-10-10)
+
+Operator: "can we please only install a new version of splice when we have a major milestone? you
+guys are resetting it too often." This replaces "install every verified build" and the hourly
+cadence. Only splice-lead installs, and only for one of two reasons: a major milestone (a v0.4.0
+spec feature finished end to end, or the zero-refusal handover going live), or a fix for something
+broken on the running daemon right now. A green sha alone is not a reason. `tools/release/lead-install.sh`
+refuses without one. No other seat installs or runs `splice restart`. When splice-lead does install,
+it still never asks and never waits, and follows the procedure below.
+
+## How an install runs, once it is due (2026-09-16)
 
 Operator, after the third ask in one session: "i told you a million times to restart ... you dont
 need my permission for everything, Im tired of babysitting all these sessions."
 
-When the branch has a new commit that passed the gate of record, install it and restart. Do not
+When an install is due (above) and its sha passed the gate of record, install it and restart. Do not
 ask. Cutting in-flight turns on the local daemon is not operator data (global rules §8): the retry
 layers exist exactly so a cut turn comes back on its own. The install is reversible because the
-backup is taken first (global rules §21). The only reasons to hold a restart are a red gate or a
+backup is taken first (global rules §21). Once an install is due, the only reasons to hold it are a red gate or a
 jar the seat did not build and verify itself.
 
 Never wait for a turn, a stop, or another seat's work (2026-09-28). Operator: "YOU CAN ALWAYS INSTALL
@@ -103,3 +113,4 @@ Marcos's standing rulings for splice, one per line.
 - No version bump and no release cut without Marcos's explicit go.
 - GitHub settings, branch protection, rulesets and required checks are Marcos's to change.
 - No detekt or ast-grep ignores, with one exception: LongParameterList skips @Serializable classes, which mirror an outside format (splice.toml, saved state, wire bodies) field by field (Marcos, 2026-10-09).
+- splice is installed and restarted only at a major milestone or for a live fix, by splice-lead alone (Marcos, 2026-10-10).

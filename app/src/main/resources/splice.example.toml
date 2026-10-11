@@ -771,8 +771,12 @@ command = "claude-splice"
 # daemon's state config.json, or at runtime through a /mgmt/config PATCH. Precedence is
 # env > TOML > default; the daemon snapshots nearly every knob at start, so a changed knob needs a
 # restart except where marked HOT. HOT means the RUNNING daemon re-reads it: a /mgmt/config PATCH or
-# an edit of the state config.json reaches it at the next use. THIS file is not re-read — its layers
-# are parsed once at start — so a knob changed HERE needs a restart whatever its marking.
+# an edit of the state config.json reaches it at the next use, and the marker says at what cadence it
+# is re-read. THIS file is not re-read — its layers are parsed once at start — so a knob changed HERE
+# needs a restart whatever its marking, which is also why a `[heads.<key>.overrides]` example below
+# carries no marker even for a HOT knob. The marker is not a habit: KnobLivenessDocumentedLawTest
+# pairs every knob here against its restartRequired flag in Knob.kt and fails on either mismatch, so
+# what you read below is what /api/config will answer.
 # `[daemon]` spells these with underscores (`show_reasoning`);
 # everywhere else a key is spelled as the name shown below. Both name the same knob. Defaults sit
 # beside each key; nothing below is live (the whole block is commented), so copying this file keeps
@@ -787,8 +791,9 @@ command = "claude-splice"
 # foldMaxTier = "6"                                         # n; the deepest truncation tier that still folds
 # toolSurface = "auto"                                      # "auto" lets splice arm tool_search per backend
 # quotaPoll = "auto"                                        # "off" stops every plan-usage poller
-# quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage
-# maxQueued = "512"                                         # requests; admission queue cap, 0 = unlimited (HOT)
+# quotaPollIntervalMs = "300000"                            # ms; how often a subscription head re-polls usage (HOT, per wait)
+# maxInflight = "0"                                         # requests; concurrent turns per head, 0 = unlimited (HOT, per admission)
+# maxQueued = "512"                                         # requests; admission queue cap, 0 = unlimited (HOT, per admission)
 # transcriptView = "true"                                  # HOT, global: read Claude Code's already-written
 #                                                           #     redacted conversation. The console switch sets
 #                                                           #     this false live; full request/response tracing
@@ -817,10 +822,10 @@ command = "claude-splice"
 #                                                           #     PER HEAD ONLY, like wireTap.
 # traceRetentionDays = "7"                                  # days; whole day files older than this are deleted
 # traceMaxBodyChars = "16777216"                            # chars; a longer body is cut and the record says so
-# retryBackoffBaseMs = "200"                                # ms; the generic retry curve's base, doubled each attempt
-# retryBackoffCapMs = "10000"                               # ms; the generic retry curve's ceiling
-# retryBackoffJitterPct = "10"                              # percent; the generic retry curve's plus-or-minus jitter
-# firstByteTimeoutMs = "90000"                              # ms; (through WatchdogBudget) the watchdog's
+# retryBackoffBaseMs = "200"                                # ms; the generic retry curve's base, doubled each attempt (HOT, per retry)
+# retryBackoffCapMs = "10000"                               # ms; the generic retry curve's ceiling (HOT, per retry)
+# retryBackoffJitterPct = "10"                              # percent; the generic retry curve's plus-or-minus jitter (HOT, per retry)
+# firstByteTimeoutMs = "90000"                              # ms; (HOT, per turn; through WatchdogBudget) the watchdog's
 #                                                           #     FIRST-OUTPUT tier: silence before the first frame
 #                                                           #     past this is a PROBE, like streamIdleMs below.
 #                                                           #     Not a socket timeout: a read waits up to
@@ -838,7 +843,7 @@ command = "claude-splice"
 #                                                           #     (2026-09-01) at 180s; it was safe then because a
 #                                                           #     breach was fatal. It no longer is. A head that
 #                                                           #     genuinely needs the long wait names 300000 here.
-# stallReanchorMs = "20000"                                 # ms; mid-output silence (content already delivered)
+# stallReanchorMs = "20000"                                 # ms; (HOT, per turn) mid-output silence (content already delivered)
 #                                                           #     before splice CANCELS the round and re-anchors it
 #                                                           #     itself (re-POST from the salvage). Only arm it for a
 #                                                           #     head whose upstream is MEASURED to continue from an
@@ -853,13 +858,13 @@ command = "claude-splice"
 # grokModel = "grok-4.6"                                    # the grok model id the head pins
 # xaiApiBase = "https://api.x.ai/v1"                        # base URL of the xAI backend
 # grokAuthPath = "~/.grok/auth.json"                        # where the grok OAuth credential file lives
-# usageWarnPct = "80"                                       # percent; plan-window usage that triggers the warning
-# usageWarnTokens5h = "0"                                   # tokens; absolute 5h threshold, 0 disables the warning
-# statuslineGitRoots = ""                                   # extra git roots the status line inspects
-# mcpIdleTimeoutMs = "1800000"                              # ms; a hosted MCP server with no open stream is closed after this
-# mcpMaxServers = "32"                                      # count; most MCP server processes hosted at once (daemon-wide)
-# mcpRequestTimeoutMs = "1800000"                           # ms; how long one forwarded MCP request may wait for the child
-# mcpInitializeTimeoutMs = "60000"                          # ms; the child initialize handshake budget
+# usageWarnPct = "80"                                       # percent; plan-window usage that triggers the warning (HOT, per ask)
+# usageWarnTokens5h = "0"                                   # tokens; absolute 5h threshold, 0 disables the warning (HOT, per ask)
+# statuslineGitRoots = ""                                   # extra git roots the status line inspects (HOT, per ask)
+# mcpIdleTimeoutMs = "1800000"                              # ms; a hosted MCP server with no open stream is closed after this (HOT, per sweep)
+# mcpMaxServers = "32"                                      # count; most MCP server processes hosted at once, daemon-wide (HOT, per spawn)
+# mcpRequestTimeoutMs = "1800000"                           # ms; how long one forwarded MCP request may wait for the child (HOT, per request)
+# mcpInitializeTimeoutMs = "60000"                          # ms; the child initialize handshake budget (HOT, per handshake)
 # mcpSlice = "app-mcp.slice"                                # the systemd slice hosted MCP servers are spawned into
 # supervisorUnit = "splice.service"                         # the systemd user unit that restarts this daemon
 #
@@ -876,7 +881,7 @@ command = "claude-splice"
 # activityRetentionDays = "90"                              # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
 # messageEdges = "true"                                    # bool; keep SendMessage edges; false stops new writes after restart, retained days stay until delete/retention
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
-# budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
+# budgetDefaultAction = "warn"                               # "warn" or "block" (HOT, per ask); PUT /api/budgets fills a bare row
 # perfArchiveRetentionDays = "90"                            # days; SUPERSEDED by historyRetentionDays, read only as its carry-over
 # historyRetentionDays = "35"                                # days, or "forever" (HOT); how far back splice keeps BOTH the hourly totals and the
 #                                                            #   request records. A fresh install's splice.toml carries 35. An install that

@@ -44,8 +44,12 @@ internal object KnobKeysDocumented {
     private val ENTRY_HEAD = Regex("^\\s*([A-Z][A-Z0-9_]*)\\s*\\(", RegexOption.DOT_MATCHES_ALL)
     private val KIND_MENTION = Regex("\\bKnobKind\\.")
     private val STRING_LITERAL = Regex("^\\s*\"([^\"]*)\"\\s*$")
+    private val RESTART_TRUE = Regex("\\brestartRequired\\s*=\\s*true\\b")
 
-    data class KnobKey(val entry: String, val key: String)
+    /** [restartRequired] is the entry's own flag, read off its argument list so the liveness twin
+     *  (KnobLivenessDocumentedLawTest) shares this parser's denominator and its guards instead of
+     *  running a second one that could disagree with it. */
+    data class KnobKey(val entry: String, val key: String, val restartRequired: Boolean = false)
 
     /** The enum's entry-list text (a Kotlin enum's entries end at the first top-level `;`; members
      *  follow), or the problem that stops the parse. */
@@ -80,8 +84,13 @@ internal object KnobKeysDocumented {
                     "(${KotlinText.pyRepr(first.trim())}) — the key cannot be read from the source"
             else -> null
         }
-        return literal?.let { KnobKey(entry, it.groupValues[1]) } to problem
+        return literal?.let { KnobKey(entry, it.groupValues[1], restartFlag(raw, args)) } to problem
     }
+
+    /** Whether this entry's argument list sets the restart flag; its own function so reading the flag does not
+     *  add a branch to [entryKey], which is already at the complexity the rules allow. */
+    private fun restartFlag(raw: String, args: KotlinText.Span?): Boolean =
+        args != null && RESTART_TRUE.containsMatchIn(raw.substring(args.bodyStart, args.closerAt))
 
     /** (keys, problems): problems only on a parse that cannot be trusted. */
     fun parseKnobs(source: String, label: String): Pair<List<KnobKey>, List<String>> {

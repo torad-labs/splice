@@ -14,6 +14,8 @@ private val PROBE_BUCKET_MS = 1.hours.inWholeMilliseconds
 
 // why: the older loop wrote a probe row every 30 s and a torn probe is the last write before its process ended, so a torn line
 // stamped later than two intervals past the newest intact probe row cannot be a probe: another intact one would have followed.
+// Known edge: a torn probe written within two minutes of a daemon start, after a stop longer than that, is skipped and
+// overstates the figure by one probe at most.
 private const val PROBE_TEAR_WINDOW_MS = 120_000L
 
 /** Why one head's legacy probe deduction cannot be made, each a fixed sentence the console shows for that head. */

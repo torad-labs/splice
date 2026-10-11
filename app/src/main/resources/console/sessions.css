@@ -178,7 +178,7 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .joint > * { position: relative; }
 .joint .model { background: var(--obj); padding: .3rem .55rem; border-radius: .3rem; }
 /* the move's time under its line, where a message's time sits, with what didn't come along beside it (hitstop f38853e) */
-.jwrap { display: flex; flex-direction: column; align-items: center; gap: .45rem; }
+.log > .jwrap { display: flex; flex-direction: column; align-items: center; gap: .45rem; align-self: stretch; max-width: none; }  /* the divider crosses the whole conversation */
 .jwrap > .joint { align-self: stretch; }
 .jat { margin: 0; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 .jat time { font: inherit; }

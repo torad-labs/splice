@@ -404,6 +404,7 @@ dated = "2026-09-17"
 names = [
     "CredentialAccountNames",
     "EnvReader",
+    "HeadOfSession",
     "HistoryWindowStore",
     "QuotaHeaderRead",
     "SessionAddress",
@@ -442,7 +443,13 @@ This one PERSISTS the history window a person chose on Settings > Your data, and
 deletes records at the moment they were shown. Serving it with any reader in this group would \
 report a save that never happened and then delete on it, which is the exact error this law exists \
 to catch: one shape, opposite directions, and a person told their setting was applied when their \
-config file never changed."""
+config file never changed. \
+HeadOfSession (Oct 11, 2026) is a FIFTH source: a session id to the splice head whose port that \
+session's requests arrived on, answered from the daemon's own record of the turns it served. Its miss \
+is ordinary and means "this daemon has seen no request of that session yet", where the session then \
+keeps the route its registration gave it. Its answer is a head KEY, a name this daemon owns, and it \
+is never a config value, a header or an address. Served by SessionAddress it would hand a SendMessage \
+caller a head name, and served by EnvReader a head name would stand where a path or a URL is expected."""
 
 # ── 3 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]

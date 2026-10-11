@@ -144,7 +144,7 @@ const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
 const ALWAYS = `<span class="fixed quiet">Always saved</span>`; // a store whose daemon has no off switch
 const YOURS = `<span class="yours">Your prompts</span>`;
 // What Off costs, under the switch. Every row that has the line always draws it, quieter while On, in the room the row keeps, so a flip moves no row below (p179; Marlin reversed show-only-while-Off, Oct 11). Each line is true On or Off and wraps at a dot, never inside a part (fin).
-const costHtml = (off, isOff) => (off ? `<p class="offcost${isOff ? "" : " quiet"}">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
+const costHtml = (off, isOff) => (off ? `<p class="offcost${isOff ? " now" : ""}">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
 const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "" }) =>
   `<div class="drow${cls}${lit(hay)}"><div class="dname"><span class="nm">${hl(name)}${yours ? YOURS : ""}</span>${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</div>`
   + `<div class="amt">${amount}</div><div class="keep">${keep}</div><div class="dsw">${sw}</div><div class="ddel">${del}</div>${costHtml(off, offShown)}${more}</div>`;

@@ -213,7 +213,7 @@ button.count:hover { color: var(--text); }
 #st .kn .ctl.col { gap: 1rem; }
 #st .sub h3 { margin-bottom: 1.7rem; }
 #st .pane .body { gap: 3.2rem; }
-#st .drow { padding: 1.65rem 0; }
+#st .drow { padding-block: 1.65rem; }
 #st .drow.dhead { padding: 0 0 1rem; }
 #st .srv { padding: 1.5rem 0; }
 /* ---------- whose limit it was: the provider's line and splice's own, side by side, each card headed by whose it is.
@@ -369,6 +369,6 @@ button.count:hover { color: var(--text); }
 .dmore .cs .said.limit { color: var(--bad, #e0584a); }
 .dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
 .drow .offcost { grid-column: 4 / -1; margin: .6rem 0 0; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
-.drow .offcost.quiet { color: color-mix(in oklab, var(--text-mute) 62%, transparent); }  /* the same words while On: still there, quieter */
+.drow .offcost.now { color: var(--text-body); }  /* the switch is Off: the cost is in force, brighter than the dimmed row name (hitstop 98d8d07) */
 .drow .offcost .whole { white-space: nowrap; }
 .drow.once .keep { flex-wrap: nowrap; white-space: nowrap; }  /* "Applied" sits beside the value, not under it */

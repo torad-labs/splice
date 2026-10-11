@@ -267,6 +267,9 @@ function headLogin() {
 }
 if (args[0] === "login" && HEAD !== "claude") headLogin();
 
+/** How many more times a launch is tried after the daemon answers 529, waiting 0.2 s, 0.4 s, 0.8 s and on to 2 s between tries. */
+const LAUNCH_BUSY_TRIES = 8;
+
 /** One HTTP exchange against the control plane: the body on ANY status (curl without -f), "" on a
  *  connection failure or after [timeoutMs] (curl -m). */
 function request(method, url, timeoutMs, headers, body) {
@@ -553,10 +556,20 @@ async function launch() {
     args,
     inheritedConfigDir: env.CLAUDE_CONFIG_DIR,
   });
-  const answer = await request("POST", `${CONTROL}/launch/${HEAD}`, 0x7fffffff, {
+  // The body's length rides in Content-Length. Without it Node sends the body chunked, and the daemon's heap
+  // ingress charges a chunked body of unknown size at its full cap, so a few launches at once exhaust it and
+  // the rest are refused with 529. A 529 is still answered with a bounded wait and another try: the refusal
+  // means the gateway was busy at that instant, not that this launch is wrong.
+  const headers = {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
-  }, body);
+    "Content-Length": String(Buffer.byteLength(body)),
+  };
+  let answer = await request("POST", `${CONTROL}/launch/${HEAD}`, 0x7fffffff, headers, body);
+  for (let attempt = 1; attempt <= LAUNCH_BUSY_TRIES && answer !== null && answer.status === 529; attempt += 1) {
+    await new Promise((resume) => setTimeout(resume, Math.min(2000, 200 * 2 ** (attempt - 1)) + Math.random() * 100));
+    answer = await request("POST", `${CONTROL}/launch/${HEAD}`, 0x7fffffff, headers, body);
+  }
   const raw = answer === null ? "" : answer.body;
   let recipe;
   try {

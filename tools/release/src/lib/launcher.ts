@@ -38,6 +38,8 @@ interface Exchange {
   readonly url: string;
   readonly body: string;
   readonly authorization: string;
+  /** the Content-Length header as received, "" when the body arrived chunked */
+  readonly contentLength: string;
 }
 
 interface Daemon {
@@ -49,9 +51,20 @@ interface Daemon {
   topologyStale: boolean;
   injectEnvKey: boolean;
   pwnedFile: string;
+  /** what the ingress stand-in holds charged right now */
+  charged: number;
   healthReads: number;
   lastLaunch?: Exchange;
   lastShutdown?: Exchange;
+  /** launches the daemon will answer 529 before it answers one */
+  refuseLaunches: number;
+  /** the heap-ingress stand-in: a body with a length costs 1, a chunked body costs 4, and what is over the budget is
+   *  answered 529. 0 turns it off. */
+  ingressBudget: number;
+  /** the 529s answered, whichever way they were decided */
+  refused: number;
+  /** launch requests received, refused or not */
+  launches: number;
   /** Drop what the last arm recorded. A method, not an assignment: an arm that cleared a field by
    *  hand would have the compiler narrow it to `undefined` and the assertion after it to `never`. */
   forget(): void;
@@ -657,6 +670,41 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // A body with no Content-Length is sent chunked, and the daemon's ingress charges a chunked body at its
+    // whole cap: six launches at once were five 529s on a 2 GB daemon (console-lead, Oct 11). The stand-in
+    // below charges a body with a length 1 and a chunked one 4 against a budget of 6, so six concurrent launches
+    // fit only when every one states its length.
+    name: "concurrent launches all reach the daemon without being refused",
+    run: async (ctx) => {
+      ctx.daemon.forget();
+      ctx.daemon.ingressBudget = 6;
+      const runs = await Promise.all([0, 1, 2, 3, 4, 5].map(() => ctx.launch(ctx.harness)));
+      const refused = ctx.daemon.refused;
+      const received = ctx.daemon.launches;
+      ctx.daemon.forget();
+      const failed = runs.filter((run) => run.code !== 0);
+      if (failed.length > 0) return `${failed.length} of 6 concurrent launches failed: ${failed[0]?.output ?? ""}`;
+      if (refused !== 0 || received !== 6) {
+        return `six concurrent launches must be six requests and no 529, got ${received} requests and ${refused} refused`;
+      }
+      return null;
+    },
+  },
+  {
+    name: "a launch refused 529 is tried again and then succeeds",
+    run: async (ctx) => {
+      ctx.daemon.forget();
+      ctx.daemon.refuseLaunches = 2;
+      const run = await ctx.launch(ctx.harness);
+      const received = ctx.daemon.launches;
+      const length = ctx.daemon.lastLaunch?.contentLength;
+      ctx.daemon.forget();
+      if (run.code !== 0) return `a busy daemon must not fail the launch: ${run.output}`;
+      if (received !== 3) return `two 529s must be two more tries, got ${received} launch requests`;
+      return length === undefined || length === "" ? "the retried launch must still carry its Content-Length" : null;
+    },
+  },
+  {
     // v0.4.0 review: the CLI asks System.console() whether a person is at a terminal, and on JDK 22-24
     // it answers yes into a pipe unless java runs with -Djdk.console=java.base, and a verb that prints to
     // a terminal only then prints into an agent's transcript. Both paths that run the CLI must carry it.
@@ -832,12 +880,31 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
       return new Response(""); // down
     }
     if (url.pathname === "/api/daemon/shutdown") {
-      daemon.lastShutdown = { url: request.url, body: await request.text(), authorization };
+      daemon.lastShutdown = { url: request.url, body: await request.text(), authorization, contentLength: "" };
       writeFileSync(statePath, "down\n");
       return new Response('{"ok":true}\n');
     }
     if (url.pathname.startsWith("/launch/")) {
-      daemon.lastLaunch = { url: request.url, body: await request.text(), authorization };
+      daemon.launches += 1;
+      const contentLength = request.headers.get("content-length") ?? "";
+      const busy = (): Response => {
+        daemon.refused += 1;
+        return new Response('{"type":"error","error":{"type":"overloaded_error","message":"gateway busy; retry"}}', { status: 529 });
+      };
+      if (daemon.refuseLaunches > 0) {
+        daemon.refuseLaunches -= 1;
+        return busy();
+      }
+      const cost = contentLength === "" ? 4 : 1;
+      if (daemon.ingressBudget > 0) {
+        if (daemon.charged + cost > daemon.ingressBudget) return busy();
+        daemon.charged += cost;
+      }
+      daemon.lastLaunch = { url: request.url, body: await request.text(), authorization, contentLength };
+      if (daemon.ingressBudget > 0) {
+        await Bun.sleep(150);
+        daemon.charged -= cost;
+      }
       const env = daemon.injectEnvKey ? `{"X$(touch ${daemon.pwnedFile})":"v"}` : "{}";
       return new Response(`{"env":${env},"unset":[],"argv":["true"]}\n`);
     }
@@ -853,12 +920,21 @@ function startDaemon(statePath: string, gateway: string, shimVersion: string, pw
     toml: ports[0] as number,
     state: ports[1] as number,
     topologyStale: false,
+    refuseLaunches: 0,
+    ingressBudget: 0,
+    refused: 0,
+    launches: 0,
+    charged: 0,
     injectEnvKey: false,
     pwnedFile,
     healthReads: 0,
     forget() {
       daemon.lastLaunch = undefined;
       daemon.lastShutdown = undefined;
+      daemon.refuseLaunches = 0;
+      daemon.ingressBudget = 0;
+      daemon.refused = 0;
+      daemon.launches = 0;
     },
     stop() {
       for (const server of servers) server.stop(true);

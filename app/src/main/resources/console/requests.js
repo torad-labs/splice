@@ -111,6 +111,15 @@ const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h"
 // priced at the model's card, with kit's zero and floor (dollars): exactly 0 is "$0", under a hundredth of a cent "<$0.0001"
 const money = (usd) => (usd === 0 || usd < 0.0001 ? dollars(usd) : `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
+/** The first read: enough rows per command to draw the newest screens at once (ui.n starts at 200). */
+const FIRST_HELD = 200;
+const PENDING_RETRY_MS = 2000;
+/** A newer read supersedes an older one still answering, so a slow first read never overwrites a filter he changed. */
+let readGen = 0;
+/** Draws the next rows when Show more scrolls into view; render re-aims it at the button it drew. */
+const scrolledMore = new IntersectionObserver((seen) => {
+  if (seen.some((e) => e.isIntersecting)) { ui.n += 200; render(); }
+}, { rootMargin: "600px 0px" });
 const MAX_HELD = 2000; // the most rows one read of a head can carry (PerfRoutes.kt MAX_TURNS); asking for more is clamped
 const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the rest are reached from Sessions
 const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.kt)
@@ -202,9 +211,9 @@ const refusalOf = (res, subject) => (res.status === 0 ? `${subject}: splice is n
 
 /** One head's window: the rows the filters asked for, and the window's own menus from an unfiltered read. */
 // WHY_ASKS (what a door's "what happened" asks the daemon for) lives in kit.js, where Settings counts the same requests.
-function turnsPath(head, filtered, win = ui.win) {
+function turnsPath(head, filtered, win = ui.win, held = MAX_HELD) {
   // local=0 on both reads, so the menus count the same requests the list does
-  const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(MAX_HELD) : "1", local: "0" });
+  const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(held) : "1", local: "0" });
   if (filtered) {
     if (ui.outcome === "fail") p.set("outcome", "failed");
     if (ui.outcome === "stopped") p.set("outcome", "stopped");
@@ -234,15 +243,19 @@ function askedHeads() {
   return state.heads.filter((h) => (!ui.cmd || h.command === ui.cmd) && (!picked || h.key === picked));
 }
 
-async function readRows() {
+/** Each command's newest requests, at most [held] of them. The read answers at once with what splice has ready: a
+ *  command whose saved requests splice is still reading after a restart is named so, and asked again shortly, rather
+ *  than holding every other command's rows back (splice-lead, Marcos's live console: 28 to 45 s to settle). */
+async function readRows(held = MAX_HELD) {
   const heads = askedHeads();
-  const reads = await Promise.all(heads.flatMap((h) => [API.get(turnsPath(h, true)), API.get(turnsPath(h, false))]));
-  const rows = [], errors = [], facets = { models: new Map(), accounts: new Map(), sessions: new Map() };
+  const reads = await Promise.all(heads.flatMap((h) => [API.getReady(turnsPath(h, true, ui.win, held)), API.getReady(turnsPath(h, false))]));
+  const rows = [], errors = [], pending = [], facets = { models: new Map(), accounts: new Map(), sessions: new Map() };
   let matched = 0, capped = false;
   heads.forEach((head, i) => {
     const [filtered, window] = [reads[i * 2], reads[i * 2 + 1]];
     const answer = (filtered.body?.heads || []).find((x) => x.key === head.key);
     if (!filtered.ok || !answer) { errors.push(refusalOf(filtered, `${head.command}\u2019s requests could not be read`)); return; }
+    if (answer.read_pending) { pending.push(head.command); return; }
     if (answer.error) { errors.push(`${head.command}: ${answer.error}`); return; }
     if (answer.read_error) errors.push(`${head.command}: ${answer.read_error}`);
     matched += answer.count ?? 0;
@@ -256,7 +269,9 @@ async function readRows() {
   state.rows = rows;
   state.matched = matched;
   state.capped = capped;
+  state.held = held;
   state.headErrors = errors;
+  state.pending = pending;
   state.facets = { models: [...facets.models], accounts: [...facets.accounts], sessions: [...facets.sessions] };
 }
 
@@ -487,7 +502,7 @@ const markIn = (t) => RV.markIn(t);
 function heldFoot() {
   if (!state.capped) return "";
   const n = state.matched;
-  return `<p class="foot held">The newest ${n0(MAX_HELD)} of each command. ${n0(n)} request${n === 1 ? "" : "s"} in ${WINDOWS[ui.win][0].toLowerCase()}.</p>`;
+  return `<p class="foot held">The newest ${n0(state.held ?? MAX_HELD)} of each command. ${n0(n)} request${n === 1 ? "" : "s"} in ${WINDOWS[ui.win][0].toLowerCase()}.</p>`;
 }
 // A SEARCH THAT READ EVERYTHING KEPT HAS NO FOOTER: its results are whole (fin, Oct 10). One that stopped early says the
 // oldest record it actually read, which can never be later than a hit above it. fin's "Search further" waits on the
@@ -504,7 +519,9 @@ function searchFoot() {
 function listHtml() {
   const rows = filtered().slice().sort((a, b) => +b.ts - +a.ts);
   const errs = state.headErrors.concat(state.search?.errors || [], state.sessionsError ? [state.sessionsError] : []);
-  const trouble = errs.length ? `<div class="list-err">${errs.map((e) => `<p>${esc(e)}</p>`).join("")}</div>` : "";
+  // a command splice is still reading is not trouble: a quiet line, gone once its rows join (asked again shortly)
+  const wait = (state.pending || []).map((cmd) => `<p class="list-wait">Still reading ${esc(cmd)}\u2019s saved requests</p>`).join("");
+  const trouble = wait + (errs.length ? `<div class="list-err">${errs.map((e) => `<p>${esc(e)}</p>`).join("")}</div>` : "");
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${searchFoot()}</div>`;
@@ -694,6 +711,11 @@ function render({ keep = true } = {}) {
   root.className = `requests${pane ? " open" : ""}`;
   document.getElementById("filters").innerHTML = state.loading ? "" : filtersHtml();
   root.innerHTML = listHtml() + pane;
+  // the rest of the day draws as he scrolls: the next rows join when Show more comes into view, and the button stays
+  // for a keyboard or a reader that never scrolls (Marlin, Oct 11)
+  scrolledMore.disconnect();
+  const more = root.querySelector('.more [data-act="more"]');
+  if (more) scrolledMore.observe(more);
   const nsc = root.querySelector(".rqpane .scroll");
   if (nsc) nsc.scrollTop = top;
   const m = document.querySelector(".fmenu");
@@ -715,13 +737,23 @@ async function reload({ standing = false } = {}) {
   state.loading = standing;
   if (standing) render();
   if (standing) await readStanding();
-  await Promise.all([readRows(), readSearch()]);
+  const gen = ++readGen;
+  // the newest requests first, drawn as soon as they answer; the rest of the window follows behind them
+  await Promise.all([readRows(FIRST_HELD), readSearch()]);
+  if (gen !== readGen) return;
   await readWider();
   state.loading = false;
   autoOpen();
   render({ keep: false });
   const r = ui.open && find(ui.open);
   if (r) readTrace(r);
+  if (state.capped) {
+    await readRows();
+    if (gen !== readGen) return;
+    render();
+  }
+  // a command still being read is asked again shortly, so its rows join the list without a press
+  if (state.pending?.length) setTimeout(() => { if (gen === readGen) reload(); }, PENDING_RETRY_MS);
 }
 
 // a search is sent to the daemon, so the page waits for him to stop typing rather than asking on every letter

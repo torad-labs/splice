@@ -23,7 +23,6 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
 import splice.core.topology.ProviderConfig
-import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
@@ -98,7 +97,7 @@ internal class ModelRosters(
     private suspend fun modelsFor(key: String, provider: ProviderConfig): List<DiscoveredModel> {
         val answer = withTimeoutOrNull(deadline) {
             runInterruptible(ProcessDispatchers().io()) { ask(key, provider) }
-        } ?: Discovery.Unavailable(UpstreamRosterUrl.of(provider), "no answer within $deadline")
+        } ?: Discovery.Unavailable(provider.rosterUrl, "no answer within $deadline")
         return when (answer) {
             is Discovery.Found -> answer.models.also {
                 keep(key, answer)

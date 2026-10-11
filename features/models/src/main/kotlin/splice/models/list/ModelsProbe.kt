@@ -15,7 +15,6 @@ package splice.models.list
 import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
-import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
@@ -42,7 +41,7 @@ internal class ModelsProbe(
 ) {
 
     fun probe(key: String, provider: ProviderConfig, env: EnvReader): ProbedProvider {
-        val url = UpstreamRosterUrl.of(provider)
+        val url = provider.rosterUrl
         if (provider.auth.kind == AuthKind.Client.wire) {
             val why = "this provider forwards your own Claude login, so splice holds no credential to ask $url with"
             return unpublished(key, provider, url, why)

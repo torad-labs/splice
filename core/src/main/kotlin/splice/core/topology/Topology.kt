@@ -141,7 +141,7 @@ public data class ProviderConfig(
      *  openai-chat dialect. Absent = auto: an openai-chat provider on a loopback base_url is local. */
     val local: Boolean? = null,
     /** 2026-09-22: where this provider publishes its model list, when that is not where its dialect
-     *  says ([UpstreamRosterUrl]). Read by the daemon at start, to discover the models its heads
+     *  says ([rosterUrl]). Read by the daemon at start, to discover the models its heads
      *  offer, and by `splice models` — never by a turn. It exists so the one vendor whose list sits
      *  off its own base_url (DeepSeek serves `/models` at the API root while splice dials its
      *  `/anthropic` base) needs no entry in a per-vendor table: a hardcoded vendor table is precisely
@@ -157,6 +157,22 @@ public data class ProviderConfig(
 
     /** Whose machine runs this provider, as the operator wrote it under [discovery] (`family = "vast"`), else null. */
     public val family: String? get() = discovery.family
+
+    /** Where this provider publishes its model list: [modelsUrl] when one is set, else its dialect's own place.
+     *  One derivation for `splice models`, the roster cache and `splice add`. The Codex backend (`chatgpt-oauth`)
+     *  lists with a client_version query, because it answers HTTP 400 without one and filters rows by it; splice is
+     *  the client and claims every model the account may use ([CODEX_LIST_CLIENT_VERSION]). */
+    public val rosterUrl: String
+        get() {
+            modelsUrl?.takeIf { it.isNotBlank() }?.let { return it }
+            val base = baseUrl.trimEnd('/')
+            return when {
+                dialect == Dialect.ANTHROPIC_PASSTHROUGH -> "$base/v1/models"
+                dialect == Dialect.OPENAI_RESPONSES && auth.kind == AuthKind.ChatgptOAuth.wire ->
+                    "$base/models?client_version=$CODEX_LIST_CLIENT_VERSION"
+                else -> "$base/models"
+            }
+        }
 
     /**
      * [extraHeaders] with TOML key quoting removed — THE accessor every consumer must use.
@@ -429,3 +445,8 @@ internal val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")
  *  dotted form [DaemonConfig.controlPort]'s own TOML key, so the report points at where to look
  *  and cannot be confused with a head key. */
 private const val CONTROL_PLANE_OWNER: String = "daemon.controlPort"
+
+/** The version the Codex model list is asked as. The version is a claim about the CLIENT; measured 2026-09-22 against
+ *  chatgpt.com/backend-api/codex: no version is HTTP 400, `0.1.0` an empty list, `0.200.0` and above all nine models.
+ *  Pinning a codex-rs release instead would hide each new model until someone bumped it. */
+public const val CODEX_LIST_CLIENT_VERSION: String = "999.0.0"

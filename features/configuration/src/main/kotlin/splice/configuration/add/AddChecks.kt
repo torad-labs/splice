@@ -19,7 +19,6 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -136,7 +135,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
     fun listedModels(provider: ProviderConfig, key: String, env: EnvReader): ListedModels {
         if (provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH) return ListedModels.NoCredential
         val blocking = provider.dialect == Dialect.OPENAI_CHAT
-        val url = UpstreamRosterUrl.of(provider)
+        val url = provider.rosterUrl
         val reply = http("GET", url, credentials.bearer(provider, key, env), null)
         return when {
             reply == null -> ListedModels.Unreadable("nothing answers at $url", blocking)

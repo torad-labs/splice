@@ -12,10 +12,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.ModelEntry
 import splice.core.model.ModelTierSuffix
+import splice.core.topology.AuthConfig
 import splice.core.topology.AuthKind
+import splice.core.topology.CODEX_LIST_CLIENT_VERSION
 import splice.core.topology.Dialect
 import splice.core.topology.ModelDiscoveryConfig
-import splice.core.topology.UpstreamRosterUrl
+import splice.core.topology.ProviderConfig
 
 /** The Codex backend's base, named once: two cases assert against it and a wrapped call would put
  *  the same literal on two lines apiece. */
@@ -25,6 +27,9 @@ class UpstreamRosterTest {
 
     private val parser = UpstreamRosterParser()
     private val diff = RosterDiff()
+
+    private fun listUrl(dialect: Dialect, base: String, override: String?, authKind: String = "") =
+        ProviderConfig(dialect, base, AuthConfig(kind = authKind), modelsUrl = override).rosterUrl
 
     private fun published(body: String): List<UpstreamModel> {
         val roster = parser.parse(body, "https://example.test/v1/models")
@@ -43,21 +48,21 @@ class UpstreamRosterTest {
     fun `each dialect names where it publishes, and an override outranks every default`() {
         assertEquals(
             "https://api.x.ai/v1/models",
-            UpstreamRosterUrl.of(Dialect.OPENAI_CHAT, "https://api.x.ai/v1", null),
+            listUrl(Dialect.OPENAI_CHAT, "https://api.x.ai/v1", null),
         )
         assertEquals(
             "https://api.kimi.com/coding/v1/models",
-            UpstreamRosterUrl.of(Dialect.ANTHROPIC_PASSTHROUGH, "https://api.kimi.com/coding", null),
+            listUrl(Dialect.ANTHROPIC_PASSTHROUGH, "https://api.kimi.com/coding", null),
         )
         // A trailing slash on base_url must not produce a doubled one.
         assertEquals(
             "https://api.x.ai/v1/models",
-            UpstreamRosterUrl.of(Dialect.OPENAI_CHAT, "https://api.x.ai/v1/", null),
+            listUrl(Dialect.OPENAI_CHAT, "https://api.x.ai/v1/", null),
         )
         // DeepSeek: the list is off the dialect's path, so the override is the whole point.
         assertEquals(
             "https://api.deepseek.com/models",
-            UpstreamRosterUrl.of(
+            listUrl(
                 Dialect.ANTHROPIC_PASSTHROUGH,
                 "https://api.deepseek.com/anthropic",
                 "https://api.deepseek.com/models",
@@ -70,16 +75,16 @@ class UpstreamRosterTest {
     @Test
     fun `the codex backend lists with a client version, and an api-key responses provider without`() {
         assertEquals(
-            "$CODEX_BASE/models?client_version=${UpstreamRosterUrl.CODEX_LIST_CLIENT_VERSION}",
-            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, null, AuthKind.ChatgptOAuth.wire),
+            "$CODEX_BASE/models?client_version=${CODEX_LIST_CLIENT_VERSION}",
+            listUrl(Dialect.OPENAI_RESPONSES, CODEX_BASE, null, AuthKind.ChatgptOAuth.wire),
         )
         assertEquals(
             "https://api.openai.com/v1/models",
-            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, "https://api.openai.com/v1", null, "api-key"),
+            listUrl(Dialect.OPENAI_RESPONSES, "https://api.openai.com/v1", null, "api-key"),
         )
         assertEquals(
             "$CODEX_BASE/models?client_version=1.2.0",
-            UpstreamRosterUrl.of(
+            listUrl(
                 Dialect.OPENAI_RESPONSES,
                 CODEX_BASE,
                 "$CODEX_BASE/models?client_version=1.2.0",
@@ -88,8 +93,8 @@ class UpstreamRosterTest {
         )
         // A blank override is not an answer — it must fall through to the dialect's own URL.
         assertEquals(
-            "$CODEX_BASE/models?client_version=${UpstreamRosterUrl.CODEX_LIST_CLIENT_VERSION}",
-            UpstreamRosterUrl.of(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  ", AuthKind.ChatgptOAuth.wire),
+            "$CODEX_BASE/models?client_version=${CODEX_LIST_CLIENT_VERSION}",
+            listUrl(Dialect.OPENAI_RESPONSES, CODEX_BASE, "  ", AuthKind.ChatgptOAuth.wire),
         )
     }
 

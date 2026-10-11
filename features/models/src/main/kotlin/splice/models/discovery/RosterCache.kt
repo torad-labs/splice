@@ -15,7 +15,6 @@ import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelRates
 import splice.core.topology.ProviderConfig
-import splice.core.topology.UpstreamRosterUrl
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -37,7 +36,7 @@ public class RosterCache(
     /** What [headKey]'s endpoint last published for the URL [provider] is asked at now, or which of
      *  the three reasons there is none — each has a different fix, so the caller's line names it. */
     public fun read(headKey: String, provider: ProviderConfig): KeptRoster {
-        val url = UpstreamRosterUrl.of(provider)
+        val url = provider.rosterUrl
         val file = statePaths.modelRosterFile(headKey)
         if (!Files.isRegularFile(file)) return KeptRoster.None
         return Cancellables.runCatchingCancellable { decode(file) }.fold(

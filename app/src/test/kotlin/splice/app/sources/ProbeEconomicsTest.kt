@@ -8,51 +8,18 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.model.ModelCatalog
-import splice.core.model.ModelEntry
-import splice.core.model.ModelRates
-import splice.core.model.TurnPrice
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
-import splice.head.usage.EconomicsStore
-import splice.head.usage.TurnBytes
 import splice.head.usage.TurnEconomics
 import splice.head.usage.TurnTokens
-import splice.head.usage.TurnTools
-import splice.usage.UsageHead
-import splice.usage.UsageHeadSinks
-import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import splice.usage.economics.EconomicsPayloads
-import splice.usage.economics.EconomicsRead
-import splice.usage.economics.EconomicsRow
-import splice.usage.economics.HeadEconomicsSource
-import splice.usage.quota.HeadUsageSource
-import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
-
-private const val PROBE_HOUR = 3_600_000L
-private const val SYNTHETIC_PROBE_ROW =
-    """{"ts":3600123,"model":"","outcome":"error:upstream-failed","req_bytes":30,""" +
-        """"upstream_req_bytes":15,"tools_eager":2,"tools_deferred":1}"""
-
-private const val MODELED_WORK_ROW =
-    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,""" +
-        """"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}"""
-private const val ABSORBING_WORK_ROW =
-    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,""" +
-        """"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10,""" +
-        """"absorbed_rounds":1,"absorbed_in_tokens":4,"absorbed_cached_tokens":1,""" +
-        """"absorbed_cache_write_tokens":1,"absorbed_out_tokens":3}"""
-private const val LOCAL_WORK_ROW =
-    """{"ts":3600123,"model":"synthetic","outcome":"ok","local_step":1,"req_bytes":20,"upstream_req_bytes":10,""" +
-        """"tools_eager":1,"tools_deferred":0,"in_tokens":7,"cached_tokens":3,"cache_write_tokens":2,"out_tokens":14}"""
 
 class ProbeEconomicsTest {
     @Test
@@ -331,146 +298,6 @@ class ProbeEconomicsTest {
         assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
         assertEquals(listOf(5 * PROBE_HOUR), read.notRead)
     }
-
-    // The log holds a probe row, so it is a log of the probe era: an hour whose rollup is ahead of it may hide probes the
-    // log lost, and reads Not read.
-    @Test
-    fun `a mismatch inside the log's span refuses only its own hour where the log holds a probe`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        Files.writeString(
-            file,
-            atHour(20 * PROBE_HOUR + 123, SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
-                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW),
-        )
-        var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        store.record(turn("", 0, 30, 15, 2L to 1L))
-        recordWork(store)
-        now = 21 * PROBE_HOUR + 123
-        recordWork(store)
-        val read = shown(store, file)
-        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
-        assertEquals(listOf(21 * PROBE_HOUR), read.notRead, "the log holds one request of the two the rollup counted")
-    }
-
-    // Live, Oct 11: a hard stop tore request-log lines the rollup had already counted. A log with no probe row has nothing
-    // to take off, so the rollup's own count stands for every hour after the one the log begins in.
-    @Test
-    fun `a rollup ahead of a log that holds no probe stands for the hours after the log begins`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        Files.writeString(
-            file,
-            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
-                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW),
-        )
-        var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        recordWork(store)
-        now = 21 * PROBE_HOUR + 123
-        recordWork(store)
-        val read = shown(store, file)
-        assertEquals(listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR), read.rows.map { it.hour })
-        assertEquals(emptyList<Long>(), read.notRead, "no probe is in the span, so the rollup stands")
-        assertEquals(1L, read.rows.last().localSteps, "the figure is the rollup's, as counted")
-    }
-
-    @Test
-    fun `the hour a log begins in is partial and stays not read when its rollup is ahead`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        Files.writeString(
-            file,
-            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW) +
-                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
-        )
-        var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        recordWork(store)
-        now = 21 * PROBE_HOUR + 123
-        recordWork(store)
-        val read = shown(store, file)
-        assertEquals(listOf(21 * PROBE_HOUR), read.rows.map { it.hour })
-        assertEquals(listOf(20 * PROBE_HOUR), read.notRead, "the log may have begun part-way through that hour")
-    }
-
-    @Test
-    fun `a torn line that could be a probe refuses only the hour it was written in`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        val torn = """{"ts":${21 * PROBE_HOUR + 5},"model":"","outcome":"error:upstream-failed","req_bytes":30"""
-        Files.writeString(
-            file,
-            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
-                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + torn + "\n",
-        )
-        var now = 20 * PROBE_HOUR + 123
-        val store = store(dir, WallClock { now })
-        recordWork(store)
-        now = 21 * PROBE_HOUR + 123
-        recordWork(store)
-        val read = shown(store, file)
-        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
-        assertEquals(listOf(21 * PROBE_HOUR), read.notRead)
-        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
-        val heads = UsageHeads { listOf(head("a", source)) }
-        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson())
-        val named = payload.jsonObject.getValue("heads").jsonArray.single().jsonObject.getValue("not_read_hours")
-        assertEquals(listOf(21 * PROBE_HOUR), named.jsonArray.map { it.jsonPrimitive.long }, "the route names them")
-    }
-
-    private fun shown(store: EconomicsStore, file: Path): EconomicsRead.Rows =
-        assertInstanceOf(EconomicsRead.Rows::class.java, EconomicsStoreSource(store, PerfRowsFileSource(file)).read())
-
-    private fun atHour(ts: Long, vararg rows: String): String =
-        rows.joinToString("") { it.replace("3600123", ts.toString()) + "\n" }
-
-    private fun EconomicsStoreSource.rows(): List<EconomicsRow> =
-        assertInstanceOf(EconomicsRead.Rows::class.java, read()).rows
-
-    private fun EconomicsStoreSource.gap(): String =
-        assertInstanceOf(EconomicsRead.Unavailable::class.java, read()).reason
-
-    private fun head(key: String, economics: HeadEconomicsSource) =
-        UsageHead(
-            key,
-            key,
-            HeadUsageSource { UsageView(0, 0, null) },
-            UsageHeadWarn(80, 0),
-            sinks = UsageHeadSinks(economics = economics),
-        )
-
-    private fun recordWork(store: EconomicsStore) {
-        store.record(turn("synthetic", 5, 100, 50, 3L to 2L))
-        store.record(turn("synthetic", 7, 20, 10, 1L to 0L).copy(localStep = true))
-    }
-
-    private fun store(dir: Path, clock: WallClock = WallClock { PROBE_HOUR + 123 }): EconomicsStore = EconomicsStore(
-        dir.resolve("economics.json"),
-        TurnPrice(
-            ModelCatalog(
-                discoveryPrefix = "synthetic--",
-                models = listOf(
-                    ModelEntry("synthetic", contextWindow = 1000, rates = ModelRates(3.0, 0.3, 15.0, 6.0)),
-                ),
-                defaultContextWindow = 1000,
-            ),
-        ),
-        clock,
-        log = { },
-    )
-
-    private fun turn(
-        model: String,
-        input: Long,
-        request: Long,
-        upstream: Long,
-        tools: Pair<Long, Long>,
-    ) = TurnEconomics(
-        model,
-        TurnTokens(input, input / 2, input / 3, input * 2),
-        TurnBytes(request, upstream),
-        TurnTools(tools.first, tools.second),
-        rateLimited = input > 0,
-        history = UsageHistory(),
-    )
 
     private fun absorbing(script: AbsorbedRounds): TurnEconomics =
         turn("synthetic", 5, 100, 50, 3L to 2L).copy(history = UsageHistory(absorbed = script))

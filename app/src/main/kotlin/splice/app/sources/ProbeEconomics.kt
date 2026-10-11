@@ -35,7 +35,7 @@ internal sealed class ProbeDeduction {
 /** Each hour is judged on its own evidence. An hour the request log covers whole, with no torn line in it, whose rollup
  *  agrees with that log, shows its figure with the legacy probes taken off. Any other hour is not read: lost, torn or
  *  mismatched evidence makes that hour unavailable, never falsely clean. The one exception is an hour after the log's
- *  first where the span holds no probe row at all: there is nothing to take off, so the rollup's count stands. A line that
+ *  first and after the newest probe the log holds: there is nothing to take off, so the rollup's count stands. A line that
  *  cannot be placed in an hour makes every hour unavailable. New probes cannot dispatch, so a settled hour stays judged
  *  while the log is only appended to and the rollup for that hour is as it was. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
@@ -121,17 +121,20 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         fun settled(hour: Long): Boolean =
             hour in torn || hour in probes || newest != null && hour + SETTLED_AFTER_MS <= newest
 
-        // Where the span read holds no probe row and no line that could be one, no probe was dispatched in it: the log's only
-        // work here is to subtract probes from the rollup, and there are none to subtract. So an hour after the one the log
-        // begins in is the rollup's own count even when the rollup is ahead of the log, as it is when a hard stop tore log
-        // lines the rollup had already counted (live, Oct 11: claudex and claude-splice at 3 AM CT). The hour the log begins
-        // in is partial, and an older one is not in the log at all, so neither is vouched for.
-        private val noProbeInSpan = probes.isEmpty() && read.probeTears.isEmpty()
+        // Probes were dispatched only until they were retired, and none is written now. An hour more than one past the newest probe row or
+        // probe-like torn line the log holds, and after the one the log begins in, has no probe to take off: the log's only
+        // work there is to subtract probes from the rollup, so the rollup's own count stands even when it is ahead of the log,
+        // as it is when a hard stop tore log lines the rollup had already counted (live, Oct 11: claudex and claude-splice at
+        // 3 AM CT; claude-splice archives hold probes on Oct 1, which held every later hour). A probe on the edge of an hour is
+        // counted in the next one by the rollup, so that next hour is kept out too. The hour the log begins in is
+        // partial, an older one is not in the log at all, and an hour at or before a probe may hide one, so none is vouched for.
+        private val newestProbe = (probes.keys + torn).maxOrNull()
         private val beginsIn = read.work.oldestHeldTs?.let { it / PROBE_BUCKET_MS * PROBE_BUCKET_MS }
 
         fun gap(bucket: EconomicsBucket): ProbeGap? {
             if (bucket.hour in torn) return ProbeGap.UNREADABLE
-            val noProbeToTake = noProbeInSpan && beginsIn != null && bucket.hour > beginsIn
+            val afterLogBegins = beginsIn != null && bucket.hour > beginsIn
+            val noProbeToTake = afterLogBegins && (newestProbe == null || bucket.hour > newestProbe + PROBE_BUCKET_MS)
             return grade(bucket, all[bucket.hour], probes[bucket.hour], noProbeToTake)
         }
     }

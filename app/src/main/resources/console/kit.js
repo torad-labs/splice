@@ -304,9 +304,12 @@ const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s)
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
   if (gaveUp(s)) {
-    const n = s.stall.n, count = n ? `<span class="detail retried">${n} ${n === 1 ? "retry" : "retries"}</span>` : "";
-    const since = s.stall.since != null ? `<span class="detail retried">since ${backWord(new Date(s.stall.since))}</span>` : "";
-    return { cls: gaveUpNeeds(s) ? "needs" : "stalled", lamp: ICON.retries, word: s.stall.word, detail: count + since };
+    // ONE INK PER PHASE (fin; hitstop, Oct 11): the word and both details take the limit's ink while it is Stalled, and
+    // the key's ink once it is Needs you. The plain detail class is the limit's; "retried" is the key's.
+    const needs = gaveUpNeeds(s), ink = needs ? "detail retried" : "detail";
+    const n = s.stall.n, count = n ? `<span class="${ink}">${n} ${n === 1 ? "retry" : "retries"}</span>` : "";
+    const since = s.stall.since != null ? `<span class="${ink}">since ${backWord(new Date(s.stall.since))}</span>` : "";
+    return { cls: needs ? "needs" : "stalled", lamp: ICON.retries, word: s.stall.word, detail: count + since };
   }
   if (resuming(s)) return { cls: "working", lamp: ICON.trace, word: "Working",
     paneDetail: `<span class="detail resumes" data-resume="${s.id}">${ICON.watch(Math.floor(s.stall.resumeMs / 1000))}<span>Resumes in ${counter(s.stall.resumeMs)}</span></span>` };

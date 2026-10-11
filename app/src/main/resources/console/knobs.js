@@ -219,6 +219,8 @@ const KNOBS = (() => {
       delete st.said[id];
       return { bad: true, reason: refused };
     }
+    // the daemon said what it applied: the row reads that now, not the value the page last fetched
+    st.cfg = { ...st.cfg, layers: { ...st.cfg?.layers, runtime: { ...st.cfg?.layers?.runtime, [key]: body.applied[key] } } };
     delete st.bad[id];
     const restart = (body.restart_required ?? []).includes(key) || needsRestart(key);
     if (!restart) st.said[id] = "Applied";

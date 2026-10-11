@@ -354,3 +354,6 @@ button.count:hover { color: var(--text); }
 .hbar.reading .hdays::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: linear-gradient(90deg, transparent, var(--track-line), transparent); animation: reading 1.8s ease-in-out infinite; }
 @keyframes reading { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .hbar.reading .hdays::after { animation: none; width: 100%; opacity: .4; } }
+
+/* the setting that answers a figure sits apart from its card */
+#st .tally > .fix { margin-top: 1.8rem; }

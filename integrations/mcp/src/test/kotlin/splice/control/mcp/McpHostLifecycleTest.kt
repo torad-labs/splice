@@ -37,6 +37,34 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
+    fun `a request budget raised while the host runs carries the next request it had refused`(@TempDir dir: Path) =
+        runBlocking {
+            // mcpRequestTimeoutMs is live, so this is the half that used to need a restart: the SAME host gives up on
+            // a held child at 300 ms, the budget is raised with nothing rebuilt, and the next held call is answered.
+            boot(requestTimeout = 300.milliseconds)
+            val session = init()
+            val first = dir.resolve("held-under-the-old-budget")
+            val refused = async(Dispatchers.IO) { call(session, 21, "hold", first.toString()) }
+            awaitFile(first)
+            assertTrue(
+                refused.await().toString().contains("did not answer in time"),
+                "300 ms is the budget, so the forwarded request must give up and say so",
+            )
+            host.post("fake", session, FakeMcpServer.RELEASE)
+
+            requestBudget = 1.minutes
+
+            val second = dir.resolve("held-under-the-new-budget")
+            val carried = async(Dispatchers.IO) { call(session, 22, "hold", second.toString()) }
+            awaitFile(second)
+            host.post("fake", session, FakeMcpServer.RELEASE)
+            assertTrue(
+                text(carried.await()).contains("echo="),
+                "the raised budget let the same host wait out the same child",
+            )
+        }
+
+    @Test
     fun `a streamless active operation survives idle sweep and refuses capacity eviction`(@TempDir dir: Path) =
         runBlocking {
             boot(maxServers = 1)

@@ -108,7 +108,8 @@ internal class HostedServer(
         // withTimeoutOrNull, not withTimeout+catch: an OUTER cancellation (the client went away, a
         // caller's own deadline) is a TimeoutCancellationException too and must propagate, never be
         // read as "the child did not answer" (review 4 regression, 2026-09-13).
-        return withTimeoutOrNull(config.requestTimeout) { slot.answer.await() } ?: run {
+        // ONE reading for this request: the budget it waits under is the budget it was admitted under.
+        return withTimeoutOrNull(config.requestTimeout()) { slot.answer.await() } ?: run {
             pending.remove(hostId)
             codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' did not answer in time")
         }

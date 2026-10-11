@@ -52,6 +52,7 @@ import splice.configuration.topology.TopologyStale
 import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
+import splice.control.mcp.McpRequestBudget
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.Knob
 import splice.core.config.TurnKey
@@ -405,14 +406,19 @@ internal class ControlPlane(
     /** V4-110: the shared MCP host's four lifecycle values, read from the knob layer (daemon-global).
      *  Absent knobs keep their declared defaults — the map is always seeded by the merge, so each
      *  read is a normalized Long. The McpHostConfig defaults are the same numbers, kept in one place
-     *  (the Knob enum) rather than restated here. */
+     *  (the Knob enum) rather than restated here. The request budget alone is a READER, asked at every
+     *  forwarded request, which is why it is the one of the four an operator can move without a
+     *  restart. The other three each have a use site of their own — the idle sweep, spawn admission,
+     *  a child's initialize — but read the number fixed here, so making one live is the same move. */
     private fun mcpHostConfig(): McpHostConfig {
         val m = config.getConfig().asMap()
         fun ms(knob: Knob): Long = (m[knob.key] as? Long) ?: (knob.count())
         return McpHostConfig(
             idleTimeout = ms(Knob.MCP_IDLE_TIMEOUT_MS).milliseconds,
             maxServers = ms(Knob.MCP_MAX_SERVERS).toInt(),
-            requestTimeout = ms(Knob.MCP_REQUEST_TIMEOUT_MS).milliseconds,
+            // The one of these four read at EVERY forwarded request, off the config as it stands then: a budget raised
+            // while a child is slow governs the next request instead of the next restart (McpRequestBudget).
+            requestTimeout = McpRequestBudget { msNow(Knob.MCP_REQUEST_TIMEOUT_MS).milliseconds },
             initializeTimeout = ms(Knob.MCP_INITIALIZE_TIMEOUT_MS).milliseconds,
             // V4-176: the slice is a NAME, not a duration, and a blank one would spawn every hosted
             // child into a `--slice=` systemd rejects. An empty knob therefore falls back to the
@@ -420,4 +426,8 @@ internal class ControlPlane(
             slice = (m[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() } ?: APP_MCP_SLICE,
         )
     }
+
+    /** One knob's milliseconds off the config AS IT STANDS NOW, with the same absent-key fallback [mcpHostConfig]'s
+     *  own reader has. The difference is the whole point: `ms` reads the map the host was built from, this re-reads. */
+    private fun msNow(knob: Knob): Long = (config.getConfig().asMap()[knob.key] as? Long) ?: knob.count()
 }

@@ -770,7 +770,10 @@ command = "claude-splice"
 # A knob is settable in `[defaults]` (every head), in `[heads.<key>.overrides]` (that head), in the
 # daemon's state config.json, or at runtime through a /mgmt/config PATCH. Precedence is
 # env > TOML > default; the daemon snapshots nearly every knob at start, so a changed knob needs a
-# restart except where marked HOT. `[daemon]` spells these with underscores (`show_reasoning`);
+# restart except where marked HOT. HOT means the RUNNING daemon re-reads it: a /mgmt/config PATCH or
+# an edit of the state config.json reaches it at the next use. THIS file is not re-read — its layers
+# are parsed once at start — so a knob changed HERE needs a restart whatever its marking.
+# `[daemon]` spells these with underscores (`show_reasoning`);
 # everywhere else a key is spelled as the name shown below. Both name the same knob. Defaults sit
 # beside each key; nothing below is live (the whole block is commented), so copying this file keeps
 # today's behaviour.

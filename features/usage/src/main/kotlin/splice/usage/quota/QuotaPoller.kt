@@ -54,8 +54,12 @@ public class QuotaPoller(
     private var lastSnapshot: QuotaSnapshot? = null
     private var lastProbeAtMs: Long? = null
     private var lastAnswered = true
-    private val floorMs = minOf(cadence.intervalMs, QUOTA_PROBE_FLOOR_MS)
-    private var reuseMs = floorMs
+    private var reuseMs = floorMs()
+
+    /** The shortest gap this poller allows between two reads of the endpoint: the poll cadence, or the probe floor
+     *  when the cadence is the longer of the two. Asked for rather than captured at construction, so a cadence an
+     *  operator changes governs the gap the next attempt sets (QuotaIntervalMs). */
+    private fun floorMs(): Long = minOf(cadence.intervalMs(), QUOTA_PROBE_FLOOR_MS)
 
     /** Refresh without a turn. Concurrent opens share the active read, and reuse never changes observation time. */
     public suspend fun probeNow(): QuotaSnapshot? {
@@ -168,7 +172,7 @@ public class QuotaPoller(
         lastProbeAtMs = clocks.mark()
         val refused = result.exceptionOrNull() is QuotaEndpointRefused
         lastAnswered = result.isSuccess || refused
-        reuseMs = if (refused) maxOf(cadence.intervalMs, floorMs) else floorMs
+        reuseMs = if (refused) maxOf(cadence.intervalMs(), floorMs()) else floorMs()
         completedAttempts++
         return lastAnswered
     }

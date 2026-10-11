@@ -87,7 +87,12 @@ abstract class McpHostFixture {
         }
     }
 
+    /** The host's per-request budget, which [boot] sets and a test may MOVE while the host runs, the way an
+     *  operator's PATCH of mcpRequestTimeoutMs does: the host asks for it at every forwarded request. */
+    protected var requestBudget: Duration = 20.seconds
+
     protected fun boot(maxServers: Int = 32, requestTimeout: Duration = 20.seconds): McpHost {
+        requestBudget = requestTimeout
         val global = buildJsonObject {
             put("fake", FakeMcpServer.entry())
             put("alias", FakeMcpServer.entry())
@@ -102,7 +107,7 @@ abstract class McpHostFixture {
             McpHostConfig(
                 idleTimeout = 30.minutes,
                 maxServers = maxServers,
-                requestTimeout = requestTimeout,
+                requestTimeout = { requestBudget },
                 clock = clock,
             ),
             log = LogSink { line ->

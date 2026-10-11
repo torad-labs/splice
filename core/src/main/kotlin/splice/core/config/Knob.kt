@@ -18,10 +18,21 @@ package splice.core.config
 // materializationHeapBytes (MaterializationBudgetBytes, per admission, which the gate caps into the
 // MaterializedByteCap that same guard asks), historyRetentionDays (RetentionDays, per read),
 // firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
-// through WriteBoundMs). Away from the turn: transcriptView (SessionTranscriptViewEnabled, per console route)
-// and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Recount these by reading
-// the reader lambdas over getConfig() in :app, never off this line. Make a knob live-read and it joins this
-// line and loses its restartRequired flag, in that same commit.
+// through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
+// sleep and deadline check). Away from the turn: quotaPollIntervalMs (QuotaIntervalMs, per wait between two looks at
+// an account's usage endpoint), mcpRequestTimeoutMs (McpRequestBudget, per forwarded request, and the only one of
+// the four MCP host knobs that is live), transcriptView (SessionTranscriptViewEnabled, per console route)
+// and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Two more are live
+// WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
+// lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
+// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is eighteen, which is every knob
+// here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
+// agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
+// than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
+// line and loses its restartRequired flag, in that same commit. A [headOnly] knob can never join it: its one
+// layer is [heads.KEY.overrides], which ConfigService holds from boot, where the state config.json and env are
+// re-read at every getConfig(). Which is also why a live knob reaches a running daemon through a PATCH or that
+// state file, and never through an edit of splice.toml.
 public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
@@ -187,7 +198,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_QUOTA_POLL_INTERVAL_MS"),
         typedDefault = KnobDefault.Count(300_000L),
-        restartRequired = true,
     ),
 
     // Per-head admission (each head is a different backend/account). Bounded by default since the
@@ -224,21 +234,18 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_RETRY_BACKOFF_BASE_MS"),
         typedDefault = KnobDefault.Count(200L),
-        restartRequired = true,
     ),
     RETRY_BACKOFF_CAP_MS(
         "retryBackoffCapMs",
         KnobKind.NUMBER,
         listOf("SPLICE_RETRY_BACKOFF_CAP_MS"),
         typedDefault = KnobDefault.Count(10_000L),
-        restartRequired = true,
     ),
     RETRY_BACKOFF_JITTER_PCT(
         "retryBackoffJitterPct",
         KnobKind.NUMBER,
         listOf("SPLICE_RETRY_BACKOFF_JITTER_PCT"),
         typedDefault = KnobDefault.Count(10L),
-        restartRequired = true,
     ),
     UPSTREAM_TIMEOUT_MS(
         "upstreamTimeoutMs",
@@ -395,7 +402,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_MCP_REQUEST_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(1_800_000L),
-        restartRequired = true,
     ),
     MCP_INITIALIZE_TIMEOUT_MS(
         "mcpInitializeTimeoutMs",

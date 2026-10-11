@@ -61,7 +61,7 @@ class QuotaPollerTest {
             probe = FailsTwiceThenRecoversProbe(calls),
             sink = QuotaSnapshotSink { },
             log = logs::add,
-            cadence = QuotaCadence(intervalMs = 1_000),
+            cadence = QuotaCadence(intervalMs = { 1_000 }),
             clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
@@ -93,7 +93,7 @@ class QuotaPollerTest {
             sink = QuotaSnapshotSink { },
             log = logs::add,
             cadence = QuotaCadence(
-                intervalMs = 1_000,
+                intervalMs = { 1_000 },
                 ticker = Ticker { intervalMs ->
                     // SUSPENDS first, like ProcessTicker: a fake that returned true without delaying
                     // would spin the loop against virtual time and hang runTest rather than exercising
@@ -134,7 +134,7 @@ class QuotaPollerTest {
             probe = probe,
             sink = QuotaSnapshotSink(recorded::add),
             log = logs::add,
-            cadence = QuotaCadence(intervalMs = 1_000),
+            cadence = QuotaCadence(intervalMs = { 1_000 }),
             clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
@@ -162,7 +162,7 @@ class QuotaPollerTest {
             probe = RefusedTwiceThenAnswersProbe(calls),
             sink = QuotaSnapshotSink(recorded::add),
             log = { },
-            cadence = QuotaCadence(intervalMs = QUOTA_POLL_INTERVAL_MS),
+            cadence = QuotaCadence(intervalMs = { QUOTA_POLL_INTERVAL_MS }),
             clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
@@ -196,7 +196,7 @@ class QuotaPollerTest {
             probe = AlwaysRefusedProbe(calls),
             sink = QuotaSnapshotSink { },
             log = { },
-            cadence = QuotaCadence(intervalMs = QUOTA_POLL_INTERVAL_MS),
+            cadence = QuotaCadence(intervalMs = { QUOTA_POLL_INTERVAL_MS }),
             clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()

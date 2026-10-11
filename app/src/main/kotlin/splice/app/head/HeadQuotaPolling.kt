@@ -10,10 +10,10 @@ import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
-import splice.core.config.Knob
 import splice.head.usage.QuotaTracker
 import splice.provider.muse.MuseAuthProvider
 import splice.usage.quota.ClientUserAgent
+import splice.usage.quota.QuotaIntervalMs
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbes
 import splice.usage.quota.UsageFields
@@ -85,8 +85,9 @@ internal class HeadQuotaPolling(
         native: ClaudeNativeQuota? = null,
     ): QuotaPoller? {
         if (ctx.cfg.quotaPollOff) return null
-        // V4-110: the merged cadence knob is always seeded and already floored by ConfigCoercion.
-        val intervalMs = ctx.cfg.asMap()[Knob.QUOTA_POLL_INTERVAL_MS.key] as Long
+        // Read at every wait, off this head's own config as it stands then: an operator who slows a provider's
+        // polling is obeyed by the next wait rather than the next restart. ConfigCoercion floors it at 30 s.
+        val intervalMs = QuotaIntervalMs { ctx.cfg.current().quotaPollIntervalMs }
         val usageFields = (auth as? MuseAuthProvider)?.let { muse -> UsageFields { muse.usageFields() } }
         val probe = native?.probe(probes, ctx.providerCfg.auth.kind, ctx.providerCfg.baseUrl, clientUserAgent)
             ?: probes.forHead(

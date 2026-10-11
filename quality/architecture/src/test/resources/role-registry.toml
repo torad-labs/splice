@@ -1,8 +1,14 @@
 # checks/config/role-registry.toml — the DISPOSITIONS for checks/role-registry.ts (V4-89,
 # ARCH-AUDIT 2026-09-17, audit B row 5).
 #
-# ONE ROLE, ONE INTERFACE. 200 `fun interface` declarations in main sources normalise to 132
-# single-abstract-method signatures, and 26 of those signatures are carried by two or more NAMES.
+# ONE ROLE, ONE INTERFACE. Several hundred `fun interface` declarations in main sources normalise to
+# far fewer single-abstract-method signatures, and dozens of those signatures are carried by two or
+# more NAMES. The exact three numbers are NOT written here, deliberately: this header claimed "200
+# declarations over 132 signatures, 26 shared" from the Sept 17 audit and was never recounted, and by
+# Oct 10 the tree held 458 declarations — a census in prose goes stale silently, which is the failure
+# this whole file exists to prevent. The live count is RoleRegistryLawTest's own, printed with every
+# group when the law fails, and kept honest by its second test, which recounts the denominator through
+# Konsist's AST and fails when the two disagree. Read it from a run, never from a line here.
 # Sharing a shape is not a defect — kt-no-lambda-seam.yml's header is explicit that collapsing
 # distinct roles into a shared `BooleanSupplier` would be STRICTLY WORSE than the lambdas it
 # replaced, and its canonical example lives in this file: ClientGone (the client hung up — abandon
@@ -181,7 +187,7 @@ fix session for a splice.toml boot refuses and answers whether every finding was
 restart` read the file again and go on to stop and start a daemon, so wired where a probe is wanted it would \
 restart on a read, and a probe wired here would restart on a file still broken."""
 
-# ── 10 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
+# ── 11 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]
 signature = "()->Long"
 dated = "2026-09-17"
@@ -191,13 +197,16 @@ names = [
     "HostClock",
     "MaterializationBudgetBytes",
     "MaterializedByteCap",
+    "QuotaIntervalMs",
     "RemainingTurnWait",
     "RequestReadBudgetMs",
     "WallClock",
     "WriteBoundMs",
     "WsPathPulse",
 ]
-reason = """Three different KINDS of long, none interchangeable, plus a count. WallClock reads UNIX \
+reason = """Five KINDS of long, none interchangeable: three clocks, an age, a count, the budget left of a \
+deadline already running, and the ceilings and cadence an operator configures (the last group arrived through \
+the live-read work of Oct 10 and is why this entry grew). WallClock reads UNIX \
 epoch milliseconds — a real point in calendar time, persisted as a perf row's `ts`, minted into \
 MgmtKey.mintedAtMs, and compared against a token's `exp` and a file mtime this process did not \
 author. ElapsedClock reads a MONOTONIC timebase whose origin is arbitrary and per-process: a \
@@ -229,6 +238,13 @@ each request so a PATCH of firstByteTimeoutMs bounds the next one. It is not Req
 a CLIENT's body read on the way in — this bounds splice's own write on the way out — and it is not \
 RemainingTurnWait, which is what is left of a turn deadline already running: wiring that here would cut every \
 write by the remainder of one turn, and wiring this one there would restart the turn's deadline at every write. \
+QuotaIntervalMs (Oct 10) is the one CADENCE among them: how long a quota poller waits between two looks at an \
+account's usage endpoint, read at every wait so a PATCH of quotaPollIntervalMs governs the next one. A cadence \
+is not a ceiling on one operation and not what is left of a deadline — it is how often something REPEATS, and \
+its floor is 30 s where the ceilings are measured against a single request. Wired where any of the three \
+ceilings is expected it would give that operation five minutes to finish by default, and a ceiling wired here \
+would poll the provider's usage endpoint as often as one request is allowed to take, which is the hammering \
+ConfigCoercion's floor exists to prevent. \
 DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
 second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""

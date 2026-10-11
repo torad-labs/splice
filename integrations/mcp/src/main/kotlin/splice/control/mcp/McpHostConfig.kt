@@ -10,13 +10,22 @@ public fun interface HostClock {
     public fun millis(): Long
 }
 
+/** How long one forwarded request may wait for a hosted child's answer, asked for at every forwarded request (knob
+ *  `mcpRequestTimeoutMs`) so a raised budget governs the next one without a daemon restart. A request already
+ *  waiting keeps the budget it started under: it is what its own deadline was set from. */
+public fun interface McpRequestBudget {
+    public operator fun invoke(): Duration
+}
+
 public data class McpHostConfig(
     /** A server with no open notification stream and no request for this long is closed. */
     val idleTimeout: Duration = 30.minutes,
     /** Hosted processes at most; past it the longest-idle streamless server is evicted first. */
     val maxServers: Int = 32,
-    /** How long one forwarded request may wait for the child's answer before it fails in words. */
-    val requestTimeout: Duration = 30.minutes,
+    /** How long one forwarded request may wait for the child's answer before it fails in words. The only one of
+     *  these four read LIVE, per request (see [McpRequestBudget]); the other three are read where this host is
+     *  built and stay restartRequired, which is what their knobs say. */
+    val requestTimeout: McpRequestBudget = McpRequestBudget { 30.minutes },
     /** Child initialize handshake budget — a server that cannot answer this is not hostable. */
     val initializeTimeout: Duration = 1.minutes,
     val clock: HostClock = HostClock(System::currentTimeMillis),

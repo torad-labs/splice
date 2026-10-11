@@ -69,6 +69,10 @@ public class SpliceConfig internal constructor(
      *  weight of [maxRequestBytes], so moving either knob leaves the pair consistent. */
     public val materializationHeapBytes: Long get() = long(Knob.MATERIALIZATION_HEAP_BYTES)
 
+    /** How long a quota poller waits between looks at an account's usage endpoint. Read LIVE, per wait, through the
+     *  poller's QuotaIntervalMs; the coercion floors it at 30 s, so a too-fast value cannot hammer the provider. */
+    public val quotaPollIntervalMs: Long get() = long(Knob.QUOTA_POLL_INTERVAL_MS)
+
     /** Live console switch for reading Claude Code's already-written redacted transcript (V4-354). */
     public val transcriptView: Boolean get() = bool(Knob.TRANSCRIPT_VIEW)
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()

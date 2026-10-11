@@ -167,6 +167,32 @@ class ConfigLiveKnobsTest {
     }
 
     @Test
+    fun `the quota poll cadence is live, so no restart is named and a head reads it`() = runBlocking<Unit> {
+        val answer = json.parseToJsonElement(patch("""{"quotaPollIntervalMs":600000}""")).jsonObject
+
+        assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+        val view = json.parseToJsonElement(read()).jsonObject
+        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        assertFalse("quotaPollIntervalMs" in restartOnly, "a live knob is not listed as restart-only")
+        // What this head's poller asks between two looks at its account's usage endpoint (QuotaIntervalMs), so an
+        // operator who slows a provider down is obeyed by the next wait.
+        assertEquals(600_000L, config.getConfig("h").quotaPollIntervalMs)
+    }
+
+    @Test
+    fun `the MCP request budget is live, so no restart is named and the host reads it`() = runBlocking<Unit> {
+        val answer = json.parseToJsonElement(patch("""{"mcpRequestTimeoutMs":60000}""")).jsonObject
+
+        assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+        val view = json.parseToJsonElement(read()).jsonObject
+        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        assertFalse("mcpRequestTimeoutMs" in restartOnly, "a live knob is not listed as restart-only")
+        // Daemon-global, so the hosted MCP server asks the same unkeyed config at every forwarded request
+        // (McpRequestBudget) — the other three MCP host values stay the numbers the host was built with.
+        assertEquals(60_000L, config.getConfig().asMap()[Knob.MCP_REQUEST_TIMEOUT_MS.key] as? Long)
+    }
+
+    @Test
     fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {
         patch("""{"maxInflight":9,"effort":"low"}""")
 

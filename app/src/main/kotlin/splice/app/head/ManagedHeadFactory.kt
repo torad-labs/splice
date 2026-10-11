@@ -42,13 +42,19 @@ import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.usage.quota.ClientUserAgent
 import splice.usage.quota.QuotaCadence
+import splice.usage.quota.QuotaIntervalMs
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaProbes
 import splice.usage.quota.QuotaSnapshotSink
 
 internal fun interface StartQuotaPoller {
-    operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker, intervalMs: Long): QuotaPoller?
+    operator fun invoke(
+        head: String,
+        probe: QuotaProbe,
+        tracker: QuotaTracker,
+        intervalMs: QuotaIntervalMs,
+    ): QuotaPoller?
 }
 
 /** Observes the primary quota tracker at assembly so a test can see which tracker was wired.

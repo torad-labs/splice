@@ -193,13 +193,14 @@ const REQVIEW = (() => {
       return `<div class="trail${r.resumed && r.silent ? " tall" : ""}"><div class="rail-t">${sends}${line}${quiet}${resumed}${mark(r.ttfb, "First byte", "fb")}${mark(r.ftok, "First token", "ft")}</div>`
         + `<div class="ends"><span>${clockS(new Date(+r.ts - total))}</span><span class="tot">${secs(total)}</span><span>${clockS(r.ts)}</span></div></div>`;
     }
-    // the figures the request has: cells names which, in order (in, write, out, cost, attempts); cost is its text
-    function figuresHtml(r, cells, cost) {
+    // the figures the request has: cells names which, in order (in, write, out, cost, attempts); cost is its text, costSub
+    // the line under it (a plan request's worth at API prices, Marlin 5:52 PM)
+    function figuresHtml(r, cells, cost, costSub = "") {
       const cell = (label, value, sub = "") => `<div class="fig"><span class="label">${label}</span><span class="v">${value}</span>${sub ? `<span class="fsub">${sub}</span>` : ""}</div>`;
       const told = (v) => (v == null ? `<span class="nr">Not reported</span>` : n0(v)); // TurnBill.kt:37-40 writes a field only when reported
       const cachePct = r.in ? Math.round((r.cached / r.in) * 100) : 0;
       const of = { in: () => cell("Tokens in", told(r.in), r.cached ? `${cachePct}% cached` : ""), write: () => cell("Cache write", told(r.write)),
-        out: () => cell("Tokens out", told(r.out)), cost: () => cell("Cost", cost), attempts: () => cell("Attempts", r.attempts) };
+        out: () => cell("Tokens out", told(r.out)), cost: () => cell("Cost", cost, costSub), attempts: () => cell("Attempts", r.attempts) };
       // the three token counts are one fact when none was reported: one card where they sat (fin)
       const none = r.in == null && r.write == null && r.out == null, tok = ["in", "write", "out"];
       const shown = none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
@@ -218,7 +219,7 @@ const REQVIEW = (() => {
         + `<div class="meta"><span class="chip">${esc(r.cmd)}</span>${h.word}<span>${esc(r.model)}</span>${h.acct ? `<span>${h.acct}</span>` : ""}</div></div>`
         + `<div class="acts">${h.acts}</div></header>`
         // h.said: what the provider answered, verbatim and unlabelled, directly under the outcome in the header (fin)
-        + `<div class="scroll">${h.said ?? ""}${railHtml(r, bodies ? h.tr() : null)}${figuresHtml(r, h.cells, h.cost)}${tabs}<div class="bodies">${lower}</div></div></section>`;
+        + `<div class="scroll">${h.said ?? ""}${railHtml(r, bodies ? h.tr() : null)}${figuresHtml(r, h.cells, h.cost, h.costSub)}${tabs}<div class="bodies">${lower}</div></div></section>`;
     }
     // its controls: a tab, a fold of a body, a send's frames. True when the click was one of them; the page draws again.
     function click(el) {

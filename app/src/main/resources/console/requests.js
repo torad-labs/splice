@@ -329,6 +329,8 @@ function mapRow(head, row) {
     cut: row.cut_source_rounds ?? 0,
     in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? null, out: row.out_tokens ?? null,
     cost: row.cost_usd ?? null, reason: row.cost_reason ?? null,
+    // what a request on a plan account would have cost at API prices; the plan paid it, so it is never the cost (TurnUsage.kt)
+    planValue: row.plan_value_usd ?? null,
     reset: row.earliest_reset_epoch_seconds ? new Date(row.earliest_reset_epoch_seconds * 1000) : null,
     // the spent window's length as the provider's refusal named it, null when it named none (limit_window_seconds)
     window: row.limit_window_seconds ?? null,
@@ -764,7 +766,8 @@ function paneHtml() {
   return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st), said,
-    tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r) });
+    tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r),
+    costSub: r.cost == null && r.planValue != null ? `${money(r.planValue)} at API prices` : "" });
 }
 
 // ---------- render ----------

@@ -227,7 +227,9 @@ function useOf(tm, slotId) {
   const tokens = (t.input || 0) + (t.cache_read || 0) + (t.cache_write || 0) + (t.output || 0);
   // a request that moved no tokens is in no money share (the route counts the ones that did, and the priced of those)
   const priced = row.priced_moved_turns ?? 0, unpriced = (row.moved_turns ?? 0) - priced, head = tm.slots.find((x) => x.id === slotId)?.head;
-  const onPlan = state.priceWhy[head] === "plan" ? unpriced : 0;
+  // a daemon that splits plan from key counts the slot's plan requests itself (plan_turns, as the economics buckets do);
+  // before that, a head whose unpriced requests are on a plan counts them all there
+  const onPlan = row.plan_turns ?? (state.priceWhy[head] === "plan" ? unpriced : 0);
   return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, priced, unpriced, onPlan };
 }
 // `scope` says what the request count covers: a slot counts the requests of the sessions it held, from the moment each

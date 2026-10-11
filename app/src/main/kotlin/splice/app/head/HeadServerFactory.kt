@@ -31,6 +31,7 @@ import splice.head.turn.LiveTurns
 import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
+import splice.usage.budgets.BudgetPlans
 import java.nio.file.Path
 
 internal class HeadServerFactory(
@@ -97,7 +98,9 @@ internal class HeadServerFactory(
                     // V4-133 review: this head's ledger, priced from its own catalog, from the
                     // publisher's one enforcement over the daemon's budget store. Pinned by
                     // BudgetWiringPinTest: without it the console's budgets are stored and ignored.
-                    budget = console?.budgets?.forHead(key, ctx.catalog) ?: NoHeadBudget,
+                    budget = console?.budgets
+                        ?.forHead(key, ctx.catalog, BudgetPlans { stores.telemetry.economics.plans(it) })
+                        ?: NoHeadBudget,
                     credentialAccountNames = HeadCredentialNames(key, credentialAccountNames, sentCredentials),
                 ),
                 seams = seams(key),

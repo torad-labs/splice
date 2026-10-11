@@ -701,12 +701,14 @@ dated = "2026-10-11"
 names = ["MovingSessionModel", "SessionRepoNameOf"]
 reason = """MovingSessionModel reads the MODEL the session's row reported, at the one moment Continue on needs it: before the move ends that client, because afterwards the row reports the model it moved to and the mark would name its destination as its origin. SessionRepoNameOf reads the FOLDER a session's row belongs to, for the history route's rows, and is read whenever a row is written. Passing the repo name where the model belongs would write a folder into the transcript's move mark; passing the model where the repo name belongs would group a session's history under its model."""
 
-# ── 2 names, (String?) -> Boolean ────────────────────────────────────────────────────────────────
+# ── 4 names, (String?) -> Boolean ────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "(String?)->Boolean"
 dated = "2026-10-11"
 names = [
     "AccountOnPlan",
+    "BudgetPlans",
     "KeptModel",
+    "SessionAccountPlans",
 ]
-reason = """Two questions asked of a nullable name that share nothing else. AccountOnPlan asks of an ACCOUNT label whether a plan covers the requests it carried, so the hourly rollup files a request as a plan's or a key's at the moment it is recorded. KeptModel asks of a MODEL id whether a resumed session keeps the assistant row it came from. Handing one the other's name would answer a question about a model with a fact about a billing account, or file a request under a plan because a model id happened to be known, and either would compile and run."""
+reason = """Three seams for ONE plan question and one unrelated question, all over a nullable name. AccountOnPlan (the hourly rollup), BudgetPlans (the budget ledger) and SessionAccountPlans (the Teams and Projects tallies) each ask of an ACCOUNT label whether a plan covers the requests it carried. They are three ports because the modules that own them have no edge to each other, and each is wired from the one AccountPlanLookup answer in app. The fourth is a different question. AccountOnPlan asks of an ACCOUNT label whether a plan covers the requests it carried, so the hourly rollup files a request as a plan's or a key's at the moment it is recorded. KeptModel asks of a MODEL id whether a resumed session keeps the assistant row it came from. Handing KeptModel an account, or a plan seam a model id, would answer a question about a model with a fact about a billing account, or file a request under a plan because a model id happened to be known, and either would compile and run."""

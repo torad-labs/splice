@@ -52,6 +52,7 @@ internal class BudgetLedger(
     private val price: TurnPrice,
     private val rows: PerfRowsSource,
     private val context: LedgerContext,
+    private val plans: BudgetPlans,
 ) : HeadBudget {
     private val lock = Any()
     private var today = DayTally(context.localDay(context.clock()))
@@ -64,7 +65,10 @@ internal class BudgetLedger(
         return reached.takeIf { limit.action == BudgetActions.BLOCK }?.let { BudgetText.refusal(head, it, limit.usd) }
     }
 
-    override fun spent(atMs: Long, model: String, counters: Map<String, Long>) {
+    override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = spentOn(null, atMs, model, counters)
+
+    override fun spentOn(account: String?, atMs: Long, model: String, counters: Map<String, Long>) {
+        if (plans(account)) return // a plan covered it: not a key's spend, and not a request without a price
         val usd = measuredCost(model, counters, atMs)
         synchronized(lock) { tallyAt(atMs)?.let { charge(it, usd, counters) } }
         val limit = limit() ?: return
@@ -152,7 +156,7 @@ internal class BudgetLedger(
             before.historyReadable = false
             unread("${window.skipped} historical request records could not be read")
         }
-        window.rows.filter { it.ts in dayStart until context.bootMs }
+        window.rows.filter { it.ts in dayStart until context.bootMs && !plans(it.facts.account) }
             .forEach { charge(before, measuredCost(it.facts.model, it.fields, it.ts), it.fields) }
         return before
     }

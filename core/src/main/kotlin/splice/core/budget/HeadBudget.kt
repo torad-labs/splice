@@ -23,6 +23,12 @@ public interface HeadBudget {
     /** A turn's perf row was written at [atMs] (wall clock) for [model] with [counters], the row's
      *  own token counters (splice.core.perf.PerfKeys). This is how the day's spend moves. */
     public fun spent(atMs: Long, model: String, counters: Map<String, Long>)
+
+    /** [spent] for a turn that [account] carried. A ledger that keeps a plan's requests out of a key's budget reads the
+     *  account here; any other budget takes the turn as [spent] does. */
+    public fun spentOn(account: String?, atMs: Long, model: String, counters: Map<String, Long>) {
+        spent(atMs, model, counters)
+    }
 }
 
 /** The head with no budget: a head built outside the daemon (tests, tools). Every production head

@@ -178,7 +178,7 @@ internal class TurnTelemetry(
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel)
-        recordSpend(rowTs, drive.upstreamModel, snap.counters)
+        recordSpend(rowTs, drive.upstreamModel, snap.counters, accountLabel)
     }
 
     private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
@@ -209,9 +209,9 @@ internal class TurnTelemetry(
      *  facts a restarted daemon reads back from the file. Best-effort like [recordEconomics]: a
      *  budget that throws must never fail the turn it is weighing. A local refusal writes no spend,
      *  because it spent nothing. */
-    private fun recordSpend(rowTs: Long, model: String, counters: Map<String, Long>) {
+    private fun recordSpend(rowTs: Long, model: String, counters: Map<String, Long>, account: String?) {
         Cancellables.discard(
-            Cancellables.runCatchingCancellable { budget.spent(rowTs, model, counters) },
+            Cancellables.runCatchingCancellable { budget.spentOn(account, rowTs, model, counters) },
             "telemetry is best-effort; a turn must never fail on its budget",
         )
     }

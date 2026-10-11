@@ -31,6 +31,12 @@ public fun interface HeadPerfHistory {
     public fun rowsFor(head: String): PerfRowsSource
 }
 
+/** Whether a plan covers the requests an account carried. A budget caps what a KEY was charged (Marlin, Oct 11), so
+ *  a request on a plan account is neither spent nor unpriced. */
+public fun interface BudgetPlans {
+    public operator fun invoke(account: String?): Boolean
+}
+
 /** How a reached `warn` budget tells the operator. Must return at once: it runs on the turn path. */
 public fun interface BudgetAlert {
     public fun budgetReached(head: String, text: String)
@@ -51,8 +57,8 @@ public class BudgetEnforcement(
 
     /** [head]'s ledger, pricing its turns against [catalog]'s rate cards. One per head: the key is
      *  bound here, so a head can never spend against another's budget. */
-    public fun forHead(head: String, catalog: ModelCatalog?): HeadBudget =
-        ledgers.computeIfAbsent(head) { BudgetLedger(head, TurnPrice(catalog), history.rowsFor(head), context) }
+    public fun forHead(head: String, catalog: ModelCatalog?, plans: BudgetPlans = BudgetPlans { false }): HeadBudget =
+        ledgers.computeIfAbsent(head) { BudgetLedger(head, TurnPrice(catalog), history.rowsFor(head), context, plans) }
 
     /** When the budget day next rolls over, as the LEDGER draws it: admission blocks until this instant, so a
      *  console on another clock draws the day splice enforces rather than its own browser's midnight

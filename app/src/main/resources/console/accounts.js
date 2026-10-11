@@ -69,12 +69,28 @@ const acctId = (row) => `${(row.heads || []).join("+")}/${labelOf(row)}`;
 const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 
 // One read of everything the page shows. Each provider: its commands (with their order, pin and day) and its accounts.
-async function load() {
+// The day's counts come from /api/economics, which on a daemon that has just started can take half a minute. The page
+// never waits on it: it is asked beside the other reads, the cards are drawn at once with Reading where a day's count
+// goes, and when it answers the page is read again with that answer in hand.
+let economics = null; // the last /api/economics answer, kept so a later read draws the day it knew while a new one is asked
+let askingEconomics = false;
+function askEconomics() {
+  if (askingEconomics) return;
+  askingEconomics = true;
+  API.getReady("/api/economics").then(async (answer) => {
+    economics = answer;
+    askingEconomics = false;
+    await load({ asks: false });
+    render();
+  });
+}
+async function load({ asks = true } = {}) {
   tick();
-  const [st, ac, ks, bg, ec, md, hd] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/economics", "/api/models", "/api/heads"]
-    .map((p) => (p === "/api/economics" ? API.getReady(p) : API.get(p))));
+  if (asks) askEconomics();
+  const [st, ac, ks, bg, md, hd] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads"].map((p) => API.get(p)));
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
+  const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
   const budgets = new Map((bg.body?.budgets || []).map((b) => [b.head, b]));
   DAY_RESETS_AT = bg.body?.day_resets_at_epoch_ms ?? null;
   DAY_STARTED_AT = bg.body?.day_started_at_epoch_ms ?? null;

@@ -33,6 +33,15 @@ public class AgedFiles(
     private val root: Path,
     private val stamp: FileStamp = FileStamp { Files.getLastModifiedTime(it, NOFOLLOW_LINKS).toMillis() },
 ) {
+    /** How many files [root] holds, their bytes, and the oldest last write (null when it holds none). */
+    public fun census(): Census {
+        val files = older(Long.MAX_VALUE)
+        return Census(files.size.toLong(), files.sumOf { Files.size(it) }, files.minOfOrNull { stamp(it) })
+    }
+
+    /** What [census] counts. */
+    public data class Census(val files: Long, val bytes: Long, val oldestMs: Long?)
+
     /** Bytes held in files last written before [momentMs]. */
     public fun bytesBefore(momentMs: Long): Long = older(momentMs).sumOf { Files.size(it) }
 

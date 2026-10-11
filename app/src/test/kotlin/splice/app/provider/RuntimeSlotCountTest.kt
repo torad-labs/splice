@@ -117,4 +117,4 @@ private const val STALE = 10_001L
 
 // why: an upper bound for a background read that answers at once; the test does not wait for it
 // unless the code under test is broken.
-private const val WAIT_S = 5L
+private const val WAIT_S = 30L

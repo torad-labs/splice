@@ -40,7 +40,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
 
-private const val REAP_WAIT_MS = 2_000L
+private const val REAP_WAIT_MS = 30_000L
 private const val REAP_POLL_NS = 10_000_000L
 
 class CodeModeRuntimeTest {

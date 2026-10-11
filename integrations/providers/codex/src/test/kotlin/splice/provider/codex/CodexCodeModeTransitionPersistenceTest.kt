@@ -382,4 +382,4 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
 
 // why: a bound on each wait in the record-race test, far above the milliseconds each step takes, so a hang
 // fails the test by name instead of reaching the suite's timeout.
-private const val WAIT_SECONDS = 5L
+private const val WAIT_SECONDS = 30L

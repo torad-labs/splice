@@ -625,7 +625,7 @@ function rowHtml(r) {
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(sessTitle(r.sid))}</button>${word}`
-    + `<span class="dur">${secs(r.total)}</span><span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}${worthHtml(r)}</span></div>`
+    + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
     + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${earlier}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);

@@ -56,7 +56,9 @@ async function look(query: string) {
       order: await page.locator(".rq").evaluateAll((els) => els.map((e) => e.getAttribute("data-open"))),
       pressed: await page.locator('.switch.order [aria-pressed="true"]').innerText(),
       hours: await page.locator(".list .hour").count(),
-      plan: await page.locator('article[data-open="alpha:plan"] .cost').innerText(),
+      // the worth sits on the top line before "On your plan", never under it beside the meta line (hitstop baa64db)
+      plan: await page.locator('article[data-open="alpha:plan"] .top').innerText(),
+      worthBeforeCost: await page.locator('article[data-open="alpha:plan"] .top .worth + .cost').count(),
       foot: await page.locator(".foot.held").innerText(),
     };
   } finally {
@@ -74,6 +76,7 @@ test("Highest price runs dearest first, unpriced last, with no hour marks, a pla
   expect(seen.hours).toBe(0);
   expect(seen.plan).toContain("On your plan");
   expect(seen.plan).toContain("at API prices");
+  expect(seen.worthBeforeCost).toBe(1);
   expect(seen.foot).toContain("highest priced of each command");
 }, 30_000);
 

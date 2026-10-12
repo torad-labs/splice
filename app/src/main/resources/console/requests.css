@@ -137,7 +137,6 @@
 /* the search sits where the head holds its tools */
 .head .tools { position: relative; display: flex; align-items: center; gap: .8rem; }
 .filters > .switch.order { margin-left: auto; } /* the order is not a filter: it sits apart, at the row's end */
-/* in Highest price, a plan row's worth on a second line under "On your plan", the open Request's two-line form (fin) */
-.rq .cost:has(.worth) { position: relative; }  /* the top line keeps one baseline; the worth hangs under it, beside the meta row */
-.rq .cost .worth { position: absolute; right: 0; top: calc(100% + .7rem); font: 500 .86rem/1 var(--font-data); color: var(--text-mute); }
-.rq:has(.worth) .meta { padding-right: 14rem; }  /* so a long meta row wraps before it reaches the worth */
+/* in Highest price, a plan row's worth sits on the top line before "On your plan": the meta line's pieces are all whole,
+   so the top line, where the session name already gives way, is what makes room (hitstop baa64db, Oct 12) */
+.rq .top .worth { font: 500 .86rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }

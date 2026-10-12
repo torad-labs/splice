@@ -35,6 +35,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.usage.perf.PerfProjectedKeys
 import splice.usage.perf.PerfProjectionRead
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsProjection
@@ -61,14 +62,22 @@ public class PerfRowsFileSource internal constructor(
     private val file: Path,
     /** Where PerfStats archives retired generations; null reads the two live ones only. */
     private val archiveDir: Path? = null,
-    private val cache: PerfRowsCache = PerfRowsCache(),
+    /** The whole rows the work and economics readers ask for, newest first under their own bound. */
+    private val cache: PerfRowsCache = PerfRowsCache(PERF_FULL_TIER_BYTES),
+    /** What the turns route filters and counts over a window: a compact row for every line, read back whole by spot. */
+    private val compact: PerfRowsCache = PerfRowsCache(
+        limitBytes = PERF_COMPACT_BYTES,
+        keep = PerfCompactRetention(),
+        limitRows = Int.MAX_VALUE,
+        numeric = PerfProjectedKeys.numeric,
+        dense = true,
+    ),
     private val sessionAccounts: PerfSessionAccountIndex = PerfSessionAccountIndex(),
 ) : PerfRowsSource, ProjectedPerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
-    private var cacheSince: Long? = null
 
-    /** Both views report the same single cache; no projection or display copy is retained. */
-    internal val projectedBytes: Long get() = cache.retainedBytes
+    /** The compact cache the turns route reads; no display copy of a row is retained beyond it. */
+    internal val projectedBytes: Long get() = compact.retainedBytes
 
     /** JSON decodes performed by this source, including rejected rows and baseline candidates. */
     internal var parsedLines: Long = 0L
@@ -122,7 +131,7 @@ public class PerfRowsFileSource internal constructor(
 
     @Synchronized
     override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
-        val retained = cache
+        val retained = compact
         return try {
             projectedRead(sinceMs, retained, read)
         } catch (_: PerfProjectionChanged) {
@@ -142,11 +151,12 @@ public class PerfRowsFileSource internal constructor(
     private fun <T> projectedRead(sinceMs: Long, retained: PerfRowsCache, read: PerfProjectionRead<T>): T {
         val scan = settledRead(sinceMs, PerfSelection.WORK, retained)
         val versions = retained.versions()
+        val whole = PerfWholeRows(scan.rows, scan.spots, PerfLineDecode(Scan(0L, PerfSelection.WORK, cache)::decode))
         val projection = object : PerfRowsProjection {
             override val window: PerfRowsWindow = scan.window()
             override fun complete(rows: List<PerfRow>): List<PerfRow> {
                 if (versions.any { !it.coherent() }) throw PerfProjectionChanged()
-                return rows
+                return whole.of(rows)
             }
         }
         val result = read(projection)
@@ -162,8 +172,8 @@ public class PerfRowsFileSource internal constructor(
     }
 
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
-        if (cacheSince?.let { sinceMs < it } == true) rowsCache.clear()
-        cacheSince = minOf(cacheSince ?: sinceMs, sinceMs)
+        if (rowsCache.since?.let { sinceMs < it } == true) rowsCache.clear()
+        rowsCache.since = minOf(rowsCache.since ?: sinceMs, sinceMs)
         val settled = AsyncFileIo.awaitFile(file)
         var keys = fileKeys()
         var read = readAll(sinceMs, selection, rowsCache)
@@ -240,6 +250,9 @@ public class PerfRowsFileSource internal constructor(
         val rowsCache: PerfRowsCache,
     ) : PerfLineVisit {
         val rows = ArrayList<PerfRow>()
+
+        /** Where each of [rows] lies on disk, in step with it; null for a row a whole cache read. */
+        val spots = ArrayList<PerfLineSpot?>()
         val probes = ArrayList<PerfRow>()
         val probeTears = ArrayList<Long?>()
         val errors = ArrayList<String>()
@@ -340,7 +353,10 @@ public class PerfRowsFileSource internal constructor(
                 return
             }
             newest = maxOf(newest ?: row.ts, row.ts)
-            if (row.ts >= sinceMs) rows += row
+            if (row.ts >= sinceMs) {
+                rows += row
+                spots += line.spot
+            }
         }
 
         private fun rejected(line: PerfCachedLine) {

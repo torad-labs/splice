@@ -18,12 +18,13 @@ private const val PACKED_VALUE_BITS = 7
 private const val PACKED_VALUE_MASK = (1 shl PACKED_VALUE_BITS) - 1
 private const val PACKED_CONTINUATION = 1 shl PACKED_VALUE_BITS
 
-/** All signed Long values and field presence remain exact; packing is private to the map contract. */
-internal class PerfNumericFields(builder: PerfNumericBuilder) : AbstractMap<String, Long>() {
-    private val schema = builder.schema()
-    private val numbers = pack(builder)
-    private val unsharedNameBytes = builder.unsharedNameBytes
-
+/** All signed Long values and field presence remain exact; packing is private to the map contract.
+ *  Fields already packed in the order of [schema]: a builder's, or a dense store's handed back. */
+internal class PerfNumericFields(
+    private val schema: PerfNumericSchema,
+    private val numbers: ByteArray,
+    private val unsharedNameBytes: Long = 0L,
+) : AbstractMap<String, Long>() {
     override val size: Int get() = schema.names.size
     override fun containsKey(key: String): Boolean = schema.index(key) >= 0
 
@@ -62,11 +63,14 @@ internal class PerfNumericFields(builder: PerfNumericBuilder) : AbstractMap<Stri
                 }
             }
         }
+}
 
-    private fun pack(builder: PerfNumericBuilder): ByteArray {
+/** The one packing of numeric values: a zigzag varint each, in the order given. */
+internal object PerfNumericPacking {
+    fun pack(values: LongArray, count: Int): ByteArray {
         var size = 0
-        for (index in builder.names.indices) {
-            var value = (builder.values[index] shl 1) xor (builder.values[index] shr (Long.SIZE_BITS - 1))
+        for (index in 0 until count) {
+            var value = (values[index] shl 1) xor (values[index] shr (Long.SIZE_BITS - 1))
             do {
                 size++
                 value = value ushr PACKED_VALUE_BITS
@@ -74,8 +78,8 @@ internal class PerfNumericFields(builder: PerfNumericBuilder) : AbstractMap<Stri
         }
         val packed = ByteArray(size)
         var position = 0
-        for (index in builder.names.indices) {
-            var value = (builder.values[index] shl 1) xor (builder.values[index] shr (Long.SIZE_BITS - 1))
+        for (index in 0 until count) {
+            var value = (values[index] shl 1) xor (values[index] shr (Long.SIZE_BITS - 1))
             do {
                 val next = value and PACKED_VALUE_MASK.toLong()
                 value = value ushr PACKED_VALUE_BITS
@@ -86,14 +90,19 @@ internal class PerfNumericFields(builder: PerfNumericBuilder) : AbstractMap<Stri
     }
 }
 
-/** Field names and reusable ordered numeric schemas share one source-owned charged ceiling. */
-internal class PerfFieldNames(private val limitBytes: Long) {
+/** Field names and reusable ordered numeric schemas share one source-owned charged ceiling. [numeric], when given,
+ *  is the numeric fields a row keeps; every other numeric field is read past and dropped. */
+internal class PerfFieldNames(private val limitBytes: Long, numeric: Collection<String>? = null) {
+    private val only: Set<String>? = numeric?.toSet()
+
     private val names = HashMap<String, String>()
     private val schemas = HashMap<List<String>, PerfNumericSchema>()
     var retainedBytes: Long = 0L
         private set
 
     fun contains(key: String): Boolean = names.containsKey(key)
+
+    fun admits(key: String): Boolean = only == null || key in only
 
     fun share(key: String): String {
         names[key]?.let { return it }

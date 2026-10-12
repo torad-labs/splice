@@ -41,30 +41,22 @@ class PerfTurnsProjectionTest {
             projection.window.copy(rows = projection.complete(projection.window.rows))
         }
         assertEquals(expected, actual, "both views preserve the entire PerfRow contract in file order")
-        assertEquals(decoded, source.parsedLines, "a warmed first projection never decodes an already read row")
         assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
         assertTrue(source.projectedBytes <= PERF_CACHE_BYTES)
     }
 
     @Test
-    fun `full history economics warming also supplies the first week projection without a second scan`(
+    fun `a projected week completes to the same whole rows the whole-row window holds`(
         @TempDir dir: Path,
     ) {
         val history = SyntheticPerfHistory(dir)
         history.create()
         val source = PerfRowsFileSource(history.file)
-        source.economicsEvidence(0)
-        val decoded = source.parsedLines
-        val paths = setOf(history.file, history.file.resolveSibling("${history.file.fileName}.1"))
-        val profile = PerfHistoryProfile()
-        profile.diskPhase("economics_warmed_projection", dir.resolve("shared.jfr"), paths) {
-            source.projected(SCALE_SINCE) { projection ->
-                assertEquals(SCALE_REQUESTS, projection.window.rows.size)
-                assertEquals(projection.window.rows, projection.complete(projection.window.rows))
-            }
+        val whole = source.window(SCALE_SINCE).rows
+        source.projected(SCALE_SINCE) { projection ->
+            assertEquals(SCALE_REQUESTS, projection.window.rows.size)
+            assertEquals(whole, projection.complete(projection.window.rows))
         }
-        assertEquals(decoded, source.parsedLines, "evicted older rows cannot force a repeated decode")
-        assertEquals(0L, profile.diskBytes, "both views share the already-scanned generations")
         assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
     }
 
@@ -94,7 +86,11 @@ class PerfTurnsProjectionTest {
             val expected = economics.get(30, java.util.concurrent.TimeUnit.SECONDS)
             val actual = projected.get(30, java.util.concurrent.TimeUnit.SECONDS)
             assertEquals(expected, actual)
-            assertEquals(1_000L, source.parsedLines, "the concurrent first opens decode each input row once")
+            assertEquals(
+                3_000L,
+                source.parsedLines,
+                "each tier decodes each input row once, and the projected rows are read back once",
+            )
         } finally {
             callers.shutdownNow()
         }
@@ -170,7 +166,7 @@ class PerfTurnsProjectionTest {
         assertEquals(expected.toString(), render(head, source).toString())
         val decoded = source.parsedLines
         assertEquals(expected.toString(), render(head, source).toString())
-        assertEquals(decoded, source.parsedLines)
+        assertTrue(source.parsedLines - decoded <= 1L, "a repeat decodes only the one row it shows")
         val totals = expected.getValue("usage").jsonObject.getValue("totals").jsonObject
         listOf("uncounted", "plan", "undeclared").forEach { cause ->
             assertEquals("1", totals.getValue("unpriced_${cause}_requests").jsonPrimitive.content)
@@ -226,8 +222,8 @@ class PerfTurnsProjectionTest {
         val decoded = source.parsedLines
         assertEquals(shifted, render(head, source, since = SCALE_SINCE + 1).toString())
         assertEquals(first, render(head, source, since = SCALE_SINCE).toString())
-        assertEquals(decoded, source.parsedLines)
-        assertTrue(source.projectedBytes <= PERF_CACHE_BYTES)
+        assertTrue(source.parsedLines - decoded <= 2L, "two repeats decode only the rows they show")
+        assertTrue(source.projectedBytes <= PERF_COMPACT_BYTES)
     }
 
     @Test
@@ -246,8 +242,15 @@ class PerfTurnsProjectionTest {
         val appended = profiler.diskPhase("product_append", dir.resolve("append.jfr"), setOf(file)) {
             render(head, source)
         }
-        assertEquals(before + 1, source.parsedLines)
-        assertTrue(profiler.diskBytes <= addition.toByteArray().size, "a proven append reads only its new bytes")
+        assertEquals(
+            before + 2,
+            source.parsedLines,
+            "the appended line is decoded once for the compact tier and once as the row shown",
+        )
+        assertTrue(
+            profiler.diskBytes <= 2 * addition.toByteArray().size,
+            "a proven append reads only its new bytes, once for the tier and once for the row shown",
+        )
         assertEquals("101", appended.getValue("count").jsonPrimitive.content)
         val repaired = (1L..100L).joinToString("") { row(it + 1_000) } + row(101)
         val key = Files.getAttribute(file, "fileKey")

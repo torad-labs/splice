@@ -248,7 +248,7 @@ public class PerfRoutes(
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
             longestSilence(asked.filter, matching)?.let { (row, silence) ->
                 put("longest_silence_ms", silence)
-                put("longest", rowJson(row, gaps))
+                put("longest", rowJson(projection.complete(listOf(row)).single(), gaps))
             }
             // Each further question the request carried reads the window already in hand: the cost of a read is the
             // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).

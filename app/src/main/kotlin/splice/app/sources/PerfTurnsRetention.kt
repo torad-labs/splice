@@ -26,7 +26,7 @@ internal class PerfTurnsRetention : PerfLineKeep {
                 ),
                 transcript = row.transcript.copy(sessionId = share(row.transcript.sessionId)),
             ),
-            retainedTextBytes = textBytes,
+            retention = PerfRetention(textBytes = textBytes),
         )
     }
 }

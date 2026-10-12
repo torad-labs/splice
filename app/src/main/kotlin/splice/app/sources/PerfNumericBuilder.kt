@@ -13,12 +13,17 @@ internal class PerfNumericBuilder(private val pool: PerfFieldNames) {
 
     fun schema(): PerfNumericSchema = pool.schema(names)
 
+    /** The fields put so far, packed. */
+    fun fields(): PerfNumericFields =
+        PerfNumericFields(schema(), PerfNumericPacking.pack(values, names.size), unsharedNameBytes)
+
     fun clear() {
         names.clear()
         unsharedNameBytes = 0L
     }
 
     fun put(key: String, value: Long) {
+        if (!pool.admits(key)) return
         if (names.size == values.size) values = values.copyOf(values.size * 2)
         names.add(pool.share(key))
         if (!pool.contains(key)) unsharedNameBytes += PERF_STRING_OVERHEAD_BYTES + key.length * PERF_CHAR_BYTES

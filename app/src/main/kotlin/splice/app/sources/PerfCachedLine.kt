@@ -16,6 +16,16 @@ internal const val PERF_RECORD_OVERHEAD_BYTES = 352L
 /** What a line's text shows of its model: a legacy probe row has an empty one, a work row names one. */
 internal enum class PerfModelHint { EMPTY, NAMED, UNSEEN }
 
+/** What a retention decided about a line it kept: the descriptions it charged once in the source's bounded sharing
+ *  pool, the object charge of the record (a compact one holds far less than a whole one), and, for a compact
+ *  retention that reads the whole row back, whether the line is [located] and where. */
+internal data class PerfRetention(
+    val textBytes: Long? = null,
+    val overheadBytes: Long = PERF_RECORD_OVERHEAD_BYTES,
+    val located: Boolean = false,
+    val spot: PerfLineSpot? = null,
+)
+
 /** Parsed facts plus the original skip hints; window selection never changes timestamp authority. */
 internal data class PerfCachedLine(
     val row: PerfRow?,
@@ -24,15 +34,21 @@ internal data class PerfCachedLine(
     val model: PerfModelHint,
     val drops: PerfDropsHint,
     val probe: Boolean,
-    /** Projected descriptions are charged once in the source's bounded sharing pool. */
-    val retainedTextBytes: Long? = null,
+    /** How a retention charges this line and where it lies. */
+    val retention: PerfRetention = PerfRetention(),
 ) {
+    val spot: PerfLineSpot? get() = retention.spot
+
+    /** The line with its place in [generation], when its retention reads the whole row back by it. */
+    fun placed(generation: PerfGenerationRef, start: Long, end: Long): PerfCachedLine =
+        if (retention.located) copy(retention = retention.copy(spot = PerfLineSpot(generation, start, end))) else this
+
     val emptyModel: Boolean get() = model == PerfModelHint.EMPTY
 
     /** Upper-bound charge for object/queue overhead, primitive field storage and descriptive strings. */
     val retainedBytes: Long
         get() {
-            val value = row ?: return PERF_RECORD_OVERHEAD_BYTES
+            val value = row ?: return retention.overheadBytes
             val text = listOf(
                 value.outcome,
                 value.cause,
@@ -44,7 +60,7 @@ internal data class PerfCachedLine(
                 value.turn,
                 value.turnId,
             ).sumOf { if (it == null) 0L else PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES }
-            return PERF_RECORD_OVERHEAD_BYTES + numericBytes + (retainedTextBytes ?: text)
+            return retention.overheadBytes + numericBytes + (retention.textBytes ?: text)
         }
 }
 

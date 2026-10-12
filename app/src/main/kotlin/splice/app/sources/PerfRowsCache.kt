@@ -20,6 +20,12 @@ internal const val PERF_CACHE_BYTES: Long = 64L * 1_024 * 1_024
 // Even tiny or invalid entries cannot outnumber what the single byte ceiling can charge.
 internal const val PERF_CACHE_ROWS: Int = (PERF_CACHE_BYTES / PERF_RECORD_OVERHEAD_BYTES).toInt()
 
+// The whole rows the work and economics readers share: the newest requests only, so the source stays near its old ceiling.
+internal const val PERF_FULL_TIER_BYTES: Long = 16L * 1_024 * 1_024
+
+// The compact rows of the turns route: a week of the busiest command (about 240,000 requests) fits.
+internal const val PERF_COMPACT_BYTES: Long = 64L * 1_024 * 1_024
+
 // Unknown field names cannot retain more than 1 MiB of shared names per source.
 private const val FIELD_NAME_BYTES = 1_024L * 1_024
 
@@ -45,20 +51,31 @@ internal class PerfRowsCache(
     private val limitBytes: Long = PERF_CACHE_BYTES,
     private val keep: PerfLineKeep = PerfTurnsRetention(),
     private val limitRows: Int = (limitBytes / PERF_RECORD_OVERHEAD_BYTES).toInt(),
+    /** The numeric fields a row keeps, in order; null keeps them all. */
+    numeric: List<String>? = null,
+    /** Whether lines are retained as dense records (needs [numeric]) instead of objects, and read back by spot. */
+    dense: Boolean = false,
 ) {
     init {
         require(limitBytes >= CACHE_OVERHEAD_BYTES)
     }
 
-    private val names = PerfFieldNames(minOf(limitBytes / FIELD_NAME_BUDGET_DIVISOR, FIELD_NAME_BYTES))
+    private val names = PerfFieldNames(minOf(limitBytes / FIELD_NAME_BUDGET_DIVISOR, FIELD_NAME_BYTES), numeric)
     private val generations = LinkedHashMap<Any, PerfCachedGeneration>()
-    private var recordBytes = 0L
-    private var recordCount = 0
+    private val codec = if (dense) PerfDenseCodec(names, requireNotNull(numeric)) else null
+    private val entries = PerfEntryFactory { ref -> codec?.let { PerfDenseEntries(it, ref) } ?: PerfLinkedEntries() }
     private val prefix = PerfPrefixDigest()
     internal val decoder = PerfRowDecode(names)
 
+    /** The oldest cutoff any read of this cache has asked for; a wider one starts the cache over. */
+    internal var since: Long? = null
+
+    private val recordBytes: Long get() = generations.values.sumOf { it.lines.bytes }
+    private val recordCount: Int get() = generations.values.sumOf { it.lines.size }
+
     val retainedBytes: Long
-        get() = CACHE_OVERHEAD_BYTES + recordBytes + names.retainedBytes + generations.values.sumOf { it.metadataBytes }
+        get() = CACHE_OVERHEAD_BYTES + recordBytes + names.retainedBytes + (codec?.retainedBytes ?: 0L) +
+            generations.values.sumOf { it.metadataBytes }
     val retainedRows: Int get() = recordCount
 
     fun versions(): List<PerfReadVersion> = generations.values.map { state ->
@@ -76,7 +93,7 @@ internal class PerfRowsCache(
             val number = (value as? kotlinx.serialization.json.JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
             if (number != null) builder.put(key, number)
         }
-        return PerfNumericFields(builder)
+        return builder.fields()
     }
 
     fun read(path: Path, priority: Int, visit: PerfLineVisit, decode: PerfLineDecode) {
@@ -129,7 +146,7 @@ internal class PerfRowsCache(
 
     private fun retained(channel: FileChannel, state: PerfCachedGeneration, visit: PerfLineVisit) {
         val selection = PerfCachedSelection(channel, visit, state.ranges)
-        state.lines.forEach { selection.kept(it.start, it.end, it.line) }
+        for (entry in state.lines) selection.kept(entry.start, entry.end, entry.line)
         selection.gap(state.complete)
     }
 
@@ -146,7 +163,7 @@ internal class PerfRowsCache(
             reset(oldest.value)
             generations.remove(oldest.key)
         }
-        val state = PerfCachedGeneration(path, priority)
+        val state = PerfCachedGeneration(path, priority, entries)
         if (CACHE_OVERHEAD_BYTES + state.metadataBytes + names.retainedBytes <= limitBytes) generations[key] = state
         trim()
         return state
@@ -169,7 +186,7 @@ internal class PerfRowsCache(
             if (hint == null) {
                 val parsed = previousTail?.takeIf { start == it.start && raw == it.raw }?.line
                     ?: decode.decode(raw)
-                val retained = keep.keep(parsed, names)
+                val retained = keep.keep(parsed, names).placed(state.ref, start, reader.position)
                 visit.kept(retained)
                 remember(state, PerfCachedEntry(start, retained, raw.takeUnless { reader.terminated }, reader.position))
             } else {
@@ -203,7 +220,7 @@ internal class PerfRowsCache(
         channel.read(next, state.complete)
         if (next[0] == '\n'.code.toByte()) {
             prefix.write('\n'.code)
-            state.lines.lastOrNull()?.takeIf { it.end == state.complete }?.let { it.end++ }
+            state.lines.extendLast(state.complete)
             state.ranges.lastOrNull()?.takeIf { it.end == state.complete }?.let { it.end++ }
             state.complete++
         }
@@ -213,22 +230,16 @@ internal class PerfRowsCache(
     private fun remember(state: PerfCachedGeneration, entry: PerfCachedEntry) {
         if (generations.values.none { it === state }) return
         state.lines.addLast(entry)
-        recordBytes += entry.retainedBytes
-        recordCount++
         trim()
     }
 
     private fun removeTail(state: PerfCachedGeneration): PerfCachedEntry? {
         val tail = state.lines.lastOrNull()?.takeIf { it.raw != null } ?: return null
         state.lines.removeLast()
-        recordBytes -= tail.retainedBytes
-        recordCount--
         return tail
     }
 
     private fun reset(state: PerfCachedGeneration) {
-        state.lines.forEach { recordBytes -= it.retainedBytes }
-        recordCount -= state.lines.size
         state.lines.clear()
         state.ranges.clear()
         state.rangeBytes = 0L
@@ -244,12 +255,9 @@ internal class PerfRowsCache(
 
     private fun trim() {
         while (retainedBytes > limitBytes || recordCount > limitRows) {
-            val oldest = generations.values.filter { it.lines.isNotEmpty() }.minByOrNull { it.priority }
+            val oldest = generations.values.filter { !it.lines.isEmpty() }.minByOrNull { it.priority }
             if (oldest != null) {
-                val evicted = oldest.lines.removeFirst()
-                recordBytes -= evicted.retainedBytes
-                recordCount--
-                oldest.evicted(evicted)
+                oldest.evicted(oldest.lines.removeFirst())
             } else {
                 val state = generations.minByOrNull { it.value.priority } ?: break
                 generations.remove(state.key)
@@ -292,9 +300,14 @@ private class PerfFileStamp(path: Path) {
     fun identity(path: Path): Any = version.key ?: (path.toAbsolutePath().normalize() to version.created)
 }
 
-private class PerfCachedGeneration(var path: Path, var priority: Int) {
-    // One charged node per entry; removing an entry releases its storage without retained capacity.
-    val lines = LinkedList<PerfCachedEntry>()
+private class PerfCachedGeneration(path: Path, var priority: Int, entries: PerfEntryFactory) {
+    val ref = PerfGenerationRef(path)
+    var path: Path
+        get() = ref.path
+        set(value) {
+            ref.path = value
+        }
+    val lines = entries.of(ref)
     val ranges = LinkedList<PerfSkippedRange>()
     var rangeBytes = 0L
     var changeTime: FileTime? = null
@@ -336,14 +349,4 @@ private class PerfCachedGeneration(var path: Path, var priority: Int) {
     }
 
     fun changed(nextSize: Long, nextModified: FileTime): Boolean = nextSize != size || nextModified != modified
-}
-
-private data class PerfCachedEntry(
-    val start: Long,
-    val line: PerfCachedLine,
-    val raw: String?,
-    var end: Long = start,
-) {
-    val retainedBytes: Long
-        get() = line.retainedBytes + (raw?.let { PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES } ?: 0L)
 }

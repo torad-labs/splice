@@ -657,7 +657,7 @@ const MCP_STATE = {
   variable: { word: "Per agent", line: "A different value in each agent" },
   relative_path: { word: "Per project", line: "A different folder in each project" },
   location_flag: { word: "Per project", line: "A different place in each project" },
-  roots: { word: "Per project", line: "Asks each project for its folders" },
+  roots: { word: "Per project", line: "Asks which project it's in" },
   directory: { word: "Per project", line: "One project's folder" },
   no_command: { word: "No command" },
   unreadable: { word: "Unreadable" },

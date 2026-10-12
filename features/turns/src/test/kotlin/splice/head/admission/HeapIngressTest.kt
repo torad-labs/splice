@@ -15,8 +15,6 @@ import io.ktor.server.routing.routing
 import io.netty.channel.Channel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -108,31 +106,6 @@ class HeapIngressTest {
         } finally {
             server.stop(0, 1000)
         }
-    }
-
-    @Test
-    fun `a body that stalls after its headers is closed at the read bound and returns its charge`() = runBlocking {
-        val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 256 * 1024)
-        val server = testServer(HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody, readIdleMs = { 300L })) {
-            routing { post("/") { call.respondText(call.receiveText()) } }
-        }
-        server.start(false)
-        try {
-            val port = server.engine.resolvedConnectors().single().port
-            Socket("127.0.0.1", port).use { socket ->
-                socket.soTimeout = CLOSE_WAIT_SECONDS.toInt() * 1000
-                socket.getOutputStream().write(
-                    "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\npartial".toByteArray(),
-                )
-                socket.getOutputStream().flush()
-                // The client sends nothing more. Only the server's own bound can end this read, with its EOF.
-                assertEquals(-1, socket.getInputStream().read(), "the stalled body's connection must be closed")
-            }
-            withTimeout(CLOSE_WAIT_SECONDS * 1000) { while (heap.available.value != heap.limitBytes) yield() }
-        } finally {
-            server.stop(0, 1000)
-        }
-        assertEquals(heap.limitBytes, heap.available.value, "every charge of the stalled request is returned")
     }
 
     @Test

@@ -28,6 +28,11 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
         pending.remove(request)?.also { it.bound = true }
     }
 
+    /** Whether [entry] is the only response this connection still owes, so a reply written now cannot jump an older one. */
+    fun soleOutstanding(entry: IngressRequest): Boolean = synchronized(lock) {
+        responses.size == 1 && responses.first() === entry
+    }
+
     fun responded(): Boolean = synchronized(lock) {
         val entry = responses.removeFirstOrNull() ?: return@synchronized false
         entry.responded()

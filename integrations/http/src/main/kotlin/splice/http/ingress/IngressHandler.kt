@@ -1,16 +1,22 @@
 // NEW: reserve before Ktor copies a body, with an ordered empty refusal when capacity is absent.
 package splice.http.ingress
 
+import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelFutureListener
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelOutboundHandlerAdapter
 import io.netty.channel.ChannelPromise
 import io.netty.channel.SimpleChannelInboundHandler
+import io.netty.handler.codec.http.DefaultFullHttpResponse
 import io.netty.handler.codec.http.DefaultHttpRequest
 import io.netty.handler.codec.http.FullHttpResponse
+import io.netty.handler.codec.http.HttpContent
 import io.netty.handler.codec.http.HttpHeaderNames
 import io.netty.handler.codec.http.HttpObject
 import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.codec.http.HttpResponseStatus
 import io.netty.handler.codec.http.HttpUtil
+import io.netty.handler.codec.http.HttpVersion
 import io.netty.handler.codec.http.LastHttpContent
 import io.netty.util.ReferenceCountUtil
 import splice.core.config.IngressReadIdleMs
@@ -37,8 +43,11 @@ internal class IngressHandler(
     private val ownership: IngressOwnership,
     /** Asked for at every chunk; null means no bound here. */
     private val readIdleMs: IngressReadIdleMs? = null,
+    private val errorBody: IngressErrorBody? = null,
 ) : SimpleChannelInboundHandler<HttpObject>(false) {
     private var silence: ScheduledFuture<*>? = null
+    private var growing: ChunkedBody? = null
+    private var admittedCap = 0L
 
     override fun channelRead0(ctx: ChannelHandlerContext, msg: HttpObject) {
         if (ownership.halted.get()) {
@@ -46,13 +55,14 @@ internal class IngressHandler(
             return
         }
         if (msg !is HttpRequest) {
-            ctx.fireChannelRead(msg)
-            watchBody(ctx, msg)
+            forwardBody(ctx, msg)
             return
         }
+        growing = null
         val entry = admit(msg)
         if (entry.refusal == null) {
             ownership.register(msg, entry)
+            if (entry.lease != null && isUndeclared(msg)) growing = ChunkedBody(entry, admittedCap)
             ctx.fireChannelRead(msg)
             watchBody(ctx, msg)
         } else {
@@ -60,10 +70,24 @@ internal class IngressHandler(
         }
     }
 
+    /** A chunk of an admitted request: charged first when its length was never declared, then handed to Ktor. */
+    private fun forwardBody(ctx: ChannelHandlerContext, msg: HttpObject) {
+        val live = growing
+        val refusal = if (live != null && msg is HttpContent) live.receive(msg.content().readableBytes()) else null
+        if (live != null && refusal != null) {
+            refuseMidBody(ctx, msg, live, refusal)
+            return
+        }
+        if (msg is LastHttpContent) growing = null
+        ctx.fireChannelRead(msg)
+        watchBody(ctx, msg)
+    }
+
     private fun admit(request: HttpRequest): IngressRequest {
         // ONE reading of each for this request, so the cap that sizes an unknown-length body is the same cap it is
         // then judged against even if an operator changes the knob between the two.
         val capBytes = cap().toLong()
+        admittedCap = capBytes
         val limitBytes = requestLimit()
         val bytes = bodyBytes(request, capBytes)
         val bodyWeight = HeapWeights.request(bytes)
@@ -92,8 +116,11 @@ internal class IngressHandler(
     private fun bodyBytes(request: HttpRequest, capBytes: Long): Long {
         val declared = HttpUtil.getContentLength(request, -1L)
         if (declared >= 0L) return declared
-        return if (HttpUtil.isTransferEncodingChunked(request)) capBytes else 0L
+        return if (HttpUtil.isTransferEncodingChunked(request)) minOf(CHUNKED_FLOOR_BYTES, capBytes) else 0L
     }
+
+    private fun isUndeclared(request: HttpRequest): Boolean =
+        HttpUtil.getContentLength(request, -1L) < 0L && HttpUtil.isTransferEncodingChunked(request)
 
     private fun refuse(ctx: ChannelHandlerContext, request: HttpRequest, entry: IngressRequest) {
         ownership.halted.set(true)
@@ -109,6 +136,36 @@ internal class IngressHandler(
         ReferenceCountUtil.release(request)
         ctx.fireChannelRead(empty)
         ctx.fireChannelRead(LastHttpContent.EMPTY_LAST_CONTENT)
+    }
+
+    /**
+     * A chunked body that outgrew its cap or the heap after it was admitted: answer it here when this is the only
+     * reply the connection owes, so the reply cannot jump an older one, and close either way. The charge returns
+     * through the disconnect that close causes.
+     */
+    private fun refuseMidBody(ctx: ChannelHandlerContext, chunk: HttpObject, body: ChunkedBody, why: BodyRefusal) {
+        ReferenceCountUtil.release(chunk)
+        ownership.halted.set(true)
+        growing = null
+        silence?.cancel(false)
+        val render = errorBody
+        if (render == null || !ownership.soleOutstanding(body.entry)) {
+            ctx.close()
+            return
+        }
+        val large = why.status == HttpStatus.CONTENT_TOO_LARGE
+        val text = render.render(if (large) "invalid_request_error" else "overloaded_error", why.message)
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        val reason = if (large) "Content Too Large" else "Gateway At Capacity"
+        val reply = DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1,
+            HttpResponseStatus(why.status, reason),
+            Unpooled.wrappedBuffer(bytes),
+        )
+        reply.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/json")
+        reply.headers().set(HttpHeaderNames.CONTENT_LENGTH, bytes.size)
+        HttpUtil.setKeepAlive(reply, false)
+        ctx.writeAndFlush(reply).addListener(ChannelFutureListener.CLOSE)
     }
 
     /**

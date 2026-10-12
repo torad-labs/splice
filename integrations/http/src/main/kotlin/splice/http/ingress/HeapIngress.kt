@@ -68,7 +68,7 @@ public class HeapIngress(
         pipeline.addAfter(
             CODEC_HANDLER,
             "splice-heap-body",
-            IngressHandler(heap, maxBodyBytes, requestLimit, ownership, readIdleMs),
+            IngressHandler(heap, maxBodyBytes, requestLimit, ownership, readIdleMs, errorBody),
         )
         // Added after the body handler, so it lands directly behind the codec: the response path sees writes there.
         pipeline.addAfter(CODEC_HANDLER, "splice-heap-response", IngressResponseWatch(ownership))

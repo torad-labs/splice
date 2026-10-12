@@ -121,6 +121,22 @@ class TurnPathProbeLoopTest {
     }
 
     @Test
+    fun `a planned drain that stops answering is said once and is never a stall`() {
+        val stalled = ConcurrentHashMap<String, Boolean>()
+        val p = TurnPathProbeLoop(
+            "t",
+            TurnPathProbe(hangingServer(), timeoutMs = 300, draining = DaemonDraining { true }),
+            stalled,
+            { logs.add(it) },
+            intervalMs = 10,
+        )
+        repeat(4) { p.tick() }
+        assertFalse(stalled["t"] == true, "a drain the daemon began is not the wedge")
+        assertTrue(logs.none { "STALLED" in it })
+        assertEquals(1, logs.count { "draining for a planned stop" in it }, "said once, not per tick")
+    }
+
+    @Test
     fun `recovery flips back and logs the transition`() {
         val stalled = ConcurrentHashMap<String, Boolean>()
         val hung = hangingServer()

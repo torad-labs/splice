@@ -47,7 +47,13 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
 /** One head's loopback probe: a non-dispatching POST to its own port, answered or not within [timeoutMs]. */
-public class TurnPathProbe(private val port: Int, public val timeoutMs: Int = PROBE_TIMEOUT_MS) {
+public class TurnPathProbe(
+    private val port: Int,
+    public val timeoutMs: Int = PROBE_TIMEOUT_MS,
+    /** True from the moment the daemon's ordered stop begins: a planned drain or restart. The heads stop answering on
+     *  purpose then, so a probe that gets nothing back is the drain, not the wedge. */
+    public val draining: DaemonDraining = DaemonDraining { false },
+) {
     /** ANY HTTP status is life; only a hang/timeout is death.
      *
      *  disconnect() is in a `finally` because the FAILURE path is the long-lived one by
@@ -74,6 +80,11 @@ public class TurnPathProbe(private val port: Int, public val timeoutMs: Int = PR
     }
 }
 
+/** Whether the daemon's ordered stop has begun: a planned drain or restart, as against a head that stopped answering. */
+public fun interface DaemonDraining {
+    public fun began(): Boolean
+}
+
 public class TurnPathProbeLoop(
     private val key: String,
     private val probe: TurnPathProbe,
@@ -87,6 +98,7 @@ public class TurnPathProbeLoop(
     private val ticker: Ticker = ProcessTicker(),
 ) {
     private var consecutiveFailures = 0
+    private var drainNoted = false
 
     public fun start(scope: CoroutineScope): Job {
         val launched = scope.launch(dispatcher) {
@@ -132,6 +144,14 @@ public class TurnPathProbeLoop(
             if (stalled[key] == true) log("[$key] turn path RECOVERED; resuming\n")
             consecutiveFailures = 0
             stalled[key] = false
+        } else if (probe.draining.began()) {
+            // A planned restart cuts the heads on purpose: it is no stall, counts toward none, and is said once.
+            consecutiveFailures = 0
+            stalled[key] = false
+            if (!drainNoted) {
+                log("[$key] turn path not answering: the daemon is draining for a planned stop, not a stall\n")
+            }
+            drainNoted = true
         } else {
             consecutiveFailures++
             if (consecutiveFailures == STALL_THRESHOLD) {

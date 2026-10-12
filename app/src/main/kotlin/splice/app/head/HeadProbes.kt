@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
 import splice.app.control.ManagedHead
+import splice.app.probe.DaemonDraining
 import splice.app.probe.LocalRuntimeWatch
 import splice.app.probe.LocalWindowRefresh
 import splice.app.probe.TurnPathProbe
@@ -67,7 +68,8 @@ internal class HeadProbes : HeadProbeReadings {
                     log("[$key][boot] failed to start: ${it.message}\n")
                 }
                 startAuthProbeIfRefreshable(key, managed.auth, probeScope, log)
-                TurnPathProbeLoop(key, TurnPathProbe(managed.head.port), turnPathStalled, log).start(probeScope)
+                val probe = TurnPathProbe(managed.head.port, draining = DaemonDraining { !startsOpen })
+                TurnPathProbeLoop(key, probe, turnPathStalled, log).start(probeScope)
                 true
             }
             if (!admitted) return

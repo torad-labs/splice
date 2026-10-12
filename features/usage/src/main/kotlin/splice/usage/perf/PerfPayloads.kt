@@ -50,7 +50,7 @@ public class PerfPayloads(
             put("window", window.label)
             putJsonArray(HEADS) {
                 heads.all().forEach { m ->
-                    val read = m.sinks.perfRows?.window(now - window.ms) ?: PerfRowsWindow(emptyList())
+                    val read = windowOf(m.sinks.perfRows, now - window.ms)
                     addJsonObject {
                         put(KEY, m.key)
                         put(LABEL, m.label)
@@ -60,6 +60,15 @@ public class PerfPayloads(
             }
             summary.stats(firstBytes)?.let { put("time_before_first_byte_ms", it) }
         }.toString()
+    }
+
+    // why: a week of rows is hundreds of MB of file, and the full-row tier holds 16 MiB of it, so reading the summary's
+    // window through window() decoded the rest again on every call (desk c: 21 s warm). The compact tier the turns
+    // route reads holds every row of the window, so the summary folds that and a second call reads nothing new.
+    private fun windowOf(source: PerfRowsSource?, sinceMs: Long): PerfRowsWindow = when (source) {
+        null -> PerfRowsWindow(emptyList())
+        is ProjectedPerfRowsSource -> source.projected(sinceMs) { it.window }
+        else -> source.window(sinceMs)
     }
 
     // {heads:[{key,label,count,stages:{<field>:{count,p50,p95,max}}}]} — fields are the TurnPerf

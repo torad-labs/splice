@@ -41,5 +41,12 @@ public object PerfProjectedKeys {
         PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
         PerfKeys.ABSORBED_CACHE_WRITE_1H_TOKENS,
         PerfKeys.ABSORBED_OUT_TOKENS,
+        // The summary folds the same window (PerfSummary): its retries, refreshes, stream ends, dropped writes and
+        // activity side queries, so it reads the compact window beside the turns route instead of the full-row tier.
+        PerfKeys.RETRIES,
+        PerfKeys.REFRESHES,
+        PerfKeys.STREAM_END,
+        PerfKeys.ASYNC_IO_DROPS,
+        PerfKeys.ACTIVITY_QUERY,
     )
 }

@@ -307,13 +307,15 @@ public class PerfRoutes(
     private fun kept(matching: List<PerfRow>, rows: AskedRows, gaps: TurnPriceGap): List<PerfRow> = when (rows.order) {
         TurnsOrder.NEWEST -> matching.sortedBy { it.ts }.takeLast(rows.n)
         // Dearest first over the whole window; a request with no figure sorts after every priced one.
-        TurnsOrder.PRICE -> matching.sortedWith(dearestFirst(gaps)).take(rows.n)
+        TurnsOrder.PRICE -> dearestFirst(matching, gaps).take(rows.n)
     }
 
-    private fun dearestFirst(gaps: TurnPriceGap): Comparator<PerfRow> {
-        val figure = { row: PerfRow -> gaps.value(row) ?: Double.NEGATIVE_INFINITY }
-        return compareByDescending(figure).thenByDescending { it.ts }
-    }
+    // why: each row is priced ONCE, then sorted by that figure. A comparator that priced both rows on every comparison
+    // asked the rate card about n log n times; a week of rows took 90 s on desk c (jstack, Oct 12).
+    private fun dearestFirst(matching: List<PerfRow>, gaps: TurnPriceGap): List<PerfRow> =
+        matching.map { it to (gaps.value(it) ?: Double.NEGATIVE_INFINITY) }
+            .sortedWith(compareByDescending<Pair<PerfRow, Double>> { it.second }.thenByDescending { it.first.ts })
+            .map { it.first }
 
     /** For `test=waited`: the matching request that sat through the longest silence, over every matching row. */
     private fun longestSilence(filter: TurnsFilter, matching: List<PerfRow>): Pair<PerfRow, Long>? {

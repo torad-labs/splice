@@ -53,7 +53,16 @@ const OUTCOME = Object.fromEntries(Object.keys(OUTCOME_WORD).concat(["ok", "empt
 // "Failed". "Failed" is the Outcome switch's label, which counts every failure, and belongs nowhere else on this page.
 // The endings splice decides itself, whose outcome word already says who and why: no provider line is drawn for them
 const SPLICE_ENDED = new Set(["error:restarted", "error:at-capacity", "error:budget-blocked", "error:all-accounts-exhausted", "error:turn-cap", "error:cancelled"]);
-const outcomeOf = (r) => (r.outcome === "failure:overloaded_error" && isCutOff(r) ? { ...OUTCOME[r.outcome], word: WHY.cutoff.word } : r.outcome === "failure:overloaded_error" && isStalled(r) ? { ...OUTCOME[r.outcome], word: WHY.gaveup.word } : OUTCOME[r.outcome]) || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
+// The row names what happened, not the tag splice handed Claude Code: a cut stream is Cut off, a stall splice gave up on
+// is the give-up's word, and a provider error the provider answered with a 429 is the rate limit it was, under the
+// limit's glyph (Marlin, desk c, Oct 12: 43 rows read "Provider error" over a provider message of "Error").
+function outcomeOf(r) {
+  const base = OUTCOME[r.outcome];
+  if (r.outcome === "failure:overloaded_error" && isCutOff(r)) return { ...base, word: WHY.cutoff.word };
+  if (r.outcome === "failure:overloaded_error" && isStalled(r)) return { ...base, word: OUTCOME_WORD["error:turn-cap"] };
+  if (r.outcome === "error:upstream-failed" && r.cause === "VENDOR_RATE_LIMITED") return OUTCOME["error:rate-limited"];
+  return base || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
+}
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
 // DECIDES, not the tag: splice writes the reset when it turned a request away because every account was spent
 // (ExhaustedAccountAdmission.kt:32), and a request that met the window mid-flight ends error:plan-limit with no reset
@@ -574,7 +583,12 @@ function pickBtn(key, label, on) {
 }
 function menuHtml(key) {
   const item = (v, label, cur, extra = "") => `<button role="menuitemradio" aria-checked="${cur}" data-act="set" data-m="${key}" data-v="${esc(v)}">${extra}${label}</button>`;
-  if (key === "win") return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}</div>`;
+  if (key === "win") {
+    // a time to start from, as far back as the widest window reads: the list then holds the requests up to it, newest first
+    const local = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
+    const goto = `<div class="goto"><label for="goto">Go to</label><input id="goto" type="datetime-local" min="${local(+NOW - WINDOWS["7d"][1])}" max="${local(+NOW)}" value="${local(ui.to ?? +NOW)}"><button class="act quiet" data-act="goto">Go</button></div>`;
+    return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}${goto}</div>`;
+  }
   if (key === "cmd") return `<div class="menu fmenu" role="menu">${item("", "Every command", !ui.cmd)}${state.heads.map((h) => item(h.command, esc(h.command) + (h.retired ? REMOVED_TAG : ""), ui.cmd === h.command, `<i class="blot" style="--c:${colorOf(state.providerOf[h.key])}"></i>`)).join("")}</div>`;
   // the requests splice couldn't put a model or an account on (unattributed=model|account, TurnsFilter.kt)
   if (key === "model") return `<div class="menu fmenu" role="menu">${item("", "Every model", !ui.model)}${state.facets.models.map(([id, label]) => item(id, esc(label), ui.model === id)).join("")}${item("none", "No model", ui.model === "none")}</div>`;
@@ -619,6 +633,7 @@ function filtersHtml() {
     + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : (acctNames().get(ui.account) ?? "")) : "Account", Boolean(ui.account))
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
+    + (ui.to && !ui.from ? `<span class="fwrap"><span class="fbtn on">Up to ${dayOf(new Date(ui.to))}${clock(new Date(ui.to))}</span><button class="fclear" data-act="unset" data-m="to" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
     + `${sw}${over}${tog("compact", "Compactions", ui.compact)}${orderHtml()}</div>`;
 }
@@ -701,17 +716,23 @@ function listHtml() {
   const unsearched = said(state.search?.errors || []);
   if (state.loading) return ghostListHtml();
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
-  if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${unsearched}${searchFoot()}</div>`;
+  if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearq">Clear</button></div>${unsearched}${searchFoot()}</div>`;
   if (!rows.length) {
     const w = state.wider, widen = w ? `<button class="act" data-act="widen" data-v="${w.win}">${n0(w.n)}${w.floor ? "+" : ""} in the last ${WINDOWS[w.win][0]}</button>` : "";
     return `<div class="list">${trouble}<div class="nomatch"><span class="state">${anyFilter() ? "No match" : "No requests"}</span>${widen}${anyFilter() ? `<button class="act quiet" data-act="clearall">Clear</button>` : ""}</div></div>`;
   }
   const shown = rows.slice(0, ui.n), items = [];
-  let hour = null;
+  let hour = null, day = null;
   for (const r of shown) {
     const hk = `${r.ts.toDateString()} ${r.ts.getHours()}`;
     // in Highest price the rows are not in time order, so no hour mark: each row says its own day (hitstop 1912470)
-    if (hk !== hour && state.order !== "price") { hour = hk; const h = r.ts.getHours(); items.push(`<div class="hour"><span>${dayOf(r.ts)}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span></div>`); }
+    // the first mark and each new day name the day in full, so a screen that opens on today still says which day it is
+    // (Marlin, desk c, Oct 12: the 24-hour view's first screen had no date)
+    if (hk !== hour && state.order !== "price") {
+      hour = hk; const h = r.ts.getHours(), dk = r.ts.toDateString();
+      const named = dk !== day ? `${dk === NOW.toDateString() ? "Today" : r.ts.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} \u00b7 ` : dayOf(r.ts);
+      day = dk; items.push(`<div class="hour"><span>${named}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span></div>`);
+    }
     items.push(rowHtml(r));
   }
   const more = rows.length > shown.length ? `<div class="more"><span class="count">${n0(shown.length)} of ${n0(rows.length)}</span><button class="act quiet" data-act="more">Show ${n0(Math.min(200, rows.length - shown.length))} more</button></div>`
@@ -954,7 +975,10 @@ document.getElementById("q").addEventListener("input", (e) => {
   clearTimeout(typing);
   typing = setTimeout(() => { ui.auto = true; reload(); }, 250);
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ui.menu) { ui.menu = null; render(); } });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.menu) { ui.menu = null; render(); }
+  if (e.key === "Enter" && e.target.id === "goto") goTo(e.target.value);
+});
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act], [data-open]");
   if (ui.menu && !e.target.closest(".fmenu, [data-act=menu]")) { ui.menu = null; if (!el) { render(); return; } }
@@ -978,6 +1002,9 @@ document.addEventListener("click", (e) => {
     case "toggle": ui[m] = !ui[m]; ui.n = 200; again(); break;
     case "clearall": Object.assign(ui, { cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null, outcome: "all", why: null, compact: false });
       { const q = document.getElementById("q"); q.value = ""; ui.q = ""; } again(); break;
+    // the search's own Clear empties the search and keeps every filter he set, Failed included (Marlin, desk c, Oct 12)
+    case "clearq": { const q = document.getElementById("q"); q.value = ""; ui.q = ""; ui.n = 200; again(); break; }
+    case "goto": goTo(document.getElementById("goto")?.value); break;
     case "more": ui.n += 200; render(); break;
     case "close": {
       ui.open = null; ui.auto = false; render();
@@ -988,6 +1015,14 @@ document.addEventListener("click", (e) => {
     case "tab": case "node": case "frames": RV.click(el); render({ keep: true }); break; // the open request's own controls (reqview.js)
   }
 });
+/** Lists the requests up to [value] (the menu's day and time), in the narrowest window that reaches back to it. */
+function goTo(value) {
+  const at = value ? +new Date(value) : NaN;
+  if (!Number.isFinite(at)) return;
+  const to = Math.min(at + 59_999, +NOW); // the whole minute he picked
+  ui.win = Object.keys(WINDOWS).find((k) => +NOW - WINDOWS[k][1] <= to) ?? "7d";
+  Object.assign(ui, { to, from: null, menu: null, n: 200 }); again();
+}
 // a filter the daemon owns is a new read; one that hides the open request moves the page to the top match when the
 // page opened it, and keeps his pick otherwise
 function again() { ui.auto = ui.auto || !filtered().some((r) => r.id === ui.open); reload(); }

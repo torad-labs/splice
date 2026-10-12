@@ -50,6 +50,10 @@
 .list .foot { margin: .9rem 0 .2rem 0; font: 500 .95rem/1.4 var(--font-data); color: var(--text-mute); }
 .fmenu .mfoot { margin: .35rem .2rem .1rem; font: 500 .88rem/1.3 var(--font-data); color: var(--text-mute); }
 .fmenu .swhen { font: 500 .92rem/1 var(--font-data); color: var(--text-mute); margin-left: 2rem; }
+/* Go to: a day and time to list the requests up to, under the windows it chooses between (Marlin, desk c, Oct 12) */
+.fmenu .goto { display: flex; align-items: center; gap: .6rem; margin: .45rem .2rem .15rem; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
+.fmenu .goto label { font: 500 1rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
+.fmenu .goto input { font: 500 .95rem/1 var(--font-data); color: inherit; background: var(--track); border: .08rem solid var(--track-line); border-radius: var(--r-in); padding: .45rem .55rem; }
 .ftog {
   display: inline-flex; align-items: center; gap: .6rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap;
   background: none; border: .12rem dashed var(--track-line); border-radius: var(--r-in); padding: .72rem .9rem; cursor: pointer;

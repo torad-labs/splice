@@ -99,7 +99,9 @@ function failWord(status, body, said) {
   if (status === 401 || status === 403) return OUTCOME_WORD["failure:authentication_error"];
   if (status >= 500 && status < 600) return OUTCOME_WORD["error:upstream-failed"];
   if (status >= 400 && status < 500) return OUTCOME_WORD["failure:invalid_request_error"];
-  if (/timed? ?out|HttpRequestTimeout/i.test(said)) return OUTCOME_WORD["error:turn-cap"];
+  // Compare's own word: its send runs under a connect and a whole-request timeout, and a model still answering is cut
+  // with no silence at all, so the kit's "Given up after a silence" is not its fact (fin, Oct 12)
+  if (/timed? ?out|HttpRequestTimeout/i.test(said)) return "Timed out";
   if (/no credential|forwards the caller/.test(said)) return OUTCOME_WORD["error:auth-missing"];
   if (/no running provider/.test(said)) return "Not running";
   if (/failed:/.test(said)) return OUTCOME_WORD["error:conn-reset"];

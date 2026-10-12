@@ -211,9 +211,9 @@ button.count:hover { color: var(--text); }
 .srv .always { display: inline-flex; justify-content: center; min-width: 7.28rem; font: 500 1.02rem/1 var(--font-name); color: var(--text-body); }  /* a web server is shared by being one server: the word sits where the switch would */
 /* a shared server's commands after "Used by", with the commands still on an older copy wrapping under them */
 .srv .fig .chip { margin-left: .6rem; }
-.srv .fig .stale .chip { margin-left: .5rem; }
+.srv .fig .chip.soon { opacity: .6; }
+.srv .fig .next { margin-left: .6rem; color: var(--text-mute); }
 .srv .fig.uses { display: flex; flex-wrap: wrap; align-items: center; row-gap: .5rem; white-space: normal; min-width: 0; }
-.srv .fig.uses .stale { margin-left: 0; }
 .srv .fig .used { display: inline-flex; align-items: center; }
 .srv .from { display: inline-flex; align-items: center; gap: .6rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
 .srv .from { max-width: 100%; min-width: 0; }

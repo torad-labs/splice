@@ -725,11 +725,12 @@ function serverRow(s, dim) {
     const state = !m || s.state === "excluded" ? `<span class="acts"><span class="always">Not shared</span></span>` : "<span></span>";
     return `<div class="srv out"><span class="lamp ended" aria-hidden="true"><i></i></span>${name}${why}${state}</div>`;
   }
-  const used = s.cmds.length ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}</span>` : "";
-  const old = s.stale.map((c) => `<span class="stale">Until restart${cmdChip(c)}</span>`).join("");
+  // a command whose own copy of the config is older joins at its next session, which rewrites the copy (fin, Oct 12)
+  const soon = s.stale.length ? s.stale.map((c) => cmdChip(c).replace("class=\"chip\"", "class=\"chip soon\"")).join("") + `<span class="next">Next session</span>` : "";
+  const used = s.cmds.length || soon ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}${soon}</span>` : "";
   const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
   return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
-    + `<span class="fig uses">${used}${old}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}</span>`
+    + `<span class="fig uses">${used}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}</span>`
     + `<span class="acts">${test}<span class="always">Shared</span></span></div>`;
 }
 const mcpServersHtml = () => {

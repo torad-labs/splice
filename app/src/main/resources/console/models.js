@@ -76,6 +76,13 @@ async function readAll() {
 // ---------- the commands: the daemon's heads joined to the topology file and the model roster ----------
 const topology = () => data.topo?.topology ?? {};
 function window_(row) { return row?.context_window ?? 0; }
+// a command added beside another on one profile (claude-openrouter-side-project) is that profile's provider, though its
+// provider key is the name it was given (marlin p228: its pane read "side-project" where every other names its provider)
+function familyByCmd(cmd) {
+  const p = (data.profiles ?? []).filter((x) => x.command && (cmd === x.command || cmd.startsWith(`${x.command}-`)))
+    .sort((x, y) => y.command.length - x.command.length)[0];
+  return p ? famOf(p) : undefined;
+}
 function commandsOf() {
   const t = topology(), hs = t.heads ?? {}, ps = t.providers ?? {};
   return data.heads.filter((h) => !ui.gone.has(h.key)).map((h) => {
@@ -90,7 +97,7 @@ function commandsOf() {
     const defaults = defaultTiers(models.map((m) => m.id), row?.pinned_model || null);
     const first = TIERS.map((s) => slots[s]).find(Boolean) ?? defaults.opus ?? row?.pinned_model ?? models[0]?.id;
     const shown = models.find((m) => m.id === first);
-    const family = PROVIDER_FAMILY[provKey] ?? provKey;
+    const family = PROVIDER_FAMILY[provKey] ?? familyByCmd(h.label || cfg.claude?.command || key) ?? provKey;
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? provKey,
@@ -101,9 +108,12 @@ function commandsOf() {
   });
 }
 // a command's state, as the daemon's doctor reports it: unlinked, signed out or not started carry their fix
+// doctor's row for a command's own link names the command in quotes, so one command's name inside another's never matches
+// (marlin p228: claude-openrouter took claude-openrouter-side-project's row, two lamps named Command on one pane)
+const wrapperOf = (x, c) => x.id === "installation/wrapper" && Boolean(x.detail?.startsWith(`'${c.cmd}'`));
 function stateOf(c) {
   const checks = data.doctor?.checks ?? [];
-  const mine = checks.filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}` || (x.id === "installation/wrapper" && x.detail?.includes(c.cmd)));
+  const mine = checks.filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}` || wrapperOf(x, c));
   const bad = mine.find((x) => x.status === "fail" || x.status === "warn");
   if (!c.live) return { state: "stopped", word: "Not started", fix: bad?.fix_id ? { id: bad.fix_id, label: "Start" } : { head: c.key, label: "Start" } };
   if (!bad) return null;
@@ -288,10 +298,12 @@ function limitHtml(model, sel, over) {
 // ---------- a command just added (spec 1i): how to start it, what doctor says of it, and one test request on offer ----------
 // doctor's checks that are this command's own, in his words: its sign-in or key, its port, its command, its runtime
 function doctorOf(c) {
-  const name = (x) => x.id.startsWith("auth/") ? (/key/i.test(c.auth) ? "Key" : "Sign-in") : x.id.startsWith("daemon/head") ? "Running"
-    : x.id === "installation/wrapper" ? "Command" : x.id === `local:${c.provKey}` ? "Runtime" : x.id.split("/").slice(1).join("/");
+  // the runtime row is doctor's configuration/local:<provider>, and only a local command's: an address on loopback is not one
+  const runtime = (x) => c.family === "local" && (x.id === `configuration/local:${c.provKey}` || x.id.startsWith(`configuration/local:${c.provKey}/`));
+  const name = (x) => x.id.startsWith("auth/") ? (/key/i.test(c.auth) ? "Key" : "Sign-in") : x.id.startsWith("daemon/head") ? "Listening"
+    : wrapperOf(x, c) ? "Command linked" : runtime(x) ? "Runtime" : x.id.split("/").slice(1).join("/");
   return (data.doctor?.checks ?? []).filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}`
-    || (x.id === "installation/wrapper" && x.detail?.includes(c.cmd)) || x.id === `local:${c.provKey}` || x.id.startsWith(`local:${c.provKey}/`))
+    || wrapperOf(x, c) || runtime(x))
     .map((x) => ({ name: name(x), ok: x.status === "ok" || x.status === "info", soft: x.status === "warn" }));
 }
 const LIVE_PROMPT = "Reply with the single word pong.";
@@ -708,7 +720,8 @@ const profileOf = (a) => data.profiles.find((x) => x.name === a.profile);
 // Add with a failed check saves nothing, and says so on the form with what to fix (marlin p226: a press did nothing). A
 // failed address opens the URL field beside the check, filled with the address tried, so it can be fixed in place.
 function notAddedWhy(a, prof) {
-  const failed = a.checks.find((c) => !c.ok && !SOFT.has(c.name));
+  const failed = a.checks.find((c) => !c.ok && !SOFT.has(c.name)) ?? a.checks.find((c) => !c.ok);
+  if (!failed) return "Not added";
   if (failed.name === "base url") {
     a.urlFailed = true;
     if (!a.url.trim()) a.url = /\bat (\S+)$/.exec(failed.detail ?? "")?.[1] ?? prof.base_url ?? "";
@@ -727,17 +740,22 @@ async function verifyAndSave() {
   if (hard || (!v.ok && !a.checks.length)) { a.busy = false; a.said = hard ? notAddedWhy(a, profileOf(a)) : "Not added"; render(); return; }
   render();
   const s = await API.post(`/api/add/${encodeURIComponent(a.id)}/save`, {});
-  if (!s.ok) { a.busy = false; a.said = "Not added"; render(); return; }
-  const key = s.body?.saved?.head_key ?? a.profile;
+  // the save checks again and refuses any check that fails, a model list it could not read included: its 409 carries the
+  // rows, so the form shows them and says which one it waits on, never a bare "Not added"
+  if (!s.ok) { if (Array.isArray(s.body?.checks)) a.checks = s.body.checks; a.busy = false; a.said = notAddedWhy(a, profileOf(a)); render(); return; }
+  // the save answers with the add's own key and command (AddViews.session); the pane that opens is that command's, once
+  // the restarted daemon lists it, never another command on the same profile (marlin p228)
+  const key = s.body?.key, cmd = s.body?.command;
+  a.saved = true;
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const up = await API.get("/api/heads");
-    if (up.ok) {
-      await readAll();
-      const added = commandsOf().find((c) => c.key === key || c.cmd === s.body?.saved?.command) ?? commandsOf().at(-1);
-      ui.add = null; ui.open = added?.key ?? null; ui.draft = null; ui.added = added ? { key: added.key, live: null } : null; render();
-      return;
-    }
+    if (!up.ok) continue;
+    await readAll();
+    const added = commandsOf().find((c) => c.key === key || c.cmd === cmd);
+    if (!added) continue;
+    ui.add = null; ui.open = added.key; ui.draft = null; ui.added = { key: added.key, live: null }; render();
+    return;
   }
   a.busy = false; a.said = "Not added"; render();
 }

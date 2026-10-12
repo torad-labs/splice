@@ -339,7 +339,10 @@ const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s)
  *  head's re-anchor tier from /api/heads). Sessions draws its cards from this; Teams and Requests rank projects by it. */
 function rowLook(row, turn, reanchorMs) {
   const ended = row.availability === "gone";
-  const working = !ended && (Boolean(turn) || row.status === "working" || row.status === "busy");
+  // A stale row (alive, but its registry entry not refreshed in 30 minutes) is not read as working off its own status,
+  // only off a live turn splice holds for it (spec §4: unavailable is never shown active; splice-providers' spec pass,
+  // Oct 12). Sessions' card already says "Not heard from since", so it takes no word here.
+  const working = !ended && (Boolean(turn) || (row.availability !== "stale" && (row.status === "working" || row.status === "busy")));
   const state = ended ? "ended" : row.waiting_for ? "needs" : working ? "working" : "idle";
   return { state, stall: state === "working" || state === "idle" ? stallOf(turn, reanchorMs, row.ended_by) : null };
 }

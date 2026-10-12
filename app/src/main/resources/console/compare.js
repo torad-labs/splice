@@ -274,7 +274,7 @@ const askedHtml = (p) => (stale(p) ? `<div class="msg his"><div class="body">${m
 function fixHtml(p, i) { // the failure's word, then the one thing that fixes it
   const who = PROVIDER_NAME[cmdOf(p.key)?.family] ?? cmdOf(p.key)?.command ?? "";
   const said = p.fail.said || p.fail.code ? `<p class="upmsg"><span class="who">${esc(who)}</span>${p.fail.code != null ? `<span class="code">${p.fail.code}</span>` : ""}${p.fail.said ? `<q>${esc(p.fail.said)}</q>` : ""}</p>` : "";
-  if (p.fail.spent) return `<span class="state limit lock">${ICON.lock}<span>${esc(p.fail.spent.word)}</span></span><span class="detail">Resets ${backWord(p.fail.spent.until)}</span>${said}`;
+  if (p.fail.spent) return `<span class="state limit lock">${ICON.lock}<span>${esc(p.fail.spent.word)} · Resets ${backWord(p.fail.spent.until)}</span></span>${said}`;
   const word = `<span class="state limit">${esc(p.fail.word)}</span>${p.tries > 1 ? `<span class="pg-try">Try <b>${p.tries}</b></span>` : ""}`;
   if (p.fail.word === OUTCOME_WORD["error:auth-missing"] || p.fail.word === OUTCOME_WORD["failure:authentication_error"]) {
     return `${word}<a class="act" href="accounts.html">Accounts</a>${said}`;

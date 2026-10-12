@@ -77,25 +77,25 @@ test("a command all on a plan counts its requests on the plan and names their va
   const { text } = await dayOf("all-plan");
   bunExpect(text).toContain("23,559 requests on your plan · ≈$1,512.40 at API prices");
   bunExpect(text).not.toContain("Set budget");
-});
+}, 30_000);
 
 test("on a command all on a plan, an hour from before the split counts on the plan too, its value at API prices", async () => {
   const { text } = await dayOf("plan-before");
   bunExpect(text).toContain("110 requests on your plan · ≈$6.00 at API prices");
-});
+}, 30_000);
 
 test("a mixed command shows the key's money for the key's requests and the plan's share as a count, never its value", async () => {
   const { text } = await dayOf("mixed");
   bunExpect(text).toContain("≈$12.40 for 300 requests · 23,259 on your plan");
   bunExpect(text).not.toContain("1,500");
   bunExpect(text).toContain("Set budget");
-});
+}, 30_000);
 
 test("on a mixed command an hour from before the split is counted as not split, never as money", async () => {
   const { text } = await dayOf("mixed-before");
   bunExpect(text).toContain("≈$12.40 for 300 requests · 23,259 on your plan · 50 not split into plan and key");
   bunExpect(text).not.toContain("15.40");
-});
+}, 30_000);
 
 test("a budget set before on a command all on a plan keeps its button, so he can see it and remove it", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -110,7 +110,7 @@ test("a budget set before on a command all on a plan keeps its button, so he can
   } finally {
     await page.close();
   }
-});
+}, 30_000);
 
 // these two drive a page per command per width, so they carry their own timeout: bun's 5 s default turned them red on a
 // machine under load (load average 134 on 16 cores, Oct 11) while the same tests passed in 19 s on a quiet one

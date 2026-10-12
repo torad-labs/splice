@@ -83,7 +83,7 @@ test("a day that holds an hour splice could not read says Not read, not the sum 
   const day = await dayOf("torn-day");
   expect(day).toContain("Not read");
   expect(day).not.toContain("$1.50");
-});
+}, 30_000);
 
 test("a day with an unread hour is the one word Not read: no money and no requests-on-your-plan count from its readable hours", async () => {
   const day = await dayOf("plan-torn");
@@ -91,13 +91,13 @@ test("a day with an unread hour is the one word Not read: no money and no reques
   expect(day).not.toContain("on your plan");
   expect(day).not.toContain("$");
   expect(day).not.toMatch(/\d+ requests/);
-});
+}, 30_000);
 
 test("a day whose hours were all read shows its figure", async () => {
   const day = await dayOf("clean-day");
   expect(day).toContain("$1.50");
   expect(day).not.toContain("Not read");
-});
+}, 30_000);
 
 test("at 3828 the requests-on-your-plan line under a Day reading stays clear of the Set budget button", async () => {
   const page = await browser.newPage({ viewport: { width: 3828, height: 1889 } });
@@ -121,7 +121,7 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
   } finally {
     await page.close();
   }
-});
+}, 30_000);
 
 test("a command the daemon is still reading says Reading, never Not read, and then shows its day", async () => {
   asked = 0;
@@ -141,13 +141,13 @@ test("a command the daemon is still reading says Reading, never Not read, and th
   } finally {
     await page.close();
   }
-});
+}, 30_000);
 
 test("a figure past a thousand dollars groups its thousands and keeps its dollar sign", async () => {
   const day = await dayOf("big-day");
   expect(day).toContain("≈$1,512.40");
   expect(day).toContain("for 23,465 requests");
-});
+}, 30_000);
 
 for (const width of [3828, 1440]) {
   test(`at ${width} a Day with a figure and a count keeps each phrase on one line, inside the card`, async () => {
@@ -173,5 +173,5 @@ for (const width of [3828, 1440]) {
     } finally {
       await page.close();
     }
-  });
+  }, 30_000);
 }

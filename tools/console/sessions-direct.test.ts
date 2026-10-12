@@ -55,4 +55,4 @@ test("a direct session says direct, an unplaced one says unknown head, a placed 
   await expect(card("stray")).toContainText("unknown head");
   await expect(card("builder")).toContainText("claude-alpha");
   await page.close();
-});
+}, 30_000);

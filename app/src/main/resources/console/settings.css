@@ -670,3 +670,7 @@ button.count:hover { color: var(--text); }
 #st .pform .act svg, #st .vcard .act svg { width: 1.15rem; height: 1.15rem; }
 #st .pacts { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; }
 #st .pform .field.wide { width: 30rem; text-align: left; font: 500 1.3rem/1 var(--font-data); }  /* its height is --ctl-h, every field's */
+
+/* a job's Advanced disclosure: the button alone until pressed (v0.4.0 section 9) */
+#st .adv .advbtn { display: inline-flex; align-items: center; gap: .4rem; }
+#st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(180deg); }

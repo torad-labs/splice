@@ -24,12 +24,12 @@ class SettingsCoverageTest {
         return ids to own
     }
 
-    /** A knob's row in knobs.js: the Settings job it names, or null when the row names none. */
+    /** A knob's row in knobs.js: the Settings job it names, as its home or its Advanced disclosure, or null when none. */
     private fun homeOf(kit: String, key: String): String? {
         val at = kit.indexOf("K(\"$key\"")
         if (at < 0) return null
         val end = kit.indexOf("\n    K(\"", at + 1).takeIf { it > 0 } ?: kit.length
-        return Regex("""home: "(\w+)"""").find(kit.substring(at, end))?.groupValues?.get(1)
+        return Regex("""(?:home|adv): "(\w+)"""").find(kit.substring(at, end))?.groupValues?.get(1)
     }
 
     @Test
@@ -40,12 +40,7 @@ class SettingsCoverageTest {
         val offPage = mapOf(
             "statuslineGitRoots" to NO_JOB,
             "replayReasoning" to ENV_OPT_IN,
-            "requestReadTimeoutMs" to NOT_DRAWN,
             "ingressReadIdleMs" to NOT_DRAWN,
-            "materializationHeapBytes" to NOT_DRAWN,
-            "retryBackoffBaseMs" to NOT_DRAWN,
-            "retryBackoffCapMs" to NOT_DRAWN,
-            "retryBackoffJitterPct" to NOT_DRAWN,
             "foldMarkerText" to NOT_DRAWN,
             "foldMaxTier" to NOT_DRAWN,
         )

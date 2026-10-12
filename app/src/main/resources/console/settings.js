@@ -38,21 +38,30 @@ const TOPICS = [
   { id: "version", name: "Version", also: "update upgrade new release roll back restart" },
 ];
 const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
-const topicOf = (key) => KNOB[key].home || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
+const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
 /** The settings this page offers: every one with a job here. One the running splice reads only at start (GET
  *  /api/config's restart_required_keys, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
  *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => Object.values(KNOB)
-  .filter((k) => shownKnob(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
+  .filter((k) => shownKnob(k.key) && (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 // the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
 const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0);
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
 const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
-const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
+const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !k.adv && !skip.includes(k.key)).map((k) => k.key);
+// A job's Advanced disclosure (v0.4.0 section 9, Resolved: advanced settings sit behind a per-section "Advanced"): the
+// settings a person rarely needs, closed until pressed, and open while a search finds one of them.
+const advKeys = (id) => liveKnobs().filter((k) => k.adv === id).map((k) => k.key);
+function advancedHtml(id) {
+  const keys = advKeys(id);
+  if (!keys.length) return "";
+  const open = ui.adv[id] || keys.some((key) => hits([KNOB[key].label, key, KNOB[key].also || ""].join(" ")));
+  return `<section class="sub adv"><button class="act quiet advbtn" data-act="adv" data-id="${id}" aria-expanded="${open}">Advanced${ICON.caret}</button>${open ? blocks(keys) : ""}</section>`;
+}
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
+const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -776,7 +785,8 @@ const busyHtml = () => {
   return peaksHtml()
     + `<section class="tally">${headed("Providers", figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }]))}`
     + blocks(keysOf("busy", LIMITS)) + `</section>`
-    + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "");
+    + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "")
+    + advancedHtml("busy");
 };
 
 // ---------- Version ----------
@@ -1203,6 +1213,7 @@ document.addEventListener("click", (e) => {
     case "restart": pressRestart(); return;
     case "restart-now": ui.armed = null; restartSplice(); return;
     case "mtest": testServer(d.name); return;
+    case "adv": ui.adv[d.id] = !ui.adv[d.id]; break;
     case "runlog": ui.runLog = !ui.runLog; render(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;

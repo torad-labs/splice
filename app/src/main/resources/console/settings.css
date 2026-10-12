@@ -27,7 +27,10 @@
 @container (min-width: 104rem) {
   .jobs, .jobs.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
   .jobs .list, .jobs.open .list { display: flex; flex: 0 0 44rem; }
-  .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; max-width: 142rem; position: sticky; top: 1.6rem; height: calc(100vh - 14rem); }
+  /* MAX-height, never height: a job with four settings in it drew a box the height of the screen with nothing in its
+     lower three quarters (Marcos on this shape: "why are we having all this empty space"). The pane ends where its
+     content ends, and only a job taller than the screen scrolls inside itself. */
+  .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; max-width: 142rem; position: sticky; top: 1.6rem; max-height: calc(100vh - 14rem); }
   .pane .close { display: none; }
   /* the lit card is the one beside it; with no pane beside the list, none is lit */
   .card.job[aria-current="true"] { --c: var(--key-light); border-color: var(--key-light); }
@@ -50,7 +53,10 @@
 mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, transparent); border-radius: .2rem; padding: 0 .06rem; }
 
 /* ---------- the open job ---------- */
-.pane { --c: var(--key-light); }
+/* height: auto undoes the shared shell's `height: calc(100vh - 12rem)` (sessions.css, the same .pane on Sessions, Teams
+   and Requests, where a feed does want the screen's height). A job holds settings, not a feed: it ends where they end,
+   and only one taller than the screen scrolls, under the max-height below. */
+.pane { --c: var(--key-light); height: auto; }
 .pane > header .lamp { position: static; flex: none; }
 .pane > header .meta { gap: .45rem .9rem; font-size: 1rem; color: var(--text-body); }
 .pane > header .meta span + span::before { content: "·"; margin-right: .9rem; color: var(--text-mute); }
@@ -71,6 +77,10 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
   display: flex; align-items: center; gap: .9rem; width: fit-content; padding: .95rem 1.2rem; text-decoration: none;
   font: 500 1.12rem/1 var(--font-name); color: var(--text); border: .12rem solid var(--track-line); border-radius: var(--r-obj);
 }
+/* a door inside a figure keeps each of its parts whole: with the three figures sharing the row at 1440, "Longest
+   silence" and "Open it" were each broken down the middle inside the card. The figure is given the width the whole
+   door needs (.fgroup > .figs3 > .fig3 below), so it stays one line. */
+.fig3 .door > * { white-space: nowrap; }
 .doors { display: flex; flex-direction: column; gap: .9rem; }
 .door b { font: 500 1.15rem/1 var(--font-data); }
 .door > span + b { margin-left: .2rem; }
@@ -107,7 +117,17 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
    track is 30rem, not 26, so a card's name, its "Your prompts" tag and its door hold one line and every figure in the
    row starts at the same height; and start, not stretch, so a card with nothing more to say stays short beside the one
    card that carries a chart (splice-lead's walk, Oct 11). */
-.dcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr)); gap: var(--gap-card); align-items: start; }
+/* flex, not a grid of fixed tracks: at 1440 three stores fit two to a row and the third sat in the left half of an
+   empty row. Wrapped flex items share the row they land on, so the odd one takes the width instead. */
+.dcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); align-items: flex-start; }
+.dcards > .dcard { flex: 1 1 30rem; }
+/* Conversation text holds three cards of the same kind, and one of them carries an extra line about how fast it grows:
+   stand them level so their Save and Keep for sit on one line (.dctl's margin-top: auto does the rest). Records holds a
+   card with a chart beside two without, and stretching those two gave them a tall empty middle. */
+.dcards.text { align-items: stretch; }
+/* and a card with no "when off" line under its switch reserves that line, so the three Save and Keep for labels sit on
+   one line: bottom-pinning alone put the card without the line a line lower than its two neighbours. */
+.dcards.text .dcard:not(:has(.offcost))::after { content: ""; font: 500 1.15rem/1.35 var(--font-name); min-height: 1.55rem; }
 .dcard { display: flex; flex-direction: column; gap: 1.1rem; padding: 1.6rem 1.7rem 1.7rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
 .dcard.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
 .dtop { display: flex; align-items: baseline; flex-wrap: wrap; gap: .6rem; }
@@ -149,7 +169,6 @@ button.count:hover { color: var(--text); }
 .fixed.need { max-width: 11rem; line-height: 1.3; }
 .armed { display: inline-flex; gap: .5rem; }
 .dmore { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
-.form.tight { grid-template-columns: 18rem minmax(0, 1fr); }
 .taps { gap: .6rem 1.1rem; }
 .tap { display: inline-flex; align-items: center; gap: .5rem; }
 .tap .fixed { padding: 0; font-size: 1rem; }
@@ -188,13 +207,17 @@ button.count:hover { color: var(--text); }
 /* what ended these turns, and the one control that governs it, under the figure */
 #st .fig3 .by { margin-top: 1.1rem; padding-top: 1rem; border-top: .12rem solid var(--track); display: flex; flex-direction: column; gap: .7rem; align-items: flex-start; }
 #st .fig3 .by .blabel { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
-#st .fig3 .by .form { grid-template-columns: minmax(0, 1fr); row-gap: .8rem; }
 .srv .always { display: inline-flex; justify-content: center; min-width: 7.28rem; font: 500 1.02rem/1 var(--font-name); color: var(--text-body); }  /* a web server is shared by being one server: the word sits where the switch would */
 
-/* ---------- Version ---------- */
-.vform .v { font: 500 1.5rem/1 var(--font-data); color: var(--text); padding: .55rem 0; }
-.vform .v.new { color: var(--key-light); }
-[data-theme="day"] .vform .v.new { color: #8a5a12; }
+/* ---------- Version: three cards, the version read at the size of a figure rather than as a word in a label column */
+.vcard .v { font: 400 3.4rem/.95 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
+.vcard .v.new { color: var(--key-light); }
+[data-theme="day"] .vcard .v.new { color: #8a5a12; }
+.vcard .state { font: 400 2.8rem/1 var(--font-lead); color: var(--text-mute); }
+.vcard .vwhy { margin: 0; font: 500 1.15rem/1.4 var(--font-name); color: var(--text-body); }
+/* the version and the button that acts on it share a line; the sentence saying what the card means is the row under them */
+#st .vcard .ctl { gap: 1rem 1.4rem; }
+#st .vcard .ctl > .vwhy { flex: 1 0 100%; }
 .run { padding: 1.3rem 1.5rem 1.4rem; background: var(--obj-sunk); border-radius: var(--r-obj); }
 .run header { display: flex; align-items: center; gap: 1rem; margin-bottom: .6rem; }
 .run header .lamp, .step .lamp { position: static; flex: none; }
@@ -251,7 +274,22 @@ button.count:hover { color: var(--text); }
 
 /* groups of figures under one heading, each with its label */
 .fgroups { display: flex; flex-wrap: wrap; gap: 1.2rem 3rem; }
-.fgroup { display: flex; flex-direction: column; gap: .7rem; }
+/* a group takes the share of the row its figure count earns (--f, set in groupHtml), and its figures split that share,
+   so every figure in the section comes out one width and the row ends where the pane ends. 35rem per figure is what a
+   figure's door needs to stay on one line; where the groups cannot both have it, each takes a row of its own rather
+   than squeezing a door into "Longest / silence" and "Open / it" (Silent models at 1440). */
+.fgroup { display: flex; flex-direction: column; gap: .7rem; flex: var(--f, 1) 1 0; min-width: calc(var(--f, 1) * 35rem); }
+.fgroup > .figs3 > .fig3 { flex: 1 1 0; min-width: 35rem; }  /* the width its door needs whole: below it the groups take a row each */
+/* where the groups took a row each, a group of one figure stretched its tile across the pane and left the right two
+   thirds of it empty (Ended early at 1440, Marcos: "why are we having all this empty space"). A tile that wide reads
+   along the row instead: the count and its door at the left, each command's share at the right edge. The row is asked,
+   not the tile, because a tile cannot query itself, and the count is in the class: three tiles sharing a row at 3828
+   are 46rem each and stay stacked, while the one on a row of its own at 1440 is 92rem. */
+.fgroup > .figs3 { container: figs / inline-size; }
+@container figs (min-width: 60rem) {
+  .figs3.n1 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
+  .figs3.n1 > .fig3 > .cdoors { justify-content: flex-end; }
+}
 .glabel { font: 500 1rem/1 var(--font-name); color: var(--text-body); min-height: 1rem; }
 .fig3 .lead { display: flex; flex-direction: column; gap: .7rem; text-decoration: none; }
 .fig3 .lead:hover em, .fig3 .lead:hover .big { color: var(--key-light); }
@@ -261,10 +299,9 @@ button.count:hover { color: var(--text); }
 /* a row that holds his prompts word for word */
 .yours { display: inline-block; white-space: nowrap; margin-left: .8rem; padding: .25rem .5rem; font: 500 .85rem/1 var(--font-name); color: var(--text-body); border: .12rem solid color-mix(in oklab, var(--key-light) 55%, transparent); border-radius: .35rem; vertical-align: .1rem; }
 
-/* ---------- room for the rows (Marcos, Oct 9: "rows look a bit cramped but overall good"): more air between the setting
-   rows, the stores and the servers, every element, word and size kept. Scoped to Settings (#st), since the kit's form is
-   also the gear on Requests and a command's settings on Models. ---------- */
-#st .kn .form { row-gap: 2.2rem; }
+/* ---------- room for the rows (Marcos, Oct 9: "rows look a bit cramped but overall good"): more air inside a setting
+   and under a section heading. Scoped to Settings (#st), since the kit also draws the gear on Requests and a
+   command's settings on Models. ---------- */
 #st .kn .ctl.col { gap: 1rem; }
 #st .sub h3 { margin-bottom: 1.7rem; }
 #st .pane .body { gap: 3.2rem; }
@@ -295,7 +332,6 @@ button.count:hover { color: var(--text); }
 .state.ok { color: var(--live); }
 /* the settings this side owns, under a line */
 .wcard .fix { margin-top: .5rem; padding-top: 1.9rem; border-top: .12rem solid var(--track); }
-#st .wcard .fix .form { grid-template-columns: 20rem minmax(0, 1fr); row-gap: 1.9rem; }
 /* ---------- what each wait does when it fires: one silence as a rail, left to right, the waits as lamps on it
    (settings.js waitsHtml). The console's own rail and lamps, laid flat: a working lamp's running trace for a wait that
    only asks whether the model is alive, the way back mirrored for the one that resumes the answer, a stop square in the
@@ -454,11 +490,7 @@ button.count:hover { color: var(--text); }
 .pcard .door { align-self: flex-start; margin-top: auto; padding: .4rem .9rem; white-space: nowrap; }
 .pcard .pnone { margin-top: auto; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
 .pidle { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; margin: 1.4rem 0 0; font: 500 1.15rem/1.3 var(--font-name); color: var(--text-body); }
-/* a wide pane fits two settings side by side, so a form never sits in the left quarter of an empty row. A form holding a
-   setting some commands override is the exception: it keeps one setting per row and spreads those commands across the
-   width, instead of stacking them in a 30rem column with three quarters of the row empty (Marcos's verdict, Oct 11). */
 @media (min-width: 2000px) {
-  #st .sub .form:not(:has(.over)), #st .fix .form:not(:has(.over)) { grid-template-columns: 20rem minmax(16rem, 30rem) 20rem minmax(16rem, 30rem); column-gap: 3.2rem; }
   /* a figure wide enough to hold both reads as one line: the count and its door at the left, each command's share at the
      right edge, instead of a tall box with its words in the top corner */
   #st .tally > .figs3 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
@@ -467,14 +499,38 @@ button.count:hover { color: var(--text); }
 /* ---------- a setting as a card (blocks()), so no label column is shared across sections and none of them sits in the
    left quarter of an empty row. Several in a section share the row; one alone lays itself out along the row instead of
    standing in a 26rem column (splice-lead's walk, Oct 11). ---------- */
-.kcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); gap: var(--gap-card); margin-top: 1.8rem; align-items: start; }
-.kcard { display: grid; gap: 1.1rem; padding: 1.5rem 1.7rem 1.6rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
-#st .kcard > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); }
-#st .kcard > .ctl { align-items: flex-start; }
-/* alone in its section: the name, then the value, then the commands that override it, across the row */
-.kcards:has(> .kcard:only-child) { grid-template-columns: minmax(0, 1fr); }
-#st .kcard:only-child { grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); align-items: start; column-gap: 3.2rem; }
-#st .kcard:only-child > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+/* FLEX with a per-row count, not a grid of equal columns: a grid gives every row the same number of tracks, so six
+   settings drew four cards and then two, with half of the second row empty (Reasoning at 3828, Oct 11). --n is the
+   count that divides them evenly (blocks()), and wrapped flex items share whatever row they land on, so a row is never
+   part empty however many settings a job has. The basis keeps one gap of slack, because --n cards at an exact share
+   rounded a hair over the row at 1440 and sent the last one down a row of its own. min-width keeps a card readable
+   where the pane is too narrow for --n: 21rem, because the root is 12px at 1440 and 26rem there asked 312px of a
+   262px share, which dropped the fourth card onto a row of its own with a shape its three neighbours did not have. */
+.kcards { display: flex; flex-wrap: wrap; gap: var(--gap-card); margin-top: 1.8rem; }
+.kcard { display: grid; flex: 1 1 calc((100% - var(--n, 1) * var(--gap-card)) / var(--n, 1)); min-width: 21rem; container: kcard / inline-size; padding: 1.5rem 1.7rem 1.6rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
+/* the card's own grid is one element in, so it can ask the card how wide it turned out: a container cannot query itself,
+   and an unnamed query here reached .page instead, which is always wide enough — every card drew two columns */
+.kin { display: grid; align-content: start; gap: 1.1rem; height: 100%; }
+/* the controls of a section sit on one line: cards in a row are one height, so a card whose name wrapped to two lines
+   would otherwise hold its control a line below its neighbours' (Plan limits at 1440, where two of four names wrap).
+   A section where a setting carries per-command values is left alone: there the control is read with the values under
+   it, not with the card's lower edge. Version's cards read their number straight under its name, so they keep start. */
+.kcards:not(.vcards) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
+/* a setting that carries per-command values takes the row, as a section holding one setting already does: beside two
+   plain cards it ran four lines taller, and the two stretched to match stood empty under their dropdown (splice's
+   limits at 1440 and 3828). On its own row it reads along the row instead, name then value then the commands. */
+.kcards > .kcard:has(.over) { flex-basis: 100%; }
+#st .kin > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); }
+/* every control box is at least a control tall, so a row of settings shows a switch and a dropdown at the same height
+   instead of the shorter one hanging 4px lower (Plan limits at 1440: three dropdowns and one Warns/Blocks switch) */
+#st .kin > .ctl { align-items: flex-start; min-height: var(--ctl-h); }
+/* A setting with a whole row to itself reads along it: the name, then the value, then the commands that override it.
+   Stacked, its control would sit under its name with the rest of the row empty. Cards that share a row stay stacked,
+   so the settings in a section keep one shape. */
+@container kcard (min-width: 80rem) {
+  #st .kin { grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); align-items: start; column-gap: 3.2rem; }
+  #st .kin > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+}
 
 /* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
 #st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); align-items: stretch; gap: 1rem 1.6rem; }

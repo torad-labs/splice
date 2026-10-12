@@ -133,13 +133,18 @@ function found(id) {
   return [...new Set(f)];
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
-const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key) && shownKnob(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })).join("")}</div>`;
-/** The same settings as cards: each one its name, its value and the commands that override it, in a grid that fills the
- *  width as the cards above it do. A label column shared by every setting left the right third of the row empty and put
- *  two sections' controls at different x (splice-lead's walk of the rebuilt pane, Oct 11), so a setting owns its block. */
+/** The same settings as cards: each one its name, its value and the commands that override it, across a row that the
+ *  cards fill however many there are. A label column shared by every setting left the right third of the row empty and
+ *  put two sections' controls at different x (splice-lead's walk of the rebuilt pane, Oct 11), so a setting owns its
+ *  card; .kin is the card's inner grid, which asks the card how wide it ended up (settings.css). */
+const kcard = (inner, cls = "") => `<article class="kcard${cls}"><div class="kin">${inner}</div></article>`;
+/** How many cards to a row, so the rows come out even: six settings read as two rows of three, never four and then two
+ *  with half a row empty. Four or fewer stand on one row; above that, the fewest rows of at most four, shared evenly. */
+const perRow = (n) => (n <= 4 ? Math.max(1, n) : Math.ceil(n / Math.ceil(n / 4)));
+const cardRow = (cards, cls = "") => `<div class="kcards${cls}" style="--n:${perRow(cards.length)}">${cards.join("")}</div>`;
 const blocks = (keys) => {
   const live = keys.filter((key) => !needsRestart(key) && shownKnob(key));
-  return live.length ? `<div class="kcards">${live.map((key) => `<article class="kcard">${rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })}</article>`).join("")}</div>` : "";
+  return live.length ? cardRow(live.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })))) : "";
 };
 
 // the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
@@ -311,7 +316,9 @@ function dataHtml() {
   // each store is built once: its card goes to its group, its Delete to the one section at the end
   const built = DATA_ROWS.map((r) => ({ r, p: dataRow(r) }));
   const sized = (b) => (heldOf(b.r)?.bytes ?? 0) > 0;
-  const cards = (g) => `<div class="dcards">${built.filter((b) => b.r.g === g && sized(b)).map((b) => b.p.html).join("")}</div>`;
+  // a group whose cards say the same kind of thing stands them level, so their Save and Keep for line up; Records holds
+  // one card with a chart and two without, and there the short ones stay short (splice-lead, Oct 11)
+  const cards = (g) => `<div class="dcards ${esc(g)}">${built.filter((b) => b.r.g === g && sized(b)).map((b) => b.p.html).join("")}</div>`;
   const dels = built.filter((b) => b.p.del && b.p.del.trim()).map((b) => {
     const x = heldOf(b.r);
     return `<div class="dfrow"><span class="nm">${esc(b.r.name)}</span><span class="dfs">${x && x.bytes ? mbWord(x.bytes) : ""}</span><span class="dfa">${b.p.del}</span></div>`;
@@ -425,11 +432,18 @@ function figParts({ why, what, door, cmds = true }) {
     + (cmds ? `<div class="cdoors">${shares.map((p) => `<a class="cdoor" href="${reqUrl({ ...from, ...ask, cmd: p.head.command })}">${cmdChip(p.head.key)}<b>${fmt(p.n)}</b></a>`).join("")}</div>` : "")
     + (door ? door(shares) : "") + `</div>` };
 }
-/** The figures of one group: the tiles he can open, then one quiet line holding the zeros. */
+/** The figures of one group: the tiles he can open, then one quiet line holding the zeros. `n` is how many tiles were
+ *  drawn, which is what a group's share of the row is weighed by: the ones that came back zero are in the line. */
 function figsHtml(figs) {
   const parts = figs.map(figParts), lines = parts.filter((p) => p.line).map((p) => p.line);
-  return `<div class="figs3">${parts.filter((p) => p.tile).map((p) => p.tile).join("")}</div>`
-    + (lines.length ? `<div class="zeros">${lines.join('<span class="dot">·</span>')}</div>` : "");
+  const tiles = parts.filter((p) => p.tile).map((p) => p.tile);
+  return {
+    n: tiles.length,
+    // the count is on the row too: a group's tiles share its width evenly, so how wide one came out is the row's width
+    // divided by this, which is what tells a lone tile on a full row from three tiles sharing one (settings.css)
+    html: `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>`
+      + (lines.length ? `<div class="zeros">${lines.join('<span class="dot">·</span>')}</div>` : ""),
+  };
 }
 const latestDoor = (shares) => {
   const best = shares.filter((p) => p.newest).sort((a, b) => b.newest.ts - a.newest.ts)[0];
@@ -439,7 +453,9 @@ const longestDoor = (shares) => {
   const best = shares.filter((p) => p.longest).sort((a, b) => b.silence - a.silence)[0];
   return best ? doorTo(`requests.html?win=7d#${encodeURIComponent(rowId(best.head.key, best.longest))}`, "Longest silence", `<b>${msLong(best.silence)}</b>`, best.head.key) : "";
 };
-const groupHtml = (label, figs) => `<div class="fgroup"><span class="glabel">${label}</span>${figsHtml(figs)}</div>`;
+// --f is how many figures the group holds, so two groups share the row in proportion to what is in them and every
+// figure comes out the same width: one group of one beside a group of three left most of the row empty at 1440 and 3828
+const groupHtml = (label, figs) => { const f = figsHtml(figs); return `<div class="fgroup" style="--f:${f.n || 1}"><span class="glabel">${label}</span>${f.html}</div>`; };
 const tallyHtml = (title, groups) => `<section class="tally"><h3>${title}</h3><div class="fgroups">${groups.join("")}</div></section>`;
 const silentHtml = () => tallyHtml("This week", [
   groupHtml("Ended early", [
@@ -451,7 +467,7 @@ const silentHtml = () => tallyHtml("This week", [
     { why: "silentresume", what: WHY.silentresume.word.replace(" after a silence", "") },
     { why: "silentover", what: WHY.silentover.word.replace(" after a silence", "") },
   ]),
-]) + `<section class="sub">${form(keysOf("silent"))}</section>`;
+]) + `<section class="sub">${blocks(keysOf("silent"))}</section>`;
 const limitOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.maxInflight ?? val("maxInflight")) || 0;
 function peaksHtml() {
   if (ui.peaks === undefined) return `<section class="tally"><h3>Today</h3><div class="card peaks">${READING}</div></section>`;
@@ -479,7 +495,7 @@ const busyHtml = () => {
   const limits = LIMITS.filter((key) => keysOf("busy").includes(key));
   // what splice does when a provider pushes back sits under that provider's figures; its own caps stand together
   return peaksHtml()
-    + `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }])}`
+    + `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }]).html}`
     + blocks(keysOf("busy", LIMITS)) + `</section>`
     + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "");
 };
@@ -487,22 +503,35 @@ const busyHtml = () => {
 // ---------- Version ----------
 // Running, Newest and Go back, from GET /api/upgrade. The route never fetches, so Newest is a version only when a check
 // has succeeded on this daemon; otherwise it is the releases page, one tap away. Go back is POST /api/upgrade {rollback}.
+//
+// Three cards, each with its version in the pane's largest type, as the settings beside them are cards. Two label/value
+// rows in the left quarter of the pane was the shape Marcos threw out ("everything is small, no rich components"), and
+// Newest's row read as an empty value beside a button: the daemon carries a sentence saying why it has no version to
+// show, and the card prints it rather than leaving the slot blank.
 const RELEASES = "https://github.com/torad-labs/splice/releases";
 const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" };
+const vcard = (label, body, note = "") => kcard(`<div class="lbl">${esc(label)}</div><div class="ctl">${body}${note ? `<p class="vwhy">${esc(note)}</p>` : ""}</div>`, " vcard");
+const vnum = (s, cls = "") => `<b class="v${cls}">${esc(s)}</b>`;
 function versionHtml() {
   const v = ui.ver;
   if (v === undefined) return `<span class="state">Reading</span>`;
   if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
-  const rows = `<div class="form vform"><div class="lbl">Running</div><div class="ctl"><b class="v">${esc(v.installed)}</b></div>`
-    + `<div class="lbl">Newest</div><div class="ctl">${v.latest ? `<b class="v${v.latest !== v.installed ? " new" : ""}">${esc(v.latest)}</b>` : ""}`
-    + `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}See releases</a></div>`
-    + (back ? `<div class="lbl">Previous</div><div class="ctl"><b class="v">${esc(back)}</b>${ui.armed === "rollback"
-      ? `<button class="act primary small" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet small" data-act="disarm">Stay on ${esc(v.installed)}</button>`
-      : `<button class="act quiet small" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}</div>` : "")
-    + `</div>`;
+  const checked = v.checked_at_epoch_millis ? `Checked ${atWord(v.checked_at_epoch_millis)}` : "";
+  const releases = `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}See releases</a>`;
+  const cards = [vcard("Running", vnum(v.installed), "What this daemon is running now"),
+    vcard("Newest",
+      v.latest ? `${vnum(v.latest, v.latest !== v.installed ? " new" : "")}${releases}`
+        : `<span class="state">Not checked</span>${releases}`,
+      v.latest ? checked : v.latest_unavailable_reason || ""),
+    (back
+      ? vcard("Previous", `${vnum(back)}${ui.armed === "rollback"
+        ? `<button class="act primary small" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet small" data-act="disarm">Stay on ${esc(v.installed)}</button>`
+        : `<button class="act quiet small" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}`,
+      "The release splice would go back to")
+      : vcard("Previous", `<span class="state">None</span>`, v.rollback_unavailable_reason || "No earlier release is on this machine to go back to"))];
   const ran = run ? `<section class="run"><header><h3>${runWord[run.state] ?? "Going back to"} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
-  return rows + ran;
+  return cardRow(cards, " vcards") + ran;
 }
 async function goBack() {
   const to = ui.ver?.rollback_target;
@@ -524,9 +553,9 @@ function pollRun(to) {
 const PANES = {
   busy: busyHtml,
   silent: silentHtml,
-  reasoning: () => `<section class="sub">${form(keysOf("reasoning"))}</section>`,
-  plan: () => `<section class="sub">${form(keysOf("plan"))}</section>`,
-  mcp: () => `<section class="sub">${form(keysOf("mcp"))}</section>`,
+  reasoning: () => `<section class="sub">${blocks(keysOf("reasoning"))}</section>`,
+  plan: () => `<section class="sub">${blocks(keysOf("plan"))}</section>`,
+  mcp: () => `<section class="sub">${blocks(keysOf("mcp"))}</section>`,
   data: dataHtml,
   version: versionHtml,
 };

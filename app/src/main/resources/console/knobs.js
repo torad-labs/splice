@@ -197,7 +197,6 @@ const KNOBS = (() => {
     const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>`;
   }
-  const formHtml = (keys, opts) => `<div class="form">${keys.map((key) => rowHtml(KNOB[key], opts)).join("")}</div>`;
 
   // ---------- changing a setting: PATCH /api/config with the one key ----------
   // The answer decides the word: the daemon says what it applied, what it refused and why, and which applied keys it
@@ -277,6 +276,6 @@ const KNOBS = (() => {
 
   return {
     fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, needsRestart, ownersOf, ownValue,
-    cmdChip, ctlHtml, saidHtml, rowHtml, formHtml, patch, sent, click, wire, focusCustom,
+    cmdChip, ctlHtml, saidHtml, rowHtml, patch, sent, click, wire, focusCustom,
   };
 })();

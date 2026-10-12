@@ -1,11 +1,11 @@
 /* The settings kit's controls (knobs.js), the same on Settings, the gear on Requests and a command's pane on Models.
-   Every rule sits under .kn, the wrapper a page puts around what the kit draws, so none reaches a page's own .form,
+   Every rule sits under .kn, the wrapper a page puts around what the kit draws, so none reaches a page's own
    .pickbtn or .said. Class names checked against console.css, sessions.css, models.css and requests.css. */
 
-/* a setting: its name, its control, and what the change did */
-.kn .form { display: grid; grid-template-columns: 24rem minmax(0, 1fr); gap: 1.3rem 1.8rem; align-items: baseline; }
-.kn .form .lbl.lit { color: var(--text); }
-.kn .form .lbl.lit::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin: 0 .6rem .15rem -1.1rem; border-radius: 50%; background: var(--key-light); }
+/* a setting: its name, its control, and what the change did. The name of one the search found carries a dot, wherever
+   the page puts the name: the kit's own form is gone and Settings draws each setting as a card. */
+.kn .lbl.lit { color: var(--text); }
+.kn .lbl.lit::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin: 0 .6rem .15rem -1.1rem; border-radius: 50%; background: var(--key-light); }
 .kn .ctl { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; min-width: 0; }
 .kn .ctl.col { flex-direction: column; align-items: flex-start; gap: .7rem; }
 .kn .line { display: flex; align-items: center; flex-wrap: wrap; gap: .9rem; }
@@ -52,7 +52,6 @@
 .kn .mchip .icon { width: 1.8rem; height: 1.8rem; }
 .kn .mchip .icon svg { width: .95rem; height: .95rem; }
 
-/* a command's own settings, under its form on Models */
+/* a command's own settings on Models */
 .kn.ownsec h3 { margin-bottom: 1.2rem; }
-.kn.ownsec .form { grid-template-columns: 22rem minmax(0, 1fr); margin-bottom: 1.2rem; }
 .kn .only.every { font: 500 .98rem/1.2 var(--font-name); color: var(--text-mute); }

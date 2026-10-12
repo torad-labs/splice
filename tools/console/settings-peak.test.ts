@@ -150,21 +150,30 @@ test("at 1440 the same commands wrap inside their block instead of running past 
   }
 }, 30_000);
 
+// A setting that carries per-command values takes the row it is on, as a section holding one setting does: beside two
+// plain cards it ran four lines taller, and the two stretched to its height stood empty under their dropdown. The
+// plain settings of a section still share one row (Marcos: "why are we having all this empty space", Oct 11).
 test("a setting alone in its section lays its name and value along the row, and several share the row as cards", async () => {
   const page = await open(3828, 2130);
   try {
     await expect(page.locator(".kcard").first()).toBeVisible({ timeout: 15_000 });
-    const m = await page.evaluate(() => {
-      const groups = [...document.querySelectorAll(".kcards")].map((g) => {
-        const cards = [...g.querySelectorAll(".kcard")].map((c) => c.getBoundingClientRect());
-        return { n: cards.length, rows: new Set(cards.map((b) => Math.round(b.top))).size, width: g.getBoundingClientRect().width, span: Math.max(...cards.map((b) => b.right)) - Math.min(...cards.map((b) => b.left)) };
-      });
-      return groups;
-    });
+    const m = await page.evaluate(() => [...document.querySelectorAll(".kcards")].map((g) => {
+      const cards = [...g.querySelectorAll(".kcard")].map((c) => ({ box: c.getBoundingClientRect(), over: !!c.querySelector(".over") }));
+      const tops = cards.map((c) => Math.round(c.box.top));
+      return {
+        width: g.getBoundingClientRect().width,
+        span: Math.max(...cards.map((c) => c.box.right)) - Math.min(...cards.map((c) => c.box.left)),
+        anyOver: cards.some((c) => c.over),
+        rows: new Set(tops).size,
+        // a card carrying per-command values has no other card on its row
+        sharedWithOver: cards.filter((c) => c.over).filter((c) => tops.filter((t) => t === Math.round(c.box.top)).length > 1).length,
+      };
+    }));
     expect(m.length).toBeGreaterThan(1);
     for (const g of m) {
       expect(g.span / g.width).toBeGreaterThan(0.98); // every section fills its row, alone or in company
-      if (g.n > 1) expect(g.rows).toBe(1);
+      if (!g.anyOver) expect(g.rows).toBe(1); // settings that override nothing share one row
+      expect(g.sharedWithOver).toBe(0);
     }
   } finally {
     await page.close();

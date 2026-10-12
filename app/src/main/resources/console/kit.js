@@ -333,7 +333,6 @@ function look(s) {
   }
   if (s.state === "working") return { cls: "working", lamp: ICON.trace, word: "Working" };
   if (s.state === "stopped") return { cls: "stopped", lamp: "<i></i>", word: "Stopped" };
-  if (s.state === "seen") return { cls: "seen", lamp: "<i></i>", word: `Seen ${clock(s.at)}` };
   if (s.state === "ended") return { cls: "ended", lamp: "<i></i>", word: "Ended" };
   return { cls: "idle", lamp: "<i></i>", word: "Idle" };
 }

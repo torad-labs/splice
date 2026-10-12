@@ -49,8 +49,6 @@
 .lamp.stalled { color: var(--limit); }
 .lamp.idle i { background: var(--text-mute); }
 .lamp.stopped i { border-radius: .15rem; background: var(--text-body); width: .75rem; height: .75rem; }
-.lamp.seen { box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail); }
-.lamp.seen i { background: transparent; box-shadow: inset 0 0 0 .14rem var(--text-mute); }  /* the stale bars' outline */
 .lamp.ended i { background: transparent; box-shadow: inset 0 0 0 .12rem var(--track-line); }
 
 /* ---------- a session: one card ---------- */
@@ -309,3 +307,27 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 /* the same card, hung under Continue on where the models menu was, so his answer appears where he pressed (hitstop 605ab5c) */
 .pane > header .acts > .inprompt.onmove { position: absolute; right: 0; top: calc(100% + .6rem); z-index: 6; height: auto; }
 .pane > header .acts > .inprompt.onmove .inprompt-card { position: static; }
+
+/* ---------- by project (Marlin and fin, Oct 11; hitstop's rail, mock a8d639f) ----------
+   A group's header reads at a glance: the name at a team name's size on Teams, then one lamp and its count for each
+   live state present, then the muted total. The caret is a node ON THE LAMPS' RAIL, so one look down the left edge
+   reads the projects and who is stuck, which is why the header hangs back into the list's lamp gutter. */
+.pgroup { display: flex; flex-direction: column; gap: var(--gap-card); }
+.phead { display: flex; align-items: center; gap: 1.3rem; min-width: 0; margin-left: -3.4rem; }
+.pfold { display: inline-flex; align-items: center; gap: 1.2rem; min-width: 0; background: none; border: 0; padding: 0; cursor: pointer; color: var(--text); }
+.pfold .caret { flex: none; width: 2.6rem; height: 2.6rem; padding: .75rem; box-sizing: border-box; color: var(--text-body); background: var(--obj); border-radius: 50%; box-shadow: 0 0 0 var(--ink-w) var(--ink); transform: rotate(90deg); transition: transform var(--t-snap) var(--e-out); }
+.pgroup.shut .pfold .caret { transform: none; }
+.phead .pname { font: 400 3rem/1 var(--font-lead); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pcounts { display: inline-flex; align-items: center; gap: 1.1rem; flex: none; font: 600 1.35rem/1 var(--font-data); }
+/* a count at a card's lamp size: the socket stands in the line, not in the card's left gutter */
+.pc.big { display: inline-flex; align-items: center; gap: .5rem; }
+.pc.big .lamp { position: static; flex: none; }
+.ptotal { font: 500 1.35rem/1 var(--font-data); color: var(--text-mute); }
+.pgo { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .4rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
+.pgo:hover { color: var(--text); }
+.pgo svg { width: .95rem; height: .95rem; }
+.pgroup + .pgroup { margin-top: 1.4rem; }
+.rested { display: flex; flex-direction: column; gap: .9rem; }
+.rested .s { padding: .8rem 1.3rem; box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.rested .lamp { top: .55rem; }
+.rested .meta { margin-top: .3rem; }

@@ -54,19 +54,17 @@ const PERF_HEADS = (() => {
   ];
   const head = (c) => `${c.label}${c.key ? KEY : ""}`;
 
-  /** Failures by kind, the largest share first, in the words every page uses for an outcome; each opens its requests. */
+  /** Failures by kind, the largest share first, in the words every page uses for an outcome; each opens its requests. A
+   *  share is printed only from 1% up: below that the rank says it, not an "under 1%" before every reason (marlin). */
   function kinds(h) {
     const shares = Object.entries(h.failure_shares || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
-    return shares.map(([tag, s]) => `<a class="k" href="${door(h.key, { tag })}"><b>${pct(s)}</b> ${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</a>`).join("");
+    return shares.map(([tag, s]) => `<a class="k" href="${door(h.key, { tag })}">${s >= 0.005 ? `<b>${pct(s)}</b> ` : ""}${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</a>`).join("");
   }
-  /** What else the command's requests were: compactions among them, which open on Requests with its Compactions toggle
-   *  on, and the status-line labels splice wrote itself from the last tool call, with no model (fin), which Requests
-   *  never lists. */
+  /** The compactions among the command's requests, which open on Requests with its Compactions toggle on. The status
+   *  labels splice writes itself are left out: nothing a person can act on (marlin). */
   function sorts(h) {
-    const k = h.kinds || {};
-    const compactions = k.compaction > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(k.compaction)} ${k.compaction === 1 ? "compaction" : "compactions"}</a>` : "";
-    const labels = k.activity_query > 0 ? `<span class="m">${n0(k.activity_query)} ${k.activity_query === 1 ? "status label" : "status labels"} splice wrote</span>` : "";
-    return compactions + labels;
+    const n = h.kinds?.compaction ?? 0;
+    return n > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(n)} ${n === 1 ? "compaction" : "compactions"}</a>` : "";
   }
   /** What the record behind a row could not cover, in the fewest words; the cause goes to the console. */
   function gaps(h) {

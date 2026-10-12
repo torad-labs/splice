@@ -717,8 +717,9 @@ origin.
   per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
   Playground that sends one prompt to several models side by side.
 - **A running session takes a note from the console.** `POST /api/sessions/{id}/message` writes the note to the
-  session's inbox socket. It is proven on Claude Code 2.1.282 to 2.1.286, and `/api/sessions` names those versions
-  so a page can refuse before anyone types. `GET /api/sessions/{id}/transcript` reads a transcript from its end,
+  session's inbox socket. It is proven on each Claude Code version `/api/sessions` names, from 2.1.282 up to the
+  tested 2.1.296, so a page can refuse before anyone types.
+  `GET /api/sessions/{id}/transcript` reads a transcript from its end,
   newest first, with a cursor, governed by the live `transcriptView` knob; `GET /api/sessions/{id}/resume`
   returns a read-only recipe for resuming on another head.
 - **The operator can stop a live turn.** `POST /api/heads/{head}/turns/{id}/stop` ends it, and the client's
@@ -815,7 +816,8 @@ origin.
   registered.
 - **Settings lists your MCP servers** with a Test act on each row.
 - **When you add an account to a command after hitting its plan limit, the sessions the limit stopped continue on
-  their own.** Each gets "A new account is available. Continue where you left off."
+  their own.** Each gets "A new account is available. Continue where you left off." A session still waiting in its own
+  retry comes back through that retry, and one you stopped yourself, in its terminal or from a card, gets nothing.
 - **Accounts lists the sessions on each login now,** under its card, each with the lamp Sessions gives it and a link
   to it on Sessions. Past four, the rest show as a count.
 - **Accounts shows each command's last move between logins** under its rail, such as "Moved from Personal to Work ·
@@ -841,6 +843,14 @@ origin.
   running" until a session asks for it. A server at a web address leaves the cell empty.
 - **`splice add` takes a profile's command as well as its name,** so `splice add claudex` adds what `splice add codex`
   does.
+- **Usage shows how each command answered,** one row per command beside the Breakdown, where the Commands cards were.
+  Each row has its requests, its failures, and first byte, streaming and whole request, typical and slowest 5%, over
+  the last hour, 24 hours or 7 days. Cache hit, retries, sign-ins renewed, cold cache and most at once appear once a
+  command has a figure for them. Each count opens its requests on Requests, each kind of failure included, and a row
+  says when its record covers less than the window. `/api/perf/summary` carries `cache_cold`, the turns that began
+  on a cold prompt cache, and `null` for a command that never records it.
+- **Requests opens on one kind of failure** with `?tag=` and an outcome tag, shown as a chip you can clear, and with
+  Compactions on with `?compact=1`.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -1018,6 +1028,15 @@ origin.
   folder.
 - **End closes a session in any state, and End all closes a team's.** Teams and Sessions have the buttons; a session
   that is working is refused with the reason.
+- **Sessions lists the week's ended agents, and every link to one opens it.** The Ended fold reads them from Claude
+  Code's history, a search finds them by name or words, and a link from a request opens that agent at the request's
+  moment, with Show newest to jump to the end.
+- **A live session's pane gives the `SendMessage` line another session types to reach it,** with Copy. A session splice
+  did not open takes a note from its pane when its Claude Code is a version the note reaches, and the pane says Note
+  sent, since the client gives no receipt.
+- **Sessions marks a session whose registration stopped updating "Not heard from since" its last update,** and ranks
+  it with the idle ones. An empty list says runs started with `claude -p` never appear there.
+- **`splice sessions` names the model each session runs,** beside its head and account.
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
@@ -1556,7 +1575,18 @@ origin.
 - **`splice models` agrees with boot on a local model the runtime does not list:** on Ollama, LM Studio and vLLM it
   reads unserved, and a model id with no tag matches its `:latest` tag.
 - **An MCP server that asks for its session's project roots is no longer shared,** since a shared copy has no one
-  session's roots. Every session starts its own copy, and Settings reads "Asks which project it's in".
+  session's roots. Every session starts its own copy, and Settings reads "Asks which project it's in". The verdict is
+  kept across restarts as a digest that holds no command, argument or environment value, so the first session after a
+  restart starts its own copy instead of losing a shared one mid-work.
+- **A local model that is not pulled or loaded ends the turn on the runtime's first answer, in its own words,** such as
+  Ollama's "try pulling it first". It used to be retried until the retries ran out.
+- **An LM Studio model that is not loaded is held only to its maximum window.** LM Studio loads a model at its own
+  default window, so a row checked against the maximum failed once the model loaded smaller. A loaded model is held
+  to the window it serves, and doctor says the served window is unknown until the model loads.
+- **Doctor gives the runtime's tool answer for every local model it accepts:** "the runtime says it calls tools" or
+  "the runtime does not say whether it calls tools". It used to show only on a refused model.
+- **A code-mode host with no work releases its worker process.** Once its last session has been idle for the idle
+  window, the host leaves the pool and its process exits, and the next session starts a fresh one.
 - **Settings › MCP:** a command still on an older copy of the config is listed under Used by with "Next session". A long
   source path ends in an ellipsis inside its column, and a server set up for one project names that project.
 - **Adding a second command on a provider already set up starts from the address that provider sends to,** in a field
@@ -1567,6 +1597,13 @@ origin.
   passed reads "Ended", and a default name's plan tag shows only when it says more than the name.
 - **Many agents at once › Today reads "Not read" beside a command whose peak was not read,** or "Not answering" when
   splice did not answer.
+- **Teams keeps your teams on the page when a reread fails,** with one line saying why, and a refused read always says
+  a sentence, never a bare status. A member that did not come up says why on its card.
+- **A team message that a member's subagent sent shows its text,** read from the subagent transcripts Claude Code keeps
+  beside the session's own. A message whose text was not found reads "Text not found", and a sender outside the team
+  is named from history or reads Outside, never an id.
+- **Teams' chips draw an ended member's dot hollow,** as they do an unstarted one, and End all no longer moves the
+  requests line.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

@@ -101,6 +101,9 @@ public object PerfKeys {
     public const val RETRIES: String = "retries"
     public const val REFRESHES: String = "refreshes"
 
+    /** Rounds re-sent once, same body, after the model answered with nothing (EmptyAnswerRetry). */
+    public const val EMPTY_RETRIES: String = "empty_retries"
+
     /** The exact instant a spent window comes back, never the capped client retry deadline: the selector's earliest
      *  exhausted-account reset when admission turned the request away, and the plan window's own reset on every other
      *  turn that ended error:plan-limit (V4-444). */

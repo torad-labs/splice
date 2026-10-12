@@ -37,36 +37,38 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.compaction.CompactionInstructions
-import splice.core.util.JsonScalars
-import splice.core.util.PathProbe
+import splice.core.config.ProjectFolderCheck
 import splice.core.util.WallClock
 import splice.http.JsonReply
+import splice.sessions.projects.ProjectEconomics
+import splice.sessions.projects.ProjectFiles
 import splice.sessions.query.SessionHead
+import splice.sessions.registry.ProjectRef
 import splice.sessions.registry.RepoOrigin
-import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.TrustedRoot
-import java.nio.file.Files
-import java.nio.file.Path
 import java.nio.file.Paths
 
-/** The repo files read as a project's own instructions, in the order they are listed. */
-private val INSTRUCTION_FILES = listOf("CLAUDE.md", "AGENTS.md")
-private const val MEMORY_SUFFIX = ".md"
+/** A session's project, as the sessions rows resolve it: the same answer the Teams and request rows use. */
+public fun interface ProjectOf {
+    public operator fun invoke(record: SessionRecord): ProjectRef?
+}
 
-/** A session's repo, as the sessions rows resolve it. */
-public fun interface RepoOf {
-    public operator fun invoke(record: SessionRecord): RepoRoot?
+/** The Projects folders saved in settings, as written. */
+public fun interface ProjectFolders {
+    public operator fun invoke(): List<String>
+}
+
+/** The project a working directory belongs to (a team's repo), asked of the same resolver. */
+public fun interface ProjectAt {
+    public operator fun invoke(cwd: String): ProjectRef?
 }
 
 /** The trusted root a head's statusline probes a path under, as the sessions rows' resolver sees it. */
@@ -80,21 +82,37 @@ public fun interface CompactionSource {
     public operator fun invoke(): CompactionInstructions?
 }
 
+/** Everything the project views ask the resolver: a session's project, a working directory's project, and the
+ *  saved Projects folders. */
+public data class ProjectLookup(
+    public val of: ProjectOf,
+    public val at: ProjectAt,
+    public val folders: ProjectFolders = ProjectFolders { emptyList() },
+)
+
 public class ProjectsRoutes(
     private val registry: SessionSource?,
     private val heads: Map<String, SessionHead>,
-    private val repoOf: RepoOf,
+    private val lookup: ProjectLookup,
     private val teams: TeamSource,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val statuslineRoot: StatuslineRootOf = StatuslineRootOf { _, _ -> null },
     private val compaction: CompactionSource = CompactionSource { null },
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val slugChars = Regex("[^A-Za-z0-9]")
-
     public fun list(): JsonReply {
         val view = ProjectView()
-        val body = buildJsonObject { put("projects", buildJsonArray { view.roots.forEach { add(view.row(it)) } }) }
+        val body = buildJsonObject {
+            put("projects", buildJsonArray { view.roots.forEach { add(view.row(it)) } })
+            // A saved folder that has vanished is kept and reported, never a reason to refuse: its sessions fall back to repos.
+            put(
+                "folders",
+                buildJsonArray {
+                    lookup.folders().forEach { path ->
+                        add(buildJsonObject { put("path", path); put("found", ProjectFolderCheck.found(path)) })
+                    }
+                },
+            )
+        }
         return JsonReply(HttpStatusCode.OK, body.toString())
     }
 
@@ -106,21 +124,7 @@ public class ProjectsRoutes(
 
     public fun files(id: String): JsonReply {
         if (id !in ProjectView().roots) return unknown(id)
-        val root = Paths.get(id)
-        val slug = slugChars.replace(id, "-")
-        val memoryDirs = heads.mapNotNull { (name, head) ->
-            head.transcriptRoot?.let { name to it.resolve("projects").resolve(slug).resolve("memory") }
-        }
-        val lookedIn = listOf(root) + memoryDirs.map { it.second }
-        val files = INSTRUCTION_FILES.mapNotNull { file(root.resolve(it), "instructions", null) } +
-            memoryDirs.flatMap { (name, dir) -> memoryFiles(dir).mapNotNull { file(it, "memory", name) } }
-        val body = buildJsonObject {
-            put("id", id)
-            put("files", buildJsonArray { files.forEach(::add) })
-            put("looked_in", buildJsonArray { lookedIn.forEach { add(JsonPrimitive(it.toString())) } })
-            autoMemory()?.let { put("auto_memory_enabled", it) }
-        }
-        return JsonReply(HttpStatusCode.OK, body.toString())
+        return JsonReply(HttpStatusCode.OK, ProjectFiles(heads).read(id).toString())
     }
 
     private fun unknown(id: String): JsonReply {
@@ -128,51 +132,27 @@ public class ProjectsRoutes(
         return JsonReply(HttpStatusCode.NotFound, body.toString())
     }
 
-    private fun file(path: Path, kind: String, head: String?): JsonObject? {
-        if (!Files.isRegularFile(path)) return null
-        // A file that vanished or cannot be read between the check and the read is left out, and its directory is still
-        // in looked_in.
-        val text = PathProbe.text(path) ?: return null
-        return buildJsonObject {
-            put("kind", kind)
-            put("path", path.toString())
-            put("head", head)
-            put("text", text)
-        }
-    }
-
-    private fun memoryFiles(dir: Path): List<Path> =
-        // No memory directory is no memory files; the directory is named in looked_in either way.
-        PathProbe.entries(dir)
-            .filter { it.fileName.toString().endsWith(MEMORY_SUFFIX) }
-            .sorted()
-
-    /** The heads' shared autoMemoryEnabled, or null when none states it or they disagree. */
-    private fun autoMemory(): Boolean? = heads.values
-        .mapNotNull { it.transcriptRoot?.resolve("settings.json") }
-        .mapNotNull { settings ->
-            // A missing or unparseable settings file states nothing about the switch.
-            PathProbe.text(settings)?.let { JsonScalars.objectOrNull(json, it) }
-                ?.get("autoMemoryEnabled")?.let { (it as? JsonPrimitive)?.booleanOrNull }
-        }
-        .distinct()
-        .singleOrNull()
-
     /** One read of the registry, the teams and today's perf rows, shared by every row of a request. */
     private inner class ProjectView {
         private val records = registry?.read().orEmpty()
         private val allTeams = teams()?.teams().orEmpty()
-        private val byRoot = ProjectRoots(repoOf).grouped(records)
+        private val placed = records.mapNotNull { record -> lookup.of(record)?.let { it to record } }
+        private val byRoot = placed.groupBy({ it.first.id }, { it.second })
+        private val teamProject =
+            allTeams.associateWith { team -> team.repo.takeIf { it.isNotBlank() }?.let { lookup.at(it) } }
+        private val refs: Map<String, ProjectRef> =
+            (placed.map { it.first } + teamProject.values.filterNotNull()).associateBy { it.id }
         private val economics = ProjectEconomics(heads, clock())
         private val table = compaction()
         val roots: List<String> =
-            (byRoot.keys + allTeams.map { it.repo }.filter { it.isNotBlank() }).distinct().sorted()
+            refs.keys.sorted()
 
         fun row(root: String): JsonObject {
             val sessions = byRoot[root].orEmpty()
-            val repoTeams = allTeams.filter { it.repo == root }
+            val repoTeams = allTeams.filter { teamProject[it]?.id == root }
             return buildJsonObject {
                 put("id", root)
+                refs[root]?.let { put("name", it.name); put("label", it.label); put("source", it.source.wire) }
                 put("root", root)
                 RepoOrigin.of(root)?.let { put("remote", it) }
                 economics.row(sessions, repoTeams).forEach { (key, value) -> put(key, value) }

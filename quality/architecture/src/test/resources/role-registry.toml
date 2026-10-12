@@ -632,15 +632,16 @@ names = [
 ]
 reason = """Two frame writers on two different planes. FrameWrite "writes one already-serialized frame to the client" on the L3 turn stream, and its KDoc names its place: "the third rung of this file's write-port ladder: FrameWrite -> ImmediateSseWriter.write -> RawSseWrite + RawSseFlush". Suspending is its contract, not a detail — the write back-pressures on the client socket and a failure out of it is how the head learns the client is gone. SseWrite writes one frame on the MCP transport's own SSE channel (control/api/McpRoutes.kt), read by an MCP client, never by the turn. Sharing a port would let management-plane frames into a client turn — the leak the L3 wire walls exist for — and turn frames into an MCP session."""
 
-# ── 2 names, () -> List<String> ───────────────────────────────────────────────────────────────────
+# ── 3 names, () -> List<String> ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->List<String>"
 dated = "2026-09-24"
 names = [
     "GpuProbe",
+    "ProjectFolders",
     "TurnPathStalled",
 ]
-reason = """Two reads that answer with names, where the EMPTY list means opposite things. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles."""
+reason = """Three reads that answer with names, where the EMPTY list means opposite things. ProjectFolders (sessions/http) lists the saved Projects folders, and empty is the default that makes a project the git repo. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles."""
 
 # ── 2 names, () -> Path? ──────────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -651,6 +652,12 @@ names = [
     "TraceDirPort",
 ]
 reason = """Two paths whose null means different things and that no caller may substitute. RunningJar (core/config) is the jar this process runs from, null when it runs from classes: doctor's install probes, status's jar line and the cold start that relaunches the same build read it. TraceDirPort (features/turns TraceRoute.kt, V4-239) is the directory every head's TraceStore writes day files under, null when the control plane was never handed it, which GET /api/heads/{head}/trace answers with a named 503. Wired the wrong way round, the trace route would list the jar's directory as a trace dir and the cold start would relaunch a directory, so they stay two roles."""
+
+[[groups]]
+signature = "(String)->ProjectRef?"
+dated = "2026-10-12"
+names = ["ProjectAt", "SessionProjectOf"]
+reason = """ProjectAt answers for a working directory, a team's repo or a request row's cwd; SessionProjectOf answers for a session id, a Teams slot's bound session. Both return the one resolver's project, but a directory path and a session id are different keys that no caller may swap."""
 
 [[groups]]
 signature = "(ProcessBuilder)->Process"

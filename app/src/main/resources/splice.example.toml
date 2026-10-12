@@ -868,6 +868,7 @@ command = "claude-splice"
 # usageWarnPct = "80"                                       # percent; plan-window usage that triggers the warning (HOT, per ask)
 # usageWarnTokens5h = "0"                                   # tokens; absolute 5h threshold, 0 disables the warning (HOT, per ask)
 # statuslineGitRoots = ""                                   # extra git roots the status line inspects (HOT, per ask)
+# projectsFolders = ""                                       # colon-separated folders; a session's project is the folder directly under one that holds its cwd (HOT, per ask)
 # mcpIdleTimeoutMs = "1800000"                              # ms; a hosted MCP server with no open stream is closed after this (HOT, per sweep)
 # mcpMaxServers = "32"                                      # count; most MCP server processes hosted at once, daemon-wide (HOT, per spawn)
 # mcpRequestTimeoutMs = "1800000"                           # ms; how long one forwarded MCP request may wait for the child (HOT, per request)
@@ -923,7 +924,7 @@ command = "claude-splice"
 #   GROK_PROXY_PORT grokPort                 XAI_API_BASE xaiApiBase   GROK_AUTH_PATH grokAuthPath
 #   CLAUDEX_MODEL / CLAUDEX_PINNED_MODEL model           CLAUDE_GROK_MODEL / CLAUDE_GROK_PINNED_MODEL model
 #   CODEX_MODEL_CONTEXT_WINDOW contextWindowOverride     CLAUDEX_STATUSLINE_GIT_ROOTS statuslineGitRoots
-#   SPLICE_USAGE_WARN_PCT usageWarnPct
+#   SPLICE_USAGE_WARN_PCT usageWarnPct                   SPLICE_PROJECTS_FOLDERS projectsFolders
 #   SPLICE_USAGE_WARN_TOKENS_5H usageWarnTokens5h        CLAUDEX_MIRROR_REASONING mirrorReasoning
 #   CLAUDEX_SHOW_REASONING / CODEX_SHOW_REASONING showReasoning
 #   CLAUDEX_REASONING_EFFORT / CODEX_REASONING_EFFORT effort

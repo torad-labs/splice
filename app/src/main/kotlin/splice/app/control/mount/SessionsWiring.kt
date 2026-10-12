@@ -26,6 +26,7 @@ import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.LaunchedTerminal
 import splice.sessions.http.LaunchedTerminals
 import splice.sessions.http.MoveLedger
+import splice.sessions.http.ProjectSessions
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionDrive
@@ -41,6 +42,7 @@ import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
+import splice.sessions.transcript.SessionTranscriptViewEnabled
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -59,6 +61,15 @@ internal class SessionsWiring(
     val historyIndex = TranscriptHistoryIndex()
     val historyRoots = listOf(SessionHistoryRoot(null, UserHome.claudeDir())) +
         sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
+
+    /** The registry joined with durable transcript history: every session the project views and request rows know. */
+    fun projectSessions(sessions: SessionSource, config: ConfigService): ProjectSessions = ProjectSessions(
+        sessions,
+        historyIndex,
+        historyRoots,
+        SessionTranscriptViewEnabled { config.getConfig().transcriptView },
+    )
+
     private val perfFacts = SessionPerfFacts(heads, ports)
     private val sessionAccounts = object : SessionAccountOf {
         override fun forRecords(records: List<SessionRecord>): SessionAccountOf {

@@ -13,6 +13,7 @@ import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
 import splice.usage.economics.EconomicsPayloads
 import splice.usage.perf.PerfRoutes
+import splice.usage.perf.RequestProjects
 
 /** Keeps cold-read preparation and the management opt-in beside the readers they govern. */
 internal class UsageReadRoutes(
@@ -24,6 +25,11 @@ internal class UsageReadRoutes(
 ) {
     private val economics = EconomicsPayloads(heads, lookup = lookup, kept = kept)
     private val perf = PerfRoutes(lookup)
+
+    /** Which project each request row belongs to, set once the sessions wiring exists. */
+    fun tagProjects(tags: RequestProjects) {
+        perf.projects = tags
+    }
 
     fun register(route: Route) {
         val warmup = UsageReadWarmup(route.application, heads, io)

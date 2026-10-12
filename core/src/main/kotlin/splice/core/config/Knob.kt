@@ -31,10 +31,11 @@ package splice.core.config
 // attempt and carried into the refusal so the ceiling named is the ceiling that refused) and
 // mcpInitializeTimeoutMs (McpHandshakeBudget, per child handshake) — transcriptView
 // (SessionTranscriptViewEnabled, per console route)
-// and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Two more are live
+// and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Three more are live
 // WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
-// per-head overridable) and budgetDefaultAction (per budget ask, unkeyed). That is thirty, which is every knob
+// per-head overridable), projectsFolders (per sessions settings ask, keyed the same way) and
+// budgetDefaultAction (per budget ask, unkeyed). That is thirty-one, which is every knob
 // here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
 // agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
@@ -467,6 +468,9 @@ public enum class Knob(
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         KnobDefault.Text(""),
     ),
+
+    // Colon-separated absolute folders; a session's project is the folder under one that holds its cwd (ProjectResolver).
+    PROJECTS_FOLDERS("projectsFolders", KnobKind.STRING, listOf("SPLICE_PROJECTS_FOLDERS"), KnobDefault.Text("")),
 
     // V4-176: THE SUPERVISION CONTRACT, as two names the operator supplies rather than two constants
     // splice asserts about the box it happens to run on.

@@ -8,13 +8,14 @@ import io.ktor.server.routing.get
 import splice.app.control.ConsolePorts
 import splice.core.config.ConfigService
 import splice.sessions.http.CompactionSource
-import splice.sessions.http.ProjectSessions
+import splice.sessions.http.ProjectAt
+import splice.sessions.http.ProjectFolders
+import splice.sessions.http.ProjectLookup
+import splice.sessions.http.ProjectOf
 import splice.sessions.http.ProjectsRoutes
-import splice.sessions.http.RepoOf
 import splice.sessions.http.StatuslineRootOf
 import splice.sessions.http.TeamSource
 import splice.sessions.registry.SessionSource
-import splice.sessions.transcript.SessionTranscriptViewEnabled
 
 /** Registered only when a session registry is wired, as the project routes always were. [ports] is read at CALL
  *  time: ControlPlane assigns the team store and the compaction rules after construction. */
@@ -27,14 +28,13 @@ internal class ProjectsMount(
 ) {
     private val projects = wiring.routes?.let { routes ->
         ProjectsRoutes(
-            ProjectSessions(
-                checkNotNull(sessions),
-                wiring.historyIndex,
-                wiring.historyRoots,
-                SessionTranscriptViewEnabled { config.getConfig().transcriptView },
-            ),
+            wiring.projectSessions(checkNotNull(sessions), config),
             wiring.sessionHeads,
-            RepoOf(routes::repoOf),
+            ProjectLookup(
+                ProjectOf(routes.projects::of),
+                ProjectAt { routes.projects.at(it, null) },
+                ProjectFolders(routes.projects::folders),
+            ),
             TeamSource { ports.teams },
             statuslineRoot = StatuslineRootOf(routes::statuslineRootOf),
             compaction = CompactionSource { ports.compaction },

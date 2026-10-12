@@ -59,12 +59,14 @@ import splice.app.control.mount.TeamsMount
 import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
+import splice.app.control.projects.RequestProjectTags
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
+import splice.sessions.http.TeamSource
 import splice.sessions.registry.SessionSource
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
@@ -126,6 +128,17 @@ internal class ControlServer(
     private val sessionMount = SessionsMount(sessions, sessionWiring, heads, config, guard)
     private val teams = TeamsMount(sessionWiring, sessions, heads, ports, guard)
     private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)
+
+    // Every request row names its project through the one resolver the session rows use.
+    init {
+        val routes = sessionWiring.routes
+        val registry = sessions
+        if (routes != null && registry != null) {
+            val known = sessionWiring.projectSessions(registry, config)
+            usage.tagProjects(RequestProjectTags(known, TeamSource { ports.teams }, routes))
+        }
+    }
+
     private val events = EventsMount(ports, guard)
 
     // V4-230: the daemon's doctor reads these three answers in process; over loopback, from inside the

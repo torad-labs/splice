@@ -50,6 +50,8 @@ internal data class TurnsAttribution(
     val model: String? = null,
     val account: String? = null,
     val session: String? = null,
+    /** Every session tag of the project a request asked for: a row outside them is left out. */
+    val sessions: Set<String>? = null,
     val unattributed: Unattributed? = null,
 )
 
@@ -72,11 +74,16 @@ internal data class TurnsFilter(
         attribution.model == null || row.facts.model == attribution.model,
         attribution.account == null || row.facts.account == attribution.account,
         attribution.session == null || row.facts.session == attribution.session,
+        attribution.sessions == null || row.facts.session in attribution.sessions,
         attributionMatches(row),
         local || row.fields[PerfKeys.LOCAL_STEP] != 1L,
         compact == null || (row.facts.compact == true) == compact,
         waits.matches(row),
     ).all { it }
+
+    /** This filter narrowed to the project [id], or as it was when none is asked; an id nothing holds matches no row. */
+    fun inProject(id: String?, tags: ProjectTags): TurnsFilter =
+        if (id == null) this else copy(attribution = attribution.copy(sessions = tags.tagsOf(id)))
 
     private fun outcomeMatches(tag: String): Boolean = when (outcome) {
         null -> true

@@ -47,7 +47,13 @@ class ProjectsRoutesTest {
             roots = TranscriptRoots(heads, vanilla = tmp.resolve("vanilla")),
             teams = teams,
         )
-        return ProjectsRoutes(rig.registry, heads, RepoOf { sessions.repoOf(it) }, teams, WallClock { AT })
+        return ProjectsRoutes(
+            rig.registry,
+            heads,
+            ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) }),
+            teams,
+            WallClock { AT },
+        )
     }
 
     @Test
@@ -122,7 +128,7 @@ class ProjectsRoutesTest {
                     """"unreported_usage_turns_today":0,""" +
                     """"day_start":$DAY_START,"last_activity":${AT + 2}}""",
             ),
-            JsonObject(repo - "cost_today_usd" - "compaction" - "statusline_roots"),
+            JsonObject(repo - "cost_today_usd" - "compaction" - "statusline_roots" - "name" - "label" - "source"),
             "yesterday's row and the outsider's are not this repo's today; the archived team is not counted",
         )
         // 2M input at 1.0 and 10 output at 2.0, per million.
@@ -221,7 +227,7 @@ class ProjectsRoutesTest {
         fun routes(wired: CompactionInstructions?) = ProjectsRoutes(
             rig.registry,
             heads,
-            RepoOf { sessions.repoOf(it) },
+            ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) }),
             TeamSource { rig.store },
             WallClock { AT },
             StatuslineRootOf(sessions::statuslineRootOf),
@@ -355,5 +361,84 @@ class ProjectsRoutesTest {
         assertEquals("null", teamOf(OUTSIDER))
         rig.store.archive(team.id)
         assertEquals("null", teamOf(BUILDER), "an archived team binds nothing")
+    }
+
+    // Marlin's ruling (Oct 11): with a Projects folder set, the project is the folder directly under it, and the
+    // session rows, /api/projects and the Teams slots all print the SAME object for it.
+    private fun foldersOver(root: Path): SessionsRoutes {
+        Files.createDirectories(rig.repo.resolve(".git"))
+        val folders = object : SessionSettings {
+            override fun transcriptView(): Boolean = true
+
+            override fun gitRoots(head: String?): List<String> = emptyList()
+
+            override fun projectFolders(head: String?): List<String> = listOf(root.toString())
+        }
+        return SessionsRoutes(
+            rig.registry,
+            TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
+            teams = TeamSource { rig.store },
+            settings = folders,
+        )
+    }
+
+    private fun lookupOf(sessions: SessionsRoutes): ProjectLookup =
+        ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) })
+
+    private fun projectOnRow(sessions: SessionsRoutes) =
+        rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER).getValue("project").jsonObject
+
+    @Test
+    fun `with a Projects folder the session row names the folder directly under it`() {
+        val onRow = projectOnRow(foldersOver(tmp.toRealPath()))
+        assertEquals(tmp.toRealPath().resolve("repo").toString(), onRow.getValue("id").jsonPrimitive.content)
+        assertEquals("repo", onRow.getValue("name").jsonPrimitive.content)
+        assertEquals("folder", onRow.getValue("source").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `with a Projects folder the project list holds the folder projects`() {
+        val sessions = foldersOver(tmp.toRealPath())
+        val expectedId = tmp.toRealPath().resolve("repo").toString()
+        val projects = ProjectsRoutes(
+            rig.registry,
+            emptyMap(),
+            lookupOf(sessions),
+            TeamSource { rig.store },
+            WallClock { AT },
+        )
+        val listed = rig.json(projects.list().body).getValue("projects").jsonArray.map { it.jsonObject }
+        assertEquals(
+            setOf(expectedId, tmp.toRealPath().resolve("elsewhere").toString()),
+            listed.map { it.getValue("id").jsonPrimitive.content }.toSet(),
+        )
+        assertEquals(
+            "folder",
+            listed.single { it.getValue("id").jsonPrimitive.content == expectedId }
+                .getValue("source").jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `with a Projects folder the team and its slot print the same project as the session row`() {
+        val team = rig.team()
+        val sessions = foldersOver(tmp.toRealPath())
+        val onRow = projectOnRow(sessions)
+        val teamsRoutes = TeamsRoutes(
+            TeamSource { rig.store },
+            emptyMap(),
+            rig.registry,
+            ActivitySource { rig.stores },
+            SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) },
+            lookup = lookupOf(sessions),
+        )
+        val shown = rig.json(teamsRoutes.list().body).getValue("teams").jsonArray.map { it.jsonObject }
+            .single { it.getValue("id").jsonPrimitive.content == team.id }
+        assertEquals(onRow, shown.getValue("project").jsonObject)
+        assertEquals(
+            onRow,
+            shown.getValue("slots").jsonArray.map { it.jsonObject }.first().getValue("project").jsonObject,
+        )
     }
 }

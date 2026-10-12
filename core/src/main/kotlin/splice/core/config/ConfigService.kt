@@ -110,9 +110,11 @@ public class ConfigService(
         val rejected = LinkedHashMap<String, String>()
         for ((key, raw) in partial) {
             val knob = knobsByKey[key]
+            val folderRefusal = ProjectFolderCheck.refusalOn(knob, raw?.toString())
             when {
                 knob == null -> rejected[key] = "unknown key"
                 knob.headOnly -> rejected[key] = HEAD_ONLY
+                folderRefusal != null -> rejected[key] = folderRefusal
                 raw == null -> {
                     applied[key] = null
                     synchronized(runtimeLock) { runtimeLayer.remove(key) }

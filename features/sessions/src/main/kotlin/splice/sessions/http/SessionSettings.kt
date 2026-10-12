@@ -11,6 +11,9 @@ public interface SessionSettings {
 
     /** The statusline git roots in force for [head]. */
     public fun gitRoots(head: String?): List<String>
+
+    /** The Projects folders in force for [head]; empty means a project is the git repo. */
+    public fun projectFolders(head: String?): List<String> = emptyList()
 }
 
 /** No configuration: transcripts on, no extra git roots. */
@@ -23,4 +26,5 @@ internal object NoSessionSettings : SessionSettings {
 public class ConfigSessionSettings(private val config: ConfigService) : SessionSettings {
     override fun transcriptView(): Boolean = config.getConfig().transcriptView
     override fun gitRoots(head: String?): List<String> = config.getConfig(head).statuslineGitRoots
+    override fun projectFolders(head: String?): List<String> = config.getConfig(head).projectsFolders
 }

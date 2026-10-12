@@ -185,6 +185,11 @@ public class SpliceConfig internal constructor(
         get() = string(Knob.STATUSLINE_GIT_ROOTS).orEmpty()
             .split(':').map { it.trim() }.filter { it.startsWith("/") }
 
+    // Colon-separated absolute paths, as statuslineGitRoots; a relative segment is dropped here and named by the boot finding.
+    public val projectsFolders: List<String>
+        get() = string(Knob.PROJECTS_FOLDERS).orEmpty()
+            .split(':').map { it.trim() }.filter { it.startsWith("/") }
+
     public fun asMap(): Map<String, Any?> = m
 
     private fun string(k: Knob): String? = m[k.key]?.toString()

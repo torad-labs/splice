@@ -1,4 +1,4 @@
-// NEW: V4-363 keeps project roots consistent with durable Sessions history and the git resolver.
+// NEW: V4-363 keeps project sessions consistent with durable Sessions history and the git resolver.
 package splice.sessions.http
 
 import splice.sessions.registry.SessionListing
@@ -32,11 +32,4 @@ public class ProjectSessions(
             live.error,
         )
     }
-}
-
-/** A session outside a trusted git checkout has a cwd, not a project root. */
-internal class ProjectRoots(private val repoOf: RepoOf) {
-    fun grouped(records: List<SessionRecord>): Map<String, List<SessionRecord>> = records
-        .mapNotNull { record -> repoOf(record)?.takeIf { it.reason == null }?.let { it.root to record } }
-        .groupBy({ it.first }, { it.second })
 }

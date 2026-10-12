@@ -218,6 +218,10 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // the same reject log, doctor row and PATCH answer as every other bad knob value, and the
         // window stays whatever it already was.
         knob == Knob.HISTORY_RETENTION_DAYS -> coerceString(raw)?.let { HistoryWindowWords.of(it)?.text }
+        // A Projects folder is an ABSOLUTE path: a relative one names a different folder per process, so it is refused by
+        // name (the same reject log, doctor row, PATCH answer and boot finding as every other bad value).
+        knob == Knob.PROJECTS_FOLDERS -> coerceString(raw)
+            ?.takeIf { text -> text.split(':').all { it.trim().startsWith("/") } }
         else -> when (knob.kind) {
             KnobKind.BOOL -> coerceBool(raw)
             KnobKind.NUMBER -> coerceNumber(knob, raw)

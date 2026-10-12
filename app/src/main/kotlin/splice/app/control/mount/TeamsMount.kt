@@ -14,6 +14,9 @@ import splice.app.control.ManagedHead
 import splice.core.config.UserHome
 import splice.core.util.JsonScalars
 import splice.sessions.http.ActivitySource
+import splice.sessions.http.ProjectAt
+import splice.sessions.http.ProjectLookup
+import splice.sessions.http.ProjectOf
 import splice.sessions.http.SentTextSource
 import splice.sessions.http.TeamScreen
 import splice.sessions.http.TeamSource
@@ -38,6 +41,7 @@ internal class TeamsMount(
             sessions,
             ActivitySource { ports.activity },
             SentTextSource(routes::sentTexts),
+            lookup = ProjectLookup(ProjectOf(routes.projects::of), ProjectAt { routes.projects.at(it, null) }),
         )
     }
 

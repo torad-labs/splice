@@ -41,11 +41,15 @@ package splice.sessions.http
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.http.JsonReply
+import splice.sessions.projects.SessionProjectOf
+import splice.sessions.projects.TeamProjects
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
@@ -69,9 +73,6 @@ private data class BindBody(val bindings: Map<String, String?> = emptyMap())
 @Serializable
 private data class InstructionsBody(val instructions: String? = null)
 
-@Serializable
-private data class TeamsBody(val teams: List<Team>)
-
 public class TeamsRoutes(
     private val teams: TeamSource,
     private val heads: Map<String, SessionHead>,
@@ -79,7 +80,13 @@ public class TeamsRoutes(
     activity: ActivitySource,
     texts: SentTextSource,
     clock: WallClock = WallClock(System::currentTimeMillis),
+    lookup: ProjectLookup = ProjectLookup(ProjectOf { null }, ProjectAt { null }),
 ) {
+    private val projects = TeamProjects(
+        lookup.at,
+        SessionProjectOf { id -> registry?.read()?.firstOrNull { it.sessionId == id }?.let { lookup.of(it) } },
+    )
+
     /** GET /api/teams/{id}/edges, chat?day= and activity?day=. */
     public val reads: TeamReads = TeamReads(teams, registry, activity, texts, clock)
     private val json = Json {
@@ -88,7 +95,7 @@ public class TeamsRoutes(
     }
 
     public fun list(): JsonReply = withStore { store ->
-        JsonReply(HttpStatusCode.OK, json.encodeToString(TeamsBody.serializer(), TeamsBody(store.teams())))
+        JsonReply(HttpStatusCode.OK, teamsJson(store.teams()))
     }
 
     /** PUT /api/teams: a new team under [key] (the Idempotency-Key header). A body that names an id is
@@ -135,7 +142,7 @@ public class TeamsRoutes(
     private inline fun write(block: (TeamStore) -> Team): JsonReply =
         withStore { store ->
             Cancellables.runCatchingCancellable { block(store) }.fold(
-                onSuccess = { JsonReply(HttpStatusCode.OK, json.encodeToString(Team.serializer(), it)) },
+                onSuccess = { JsonReply(HttpStatusCode.OK, teamJson(it).toString()) },
                 onFailure = { failure ->
                     val status = when {
                         failure is IOException -> HttpStatusCode.InternalServerError
@@ -147,6 +154,12 @@ public class TeamsRoutes(
                 },
             )
         }
+
+    private fun teamJson(team: Team): JsonObject =
+        projects.on(team, json.encodeToJsonElement(Team.serializer(), team) as JsonObject)
+
+    private fun teamsJson(all: List<Team>): String =
+        buildJsonObject { put("teams", JsonArray(all.map(::teamJson))) }.toString()
 
     private inline fun withStore(block: (TeamStore) -> JsonReply): JsonReply {
         val store = teams() ?: return refuse(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)

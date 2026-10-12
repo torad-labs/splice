@@ -1,5 +1,5 @@
 // PORT-OF: features/sessions/src/main/kotlin/splice/sessions/http/ProjectsRoutes.kt @ 9cde3b3e8 — invariants: UTC day, alive sessions, no local-step turns.
-package splice.sessions.http
+package splice.sessions.projects
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfKeys
+import splice.sessions.http.PerfTally
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfWindow
 import splice.sessions.registry.SessionAvailability

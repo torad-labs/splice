@@ -43,6 +43,7 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
 import splice.sessions.note.PeerNoteAbi
+import splice.sessions.projects.SessionProjects
 import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
@@ -117,6 +118,9 @@ public class SessionsRoutes(
 
     /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
     private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()
+
+    /** Which project a session, a working directory or a request belongs to: the one answer every screen shares. */
+    public val projects: SessionProjects = SessionProjects(settings)
 
     private val viewEnabled = SessionTranscriptViewEnabled(settings::transcriptView)
 
@@ -234,6 +238,7 @@ public class SessionsRoutes(
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
         resumable.mark(this, s.sessionId)
         repoOf(s)?.let { put("repo", repoJson(it)) }
+        projects.put(this, s)
         val bound = s.sessionId?.let { teamOf(it) }
         put("team", bound?.id)
         // the card names the team a person reads, never its id: `team` stays the id other readers join on

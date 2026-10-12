@@ -29,6 +29,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.parseQueryString
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -61,6 +62,10 @@ private const val DEFAULT_TURNS = 200
 // refused, and the EFFECTIVE value is what the payload reports, so the clamp is never silent.
 private const val MAX_TURNS = 2_000
 
+/** Which whole-window figures the answer carries beside its rows. [peak] is the most requests held at once over
+ *  EVERY matching row, not the clamped newest. */
+private data class AskedFigures(val usage: Boolean = true, val peak: Boolean = false)
+
 /** The window one request asks for, after validation. A named pair and not a `Pair<Long, Int>`: the
  *  two are read straight into a cutoff and a clamp, and a positional swap of same-shaped values is the
  *  defect the row's own named-argument rule exists for. */
@@ -69,11 +74,11 @@ private data class AskedWindow(
     val n: Int,
     val filter: TurnsFilter,
     val zone: ZoneId,
-    val usage: Boolean = true,
-    /** Whether the answer also carries the most requests held at once over EVERY matching row, not the clamped newest. */
-    val peak: Boolean = false,
+    val figures: AskedFigures = AskedFigures(),
     /** More questions of the SAME window, each its own filter and clamp, answered from the one read of it. */
     val asks: List<AskedWindow> = emptyList(),
+    /** The project snapshot this request's rows are tagged from. */
+    val tags: ProjectTags = NoProjectTags,
 )
 
 public class PerfRoutes(
@@ -86,6 +91,9 @@ public class PerfRoutes(
 
     /** Installed by the application before serving routes; older readers never consult it. */
     public var preparation: UsageReadPreparation? = null
+
+    /** Installed by the application: which project each request's session belongs to, taken once per request. */
+    public var projects: RequestProjects = RequestProjects { NoProjectTags }
 
     public suspend fun turns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
@@ -165,9 +173,10 @@ public class PerfRoutes(
             refuse(call, "unknown time_zone: $zoneText", HttpStatusCode.BadRequest)
             return null
         }
+        val tags = projects()
         val asks = call.request.queryParameters.getAll("ask").orEmpty()
-            .map { askedOf(parseQueryString(it), since, zone) }
-        val asked = askedOf(call.request.queryParameters, since, zone)
+            .map { askedOf(parseQueryString(it), since, zone, tags) }
+        val asked = askedOf(call.request.queryParameters, since, zone, tags)
         val unread = (listOf(asked) + asks).firstOrNull { it.refusal != null }
         unread?.let { refuse(call, it.refusal.orEmpty(), HttpStatusCode.BadRequest) }
         return asked.window?.copy(asks = asks.mapNotNull { it.window })?.takeIf { unread == null }
@@ -176,13 +185,14 @@ public class PerfRoutes(
     /** One question's window, or the sentence naming what it could not read. */
     private data class AskRead(val window: AskedWindow?, val refusal: String? = null)
 
-    private fun askedOf(params: Parameters, since: Long, zone: ZoneId): AskRead {
+    private fun askedOf(params: Parameters, since: Long, zone: ZoneId, tags: ProjectTags): AskRead {
         val nText = params["n"]
         val read = readFilter(params)
-        val filter = (read as? TurnsFilterRead.Read)?.filter
+        val filter = (read as? TurnsFilterRead.Read)?.filter?.inProject(params["project"], tags)
         val window = rowsAsked(nText)?.let { n ->
             filter?.let {
-                AskedWindow(since, n, it, zone, usage = params["usage"] != "0", peak = params["peak"] == "1")
+                val figures = AskedFigures(params["usage"] != "0", params["peak"] == "1")
+                AskedWindow(since, n, it, zone, figures, tags = tags)
             }
         }
         return AskRead(window, refusal(nText, read).takeIf { window == null })
@@ -240,15 +250,15 @@ public class PerfRoutes(
             if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only
             // `count` and `rows` (Settings asks about a hundred such counts) must not pay for figures it drops.
-            if (asked.usage) {
+            if (asked.figures.usage) {
                 put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
             }
             // Over every row of the window the filters matched, never the newest n: a busy command's day is more than n rows.
-            if (asked.peak) put("at_once", PerfPeak(matching).json())
-            putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
+            if (asked.figures.peak) put("at_once", PerfPeak(matching).json())
+            putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps, asked.tags)) } }
             longestSilence(asked.filter, matching)?.let { (row, silence) ->
                 put("longest_silence_ms", silence)
-                put("longest", rowJson(projection.complete(listOf(row)).single(), gaps))
+                put("longest", rowJson(projection.complete(listOf(row)).single(), gaps, asked.tags))
             }
             // Each further question the request carried reads the window already in hand: the cost of a read is the
             // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).
@@ -272,7 +282,7 @@ public class PerfRoutes(
      *  facts written OVER it, so a key the writer put in both is reported by the typed fact and never
      *  by the bag. `ts` is the only such key today and is skipped from the bag to avoid writing it
      *  twice; the ordering is what makes that a safety net rather than a coincidence. */
-    private fun rowJson(row: PerfRow, gaps: TurnPriceGap): JsonObject = buildJsonObject {
+    private fun rowJson(row: PerfRow, gaps: TurnPriceGap, tags: ProjectTags): JsonObject = buildJsonObject {
         row.fields.forEach { (key, value) -> if (key != TS) put(key, value) }
         put(TS, row.ts)
         put("outcome", row.outcome)
@@ -284,6 +294,8 @@ public class PerfRoutes(
         // is reported the same way, rather than filled in with a value the file does not contain.
         put("model", row.facts.model)
         put("session", row.facts.session)
+        // The project object the session rows carry; null where the session is unknown or outside every project.
+        put("project", row.facts.session?.let(tags::of) ?: JsonNull)
         put("account", row.facts.account)
         put("cache_cold", row.facts.cacheCold)
         put("compact", row.facts.compact)

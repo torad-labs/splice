@@ -40,7 +40,6 @@ class HistoryProjectRoutesTest {
             TestTranscripts(),
             roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
         )
-        val repoOf = RepoOf { sessions.repoOf(it) }
         val historical = SessionHistoryRoute(
             records,
             source,
@@ -53,7 +52,12 @@ class HistoryProjectRoutesTest {
         val fromHistory = listed.single { it.getValue("session_id").jsonPrimitive.content == id }
         assertEquals(repo.toString(), fromHistory.getValue("repo").jsonObject.getValue("root").jsonPrimitive.content)
 
-        val projects = ProjectsRoutes(ProjectSessions(records, source, roots), emptyMap(), repoOf, TeamSource { null })
+        val projects = ProjectsRoutes(
+            ProjectSessions(records, source, roots),
+            emptyMap(),
+            ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) }),
+            TeamSource { null },
+        )
         val rootsSeen = Json.parseToJsonElement(projects.list().body).jsonObject.getValue("projects")
             .jsonArray.map { it.jsonObject.getValue("root").jsonPrimitive.content }
         assertTrue(repo.toString() in rootsSeen, "the Sessions listing names a repo missing from Projects")

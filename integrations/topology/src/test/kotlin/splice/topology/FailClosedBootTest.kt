@@ -77,6 +77,27 @@ class FailClosedBootTest {
         assertFalse(said.contains("not declared under"), "the decode never ran: $said")
     }
 
+    // Marlin's ruling (Oct 11): a Projects folder is a display preference and never stops splice. A saved folder that is
+    // gone is reported as not found by the projects read and its sessions fall back to the git-repo rule; only a
+    // relative entry, which names no folder at all, is a finding.
+    @Test
+    fun `a Projects folder that does not exist boots, and a relative entry is a finding`(@TempDir root: Path) {
+        val head = provider + """
+            [heads.one]
+            provider = "demo"
+            port = 3101
+            discovery_prefix = "claude-one--"
+            pinned_model = "m"
+            [heads.one.overrides]
+            """
+        val gone = config(root, head + "projectsFolders = \"${root.resolve("deleted-work")}\"")
+        assertEquals(setOf("one"), TopologyLoader.loadForBoot(gone).topology.heads.keys)
+
+        val relative = config(root, head + "projectsFolders = \"work\"")
+        val refusal = assertThrows(TopologyRefusal::class.java) { TopologyLoader.loadForBoot(relative) }
+        assertTrue(refusal.message.orEmpty().contains("heads.one.overrides.projectsFolders"), refusal.message)
+    }
+
     @Test
     fun `a fixed file boots`(@TempDir root: Path) {
         val path = config(

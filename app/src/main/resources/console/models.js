@@ -184,13 +184,13 @@ function paneHtml() {
   const addPer = free.length ? `<div class="menuwrap"><button class="act quiet" data-act="perpick">Add project</button>${ui.pick === "per" ? `<div class="menu">${free.map((p) => `<button data-act="per" data-p="${esc(p.root)}">${esc(p.name)}</button>`).join("")}</div>` : ""}</div>` : "";
   const calm = ["Applied", "Saved", "Restarting"].includes(ui.said);
   const saidHtml = ui.said ? `<span class="said${calm ? "" : " limit"}">${ui.said === "Restarting" ? ICON.wait : ""}${esc(ui.said)}</span>` : "";
-  const restart = "";
+  const restart = ui.said === "Saved" && ui.pending ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
   const form = `<section class="form">`
     + `<span class="lbl">Sends to</span><div class="ctl"><span class="urlread">${esc(c.url)}</span></div>`
-    + `<span class="lbl"></span><div class="ctl"><span class="said">When Claude Code asks for a tier, ${esc(c.cmd)} sends</span></div>` + tierRows
+    + tierRows
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
-    + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save and restart splice</button>${saidHtml}${restart}</div></section>`;
+    + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save</button>${saidHtml}${restart}</div></section>`;
   const lines = logsOf(c.key);
   const ev = eventsOf(lines ?? []);
   const raw = (lines ?? []).filter((l) => l.text).slice(-60).reverse();
@@ -292,8 +292,8 @@ async function save() {
     return;
   }
   ui.draft = null;
-  if (res.body.restart_required) { await restartSplice(); return; }
-  ui.said = "Applied";
+  ui.pending = Boolean(res.body.restart_required);
+  ui.said = ui.pending ? "Saved" : "Applied";
   await readAll();
   render();
 }

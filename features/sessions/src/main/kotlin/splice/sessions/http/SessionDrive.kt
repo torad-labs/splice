@@ -44,6 +44,8 @@ private const val SAY_NOT_OURS =
     "splice did not start this session, so it cannot write to it from here; write in the terminal it runs in"
 private const val SCREEN_NOT_OURS =
     "splice did not start this session, so it cannot read its screen; look at the terminal it runs in"
+private const val ANSWER_CLOSED = "its terminal is closed, so nothing is being asked"
+private const val SCREEN_MOVED = "the screen no longer shows that choice where it was, so nothing was pressed"
 private const val DRAFT_HELD = "its prompt already holds words, and a message would be sent with them"
 private const val TERMINAL_REFUSED = "the terminal did not take it: "
 private const val LAUNCH_PANE_GONE =
@@ -92,12 +94,28 @@ public class SessionDrive(
         }
     }
 
-    /** Answer what the session is waiting on by pressing its numbered choice, as the person would. */
-    public fun answer(session: String, choice: Int): JsonReply {
+    /** Answer what the session is waiting on as the person would: a numbered choice by its digit, and a menu drawn
+     *  without numbers (the folder trust question) by moving the pointer from where the screen shows it, then
+     *  accepting. [label], when the page sends the words it showed, must still be that choice's words on the screen:
+     *  a screen that changed under the click is refused, never answered with whatever now sits at that place. */
+    public fun answer(session: String, choice: Int, label: String? = null): JsonReply {
+        val driving = driver() ?: return unwired()
         val key = choiceKeys.getOrNull(choice - 1)
             ?: return refuse(HttpStatusCode.BadRequest, "a choice is one of the numbered options, 1 to 9")
-        return inPane(session, ANSWER_NOT_OURS, "its terminal is closed, so nothing is being asked") { driving, pane ->
-            driving.terminal.press(pane, key)
+        val pane = locate(driving, session, ANSWER_NOT_OURS, ANSWER_CLOSED).pane
+        val offer = pane?.let {
+            Cancellables.runCatchingCleanup {
+                choices.on(
+                    driving.terminal.screen(it),
+                )
+            }.getOrNull()
+        }
+        return if (offer?.moved(choice, label) == true) {
+            refuse(HttpStatusCode.Conflict, SCREEN_MOVED, Refusal.SCREEN_MOVED)
+        } else {
+            inPane(session, ANSWER_NOT_OURS, ANSWER_CLOSED) { _, at ->
+                (offer?.keys(choice, key) ?: listOf(key)).forEach { driving.terminal.press(at, it) }
+            }
         }
     }
 
@@ -109,9 +127,18 @@ public class SessionDrive(
         return say(session, obj?.let { JsonScalars.str(it, "text") }.orEmpty(), clear)
     }
 
-    /** POST .../answer's body, {"choice": n}: a body that names none answers 0, which [answer] refuses in words. */
-    public fun answerJson(session: String, body: String): JsonReply =
-        answer(session, JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.long(it, "choice") }?.toInt() ?: 0)
+    /** POST .../answer's body, {"choice": n, "label": "..."}: a body that names none answers 0, which [answer] refuses
+     *  in words; the label is optional and, when sent, is checked against the screen. */
+    public fun answerJson(session: String, body: String): JsonReply {
+        val obj = JsonScalars.objectOrNull(Json, body)
+        return answer(
+            session,
+            obj?.let {
+                JsonScalars.long(it, "choice")
+            }?.toInt() ?: 0,
+            obj?.let { JsonScalars.str(it, "label") },
+        )
+    }
 
     /** Stop the turn the session is running, and nothing else. */
     public fun stop(session: String): JsonReply =

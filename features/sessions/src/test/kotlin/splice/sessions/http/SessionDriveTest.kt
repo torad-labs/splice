@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.http.JsonReply
+import splice.sessions.prompt.trustScreen
 
 class SessionDriveTest {
     private val terminal = FakeTerminal()
@@ -42,6 +43,33 @@ class SessionDriveTest {
 
         val pane = SessionPane("%7")
         assertEquals(listOf(pane to SessionKey.CHOICE_2, pane to SessionKey.STOP), terminal.pressed)
+    }
+
+    @Test
+    fun `a menu drawn without numbers is answered by moving the pointer to his choice and accepting it`() {
+        terminal.screenText = trustScreen
+        val pane = SessionPane("%7")
+
+        assertEquals(
+            HttpStatusCode.OK,
+            drive.answerJson(OURS, """{"choice": 2, "label": "Yes, I trust this folder"}""").status,
+        )
+        assertEquals(listOf(pane to SessionKey.NEXT, pane to SessionKey.ACCEPT), terminal.pressed)
+
+        terminal.pressed.clear()
+        assertEquals(HttpStatusCode.OK, drive.answerJson(OURS, """{"choice": 1, "label": "No, exit"}""").status)
+        assertEquals(listOf(pane to SessionKey.ACCEPT), terminal.pressed, "the pointer already sits on No")
+    }
+
+    @Test
+    fun `a click on words the screen no longer shows there presses nothing`() {
+        terminal.screenText = trustScreen
+
+        val reply = drive.answerJson(OURS, """{"choice": 1, "label": "Yes, I trust this folder"}""")
+
+        assertEquals(HttpStatusCode.Conflict, reply.status, reply.body)
+        assertEquals("screen_moved", reason(reply))
+        assertTrue(terminal.pressed.isEmpty())
     }
 
     @Test

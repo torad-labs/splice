@@ -32,6 +32,9 @@ internal enum class Refusal(val key: String) {
     /** The prompt already holds words, which a message would be typed after: shown to the person, cleared only on
      *  his say-so (Marlin, Oct 10). */
     DRAFT("draft"),
+
+    /** The screen no longer shows the choice the page drew under the click, so nothing was pressed. */
+    SCREEN_MOVED("screen_moved"),
 }
 
 /** A refusal's reply: its sentence, for the log, and its [Refusal] key when it has one, which is what a page names

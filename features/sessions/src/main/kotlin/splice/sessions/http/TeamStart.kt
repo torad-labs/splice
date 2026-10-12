@@ -17,7 +17,12 @@
 //   200  the member is up: its session id, and what a person types to sit in front of it.
 //   404  no such team or slot.   409  nothing started, and the reason (archived, already running, not launchable).
 //   502  the terminal would not open.   503  there is no terminal to start it in.
-//   504  the terminal opened and Claude Code did not register in time.
+//   202  the terminal opened and Claude Code is asking something before it registers (its folder trust question, a
+//        first-run prompt): {"state": "needs_you", "session_id"}. The slot stays bound and the pane stays open; the page
+//        reads the question off .../screen and answers it on his click only, through .../answer. splice never answers
+//        it for him (Marlin, Oct 12). A start asked again for that slot then waits on the SAME pane, its 45 s clock
+//        starting over, and a pane his answer closed (No, exit) gives the slot back.
+//   504  the terminal opened and Claude Code did not register in time, with nothing asked on its screen.
 // A failure to come up leaves the slot as it was: the binding is put back and the terminal closed, so a slot is never
 // left on Starting. The 504 carries the screen's last lines, because the reason is usually on it (a folder to trust,
 // a sign-in to finish), and splice does not answer those for the person.
@@ -32,6 +37,7 @@ import kotlinx.serialization.json.put
 import splice.core.session.SessionPane
 import splice.core.util.Cancellables
 import splice.http.JsonReply
+import splice.sessions.prompt.ScreenChoices
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
@@ -67,11 +73,17 @@ public class TeamStart(
     private val registry: SessionSource?,
     private val home: Path,
 ) {
+    /** How a screen is read for a question asked before the session registers: the drive's own reading. */
+    private val choices = ScreenChoices()
+
     public suspend fun start(teamId: String, slotId: String): JsonReply {
         val store = teams() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
         return when (val member = locate(store, teamId, slotId)) {
             is Located.Missing -> member.reply
-            is Located.Member -> refusalToStart(member.team, member.slot) ?: launchable(store, member)
+            is Located.Member -> pending(
+                store,
+                member,
+            ) ?: refusalToStart(member.team, member.slot) ?: launchable(store, member)
         }
     }
 
@@ -85,9 +97,10 @@ public class TeamStart(
 
     public fun stop(teamId: String, slotId: String): JsonReply = onSession(teamId, slotId) { drive.stop(it) }
 
-    /** Answer the question the member is waiting on by pressing its numbered choice, as the person would. */
-    public fun answer(teamId: String, slotId: String, choice: Int): JsonReply =
-        onSession(teamId, slotId) { drive.answer(it, choice) }
+    /** Answer the question the member is waiting on as the person would; [label], the words the page drew, must
+     *  still be that choice's on the screen (SessionDrive.answer). */
+    public fun answer(teamId: String, slotId: String, choice: Int, label: String? = null): JsonReply =
+        onSession(teamId, slotId) { drive.answer(it, choice, label) }
 
     /** [act] on the member's session, or the reply that says there is no such member or it holds no session. */
     private inline fun onSession(teamId: String, slotId: String, act: (String) -> JsonReply): JsonReply {
@@ -140,7 +153,10 @@ public class TeamStart(
         return Cancellables.runCatchingCleanup {
             driving.terminal.open(session, argv + flags, folder)
         }.fold(
-            onSuccess = { pane -> opened(store, driving, member, session, pane) },
+            onSuccess = { pane ->
+                driving.panes.remember(session, pane)
+                awaitUp(store, driving, member, session, pane)
+            },
             onFailure = {
                 giveBack(store, member)
                 Refusals.reply(HttpStatusCode.BadGateway, "the terminal would not open: ${it.message}")
@@ -148,23 +164,58 @@ public class TeamStart(
         )
     }
 
-    private suspend fun opened(
+    /** A slot whose start stopped on a question: its session has not registered and the pane splice opened for it is
+     *  still remembered. Asked again, the start waits on that pane; a pane his answer closed gives the slot back. Null
+     *  for every other slot, which then starts or is refused as before. */
+    private suspend fun pending(store: TeamStore, member: Located.Member): JsonReply? {
+        val driving = drive.driver() ?: return null
+        val (session, pane) = member.slot.session?.takeIf { !live(it) }
+            ?.let { s -> driving.panes.paneFor(s)?.let { s to it } } ?: return null
+        return if (driving.terminal.isOpen(pane)) {
+            awaitUp(store, driving, member, session, pane)
+        } else {
+            driving.panes.forget(session)
+            store.bind(member.team.id, mapOf(member.slot.id to null))
+            Refusals.reply(
+                HttpStatusCode.Conflict,
+                "${member.slot.id} did not start: its terminal closed",
+                Refusal.CLOSED,
+            )
+        }
+    }
+
+    /** Waits up to [ARRIVAL_SECONDS] for the session to register, a second at a time, reading the screen between: a
+     *  question on it before the session is up is his to answer, so the start says so and leaves the pane open. */
+    private suspend fun awaitUp(
         store: TeamStore,
         driving: SessionDriver,
         member: Located.Member,
         session: String,
         pane: SessionPane,
     ): JsonReply {
-        driving.panes.remember(session, pane)
-        if (!arrival.arrived(session, ARRIVAL_SECONDS)) return didNotComeUp(store, driving, member, session, pane)
-        return JsonReply(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put("session_id", session)
-                put("how_to_open", driving.terminal.howToOpen(pane))
-            }.toString(),
-        )
+        repeat(ARRIVAL_SECONDS.toInt()) {
+            if (arrival.arrived(session, 1)) return up(driving, session, pane)
+            val asked = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).offering }
+            if (asked.getOrDefault(false)) {
+                return JsonReply(
+                    HttpStatusCode.Accepted,
+                    buildJsonObject {
+                        put("state", "needs_you")
+                        put("session_id", session)
+                    }.toString(),
+                )
+            }
+        }
+        return didNotComeUp(store, driving, member, session, pane)
     }
+
+    private fun up(driving: SessionDriver, session: String, pane: SessionPane) = JsonReply(
+        HttpStatusCode.OK,
+        buildJsonObject {
+            put("session_id", session)
+            put("how_to_open", driving.terminal.howToOpen(pane))
+        }.toString(),
+    )
 
     private fun didNotComeUp(
         store: TeamStore,

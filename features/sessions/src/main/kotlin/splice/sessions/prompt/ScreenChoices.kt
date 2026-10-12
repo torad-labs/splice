@@ -22,6 +22,7 @@
 package splice.sessions.prompt
 
 import splice.core.session.SessionKey
+import kotlin.math.abs
 
 // why: a choice opens its line after nothing but whitespace and an optional selection marker, and the marker
 // is whatever glyph the client points with. The digit is 1 to 9 because those are the keys that answer it.
@@ -36,6 +37,12 @@ private val FRAME_RULE = Regex("""^\s*╌{3,}\s*$""")
 // prompt mark at the margin; a choice's pointer is indented, so the two never meet.
 private val INPUT_EDGE = Regex("""^─{3,}.*$""")
 
+// why: a menu the client draws WITHOUT numbers (Claude Code 2.1.296's folder trust question: "❯ No, exit" over
+// "Yes, I trust this folder") points at its option from an indent; the input box's own mark sits at the margin, so an
+// indented pointer is never the prompt. Its digits answer nothing (pressed on a live pane, Oct 12), so such a menu is
+// answered by moving the pointer, which [ScreenOffer.pointed] tells the drive.
+private val POINTER_LINE = Regex("""^ +❯[ \u00A0]+(\S.*)$""")
+
 // Claude Code 2.1.296 follows its prompt arrow with a no-break space (U+00A0); a plain space is taken too.
 private val PROMPT_LINE = Regex("""^❯[ \u00A0]?(.*)$""")
 
@@ -45,6 +52,9 @@ private const val CHOICE = "CHOICE_"
 /** One choice the session is showing: the [key] that answers it and the [label] the client drew for it.
  *  [here] is true for the option the client is pointing at, which is what ACCEPT would take. */
 public data class ScreenChoice(val key: SessionKey, val label: String, val here: Boolean)
+
+/** A menu names its options by the digits 1 to 9. */
+private const val MENU_KEYS = 9
 
 /** One line of the panel above a prompt's choices, as the client drew it. [framed] is true for a line the client set
  *  between dashed rules: what the call will run, which a person reads before choosing. */
@@ -61,9 +71,26 @@ public data class ScreenOffer(
     /** What the prompt holds when nothing is offered: words the person typed there, or a stopped message the client
      *  put back. Empty when the prompt is empty or could not be read. */
     val draft: String = "",
+    /** True when the client drew its choices without numbers: a choice is answered by moving the pointer to it and
+     *  accepting, never by its digit, which such a menu ignores. */
+    val pointed: Boolean = false,
 ) {
     /** Whether the screen is offering anything to press. Nothing offered is not "nothing pending". */
     public val offering: Boolean get() = choices.isNotEmpty()
+
+    /** Whether the [choice]-th option no longer reads [label], the words the page drew under the click: a screen
+     *  that changed under it is never answered with whatever now sits at that place. No label checks nothing. */
+    public fun moved(choice: Int, label: String?): Boolean =
+        label != null && choices.getOrNull(choice - 1)?.label != label
+
+    /** The keys that answer the [choice]-th option as the person would: its [digit] on a numbered menu, and on a
+     *  pointed one the moves from where the pointer sits to it, then Enter. */
+    public fun keys(choice: Int, digit: SessionKey): List<SessionKey> {
+        if (!pointed) return listOf(digit)
+        val from = choices.indexOfFirst { it.here }.coerceAtLeast(0)
+        val step = if (choice - 1 > from) SessionKey.NEXT else SessionKey.PREVIOUS
+        return List(abs(choice - 1 - from)) { step } + SessionKey.ACCEPT
+    }
 }
 
 /** Reads the numbered choices off a session's screen, exactly as the client drew them.
@@ -74,10 +101,13 @@ public data class ScreenOffer(
  *  public signatures). Internal reds those routes instead: a public function cannot expose an internal
  *  parameter type. */
 public class ScreenChoices {
+    /** The keys a menu's options are named by, 1 to 9 in reading order. */
+    private val choiceKeys = (1..MENU_KEYS).map { SessionKey.valueOf(CHOICE + it) }
+
     /** What [screen] is offering. A screen splice cannot read a choice on offers nothing. */
     public fun on(screen: String): ScreenOffer {
         val lines = screen.lines()
-        val block = lastBlock(lines) ?: return ScreenOffer("", emptyList(), draft = draft(lines))
+        val block = lastBlock(lines) ?: return pointerMenu(lines) ?: ScreenOffer("", emptyList(), draft = draft(lines))
         val choices = block.mapNotNull { at -> CHOICE_LINE.matchEntire(lines[at])?.let { drawn(it) } }
             .distinctBy { it.key }
             .sortedBy { it.key.ordinal }
@@ -100,6 +130,26 @@ public class ScreenChoices {
         var first = last
         while (first > 0 && CHOICE_LINE.matches(lines[first - 1])) first -= 1
         return first..last
+    }
+
+    /** A menu drawn without numbers: the indented pointer's line and the lines beside it whose words start in the same
+     *  column, keyed 1, 2, 3 in the order a person reads them. Null when no line carries an indented pointer. */
+    private fun pointerMenu(lines: List<String>): ScreenOffer? {
+        val at = lines.indexOfLast { POINTER_LINE.matches(it) }
+        if (at < 0) return null
+        val column = lines[at].length - requireNotNull(POINTER_LINE.matchEntire(lines[at])).groupValues[1].length
+        val item = { line: String ->
+            line.length > column && line.take(
+                column,
+            ).isBlank() && !line[column].isWhitespace()
+        }
+        var first = at
+        while (first > 0 && item(lines[first - 1])) first -= 1
+        var last = at
+        while (last < lines.lastIndex && item(lines[last + 1])) last += 1
+        val labels = (first..last).map { lines[it].substring(column).trim() }.take(choiceKeys.size)
+        val choices = labels.mapIndexed { i, label -> ScreenChoice(choiceKeys[i], label, here = first + i == at) }
+        return ScreenOffer(asked(lines, first), choices, panel(lines, first), pointed = true)
     }
 
     /** The line's three parts, named by CHOICE_LINE's own order: the pointer, the digit, the words. */

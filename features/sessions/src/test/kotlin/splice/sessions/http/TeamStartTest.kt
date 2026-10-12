@@ -18,6 +18,7 @@ import splice.core.session.SessionPane
 import splice.core.session.SessionPanes
 import splice.core.session.SessionTerminal
 import splice.http.JsonReply
+import splice.sessions.prompt.trustScreen
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import java.io.IOException
@@ -151,22 +152,64 @@ class TeamStartTest {
         }
 
     @Test
-    fun `a member that never registers leaves the slot as it was, its terminal closed and its screen in the reply`() =
+    fun `a member that never registers with nothing asked gives the slot back and its screen in the reply`() =
         runBlocking {
             val id = team().id
-            terminal.screenText = "\n\nDo you trust the files in this folder?\n  1. Yes\n  2. No\n"
+            terminal.screenText = "\n\n  Loading your workspace…\n"
             arrives = false
             val reply = start().start(id, "b1")
             assertEquals(HttpStatusCode.GatewayTimeout, reply.status)
             assertTrue(error(reply).startsWith("b1 did not start"), error(reply))
-            assertEquals(
-                "Do you trust the files in this folder?\n  1. Yes\n  2. No",
-                rig.json(reply.body).getValue("screen").jsonPrimitive.content,
-            )
+            assertEquals("  Loading your workspace…", rig.json(reply.body).getValue("screen").jsonPrimitive.content)
             assertNull(slot("b1").session, "the slot is open again, not stuck on a session that never came")
             assertEquals(1, terminal.closed.size)
             assertNull(panes.paneFor(terminal.opened.single().session))
         }
+
+    /** Marlin, Oct 12: a member stopped at Claude Code's folder trust question does not time out; it needs him, and
+     *  splice never answers it for him. */
+    @Test
+    fun `a member stopped at the trust question needs him, slot bound, pane open, nothing pressed`() =
+        runBlocking {
+            val id = team().id
+            terminal.screenText = trustScreen
+            arrives = false
+            val reply = start().start(id, "b1")
+            assertEquals(HttpStatusCode.Accepted, reply.status, reply.body)
+            assertEquals("needs_you", rig.json(reply.body).getValue("state").jsonPrimitive.content)
+            val session = rig.json(reply.body).getValue("session_id").jsonPrimitive.content
+            assertEquals(session, slot("b1").session)
+            assertNotNull(panes.paneFor(session))
+            assertTrue(terminal.closed.isEmpty(), "the question stays where he can answer it")
+            assertTrue(terminal.pressed.isEmpty(), "splice never answers it for him")
+        }
+
+    @Test
+    fun `once he answered, a start asked again waits on the same pane and the member comes up`() = runBlocking {
+        val id = team().id
+        terminal.screenText = trustScreen
+        arrives = false
+        val asked = rig.json(start().start(id, "b1").body).getValue("session_id").jsonPrimitive.content
+        terminal.screenText = ""
+        arrives = true
+        val reply = start().start(id, "b1")
+        assertEquals(HttpStatusCode.OK, reply.status, reply.body)
+        assertEquals(asked, rig.json(reply.body).getValue("session_id").jsonPrimitive.content)
+        assertEquals(1, terminal.opened.size, "no second terminal")
+    }
+
+    @Test
+    fun `a pane his No closed gives the slot back`() = runBlocking {
+        val id = team().id
+        terminal.screenText = trustScreen
+        arrives = false
+        val asked = rig.json(start().start(id, "b1").body).getValue("session_id").jsonPrimitive.content
+        terminal.live = false
+        val reply = start().start(id, "b1")
+        assertEquals(HttpStatusCode.Conflict, reply.status, reply.body)
+        assertNull(slot("b1").session)
+        assertNull(panes.paneFor(asked))
+    }
 
     @Test
     fun `a terminal that will not open leaves the slot as it was`() = runBlocking {

@@ -20,8 +20,49 @@ private val PERMISSION = """
       3. No, and tell Claude what to do differently (esc)
 """.trimIndent()
 
+/** Claude Code 2.1.296's folder trust question as captured off a desk pane on Oct 12, 2026: its options carry no numbers,
+ *  and pressing a digit on it does nothing. */
+internal val trustScreen = """
+────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /tmp/trustprobe
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+""".trimIndent()
+
 class ScreenChoicesTest {
     private val choices = ScreenChoices()
+
+    @Test
+    fun `a menu drawn without numbers is still read, in order, pointer and all, and marked as answered by pointing`() {
+        val offer = choices.on(trustScreen)
+
+        assertTrue(offer.offering, "the trust question is a question")
+        assertTrue(offer.pointed, "its digits answer nothing, so it is answered by moving the pointer")
+        assertEquals(listOf("No, exit", "Yes, I trust this folder"), offer.choices.map { it.label })
+        assertEquals(listOf(true, false), offer.choices.map { it.here })
+        assertTrue(offer.panel.any { it.text.startsWith("Quick safety check") }, "the question comes with its panel")
+        assertTrue(offer.panel.any { it.text == "/tmp/trustprobe" }, "and the folder it asks about")
+    }
+
+    @Test
+    fun `the input box's own mark at the margin is never read as a menu`() {
+        val offer = choices.on("────────────\n❯ fix the totals\n────────────\n")
+
+        assertFalse(offer.offering)
+        assertEquals("fix the totals", offer.draft)
+    }
 
     @Test
     fun `the choices are the ones the client drew, in order, each with the key that answers it`() {

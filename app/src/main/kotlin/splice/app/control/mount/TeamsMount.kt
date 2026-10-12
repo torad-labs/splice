@@ -91,7 +91,12 @@ internal class TeamsMount(
             guard.guarded(call) { starts.stop(id(call), slot(call)).send(call) }
         }
         route.post("/api/teams/{id}/slots/{slot}/answer") {
-            guard.guarded(call) { starts.answer(id(call), slot(call), choice(call.receiveText())).send(call) }
+            guard.guarded(call) {
+                // the label is the words the page drew under the click, so a screen that changed is refused
+                val body = call.receiveText()
+                val label = JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.str(it, "label") }
+                starts.answer(id(call), slot(call), choice(body), label).send(call)
+            }
         }
         // The choices a member is showing, as its own client drew them (ScreenChoices): the card draws Allow /
         // Always allow / Deny because they are on the screen, never because splice keeps a list of them.

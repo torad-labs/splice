@@ -10,7 +10,10 @@
 // A sessions slice since LAYOUT-01, beside the registry it reads; the lines leave through TerminalOutput.
 package splice.sessions.list
 
+import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.terminal.BOLD
 import splice.core.terminal.CYAN
 import splice.core.terminal.DIM
@@ -23,12 +26,17 @@ import splice.core.topology.HeadConfig
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.sessions.registry.ArrivalJoinedSessions
+import splice.sessions.registry.HeadOfSession
 import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.RouteOfPid
+import splice.sessions.registry.SEEN_SESSIONS_DIR
+import splice.sessions.registry.SeenSessions
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionSource
 import splice.topology.TopologyLoader
 import java.io.IOException
 import java.nio.file.Files
@@ -55,13 +63,17 @@ public class SessionsCommand(
 
     public fun sessions(
         envReader: EnvReader,
-        registry: SessionRegistry = defaultRegistry(envReader),
+        registry: SessionSource = defaultRegistry(envReader),
         now: WallClock = WallClock { System.currentTimeMillis() },
     ): Boolean {
         val home = UserHome.dir(envReader).toString()
         output.line("${BOLD}splice sessions$RESET$DIM: Claude Code sessions registered in ~/.claude/sessions$RESET")
         output.line("")
-        val listing = registry.list()
+        // The head the daemon last saw a session's requests arrive on, from the record it keeps, for a live session
+        // with no launch record: the listing the console draws, so the two never name a head differently.
+        val recorded = StatePaths(envReader = envReader).stateDir.resolve(SEEN_SESSIONS_DIR)
+        val seen = SeenSessions(recorded, KeptHistory { HistoryWindow(days = null) })
+        val listing = ArrivalJoinedSessions(registry, HeadOfSession { seen.headOf(it) }).list()
         val rows = listing.sessions
         listing.error?.let { output.line("  $RED✗$RESET the registry could not be listed: ${clean(it)}") }
         if (rows.isEmpty() && listing.error == null) output.line("  $DIM–  no registered sessions$RESET")
@@ -143,7 +155,7 @@ public class SessionsCommand(
         }
     }
 
-    private fun defaultRegistry(envReader: EnvReader): SessionRegistry {
+    private fun defaultRegistry(envReader: EnvReader): SessionSource {
         val heads = readHeads(envReader)
         val environment = ProcessEnvironment()
         return SessionRegistry(

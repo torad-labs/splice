@@ -193,6 +193,7 @@ class SessionsCommandTest {
     ) {
         val registered = Files.createDirectories(home.resolve(".claude").resolve("sessions"))
         val pid = ProcessHandle.current().pid()
+        val now = System.currentTimeMillis()
         Files.writeString(
             registered.resolve("$pid.json"),
             """{"pid":$pid,"name":"here","status":"busy","updatedAt":${System.currentTimeMillis()},""" +
@@ -215,6 +216,36 @@ class SessionsCommandTest {
         assertFalse(row.contains("claudex"), "with no readable topology no session is placed on a head: $row")
         assertTrue(out.contains("SendMessage(to=\"here\")"), out)
         assertTrue(diagnostics.single().contains("topology not readable"), diagnostics.toString())
+    }
+
+    // §4 Reading, Oct 11: a live session with no launch record joins the head the daemon last saw its requests arrive
+    // on. The standalone verb reads the daemon's record of that, so it names the head the console names.
+    @Test
+    fun `a session with no launch record takes the head the daemon recorded for it`(@TempDir home: Path) {
+        val registered = Files.createDirectories(home.resolve(".claude").resolve("sessions"))
+        val pid = ProcessHandle.current().pid()
+        Files.writeString(
+            registered.resolve("$pid.json"),
+            """{"pid":$pid,"sessionId":"s-join","name":"joined","status":"busy","updatedAt":$now}""",
+        )
+        val recorded = Files.createDirectories(home.resolve("state").resolve("sessions-seen"))
+        Files.writeString(
+            recorded.resolve("s-join.json"),
+            """{"session_id":"s-join","head":"claudex","last_activity_ms":${System.currentTimeMillis()}}""",
+        )
+        val env = EnvReader { name ->
+            when (name) {
+                "HOME" -> home.toString()
+                "SPLICE_STATE_DIR" -> home.resolve("state").toString()
+                "SPLICE_CONFIG" -> home.resolve("absent.toml").toString()
+                else -> null
+            }
+        }
+
+        val out = capture { SessionsCommand(TerminalOutput(::println), TerminalOutput {}).sessions(env) }
+
+        val row = out.lines().first { it.contains("joined") }
+        assertTrue(row.contains("claudex") && !row.contains("unknown head"), row)
     }
 
     /** The verb as app wires it — stdout and stderr — so capture() reads what an operator sees. */

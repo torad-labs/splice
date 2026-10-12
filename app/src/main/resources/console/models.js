@@ -608,6 +608,11 @@ const tplName = (p) => PROVIDER_NAME[famOf(p)] ?? (p.name === "local" ? "Local m
 const second = (p) => Boolean(p.command) && taken(p);
 const commandFor = (p, a) => (p.command ? (second(p) ? `${p.command}-${a.name.trim()}` : p.command) : a.name.trim() ? `claude-${a.name.trim()}` : "");
 const taken = (p) => p.command && data.heads.some((h) => h.label === p.command || h.key === p.head_key);
+// a second command on a provider already set up starts from the address that provider already sends to, never the
+// profile's stock one (marlin p226: a second OpenRouter command tried openrouter.ai where the first sends to a stand-in)
+const twinUrl = (p) => commandsOf().find((c) => c.key === p.head_key || c.cmd === p.command)?.url || p.base_url || "";
+// the address is a field when the profile asks for it, for a second command, and once the address did not answer
+const showsUrl = (p, a) => p.asks.includes("base_url") || second(p) || Boolean(a.urlFailed);
 function addPaneHtml() {
   const a = ui.add;
   const p = a.profile && data.profiles.find((x) => x.name === a.profile);
@@ -622,10 +627,10 @@ function addPaneHtml() {
     return `<div class="pane add-pane">${head}<div class="body"><div class="tpls">${tiles}</div></div></div>`;
   }
   const asks = (k) => p.asks.includes(k);
-  const field = (id, lbl, val, extra = "") => `<label class="lbl" for="${id}">${lbl}</label><div class="ctl"><input class="field" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div>`;
+  const field = (id, lbl, val, extra = "") => `<label class="lbl" for="${id}">${lbl}</label><div class="ctl"><input class="field${id === "a-url" ? " url" : ""}" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div>`;
   let f = "";
   if (asks("name") || second(p)) f += field("a-name", "Name", a.name);
-  if (asks("base_url")) f += field("a-url", "URL", a.url);
+  if (showsUrl(p, a)) f += field("a-url", "URL", a.url);
   if (p.requires_key || (p.auth_kind === "api-key" && p.asks.length)) f += field("a-key", "Key", a.key, 'type="password"');
   if (asks("models")) {
     const rows = a.rows.map((r, i) => `<div class="mrow"><input class="field" id="a-m${i}" data-i="${i}" data-f="id" value="${esc(r.id)}" spellcheck="false" autocomplete="off" aria-label="Model">`
@@ -647,7 +652,7 @@ function addPaneHtml() {
     + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
     + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>` : "";
   const said = a.said ? `<span class="said limit">${esc(a.said)}</span>` : "";
-  const ready = ((!asks("name") && !second(p)) || a.name.trim()) && (!asks("base_url") || a.url.trim()) && (!asks("models") || a.rows.some((r) => r.id.trim()));
+  const ready = ((!asks("name") && !second(p)) || a.name.trim()) && (!showsUrl(p, a) || a.url.trim()) && (!asks("models") || a.rows.some((r) => r.id.trim()));
   const foot = `<div class="foot"><button class="act primary" data-act="add"${ready && !a.busy ? "" : " disabled"}>${a.busy ? "Adding" : "Add"}</button><button class="act quiet" data-act="cancel-add">Cancel</button>${said}</div>`;
   return `<div class="pane add-pane" style="--c:${colorOf(fam)}">${head}<div class="body">${headRow}${f ? `<section class="form">${f}</section>` : ""}${checks}${sign}${foot}</div></div>`;
 }
@@ -656,7 +661,7 @@ function failWordOf(c, p) {
   const d = c.detail ?? "", http = /HTTP (\d{3})/.exec(d);
   console.warn(`add check ${c.name}: ${d}`);
   if (c.name === "credential") return /oauth|login|sign/i.test(p.auth_kind) ? "Signed out" : "No key";
-  if (c.name === "base url") return "No answer";
+  if (c.name === "base url") { const at = /\bat (\S+)$/.exec(d)?.[1]; return at ? `No answer at ${at}` : "No answer"; }
   if (c.name === "models") return http ? `HTTP ${http[1]}` : /did not answer with a model list|not a list/i.test(d) ? "No list" : /not listed|missing/i.test(d) ? "Not listed" : "No answer";
   if (c.name === "windows") return "Too large";
   return http ? `HTTP ${http[1]}` : "No answer";
@@ -666,11 +671,13 @@ const SOFT = new Set(["models"]);
 const failWord = (r) => (r.status === 409 ? "Already added" : "Not added");
 async function startAdd() {
   const a = ui.add, p = data.profiles.find((x) => x.name === a.profile);
+  // a press after a failed one starts a new add from the form as it reads now; the earlier one is closed
+  if (a.id) { API.del(`/api/add/${encodeURIComponent(a.id)}`); a.id = null; }
   a.busy = true; a.said = null; a.checks = null; render();
   const body = { profile: p.name };
   if (p.asks.includes("name") || second(p)) body.name = a.name.trim();
   if (second(p)) body.command = commandFor(p, a);
-  if (p.asks.includes("base_url")) body.base_url = a.url.trim();
+  if (showsUrl(p, a) && a.url.trim()) body.base_url = a.url.trim();
   if (p.asks.includes("models")) body.models = a.rows.filter((r) => r.id.trim()).map((r) => ({ id: r.id.trim(), context_window: parseWindow(r.win) ?? undefined }));
   const res = await API.post("/api/add", body);
   if (!res.ok) { a.busy = false; a.said = failWord(res); render(); return; }
@@ -697,6 +704,19 @@ async function signIn() {
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
+const profileOf = (a) => data.profiles.find((x) => x.name === a.profile);
+// Add with a failed check saves nothing, and says so on the form with what to fix (marlin p226: a press did nothing). A
+// failed address opens the URL field beside the check, filled with the address tried, so it can be fixed in place.
+function notAddedWhy(a, prof) {
+  const failed = a.checks.find((c) => !c.ok && !SOFT.has(c.name));
+  if (failed.name === "base url") {
+    a.urlFailed = true;
+    if (!a.url.trim()) a.url = /\bat (\S+)$/.exec(failed.detail ?? "")?.[1] ?? prof.base_url ?? "";
+    return "Not added until the URL answers";
+  }
+  if (failed.name === "credential") return /oauth|login|sign/i.test(prof.auth_kind) ? "Not added until signed in" : "Not added until the key works";
+  return `Not added until ${CHECK_NAME[failed.name] ?? failed.name} passes`;
+}
 async function verifyAndSave() {
   const a = ui.add;
   const v = await API.post(`/api/add/${encodeURIComponent(a.id)}/verify`, {});
@@ -704,7 +724,7 @@ async function verifyAndSave() {
   // A press never ends in nothing: a check that stops the add shows beside its own name, and an answer with no checks says so.
   const hard = a.checks.some((c) => !c.ok && !SOFT.has(c.name));
   if (!v.ok && !a.checks.length) console.warn(`add verify: ${v.body?.error ?? v.status}`);
-  if (hard || (!v.ok && !a.checks.length)) { a.busy = false; a.said = hard ? null : "Not added"; render(); return; }
+  if (hard || (!v.ok && !a.checks.length)) { a.busy = false; a.said = hard ? notAddedWhy(a, profileOf(a)) : "Not added"; render(); return; }
   render();
   const s = await API.post(`/api/add/${encodeURIComponent(a.id)}/save`, {});
   if (!s.ok) { a.busy = false; a.said = "Not added"; render(); return; }
@@ -807,7 +827,7 @@ function onClick(e) {
     case "close": dropAdd(); Object.assign(ui, { open: null, add: null, draft: null, said: null }); render(); break;
     case "new": Object.assign(ui, { open: null, draft: null, add: { profile: null, name: "", url: "", key: "", rows: [{ id: "", win: "" }], checks: null } }); render(); break;
     case "cancel-add": dropAdd(); ui.add = null; render(); break;
-    case "tpl": a.profile = d.t; render(); break;
+    case "tpl": { a.profile = d.t; const pr = data.profiles.find((x) => x.name === d.t); if (pr && second(pr)) a.url = twinUrl(pr); render(); break; }
     case "addrow": a.rows.push({ id: "", win: "" }); render(); document.getElementById(`a-m${a.rows.length - 1}`)?.focus(); break;
     case "add": startAdd(); break;
     case "open-signin": { const sg = a?.sign ?? ui.sign; if (sg?.url) window.open(sg.url, "_blank", "noopener"); break; }

@@ -574,7 +574,13 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 .card .onlogin { display: flex; flex-wrap: wrap; gap: .5rem .6rem; margin-top: 1rem; }
 .card .onlogin .sdoor { display: inline-flex; align-items: center; gap: .5rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
 .card .onlogin .sdoor:hover span { color: var(--text); text-decoration: underline; }
-.card .onlogin .sdoor .lamp { position: static; width: 1.6rem; height: 1.6rem; flex: none; }
-.card .onlogin .sdoor .lamp svg { width: 1rem; height: 1rem; }
-.card .onlogin .sdoor .lamp i { width: .5rem; height: .5rem; }
+/* the lamp Sessions draws (sessions.css .lamp), which this page does not load: a dark socket with an ink ring, idle a dot
+   in the muted ink, working the live trace (marlin, Oct 12) */
+.card .onlogin .sdoor .lamp { position: static; flex: none; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; color: var(--text-mute); background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail); }
+[data-theme="day"] .card .onlogin .sdoor .lamp { --live: #5bb59c; --text-mute: #9c8f70; }
+.card .onlogin .sdoor .lamp i { width: .55rem; height: .55rem; border-radius: 50%; background: currentColor; }
+.card .onlogin .sdoor .lamp svg { width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.card .onlogin .sdoor .lamp.working { color: var(--live); }
+.card .onlogin .sdoor .lamp.working .base { opacity: .32; }
+.card .onlogin .sdoor .lamp.working .beat { stroke-dasharray: 16 64; animation: tlamp-trace 2.2s linear infinite; }
 .card .onlogin .sdoor.more { color: var(--text-mute); }

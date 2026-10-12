@@ -51,7 +51,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, err: null };
+const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -90,7 +90,7 @@ function readKept() {
   // a rollback already running (started elsewhere) is picked up once the version is known: it names the release it goes back to
   get("/api/upgrade", (r) => { ui.ver = r.ok ? r.body : null; }).then(async () => {
     const upgradeRun = await API.get("/api/upgrade/run");
-    if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = { state: "running", to: ui.ver?.rollback_target, output: upgradeRun.body.run.output || [] }; pollRun(ui.run.to); }
+    if (!ui.run && upgradeRun.ok && upgradeRun.body?.run?.state === "running") { ui.run = runOf(upgradeRun.body.run); pollRun(ui.run.to, ui.run.way); }
   });
   readWeek();
   readHeads();
@@ -670,7 +670,12 @@ const busyHtml = () => {
 // which names fetching, verifying and polls ("no upgrade check has succeeded on this daemon; splice learns the latest
 // version by fetching and verifying a release, which no poll may do").
 const RELEASES = "https://github.com/torad-labs/splice/releases";
-const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" };
+// ONE ROUTE, TWO DIRECTIONS: POST /api/upgrade takes him to a release or back to one, and the run that follows is the
+// same run. Only the words differ, so the header says which way it went rather than "Going back to" over an upgrade.
+const RUN_WORD = {
+  up: { running: "Upgrading to", succeeded: "Now on", failed: "Not on", lost: "Not on" },
+  back: { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" },
+};
 const vcard = (label, body, note = "") => kcard(`<div class="lbl">${esc(label)}</div><div class="ctl">${body}${note ? `<p class="vwhy">${esc(note)}</p>` : ""}</div>`, " vcard");
 const vnum = (s) => `<b class="v">${esc(s)}</b>`;
 function versionHtml() {
@@ -690,12 +695,17 @@ function versionHtml() {
     : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : `<span class="state">Not checked</span>`;
   // ONLY HIS TAP READS THE NETWORK (Marlin's privacy line, Oct 12): nothing here polls, and the page never checks when
   // it opens. GET /api/upgrade answers the snapshot a past tap left, and POST /api/upgrade/check is the only fetch.
-  const act = `<button class="act quiet" data-act="check"${ui.checking ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
+  const act = `<button class="act quiet" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
     + (ui.checkSaid ? `<span class="said limit">${esc(ui.checkSaid)}</span>` : "");
-  const cards = [vcard("Running", `${vnum(v.installed)}${newest}${act}${checked}`)];
-  // the releases page is a door only beside a version he does not have: that is the one state on this pane with
-  // something to go and read, and it is also his only way on, since nothing here installs a release
-  if (news) cards.push(vcard("Newest", `${vnum(v.latest)}${releases}`));
+  const cards = [vcard("Running", `${vnum(v.installed)}${newest}${act}${restartAct(going)}${checked}`)];
+  // UPGRADE IS THE SAME ARMING AS GO BACK, on the card that holds the version it would take him to, because it is the
+  // same decision in the other direction. The releases page is the door for reading the notes before he arms; while
+  // he is armed the card holds the question and nothing else, so the yes and the no are the only things to tap.
+  if (news) {
+    cards.push(vcard("Newest", `${vnum(v.latest)}${ui.armed === "upgrade"
+      ? `<button class="act primary" data-act="upgrade">Upgrade to ${esc(v.latest)}</button><button class="act quiet" data-act="disarm">Stay on ${esc(v.installed)}</button>`
+      : `<button class="act quiet" data-act="arm" data-id="upgrade"${going ? " disabled" : ""}>Upgrade to ${esc(v.latest)}</button>${releases}`}`));
+  }
   // Previous is a card only when there is a release to go back to, or when the read that would have found one failed:
   // "None" under a name is not news, and three cards of which two held no number read as a broken row.
   if (back) {
@@ -706,8 +716,20 @@ function versionHtml() {
   } else if (v.rollback_unavailable_reason) {
     cards.push(vcard("Previous", `<span class="state">Not read</span>`, v.rollback_unavailable_reason));
   }
-  const ran = run ? `<section class="run"><header><h3>${runWord[run.state] ?? "Going back to"} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
+  const words = RUN_WORD[run?.way === "up" ? "up" : "back"];
+  const ran = run ? `<section class="run"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
   return cardRow(cards, " vcards") + ran;
+}
+/** Restart splice, beside the version it is running. Not armed: a restart drains in-flight turns and splice is built
+ *  to come back from one, so it is an act like any other. What it waits for is said on the button, because a daemon
+ *  that waits on a compaction looks the same as one that hung. */
+function restartAct(going) {
+  const wait = ui.restartWait;
+  const word = !ui.restarting ? "Restart splice"
+    : wait ? `Waiting for ${fmt(wait)} ${wait === 1 ? "compaction" : "compactions"}`
+    : "Restarting";
+  return `<button class="act quiet" data-act="restart"${ui.restarting || going ? " disabled" : ""}>${ui.restarting ? ICON.wait : ""}${word}</button>`
+    + (ui.restartSaid ? `<span class="said limit">${esc(ui.restartSaid)}</span>` : "");
 }
 /** His tap, and the only thing on this page that reaches the network: POST /api/upgrade/check reads once and answers
  *  the snapshot, which the card then reads as its own state. A refusal is said beside the act in the console's words,
@@ -728,18 +750,60 @@ async function check() {
   }
   render();
 }
-async function goBack() {
-  const to = ui.ver?.rollback_target;
-  const res = await API.post("/api/upgrade", { rollback: true });
-  ui.run = res.ok ? { state: "running", to, output: [] } : { state: "failed", to, output: [res.body?.error || `splice answered ${res.status}`] };
-  render();
-  if (res.ok) pollRun(to);
+/** A run already going when the page opened, read off the args splice started it with (`upgrade --rollback`, or
+ *  `upgrade --to 0.4.1`): the way it went and the release it names, so a run started on another screen reads the
+ *  same here as the one he started. Before Upgrade existed every such run was a rollback, and this read it as one. */
+function runOf(run) {
+  const args = run.args || [], back = args.includes("--rollback");
+  const at = args.indexOf("--to");
+  return { way: back ? "back" : "up", state: run.state, to: at >= 0 ? args[at + 1] : back ? ui.ver?.rollback_target : ui.ver?.latest, output: run.output || [] };
 }
-function pollRun(to) {
+/** The one run, in whichever direction he asked for: [body] is what POST /api/upgrade is given, [way] the words the
+ *  header reads it back in. A refusal is the run's first line, because the run section is where he is looking. */
+async function startRun(way, to, body) {
+  const res = await API.post("/api/upgrade", body);
+  ui.run = res.ok ? { way, state: "running", to, output: [] } : { way, state: "failed", to, output: [res.body?.error || `splice answered ${res.status}`] };
+  render();
+  if (res.ok) pollRun(to, way);
+}
+const goBack = () => startRun("back", ui.ver?.rollback_target, { rollback: true });
+const upgrade = () => startRun("up", ui.ver?.latest, { to: ui.ver?.latest });
+/** Restart splice. The 202 says the phase it is entering, never one it has reached: draining, or waiting on the
+ *  compactions it names. Then the daemon goes, and GET /api/daemon/restart answers again once its successor is up,
+ *  which is the console's one signal that it is back. A refusal is said beside the act in the console's words. */
+async function restartSplice() {
+  if (ui.restarting) return;
+  ui.restarting = true; ui.restartSaid = null; ui.restartWait = 0; render();
+  const r = await API.post("/api/daemon/restart", {});
+  if (!r.ok) {
+    ui.restarting = false;
+    // 503 is the daemon saying nothing would bring it back, unwired or unsupervised: both mean the same to him here
+    ui.restartSaid = r.status === 409 ? "Already restarting" : r.status === 503 ? "Nothing would bring it back" : "Not restarted";
+    if (r.body?.error) console.warn(`restart: ${r.body.error}`);
+    render();
+    return;
+  }
+  ui.restartWait = r.body?.compactions?.length ?? 0;
+  render();
+  pollRestart(0);
+}
+/** Until the daemon answers again, or long enough that saying nothing would be the lie. Every call while it is down
+ *  fails, which is the wait, not an error. */
+const RESTART_TRIES = 60;
+function pollRestart(tries) {
+  setTimeout(async () => {
+    const r = await API.get("/api/daemon/restart");
+    if (r.ok && r.body?.status === "waiting") { ui.restartWait = r.body.compactions?.length ?? 0; render(); }
+    if (r.ok && r.body?.status === "idle") { ui.restarting = false; ui.restartWait = 0; render(); refresh(); return; }
+    if (tries >= RESTART_TRIES) { ui.restarting = false; ui.restartWait = 0; ui.restartSaid = "Not back yet"; render(); return; }
+    pollRestart(tries + 1);
+  }, 2000);
+}
+function pollRun(to, way) {
   setTimeout(async () => {
     const r = await API.get("/api/upgrade/run"), run = r.body?.run;
-    if (run) ui.run = { state: run.state, to, output: run.output || [] };
-    if (!run || run.state === "running") { render(); pollRun(to); return; }
+    if (run) ui.run = { way, state: run.state, to, output: run.output || [] };
+    if (!run || run.state === "running") { render(); pollRun(to, way); return; }
     ui.ver = (await API.get("/api/upgrade")).body ?? ui.ver;
     render();
   }, 2000);
@@ -947,7 +1011,7 @@ document.addEventListener("click", (e) => {
   if (!t) return;
   const d = t.dataset;
   // leaving a job drops what was said on it: a refusal he has walked away from is stale by the time he comes back
-  if (d.open && !d.act) { ui.open = d.open; ui.shown = true; ui.armed = null; ui.checkSaid = null; ks.custom = null; render(); return; }
+  if (d.open && !d.act) { ui.open = d.open; ui.shown = true; ui.armed = null; ui.checkSaid = null; ui.restartSaid = null; ks.custom = null; render(); return; }
   switch (d.act) {
     case "theme": toggleTheme(); return;
     case "close": ui.shown = false; break;
@@ -958,7 +1022,9 @@ document.addEventListener("click", (e) => {
     case "arm": ui.armed = d.id; delete ui.bad[d.id]; break;
     case "disarm": ui.armed = null; break;
     case "rollback": ui.armed = null; goBack(); return;
+    case "upgrade": ui.armed = null; upgrade(); return;
     case "check": check(); return;
+    case "restart": restartSplice(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;
     case "unask": ui.ask = null; break;

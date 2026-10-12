@@ -34,13 +34,33 @@ const answers: Record<string, unknown> = {
   "/api/perf/turns": { heads: [] },
   "/api/history": {},
 };
+// what POST /api/upgrade was given, and what POST /api/daemon/restart answers and was asked.
+const started: Record<string, unknown>[] = [];
+const restarts: string[] = [];
+let restartReply: { status: number; body: Record<string, unknown> } = { status: 202, body: { status: "draining" } };
+let restartPhase: Record<string, unknown> = { status: "idle" };
 const server = Bun.serve({
   port: Number(process.env.SETTINGS_VERSION_PORT ?? 0),
-  fetch(req) {
+  async fetch(req) {
     const path = new URL(req.url).pathname;
     if (path === "/api/upgrade/check") {
       posts.push(req.method);
       return Response.json(checkReply.body, { status: checkReply.status });
+    }
+    if (path === "/api/daemon/restart") {
+      if (req.method !== "POST") return Response.json(restartPhase);
+      restarts.push(req.method);
+      return Response.json(restartReply.body, { status: restartReply.status });
+    }
+    if (path === "/api/upgrade" && req.method === "POST") {
+      started.push((await req.json()) as Record<string, unknown>);
+      return Response.json({ run: { id: "r1", args: [], state: "running", output: [] } }, { status: 202 });
+    }
+    // null until he starts one, as the daemon answers on a machine that has never upgraded from the console
+    if (path === "/api/upgrade/run") {
+      const last = started.at(-1);
+      const args = !last ? null : last.rollback ? ["upgrade", "--rollback"] : ["upgrade", "--to", String(last.to)];
+      return Response.json({ run: args ? { id: "r1", args, state: "running", output: [] } : null });
     }
     if (path === "/api/upgrade") return Response.json(upgrade);
     if (path in answers) return Response.json(answers[path]);
@@ -67,6 +87,10 @@ async function version(body: Record<string, unknown>, reply = { status: 200, bod
   upgrade = body;
   checkReply = reply;
   posts.length = 0;
+  started.length = 0;
+  restarts.length = 0;
+  restartReply = { status: 202, body: { status: "draining" } };
+  restartPhase = { status: "idle" };
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(`http://127.0.0.1:${server.port}/settings.html`);
   await page.getByText("Version").first().click();
@@ -169,6 +193,76 @@ test("a tap refused because he checked a moment ago is said beside the act", asy
     const pane = page.locator(".pane");
     await pane.getByRole("button", { name: "Check" }).click();
     await expect(pane.locator(".vcard .said")).toHaveText("Checked a moment ago", { timeout: 10_000 });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+// UPGRADE IS THE SAME ARMING AS GO BACK, in the other direction: the first tap asks, the second starts the one run
+// POST /api/upgrade drives, and the run header says which way it went rather than "Going back to" over an upgrade.
+test("the version a check found is the version Upgrade takes him to, once he has answered the question", async () => {
+  const page = await version(NEVER_CHECKED, {
+    status: 200,
+    body: { state: "read", latest: "0.4.1", read_at_epoch_millis: Date.now(), reason: null },
+  });
+  try {
+    const pane = page.locator(".pane");
+    await pane.getByRole("button", { name: "Check" }).click();
+    const newest = page.locator(".vcard", { hasText: "Newest" });
+    await expect(newest.getByRole("button", { name: "Upgrade to 0.4.1" })).toBeVisible({ timeout: 10_000 });
+    await newest.getByRole("button", { name: "Upgrade to 0.4.1" }).click();
+    expect(started).toEqual([]); // the first tap asks and starts nothing
+    await expect(newest.getByRole("button", { name: "Stay on 0.4.0" })).toBeVisible();
+    await expect(newest.getByRole("link", { name: /Releases/ })).toHaveCount(0); // armed, the card holds the question alone
+    await newest.getByRole("button", { name: "Upgrade to 0.4.1" }).click();
+    await expect(pane.locator(".run h3")).toHaveText("Upgrading to 0.4.1", { timeout: 10_000 });
+    expect(started).toEqual([{ to: "0.4.1" }]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("going back still reads as going back, and is still the only thing Go back sends", async () => {
+  const page = await version({ ...NEVER_CHECKED, rollback_target: "0.3.2" });
+  try {
+    const pane = page.locator(".pane");
+    await pane.getByRole("button", { name: "Go back to 0.3.2" }).click();
+    await pane.getByRole("button", { name: "Go back to 0.3.2" }).click();
+    await expect(pane.locator(".run h3")).toHaveText("Going back to 0.3.2", { timeout: 10_000 });
+    expect(started).toEqual([{ rollback: true }]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+// A RESTART IS AN ACT, NOT A QUESTION: it drains in-flight turns and splice comes back from one. What it waits for is
+// said on the button, because a daemon waiting on a compaction looks exactly like one that hung.
+test("Restart splice takes the restart, and says what it is waiting for while it waits", async () => {
+  const page = await version(NEVER_CHECKED);
+  try {
+    const pane = page.locator(".pane");
+    restartReply = { status: 202, body: { status: "waiting", compactions: [{ head: "alpha", age_ms: 1200 }] } };
+    restartPhase = { status: "waiting", compactions: [{ head: "alpha", age_ms: 1200 }] };
+    await pane.getByRole("button", { name: "Restart splice" }).click();
+    await expect(pane.getByRole("button", { name: "Waiting for 1 compaction" })).toBeDisabled({ timeout: 10_000 });
+    expect(restarts).toEqual(["POST"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a restart nothing would bring it back from is refused in the console's words, not the daemon's", async () => {
+  const page = await version(NEVER_CHECKED);
+  try {
+    const pane = page.locator(".pane");
+    restartReply = {
+      status: 503,
+      body: { error: "nothing will restart this daemon: it was not started by systemd, so a drain would leave it down" },
+    };
+    await pane.getByRole("button", { name: "Restart splice" }).click();
+    await expect(pane.locator(".vcard .said")).toHaveText("Nothing would bring it back", { timeout: 10_000 });
+    await expect(pane).not.toContainText("systemd");
+    await expect(pane.getByRole("button", { name: "Restart splice" })).toBeEnabled();
   } finally {
     await page.close();
   }

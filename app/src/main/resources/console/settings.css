@@ -220,7 +220,9 @@ button.count:hover { color: var(--text); }
 /* the version and the button that acts on it share a line; the sentence saying what the card means is the row under them */
 #st .vcard .ctl { gap: 1rem 1.4rem; }
 #st .vcard .act .wait { --c: currentColor; }  /* the ring while his tap reads, in the button's own ink */
-#st .vcard .ctl > .vwhy { flex: 1 0 100%; }
+/* when the check happened, and what the card means, each take the row under the acts rather than whichever gap the
+   wrap leaves them: at 1440 "Checked Oct 12, 3:17 AM" landed beside Restart splice and read as part of the button */
+#st .vcard .ctl > .vwhy, #st .vcard .ctl > .kel { flex: 1 0 100%; }
 /* on a card wide enough to read along, what acts on the version sits at the far edge, as a lone figure's doors do:
    number at one end, action at the other, instead of both clumped in the first third of a 3828 row */
 @container kcard (min-width: 80rem) {

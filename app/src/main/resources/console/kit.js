@@ -94,7 +94,9 @@ function modelName(labels, id) {
 // ---------- fin's words for how a request ended (OutcomeTag.kt's tags) ----------
 // A clean request and a spent window have no word: the window shows its own lock and reset time. A stop is not
 // a failure (isStopped, OutcomeTag.kt:75-76).
-const OUTCOME_WORD = { client_abort: "Stopped", "error:stopped": "Stopped", "error:cancelled": "Cancelled", "error:restarted": "splice restarted", "error:at-capacity": "Too many at once",
+// Who stopped it (fin, Marlin on Requests, Oct 12): client_abort is Claude Code letting go (Esc, the client closing, its own
+// 600 s give-up, LaunchTypes.kt:208); error:stopped is the console's Stop or End (OperatorStop, CancellationSeal.kt:133-136).
+const OUTCOME_WORD = { client_abort: "Stopped in Claude Code", "error:stopped": "Stopped in the console", "error:cancelled": "Cancelled", "error:restarted": "splice restarted", "error:at-capacity": "Too many at once",
   "error:plan-limit": "", "error:rate-limited": "Rate limited", "error:all-accounts-exhausted": "No quota", "error:budget-blocked": "Over budget",
   "error:auth-missing": "Signed out", "error:upstream-failed": "Provider error", "failure:overloaded_error": "Overloaded",
   "error:conn-reset": "Network error", "error:upstream-frame-too-large": "Stream error", empty_model: "Empty answer", "error:unexpected": "Internal error" };

@@ -12,10 +12,13 @@ import java.nio.file.attribute.FileTime
 // why: the first message is at the head of the file; the head is read in doubling windows so a transcript whose first
 // line is a large paste is still read whole, and no card poll ever walks past the ceiling.
 private const val TITLE_FIRST_WINDOW_BYTES = 64 shl 10
+
+// why: the ceiling on that doubling: a first message larger than this is not a heading worth the read, and the
+// card simply has no title rather than a poll that walks megabytes.
 private const val TITLE_MAX_BYTES = 2 shl 20
 
-// why: a title is a card heading, not a summary.
-private const val TITLE_CHARS = 80
+// why: a session title is a card heading, not a summary (TranscriptMetadata's own limit is a different, longer text).
+private const val SESSION_TITLE_CHARS = 80
 
 // why: only recent sessions are retained, not every transcript the daemon has ever seen.
 private const val TITLE_HELD_FILES = 256
@@ -76,7 +79,7 @@ internal class TranscriptTitle(
 
     private fun line(text: String): String {
         val first = text.lineSequence().map { it.trim() }.first { it.isNotEmpty() }
-        return if (first.length <= TITLE_CHARS) first else first.take(TITLE_CHARS - 1).trimEnd() + "…"
+        return if (first.length <= SESSION_TITLE_CHARS) first else first.take(SESSION_TITLE_CHARS - 1).trimEnd() + "…"
     }
 
     private data class Stamp(val size: Long, val modified: FileTime, val identity: FileIdentity?)

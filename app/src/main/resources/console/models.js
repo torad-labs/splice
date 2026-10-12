@@ -194,7 +194,7 @@ function paneHtml() {
   const lines = logsOf(c.key);
   const ev = eventsOf(lines ?? []);
   const raw = (lines ?? []).filter((l) => l.text).slice(-60).reverse();
-  const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(e.at)}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">Nothing to report</p>`}`
+  const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">Nothing to report</p>`}`
     + `<details class="rawlog"><summary>Raw log</summary><ol>${raw.map((l) => `<li><time>${esc(l.at)}</time><span>${esc(l.text)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
@@ -216,6 +216,10 @@ const EVENTS = [
   [/\bstopped\b|shut ?down/i, "Stopped"],
 ];
 const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b/i;
+const ampm = (hms) => { // 8:02 AM, the way a message's time is written; the raw log keeps its seconds
+  const [h, m] = hms.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+};
 function eventsOf(lines) {
   const folded = new Map();
   for (const l of lines) {
@@ -403,18 +407,19 @@ function viewsHtml() {
 }
 
 // ---------- a new command: a template, what it asks, its sign-in, splice's checks, then Save and the restart ----------
-const tplName = (p) => PROVIDER_NAME[PROVIDER_FAMILY[p.head_key] ?? p.head_key] ?? (p.name === "local" ? "Local model" : p.name === "api-key" ? "Other provider" : p.name);
+const famOf = (p) => PROVIDER_FAMILY[p.head_key] ?? PROVIDER_FAMILY[p.name] ?? (p.name === "claude" ? "claude" : p.head_key);
+const tplName = (p) => PROVIDER_NAME[famOf(p)] ?? (p.name === "local" ? "Local model" : p.name === "api-key" ? "Other provider" : p.name);
 const second = (p) => Boolean(p.command) && taken(p);
 const commandFor = (p, a) => (p.command ? (second(p) ? `${p.command}-${a.name.trim()}` : p.command) : a.name.trim() ? `claude-${a.name.trim()}` : "");
 const taken = (p) => p.command && data.heads.some((h) => h.label === p.command || h.key === p.head_key);
 function addPaneHtml() {
   const a = ui.add;
   const p = a.profile && data.profiles.find((x) => x.name === a.profile);
-  const head = `<header style="--c:${p ? colorOf(PROVIDER_FAMILY[p.head_key] ?? p.head_key) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span></div></div>`
+  const head = `<header style="--c:${p ? colorOf(famOf(p)) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span></div></div>`
     + `<div class="acts"><button class="icon close" data-act="cancel-add" aria-label="Close">${GL.close}</button></div></header>`;
   if (!p) {
     const tiles = data.profiles.map((x) => {
-      const fam = PROVIDER_FAMILY[x.head_key] ?? x.head_key, off = taken(x);
+      const fam = famOf(x), off = taken(x);
       return `<button class="pick tpl" style="--c:${colorOf(fam)}" data-act="tpl" data-t="${esc(x.name)}"><span class="blot"></span><span class="tname">${esc(tplName(x))}</span>`
         + `${off ? `<span class="said">Added</span>` : ""}${x.command ? `<span class="chip">${esc(x.command)}</span>` : ""}</button>`;
     }).join("");
@@ -431,7 +436,7 @@ function addPaneHtml() {
       + `<input class="field win" id="a-w${i}" data-i="${i}" data-f="win" value="${esc(r.win)}" spellcheck="false" autocomplete="off" aria-label="Window"></div>`).join("");
     f += `<span class="lbl"></span><div class="ctl col"><div class="mrow labels"><span>Model</span><span>Window</span></div>${rows}<button class="act quiet" data-act="addrow">Add model</button></div>`;
   }
-  const fam = PROVIDER_FAMILY[p.head_key] ?? p.head_key;
+  const fam = famOf(p);
   const cmd = commandFor(p, a);
   const headRow = `<div class="tplhead"><span class="blot"></span><span class="tname">${esc(tplName(p))}</span>${cmd ? `<span class="chip">${esc(cmd)}</span>` : ""}</div>`;
   const checks = a.checks ? `<ol class="checks">${a.checks.map((c) => {

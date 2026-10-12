@@ -405,7 +405,7 @@ async function save() {
   if (!res.ok || !res.body?.ok) {
     // the daemon's sentences are for the log; the page says a config finding in fin's word for it, never the sentence
     const found = res.body?.findings ?? [];
-    if (found.length) console.warn(`models: saving  refused: `);
+    if (found.length) console.warn(`models: saving ${c.key} refused: ${found.map((x) => x.message).join("; ")}`);
     ui.said = found.length ? "Config error" : "Not saved";
     render();
     return;

@@ -119,7 +119,7 @@
 .every td { font: 500 1.05rem/1 var(--font-data); color: var(--text); padding: .75rem 1.6rem; white-space: nowrap; }
 .every .num { text-align: right; font-variant-numeric: tabular-nums; width: 12rem; }
 .every .mname { font: 500 1.15rem/1 var(--font-name); width: 100%; }
-.every .mname .dflt { margin-left: .6em; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+.every .mname .chip { margin-left: .9rem; vertical-align: middle; }
 .every .unpriced { text-align: center; color: var(--text-mute); font-family: var(--font-name); }
 .every .tier td { color: var(--text-mute); font-size: .95rem; padding-top: 0; }
 .every .grp td { padding: 1.5rem 1.6rem .6rem; }

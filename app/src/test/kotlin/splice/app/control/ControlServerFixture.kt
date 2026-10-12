@@ -74,7 +74,12 @@ internal class ControlAuth(private val mgmtKey: MgmtKey, val log: LogSink) {
         mgmtKey,
         ControlAudit(log),
         log,
-        HeapIngress(JvmHeap.budget, { Knob.MAX_REQUEST_BYTES.count().toInt() }, AdmissionErrorBody),
+        HeapIngress(
+            JvmHeap.budget,
+            { Knob.MAX_REQUEST_BYTES.count().toInt() },
+            AdmissionErrorBody,
+            readIdleMs = { Knob.INGRESS_READ_IDLE_MS.count() },
+        ),
     )
 }
 

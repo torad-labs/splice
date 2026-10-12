@@ -155,6 +155,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.MCP_MAX_SERVERS.key] = clampLong(out, Knob.MCP_MAX_SERVERS, floor = 1L)
         out[Knob.MAX_REQUEST_BYTES.key] = clampLong(out, Knob.MAX_REQUEST_BYTES, floor = 1L)
         out[Knob.REQUEST_READ_TIMEOUT_MS.key] = clampLong(out, Knob.REQUEST_READ_TIMEOUT_MS, floor = 1L)
+        out[Knob.INGRESS_READ_IDLE_MS.key] = clampLong(out, Knob.INGRESS_READ_IDLE_MS, floor = 1L)
         val heapBytes = clampLong(out, Knob.MATERIALIZATION_HEAP_BYTES, floor = 0L)
         out[Knob.MATERIALIZATION_HEAP_BYTES.key] = if (heapBytes == 0L) {
             0L

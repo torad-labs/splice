@@ -15,6 +15,7 @@ package splice.core.config
 // reader; what follows is a reading of the ones that do, taken 2026-10-10, and not a gate: maxInflight
 // and maxQueued (LiveLimit, per admission), requestReadTimeoutMs (RequestReadBudgetMs, per body read),
 // maxRequestBytes (RequestByteCap, per request, in the head path and the ingress guard both),
+// ingressReadIdleMs (IngressReadIdleMs, per chunk, the control listener's silent-body bound),
 // materializationHeapBytes (MaterializationBudgetBytes, per admission, which the gate caps into the
 // MaterializedByteCap that same guard asks), historyRetentionDays (RetentionDays, per read),
 // firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
@@ -431,6 +432,16 @@ public enum class Knob(
         "requestReadTimeoutMs",
         KnobKind.NUMBER,
         listOf("SPLICE_REQUEST_READ_TIMEOUT_MS"),
+        typedDefault = KnobDefault.Count(30_000L),
+    ),
+
+    // How long the control listener lets a request body sit silent after its headers, before it closes
+    // the connection and returns the ingress charge. Reset by every chunk, so a slow upload that keeps
+    // sending is never cut; only a stalled one is.
+    INGRESS_READ_IDLE_MS(
+        "ingressReadIdleMs",
+        KnobKind.NUMBER,
+        listOf("SPLICE_INGRESS_READ_IDLE_MS"),
         typedDefault = KnobDefault.Count(30_000L),
     ),
 

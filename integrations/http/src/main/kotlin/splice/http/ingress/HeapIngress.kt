@@ -13,6 +13,7 @@ import io.ktor.util.AttributeKey
 import io.netty.channel.ChannelPipeline
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
+import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
 import splice.core.memory.HeapCapacityException
@@ -46,6 +47,9 @@ public class HeapIngress(
     private val requestLimit: MaterializedByteCap = MaterializedByteCap { heap.limitBytes },
     /** How long a staged close waits for the client's own FIN before closing; a test stretches it to tell a FIN from the timer. */
     private val shutdownGraceMs: Long = SHUTDOWN_GRACE_MS,
+    /** How long a request body may sit silent before the connection is closed and its charge returned; null leaves a
+     *  listener unbounded here, for one whose own routes already bound the read (a head). */
+    private val readIdleMs: IngressReadIdleMs? = null,
 ) {
     private val requests = NettyIngressRequest()
     private val stopping = AtomicBoolean()
@@ -64,7 +68,7 @@ public class HeapIngress(
         pipeline.addAfter(
             CODEC_HANDLER,
             "splice-heap-body",
-            IngressHandler(heap, maxBodyBytes, requestLimit, ownership),
+            IngressHandler(heap, maxBodyBytes, requestLimit, ownership, readIdleMs),
         )
         // Added after the body handler, so it lands directly behind the codec: the response path sees writes there.
         pipeline.addAfter(CODEC_HANDLER, "splice-heap-response", IngressResponseWatch(ownership))

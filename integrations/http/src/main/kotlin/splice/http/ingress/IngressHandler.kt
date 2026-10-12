@@ -13,11 +13,14 @@ import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.LastHttpContent
 import io.netty.util.ReferenceCountUtil
+import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 internal class IngressReadGuard(private val ownership: IngressOwnership) : ChannelOutboundHandlerAdapter() {
     override fun read(ctx: ChannelHandlerContext) {
@@ -32,7 +35,11 @@ internal class IngressHandler(
     /** Read once per admitted request too: the gate behind this guard derives it from a live knob. */
     private val requestLimit: MaterializedByteCap,
     private val ownership: IngressOwnership,
+    /** Asked for at every chunk; null means no bound here. */
+    private val readIdleMs: IngressReadIdleMs? = null,
 ) : SimpleChannelInboundHandler<HttpObject>(false) {
+    private var silence: ScheduledFuture<*>? = null
+
     override fun channelRead0(ctx: ChannelHandlerContext, msg: HttpObject) {
         if (ownership.halted.get()) {
             ReferenceCountUtil.release(msg)
@@ -40,12 +47,14 @@ internal class IngressHandler(
         }
         if (msg !is HttpRequest) {
             ctx.fireChannelRead(msg)
+            watchBody(ctx, msg)
             return
         }
         val entry = admit(msg)
         if (entry.refusal == null) {
             ownership.register(msg, entry)
             ctx.fireChannelRead(msg)
+            watchBody(ctx, msg)
         } else {
             refuse(ctx, msg, entry)
         }
@@ -102,7 +111,25 @@ internal class IngressHandler(
         ctx.fireChannelRead(LastHttpContent.EMPTY_LAST_CONTENT)
     }
 
+    /**
+     * Armed at a request's headers, restarted by every chunk, stopped by its last: a body that goes quiet holds its
+     * ingress charge until the bound passes, then the connection closes and the charge returns through the same
+     * disconnect a client's own close takes. A halted connection is already closing in stages and keeps that path.
+     */
+    private fun watchBody(ctx: ChannelHandlerContext, msg: HttpObject) {
+        val bound = readIdleMs ?: return
+        silence?.cancel(false)
+        silence = null
+        if (msg is LastHttpContent) return
+        silence = ctx.executor().schedule(
+            { if (!ownership.halted.get()) ctx.close() },
+            bound(),
+            TimeUnit.MILLISECONDS,
+        )
+    }
+
     override fun channelInactive(ctx: ChannelHandlerContext) {
+        silence?.cancel(false)
         ownership.disconnect()
         ctx.fireChannelInactive()
     }

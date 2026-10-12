@@ -25,6 +25,14 @@ public fun interface RequestByteCap {
     public operator fun invoke(): Int
 }
 
+/** How long a request body may sit silent after its headers (knob `ingressReadIdleMs`), ASKED FOR AT EVERY CHUNK: a
+ *  stalled body costs the listener its ingress charge until this passes, so an operator who tightens it is obeyed by
+ *  the next chunk. It lives in core beside [RequestByteCap] because the knob and the guard that reads it are in
+ *  different modules. */
+public fun interface IngressReadIdleMs {
+    public operator fun invoke(): Long
+}
+
 /** Whether the status line rides the heartbeat of a quiet turn (knob `progressLine`), ASKED FOR AT EVERY HEARTBEAT: an
  *  operator who turns the line off while a turn is waiting stops it on the next tick instead of at the next restart. */
 public fun interface ProgressLineOn {
@@ -64,6 +72,10 @@ public class SpliceConfig internal constructor(
     /** How long one client request body read may take. Read LIVE, per read, through the head's RequestReadBudgetMs,
      *  so a PATCH moves the ceiling of the next read and no restart is named for it. */
     public val requestReadTimeoutMs: Long get() = long(Knob.REQUEST_READ_TIMEOUT_MS)
+
+    /** How long the control listener lets a request body sit silent before it closes the connection. Read LIVE, at
+     *  every chunk, through an [IngressReadIdleMs]. */
+    public val ingressReadIdleMs: Long get() = long(Knob.INGRESS_READ_IDLE_MS)
 
     /** The largest request body this gateway will decode; past it the client is answered 413. Read LIVE, per
      *  request, through a [RequestByteCap] — by the head path and by the ingress guard in front of it, which is why

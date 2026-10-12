@@ -39,6 +39,7 @@ class SettingsCoverageTest {
         val offPage = mapOf(
             "statuslineGitRoots" to NO_JOB,
             "requestReadTimeoutMs" to NOT_DRAWN,
+            "ingressReadIdleMs" to NOT_DRAWN,
             "materializationHeapBytes" to NOT_DRAWN,
             "retryBackoffBaseMs" to NOT_DRAWN,
             "retryBackoffCapMs" to NOT_DRAWN,

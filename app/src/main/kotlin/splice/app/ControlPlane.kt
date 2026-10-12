@@ -283,7 +283,12 @@ internal class ControlPlane(
             mgmtKey,
             ControlAudit(log),
             log,
-            HeapIngress(JvmHeap.budget, { config.getConfig().maxRequestBytes }, AdmissionErrorBody),
+            HeapIngress(
+                JvmHeap.budget,
+                { config.getConfig().maxRequestBytes },
+                AdmissionErrorBody,
+                readIdleMs = { config.getConfig().ingressReadIdleMs },
+            ),
         )
         val srv = ControlServer(
             adopted.control(controlPort),

@@ -35,7 +35,6 @@ internal class PlaygroundUsage {
         is TurnOutcome.Success -> ReadSend(reported(outcome.usage), OutcomeTag.OK.wire)
         is TurnOutcome.Failure -> ReadSend(reported(outcome.salvagedUsage), OutcomeTag.UPSTREAM_FAILED.wire)
         is TurnOutcome.ClientAbandoned -> ReadSend(reported(outcome.salvagedUsage), OutcomeTag.CLIENT_ABORT.wire)
-        else -> ReadSend(null, OutcomeTag.OK.wire)
     }
 
     private fun reported(usage: Usage): Usage? = usage.takeIf { it.reported.isNotEmpty() }

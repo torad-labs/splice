@@ -2,7 +2,8 @@
 /** Shared MCP hosting benchmark (FEATURES.md §8): N parallel Claude Code sessions, the same
  *  stdio MCP servers, once launched per session (Claude Code's own behaviour) and once through the
  *  splice host. The receipt records the PEAK summed RSS of the MCP server processes in each mode
- *  (the denominator the >50% target is measured against), the daemon's RSS delta while hosting,
+ *  (the denominator the saving is measured against, reported as a number with no pass bar since Marcos dropped
+ *  the >50% claim on Oct 10), the daemon's RSS delta while hosting,
  *  whole-workload RSS, and wall time.
  *
  *  Usage:
@@ -861,8 +862,8 @@ export function receiptProblems(a: PyValue, b: PyValue, names: string[], saving:
     problems.push(`tool surface differs between modes: unhosted=${pyRepr(sub(a, "mcp_tools"))} hosted=${pyRepr(sub(b, "mcp_tools"))}`);
   }
   if (pyEq(sub(b, "peak_server_rss_kb"), int(0))) problems.push("hosted server RSS was zero");
-  if (saving === null || saving < 0.5) {
-    problems.push(`server RSS saving ${saving === null ? "None" : floatRepr(String(saving))} is below the 50% bar`);
+  if (saving === null) {
+    problems.push("unhosted server RSS was zero, so no saving can be measured");
   }
   return problems;
 }
@@ -1326,9 +1327,9 @@ export async function main(argv: string[]): Promise<number> {
   const aRss = num(sub(obj(a), "peak_server_rss_kb"));
   const bRss = num(sub(obj(b), "peak_server_rss_kb"));
   const saving = aRss ? 1 - bRss / aRss : null;
-  // Fail closed: a receipt is only written when the run PROVES the claim — every session exited 0
+  // Fail closed: a receipt is only written when the measurement holds — every session exited 0
   // in both modes, every session saw the same non-empty tool surface hosted as unhosted, the
-  // measurement is complete, and the saving clears the 50% bar.
+  // measurement is complete, and both modes measured server RSS. The saving is reported, never judged.
   const problems = receiptProblems(obj(a), obj(b), names, saving, daemonHash);
   if (problems.length > 0) {
     for (const problem of problems) process.stderr.write(`BENCH FAILED: ${problem}\n`);
@@ -1346,7 +1347,7 @@ export async function main(argv: string[]): Promise<number> {
     ["hosted", obj(b)],
     ["server_rss_saving", rounded === null ? null : float(rounded)],
     ["note", "server_rss = peak summed RSS of the MCP server process trees: under the sessions when unhosted, " +
-      "under the daemon when hosted (the >50% denominator); " +
+      "under the daemon when hosted (the saving's denominator); " +
       "workload = every process under the sessions (+ daemon when hosted); daemon = the splice JVM."],
   ]);
   mkdirSync(dirname(args.out), { recursive: true });

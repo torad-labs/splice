@@ -44,7 +44,7 @@ const root = document.getElementById("usage");
 const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, keys: [], accounts: [], registry: [], groups: [], error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: {}, errors: [], gen: 0 };
+const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: {}, failed: {}, errors: [], gen: 0 };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;
@@ -105,7 +105,9 @@ function filterParams(p, f, label) {
 // each 15-minute column of the 5-hour window is one more question on the same read (`ask`), so the whole window is read once
 function turnsUrl(head, held, f, label) {
   const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f, label);
-  if (held > 1) p.set("usage", "0");
+  // the rows are the newest MAX_HELD of the window, so its failures are asked of the whole window on the same read: a card
+  // never prints a week's requests beside the failures of its newest rows (splice-providers, Oct 12: 1 failed of 46,494)
+  if (held > 1) { p.set("usage", "0"); p.append("ask", filterParams(new URLSearchParams({ n: String(held), local: "0", usage: "0", outcome: "failed" }), f, label).toString()); }
   else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f, label).toString());
   return `/api/perf/turns?${p}`;
 }
@@ -161,7 +163,7 @@ async function readWindow() {
   D.scoped = split(scopes[0]);
   D.all = hasFilter() ? split(scopes[1]) : D.scoped;
   D.every = ui.project ? split(wide) : D.all;
-  D.rows = []; D.held = {}; D.errors = [...D.scoped.errors];
+  D.rows = []; D.held = {}; D.failed = {}; D.errors = [...D.scoped.errors];
   let pending = D.scoped.pending || D.all.pending || D.every.pending;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
@@ -170,6 +172,8 @@ async function readWindow() {
     const had = D.held[a.h.key];
     D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
+    const fa = answer.asks?.[0], fh = D.failed[a.h.key];
+    if (fa) D.failed[a.h.key] = { count: (fh?.count ?? 0) + (fa.count ?? 0), rows: [...(fh?.rows ?? []), ...(fa.rows || []).map((row) => mapRow(a.h, row))] };
   });
   if (rowAsks.length > headsFor(ui.f).length) { // several labels: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
     D.rows.sort((x, y) => y.ts - x.ts);
@@ -491,7 +495,8 @@ function flagHtml(head, f) {
 /** What share of the requests in hand failed, in words a reader can place: under one in a hundred says so. */
 const failShare = (n, of) => (!of ? "" : n / of < 0.005 ? "under 1%" : `${Math.round((100 * n) / of)}%`);
 function headCard(head, f = null, foldable = !f) {
-  const rs = D.rows.filter((r) => r.head === head), fails = rs.filter(failed), held = D.held[head];
+  const rs = D.rows.filter((r) => r.head === head), held = D.held[head];
+  const fails = D.failed[head]?.rows ?? rs.filter(failed), failCount = D.failed[head]?.count ?? fails.length;
   const counts = new Map(); for (const r of fails) counts.set(r.outcome, (counts.get(r.outcome) || 0) + 1);
   const lastReset = (o) => fails.filter((r) => r.outcome === o && r.reset).reduce((a, r) => (!a || r.reset > a ? r.reset : a), null);
   const word = (o) => (o === "error:plan-limit" ? `<span class="lk">${ICON.lock}${lastReset(o) ? `Resets ${dayClock(new Date(lastReset(o)))}` : ""}</span>` : esc(OUTCOME_WORD[o] ?? tagWord(o) ?? "Failed"));
@@ -502,10 +507,10 @@ function headCard(head, f = null, foldable = !f) {
   return `<article class="card head-card${f ? " lead" : ""}" style="--c:${colorOf(providerOfHead(head))}"><header>${chip(head)}<a class="count" href="${reqUrl({ cmd: cmdOf(head) })}">${n0(total)} requests${OPEN}</a>${fold}</header>`
     + (f ? flagHtml(head, f) : "") + `<p class="models">${models.map(esc).join('<span class="dot"></span>')}</p>${cut}`
     + LAT_HEAD + strip("First byte", rs.filter((r) => r.ttfb != null).map((r) => r.ttfb)) + strip("Whole request", rs.map((r) => r.total), true) + trail(rs, f, held?.truncated === true)
-    + `<p class="fails${fails.length ? " bad" : ""}">${fails.length ? `<a class="all" href="${reqUrl({ cmd: cmdOf(head), outcome: "fail" })}"><b>${n0(fails.length)}</b> failed${OPEN}</a><span class="share">${failShare(fails.length, rs.length)}</span>` : `<span><b>0</b> failed</span>`}${kinds}</p></article>`;
+    + `<p class="fails${failCount ? " bad" : ""}">${failCount ? `<a class="all" href="${reqUrl({ cmd: cmdOf(head), outcome: "fail" })}"><b>${n0(failCount)}</b> failed${OPEN}</a><span class="share">${failShare(failCount, total)}</span>` : `<span><b>0</b> failed</span>`}${kinds}</p></article>`;
 }
 function headRow(head) {
-  const rs = D.rows.filter((r) => r.head === head), fails = rs.filter(failed).length;
+  const rs = D.rows.filter((r) => r.head === head), fails = D.failed[head]?.count ?? rs.filter(failed).length;
   return `<button class="hrow" data-act="head" data-v="${esc(head)}" style="--c:${colorOf(providerOfHead(head))}" aria-expanded="false">${chip(head)}<span class="n">${n0(D.held[head]?.count ?? rs.length)} requests</span>`
     + `<span class="t"><em>Typical</em>${secs(q(rs.map((r) => r.total), .5) ?? 0)}</span><span class="fl${fails ? " bad" : ""}"><b>${n0(fails)}</b> failed</span>${ICON.caret}</button>`;
 }
@@ -540,7 +545,7 @@ function render() {
   const waiting = reading(), hold = (title, body, cls = "") => `<section${cls ? ` class="${cls}"` : ""} aria-busy="true"><header><h2>${title}</h2></header>${body}</section>`;
   const money = plansHtml() + keysHtml();
   const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
-  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${waiting ? hold("Commands", GHOST.card([8, 22, 18]), "heads") : headsHtml()}</div>`;
+  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${waiting ? hold("Commands", GHOST.card([8, 22, 18]), "heads") : headsHtml()}</div>${PERF_HEADS.html()}`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading

@@ -77,15 +77,47 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 
 /* ---------- Your data: one row per thing splice saves ---------- */
 .dlist { display: flex; flex-direction: column; }
-.drow { display: grid; grid-template-columns: minmax(15rem, 1.6fr) minmax(8rem, 1fr) minmax(9rem, 1fr) 12.5rem 17.5rem; column-gap: 1.4rem; align-items: center; padding: 1.15rem 0; border-top: .12rem solid var(--track); }
-.drow.dhead { padding: 0 0 .8rem; border-top: 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
-.drow.lit { box-shadow: inset .3rem 0 0 var(--key-light); padding-left: 1.1rem; margin-left: -1.1rem; }
-.dname { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
-.dname .nm, .sname .nm { font: 500 1.2rem/1.2 var(--font-name); color: var(--text); }
-.amt { display: flex; align-items: baseline; flex-wrap: wrap; gap: .45rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
-.amt b { font: 500 1.3rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
-.amt .mb { width: 100%; margin-top: .3rem; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
-.amt .none { color: var(--text-mute); }
+/* Your data, rebuilt on Marcos's verdict (Oct 11): the whole of it as one figure and one split bar, then a store per
+   card in a grid that follows the width, and every Delete together at the end. Nothing here is under 1.05rem. */
+.dtotal { display: flex; flex-direction: column; gap: 1.5rem; padding: 0 0 2.8rem; }
+.dtfig { display: flex; align-items: baseline; gap: 1.2rem; }
+.dtfig b { font: 400 5.2rem/1 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
+.dtfig .none { font: 400 3rem/1 var(--font-lead); color: var(--text-mute); }
+.dtfig .dtw { font: 500 1.35rem/1 var(--font-name); color: var(--text-body); }
+.dtbar { display: flex; gap: .2rem; height: 2.6rem; border-radius: var(--r-in); overflow: hidden; background: var(--track); }
+.dtbar i { flex: 0 0 var(--w); min-width: .3rem; background: color-mix(in oklab, var(--key-light) var(--t), var(--wall-low)); }
+.dtkey { display: flex; flex-wrap: wrap; gap: .7rem 2.4rem; }
+.dkey { display: inline-flex; align-items: baseline; gap: .6rem; font: 500 1.1rem/1.2 var(--font-name); color: var(--text-body); }
+.dkey i { align-self: center; width: 1rem; height: 1rem; border-radius: .2rem; background: color-mix(in oklab, var(--key-light) var(--t), var(--wall-low)); }
+.dkey b { font: 500 1.15rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+/* the grid follows the width: as many cards as fit at 22rem each, so 3828 fills and 1440 does not crowd */
+/* auto-fit, not auto-fill: three stores take the width between them rather than leaving a fourth track empty at the
+   right of the row (Marcos's verdict on this pane, Oct 11); a group with more stores than tracks still wraps at 26rem */
+.dcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); gap: var(--gap-card); }
+.dcard { display: flex; flex-direction: column; gap: 1.1rem; padding: 1.6rem 1.7rem 1.7rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
+.dcard.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
+.dtop { display: flex; align-items: baseline; flex-wrap: wrap; gap: .6rem; }
+.dtop .nm { font: 500 1.35rem/1.2 var(--font-name); color: var(--text); }
+.dfig { display: flex; flex-direction: column; gap: .5rem; }
+.dfig .big { font: 500 2.6rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.dfig .dmeta { font: 500 1.1rem/1.3 var(--font-name); color: var(--text-body); }
+.dfig .none { font: 500 1.25rem/1.2 var(--font-name); color: var(--text-mute); }
+.dfig .dsh { height: .6rem; margin-top: .4rem; border-radius: .3rem; background: var(--track); overflow: hidden; }
+.dfig .dsh i { display: block; width: var(--w); height: 100%; background: var(--key-light); }
+.dfig .dpc, .dfig .dgrow { font: 500 1.05rem/1.3 var(--font-name); color: var(--text-mute); }
+.dctl { display: flex; flex-wrap: wrap; gap: 1rem 2.2rem; margin-top: auto; padding-top: 1.2rem; border-top: .12rem solid var(--track); }
+.dc { display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
+.dcl { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
+.dcv { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
+.dcards.slim .dcard { gap: .9rem; }
+.dcards.slim .dfig .none { font-size: 1.1rem; }
+/* every Delete together, away from the readings */
+.dfree { margin-top: 3rem; }
+.dfrows { display: flex; flex-direction: column; }
+.dfrow { display: grid; grid-template-columns: minmax(18rem, 1fr) 12rem auto; align-items: center; gap: 1.4rem; padding: 1.1rem 0; border-top: .12rem solid var(--track); }
+.dfrow .nm { font: 500 1.2rem/1.2 var(--font-name); color: var(--text); }
+.dfrow .dfs { font: 500 1.15rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.dfrow .dfa { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; }
 .keep { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
 .keep .pickbtn { min-width: 10rem; }
 .count { display: inline-flex; align-items: center; white-space: nowrap; gap: .45rem; padding: .3rem 0; font: 500 .98rem/1 var(--font-data); color: var(--text-body); background: none; border: 0; }
@@ -95,13 +127,12 @@ button.count:hover { color: var(--text); }
 .count[aria-expanded="true"] svg { transform: rotate(90deg); }
 /* the two heads: what holds conversation text, and what keeps only records, each with its size */
 .dgroup { display: flex; align-items: baseline; gap: .8rem; padding: 0 0 1rem; }
-.dgroup + .drow.dhead { margin-top: -.4rem; }
-.drow + .dgroup { margin-top: 2.6rem; }
+.dcards + .dgroup, .dfree .dgroup { margin-top: 2.6rem; }
 .dgroup .hn { font: 500 1.1rem/1 var(--font-data); color: var(--text-mute); }
 .ddel { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; }
 .fixed.need { max-width: 11rem; line-height: 1.3; }
 .armed { display: inline-flex; gap: .5rem; }
-.dmore { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+.dmore { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
 .form.tight { grid-template-columns: 18rem minmax(0, 1fr); }
 .taps { gap: .6rem 1.1rem; }
 .tap { display: inline-flex; align-items: center; gap: .5rem; }
@@ -187,6 +218,9 @@ button.count:hover { color: var(--text); }
 /* three figures side by side: what splice did this week when a model went quiet */
 .tally h3 { margin-bottom: 1.2rem; }
 .figs3 { display: flex; flex-wrap: wrap; gap: 1.4rem; }
+/* a group's figures keep their own size beside the next group (Silent models); a section's own figures, with no group
+   beside them, take the width between them so a wide pane is not two tiles and an empty row (Marcos, Oct 11) */
+#st .tally > .figs3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: 1.4rem; }
 .fig3 { display: flex; flex-direction: column; gap: .7rem; min-width: 22rem; padding: 1.3rem 1.5rem 1.4rem; text-decoration: none; border: .12rem solid var(--track-line); border-radius: var(--r-obj); }
 .fig3 .big { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
 .fig3 .what { font: 500 1.25rem/1.2 var(--font-name); color: var(--text); }
@@ -218,8 +252,7 @@ button.count:hover { color: var(--text); }
 #st .kn .ctl.col { gap: 1rem; }
 #st .sub h3 { margin-bottom: 1.7rem; }
 #st .pane .body { gap: 3.2rem; }
-#st .drow { padding-block: 1.65rem; }
-#st .drow.dhead { padding: 0 0 1rem; }
+#st .dfrow { padding-block: 1.5rem; }
 #st .srv { padding: 1.5rem 0; }
 /* ---------- whose limit it was: the provider's line and splice's own, side by side, each card headed by whose it is.
    The side whose requests failed keeps its edge in the limit's colour, as a failed request's own row does
@@ -373,7 +406,46 @@ button.count:hover { color: var(--text); }
 .dmore .cs .said { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .dmore .cs .said.limit { color: var(--bad, #e0584a); }
 .dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
-.drow .offcost { grid-column: 4 / -1; margin: .6rem 0 0; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
-.drow .offcost.now { color: var(--text-body); }  /* the switch is Off: the cost is in force, brighter than the dimmed row name (hitstop 98d8d07) */
-.drow .offcost .whole { white-space: nowrap; }
-.drow.once .keep { flex-wrap: nowrap; white-space: nowrap; }  /* "Applied" sits beside the value, not under it */
+.dcard .offcost { margin: 0; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
+.dcard .offcost.now { color: var(--text-body); }  /* the switch is Off: the cost is in force, brighter than the dimmed row name (hitstop 98d8d07) */
+/* a phrase keeps its dot with it (the join puts a no-break space before each "·", so a line never opens with one) and
+   wraps inside the card when it is longer than the card: nowrap here ran the first phrase past the edge at 1440 */
+.dcard .offcost .whole { white-space: normal; }
+.dcard.once .dcv { flex-wrap: nowrap; white-space: nowrap; }  /* "Applied" sits beside the value, not under it */
+/* usage history's own days, the one series the daemon measures; every other card's growth is words, never a shape */
+.dchart { display: flex; flex-direction: column; gap: .4rem; margin-top: .5rem; }
+.dbars { display: flex; align-items: flex-end; gap: .1rem; height: 4.4rem; }
+.dbars i { flex: 1 1 0; min-width: 0; height: var(--h); background: color-mix(in oklab, var(--key-light) 55%, var(--wall-low)); border-radius: .15rem .15rem 0 0; }
+.dcends { display: flex; justify-content: space-between; font: 500 1.05rem/1 var(--font-data); color: var(--text-mute); }
+/* Many agents at once, rebuilt on Marcos's verdict (Oct 11): the commands that ran today lead as cards in a grid that
+   follows the width, the ones that held nothing are one line, and the settings below pair up instead of hugging the
+   left edge of a wide pane. */
+/* auto-fit, not auto-fill: the two commands that ran today take the width between them, instead of two 28rem cards at the
+   left of an empty row (Marcos's verdict on this pane, Oct 11). A day where every command ran wraps at 28rem as before. */
+.pcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr)); gap: var(--gap-card); }
+.pcard { display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem 1.7rem 1.6rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
+.pcard > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.pcard .pat { font: 500 1.1rem/1 var(--font-data); color: var(--text-mute); }
+.pcard .pbig { display: flex; align-items: baseline; gap: .9rem; }
+.pcard .pbig b { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
+.pcard .pof { font: 500 1.2rem/1.2 var(--font-name); color: var(--text-body); }
+.pcard .pbar { display: block; height: .9rem; border-radius: .45rem; background: var(--track); overflow: hidden; }
+.pcard .pbar b { display: block; height: 100%; background: color-mix(in oklab, var(--live) 80%, transparent); }
+.pcard.full .pbar b { background: var(--limit); }
+.pcard .door { align-self: flex-start; margin-top: auto; padding: .4rem .9rem; white-space: nowrap; }
+.pcard .pnone { margin-top: auto; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
+.pidle { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem .8rem; margin: 1.4rem 0 0; font: 500 1.15rem/1.3 var(--font-name); color: var(--text-body); }
+/* a wide pane fits two settings side by side, so a form never sits in the left quarter of an empty row. A form holding a
+   setting some commands override is the exception: it keeps one setting per row and spreads those commands across the
+   width, instead of stacking them in a 30rem column with three quarters of the row empty (Marcos's verdict, Oct 11). */
+@media (min-width: 2000px) {
+  #st .sub .form:not(:has(.over)), #st .fix .form:not(:has(.over)) { grid-template-columns: 20rem minmax(16rem, 30rem) 20rem minmax(16rem, 30rem); column-gap: 3.2rem; }
+  /* a figure wide enough to hold both reads as one line: the count and its door at the left, each command's share at the
+     right edge, instead of a tall box with its words in the top corner */
+  #st .tally > .figs3 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
+  #st .tally > .figs3 > .fig3 > .cdoors { justify-content: flex-end; }
+}
+/* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
+#st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); align-items: stretch; gap: 1rem 1.6rem; }
+#st .kn .ctl.col > .line { grid-column: 1 / -1; }
+#st .kn .ctl.col > .over { padding: .2rem 0 .2rem 1.1rem; }

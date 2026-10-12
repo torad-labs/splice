@@ -181,11 +181,49 @@ const delBtn = (id, n, unit) => (!n ? "" : ui.armed === id
 const ALWAYS = `<span class="fixed quiet">Always saved</span>`; // a store whose daemon has no off switch
 const YOURS = `<span class="yours">Your prompts</span>`;
 // What Off costs, under the switch. Every row that has the line always draws it, quieter while On, in the room the row keeps, so a flip moves no row below (p179; Marlin reversed show-only-while-Off, Oct 11). Each line is true On or Off and wraps at a dot, never inside a part (fin).
-const costHtml = (off, isOff) => (off ? `<p class="offcost${isOff ? " now" : ""}">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join(" · ")}</p>` : "");
-const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "" }) =>
-  `<div class="drow${cls}${lit(hay)}"><div class="dname"><span class="nm">${hl(name)}${yours ? YOURS : ""}</span>${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</div>`
-  + `<div class="amt">${amount}</div><div class="keep">${keep}</div><div class="dsw">${sw}</div><div class="ddel">${del}</div>${costHtml(off, offShown)}${more}</div>`;
-const amountOf = (x, unit) => (x.n ? `<b>${fmt(x.n)}</b> ${unit}<span class="mb">${mbWord(x.bytes)}</span>${x.since ? `<span class="mb">Since ${atWord(x.since)}</span>` : ""}` : `<span class="none">Nothing saved</span>`);
+const costHtml = (off, isOff) => (off ? `<p class="offcost${isOff ? " now" : ""}">${off.split(" · ").map((t) => `<span class="whole">${esc(t)}</span>`).join("\u00a0· ")}</p>` : "");
+/** One store, as a card: its name, its size large, what it holds, its share of everything splice keeps, and its own
+ *  controls. The card returns its Delete rather than drawing it, so every destructive act stands together in one
+ *  section at the end instead of once per row (Marcos's verdict on the small-table pane, Oct 11). */
+const drow = ({ cls = "", name, hay = name, yours, door, amount, keep = "", sw = "", del = "", off = "", offShown = false, more = "", wide = false }) => ({
+  name, del,
+  html: `<article class="dcard${cls}${wide ? " wide" : ""}${lit(hay)}">`
+    + `<header class="dtop"><span class="nm">${hl(name)}</span>${yours ? YOURS : ""}${door ? `<a class="link" href="${door[0]}">${SV.open}${door[1]}</a>` : ""}</header>`
+    + `<div class="dfig">${amount}</div>`
+    + (keep || sw ? `<div class="dctl">${sw ? `<div class="dc"><span class="dcl">Save</span>${sw}</div>` : ""}${keep ? `<div class="dc"><span class="dcl">Keep for</span><div class="dcv">${keep}</div></div>` : ""}</div>` : "")
+    + `${costHtml(off, offShown)}${more}</article>`,
+});
+/** Everything splice keeps, in bytes: the figure the pane leads with, and what each card's share is measured against. */
+const allBytes = () => DATA_ROWS.reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
+/** How fast a store grows. Usage history is the one store the daemon measures (rate_bytes_per_month, over its own days);
+ *  for every other store it is the size divided by the days since the oldest thing kept, and the words say so. */
+function growOf(r, x) {
+  if (r.id === "hist") return ui.hist && ui.hist.rate_bytes_per_month ? `About ${mbWord(ui.hist.rate_bytes_per_month)} a month` : "";
+  if (!x.since || !x.bytes) return "";
+  const days = Math.max(1, Math.round((Date.now() - x.since) / DAY));
+  return `About ${mbWord(x.bytes / days)} a day on average`;
+}
+/** A store's share of everything kept, as a bar and a figure. Under half a percent reads "under 1%", never "0%". */
+function shareOf(x) {
+  const all = allBytes();
+  if (!all || !x.bytes) return "";
+  const pc = (x.bytes / all) * 100, word = pc < 1 ? "under 1%" : `${Math.round(pc)}%`;
+  return `<div class="dsh" role="img" aria-label="${word} of ${mbWord(all)} kept"><i style="--w:${Math.max(0.6, pc).toFixed(1)}%"></i></div>`
+    + `<span class="dpc">${word} of everything kept</span>`;
+}
+/** Usage history, day by day, as the daemon measured it (its own per-day bytes). No other store has a series, so no
+ *  other card draws one: an average is words, never a shape that would read as history. */
+function daysChart(h) {
+  if (!h || !h.days || h.days.length < 2) return "";
+  const top = Math.max(...h.days.map((d) => d.bytes)) || 1;
+  const bars = h.days.map((d) => `<i style="--h:${Math.max(2, (d.bytes / top) * 100).toFixed(1)}%"></i>`).join("");
+  return `<div class="dchart"><div class="dbars" role="img" aria-label="${h.days.length} days, biggest ${mbWord(top)}">${bars}</div>`
+    + `<div class="dcends"><span>${atWord(h.held.oldest_epoch_ms)}</span><span>Today</span></div></div>`;
+}
+const amountOf = (x, r) => (x.n || x.bytes
+  ? `<b class="big">${mbWord(x.bytes)}</b><span class="dmeta">${fmt(x.n)} ${esc(r.unit)}${x.since ? ` · since ${atWord(x.since)}` : ""}</span>`
+    + shareOf(x) + (growOf(r, x) ? `<span class="dgrow">${growOf(r, x)}</span>` : "") + (r.id === "hist" ? daysChart(ui.hist) : "")
+  : `<span class="none">Nothing saved</span>`);
 // A store splice could not read is a quiet "Not read" in the muted line, as every page says it; why goes to the console,
 // where the read that failed is named (fin, Oct 11)
 const unreadable = `<span class="none">Not read</span>`;
@@ -210,7 +248,7 @@ function histRow(r) {
   return drow({
     name: r.name, hay: `${r.name} ${KNOB.historyRetentionDays.also}`, door: r.door,
     sw: ALWAYS, // the daemon has no switch for turn statistics: only how far back they go
-    amount: amountOf(x, r.unit),
+    amount: amountOf(x, r),
     keep: `${ctlHtml(KNOB.historyRetentionDays, a ? a.v : val("historyRetentionDays"))}${saidHtml("historyRetentionDays")}${rate}`,
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
     more: a && a.h ? `<div class="dmore hask">${histBar(a.h)}<div class="hacts"><button class="act danger small" data-act="shorten">Delete ${fmt(a.h.cut.turns)} requests</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>`
@@ -234,7 +272,7 @@ function dataRow(r) {
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   const said = r.knob ? saidHtml(r.knob) : "";
   return drow({
-    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r.unit), keep: keep + said, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
+    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r), keep: keep + said, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
     sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob)) : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
     more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
@@ -248,17 +286,50 @@ function dataHtml() {
   // offers nothing (the tap is restart-only and has no control here), so it is not drawn at all (fin, Oct 11).
   const memory = taps.length || heldN ? drow({
     name: "Last requests, in memory", yours: true,
-    amount: taps.some((h) => ui.held[h] === undefined) ? READING : taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<b>${fmt(heldN)}</b> ${heldN === 1 ? "request" : "requests"}` : `<span class="none">Nothing held</span>`,
+    amount: taps.some((h) => ui.held[h] === undefined) ? READING : taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<span class="none">${fmt(heldN)} ${heldN === 1 ? "request" : "requests"} held</span>` : `<span class="none">Nothing held</span>`,
     keep: `<span class="taps">${taps.map((h) => `<span class="tap">${cmdChip(h)}<span class="fixed">Last ${tapOf(h)}</span></span>`).join("")}</span>`,
     sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
   }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
   // a total over a store that was not read is not read either: "0 B" over unread stores is a figure that is not true
   const unreadIn = (g) => DATA_ROWS.some((r) => r.g === g && !(r.noRoute || r.own) && heldOf(r) === null);
-  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading" : unreadIn(g) ? "Not read" : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`}</span></div>`;
-  const dhead = `<div class="drow dhead"><span></span><span></span><span>Keep for</span><span>Save</span><span></span></div>`;
-  const rows = (g) => DATA_ROWS.filter((r) => r.g === g).map(dataRow).join("");
-  return `<div class="dlist">${read}${head("Conversation text", "text")}${dhead}${rows("text")}${memory}${head("Records", "records")}${rows("records")}</div>`;
+  const sum = (g) => (DATA_ROWS.some((r) => r.g === g && stillReading(r)) ? "Reading" : unreadIn(g) ? "Not read"
+    : `${mbWord(bytes(g))}${DATA_ROWS.some((r) => r.g === g && (r.noRoute || r.own)) ? " counted" : ""}`);
+  const head = (name, g) => `<div class="dgroup"><h3>${name}</h3><span class="hn">${sum(g)}</span></div>`;
+  // each store is built once: its card goes to its group, its Delete to the one section at the end
+  const built = DATA_ROWS.map((r) => ({ r, p: dataRow(r) }));
+  const sized = (b) => (heldOf(b.r)?.bytes ?? 0) > 0;
+  const cards = (g) => `<div class="dcards">${built.filter((b) => b.r.g === g && sized(b)).map((b) => b.p.html).join("")}</div>`;
+  const dels = built.filter((b) => b.p.del && b.p.del.trim()).map((b) => {
+    const x = heldOf(b.r);
+    return `<div class="dfrow"><span class="nm">${esc(b.r.name)}</span><span class="dfs">${x && x.bytes ? mbWord(x.bytes) : ""}</span><span class="dfa">${b.p.del}</span></div>`;
+  });
+  return `<div class="dlist">${totalHtml()}`
+    + `${head("Conversation text", "text")}${cards("text")}`
+    + `${head("Records", "records")}${cards("records")}`
+    + `<div class="dgroup"><h3>Nothing kept right now</h3><span class="hn">No space used</span></div><div class="dcards slim">${read.html}${built.filter((b) => !sized(b)).map((b) => b.p.html).join("")}${memory ? memory.html : ""}</div>`
+    + freeHtml(dels) + `</div>`;
+}
+/** What splice keeps, all of it, as one figure and one bar split by store, biggest first. Each piece is the share that
+ *  store holds, so where the space went is read in one look rather than summed from a column of small numbers. */
+function totalHtml() {
+  const reading = DATA_ROWS.some(stillReading), unread = DATA_ROWS.some((r) => !(r.noRoute || r.own) && heldOf(r) === null);
+  const held = DATA_ROWS.map((r) => ({ r, x: heldOf(r) })).filter((p) => p.x && p.x.bytes > 0).sort((a, b) => b.x.bytes - a.x.bytes);
+  const all = allBytes();
+  const fig = reading ? `<span class="none">Reading</span>` : unread ? `<span class="none">Not read</span>` : `<b>${mbWord(all)}</b>`;
+  // one tint family, never the provider colours: on every page a colour names a provider, and these name stores
+  const seg = (p, i) => `<i style="--t:${Math.max(16, 92 - i * 13)}%;--w:${((p.x.bytes / all) * 100).toFixed(2)}%" title="${esc(p.r.name)}"></i>`;
+  const key = (p, i) => `<span class="dkey"><i style="--t:${Math.max(16, 92 - i * 13)}%"></i>${esc(p.r.name)}<b>${mbWord(p.x.bytes)}</b></span>`;
+  return `<section class="dtotal"><div class="dtfig">${fig}<span class="dtw">kept on this computer</span></div>`
+    + (all && !reading ? `<div class="dtbar" role="img" aria-label="${held.map((p) => `${p.r.name} ${mbWord(p.x.bytes)}`).join(", ")}">${held.map(seg).join("")}</div>`
+      + `<div class="dtkey">${held.map(key).join("")}</div>` : "")
+    + `</section>`;
+}
+/** Every delete in one place at the end, away from the cards, so a destructive act is never a button beside a reading. */
+function freeHtml(dels) {
+  if (!dels.length) return "";
+  return `<section class="dfree"><div class="dgroup"><h3>Free up space</h3><span class="hn">Deleting cannot be undone</span></div>`
+    + `<div class="dfrows">${dels.join("")}</div></section>`;
 }
 
 // ---------- what happened this week ----------
@@ -374,22 +445,25 @@ function peaksHtml() {
   if (ui.peaks === undefined) return `<section class="tally"><h3>Today</h3><div class="card peaks">${READING}</div></section>`;
   if (!ui.peaks.length) return "";
   const rows = [...ui.peaks].sort((a, b) => (b.peak ?? -1) - (a.peak ?? -1));
-  const row = (p) => {
-    const key = p.head.key, lim = limitOf(key);
-    if (p.err) return `<div class="peak">${cmdChip(key)}<span></span><span class="pnum"><span class="state limit">${esc(p.err)}</span></span><span></span></div>`;
-    return `<div class="peak${lim && p.peak >= lim ? " full" : ""}">${cmdChip(key)}`
-      + `<span class="pbar"><b style="width:${lim ? Math.min(100, (100 * p.peak) / lim) : 4}%"></b></span>`
-      + `<span class="pnum"><b>${p.peak}</b> of ${lim || "Unlimited"} requests at once${p.peak ? `<i>${clockOf(p.at)}</i>` : ""}</span>`
-      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${fmt(p.queued)}</b><em>Open on Requests</em></a>` : "<span></span>") + `</div>`;
+  // The commands that actually ran today lead, one card each; the ones that held nothing collapse to a line naming
+  // them, instead of a full-width bar at 0 apiece (Marcos's verdict on this pane, Oct 11).
+  const busy = rows.filter((p) => !p.err && p.peak > 0), idle = rows.filter((p) => !p.err && !p.peak), bad = rows.filter((p) => p.err);
+  const card = (p) => {
+    const key = p.head.key, lim = limitOf(key), pc = lim ? Math.min(100, (100 * p.peak) / lim) : 4;
+    return `<article class="pcard${lim && p.peak >= lim ? " full" : ""}"><header>${cmdChip(key)}<span class="pat">${clockOf(p.at)}</span></header>`
+      + `<div class="pbig"><b>${fmt(p.peak)}</b><span class="pof">of ${lim || "no limit"} at once</span></div>`
+      + `<span class="pbar"><b style="width:${pc}%"></b></span>`
+      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${fmt(p.queued)}</b><em>Open on Requests</em></a>` : `<span class="pnone">None waited in line</span>`)
+      + `</article>`;
   };
-  const waited = rows.reduce((a, p) => a + (p.queued || 0), 0);
-  // the header door adds something only when it spans commands; with one command waiting, that command's own row door is the same list
-  const doors = rows.filter((p) => p.queued).length;
-  return `<section class="tally"><h3>Today</h3><div class="card peaks">${doors > 1 ? `<header><a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued" })}">${SV.open}<span>Waited in line</span><b>${fmt(waited)}</b><em>Open on Requests</em></a></header>` : ""}${rows.map(row).join("")}</div></section>`;
+  const quiet = idle.length
+    ? `<p class="pidle"><span>${fmt(idle.length)} command${idle.length === 1 ? "" : "s"} held nothing today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
+  const errs = bad.map((p) => `<p class="pidle"><span class="state limit">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
+  return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No command ran a request today</span></p>`}${quiet}${errs}</section>`;
 }
-const busyHtml = () => `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "cutoff", what: "Cut off today" }])}`
+const busyHtml = () => peaksHtml()
+  + `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }])}`
   + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`
-  + peaksHtml()
   + `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
   + (keysOf("busy").includes("maxRequestBytes") ? `<section class="sub"><h3>Too large</h3>${form(["maxRequestBytes"])}</section>` : "");
 

@@ -35,18 +35,31 @@ internal class TurnUsage(
         rows.forEach { row ->
             val cost = gaps.usd(row)
             val value = gaps.value(row).takeIf { gaps.onPlan(row) }
-            val gap = gaps.of(row)
+            // the row's numbers are read once and added to its five groups: each read is a lookup into the packed row,
+            // and reading them per group was most of a week's fold (jfr on desk c, Oct 12)
+            val counted = counted(row, Priced(cost, value), gaps.of(row))
             val day = Instant.ofEpochMilli(row.ts).atZone(zone).toLocalDate().toString()
-            totals.add(row, Priced(cost, value), gap)
-            models.getOrPut(row.facts.model, ::Counters).add(row, Priced(cost, value), gap)
+            totals.add(counted)
+            models.getOrPut(row.facts.model, ::Counters).add(counted)
             val account = reading.key(row.facts.account)
             reading.label(row.facts.account)?.let { label -> account?.let { accountLabels[it] = label } }
-            accounts.getOrPut(account, ::Counters).add(row, Priced(cost, value), gap)
-            days.getOrPut(day, ::Counters).add(row, Priced(cost, value), gap)
+            accounts.getOrPut(account, ::Counters).add(counted)
+            days.getOrPut(day, ::Counters).add(counted)
             val sessionKey = if (row.fields[PerfKeys.COMPARE] == 1L) COMPARE_BUCKET else row.transcript.sessionId
-            sessions.getOrPut(sessionKey, ::Counters).add(row, Priced(cost, value), gap)
+            sessions.getOrPut(sessionKey, ::Counters).add(counted)
             recordModel(row)
         }
+    }
+
+    private fun counted(row: PerfRow, priced: Priced, gap: PriceGap?): Counted {
+        val fields = row.fields
+        return Counted(
+            localStep = fields[PerfKeys.LOCAL_STEP] == 1L,
+            tokens = Tokens(fields[PerfKeys.IN_TOKENS], fields[PerfKeys.CACHED_TOKENS], fields[PerfKeys.OUT_TOKENS]),
+            cutRounds = fields[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
+            priced = priced,
+            gap = gap,
+        )
     }
 
     fun json(): JsonObject = buildJsonObject {
@@ -98,6 +111,18 @@ internal class TurnUsage(
     /** One row's figures: what a key was billed, or what a plan's request would have cost at the API rates. */
     private data class Priced(val usd: Double?, val planValue: Double?)
 
+    /** One row as every group counts it, its numbers read out of the row once. */
+    private data class Counted(
+        val localStep: Boolean,
+        val tokens: Tokens,
+        val cutRounds: Long,
+        val priced: Priced,
+        val gap: PriceGap?,
+    )
+
+    /** The row's reported token totals; null where the row never carried one. */
+    private data class Tokens(val incoming: Long?, val cache: Long?, val outgoing: Long?)
+
     private class Counters {
         private var requests = 0L
         private var input: Long? = null
@@ -124,23 +149,21 @@ internal class TurnUsage(
          *  as a request made every window with steps report requests that never reached a provider, each one also
          *  missing its input and output because a step has no token counts, and each one unpriced for a reason no
          *  case covers. It takes no token count, no price, no reason and no cut round: it has none of those. */
-        fun add(row: PerfRow, priced: Priced, gap: PriceGap?) {
-            if (row.fields[PerfKeys.LOCAL_STEP] == 1L) {
+        fun add(row: Counted) {
+            if (row.localStep) {
                 localSteps++
                 return
             }
             requests++
-            addTokens(row)
-            cutRounds += row.fields[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L
-            priced.usd?.let { cost = (cost ?: 0.0) + it }
-            priced.planValue?.let { planValue = (planValue ?: 0.0) + it; planValued++ }
-            if (gap != null) gaps[gap] = gaps.getValue(gap) + 1
+            addTokens(row.tokens)
+            cutRounds += row.cutRounds
+            row.priced.usd?.let { cost = (cost ?: 0.0) + it }
+            row.priced.planValue?.let { planValue = (planValue ?: 0.0) + it; planValued++ }
+            if (row.gap != null) gaps[row.gap] = gaps.getValue(row.gap) + 1
         }
 
-        private fun addTokens(row: PerfRow) {
-            val incoming = row.fields[PerfKeys.IN_TOKENS]
-            val cache = row.fields[PerfKeys.CACHED_TOKENS]
-            val outgoing = row.fields[PerfKeys.OUT_TOKENS]
+        private fun addTokens(tokens: Tokens) {
+            val (incoming, cache, outgoing) = tokens
             if (incoming == null) missingInput++ else input = (input ?: 0) + incoming
             if (outgoing == null) missingOutput++ else output = (output ?: 0) + outgoing
             if (cache != null) cached = (cached ?: 0) + cache

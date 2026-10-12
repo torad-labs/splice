@@ -230,7 +230,7 @@ public class TranscriptReader(
     override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts {
         val file = if (validSessionId.matches(sessionId)) locator.locate(roots, sessionId) else null
         if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(Keys.PROJECTS).toString() })
-        return sent.read(file, ids)
+        return sent.readSession(file, ids)
     }
 
     /** Only SendMessage candidates are parsed. All redacted sends are held, regardless of this caller's ids. */

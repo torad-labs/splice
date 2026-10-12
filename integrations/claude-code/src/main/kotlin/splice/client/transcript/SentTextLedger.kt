@@ -1,4 +1,7 @@
 // NEW: V4-427 — hold only redacted SendMessage texts, never the conversation, against a file snapshot.
+// A session's subagents send too, and Claude Code keeps their transcripts beside the session's own, in
+// <session>/subagents/*.jsonl (often absolute symlinks): a text the session's file lacks is looked for there
+// (marlin's 3:37 walk, Oct 12: ten of a team's messages were a subagent's).
 // Unchanged files cost a stat and no transcript bytes. Appends resume at the last complete line;
 // a replaced, shrunk or same-size rewritten file starts over. A boundary guard detects truncate-and-grow.
 package splice.client.transcript
@@ -7,11 +10,19 @@ import splice.core.util.FileIdentity
 import splice.core.util.FileStat
 import splice.sessions.transcript.SentTexts
 import java.io.ByteArrayOutputStream
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 
-// why: hold the recent sessions without keeping every transcript ever visited in daemon memory.
-private const val HELD_FILES = 128
+// why: hold the recent sessions and their subagents (419 beside one session on his machine) without keeping every
+// transcript ever visited; an entry is its texts and a 4 KiB tail, so this many cost a few megabytes.
+private const val HELD_FILES = 1024
+
+// why: where Claude Code writes a session's subagent transcripts, beside the session's own file.
+private const val SUBAGENTS = "subagents"
+
+private const val TRANSCRIPT_SUFFIX = ".jsonl"
 
 // why: a bounded witness of the old EOF distinguishes append from the common truncate-and-grow rewrite.
 private const val GUARD_BYTES = 4_096
@@ -28,6 +39,37 @@ internal class SentTextLedger(
     private val collect: SentTextCollector,
 ) {
     private val held = LinkedHashMap<Path, Held>()
+
+    /** [read] over a session's own transcript, then over its subagents' for the ids it lacks. The path named is the
+     *  session's own file. */
+    fun readSession(file: Path, ids: Set<String>): SentTexts {
+        val own = read(file, ids)
+        if (own.missing.isEmpty()) return own
+        val found = HashMap(own.texts)
+        for (agent in subagents(file)) {
+            val left = ids - found.keys
+            if (left.isEmpty()) break
+            try {
+                found.putAll(read(agent, left).texts)
+            } catch (_: NoSuchFileException) {
+                // removed between the listing and the read: it has no texts left to give
+            }
+        }
+        return SentTexts(own.path, found, ids - found.keys)
+    }
+
+    /** The subagent transcripts beside [file], in name order; none when the session has no subagents folder. Any
+     *  other failure to list it is raised, as a failure to read the session's own file is. */
+    private fun subagents(file: Path): List<Path> {
+        val dir = file.resolveSibling(file.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX)).resolve(SUBAGENTS)
+        return try {
+            Files.newDirectoryStream(dir, "*$TRANSCRIPT_SUFFIX").use { entries ->
+                entries.filter(Files::isRegularFile).sorted()
+            }
+        } catch (_: NoSuchFileException) {
+            emptyList()
+        }
+    }
 
     /** File I/O and publication are serialized so simultaneous panel reads do not rescan one file. */
     @Synchronized

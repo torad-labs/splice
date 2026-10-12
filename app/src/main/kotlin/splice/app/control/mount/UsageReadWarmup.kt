@@ -14,6 +14,8 @@ import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import splice.usage.UsageReadPreparation
 import splice.usage.economics.EconomicsRead
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.ProjectedPerfRowsSource
 import java.util.concurrent.ConcurrentHashMap
 
 // A cold reconciliation retains decoded facts; one scan at a time avoids the measured fleet contention.
@@ -77,7 +79,7 @@ internal class UsageReadWarmup(
             do {
                 context.ensureActive()
                 since = synchronized(state) { minOf(first, state.wanted ?: first) }
-                head.sinks.perfRows?.window(since)
+                head.sinks.perfRows?.let { warm(it, since) }
                 context.ensureActive()
             } while (synchronized(state) { state.wanted?.let { it < since } == true })
             since
@@ -87,6 +89,16 @@ internal class UsageReadWarmup(
                 onSuccess = { since -> state.readySince = minOf(state.readySince ?: since, since) },
                 onFailure = { failure -> state.failure = failure },
             )
+        }
+    }
+
+    /** Reads the window the way the turns route will: through its projection where the source keeps one, so the
+     *  tier that route answers from is the one made ready, and the whole-row window only for sources with no other. */
+    private fun warm(source: PerfRowsSource, sinceMs: Long) {
+        if (source is ProjectedPerfRowsSource) {
+            source.projected(sinceMs) { projection -> projection.window.rows.size }
+        } else {
+            source.window(sinceMs)
         }
     }
 

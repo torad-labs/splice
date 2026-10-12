@@ -47,10 +47,13 @@ import splice.usage.economics.EconomicsTokens
 import splice.usage.economics.EconomicsTools
 import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
+import splice.usage.perf.PerfProjectionRead
 import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.PerfTurnFacts
+import splice.usage.perf.ProjectedPerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Path
@@ -138,6 +141,28 @@ class ColdUsageReadRouteTest {
         }
 
     @Test
+    fun `startup warms a projected source through its projection and a read during the warm waits, then agrees`(
+        @TempDir dir: Path,
+    ) = runBlocking<Unit> {
+        val fixture = Fixture(dir, projected = true)
+        fixture.withServer {
+            val path = fixture.requestsPath()
+            val request = async { fixture.get(path, pending = true) }
+            fixture.entered.await()
+            val first = withTimeoutOrNull(30_000) { request.await() }
+            fixture.release.countDown()
+            request.await()
+            assertNotNull(first, "a read during the warm must not wait on the scan")
+            assertEquals(true, first!!.head()["read_pending"]?.jsonPrimitive?.booleanOrNull)
+            val finished = fixture.untilReady(path)
+            val direct = fixture.get(path, pending = false)
+            assertEquals(direct, finished, "the read after the warm has the counts of a direct one")
+            assertEquals(2L, finished.head().getValue("count").jsonPrimitive.content.toLong())
+            assertTrue(fixture.projectedScans.get() >= 1, "the warm reads the window the way the turns route will")
+        }
+    }
+
+    @Test
     fun `cancelling preparation during economics prevents the next request scan`(@TempDir dir: Path) =
         runBlocking<Unit> {
             val fixture = Fixture(dir)
@@ -164,10 +189,11 @@ class ColdUsageReadRouteTest {
             }
         }
 
-    private class Fixture(dir: Path) {
+    private class Fixture(dir: Path, private val projected: Boolean = false) {
         val entered = CompletableDeferred<Unit>()
         val release = CountDownLatch(1)
         val perfScans = AtomicInteger()
+        val projectedScans = AtomicInteger()
         private val now = System.currentTimeMillis()
         private val paths = StatePaths(baseOverride = dir)
         private val mgmt = MgmtKey(paths)
@@ -265,11 +291,33 @@ class ColdUsageReadRouteTest {
             )
         }
 
-        private fun perfSource(): PerfRowsSource = PerfRowsSource {
+        private fun perfSource(): PerfRowsSource = if (projected) ProjectedSynthetic() else PerfRowsSource { counted() }
+
+        /** A source that keeps a projection, as the file source does, and counts which of its two reads was asked. */
+        private inner class ProjectedSynthetic : PerfRowsSource, ProjectedPerfRowsSource {
+            override fun window(sinceMs: Long): PerfRowsWindow = counted()
+
+            override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
+                projectedScans.incrementAndGet()
+                val held = scan()
+                return read(
+                    object : PerfRowsProjection {
+                        override val window: PerfRowsWindow = held
+                        override fun complete(rows: List<PerfRow>): List<PerfRow> = rows
+                    },
+                )
+            }
+        }
+
+        private fun counted(): PerfRowsWindow {
             perfScans.incrementAndGet()
+            return scan()
+        }
+
+        private fun scan(): PerfRowsWindow {
             entered.complete(Unit)
             check(release.await(10, TimeUnit.SECONDS)) { "the synthetic scan was not released" }
-            PerfRowsWindow(
+            return PerfRowsWindow(
                 listOf(1L, 2L).map { index ->
                     PerfRow(
                         ts = now - index,

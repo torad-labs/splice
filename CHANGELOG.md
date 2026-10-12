@@ -816,6 +816,31 @@ origin.
 - **Settings lists your MCP servers** with a Test act on each row.
 - **When you add an account to a command after hitting its plan limit, the sessions the limit stopped continue on
   their own.** Each gets "A new account is available. Continue where you left off."
+- **Accounts lists the sessions on each login now,** under its card, each with the lamp Sessions gives it and a link
+  to it on Sessions. Past four, the rest show as a count.
+- **Accounts shows each command's last move between logins** under its rail, such as "Moved from Personal to Work ·
+  4:12 PM · 5-hour limit used up", read from `last_switch` on `/api/auth`.
+- **Accounts says why a login's limits are not read.** A login reads "Not read yet" only while its first read is in
+  flight, then "Not read" with the reason: not answering, signed out, refused, or unsupported for a sign-in splice holds
+  no token for. `/api/accounts` carries it as `last_read_failure`, with no provider text in it.
+- **Models shows what a local runtime says about itself.** A local command's pane has a Runtime row naming the runtime and
+  its version, and each model shows the window it serves against its ceiling and whether it calls tools.
+  `GET /api/models/local` asks each local provider's runtime.
+- **A command's pane edits its provider's address.** Sends to is a field, checked as an http or https address and saved
+  with Restart splice. A field the provider's other commands share names them beside it.
+- **A command just added from Models opens on how to use it:** the command to type with Copy, doctor's checks for it,
+  and Send one request, a single test turn that is sent only when you press it.
+- **Every model marks each command's main model.** It leads its command's group, with the command's colour at its edge.
+- **A command's timing settings show on Models only once it holds its own,** under their Settings names. Add setting
+  lists the rest beside the value every command uses, and models read their catalog names, such as GPT-6 Sol.
+- **Settings shows the settings that apply on restart,** each reading "Applies on restart" until it changes, then Saved
+  with Restart splice.
+- **Many agents at once has an Advanced section** holding the request-read wait, the memory for reading requests and
+  the three retry waits. It stays closed until you open it, and opens while a search finds one of them.
+- **Settings › MCP shows how much memory each shared server's process holds,** "Running" when none was read, and "Not
+  running" until a session asks for it. A server at a web address leaves the cell empty.
+- **`splice add` takes a profile's command as well as its name,** so `splice add claudex` adds what `splice add codex`
+  does.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -1522,6 +1547,26 @@ origin.
   which opened the console signed out. The key stays in a private file and is never printed.
 - **A stop, an answer or a message from any card counts as the person handling the session,** Teams included. A team
   member that came up and later ended starts again instead of answering "closed".
+- **One bad pool file refuses only its own login.** A credential signed in for another provider, carrying another
+  label or unreadable lists as refused with its reason, and the pool's other logins keep serving. One mislabeled codex
+  file used to fail every codex login. A primary credential that declares another provider's kind is refused the same
+  way.
+- **`splice add` checks a local model's window against what the runtime serves,** read from Ollama and LM Studio as
+  boot reads it, and refuses a row by the rules boot applies, such as a model the runtime says cannot call tools.
+- **`splice models` agrees with boot on a local model the runtime does not list:** on Ollama, LM Studio and vLLM it
+  reads unserved, and a model id with no tag matches its `:latest` tag.
+- **An MCP server that asks for its session's project roots is no longer shared,** since a shared copy has no one
+  session's roots. Every session starts its own copy, and Settings reads "Asks which project it's in".
+- **Settings › MCP:** a command still on an older copy of the config is listed under Used by with "Next session". A long
+  source path ends in an ellipsis inside its column, and a server set up for one project names that project.
+- **Adding a second command on a provider already set up starts from the address that provider sends to,** in a field
+  you can fix. A failed address check names the address it tried, and Add with a failed check says on the form what it
+  waits on. The pane that opens after Add is the new command's own, and a command added beside another names its
+  provider.
+- **Accounts:** the key in use shows its masked tail, with a date only where its variable held two keys. A window that
+  passed reads "Ended", and a default name's plan tag shows only when it says more than the name.
+- **Many agents at once › Today reads "Not read" beside a command whose peak was not read,** or "Not answering" when
+  splice did not answer.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

@@ -129,6 +129,32 @@ test("one project and nothing outside it stays a flat list", async () => {
   }
 }, 60_000);
 
+// ONE NAME FOR WHERE A SESSION IS (Marlin, Oct 12): the open pane names the project its group wears, never the folder,
+// which reads "repo" for most of his sessions.
+test("the open session names its project, the same name its group wears", async () => {
+  const p = await page(THREE);
+  try {
+    await p.locator(".pgroup", { hasText: "temple" }).first().locator(".card.s .name", { hasText: "builder" }).click();
+    const meta = p.locator(".pane .meta").first();
+    await expect(meta).toContainText("temple", { timeout: 10_000 });
+    await expect(meta).not.toContainText("w-2"); // its folder
+  } finally {
+    await p.close();
+  }
+}, 60_000);
+
+// In no project the folder is the only clue, so that card names it, from home, as the daemon spells it.
+test("a session in no project names its folder from home on its card", async () => {
+  const p = await page([...THREE.slice(0, 4), row("l-1", "stray", null, { place: "~/notes" })]);
+  try {
+    const loose = p.locator(".pgroup", { hasText: "No project" }).first();
+    await expect(loose.locator(".card.s .where")).toHaveText("~/notes");
+    await expect(p.locator(".pgroup", { hasText: "temple" }).first().locator(".card.s .where")).toHaveCount(0);
+  } finally {
+    await p.close();
+  }
+}, 60_000);
+
 // The header says where a session is, so the card does not repeat it; unnamed, the card takes the first line of its
 // first message, which the daemon reads for it, and never the folder.
 test("inside a group a card is titled by what was asked of it, never by its folder", async () => {

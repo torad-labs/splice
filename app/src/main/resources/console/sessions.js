@@ -131,13 +131,24 @@ const title = (s) => (ui.grouped ? s.name || s.first || s.wt || `Session ${s.id.
   : s.name || s.repo || `Session ${s.id.slice(0, 8)}`);
 const color = (s) => colorOf(s.provider);
 
+const FOLDER = G('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
+/** Where a session is, said once and in the words the page already uses for it (Marlin, Oct 12):
+ *  - the open pane names its project, the same name its group wears, never the folder ("repo" for most of his);
+ *  - a session in no project names its folder from home with the folder glyph, on its card too, because there the
+ *    folder is the only clue; `place` is the daemon's spelling of it ("~/notes"), and until a row carries one the
+ *    folder's own name stands in, which is what the card said before projects;
+ *  - a card in a group says nothing more, since the header already says it; flat, a named card keeps its folder. */
+function whereHtml(s, inPane) {
+  if (s.project) return inPane ? `<span>${esc(projName(s))}</span>` : !ui.grouped && s.name && s.repo ? `<span>${esc(s.repo)}</span>` : "";
+  const place = s.row.place || s.repo;
+  if (!place) return "";
+  return inPane || ui.grouped ? `<span class="where">${FOLDER}${esc(place)}</span>` : s.name ? `<span>${esc(place)}</span>` : "";
+}
 function metaHtml(s, L, inPane) {
   const chip = inPane && QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : inPane && s.cmd ? `<span class="chip" style="--c:${color(s)}">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : "";
   const team = s.team ? `<span class="team">${ICON.team}${esc(s.team)}</span>` : "";
   const model = s.model && !ui.moving.has(s.id) ? `<span>${esc(s.model)}</span>` : ""; // a move in flight names its target model in the word (hitstop)
-  // the folder, only where it still says something: in a group the header already names where the session is, and a
-  // worktree is named on the card itself, so repeating the folder on every line is noise (Marlin, Oct 11)
-  const repo = s.name && s.repo && !(ui.grouped && !inPane) ? `<span>${esc(s.repo)}</span>` : "";
+  const repo = whereHtml(s, inPane);
   const past = s.at.toDateString() !== NOW.toDateString();
   const when = `<span class="when">${past ? `${s.at.toLocaleDateString("en-US", { weekday: "short" })} ` : ""}${clock(s.at)}</span>`;
   const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}`;

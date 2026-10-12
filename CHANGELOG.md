@@ -991,6 +991,8 @@ origin.
   Oct 12). The Locked state shows on every page, and Teams and the trust page read as walked.
 - **Models and MCP read better when a save is refused:** the refusal says why, and an MCP row shows its working
   folder.
+- **End closes a session in any state, and End all closes a team's.** Teams and Sessions have the buttons; a session
+  that is working is refused with the reason.
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a

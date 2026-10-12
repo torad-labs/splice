@@ -57,6 +57,14 @@ internal class OAuthAccountValidation(private val json: Json) {
         }
     }
 
+    /** Why the legacy primary at [path] cannot serve [kind]: it declares another provider's kind. A primary that
+     *  declares no kind is what the in-place login has always written, and stays this provider's (v0.4.0 §11). */
+    fun primaryRefusal(kind: AuthKind.OAuth, path: Path): String? {
+        val declared = JsonScalars.str(jsonObjectOrNull(path), FIELD_KIND) ?: return null
+        return "the primary login was signed in for another provider; sign in again here, or remove it"
+            .takeIf { declared != kind.wire }
+    }
+
     private fun declaresKind(raw: JsonObject?): Boolean = raw?.get(FIELD_KIND).let { it != null && it !is JsonNull }
 
     /** A file that declares a kind is this provider's login only when its kind and its own label both match. */

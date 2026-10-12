@@ -148,7 +148,12 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
      *  credential file name, as they always did. */
     public fun discover(kind: AuthKind.OAuth, primaryFile: Path, log: LogSink): List<OAuthAccountFile> {
         val poolDir = poolDir(kind, primaryFile)
-        val found = mutableListOf(account(PRIMARY, primaryFile, poolDir, primary = true))
+        // A primary signed in for another provider is refused like a pool file, never served (v0.4.0 §11 acceptance).
+        val primary = account(PRIMARY, primaryFile, poolDir, primary = true).let { file ->
+            val why = validation.primaryRefusal(kind, primaryFile)
+            if (why == null) file else file.copy(credentialPresent = false, refusal = why)
+        }
+        val found = mutableListOf(primary)
         occupiedLabels(kind, primaryFile).sortedBy { "$it$JSON_SUFFIX" }.forEach { label ->
             listing(kind, label, poolDir, log)?.let(found::add)
         }

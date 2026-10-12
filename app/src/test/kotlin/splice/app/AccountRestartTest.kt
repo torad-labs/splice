@@ -66,6 +66,22 @@ class AccountRestartTest {
     }
 
     @Test
+    fun `a primary credential signed in for another provider is refused while the pool keeps serving`() {
+        val store = OAuthAccountFiles()
+        val primary = dir.resolve("codex.json")
+        Files.writeString(primary, """{"splice_auth_kind":"grok-oauth"}""")
+        store.writeLabeled(AuthKind.ChatgptOAuth, primary, "work", JsonObject(emptyMap()))
+
+        val accounts = store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
+
+        val refused = accounts.single { it.primary }
+        assertFalse(refused.credentialPresent)
+        assertTrue(refused.refusal.orEmpty().contains("another provider"), "${refused.refusal}")
+        assertFalse(refused.refusal.orEmpty().contains("grok-oauth"))
+        assertTrue(accounts.single { it.label == "work" }.credentialPresent)
+    }
+
+    @Test
     fun `reserved automatic and primary labels are skipped during discovery`() {
         for (label in listOf("auto", "primary")) {
             val logs = mutableListOf<String>()

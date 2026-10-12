@@ -41,12 +41,20 @@ internal sealed class ModelsReport {
     ) : ModelsReport()
 }
 
+/** Whether the local runtime at a base URL publishes a list it serves from (Ollama, LM Studio, vLLM), so a row it
+ *  does not list is refused at boot, as LocalRuntimeProbe.validate refuses it. False for a generic OpenAI-compatible
+ *  server, whose list may name a file or an alias, and when nothing answers. */
+public fun interface LocalListAuthority {
+    public operator fun invoke(baseUrl: String): Boolean
+}
+
 /** Asks each provider [ModelsReporter.report] names what it serves and compares it with splice.toml.
  *  Every call reaches the providers: a reader asks for it, nothing polls it. The credential is read
  *  inside the probe and presented to the provider only; no report carries it. */
 public class ModelsReporter(
     private val configuration: ModelConfigurationSource,
     credentials: ModelCredentialSource,
+    private val listAuthority: LocalListAuthority = LocalListAuthority { false },
 ) {
     private val probe = ModelsProbe(credentials = credentials)
     private val diff = RosterDiff()
@@ -66,7 +74,8 @@ public class ModelsReporter(
         val provider = probed.provider
         val roster = probed.roster
         val rows = if (roster is UpstreamRoster.Published) {
-            diff.of(provider.models, roster.models, provider.isLocal, provider.discovery)
+            val authoritative = provider.isLocal && listAuthority(provider.baseUrl)
+            diff.of(provider.models, roster.models, provider.isLocal, provider.discovery, authoritative)
         } else {
             emptyList()
         }

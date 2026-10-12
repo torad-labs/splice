@@ -26,8 +26,9 @@ public class ModelsCommand(
     configuration: ModelConfigurationSource,
     credentials: ModelCredentialSource,
     private val output: TerminalOutput,
+    listAuthority: LocalListAuthority = LocalListAuthority { false },
 ) {
-    private val reporter = ModelsReporter(configuration, credentials)
+    private val reporter = ModelsReporter(configuration, credentials, listAuthority)
 
     /** True when every provider that answered agrees with splice.toml. */
     public fun models(args: List<String>, env: EnvReader): Boolean {

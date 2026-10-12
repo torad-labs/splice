@@ -3,13 +3,17 @@
 package splice.app
 
 import splice.app.auth.StoredModelCredentials
+import splice.app.provider.JdkLocalHttp
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.models.list.LocalListAuthority
 import splice.models.list.ModelConfiguration
 import splice.models.list.ModelConfigurationSource
 import splice.models.list.ModelsCommand
 import splice.models.list.ModelsReporter
 import splice.topology.TopologyLoader
+import splice.upstream.local.LocalRuntimeKind
+import splice.upstream.local.LocalRuntimeProbe
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -22,6 +26,7 @@ internal object ModelsWiring {
             },
             credentials = StoredModelCredentials(),
             output = TerminalOutput(::println),
+            listAuthority = AuthoritativeLocalList(),
         )
         return command.models(args, EnvReader(System::getenv))
     }
@@ -35,5 +40,14 @@ internal object ModelsWiring {
             ModelConfiguration(path.toString(), TopologyLoader.parse(Files.readString(path)).providers)
         },
         StoredModelCredentials(),
+        AuthoritativeLocalList(),
     )
+}
+
+/** Boot's rule for an unlisted local row, asked of the runtime itself (LocalRuntimeProbe.detect): Ollama, LM Studio and
+ *  vLLM serve from their list, so a row they do not list is refused; a generic OpenAI-compatible server's list is not. */
+internal class AuthoritativeLocalList : LocalListAuthority {
+    override fun invoke(baseUrl: String): Boolean =
+        LocalRuntimeProbe(baseUrl, JdkLocalHttp()).detect()?.kind
+            ?.let { kind -> kind != LocalRuntimeKind.OPENAI_COMPATIBLE } == true
 }

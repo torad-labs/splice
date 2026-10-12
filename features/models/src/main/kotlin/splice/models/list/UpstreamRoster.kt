@@ -198,7 +198,9 @@ internal data class RosterRow(
  *  investigations; one that only walked the endpoint could never report the retired row that 400s. */
 internal class RosterDiff {
 
-    /** [local] is the provider's own `isLocal`, and it changes ONE verdict: a user-managed runtime
+    /** [authoritative] says the local runtime's list is one it serves from (Ollama, LM Studio, vLLM): there an unlisted
+     *  row is the refused turn boot names, as on a remote provider, so splice models agrees with boot (spec §10).
+     *  [local] is the provider's own `isLocal`, and it changes ONE verdict: a user-managed runtime
      *  publishes the file it loaded (llama-server lists the .gguf path) and serves THAT model
      *  whatever id the request names — measured 2026-09-22, a turn on the declared `bonsai-2-27b`
      *  was answered by the listed gguf. So an unlisted id is a naming difference there, not the
@@ -209,9 +211,14 @@ internal class RosterDiff {
         published: List<UpstreamModel>,
         local: Boolean = false,
         discovery: ModelDiscoveryConfig = ModelDiscoveryConfig(),
+        authoritative: Boolean = false,
     ): List<RosterRow> {
         val bySpelling = published.flatMap { model -> model.spellings.map { it to model } }.toMap()
-        val declaredRows = declared.map { entry -> row(entry, bySpelling[ModelTierSuffix.strip(entry.id)], local) }
+        // An untagged id names its `:latest` tag on a local runtime (Ollama lists `qwen3:latest` and serves `qwen3`).
+        val listed = { id: String -> bySpelling[id] ?: bySpelling["$id:latest"].takeIf { local } }
+        val declaredRows = declared.map { entry ->
+            row(entry, listed(ModelTierSuffix.strip(entry.id)), local && !authoritative)
+        }
         val claimed = declared.mapTo(HashSet()) { ModelTierSuffix.strip(it.id) }
         val newRows = published
             .filterNot { model -> model.spellings.any { it in claimed } }

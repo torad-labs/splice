@@ -138,3 +138,23 @@ test("at 3828 a provider with seven accounts spreads over columns, its order car
   const narrow = await onPage(async (page) => page.locator(".provider.wide").count());
   bunExpect(narrow).toBe(0);
 }, 60_000);
+
+test("before the daemon reports failed requests, the meter draws no failed line at all, not even 0 failed", async () => {
+  const saved = { budgets: answers["/api/budgets"], economics: answers["/api/economics"] };
+  const strip = (o: unknown) => JSON.parse(JSON.stringify(o, (k, v) => (k === "failed_turns" ? undefined : v)));
+  answers["/api/budgets"] = strip(saved.budgets);
+  answers["/api/economics"] = strip(saved.economics);
+  try {
+    await onPage(async (page) => {
+      for (const meter of ["claude-deepseek", "deepseek-split"]) {
+        const day = await text(page, `[data-meter="${meter}"]`);
+        bunExpect(day).toContain("$5");
+        bunExpect(day).not.toContain("failed");
+        bunExpect(day).not.toContain("no price");
+      }
+    });
+  } finally {
+    answers["/api/budgets"] = saved.budgets;
+    answers["/api/economics"] = saved.economics;
+  }
+}, 30_000);

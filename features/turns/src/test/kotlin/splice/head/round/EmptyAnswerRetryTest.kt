@@ -18,7 +18,7 @@ import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
 class EmptyAnswerRetryTest {
-    private val empty = success(RoundText())
+    private val empty = success(RoundText(), usage = Usage(200_000, 0, 0))
     private val answered = success(RoundText(bodyText = "hello", emittedText = true))
 
     @Test
@@ -28,6 +28,9 @@ class EmptyAnswerRetryTest {
 
         assertSame(answered, run.finished.single())
         assertEquals(listOf(BODY, BODY), run.bodies, "the same bytes both times")
+        val billed = (run.finished.single() as TurnOutcome.Success).usage
+        assertEquals(1, billed.absorbed.rounds, "the empty round is metered as a request of its own")
+        assertEquals(200_000L, billed.absorbed.inputTokens)
         assertEquals(1L, perf.count(PerfKeys.EMPTY_RETRIES))
     }
 
@@ -81,8 +84,8 @@ class EmptyAnswerRetryTest {
         return Run(finished, bodies)
     }
 
-    private fun success(text: RoundText, shape: ResponseShape = ResponseShape()) =
-        TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(10, 0, 0), text = text, shape = shape)
+    private fun success(text: RoundText, shape: ResponseShape = ResponseShape(), usage: Usage = Usage(10, 0, 0)) =
+        TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = usage, text = text, shape = shape)
 
     private class QuietSink : WireSink {
         override suspend fun openText(): WireBlockIndex = error("unexpected sink write")

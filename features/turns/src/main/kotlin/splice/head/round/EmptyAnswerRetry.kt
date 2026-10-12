@@ -5,6 +5,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 
@@ -24,17 +25,34 @@ internal class EmptyAnswerRetry(private val perf: TurnPerf?) {
     suspend fun post(body: RoundBody, direct: PostRound): RoundResult {
         val framesBefore = contentFrames()
         val first = direct(body)
-        if (!empty(first) || contentFrames() > framesBefore) return first
+        val emptied = emptied(first)
+        if (emptied == null || contentFrames() > framesBefore) return first
         perf?.add(PerfKeys.EMPTY_RETRIES, 1)
-        return direct(body)
+        return billed(emptied.usage, direct(body))
+    }
+
+    /** The empty round was a request of its own and cost its input: it folds in as an absorbed round, the way the
+     *  rollup already meters a superseded round, so the row and the hour count both requests. */
+    private fun billed(first: Usage, second: RoundResult): RoundResult {
+        val outcome = (second as? RoundResult.Outcome)?.outcome ?: return second
+        return RoundResult.Outcome(
+            when (outcome) {
+                is TurnOutcome.Success -> outcome.copy(usage = first.followedBy(outcome.usage))
+                is TurnOutcome.Failure -> outcome.partial?.let { part ->
+                    outcome.copy(partial = part.copy(usage = first.followedBy(part.usage)))
+                } ?: outcome.copy(salvagedUsage = first.followedBy(outcome.salvagedUsage))
+                is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = first.followedBy(outcome.salvagedUsage))
+            },
+        )
     }
 
     private fun contentFrames(): Long = perf?.count(PerfKeys.CONTENT_FRAMES_OUT) ?: 0L
 
-    private fun empty(result: RoundResult): Boolean {
-        val outcome = (result as? RoundResult.Outcome)?.outcome as? TurnOutcome.Success ?: return false
-        return !outcome.hasToolUse && !outcome.incomplete && !outcome.shape.messageClosed &&
+    private fun emptied(result: RoundResult): TurnOutcome.Success? {
+        val outcome = (result as? RoundResult.Outcome)?.outcome as? TurnOutcome.Success ?: return null
+        val empty = !outcome.hasToolUse && !outcome.incomplete && !outcome.shape.messageClosed &&
             !shown(outcome.text) && outcome.handoffs.customCalls.isEmpty() && outcome.handoffs.toolSearches.isEmpty()
+        return outcome.takeIf { empty }
     }
 
     private fun shown(text: RoundText): Boolean =

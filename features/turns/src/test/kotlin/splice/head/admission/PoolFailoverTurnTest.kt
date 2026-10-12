@@ -2,7 +2,8 @@
 // limit the same command moves to the next in the order Accounts sets"). A passthrough head with three synthetic logins
 // in a pool, over a local upstream that refuses a login with a native 429 naming its spent plan window. The turn that
 // meets the 429 moves the same request to the next free login before the client hears any refusal. Later turns stay
-// on the serving login. With every login held, admission replays the nearest-reset login's native refusal locally.
+// on the serving login. With every login held and armed, admission answers the pool's own "earliest reset" refusal
+// locally (splice-lead, Oct 12).
 // No login is retried within a request, and splice adds no retry words.
 package splice.head.admission
 
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -162,7 +164,7 @@ class PoolFailoverTurnTest {
     }
 
     @Test
-    fun `with every login held the client gets the native refusal of the login whose reset is nearest`() =
+    fun `with every login held the client gets the pool's earliest reset with no upstream request`() =
         runBlocking {
             val resets = mapOf("one" to 3 * HOUR_S, "two" to HOUR_S, "three" to 2 * HOUR_S)
             val rig = FailoverRig(directory, limited = resets)
@@ -174,7 +176,7 @@ class PoolFailoverTurnTest {
                 val held = rig.turn()
 
                 assertEquals(HttpStatusCode.TooManyRequests, held.first)
-                assertEquals(refusal("two"), held.second, "two resets first")
+                assertTrue(held.second.contains("all OAuth accounts are exhausted; earliest reset is"), held.second)
                 assertEquals(listOf("one", "two", "three"), rig.requests, "replayed at admission, no upstream request")
             } finally {
                 rig.close()

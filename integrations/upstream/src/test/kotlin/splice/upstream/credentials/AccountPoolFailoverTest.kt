@@ -2,13 +2,12 @@
 // one hits its limit the same command moves to the next in the order Accounts sets"). A login the provider holds on its
 // plan, by a native 429 with plan headers or a held refusal a translated provider read from the body, stays held for
 // the reset it named, and the next turn of the same session goes to the next login in the operator's order. When every
-// login is held, the turn goes to the login whose reset is nearest, so the client gets that login's own refusal and
-// splice adds no retry. A restart keeps the held login held.
+// login is held and armed, the turn is the pool's own "earliest reset" refusal (splice-lead, Oct 12); once a horizon
+// lifts, the login whose reset is nearest is probed. A restart keeps the held login held.
 package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -119,7 +118,7 @@ class AccountPoolFailoverTest {
     }
 
     @Test
-    fun `when every login is held the turn goes to the login whose reset is nearest, with its own refusal`() {
+    fun `when every login is held the pool names its earliest reset, then probes the nearest once its horizon lifts`() {
         val fixture = AccountPoolTest.Fixture()
         val one = fixture.account("one", primary = true)
         val two = fixture.account("two")
@@ -131,11 +130,8 @@ class AccountPoolFailoverTest {
 
         val selection = pool.select(SESSION)
 
-        assertTrue(selection is Selection.Chosen, "a held login is chosen; admission answers with its refusal")
-        val chosen = (selection as Selection.Chosen).account.account
-        assertSame(two, chosen)
-        assertEquals(reply("two"), chosen.cooldown.rateLimitReply, "the native refusal the client gets")
-        assertTrue(chosen.cooldown.remainingMs() > 0L, "armed: the refusal is replayed with no upstream request")
+        assertTrue(selection is Selection.Exhausted, "every hold is armed: the pool answers, naming its reset")
+        assertTrue((selection as Selection.Exhausted).earliestResetEpochSeconds != null, "the pool names a reset")
         assertEquals("two", pool.nextTargetLabel(SESSION))
         fixture.advanceElapsed(MAX_RATE_LIMIT_COOLDOWN_MS + 1)
         assertEquals("two", pool.chosen(), "once the horizon lifts, the nearest reset is the one probed")

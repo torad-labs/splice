@@ -34,10 +34,8 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
@@ -71,35 +69,6 @@ private const val REQUEST_TIMEOUT_MS = 60_000L
 // why: a playground reply is a debugging echo of ONE turn, not a served conversation — capped well
 // under a real turn's budget so one slow or huge vendor response cannot hold the route open forever.
 private const val MAX_RESPONSE_CHARS = 200_000
-
-// why: a minimal probe still needs an answer longer than a one-line ack to be useful to read.
-private const val PLAYGROUND_MAX_TOKENS = 1024
-
-// why: one system line for every model the page compares, so no head answers under an instruction another did not get.
-// It is the line splice already gives a Responses head when a body names none, so GPT's request reads as it did.
-private const val PLAYGROUND_SYSTEM = "You are a helpful assistant."
-
-/** The one-message turn Claude Code sends with a prompt: what the head's provider builds the upstream request from. */
-internal object PlaygroundTurn {
-    /** The turn with [prompt] on [model], as the JSON text Claude Code posts. */
-    fun of(model: String, prompt: String): String = buildJsonObject {
-        put("model", model)
-        put("max_tokens", PLAYGROUND_MAX_TOKENS)
-        put("system", PLAYGROUND_SYSTEM)
-        put("stream", true)
-        putJsonArray("messages") {
-            addJsonObject {
-                put("role", "user")
-                putJsonArray("content") {
-                    addJsonObject {
-                        put("type", "text")
-                        put("text", prompt)
-                    }
-                }
-            }
-        }
-    }.toString()
-}
 
 internal class UpstreamPlaygroundProbe(
     private val providers: PlaygroundProviders,

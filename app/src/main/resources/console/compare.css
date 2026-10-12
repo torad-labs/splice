@@ -5,16 +5,16 @@
 .page { container-type: inline-size; }
 .pg { display: flex; flex-direction: column; gap: 2.6rem; }
 
-/* ---------- the composer: his plan in markdown, written on the left and read on the right ---------- */
+/* ---------- the composer: one surface, his plan read as it renders, the field while he writes ---------- */
 .pg-compose { display: flex; flex-direction: column; gap: 1.2rem; min-width: 0; }
-.pg-md { --c: var(--key-light); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 0; overflow: hidden; }
+.pg-md { --c: var(--key-light); display: grid; padding: 0; overflow: hidden; }
 .pg-md .field {
-  min-height: 14rem; resize: vertical; border: 0; border-radius: 0; background: var(--obj-sunk);
+  min-height: 14rem; resize: none; overflow: hidden; border: 0; border-radius: 0; background: var(--obj-sunk);
   font: 400 1.05rem/1.65 var(--font-data); color: var(--text-body); padding: 1.3rem 1.6rem;
 }
 .pg-md .field:focus { border: 0; outline: none; box-shadow: inset 0 0 0 .14rem var(--key-light); }
 .pg-md-out {
-  min-width: 0; padding: 1.1rem 2rem; border-left: var(--ink-w) solid var(--ink); overflow-wrap: anywhere;
+  min-width: 0; min-height: 14rem; padding: 1.3rem 2rem; overflow-wrap: anywhere; cursor: text;
   font: 400 1.12rem/1.6 var(--font-name); color: var(--text);
 }
 .pg-md-out > :first-child { margin-top: 0; }
@@ -35,10 +35,9 @@
 .pg-box { position: relative; width: 1.15rem; height: 1.15rem; flex: none; margin-top: .3rem; border: .14rem solid var(--ink); border-radius: .3rem; background: var(--obj-sunk); }
 .pg-box.on { background: var(--key-light); }
 .pg-box.on::after { content: ""; position: absolute; left: .32rem; top: .08rem; width: .3rem; height: .62rem; border: solid #241d14; border-width: 0 .17rem .17rem 0; transform: rotate(45deg); }
-@container (max-width: 80rem) {
-  .pg-md { grid-template-columns: minmax(0, 1fr); }
-  .pg-md-out { border-left: 0; border-top: var(--ink-w) solid var(--ink); }
-}
+/* the plan says it's his to change where a pointer or a key lands on it: the field's own key-light line, fainter */
+.pg-md.read .pg-md-out:hover { box-shadow: inset 0 0 0 .14rem color-mix(in srgb, var(--key-light) 45%, transparent); }
+.pg-md.read .pg-md-out:focus-visible { outline: none; box-shadow: inset 0 0 0 .14rem var(--key-light); }
 
 /* ---------- the models: one row under the composer, his models as chips, Add model, and Send (N) at the end ---------- */
 .pg-heads { --c: var(--text-mute); padding: 1rem 1.2rem; }
@@ -144,9 +143,6 @@
 .panes > .rqpane .scroll { overflow: visible; }
 .panes > .rqpane > header { border-radius: calc(var(--r-obj) - .12rem) calc(var(--r-obj) - .12rem) 0 0; }
 
-/* an empty field has nothing to render: the editor takes the card until there's text */
-.pg-md.blank { grid-template-columns: minmax(0, 1fr); }
-.pg-md.blank .pg-md-out { display: none; }
 .pg-row .send.busy:disabled { opacity: 1; }  /* working, not unavailable: the count stays and the wheel turns */
 .pg-row .send .wait { width: 1.3rem; height: 1.3rem; }
 .pg-row .send .wait circle { stroke: currentColor; }

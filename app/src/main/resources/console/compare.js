@@ -15,7 +15,7 @@ const PLUS = G('<path d="M12 5v14M5 12h14"/>', 'aria-hidden="true"');
 const root = document.getElementById("pg");
 
 // cmds: the commands that can send, each { key, command, family, models: [{id, label}], acct, plan }
-const ui = { prompt: "", panes: [], cmds: null, error: null, raw: null, add: false, rv: { tab: "sent", nodes: new Set(), q: "" } };
+const ui = { editing: false, prompt: "", panes: [], cmds: null, error: null, raw: null, add: false, rv: { tab: "sent", nodes: new Set(), q: "" } };
 try { ui.prompt = sessionStorage.getItem(KEPT) ?? ""; } catch { /* no storage: the field starts empty */ }
 const keep = () => { try { sessionStorage.setItem(KEPT, ui.prompt); } catch { /* nothing to keep it in */ } };
 const RV = REQVIEW.view(() => ui.rv);
@@ -210,10 +210,33 @@ function mdPlan(text) {
   if (fence) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
   return out.join("");
 }
-function composeHtml() {
-  return `<form class="pg-compose" id="ask"><section class="card pg-md${ui.prompt.trim() ? "" : " blank"}"><textarea class="field" id="prompt" rows="6" placeholder="Write a question or a plan" aria-label="Prompt" spellcheck="false">${esc(ui.prompt)}</textarea>`
-    + `<div class="pg-md-out" aria-label="Preview">${mdPlan(ui.prompt)}</div></section>${rowHtml()}</form>`;
+// The composer is one surface (fin, Oct 12: the field beside its preview put every word of the page's first card on it twice).
+// His plan reads as it renders, the way the answers under it do; a click or Enter on it turns it into the field, caret at the
+// end, and leaving the field (a click elsewhere, Escape, a send) renders it again. An empty prompt is the field. Under it,
+// the row: his models and Send.
+const writing = () => ui.editing || !ui.prompt.trim();
+function cardHtml() {
+  return writing()
+    ? `<section class="card pg-md"><textarea class="field" id="prompt" rows="6" placeholder="Write a question or a plan" aria-label="Prompt" spellcheck="false">${esc(ui.prompt)}</textarea></section>`
+    : `<section class="card pg-md read"><div class="pg-md-out" role="button" tabindex="0" data-act="write" aria-label="Prompt, edit">${mdPlan(ui.prompt)}</div></section>`;
 }
+const composeHtml = () => `<form class="pg-compose" id="ask">${cardHtml()}${rowHtml()}</form>`;
+// the field opens as tall as the plan read, so the card doesn't jump under his click, and grows with what he writes
+function openField(h) {
+  ui.editing = true; render();
+  const f = document.getElementById("prompt");
+  f.style.height = `${Math.max(h, f.scrollHeight + 4)}px`;
+  f.focus({ preventScroll: true }); f.setSelectionRange(f.value.length, f.value.length);
+}
+// only the card is swapped, never the page: leaving the field by pressing Send or a chip must not replace the button under
+// the pointer between its press and its click, or the click is lost
+function closeField() {
+  if (!ui.editing) return;
+  ui.editing = false;
+  if (writing()) return; // emptied: the field stays
+  root.querySelector(".pg-md").outerHTML = cardHtml();
+}
+const fitField = (f) => { f.style.height = "auto"; f.style.height = `${f.scrollHeight + 4}px`; };
 // the answer under an older prompt is dimmed, and that prompt sits above it as his message
 const askedHtml = (p) => (stale(p) ? `<div class="msg his"><div class="body">${mdPlan(p.asked)}</div></div>` : "");
 function fixHtml(p, i) { // the failure's word, then the one thing that fixes it
@@ -269,12 +292,17 @@ root.addEventListener("input", (e) => {
   if (e.target.id !== "prompt") return;
   const was = ui.panes.map(stale).join();
   ui.prompt = e.target.value; keep();
-  root.querySelector(".pg-md-out").innerHTML = mdPlan(ui.prompt);
-  root.querySelector(".pg-md").classList.toggle("blank", !ui.prompt.trim());
+  ui.editing = true; fitField(e.target);
   if (ui.panes.map(stale).join() !== was) render(); else root.querySelector(".pg-send").disabled = !sendable();
 });
 root.addEventListener("submit", (e) => { e.preventDefault(); send(); });
-root.addEventListener("keydown", (e) => { if (e.target.id === "prompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } });
+root.addEventListener("keydown", (e) => {
+  if (e.target.id === "prompt" && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ui.editing = false; send(); return; }
+  if (e.target.id === "prompt" && e.key === "Escape" && ui.prompt.trim()) { e.preventDefault(); closeField(); root.querySelector("[data-act=write]")?.focus(); return; }
+  if (e.target.dataset?.act === "write" && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openField(e.target.offsetHeight); }
+});
+// leaving the field renders the plan; a render that swaps the field keeps focus in it, so only a real leave counts
+root.addEventListener("focusout", (e) => { if (e.target.id === "prompt") setTimeout(() => { if (document.activeElement?.id !== "prompt") closeField(); }, 0); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ui.add) { closeAdd(); root.querySelector(".pg-addbtn")?.focus(); } });
 document.addEventListener("click", (e) => {
   if (e.target.closest("a")) return;
@@ -284,6 +312,7 @@ document.addEventListener("click", (e) => {
   const i = Number(t.dataset.i), p = ui.panes[i];
   switch (t.dataset.act) {
     case "theme": toggleTheme(); return;
+    case "write": openField(t.offsetHeight); return;
     case "add":
       ui.add = !ui.add; render();
       if (ui.add) root.querySelector(".pg-menu button:not(:disabled)")?.focus({ preventScroll: true });

@@ -90,7 +90,10 @@ function askEconomics() {
 async function load({ asks = true } = {}) {
   tick();
   if (asks) askEconomics();
-  const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
+  const [st, ac, ks, bg, md, hd, au, ss] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth", "/api/sessions"].map((p) => API.get(p)));
+  // the sessions running now, each on the login splice proved it uses (/api/sessions account, SessionAccountOf.kt): a
+  // login lists them under its card (v0.4.0 section 9: show which account every session is currently on)
+  const liveSessions = (ss.body?.sessions || []).filter((x) => x.availability === "live" && x.account && x.head);
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
@@ -177,7 +180,11 @@ async function load({ asks = true } = {}) {
           windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
         const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
           ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
-        p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows,
+        // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
+        // own label, and a single login with none is the primary
+        const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
+        const onIt = liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account));
+        p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows, sessions: onIt,
           // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
@@ -628,6 +635,15 @@ function nameHtml(p, a, spot) {
 }
 // c is the command whose order the rail shows on a plan provider, and null for a key or this computer. Each account shows
 // once, so its spot is the provider and the account.
+// the sessions on a login now, each a door to it on Sessions; past a handful, the rest as a count that opens Sessions
+const SESS_SHOWN = 4;
+function sessionsHtml(a) {
+  const on = a.sessions || [];
+  if (!on.length) return "";
+  const door = (x) => `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(x.name || x.title || String(x.session_id).slice(0, 8))}</a>`;
+  const more = on.length > SESS_SHOWN ? `<a class="sdoor more" href="sessions.html">+${on.length - SESS_SHOWN}</a>` : "";
+  return `<div class="onlogin">${on.slice(0, SESS_SHOWN).map(door).join("")}${more}</div>`;
+}
 function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
   const cls = ["card", serves.length ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
@@ -671,7 +687,7 @@ function cardHtml(p, c, a, i, serves) {
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
     + `${nameHtml(p, a, spot)}${nameIt}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`
-    + `${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}</article>`;
+    + `${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}${sessionsHtml(a)}</article>`;
 }
 
 // ---------- the tiles that end a rail, and the one that ends the page ----------

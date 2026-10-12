@@ -569,3 +569,9 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 .lockedby .word { margin: 0; font: 500 1.4rem/1 var(--font-name); color: var(--limit); }
 .lockedby .way { display: flex; align-items: center; gap: .9rem; }
 .lockedby code { font: 500 1.15rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .7rem 1rem; }
+
+/* Accounts: the sessions on a login now, under its card, each a door to Sessions (v0.4.0 section 9) */
+.card .onlogin { display: flex; flex-wrap: wrap; gap: .5rem .6rem; margin-top: 1rem; }
+.card .onlogin .sdoor { font: 500 .98rem/1 var(--font-name); color: var(--text-body); text-decoration: none; padding: .4rem .65rem; border: .12rem solid var(--track-line); border-radius: .4rem; }
+.card .onlogin .sdoor:hover { border-color: var(--ink); color: var(--text); }
+.card .onlogin .sdoor.more { color: var(--text-mute); }

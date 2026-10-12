@@ -203,7 +203,9 @@ const REQVIEW = (() => {
         out: () => cell("Tokens out", told(r.out)), cost: () => cell("Cost", cost, costSub), attempts: () => cell("Attempts", r.attempts) };
       // the three token counts are one fact when none was reported: one card where they sat (fin)
       const none = r.in == null && r.write == null && r.out == null, tok = ["in", "write", "out"];
-      const shown = none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
+      // a request splice ended before any attempt (over budget, no quota, too many at once) asked no provider, so it has
+      // no token figures at all, not unreported ones and not zeros: Attempts 0 stands alone (fin, Oct 12)
+      const shown = r.attempts === 0 ? cells.filter((k) => !tok.includes(k)) : none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
       if (none) of.in = of.write = of.out = () => cell("Tokens", told(null));
       return `<div class="figs" style="--n:${shown.length}">${shown.map((k) => of[k]()).join("")}</div>`;
     }

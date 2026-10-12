@@ -664,21 +664,21 @@ function rowHtml(r) {
   // the pair, so every row that is too long breaks in the same place and no row loses half a reading.
   const tokens = (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached / r.in >= .5 ? `<em>${Math.round((r.cached / r.in) * 100)}% cached</em>` : ""}</span>` : "")
     + (r.out != null ? `<span class="tok">${kTok(r.out)} out</span>` : "");
-  const toks = tokens ? `<span class="toks">${tokens}</span>` : "";
+  const earlier = r.cut > 0 && r.in != null
+    ? (r.cutId ? `<button class="tok quiet door" data-open="${esc(r.cutId)}">Counts 1 earlier request</button>` : `<span class="tok quiet">Counts ${r.cut} earlier request${r.cut === 1 ? "" : "s"}</span>`)
+    : "";
+  const toks = tokens ? `<span class="toks">${tokens}${earlier}</span>` : "";
   // a finished request with no tokens says where they went: counted on the request that took them, a door to it when it
   // is in the list; any other has no reading and says so. The request that took them says what its count holds.
   const noReading = r.outcome === "ok" && r.in == null && r.out == null
     ? (r.countedOn ? `<button class="tok quiet door" data-open="${esc(r.countedOn)}">Counted on the next request</button>` : r.counted ? `<span class="tok quiet">Counted on the next request</span>` : `<span class="tok quiet">No usage reported</span>`)
-    : "";
-  const earlier = r.cut > 0 && r.in != null
-    ? (r.cutId ? `<button class="tok quiet door" data-open="${esc(r.cutId)}">with 1 earlier request</button>` : `<span class="tok quiet">with ${r.cut} earlier request${r.cut === 1 ? "" : "s"}</span>`)
     : "";
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${earlier}</div>${match}</article>`;
+    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and
@@ -748,7 +748,7 @@ function listHtml() {
       const prev = new Date(r.ts.getFullYear(), r.ts.getMonth(), r.ts.getDate() - 1), back = dayEnd(prev);
       // a new day's heading takes him to the day before in one press (Marlin, p225: scrolling from Saturday never reached Friday)
       const earlier = dk !== day && back > +NOW - WINDOWS["7d"][1]
-        ? `<button class="act quiet small" data-act="upto" data-v="${back}">Show ${prev.toLocaleDateString("en-US", { weekday: "long" })}</button>` : "";
+        ? `<button class="act quiet small" data-act="upto" data-v="${back}">Show ${prev.toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}</button>` : "";
       day = dk; items.push(`<div class="hour"><span>${named}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span>${earlier}</div>`);
     }
     items.push(rowHtml(r));
@@ -895,28 +895,20 @@ function framesOf(text, transport) {
 const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.html")
   ? `<a class="act" href="sessions.html?at=${+r.ts}#${esc(r.sid)}">Open session</a>` : "");
 
-// What the row itself says about the two things a walker could not read off the open request (Marlin, p225, Oct 12).
-// A rate limit says whose limit it was and what to do: Attempts 0 means splice held it without sending, because the
-// provider kept limiting the account (OutcomeSentences.kt, error:rate-limited); a send means the provider refused it.
-// A resumed or started-over request says why its first try ended: stall_ms is the silence that set off the re-anchor,
-// and a re-anchor with no silence was a broken stream (PerfKeys REANCHORS, "after a stall or a tear").
+// Two states a walker could not read off the open request (Marlin, p225, Oct 12), in fin's words. A rate limit splice
+// held unsent (attempts 0: the provider kept limiting the account, OutcomeSentences.kt) reads "Not sent" on the
+// provider line, in the shape of No answer: the row's word says why, the account says whose, and a reset the row holds
+// is the lock beside the word. A resumed or started-over request says what set it off, from the row alone: stall_ms is
+// the silence that triggered the re-anchor, and a re-anchor with no silence was a broken stream (PerfKeys REANCHORS).
 const LIMITED = (r) => r.outcome === "error:rate-limited" || r.outcome === "failure:rate_limit_error"
   || (r.outcome === "error:upstream-failed" && r.cause === "VENDOR_RATE_LIMITED");
-function noteHtml(r) {
-  const line = (cls, text) => `<p class="upmsg note ${cls}"><span class="say">${text}</span></p>`;
-  let out = "";
-  if (LIMITED(r)) {
-    const who = esc(PROVIDER_NAME[r.provider] ?? "The provider");
-    out += line("", r.attempts === 0
-      ? `${who} was limiting this account, so splice held the request without sending it. Wait for the limit to clear, then try again.`
-      : `${who} refused it because this account was over its rate limit. Wait for the limit to clear, then try again.`);
-  }
+function noteHtml(r, who) {
+  let out = LIMITED(r) && r.attempts === 0 ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">Not sent</span></p>` : "";
   if (r.resumed > 0) {
-    const n = r.resumed, quiet = r.stallMs ? `went quiet for ${secs(r.stallMs)}` : "broke off";
-    const what = n === 1 ? quiet : `stopped ${n} times${r.stallMs ? `, quiet for ${secs(r.stallMs)} in all` : ""}`;
-    out += line("mend", r.resumedFresh
-      ? `The first try ${what} before any of the answer arrived, so splice sent the request again from the start.`
-      : `The answer ${what} partway through, so splice asked for the rest, continuing from what had arrived.`);
+    const n = r.resumed, word = r.resumedFresh ? WHY.startedover.word : WHY.resumed.word;
+    const text = n > 1 ? `${word} ${n} times${r.stallMs ? ` · ${secs(r.stallMs)} of silence` : ""}`
+      : `${word} after ${r.stallMs ? `a ${secs(r.stallMs)} silence` : "the stream broke"}`;
+    out += `<p class="upmsg note mend"><span class="state">${text}</span></p>`;
   }
   return out;
 }
@@ -942,7 +934,7 @@ function paneHtml() {
     ? `<p class="upmsg"><span class="who">${esc(who)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
       + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>`
     : unanswered ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">No answer</span></p>` : ""; // fin's words, hitstop f4581a6
-  return RV.paneHtml(r, { said: said + noteHtml(r), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
+  return RV.paneHtml(r, { said: said + noteHtml(r, who), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st),
     tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r),

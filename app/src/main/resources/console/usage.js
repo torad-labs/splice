@@ -401,7 +401,7 @@ function byHtml() {
     return `<div class="brow" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" tabindex="0">`
       + `<div class="who"><span class="nm">${e.label}</span><span class="sb">${e.sub ? `<span class="st">${e.sub}</span>` : ""}${[...e.heads].map(chip).join("")}</span></div>`
       + `<div class="share"><div class="sbar" style="width:${((tokensOf(e.s) / max) * 100).toFixed(2)}%"></div><span class="num">${tokWord(tokensOf(e.s))}</span></div>`
-      + `${e.many ? `<span class="num">${n0(e.s.requests)}</span>` : `<a class="num open" href="${reqUrl(extra, f)}">${n0(e.s.requests)}${OPEN}</a>`}<span class="cost">${costCell(e.s)}</span></div>`;
+      + `${e.many ? `<span class="num">${n0(e.s.requests)}</span>` : `<a class="num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${n0(e.s.requests)}${OPEN}</a>`}<span class="cost">${costCell(e.s)}</span></div>`;
   };
   const sw = `<div class="switch" role="group" aria-label="Group by">${Object.entries(DIMS).map(([k, v]) => `<button data-act="by" data-v="${k}" aria-pressed="${ui.by === k}">${v.word}</button>`).join("")}</div>`;
   const open = hasFilter() ? `<a class="act" href="${reqUrl()}">${OPEN}Open on Requests</a>` : "";

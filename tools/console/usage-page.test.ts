@@ -146,6 +146,7 @@ test("Usage: a breakdown row opens its requests on Requests with the account car
     expect(href.pathname).toBe("/requests.html");
     expect(href.searchParams.get("account")).toBe("plan|primary");
     expect(href.searchParams.get("win")).toBe("7d");
+    expect(href.searchParams.get("order")).toBe("price");
   } finally {
     await p.context().close();
   }

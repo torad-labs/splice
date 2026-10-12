@@ -452,9 +452,16 @@ async function countsWeek(head, plan, week) {
 async function readPeak(head) {
   const res = await bulkGet(`/api/perf/turns?${new URLSearchParams({ head: head.key, since: String(startOfToday()), time_zone: ZONE, n: "1", local: "0", usage: "0", peak: "1" })}`);
   const answer = (res.body?.heads || []).find((x) => x.key === head.key);
-  if (!res.ok || !answer || answer.error || answer.read_error) return { head, err: answer?.error || answer?.read_error || `splice answered ${res.status}` };
+  // a peak not read is "Not read" or "Not answering" on the page, and why goes to the console, as whyNot does (fin, Oct 12)
+  if (!res.ok || !answer || answer.error || answer.read_error) {
+    console.warn(`/api/perf/turns peak for ${head.key}: ${res.status === 0 ? "splice is not answering" : answer?.error || answer?.read_error || `splice answered ${res.status}`}`);
+    return { head, err: res.status === 0 ? "Not answering" : "Not read" };
+  }
   const held = answer.at_once;
-  if (!held) return { head, err: "Most at once not read" };
+  if (!held) {
+    console.warn(`/api/perf/turns peak for ${head.key}: the answer carried no at_once`);
+    return { head, err: "Not read" };
+  }
   return { head, peak: held.peak, at: held.at, n: held.counted, queued: held.queued };
 }
 function readWeek() {
@@ -552,7 +559,7 @@ function peaksHtml() {
   };
   const quiet = idle.length
     ? `<p class="pidle"><span>No requests today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
-  const errs = bad.map((p) => `<p class="pidle"><span class="state limit">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
+  const errs = bad.map((p) => `<p class="pidle"><span class="none">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
   return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No requests today</span></p>`}${quiet}${errs}</section>`;
 }
 // ---------- Plan limits ----------

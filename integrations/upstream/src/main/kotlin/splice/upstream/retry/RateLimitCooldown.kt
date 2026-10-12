@@ -392,13 +392,9 @@ internal const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
 // 120s starves a herd but lets a recovered account resume inside one client-retry cycle;
 // the true pushback still reaches the operator in the surfaced upstream body.
 //
-// V4-100: PUBLIC, and that is the point of the ceiling rather than a widening for its own sake.
-// The admission plane hands the client a deadline derived from the same number (HeadAdmission's
-// clamp on the Retry-After it writes, and the CLAMP_SECONDS both head tests pin), so the ceiling
-// is a CROSS-MODULE fact with three existing readers in :daemon-head. It lived private here and was
-// re-typed there, which is the copy this export retires: one number, one declaration, and the
-// client's deadline cannot outlive the cooldown the gateway is actually holding.
-public const val MAX_RATE_LIMIT_COOLDOWN_MS: Long = 120_000L
+// Internal since the client recheck (Oct 12): the client's deadline is now ClientRecheck's 30 s in :features-turns,
+// not this ceiling, so no other module reads it.
+internal const val MAX_RATE_LIMIT_COOLDOWN_MS: Long = 120_000L
 
 // A saturated or hostile header must not poison reset reporting after the local re-probe opens.
 // Seven days preserves legitimate multi-day resets while bounding the reporting-only state too.

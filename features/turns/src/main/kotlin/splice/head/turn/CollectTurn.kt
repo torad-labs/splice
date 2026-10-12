@@ -27,6 +27,7 @@ import splice.core.model.ClientWindows
 import splice.core.util.JsonWire
 import splice.core.wire.RateLimitReply
 import splice.head.ClientWindowWitness
+import splice.head.admission.ClientRecheck
 import splice.head.admission.TurnQuota
 import splice.head.turn.delivery.CollectedReply
 import splice.head.wire.ClientAnswer
@@ -46,6 +47,7 @@ internal class CollectTurn(
     private val clientWindows: ClientWindows = ClientWindows(),
 ) {
     private val wiring = TurnWiring()
+    private val recheck = ClientRecheck()
     private val clientWindow = ClientWindowWitness(clientWindows)
 
     /** Non-stream sibling of TurnDriver.stream: Claude Code sends stream:false on some internal
@@ -76,8 +78,9 @@ internal class CollectTurn(
             )
         }
         val drive = driveFactory.assembleDrive(inputs, terminal, channel)
+        // The provider's own 429, told to come back within the recheck, as the streamed relay tells it.
         drive.rateLimitRelay = TurnDrive.RateLimitRelay { reply ->
-            nativeReply = reply
+            nativeReply = recheck.reply(reply)
             true
         }
         drive.collectPerf.defer()

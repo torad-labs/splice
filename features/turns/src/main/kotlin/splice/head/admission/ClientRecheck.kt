@@ -3,16 +3,13 @@ package splice.head.admission
 
 import splice.core.util.WallClock
 import splice.core.wire.RateLimitReply
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
+import splice.upstream.retry.RetryAfter
 
 /** How long a client refused for a limit sleeps before it asks again. */
 internal const val CLIENT_RECHECK_SECONDS = 30L
 
 private const val RETRY_AFTER = "retry-after"
 private const val UNIFIED_RESET = "anthropic-ratelimit-unified-reset"
-private const val MILLIS = 1000L
 
 /**
  * When a limit refusal tells the client to come back. Claude Code's unattended retry sleeps until the plain
@@ -25,7 +22,7 @@ private const val MILLIS = 1000L
 internal class ClientRecheck(private val wallClock: WallClock = WallClock(System::currentTimeMillis)) {
     /** The client's deadline for a refusal whose real reset is [resetEpochSeconds], or a recheck when none is known. */
     fun deadline(resetEpochSeconds: Long?): Long {
-        val recheck = wallClock() / MILLIS + CLIENT_RECHECK_SECONDS
+        val recheck = wallClock() / MILLIS_PER_SECOND + CLIENT_RECHECK_SECONDS
         return resetEpochSeconds?.let { minOf(it, recheck) } ?: recheck
     }
 
@@ -44,21 +41,13 @@ internal class ClientRecheck(private val wallClock: WallClock = WallClock(System
     }
 
     private fun retryAfter(value: String, now: Long): String {
-        val seconds = value.trim().toDoubleOrNull() ?: httpDateSeconds(value, now) ?: return value
-        return if (seconds > CLIENT_RECHECK_SECONDS) CLIENT_RECHECK_SECONDS.toString() else value
+        val ms = RetryAfter().retryAfterMs(value, WallClock { now }) ?: return value
+        return if (ms > CLIENT_RECHECK_SECONDS * MILLIS_PER_SECOND) CLIENT_RECHECK_SECONDS.toString() else value
     }
 
     private fun unifiedReset(value: String, now: Long): String {
         val reset = value.trim().toDoubleOrNull() ?: return value
-        val recheck = now / MILLIS + CLIENT_RECHECK_SECONDS
+        val recheck = now / MILLIS_PER_SECOND + CLIENT_RECHECK_SECONDS
         return if (reset > recheck) recheck.toString() else value
     }
-
-    private fun httpDateSeconds(value: String, now: Long): Double? =
-        try {
-            (ZonedDateTime.parse(value.trim(), DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - now)
-                .toDouble() / MILLIS
-        } catch (_: DateTimeParseException) {
-            null
-        }
 }

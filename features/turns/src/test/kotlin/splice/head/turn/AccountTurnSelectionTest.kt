@@ -22,7 +22,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -43,6 +42,7 @@ import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
+import splice.head.admission.CLIENT_RECHECK_SECONDS
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.head.headStores
@@ -59,7 +59,6 @@ import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
-import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
@@ -329,15 +328,17 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
     }
 
     @Test
-    fun `all exhausted without reset evidence does not invent Retry-After`() = runTest {
+    fun `all exhausted without reset evidence asks the client back within the recheck`() = runTest {
         val rig = AccountTurnRig(root, credentialPresent = false)
         try {
             rig.start()
+            val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             val response = rig.messages().also { it.bodyAsText() }
+            val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
-            assertNull(response.headers["Retry-After"])
+            assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds, receivedAtSeconds)
             assertEquals(1L, rig.localErrors())
             assertEquals(0L, rig.providerErrors())
             assertTrue(rig.authHeaders().isEmpty())
@@ -622,9 +623,5 @@ private inline fun <T> inZone(zone: String, block: () -> T): T {
     }
 }
 
-// V4-61's ceiling on the CLIENT-FACING deadline. V4-100: READS the one declaration
-// (splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS, public as of this row) instead of restating 120 here. The
-// point of the row is that the production ceiling and the two pins asserting against it are ONE
-// number; the comment this replaces ("both are private to their files, so the pin states the number
-// the law states") was the copy admitting it could not see its own source.
-private const val CLAMP_SECONDS: Long = MAX_RATE_LIMIT_COOLDOWN_MS / MS_PER_SECOND
+// The ceiling on the client-facing deadline: the client recheck (Oct 12).
+private const val CLAMP_SECONDS: Long = CLIENT_RECHECK_SECONDS

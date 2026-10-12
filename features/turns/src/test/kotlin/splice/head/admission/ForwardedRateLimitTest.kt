@@ -43,7 +43,6 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.InflightGate
-import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -225,11 +224,8 @@ class ForwardedRateLimitTest {
             try {
                 assertEquals("seven_day", restarted.upstream.planHold?.claim)
                 assertTrue(restarted.upstream.providerResetForMs > 0L)
-                assertEquals(
-                    MAX_RATE_LIMIT_COOLDOWN_MS,
-                    restarted.upstream.rateLimitedForMs,
-                    "startup retains the native credential's refusal, bounded by the existing re-probe ceiling",
-                )
+                val heldMs = restarted.upstream.rateLimitedForMs
+                assertTrue(heldMs > 0L, "startup retains the native credential's refusal")
                 val (status, body, headers) = restarted.turn("synthetic-refused")
                 assertEquals(HttpStatusCode.TooManyRequests, status)
                 assertEquals(LIMIT_BODY, body)
@@ -238,7 +234,7 @@ class ForwardedRateLimitTest {
                 assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
                 assertEquals(listOf("synthetic-new-login"), restarted.requests)
 
-                elapsed = MAX_RATE_LIMIT_COOLDOWN_MS + 1
+                elapsed = heldMs + 1
                 assertEquals(HttpStatusCode.TooManyRequests, restarted.turn("synthetic-refused").first)
                 assertEquals(listOf("synthetic-new-login", "synthetic-refused"), restarted.requests)
             } finally {

@@ -36,6 +36,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
+import splice.head.admission.CLIENT_RECHECK_SECONDS
 import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -45,7 +46,6 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.InflightGate
-import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
@@ -458,9 +458,7 @@ class HeadServerCapacityTest {
 private const val MS_PER_S = 1_000L
 private const val POLL_MS = 100L
 
-// V4-61's ceiling on the client-facing deadline. V4-100: READS RateLimitCooldown's
-// MAX_RATE_LIMIT_COOLDOWN_MS itself, which is now public — the pin used to restate 120 because both
-// declarations were private to their files, which is precisely the copy this row retires.
-private const val CLAMP_SECONDS: Long = MAX_RATE_LIMIT_COOLDOWN_MS / MS_PER_S
+// The ceiling on the client-facing deadline: the client recheck (Oct 12).
+private const val CLAMP_SECONDS: Long = CLIENT_RECHECK_SECONDS
 
 private const val THREE_DAYS_MS = 3L * 24 * 60 * 60 * 1_000

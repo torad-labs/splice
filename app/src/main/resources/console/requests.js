@@ -593,7 +593,14 @@ function menuHtml(key) {
     // a time to start from, as far back as the widest window reads: the list then holds the requests up to it, newest first
     const local = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
     const goto = `<div class="goto"><label for="goto">Up to</label><input id="goto" type="datetime-local" min="${local(+NOW - WINDOWS["7d"][1])}" max="${local(+NOW)}" value="${local(ui.to ?? +NOW)}"><button class="act quiet" data-act="goto">Show</button></div>`;
-    return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}${goto}</div>`;
+    // each of the week's days is one press, up to its end (Marlin, p225: a pick in the browser's calendar never reached
+    // the field, so the field keeps typing and the arrow keys and loses its calendar button)
+    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+      const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - i), end = dayEnd(d);
+      const on = i === 0 ? !ui.to : ui.to === end;
+      return `<button role="menuitemradio" aria-checked="${on}" data-act="upto" data-v="${i === 0 ? "" : end}">${i === 0 ? "Today" : d.toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}</button>`;
+    }).join("");
+    return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}${goto}<div class="days">${days}</div></div>`;
   }
   if (key === "cmd") return `<div class="menu fmenu" role="menu">${item("", "Every command", !ui.cmd)}${state.heads.map((h) => item(h.command, esc(h.command) + (h.retired ? REMOVED_TAG : ""), ui.cmd === h.command, `<i class="blot" style="--c:${colorOf(state.providerOf[h.key])}"></i>`)).join("")}</div>`;
   // the requests splice couldn't put a model or an account on (unattributed=model|account, TurnsFilter.kt)
@@ -738,7 +745,11 @@ function listHtml() {
     if (hk !== hour && state.order !== "price") {
       hour = hk; const h = r.ts.getHours(), dk = r.ts.toDateString();
       const named = dk !== day ? `${dk === NOW.toDateString() ? "Today" : r.ts.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} \u00b7 ` : dayOf(r.ts);
-      day = dk; items.push(`<div class="hour"><span>${named}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span></div>`);
+      const prev = new Date(r.ts.getFullYear(), r.ts.getMonth(), r.ts.getDate() - 1), back = dayEnd(prev);
+      // a new day's heading takes him to the day before in one press (Marlin, p225: scrolling from Saturday never reached Friday)
+      const earlier = dk !== day && back > +NOW - WINDOWS["7d"][1]
+        ? `<button class="act quiet small" data-act="upto" data-v="${back}">Show ${prev.toLocaleDateString("en-US", { weekday: "long" })}</button>` : "";
+      day = dk; items.push(`<div class="hour"><span>${named}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span>${earlier}</div>`);
     }
     items.push(rowHtml(r));
   }
@@ -884,6 +895,31 @@ function framesOf(text, transport) {
 const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.html")
   ? `<a class="act" href="sessions.html?at=${+r.ts}#${esc(r.sid)}">Open session</a>` : "");
 
+// What the row itself says about the two things a walker could not read off the open request (Marlin, p225, Oct 12).
+// A rate limit says whose limit it was and what to do: Attempts 0 means splice held it without sending, because the
+// provider kept limiting the account (OutcomeSentences.kt, error:rate-limited); a send means the provider refused it.
+// A resumed or started-over request says why its first try ended: stall_ms is the silence that set off the re-anchor,
+// and a re-anchor with no silence was a broken stream (PerfKeys REANCHORS, "after a stall or a tear").
+const LIMITED = (r) => r.outcome === "error:rate-limited" || r.outcome === "failure:rate_limit_error"
+  || (r.outcome === "error:upstream-failed" && r.cause === "VENDOR_RATE_LIMITED");
+function noteHtml(r) {
+  const line = (cls, text) => `<p class="upmsg note ${cls}"><span class="say">${text}</span></p>`;
+  let out = "";
+  if (LIMITED(r)) {
+    const who = esc(PROVIDER_NAME[r.provider] ?? "The provider");
+    out += line("", r.attempts === 0
+      ? `${who} was limiting this account, so splice held the request without sending it. Wait for the limit to clear, then try again.`
+      : `${who} refused it because this account was over its rate limit. Wait for the limit to clear, then try again.`);
+  }
+  if (r.resumed > 0) {
+    const n = r.resumed, quiet = r.stallMs ? `went quiet for ${secs(r.stallMs)}` : "broke off";
+    const what = n === 1 ? quiet : `stopped ${n} times${r.stallMs ? `, quiet for ${secs(r.stallMs)} in all` : ""}`;
+    out += line("mend", r.resumedFresh
+      ? `The first try ${what} before any of the answer arrived, so splice sent the request again from the start.`
+      : `The answer ${what} partway through, so splice asked for the rest, continuing from what had arrived.`);
+  }
+  return out;
+}
 function paneHtml() {
   const r = filtered().find((x) => x.id === ui.open) ?? state.rows.find((x) => x.id === ui.open);
   if (!r) return "";
@@ -906,9 +942,9 @@ function paneHtml() {
     ? `<p class="upmsg"><span class="who">${esc(who)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
       + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>`
     : unanswered ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">No answer</span></p>` : ""; // fin's words, hitstop f4581a6
-  return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
+  return RV.paneHtml(r, { said: said + noteHtml(r), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
-    st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st), said,
+    st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st),
     tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r),
     costSub: r.cost == null && r.planValue != null ? `${money(r.planValue)} at API prices` : "" });
 }
@@ -987,8 +1023,10 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act], [data-open]");
-  if (ui.menu && !e.target.closest(".fmenu, [data-act=menu]")) { ui.menu = null; if (!el) { render(); return; } }
-  if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; if (!el) { render(); return; } }
+  // A click outside an open menu only closes it. It never also opens the request under it: a pick in the browser's own
+  // calendar landed on the row beneath and opened a request he never chose (Marlin, p225 step 14).
+  if (ui.menu && !e.target.closest(".fmenu, [data-act=menu]")) { ui.menu = null; render(); return; }
+  if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; render(); return; }
   if (!el) return;
   if (!el.dataset.act) { if (e.target.closest("a")) return; open(el.dataset.open); return; }
   const v = el.dataset.v, m = el.dataset.m;
@@ -1011,6 +1049,7 @@ document.addEventListener("click", (e) => {
     // the search's own Clear empties the search and keeps every filter he set, Failed included (Marlin, desk c, Oct 12)
     case "clearq": { const q = document.getElementById("q"); q.value = ""; ui.q = ""; ui.n = 200; again(); break; }
     case "goto": goTo(document.getElementById("goto")?.value); break;
+    case "upto": upTo(v ? +v : null); scrollTo(0, 0); break;
     case "more": ui.n += 200; render(); break;
     case "close": {
       ui.open = null; ui.auto = false; render();
@@ -1024,11 +1063,16 @@ document.addEventListener("click", (e) => {
 /** Lists the requests up to [value] (the menu's day and time), in the narrowest window that reaches back to it. */
 function goTo(value) {
   const at = value ? +new Date(value) : NaN;
-  if (!Number.isFinite(at)) return;
-  const to = Math.min(at + 59_999, +NOW); // the whole minute he picked
-  ui.win = Object.keys(WINDOWS).find((k) => +NOW - WINDOWS[k][1] <= to) ?? "7d";
+  if (Number.isFinite(at)) upTo(at + 59_999); // the whole minute he picked
+}
+/** Lists the requests up to [at], or up to now when [at] is null or not past, in the narrowest window that reaches it. */
+function upTo(at) {
+  const to = at == null || at >= +NOW ? null : at;
+  if (to != null) ui.win = Object.keys(WINDOWS).find((k) => +NOW - WINDOWS[k][1] <= to) ?? "7d";
   Object.assign(ui, { to, from: null, menu: null, n: 200 }); again();
 }
+// the last millisecond of [d]'s day, by the calendar, so a day with a clock change still ends at its own midnight
+const dayEnd = (d) => +new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1) - 1;
 // a filter the daemon owns is a new read; one that hides the open request moves the page to the top match when the
 // page opened it, and keeps his pick otherwise
 function again() { ui.auto = ui.auto || !filtered().some((r) => r.id === ui.open); reload(); }

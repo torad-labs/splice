@@ -54,6 +54,12 @@
 .fmenu .goto { display: flex; align-items: center; gap: .6rem; margin: .45rem .2rem .15rem; padding-top: .55rem; border-top: .08rem solid var(--track-line); }
 .fmenu .goto label { font: 500 1rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .fmenu .goto input { font: 500 .95rem/1 var(--font-data); color: inherit; background: var(--track); border: .08rem solid var(--track-line); border-radius: var(--r-in); padding: .45rem .55rem; }
+/* the field types and steps with the arrow keys; its calendar button is gone, because a pick there never reached the
+   field (Marlin, p225) and the week's days below are one press each */
+.fmenu .goto input::-webkit-calendar-picker-indicator { display: none; }
+.fmenu .days { display: flex; flex-wrap: wrap; gap: .2rem .3rem; margin: .35rem 0 .1rem; max-width: 24rem; }
+.fmenu .days button { flex: none; padding: .6rem .7rem; }
+.fmenu .days button[aria-checked="true"]::before { left: .5rem; right: .5rem; top: auto; bottom: .1rem; width: auto; height: .2rem; border-radius: .1rem; }  /* in a row the picked day is underlined, not barred on its left */
 .ftog {
   display: inline-flex; align-items: center; gap: .6rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap;
   background: none; border: .12rem dashed var(--track-line); border-radius: var(--r-in); padding: .72rem .9rem; cursor: pointer;
@@ -130,6 +136,7 @@
 /* the hour, on the rail where it turns */
 .hour { position: relative; margin: .9rem 0 -.1rem -3.4rem; height: 2.2rem; display: flex; align-items: center; }
 .hour:first-child { margin-top: 0; }
+.hour .act { margin-left: auto; }  /* the day before, at the right end of the new day's heading */
 .hour span {
   font: 600 .95rem/1 var(--font-data); color: #efe2c6; background: var(--socket); padding: .45rem .6rem; border-radius: .35rem;  /* the socket is dark in both themes */
   box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .14rem var(--rail);

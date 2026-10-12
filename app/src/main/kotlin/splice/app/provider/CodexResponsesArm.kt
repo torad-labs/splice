@@ -27,6 +27,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeCellLease
 import splice.provider.codex.CodeModeJournaling
 import splice.provider.codex.CodeModeOnlyModels
+import splice.provider.codex.CodeModeReplayReasoning
 import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
@@ -159,6 +160,7 @@ internal class CodexResponsesArm(
                         dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
                         legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
                         journaling = CodeModeJournaling { ctx.cfg.current().keepCodeModeWork },
+                        replayReasoning = CodeModeReplayReasoning { ctx.cfg.current().replayReasoning },
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                     cellLease = CodeModeCellLease(sessionAlive = sessionAlive),

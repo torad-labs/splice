@@ -113,6 +113,8 @@ public data class CodeModeStateLocation(
     val legacyFile: Path,
     /** Whether a save reaches the disk, asked at each save: off keeps the journal in memory only. */
     val journaling: CodeModeJournaling = CodeModeJournaling { true },
+    /** Whether an earlier turn's reasoning rides back, asked at each post: replay_reasoning. */
+    val replayReasoning: CodeModeReplayReasoning = CodeModeReplayReasoning { true },
 )
 
 // why: how often a head's code-mode records are swept with no turn (V4-287). A record goes within
@@ -148,7 +150,8 @@ public class CodexCodeModeBridge(
         sweepInterval,
         closeSession = CodeModeSessionEnd(run::closeSession),
     )
-    private val wire = CodexCodeModeWire(json, config.log, CodeModeNativeRetirement(registry.changes::retireNative))
+    private val retirement = CodeModeNativeRetirement(registry.changes::retireNative)
+    private val wire = CodexCodeModeWire(json, config.log, retirement, config.state.replayReasoning)
     private val validation = CodexCodeModeValidation(config)
     internal val machine = CodexCodeModeMachine(config, registry, validation)
     internal val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)

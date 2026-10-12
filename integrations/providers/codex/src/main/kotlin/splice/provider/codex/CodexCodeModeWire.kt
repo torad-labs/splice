@@ -15,6 +15,7 @@ import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.dialect.responses.request.ResponsesPriorReasoning
 import splice.provider.codex.state.diagnostics.CodeModeHistoryOmissions
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
@@ -26,8 +27,10 @@ internal class CodexCodeModeWire(
     private val json: Json,
     private val log: LogSink,
     retireNative: CodeModeNativeRetirement = CodeModeNativeRetirement {},
+    private val replayReasoning: CodeModeReplayReasoning = CodeModeReplayReasoning { true },
 ) {
     private val history = CodexCodeModeHistory(json)
+    private val priorReasoning = ResponsesPriorReasoning()
     private val namespace = ResponsesFunctionNamespace()
 
     private val omissions = CodeModeHistoryOmissions(log, retireNative)
@@ -75,7 +78,9 @@ internal class CodexCodeModeWire(
      *  A body with none goes out as the body it is; one with some keeps the spelling it always had. */
     fun upstream(body: CodeModeBody): RoundBody {
         val (request, input) = body.request ?: return body.round
-        val kept = input.filterNot { string(it as? JsonObject, FIELD_TYPE) in TOOL_SEARCH_ITEMS }
+        val searched = input.filterNot { string(it as? JsonObject, FIELD_TYPE) in TOOL_SEARCH_ITEMS }
+        // replay_reasoning=false: the stored continuity of earlier scripts does not ride back; this turn's does.
+        val kept = if (replayReasoning.now()) searched else priorReasoning.withoutPriorTurns(searched)
         return if (kept.size == input.size) {
             body.round
         } else {
@@ -237,3 +242,8 @@ private const val TYPE_TOOL_SEARCH = "tool_search"
 private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
 private const val TYPE_TOOL_SEARCH_OUTPUT = "tool_search_output"
 private val TOOL_SEARCH_ITEMS = setOf(TYPE_TOOL_SEARCH_CALL, TYPE_TOOL_SEARCH_OUTPUT)
+
+/** Whether an earlier turn's reasoning rides back to the model, asked at each post so a change acts on the next round. */
+public fun interface CodeModeReplayReasoning {
+    public fun now(): Boolean
+}

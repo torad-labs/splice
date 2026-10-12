@@ -40,6 +40,7 @@
 
 package splice.dialect.responses.request
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import splice.core.turn.TurnMeta
@@ -67,6 +68,7 @@ internal class ResponsesRequestBuilder(
     private val looseFields = ResponsesLooseFields(quirks)
     private val ids = ResponsesStableIds()
     private val assembler = ResponsesRequestAssembler(quirks, toolNames)
+    private val priorReasoning = ResponsesPriorReasoning()
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
@@ -81,10 +83,17 @@ internal class ResponsesRequestBuilder(
         val loopGuardDirectives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
         // Constructed per build (the field version predates per-build state) — cheap, race-free.
         val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives, toolNames)
-        val input = buildJsonArray {
+        val walked = buildJsonArray {
             for (msg in body.messages) {
                 inputBuilder.appendMessage(this, msg, opts, declareByName)
             }
+        }
+        // replay_reasoning=false: the gateway cache must not put an earlier turn's reasoning back, and the current
+        // turn keeps its own. A compaction is built exactly like a turn, so it follows the same rule.
+        val input = if (opts.handoff.replay.v) {
+            walked
+        } else {
+            JsonArray(priorReasoning.withoutPriorTurns(walked))
         }
         val instructions = body.system.orEmpty().ifEmpty { DEFAULT_INSTRUCTIONS }
         val effort = knobs.resolveEffort(body, raw, opts)

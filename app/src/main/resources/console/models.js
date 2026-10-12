@@ -186,9 +186,18 @@ function draftOf(c) {
     })),
     // with no tier declared, one window serves every default tier: the head's own, shown as the default model's
     headWin: TIERS.some((t) => c.slots[t]) ? "" : big(c.models.find((m) => m.id === c.defaults.opus)?.window ?? 0),
-    mode: c.prompt.mode, text: c.prompt.text, file: c.prompt.file, per: perOf(c),
+    mode: c.prompt.mode, text: c.prompt.text, file: c.prompt.file, per: perOf(c), url: c.url,
   };
 }
+// the other commands on this command's provider: an edit to the provider's own fields (its address, a model's window)
+// reaches them too, so the pane names them beside the field (spec 9d)
+const sharersOf = (c) => commandsOf().filter((x) => x.provKey === c.provKey && x.key !== c.key);
+const sharedHtml = (c) => {
+  const others = sharersOf(c);
+  return others.length ? `<span class="shared">Also ${others.map((x) => `<span class="chip" style="--c:${colorOf(x.family)}">${esc(x.cmd)}</span>`).join("")}</span>` : "";
+};
+// an address splice can send to: http or https, with a host
+const urlOk = (v) => { try { const u = new URL(String(v).trim()); return (u.protocol === "http:" || u.protocol === "https:") && Boolean(u.host); } catch { return false; } };
 function draftState(c) {
   const d = ui.draft;
   // a window is a number, and no larger than the most the provider publishes for that model, where it publishes one
@@ -202,7 +211,8 @@ function draftState(c) {
   const hmax = caps.length ? Math.min(...caps) : null;
   const head = { ok: !unset || (Boolean(hw) && (hmax === null || hw <= hmax)), over: unset && Boolean(hw) && hmax !== null && hw > hmax, max: hmax };
   const same = JSON.stringify(d) === JSON.stringify(draftOf(c));
-  return { tiers, head, ok: TIERS.every((t) => tiers[t].ok) && head.ok, same };
+  const url = { ok: d.url === c.url || urlOk(d.url) };
+  return { tiers, head, url, ok: TIERS.every((t) => tiers[t].ok) && head.ok && url.ok, same };
 }
 const logsOf = (key) => ui.logs[key];
 // Remove: two presses, and what stays is said before the second. A command a session is on says who, and each name opens it.
@@ -302,7 +312,7 @@ function paneHtml() {
     const note = picked ? runtimeNote(c, picked.id, ts.over) ?? limitHtml(picked, sel, ts.over)
       : asDefault ? runtimeNote(c, dm.id, st.head.over) ?? limitHtml({ max: st.head.max ?? dm.max }, { model: dm.id }, st.head.over) : "";
     return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${picked ? "" : asDefault ? " dflt-tier" : " empty"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${face}${ICON.caret}</button>`
-      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${bad ? `<span class="said limit">Not a window</span>` : ""}${note}</div>`;
+      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${bad ? `<span class="said limit">Not a window</span>` : ""}${note}${picked ? sharedHtml(c) : ""}</div>`;
   }).join("");
   const per = Object.entries(d.per).map(([root, l]) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
     + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove">${GL.close}</button></div>${l.file ? pfile(l.file) : `<textarea class="field ptext" data-ptext="${esc(root)}" rows="2">${esc(l.text)}</textarea>`}</div>`).join("");
@@ -312,7 +322,8 @@ function paneHtml() {
   const saidHtml = ui.said ? `<span class="said${calm ? "" : " limit"}">${ui.said === "Restarting" ? ICON.wait : ""}${esc(ui.said)}</span>` : "";
   const restart = ui.said === "Saved" && ui.pending ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
   const form = `<section class="form">`
-    + `<span class="lbl">Sends to</span><div class="ctl"><span class="urlread">${esc(c.url)}</span></div>`
+    + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to">`
+    + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
     + runtimeHtml(c)
     + tierRows
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
@@ -388,6 +399,8 @@ function applyDraft(tree, c, d) {
   }
   // windows: the provider's own row for that model, which every command on the provider shares
   const prov = t.providers[c.provKey];
+  // the provider's address, which every command on the provider shares too (spec 9d)
+  if (prov && d.url !== c.url && urlOk(d.url)) prov.base_url = d.url.trim();
   for (const tier of TIERS) {
     const sel = d.tiers[tier], w = parseWindow(sel.win);
     const row = prov?.models?.find((m) => m.id === sel.model);
@@ -808,6 +821,7 @@ function onInput(e) {
   if (t.dataset.hw) { ui.draft.headWin = t.value; ui.said = null; render(); }
   else if (t.dataset.t) { ui.draft.tiers[t.dataset.t].win = t.value; ui.said = null; render(); }
   else if (t.id === "h-text") { ui.draft.text = t.value; ui.said = null; render(); }
+  else if (t.id === "h-url") { ui.draft.url = t.value; ui.said = null; render(); }
   else if (t.dataset.ptext) { ui.draft.per[t.dataset.ptext].text = t.value; ui.said = null; render(); }
 }
 root.addEventListener("click", onClick);

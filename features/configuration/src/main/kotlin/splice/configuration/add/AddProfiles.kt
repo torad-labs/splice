@@ -117,7 +117,11 @@ public class AddProfiles {
 
     private val profiles = AddProfileCatalog().rows
 
-    public fun find(name: String): AddProfile? = profiles.firstOrNull { it.name == name }
+    /** The profile named [name], else the one whose wrapper command it is: a person types the command they launch
+     *  (`splice add claudex`) as often as the profile's name (`codex`), and both add the same row. */
+    public fun find(name: String): AddProfile? =
+        profiles.firstOrNull { profile -> profile.name == name }
+            ?: profiles.firstOrNull { profile -> profile.head.command.isNotEmpty() && profile.head.command == name }
 
     internal fun describe(): List<String> = profiles.map { "${it.name.padEnd(NAME_PAD)} ${it.labels.summary}" }
 

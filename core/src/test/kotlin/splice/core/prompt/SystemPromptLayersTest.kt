@@ -216,6 +216,35 @@ class SystemPromptLayersTest {
     }
 
     @Test
+    fun `a project table naming both the inline text and a file is refused at load`() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            SystemPromptLayers(
+                head = head("N", SystemPromptMode.APPEND),
+                projects = mapOf(repo to ProjectConfig(systemPrompt = "P", systemPromptFile = "prompt.md")),
+                headKey = "codex",
+                home = "/home/operator",
+            )
+        }
+
+        assertTrue(failure.message.orEmpty().contains("both"), failure.message)
+    }
+
+    @Test
+    fun `a project prompt file that cannot be read is refused at load, never skipped`() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            SystemPromptLayers(
+                head = head("N", SystemPromptMode.APPEND),
+                projects = mapOf(repo to ProjectConfig(systemPromptFile = "missing.md")),
+                headKey = "codex",
+                home = "/home/operator",
+                readFile = SystemPromptFileRead { throw java.io.IOException("no such file") },
+            )
+        }
+
+        assertTrue(failure.message.orEmpty().contains("missing.md"), failure.message)
+    }
+
+    @Test
     fun `a quoted key and a home-relative root resolve, and a relative file reads under the root`() {
         val read = mutableListOf<String>()
         val resolved = SystemPromptLayers(

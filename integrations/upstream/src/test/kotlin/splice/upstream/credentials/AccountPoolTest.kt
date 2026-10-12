@@ -60,6 +60,26 @@ class AccountPoolTest {
         assertEquals("primary", pool.view("session-b").selectedLabel)
     }
 
+    // Marcos, Oct 3: no threshold of ours. A window short of 100 percent never moves a session, however full.
+    @Test
+    fun `a window under a hundred percent never moves the session, a full one does`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val quieter = fixture.account("plus-a", quota = fixture.quota(weekly = 1.0))
+        val pool = fixture.pool(primary, quieter)
+        assertSame(primary, pool.chosen("session").account)
+
+        fixture.setQuota(primary, fixture.quota(five = 99.0, weekly = 99.0))
+
+        val stayed = pool.chosen("session")
+        assertSame(primary, stayed.account, "99 percent is not 100")
+        assertEquals(null, stayed.switch)
+
+        fixture.setQuota(primary, fixture.quota(five = 100.0, reset = 2_000L))
+
+        assertSame(quieter, pool.chosen("session").account)
+    }
+
     @Test
     fun `an in-flight selection stays fixed and the next turn observes a long rate limit`() {
         val fixture = Fixture()

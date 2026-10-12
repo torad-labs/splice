@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.core.topology.Dialect
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -36,6 +37,22 @@ class DeepSeekProfileTest {
         val catalog = provider.catalogFor(head)
         assertEquals(2, catalog.models.size, "both declared rows must resolve")
         assertEquals("deepseek-flash", catalog.pinnedModel)
+    }
+
+    // §1 Deviation, 2026-10-10: DeepSeek runs on an API key over the Anthropic wire, Muse on its own login over Responses.
+    @Test
+    fun `the deepseek and muse profiles write the auth kind and dialect the spec names`(@TempDir dir: Path) {
+        val path = dir.resolve("splice.toml")
+        val muse = requireNotNull(AddProfiles().find("muse")) { "muse profile missing" }
+        val both = AddProfiles().toml(profile, "deepseek", PORT) + AddProfiles().toml(muse, "muse", PORT + 1)
+        Files.writeString(path, DAEMON_BLOCK + both)
+
+        val topology = TopologyLoader.loadOrMaterialize(path)
+
+        assertEquals("api-key", topology.providers.getValue("deepseek").auth.kind)
+        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, topology.providers.getValue("deepseek").dialect)
+        assertEquals("muse-oauth", topology.providers.getValue("muse").auth.kind)
+        assertEquals(Dialect.OPENAI_RESPONSES, topology.providers.getValue("muse").dialect)
     }
 
     @Test

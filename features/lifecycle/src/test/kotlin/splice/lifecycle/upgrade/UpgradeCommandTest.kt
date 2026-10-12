@@ -270,6 +270,32 @@ internal class UpgradeCommandTest : UpgradeRig() {
     }
 
     @Test
+    fun `turns still in flight at the wait's limit leave the candidate staged and nothing restarted`(
+        @TempDir home: Path,
+    ) {
+        val intact = flatInstall(home)
+        inflightAfter = InflightRead.Count(2)
+        maxWaitMs = 50
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9")) }
+        assertFalse(ok, out)
+        assertTrue(out.contains("in flight"), out)
+        assertFalse(Files.isSymbolicLink(home.resolve("share/splice.jar")), "nothing was activated")
+        assertEquals(0, unitRestarts + verbRestarts)
+        assertTrue(Files.isDirectory(home.resolve("share/releases/9.9.9")), "the candidate stays staged")
+        assertIntact(intact)
+    }
+
+    @Test
+    fun `--now activates at once with turns in flight and never reads the count`(@TempDir home: Path) {
+        flatInstall(home)
+        inflightAfter = InflightRead.Count(3)
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9", "--now")) }
+        assertTrue(ok, out)
+        assertFalse(out.contains("in flight"), "no wait was printed: $out")
+        assertEquals(1, unitRestarts + verbRestarts, "the daemon restarted under the turns")
+    }
+
+    @Test
     fun `an in-flight count that cannot be read never activates`(@TempDir home: Path) {
         val intact = flatInstall(home)
         inflightAnswers = ArrayDeque(listOf(InflightRead.Count(2)))

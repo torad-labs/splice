@@ -1,8 +1,6 @@
 package splice.app.cli.status
 
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -66,15 +64,35 @@ class StatusCommandTest {
         }
     }
 
+    // The warning crosses the wire as the daemon's /health body says it: parsed the way the CLI parses it, then drawn
+    // by the real status verb under the wordmark.
     @Test
-    fun `status shows the daemon's newer-client warning and nothing when it has none`() {
-        val heads = DaemonProbe.HealthHeads(total = 1, ready = 1, failed = 0)
+    fun `status prints the newer-client warning a health body carries, and none when it carries none`(
+        @TempDir home: Path,
+    ) {
         val warning = "Claude Code 9.9.9 is newer than the version splice 0.4.0 was tested with (2.1.289)"
-        val warned = DaemonProbe.HealthView("0.4.0", heads = heads, clientVersionWarning = warning)
+        val warned = """{"version":"0.0.1","ok":true,"clientVersionWarning":"$warning"}"""
+        val quiet = """{"version":"0.0.1","ok":true}"""
 
-        assertEquals(warning, StatusCommand().clientVersionWarning(warned))
-        assertNull(StatusCommand().clientVersionWarning(DaemonProbe.HealthView("0.4.0", heads = heads)))
-        assertNull(StatusCommand().clientVersionWarning(null))
+        UserHome.within(home) {
+            val withWarning = printed { StatusCommand(healthProbe = { DaemonProbe.parseHealth(warned) }).status() }
+            val without = printed { StatusCommand(healthProbe = { DaemonProbe.parseHealth(quiet) }).status() }
+
+            assertTrue(withWarning.lines().any { it.contains("! $warning") }, withWarning)
+            assertFalse(without.contains("newer than"), without)
+        }
+    }
+
+    private fun printed(block: () -> Unit): String {
+        val buffer = java.io.ByteArrayOutputStream()
+        val original = System.out
+        System.setOut(java.io.PrintStream(buffer, true))
+        try {
+            block()
+        } finally {
+            System.setOut(original)
+        }
+        return buffer.toString()
     }
 
     @Test

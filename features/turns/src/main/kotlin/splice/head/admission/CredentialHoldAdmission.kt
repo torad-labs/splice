@@ -174,8 +174,8 @@ internal class CredentialHoldAdmission(
     private fun message(armedMs: Long, reset: Long?, plan: PlanLimit?): String {
         if (plan != null) return plan.refusal()
         val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
-        val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
-            "limited, so it is holding new turns for ${waitS}s. Retry after that."
+        val base = "Rate limit exceeded. The provider limited this account, so this gateway is holding " +
+            "new requests for ${waitS}s. Retry after that."
         if (reset == null) return base
         return "$base The upstream reports its quota window resets at " +
             "${AccountResetText.forPerson(reset)}; if this keeps happening, that is the real deadline."

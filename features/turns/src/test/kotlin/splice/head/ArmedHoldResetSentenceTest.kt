@@ -189,7 +189,8 @@ class ArmedHoldResetSentenceTest {
             head.close()
         }
 
-        assertTrue("holding new turns for" in body, body)
+        assertTrue("The provider limited this account, so this gateway is holding new requests for" in body, body)
+        assertFalse("already retried" in body, "the hold never claims retries splice did not make: $body")
         assertFalse("quota window resets at" in body, body)
         assertFalse('—' in body, "no em dash in text the client shows: $body")
     }

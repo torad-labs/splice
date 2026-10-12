@@ -46,6 +46,9 @@ internal class UsageReadRoutes(
         route.get("/api/perf/turns") {
             guard.guarded(call) { withContext(io) { perf.turns(call) } }
         }
+        route.get("/api/perf/price") {
+            guard.guarded(call) { withContext(io) { perf.price(call) } }
+        }
         route.get("/api/economics") {
             guard.guarded(call) {
                 val result = withContext(io) {

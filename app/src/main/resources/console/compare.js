@@ -98,10 +98,23 @@ function failWord(status, body, said) {
   return OUTCOME_WORD["error:unexpected"];
 }
 
+// What a reply cost, in Requests' words (requests.js REASON, money, costText): a figure on a key, else the reason it has none.
+const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
+const money = (usd) => (usd < 0.01 ? dollars(usd) : `≈$${usd.toFixed(usd < 1 ? 3 : 2)}`);
+const costText = (c) => (c ? (c.usd != null ? money(c.usd) : REASON[c.reason] ?? "") : "");
+const costSub = (c) => (c && c.usd == null && c.planValue != null ? `${money(c.planValue)} at API prices` : "");
+// the daemon prices the reply the way it prices a recorded request, from the tokens the answer reported
+async function priceOf(p, reply) {
+  const q = new URLSearchParams({ head: p.key, model: p.id, in_tokens: p.tin, out_tokens: p.tout });
+  if (reply?.request?.account) q.set("account", reply.request.account);
+  const res = await API.get(`/api/perf/price?${q}`);
+  if (!res.ok) { console.warn(`compare: /api/perf/price answered ${res.status}`); return null; }
+  return { usd: res.body.cost_usd ?? null, reason: res.body.cost_reason ?? null, planValue: res.body.plan_value_usd ?? null };
+}
 // ---------- sending: one POST per pane, all at once, each answering on its own clock ----------
 async function ask(p) {
   const t0 = Date.now(), began = performance.now();
-  Object.assign(p, { st: "sending", t0, at: new Date(t0), asked: ui.prompt, fail: null, text: "", tin: null, tout: null, trace: null, tries: p.fail ? p.tries + 1 : 1 });
+  Object.assign(p, { st: "sending", t0, at: new Date(t0), asked: ui.prompt, fail: null, cost: null, text: "", tin: null, tout: null, trace: null, tries: p.fail ? p.tries + 1 : 1 });
   const sent = { head: p.key, prompt: ui.prompt, model: p.id };
   const res = await API.post("/api/playground", sent);
   const ms = Math.round(performance.now() - began);
@@ -122,7 +135,8 @@ async function ask(p) {
   if (status >= 400 || read.error) {
     const word = failWord(read.error ? 0 : status, errBody, "");
     const type = errBody?.error?.type ?? errBody?.error?.code ?? "";
-    Object.assign(p, { st: "failed", fail: { word: /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : word, retry: true } });
+    const told = errBody?.error?.message ?? errBody?.message;
+    Object.assign(p, { st: "failed", fail: { word: /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : word, retry: true, said: typeof told === "string" ? told.slice(0, 200) : "" } });
     attempt.failure = p.fail.word;
   } else if (!read.text.trim() && !(body && !frames)) {
     Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD.empty_model, retry: true }, tin: read.tin, tout: 0 });
@@ -130,6 +144,7 @@ async function ask(p) {
   } else {
     const plain = !frames && body ? (body.choices?.[0]?.message?.content ?? body.content?.[0]?.text ?? JSON.stringify(body)) : "";
     Object.assign(p, { st: "done", text: read.text || plain, tin: read.tin, tout: read.tout });
+    if (p.tin != null && p.tout != null) p.cost = await priceOf(p, reply);
   }
 }
 let ticker = null;
@@ -240,11 +255,12 @@ const fitField = (f) => { f.style.height = "auto"; f.style.height = `${f.scrollH
 // the answer under an older prompt is dimmed, and that prompt sits above it as his message
 const askedHtml = (p) => (stale(p) ? `<div class="msg his"><div class="body">${mdPlan(p.asked)}</div></div>` : "");
 function fixHtml(p, i) { // the failure's word, then the one thing that fixes it
+  const said = p.fail.said ? `<span class="pg-said">${esc(p.fail.said)}</span>` : "";
   const word = `<span class="state limit">${esc(p.fail.word)}</span>${p.tries > 1 ? `<span class="pg-try">Try <b>${p.tries}</b></span>` : ""}`;
   if (p.fail.word === OUTCOME_WORD["error:auth-missing"] || p.fail.word === OUTCOME_WORD["failure:authentication_error"]) {
-    return `${word}<a class="act" href="accounts.html">Accounts</a>`;
+    return `${word}<a class="act" href="accounts.html">Accounts</a>${said}`;
   }
-  return p.fail.retry ? `${word}<button class="act primary" data-act="retry" data-i="${i}">Try again</button>` : word;
+  return (p.fail.retry ? `${word}<button class="act primary" data-act="retry" data-i="${i}">Try again</button>` : word) + said;
 }
 function paneHtml(p, i) {
   const c = cmdOf(p.key), raw = ui.raw === i;
@@ -257,8 +273,10 @@ function paneHtml(p, i) {
   else if (p.st === "done") body = `${askedHtml(p)}<div class="msg agent"><div class="body">${mdPlan(p.text)}</div></div>`;
   const back = p.st === "done" || p.st === "failed";
   const toks = (a, b) => `<span class="toks"><b>${a}</b> tokens in<i class="sep">·</i><b>${b}</b> out</span>`;
-  const figs = (p.tin != null && p.tout != null ? toks(p.tin, p.tout) : "") + (back ? `<span>${secs(p.ms)}</span>` : "");
-  const foot = back ? `<footer>${figs}${hasRaw(p) ? `<button class="act quiet small" data-act="raw" data-i="${i}" aria-pressed="${raw}">Request</button>` : ""}</footer>` : "";
+  const word = costText(p.cost), price = word ? `<span class="cost${p.cost.usd == null ? " word" : ""}">${esc(word)}</span>` : "";
+  const what = p.tin != null && p.tout != null ? `<span class="pg-what">${toks(p.tin, p.tout)}${price}</span>` : "";
+  const end = `<span class="pg-end"><span>${secs(p.ms)}</span>${hasRaw(p) ? `<button class="act quiet small" data-act="raw" data-i="${i}" aria-pressed="${raw}">Request</button>` : ""}</span>`;
+  const foot = back ? `<footer>${what}${end}</footer>` : "";
   return `<section class="pgp${stale(p) ? " stale" : ""}" style="--c:${colorOf(c?.family)}" data-key="pane:${i}">${head}${body ? `<div class="answer">${body}</div>` : ""}${foot}</section>`;
 }
 // ---------- the request, in Requests' own open request (reqview.js) ----------
@@ -268,7 +286,7 @@ function requestHtml(p, i) {
   const word = f ? `<span class="word fail">${esc(f.word)}</span>` : "";
   return RV.paneHtml(r, {
     lampCls: f ? "fail" : "clean", lamp: f ? REQVIEW.GLYPH.bang : "<i></i>", word, name: p.label, acct: c?.acct ? esc(c.acct) : "",
-    acts: `<button class="icon" data-act="raw" data-i="${i}" aria-label="Close">${ICON.close}</button>`, st: "kept", tr: () => p.trace, cells: ["in", "out", "attempts"],
+    acts: `<button class="icon" data-act="raw" data-i="${i}" aria-label="Close">${ICON.close}</button>`, st: "kept", tr: () => p.trace, cells: ["in", "out", ...(p.cost && costText(p.cost) ? ["cost"] : []), "attempts"], cost: costText(p.cost), costSub: costSub(p.cost),
   });
 }
 function render() {

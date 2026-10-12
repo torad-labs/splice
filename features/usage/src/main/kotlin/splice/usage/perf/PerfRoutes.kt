@@ -319,6 +319,25 @@ public class PerfRoutes(
         put("plan_value_usd", gaps.value(row).takeIf { gaps.onPlan(row) })
     }
 
+    /** What a reply of `in_tokens` and `out_tokens` on `head` costs: the decision a recorded request gets. */
+    public suspend fun price(call: ApplicationCall) {
+        val query = call.request.queryParameters
+        val name = query["head"].orEmpty()
+        val head = heads.byName(name).firstOrNull { it.key == name }
+        val tokensIn = query["in_tokens"]?.toLongOrNull()
+        val tokensOut = query["out_tokens"]?.toLongOrNull()
+        when {
+            head == null -> refuse(call, "unknown head: $name", HttpStatusCode.BadRequest)
+            tokensIn == null || tokensOut == null ->
+                refuse(call, "in_tokens and out_tokens are both required numbers", HttpStatusCode.BadRequest)
+            else -> {
+                val reply = RepliedTokens(query["model"], query["account"], tokensIn, tokensOut)
+                val priced = ReplyPrice(heads).json(head, reply, clock())
+                call.respondText(priced.toString(), ContentType.Application.Json)
+            }
+        }
+    }
+
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {
         call.respondText(
             buildJsonObject { put("error", message) }.toString(),

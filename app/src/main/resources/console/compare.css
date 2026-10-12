@@ -32,7 +32,7 @@
 .pg-md-out pre { margin: 0 0 .6rem; padding: .7rem .9rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
 .pg-md-out pre code { background: none; padding: 0; font: 500 .92rem/1.5 var(--font-data); white-space: pre; }
 /* a checkbox in a plan: a box, lit with the key light when it's done */
-.pg-box { position: relative; width: 1.15rem; height: 1.15rem; flex: none; margin-top: .3rem; border: .14rem solid var(--ink); border-radius: .3rem; background: var(--obj-sunk); }
+.pg-box { position: relative; width: 1.15rem; height: 1.15rem; flex: none; margin-top: .3rem; border: .14rem solid color-mix(in srgb, var(--text) 55%, transparent); border-radius: .3rem; background: var(--obj-sunk); }
 .pg-box.on { background: var(--key-light); }
 .pg-box.on::after { content: ""; position: absolute; left: .32rem; top: .08rem; width: .3rem; height: .62rem; border: solid #241d14; border-width: 0 .17rem .17rem 0; transform: rotate(45deg); }
 /* the plan says it's his to change where a pointer or a key lands on it: the field's own key-light line, fainter */
@@ -123,6 +123,7 @@
 /* a failure: its word and the one control that fixes it, where the answer would be */
 .pg-fix { margin: 0 auto; width: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 1rem 1.2rem; }
 .pg-fix .state { font-size: 1.15rem; }
+.pg-fix .pg-said { flex-basis: 100%; text-align: center; font: 400 .98rem/1.45 var(--font-name); color: var(--text-mute); }  /* what the provider itself said: whose limit, and when it frees */
 .pg-fix .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
 .pg-fix .act .go { width: 1.05rem; height: 1.05rem; }
 .pg-fix .field { width: 22rem; font: 500 1.02rem/1 var(--font-data); padding: .7rem .9rem; }
@@ -133,9 +134,8 @@
 .pg-wait .lamp { position: static; }
 .pg-wait .detail { display: inline-flex; align-items: center; gap: .45rem; font: 500 1.05rem/1 var(--font-data); color: var(--text-body); }
 .pg-wait .detail svg { width: 1.15rem; height: 1.15rem; }
-.pgp > footer { display: flex; align-items: center; gap: 1.8rem; min-height: 4.13rem; box-sizing: border-box; padding: .85rem 1.6rem;  /* one height, with or without Request */ border-top: .12rem solid var(--track); font: 500 1rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.pgp > footer { display: flex; align-items: center; flex-wrap: wrap; gap: 1.8rem; min-height: 4.13rem; box-sizing: border-box; padding: .85rem 1.6rem;  /* one height, with or without Request */ border-top: .12rem solid var(--track); font: 500 1rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 .pgp > footer em { font-style: normal; color: var(--text-mute); margin-right: .5rem; }
-.pgp > footer .act { margin-left: auto; }
 .pgp > footer .act[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }
 
 /* ---------- the request: Requests' own open request (reqview.css), in the grid under the pane it belongs to ---------- */
@@ -146,6 +146,12 @@
 .pg-row .send.busy:disabled { opacity: 1; }  /* working, not unavailable: the count stays and the wheel turns */
 .pg-row .send .wait { width: 1.3rem; height: 1.3rem; }
 .pg-row .send .wait circle { stroke: currentColor; }
+.pgp > footer .pg-what, .pgp > footer .pg-end { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .7rem 1.8rem; }
+.pgp > footer .pg-what > *, .pgp > footer .pg-end > * { white-space: nowrap; }  /* past that, a figure at a time, never a word */
+.pgp > footer .pg-end { margin-left: auto; }  /* the seconds and Request hold the right end; a narrow pane wraps between the two groups */
+.pgp .msg .body pre { margin: 0 0 .6rem; padding: .9rem 1.1rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+.pgp .msg .body pre code { background: none; padding: 0; border-radius: 0; font: 500 .92em/1.55 var(--font-data); white-space: pre; }
+.pgp > footer .cost.word { color: var(--text-mute); }
 .pgp > footer .toks { color: var(--text-mute); }
 .pgp > footer .toks b { font-weight: 600; color: var(--text); }
 .pgp > footer .toks .sep { font-style: normal; margin: 0 .55rem; }

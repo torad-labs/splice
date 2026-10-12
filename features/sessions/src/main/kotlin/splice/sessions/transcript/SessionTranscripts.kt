@@ -193,6 +193,15 @@ public interface SessionTranscripts {
         limit: Int,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source pages forward only")
 
+    /** The newest [limit] messages written at or before [atMs], as [pageBefore] reads them: a door from a request opens
+     *  its agent at that request's place, however deep in the file it lies. Ports that cannot seek refuse. */
+    public fun pageAt(
+        sessionId: String,
+        roots: List<Path>,
+        atMs: Long,
+        limit: Int,
+    ): TranscriptLookup = TranscriptLookup.Refused("this transcript source cannot open at a moment")
+
     /** An indexed response and at most [context] earlier messages. Null means this port does not support indexed
      *  lookup; the caller may use its forward pages. A supported port reports absence or a spent [budget] explicitly. */
     public fun response(

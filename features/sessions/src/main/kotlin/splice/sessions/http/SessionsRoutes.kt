@@ -64,6 +64,7 @@ import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val UNKNOWN_HEAD = "unknown head"
@@ -99,6 +100,21 @@ private object MoveWire {
 
 /** `before=end` on the transcript route: read from the last message. */
 private const val FROM_END = "end"
+
+// why: before=at:<epoch ms> opens the page ending at that moment: a request's door to its place in a conversation.
+private const val AT_MOMENT = "at:"
+
+/** One transcript read: forward from [cursor], back from [before] (or the end), or the page ending at `at:<ms>`. */
+private class TranscriptAsk(val trees: List<Path>, val cursor: String?, val size: Int, val before: String?) {
+    fun lookup(transcripts: SessionTranscripts, sessionId: String): TranscriptLookup = when {
+        before == null -> transcripts.page(sessionId, trees, cursor, size)
+        before.startsWith(AT_MOMENT) -> before.removePrefix(AT_MOMENT).toLongOrNull()
+            ?.let { transcripts.pageAt(sessionId, trees, it, size) }
+            ?: TranscriptLookup.Refused("not a moment this daemon reads")
+        else -> transcripts.pageBefore(sessionId, trees, before.takeUnless { it == FROM_END }, size)
+    }
+}
+
 internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; gone = the process exited; " +
     "stale = alive but no registry update inside the stale window"
 
@@ -168,13 +184,8 @@ public class SessionsRoutes(
         val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
         val trees = roots.treesFor(head)
         val size = limit ?: DEFAULT_TRANSCRIPT_PAGE
-        return when (
-            val lookup = if (before == null) {
-                transcripts.page(sessionId, trees, cursor, size)
-            } else {
-                transcripts.pageBefore(sessionId, trees, before.takeUnless { it == FROM_END }, size)
-            }
-        ) {
+        val ask = TranscriptAsk(trees, cursor, size, before)
+        return when (val lookup = ask.lookup(transcripts, sessionId)) {
             is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null))
             is TranscriptLookup.Missing -> JsonReply(
                 HttpStatusCode.NotFound,

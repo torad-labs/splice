@@ -117,6 +117,7 @@ public class TranscriptReader(
     private val tail = TranscriptTail(opener, TranscriptTailAssembly(TranscriptLineParser(::parse), redaction))
     private val titles = TranscriptTitle(opener, TranscriptLineParser(::parse), redaction)
     private val back = TranscriptBackPage(opener, TranscriptLineParser(::parse), redaction)
+    private val seek = TranscriptSeek(opener)
 
     override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? =
         tailOf(sessionId, roots, cwd)?.message
@@ -147,7 +148,7 @@ public class TranscriptReader(
     }
 
     override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
-        val start = parseCursor(cursor)
+        val start = ForwardCursor.parse(cursor)
         if (!validSessionId.matches(sessionId) || start == null) {
             return TranscriptLookup.Refused(if (start == null) BAD_CURSOR else BAD_ID)
         }
@@ -170,6 +171,13 @@ public class TranscriptReader(
             file == null -> TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
             else -> back.lookup(file, sessionId, end, limit)
         }
+    }
+
+    override fun pageAt(sessionId: String, roots: List<Path>, atMs: Long, limit: Int): TranscriptLookup {
+        if (!validSessionId.matches(sessionId)) return TranscriptLookup.Refused(BAD_ID)
+        val file = locator.locate(roots, sessionId)
+            ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+        return back.lookup(file, sessionId, seek.after(file, atMs), limit)
     }
 
     override fun response(
@@ -249,7 +257,7 @@ public class TranscriptReader(
 
     /** Lines from [start] until the page is full, the byte budget is spent or the file ends; a line the
      *  assembly declines (it starts the next page's first message) is left unread for that page. */
-    private fun read(file: Path, sessionId: String, start: Position, limit: Int): TranscriptPage {
+    private fun read(file: Path, sessionId: String, start: ForwardCursor.Position, limit: Int): TranscriptPage {
         val assembly = PageAssembly(start.index, limit, redaction)
         val size = Files.size(file)
         val from = start.offset.coerceAtMost(size)
@@ -281,14 +289,17 @@ public class TranscriptReader(
         } catch (_: IllegalArgumentException) {
             null
         }
+}
+
+/** The forward page's cursor, `<byte offset>.<next message index>`. */
+private object ForwardCursor {
+    data class Position(val offset: Long, val index: Long)
 
     /** `<offset>.<index>`, both non-negative; "1.2.3" and "-1.0" are refused, never guessed at. */
-    private fun parseCursor(cursor: String?): Position? {
+    fun parse(cursor: String?): Position? {
         if (cursor == null) return Position(0L, 0L)
         val offset = cursor.substringBefore('.', "").toLongOrNull()?.takeIf { it >= 0 }
         val index = cursor.substringAfter('.', "").toLongOrNull()?.takeIf { it >= 0 }
         return if (offset != null && index != null) Position(offset, index) else null
     }
-
-    private data class Position(val offset: Long, val index: Long)
 }

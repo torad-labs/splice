@@ -22,7 +22,7 @@
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
-const state = { rows: [], heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
+const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
 const ui = { ending: new Map(), armedEnd: new Map(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
@@ -57,10 +57,34 @@ async function read() {
     for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) state.live[t.session] = { head: h.key, ...t };
   });
   state.rows = (sessions.body?.sessions || []).filter((s) => s.session_id).map(sessionOf);
+  joinPast();
   // an answer that landed shows as going until the session stops waiting, or for half a minute at most
   for (const [id, going] of ui.answered) if (find(id)?.state !== "needs" || Date.now() - going.at > ANSWER_HOLD_MS) ui.answered.delete(id);
   state.loading = false;
   await readScreens();
+}
+
+// ---------- the agents that have ended: Claude Code keeps every conversation, and splice lists them from it ----------
+// The registry holds only the agents its client still reports, so a week's ended agents come from history
+// (GET /api/sessions/history): its newest page joins the Ended line, a search asks it too, and a door to an agent the
+// list does not hold looks there before it says No transcript (Marlin, Oct 12: from a request, the agent opens, running
+// or ended). A history row is the same row shape as a live one; it is drawn as ended, since nothing of it runs.
+const HISTORY_PAGE = 50;
+const UNKNOWN_HEAD = "unknown head";
+function joinPast() {
+  const live = new Set(state.rows.map((s) => s.id));
+  for (const [id, row] of state.past) if (!live.has(id)) state.rows.push(sessionOf(row));
+}
+async function readPast(query = "") {
+  const q = query ? `&query=${encodeURIComponent(query)}` : "";
+  const res = await API.get(`/api/sessions/history?limit=${HISTORY_PAGE}${q}`);
+  if (!res.ok || res.body?.state === "off") return [];
+  const rows = (res.body?.sessions || []).filter((r) => r.session_id && r.availability !== "live" && r.availability !== "stale")
+    .map((r) => ({ ...r, availability: "gone", head: r.head === UNKNOWN_HEAD ? null : r.head }));
+  for (const r of rows) state.past.set(r.session_id, r);
+  const known = new Set(state.rows.map((s) => s.id));
+  for (const r of rows) if (!known.has(r.session_id)) state.rows.push(sessionOf(r));
+  return rows;
 }
 
 /** The screens of the sessions that need him and of the open one: which splice can drive, and what each is offering. */
@@ -123,10 +147,10 @@ async function readLog(s, before = "end") {
   } else {
     const page = res.body;
     const messages = before === "end" || !held?.messages ? page.messages : [...page.messages, ...held.messages];
-    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end", moves: page.moves ?? held?.moves ?? [], unmoved: page.unmoved ?? held?.unmoved ?? [],
+    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end", at: String(before).startsWith("at:") || (held?.at && before !== "end"), moves: page.moves ?? held?.moves ?? [], unmoved: page.unmoved ?? held?.unmoved ?? [],
       unreadable: (before === "end" ? 0 : held?.unreadable ?? 0) + (page.unparseable_lines ?? 0) };
   }
-  render({ stick: before === "end" });
+  render({ stick: before === "end" || String(before).startsWith("at:") });
 }
 
 // ---------- what the page says about a session (look() and the lamp are kit.js's) ----------
@@ -416,6 +440,7 @@ function logHtml(s) {
     while (marks.length && (ts == null || marks[0].moved_at <= ts)) { const mv = marks.shift(); pressed = mv.moved_at; exit = EXIT_LOOKING; items.push(jointHtml(mv)); }
     while (tries.length && ts != null && tries[0] <= ts) { pressed = tries.shift(); exit = EXIT_LOOKING; }
   };
+  const newest = held.at ? `<button class="act quiet earlier" data-act="newest" data-s="${esc(s.id)}">Show newest</button>` : "";
   held.messages.forEach((m) => {
     if (m.ts) markUpTo(m.ts);
     const key = `${s.id}:${m.index}`;
@@ -445,6 +470,7 @@ function logHtml(s) {
     items.push(`<div class="msg ${m.role === "user" ? "his" : "agent"}"><div class="body">${md(m.text)}</div>${at}</div>`);
   });
   markUpTo(null); // a move after the newest message, before anything was said on the new model
+  if (newest) items.push(newest);
   return `<div class="log">${items.join("")}</div>`;
 }
 /** The /exit splice typed to end the client for a move, and what Claude Code printed for it: the move's mechanics, which
@@ -570,7 +596,7 @@ function open(id) {
   ui.open = id; ui.missing = null;
   render();
   const s = find(id);
-  if (s && !state.logs[id]) readLog(s);
+  if (s && !(id in state.logs)) readLog(s); // null: a read at a moment is on its way
   if (s && s.state !== "ended" && !state.screens[id]) readScreen(s);
   if (s && !(id in state.usage)) readUsage(s);
 }
@@ -857,8 +883,18 @@ root.addEventListener("submit", (e) => {
 });
 root.addEventListener("input", (e) => { if (e.target.id === "say") ui.drafts[e.target.closest("form").dataset.s] = e.target.value; });
 
+let pastAsk = 0;
 document.getElementById("q").addEventListener("input", (e) => {
   ui.q = e.target.value.trim().toLowerCase();
+  // the search asks history too, a moment after the last key, so an ended agent is found by its name or words
+  clearTimeout(pastAsk);
+  const q = ui.q;
+  if (q) pastAsk = setTimeout(() => readPast(q).then((rows) => {
+    if (q !== ui.q) return;
+    if (rows.length) ui.ended = true;
+    if (ui.auto) { ui.open = null; autoOpen(); }
+    render({ stick: false });
+  }), 300);
   // a search opens the ended sessions it matched: a match folded away reads as no match. The fold still closes them.
   if (ui.q && state.rows.some((s) => s.state === "ended" && matches(s))) ui.ended = true;
   if (ui.auto) { ui.open = null; autoOpen(); }
@@ -903,6 +939,7 @@ document.addEventListener("click", (e) => {
     case "answer": if (s && !ui.sending.has(s.id)) answer(s, Number(el.dataset.i)); break;
     case "result": { const k = el.dataset.k; ui.results.has(k) ? ui.results.delete(k) : ui.results.add(k); render({ stick: false }); break; }
     case "earlier": if (s && state.logs[s.id]?.earlier) readLog(s, state.logs[s.id].earlier); break;
+    case "newest": if (s) readLog(s, "end"); break;
   }
 });
 
@@ -927,19 +964,26 @@ async function reload() {
   if (ui.open && !find(ui.open)) ui.open = null;
   render({ stick: false });
   const s = ui.open && find(ui.open);
-  if (s && s.state !== "ended" && !state.logs[s.id]?.extended) readLog(s);
+  if (s && s.state !== "ended" && state.logs[s.id] !== null && !state.logs[s.id]?.extended) readLog(s);
   if (s && s.state !== "ended") readUsage(s);
 }
 
 // the door's session is taken before the first draw, which writes the address from what is open (nothing yet)
-const door = location.hash.slice(1);
+const door = decodeURIComponent(location.hash.slice(1));
+// ?at=<epoch ms> on the door: the moment a request ran, so its agent opens at that place in the conversation
+const moment = Number(new URLSearchParams(location.search).get("at")) || null;
+const byDoor = (id) => find(id) ?? state.rows.find((s) => id.length >= 8 && s.id.startsWith(id));
 render();
-read().then(() => {
-  ui.open = find(door)?.id ?? null; // a member card on Teams, or Open session on Requests, opens it here
+read().then(async () => {
+  // a door to an agent the list does not hold looks in history first: most of a week's agents have ended
+  if (door && !byDoor(door)) await readPast(door);
+  ui.open = byDoor(door)?.id ?? null; // a member card on Teams, or Open session on Requests, opens it here
   ui.missing = door && !ui.open ? door : null; // one splice no longer lists says so in the pane, never an empty page
   if (ui.open && find(ui.open).state === "ended") ui.ended = true; // a door to an ended session shows it among the ended
+  if (ui.open && moment) { state.logs[ui.open] = null; readLog(find(ui.open), `at:${moment}`); }
   render();
   if (ui.open) open(ui.open); else if (!ui.missing) autoOpen();
+  readPast().then(() => render({ stick: false })); // the week's ended agents join the Ended line
 });
 // what a session is doing changes on its own clock: the list is read again while the page is open
 setInterval(() => { if (!document.hidden) reload(); }, 5000);

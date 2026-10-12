@@ -18,6 +18,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.Wired
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.budget.BudgetBlock
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
@@ -95,7 +98,14 @@ class PlaygroundCompareRecordTest {
             override fun answered(answer: CompareAnswer) = error("a refused send is never answered")
         }
         val target = requireNotNull(registry.target("claudex"))
-        val wired = Wired(target.provider, fixture.first.auth)
+        val auth = object : RefreshableAuthProvider {
+            override suspend fun credentials(): Credentials = Credentials.Bearer("synthetic")
+
+            override suspend fun refresh(): Credentials = credentials()
+
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
+        }
+        val wired = Wired(target.provider, auth)
         registry.bind("claudex", wired, null, requireNotNull(target.observer), refusing)
         HttpClient(MockEngine { error("a refused send never reaches the upstream") }).use { client ->
             val probe = UpstreamPlaygroundProbe(registry, client)

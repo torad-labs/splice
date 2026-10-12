@@ -12,8 +12,10 @@ import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 
 private const val MINUTE_MS = 60_000L
+private const val POLL_MS = 25L
 
 class UpgradeRunsTest {
 
@@ -108,5 +110,41 @@ class UpgradeRunsTest {
         }
         val scope = SystemdScope("java", Path.of("/j"), noBus)
         assertEquals("systemd-run exited 1 (Failed to connect to bus)", scope.launch(dir, listOf("upgrade")))
+    }
+
+    /** No user bus (a Mac, a container, a session without one): the console's upgrade starts all the same, the same
+     *  shell run on its own, and the run is read off its directory like any other. */
+    @Test
+    fun `a host with no user bus runs the upgrade detached, and the run is read back`(@TempDir share: Path) {
+        val calls = mutableListOf<List<String>>()
+        val noBus = DetachedSpawn { command, log ->
+            calls += command
+            val line = if (command.first() == "systemd-run") "echo 'Failed to connect to bus' >&2; exit 1" else null
+            val argv = line?.let { listOf("/bin/sh", "-c", it) } ?: command
+            ProcessBuilder(argv).redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(log.toFile())).start()
+        }
+        val env = EnvReader { if (it == "SPLICE_SHARE_DIR") share.toString() else null }
+        val daemon = UpgradeRuns(env, SystemdScope("/bin/echo", Path.of("/share/splice.jar"), noBus))
+
+        val started = daemon.start(UpgradeRequest("v1.2.3", false)) as UpgradeRunStart.Started
+
+        assertEquals(listOf("systemd-run", "/bin/sh"), calls.map { it.first() })
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (daemon.latest()?.state == UpgradeRunState.RUNNING && System.nanoTime() < deadline) {
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(POLL_MS))
+        }
+        val run = daemon.latest()
+        assertEquals(started.run.id, run?.id)
+        assertEquals(UpgradeRunState.SUCCEEDED, run?.state)
+        assertTrue(run?.output.orEmpty().any { it == "-jar /share/splice.jar upgrade --to v1.2.3" }, "${run?.output}")
+    }
+
+    /** Neither a scope nor a detached shell: the sentence is the scope's, the host's own reason. */
+    @Test
+    fun `a run no launch could start says why the scope would not`(@TempDir dir: Path) {
+        val none = DetachedSpawn { _, _ -> throw java.io.IOException("no such program") }
+        val scope = SystemdScope("java", Path.of("/j"), none)
+        assertTrue(scope.launch(dir, listOf("upgrade"))!!.startsWith("systemd-run could not start"))
     }
 }

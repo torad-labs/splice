@@ -15,7 +15,9 @@
 package splice.lifecycle.upgrade
 
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -58,12 +60,27 @@ internal class SystemdScope(
     private val settleMs: Long = LAUNCH_SETTLE_MS,
 ) : UpgradeRunLauncher {
 
+    /** In its own scope when the user's systemd answers; otherwise the same run's shell, detached from the
+     *  daemon the way a restart starts its successor on a host with no unit. A host with no user bus (macOS,
+     *  a container, a session without one) upgrades from the console all the same. */
     override fun launch(dir: Path, args: List<String>): String? {
-        val command = listOf(
-            "systemd-run", "--user", "--scope", "--collect", "--quiet", "--unit=splice-upgrade-${dir.fileName}",
-            "--", "/bin/sh", "-c", RUN_SCRIPT, "sh", dir.toString(), java, "-jar", liveJar.toString(),
-        ) + args
-        val process = spawn.spawn(command, dir.resolve(RUN_OUTPUT))
+        val run = listOf("/bin/sh", "-c", RUN_SCRIPT, "sh", dir.toString(), java, "-jar", liveJar.toString()) + args
+        val scope = listOf("systemd-run", "--user", "--scope", "--collect", "--quiet")
+        val scoped = scope + "--unit=splice-upgrade-${dir.fileName}" + "--" + run
+        return attempt(dir, scoped)?.let { why -> attempt(dir, run)?.let { why } }
+    }
+
+    /** Null when [command] started the run; otherwise why it did not. */
+    private fun attempt(dir: Path, command: List<String>): String? {
+        val process = try {
+            spawn.spawn(command, dir.resolve(RUN_OUTPUT))
+        } catch (error: IOException) {
+            return "${command.first()} could not start (${SafeFailureText.render(error)})"
+        }
+        return settled(dir, command, process)
+    }
+
+    private fun settled(dir: Path, command: List<String>, process: Process): String? {
         val pid = dir.resolve(RUN_PID)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(settleMs)
         while (!Files.exists(pid) && System.nanoTime() < deadline) {
@@ -71,6 +88,6 @@ internal class SystemdScope(
         }
         if (Files.exists(pid) || process.isAlive) return null
         val said = Files.readAllLines(dir.resolve(RUN_OUTPUT)).lastOrNull { it.isNotBlank() }?.trim()
-        return "systemd-run exited ${process.exitValue()}" + (said?.let { " ($it)" } ?: "")
+        return "${command.first()} exited ${process.exitValue()}" + (said?.let { " ($it)" } ?: "")
     }
 }

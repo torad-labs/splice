@@ -16,7 +16,7 @@ import splice.accounts.CredentialVerdictJson
 import splice.accounts.pool.AccountPoolJson
 import splice.core.auth.RefreshableAuthProvider
 
-private const val UNREADABLE = "can't read the login file"
+private const val LOGIN_FILE_UNREADABLE = "can't read the login file"
 
 public class AuthStatusRoutes(
     private val heads: Map<String, AccountHead>,
@@ -50,7 +50,7 @@ public class AuthStatusRoutes(
                     put("present", description.present)
                     CredentialVerdictJson().write(this, description.verdict)
                     description.fields.filterKeys { it in shown }.forEach { (key, value) -> put(key, value) }
-                    if ("read_error" in description.fields) put("read_error", UNREADABLE)
+                    if ("read_error" in description.fields) put("read_error", LOGIN_FILE_UNREADABLE)
                     head.activePool?.view(null)?.let { pool ->
                         AccountPoolJson().write(this, pool, accountAuth)
                     }

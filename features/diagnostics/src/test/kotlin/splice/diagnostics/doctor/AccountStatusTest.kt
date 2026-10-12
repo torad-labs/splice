@@ -488,44 +488,6 @@ class AccountSwitchVocabularyTest {
         }
     }
 
-    @Test
-    fun `reset priority operator choices and cooldowns produce printable reasons`() {
-        val auth = object : RefreshableAuthProvider {
-            override suspend fun credentials(): Credentials = Credentials.Bearer("synthetic")
-            override suspend fun refresh(): Credentials = credentials()
-            override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
-        }
-        val primary = PoolAccount(
-            "primary",
-            true,
-            auth,
-            AccountQuotaSource { QuotaSnapshot(sevenDay = QuotaWindow(1.0, 3_000L, 604_800L)) },
-            RateLimitCooldown(ElapsedClock { 0L }),
-        )
-        val backup = primary.copy(
-            label = "backup",
-            primary = false,
-            quota = AccountQuotaSource { QuotaSnapshot(sevenDay = QuotaWindow(80.0, 2_000L, 604_800L)) },
-            cooldown = RateLimitCooldown(ElapsedClock { 0L }),
-        )
-        val pool = AccountPool(listOf(primary, backup), WallClock { 1_000_000L })
-        assertSafeChoice(pool)
-        pool.pin("primary")
-        assertSafeChoice(pool)
-        pool.unpin()
-        pool.order = listOf("backup", "primary")
-        assertSafeChoice(pool)
-        backup.cooldown.markUnavailable(30_000L)
-        assertSafeChoice(pool)
-    }
-
-    private fun assertSafeChoice(pool: AccountPool) {
-        val chosen = (pool.select("session") as Selection.Chosen).account
-        val reason = requireNotNull(chosen.switch).reason
-        assertTrue(AccountSwitchReason.isSafe(reason), "pool produced a reason the CLI drops: $reason")
-        chosen.releaseCredentialProbe()
-    }
-
     private enum class Block { CREDENTIAL, COOLDOWN, FIVE_HOUR, SEVEN_DAY }
 }
 

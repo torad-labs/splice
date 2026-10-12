@@ -9,6 +9,26 @@ const API = (() => {
     localStorage.setItem(STORE, decodeURIComponent(handed[1]));
     history.replaceState(history.state, "", `${location.pathname}${location.search}`); // not left in view or history
   }
+  // A 401 means this browser holds no key splice takes: every page is locked the same way, its body set aside for the
+  // one way back, `splice console` with Copy, which hands the key over again whatever lost it (fin, Marlin, Oct 12).
+  let locked = false;
+  function lock() {
+    const main = document.querySelector("main.page");
+    if (locked || !main) return;
+    locked = true;
+    document.body.classList.add("locked");
+    const box = document.createElement("section");
+    box.className = "lockedby";
+    box.setAttribute("role", "alert");
+    box.innerHTML = `<p class="word">Locked</p><div class="way"><code>splice console</code><button class="act quiet small" type="button">Copy</button></div>`;
+    const copy = box.querySelector("button");
+    copy.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try { await navigator.clipboard.writeText("splice console"); copy.textContent = "Copied"; } catch { copy.textContent = "Copy"; }
+      setTimeout(() => { copy.textContent = "Copy"; }, 1600);
+    });
+    (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
+  }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
   async function call(method, path, body, extra) {
     const init = { method, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
@@ -18,6 +38,7 @@ const API = (() => {
       const text = await res.text();
       let parsed = null;
       try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+      if (res.status === 401) lock();
       return { ok: res.ok, status: res.status, body: parsed };
     } catch {
       return { ok: false, status: 0, body: null };

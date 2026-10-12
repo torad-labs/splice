@@ -60,9 +60,12 @@ const state = {
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
   screens: {},
+  // What a member's screen asks before its session registered (its folder trust question), by slot id: the start
+  // stopped there and left the pane open for him to answer (Marlin, Oct 12).
+  pending: {},
   error: null, loading: true,
 };
-const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
+const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
 // From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
 // Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
 const ANSWER_HOLD_MS = 30_000;
@@ -150,6 +153,7 @@ async function readTeam() {
   // Cleared before the first draw, not after: slot ids repeat across teams ("lead", "builder"), so a screen
   // left over from the team before would draw its choices on this team's card for one frame.
   state.screens = {};
+  state.pending = {};
   const { from, to } = dayWindow(ui.day);
   const day = `from=${from}&to=${to}`;
   const [economics, chat, activity, perHead] = await Promise.all([
@@ -184,10 +188,16 @@ async function readScreens(tm) {
     const s = sessOf(slot);
     return s?.waiting_for && !(s.last?.asks || []).length;
   });
-  if (!waiting.length) return;
-  const read = await Promise.all(waiting.map((slot) => API.get(`/api/teams/${tm.id}/slots/${slot.id}/screen`)));
+  // a slot bound to a session that never registered: a start that stopped on a question, which its screen still shows
+  const asking = tm.slots.filter((slot) => slot.session && !sessOf(slot));
+  if (!waiting.length && !asking.length) return;
+  const read = await Promise.all([...waiting, ...asking].map((slot) => API.get(`/api/teams/${tm.id}/slots/${slot.id}/screen`)));
   waiting.forEach((slot, i) => {
     if (read[i].ok && read[i].body?.choices?.length) state.screens[slot.id] = read[i].body;
+  });
+  asking.forEach((slot, i) => {
+    const r = read[waiting.length + i];
+    if (r.ok && r.body?.choices?.length) state.pending[slot.id] = r.body;
   });
   render();
 }
@@ -256,7 +266,8 @@ function figures(u, since, scope = "since joining") {
     .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
   const spent = u.usd != null && priced > 0 ? [`${dollars(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
   const money = [...spent, ...shares].join(" · ");
-  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"} ${scope}</span><span>${big(u.tokens)} tokens</span>${money ? `<span>${money}</span>` : ""}` +
+  // no requests, no tokens: "0 tokens" beside "0 requests" says nothing more (fin, Oct 12)
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"} ${scope}</span>${u.turns ? `<span>${big(u.tokens)} tokens</span>` : ""}${money ? `<span>${money}</span>` : ""}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
@@ -328,7 +339,8 @@ function memberHtml(tm, slot) {
   const s = sessOf(slot);
   const key = `${tm.id}/${slot.id}`;
   const ro = tm.archived;
-  const lead = slot.lead ? `<span class="lead">Lead</span>` : "";
+  // the tag says what the role does not: a role that already reads Lead carries none (fin, Oct 12)
+  const lead = slot.lead && !/^lead$/i.test((slot.role || "").trim()) ? `<span class="lead">Lead</span>` : "";
   const command = commandOf(slot.head);
   const chip = `<span class="chip">${s && liveNow(s) ? "<i></i>" : ""}${esc(command)}</span>`;
   // the model its session runs, which the sessions route carries; the slot's own only until the session says
@@ -354,7 +366,7 @@ function memberHtml(tm, slot) {
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
-    `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
+    `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` +
     `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
 
@@ -428,12 +440,32 @@ const turnsOf = (session) => {
 
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
 function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
-  const failed = ui.failed.get(key);
+  const failed = ui.failed.get(key), unstarted = ui.unstarted.get(key), asked = state.pending[slot.id];
   let word = `<span class="word">No session</span>`;
   let acts = "";
   let why = "";
+  let lamp = `<span class="lamp open" aria-hidden="true"></span>`;
   if (ui.starting.has(key)) {
-    word = `<span class="word starting">${ICON.wait}Starting</span>`;
+    // counting up, as Testing does on Settings, so a start that waits reads as waiting and not as stuck (fin)
+    const secs = Math.floor((Date.now() - (ui.startedAt.get(key) || Date.now())) / 1000);
+    word = `<span class="word starting">${ICON.wait}Starting${secs ? ` · ${secs} s` : ""}</span>`;
+  } else if (asked && !ro) {
+    // stopped at Claude Code's own question before it came up: his to answer, in the client's words, in the family of
+    // a member's ask (Marlin, Oct 12; hitstop da3d8b2)
+    lamp = `<span class="lamp needs" aria-hidden="true">${ICON.dialog}</span>`;
+    word = `<span class="word needs">Needs you</span>`;
+    why = trustHtml(slot.id, asked, ui.trusting.get(key));
+  } else if (unstarted) {
+    // one word for a member that did not come up, whoever ended it; only the timeout has a screen he has not seen, behind
+    // a door that stays shut until he opens it (fin; hitstop da3d8b2)
+    word = `<span class="word limit">Not started</span>`;
+    if (unstarted.path) why = `<div class="ask trust"><p class="cmd">${esc(unstarted.path)}</p></div>`;
+    acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
+    if (unstarted.screen) {
+      const open = ui.screenOpen.has(key);
+      acts += `<button class="act quiet small" data-act="screen" data-s="${esc(slot.id)}" aria-expanded="${open}">Last screen</button>` +
+        (open ? `<pre class="screen">${esc(unstarted.screen)}</pre>` : "");
+    }
   } else if (failed) {
     word = `<span class="word limit">Not started</span>`;
     why = `<p class="why limit">${esc(failed)}</p>`;
@@ -451,8 +483,8 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
         `<span class="mmeta">${esc(x.model ? modelLabel(x.head, x.model) : commandOf(x.head))}${turnsOf(x)}</span></button>`).join("")}</div>`;
     }
   }
-  return `<article class="card m vacant" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
-    `<span class="lamp open" aria-hidden="true"></span>` +
+  return `<article class="card m ${asked && !ro && !ui.starting.has(key) ? "needs trust" : "vacant"}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
+    lamp +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}</div>` +
     `<div class="meta">${word}<span class="mdl">${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
     `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
@@ -698,19 +730,77 @@ async function createTeam(body) {
   }
 }
 
-/** Starting a member opens a Claude Code session on its command, bound to the slot. */
-async function startSlot(tm, slot) {
+/** Starting a member opens a Claude Code session on its command, bound to the slot. A start that stops on a question
+ *  (202, needs_you) leaves it on the card for him; asked again for that slot, the start waits on the same terminal. */
+async function startSlot(tm, slot, path = null) {
   const key = `${tm.id}/${slot.id}`;
   ui.failed.delete(key);
+  ui.unstarted.delete(key);
+  ui.screenOpen.delete(key);
   ui.starting.add(key);
+  ui.startedAt.set(key, Date.now());
   render();
+  const tick = setInterval(render, 1000);
   const answer = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/start`);
+  clearInterval(tick);
   ui.starting.delete(key);
-  if (!answer.ok) {
-    const screen = answer.body?.screen;
-    ui.failed.set(key, [refusalOf(answer, "The member did not start"), screen].filter(Boolean).join("\n"));
+  ui.startedAt.delete(key);
+  // the daemon's sentence goes to the console's log; the card says the fact and keeps what he has not seen (fin)
+  if (answer.status === 504) {
+    console.warn(`start ${key}: ${answer.body?.error || 504}`);
+    ui.unstarted.set(key, { screen: answer.body?.screen || "" });
+  } else if (answer.status === 409 && answer.body?.reason === "closed") {
+    ui.unstarted.set(key, { path });
+  } else if (!answer.ok) {
+    ui.failed.set(key, refusalOf(answer, "The member did not start"));
   }
   await read();
+}
+
+/** The folder a question names: its panel's line that is a path, as the client drew it. */
+const pathOf = (offer) => (offer?.panel || []).map((l) => l.text).find((t) => /^[~/]/.test(t)) || null;
+/** The client's question in its own words: the panel's lines up to its question mark, from after the last line that
+ *  is a path or a heading ending in a colon, so "Accessing workspace:" and the advice after the question stay off. */
+function questionOf(offer) {
+  let said = [];
+  for (const { text } of offer.panel || []) {
+    if (/^[~/]/.test(text) || /:$/.test(text)) { said = []; continue; }
+    said.push(text);
+    const at = said.join(" ").indexOf("?");
+    if (at >= 0) return said.join(" ").slice(0, at + 1);
+  }
+  return offer.asked || "";
+}
+
+/** The client's question as it drew it: the question verbatim, its folder as code, and its options as the buttons,
+ *  verbatim, neither primary (the client itself points at No). Nothing is answered until he clicks, and splice never
+ *  picks one for him. The pressed one holds the wait ring until the terminal has it, the rest wait disabled. */
+function trustHtml(slotId, offer, pressed) {
+  const path = pathOf(offer);
+  const acts = offer.choices.map((c) => pressed !== undefined
+    ? `<button class="act${pressed === c.choice ? " answering" : ""}" disabled>${pressed === c.choice ? ICON.wait : ""}${esc(c.label)}</button>`
+    : `<button class="act" data-act="trust" data-s="${esc(slotId)}" data-i="${c.choice}" data-l="${esc(c.label)}">${esc(c.label)}</button>`).join("");
+  return `<div class="ask trust"><p class="q">${esc(questionOf(offer))}</p>${path ? `<p class="cmd">${esc(path)}</p>` : ""}` +
+    `<div class="answers">${acts}</div></div>`;
+}
+
+/** His answer to the question a start stopped on, then the start again on that same terminal: after Yes it waits for
+ *  the member to come up, after No the terminal has closed and the slot is given back. */
+async function answerTrust(tm, slot, choice, label) {
+  const key = `${tm.id}/${slot.id}`;
+  if (ui.trusting.has(key)) return;
+  const path = pathOf(state.pending[slot.id]);
+  ui.trusting.set(key, choice);
+  render();
+  const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice, label });
+  ui.trusting.delete(key);
+  if (!answered.ok) {
+    ui.failed.set(key, refusalOf(answered, "The answer did not reach the member"));
+    await read();
+    return;
+  }
+  delete state.pending[slot.id];
+  await startSlot(tm, slot, path);
 }
 
 /** Answering presses the option's own number in the member's terminal; a refusal stays on its card. */
@@ -822,6 +912,8 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "answer": await answerSlot(tm, slot, Number(b.dataset.i)); break;
+    case "trust": await answerTrust(tm, slot, Number(b.dataset.i), b.dataset.l); break;
+    case "screen": { const k = `${tm.id}/${slot.id}`; if (!ui.screenOpen.delete(k)) ui.screenOpen.add(k); render(); break; }
     // the composer
     case "pick": ui.pick = ui.pick?.i === i && ui.pick.what === b.dataset.what ? null : { i, what: b.dataset.what }; render(); break;
     case "set": {

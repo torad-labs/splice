@@ -558,3 +558,11 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .money-band > .card.gcard { width: 36rem; }
 .card.gcard > .ghost.big { margin-bottom: 1rem; }
 .lower .card.gcard + .card.gcard { margin-top: var(--gap-card); }
+
+/* Locked: this browser holds no key splice takes (a 401). The page's body steps aside for the one way back, the command as
+   something to run with Copy beside it; the title stays so he knows where he is (fin, Marlin, Oct 12) */
+body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .head > :not(h1) { display: none; }
+.lockedby { display: flex; flex-direction: column; align-items: flex-start; gap: 1.2rem; }
+.lockedby .word { margin: 0; font: 500 1.4rem/1 var(--font-name); color: var(--limit); }
+.lockedby .way { display: flex; align-items: center; gap: .9rem; }
+.lockedby code { font: 500 1.15rem/1 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .7rem 1rem; }

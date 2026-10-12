@@ -44,7 +44,7 @@ internal class UpgradeRelease(
     private val java: String,
 ) {
     /** The line of the published launch shim that names its release; the workflow tags the release from the same line. */
-    private val launchVersion = Regex("""SPLICE_GATEWAY_VERSION="(\d+\.\d+\.\d+[-+.0-9A-Za-z]*)"""")
+    private val launchVersion = Regex("SPLICE_GATEWAY_VERSION=\"(\\d+\\.\\d+\\.\\d+[-+.0-9A-Za-z]*)\"")
 
     /** The release base: SPLICE_RELEASE_BASE_URL wins (the installer's override), else the tag or latest.
      *  Tags are `v<version>` (release.yml); `--to 0.4.0` and `--to v0.4.0` name the same one. */

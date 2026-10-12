@@ -19,14 +19,14 @@ import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.deleteRecursively
 
 /** Shortest time between the starts of two reads. */
 private const val MIN_GAP_MS = 10_000L
-private const val MILLIS_PER_SECOND = 1_000L
-private const val STAGING_PREFIX = "splice-upgrade-check-"
+private const val CHECK_STAGING_PREFIX = "splice-upgrade-check-"
 
 /** What the last tap found: [NEVER] before any tap, [READ] with the newest version, [NOT_READ] when the fetch failed. */
 public enum class UpgradeReadState(public val wire: String) {
@@ -72,7 +72,7 @@ public class UpgradeChecks(
         try {
             val now = clock()
             val wait = lastStartedAt?.let { it + MIN_GAP_MS - now } ?: 0L
-            if (wait > 0) return UpgradeCheckOutcome.TooSoon((wait + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND)
+            if (wait > 0) return UpgradeCheckOutcome.TooSoon(TimeUnit.MILLISECONDS.toSeconds(wait - 1) + 1)
             lastStartedAt = now
             return UpgradeCheckOutcome.Done(read(now).also { last.set(it) })
         } finally {
@@ -81,7 +81,7 @@ public class UpgradeChecks(
     }
 
     private fun read(startedAt: Long): UpgradeSnapshot {
-        val staging = Files.createTempDirectory(STAGING_PREFIX)
+        val staging = Files.createTempDirectory(CHECK_STAGING_PREFIX)
         val answer = Cancellables.runCatchingCancellable {
             release.latest(release.base(null, env("SPLICE_RELEASE_BASE_URL")), staging)
         }

@@ -60,7 +60,12 @@ import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
 import splice.app.control.projects.RequestProjectTags
+import splice.app.head.HeadRemoval
+import splice.app.head.HeadRemovalFacts
+import splice.app.head.RegisteredSessions
+import splice.app.head.WrapperBinSource
 import splice.core.config.ConfigService
+import splice.core.topology.TopologyWriterSource
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.launch.recipe.LaunchService
@@ -119,7 +124,13 @@ internal class ControlServer(
 
     // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
     private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)
-    private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard)
+    private val removal = HeadRemoval(
+        TopologyWriterSource { ports.topology },
+        WrapperBinSource { ports.wrapperBin },
+        config.statePaths,
+        HeadRemovalFacts(config.statePaths, heads, RegisteredSessions { sessions }),
+    )
+    private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard, removal)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)

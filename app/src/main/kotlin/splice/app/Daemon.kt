@@ -38,6 +38,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.retired.RetiredHeads
 import splice.core.topology.HeadModel
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
@@ -216,7 +217,12 @@ public class Daemon(
         val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
         // V4-260: a head removed from splice.toml leaves no compaction answers, code-mode state or
         // trace days behind; this start is the first moment it is known to be gone.
-        HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys)
+        // A command removed from Models is recorded as retired and keeps everything it wrote (Marcos, Oct 12).
+        val retiredHeads = RetiredHeads(statePaths.stateDir)
+        // A command added back is no longer retired: its history joins it again, once.
+        retiredHeads.all().filter { it.key in topology.heads }.forEach { retiredHeads.rejoin(it.key) }
+        val retired = retiredHeads.all().map { it.key }
+        HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys + retired)
         TranscriptOriginals(statePaths).sweep(log)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.

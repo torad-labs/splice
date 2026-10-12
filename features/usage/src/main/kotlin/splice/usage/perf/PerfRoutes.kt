@@ -97,7 +97,7 @@ public class PerfRoutes(
 
     public suspend fun turns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
-        val matches = if (name.isBlank()) emptyList() else heads.byName(name)
+        val matches = if (name.isBlank()) emptyList() else heads.byName(name).ifEmpty { heads.retired(name) }
         if (matches.isEmpty()) {
             // 400 naming the head, never 404 — the console reads 404 on this path as route-not-built,
             // which is the same rule /api/compaction/instructions answers to, for the same console.

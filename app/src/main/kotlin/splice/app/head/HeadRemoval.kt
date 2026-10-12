@@ -1,0 +1,127 @@
+// NEW: Oct 12, 2026 — removing a command from Models (Marcos's rulings through the splice-lead): the read says what a removal
+// would leave and who is on the command now, and the removal drops the head from splice.toml through the one topology
+// writer (backup first), unlinks the wrapper no other head shares, empties its account order, and records it as retired
+// so its requests, sessions and usage stay findable. Every store stays in place. A command a live session is using is
+// refused, naming those sessions. The daemon keeps serving the head until it restarts.
+package splice.app.head
+
+import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import splice.accounts.order.ACCOUNT_ORDER_FILE
+import splice.accounts.order.AccountOrderStore
+import splice.core.config.InstallPaths
+import splice.core.config.StatePaths
+import splice.core.retired.RetiredHead
+import splice.core.retired.RetiredHeads
+import splice.core.topology.Topology
+import splice.core.topology.TopologyWriteResult
+import splice.core.topology.TopologyWriterSource
+import splice.core.util.Cancellables
+import splice.http.JsonReply
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.isSymbolicLink
+
+/** Where the wrapper links live; null reads the install's own bin dir. */
+internal fun interface WrapperBinSource {
+    operator fun invoke(): Path?
+}
+
+internal class HeadRemoval(
+    private val writer: TopologyWriterSource,
+    private val wrapperBin: WrapperBinSource,
+    private val statePaths: StatePaths,
+    private val facts: HeadRemovalFacts,
+) {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val retired = RetiredHeads(statePaths.stateDir)
+
+    /** What stays, and who is on the command now. */
+    fun read(key: String): JsonReply {
+        val topology = stored() ?: return refusal(HttpStatusCode.ServiceUnavailable, "topology is not wired")
+        val head = topology.heads[key] ?: return refusal(HttpStatusCode.NotFound, "unknown head: $key")
+        return JsonReply(
+            HttpStatusCode.OK,
+            buildJsonObject {
+                put("key", key)
+                put("command", commandOf(key, topology))
+                put("requests", facts.requestsOf(key))
+                put("sessions", facts.sessionsOf(key))
+                put("live_sessions", facts.sessionList(facts.liveOn(key)))
+                put("provider", head.provider)
+            }.toString(),
+        )
+    }
+
+    fun remove(key: String): JsonReply {
+        val topology = stored()
+        return when {
+            topology == null -> refusal(HttpStatusCode.ServiceUnavailable, "topology is not readable")
+            key !in topology.heads -> refusal(HttpStatusCode.NotFound, "unknown head: $key")
+            facts.liveOn(key).isNotEmpty() -> inUse(key)
+            else -> drop(key, topology)
+        }
+    }
+
+    private fun inUse(key: String): JsonReply = JsonReply(
+        HttpStatusCode.Conflict,
+        buildJsonObject {
+            put("error", "in use")
+            put("live_sessions", facts.sessionList(facts.liveOn(key)))
+        }.toString(),
+    )
+
+    private fun drop(key: String, topology: Topology): JsonReply {
+        val command = commandOf(key, topology)
+        // The record comes first: a head gone from splice.toml with no record would lose its history's door.
+        retired.retire(RetiredHead(key, command, facts.transcriptRoot(key)?.toString()))
+        val result = writer()?.write(without(topology, key))
+        if (result !is TopologyWriteResult.Written) {
+            retired.rejoin(key)
+            return refusal(HttpStatusCode.UnprocessableEntity, "not removed")
+        }
+        val unlinked = unlink(command, topology.heads.filterKeys { it != key }.keys, topology)
+        AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE)).set(key, emptyList())
+        return JsonReply(
+            HttpStatusCode.OK,
+            buildJsonObject {
+                put("ok", true)
+                put("restart_required", true)
+                put("wrapper_removed", unlinked)
+                result.backup?.let { put("backup_path", it.toString()) }
+            }.toString(),
+        )
+    }
+
+    private fun stored(): Topology? {
+        val current = writer() ?: return null
+        return Cancellables.runCatchingCancellable {
+            json.decodeFromJsonElement(Topology.serializer(), current.current())
+        }.fold(onSuccess = { it }, onFailure = { null })
+    }
+
+    private fun without(topology: Topology, key: String): Topology = topology.copy(
+        heads = topology.heads - key,
+        projects = topology.projects.mapValues { (_, project) -> project.copy(heads = project.heads - key) },
+    )
+
+    private fun commandOf(key: String, topology: Topology): String = topology.heads[key]?.claude?.command ?: key
+
+    /** The wrapper link goes unless another head still answers to the same command. True when it went. */
+    private fun unlink(command: String, others: Set<String>, topology: Topology): Boolean {
+        if (others.any { commandOf(it, topology) == command }) return false
+        val bin = wrapperBin() ?: InstallPaths().binDir
+        val link = bin.resolve(command)
+        if (!isOwnLink(bin, link, command)) return false
+        return Cancellables.runCatchingCancellable { Files.delete(link) }
+            .fold(onSuccess = { true }, onFailure = { false })
+    }
+
+    private fun isOwnLink(bin: Path, link: Path, command: String): Boolean =
+        command.isNotEmpty() && link.normalize().parent == bin.normalize() && link.isSymbolicLink()
+
+    private fun refusal(status: HttpStatusCode, message: String): JsonReply =
+        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+}

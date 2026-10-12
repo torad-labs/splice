@@ -20,6 +20,7 @@ import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
+import splice.core.retired.RetiredHeads
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
@@ -43,6 +44,7 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
+import java.nio.file.Path
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -60,7 +62,11 @@ internal class SessionsWiring(
     val sessionHeads = SessionHeadAdapter.adapt(heads)
     val historyIndex = TranscriptHistoryIndex()
     val historyRoots = listOf(SessionHistoryRoot(null, UserHome.claudeDir())) +
-        sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
+        sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } } +
+        // A removed command's sessions stay readable: its config directory is on the retired record.
+        RetiredHeads(config.statePaths.stateDir).all().mapNotNull { retired ->
+            retired.configDir?.let { SessionHistoryRoot(retired.key, Path.of(it)) }
+        }
 
     /** The registry joined with durable transcript history: every session the project views and request rows know. */
     fun projectSessions(sessions: SessionSource, config: ConfigService): ProjectSessions = ProjectSessions(

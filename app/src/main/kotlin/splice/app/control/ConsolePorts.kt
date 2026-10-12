@@ -182,6 +182,9 @@ public class ConsolePorts {
      *  inventory, rather than telling the console no turn statistics exist on an unwired daemon. */
     public var turnStatistics: StatePaths? = null
 
+    /** Where the wrapper links live, for a removal to unlink; null reads the install's own bin dir. */
+    public var wrapperBin: Path? = null
+
     /** V4-239: the daemon's ONE wire-tap registry, the one HeadServerFactory registers each head's tap
      *  in, behind GET /api/heads/{head}/wire. Null answers a named 503, never "the tap is off". */
     public var wires: WireTaps? = null

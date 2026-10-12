@@ -4,7 +4,10 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.control.api.HeadResolver
+import splice.app.sources.PerfRowsFileSource
 import splice.core.auth.CLIENT_AUTH_KIND
+import splice.core.config.StatePaths
+import splice.core.retired.RetiredHeads
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.models.roster.DeclaredHeads
@@ -15,6 +18,8 @@ import splice.usage.UsageHeadSinks
 import splice.usage.UsageHeadStatusline
 import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 
 internal object UsageHeadAdapter {
     /** Adapted per call, never captured: a head's label follows a runtime rename (DR-22a). */
@@ -38,8 +43,24 @@ internal object UsageHeadAdapter {
     fun lookup(
         resolver: HeadResolver,
         declared: DeclaredHeads = DeclaredHeads { emptyMap() },
+        retired: RetiredHeads? = null,
+        paths: StatePaths = StatePaths(),
     ): UsageHeadLookup = object : UsageHeadLookup {
         override fun byName(name: String): List<UsageHead> = resolver.headByName(name).map(::adapt)
+
+        override fun retired(name: String): List<UsageHead> = retired?.all().orEmpty()
+            .filter { it.key == name || it.command == name }
+            .map { removed ->
+                UsageHead(
+                    key = removed.key,
+                    label = removed.command,
+                    usage = HeadUsageSource { UsageView(outputTokens5h = 0, entries = 0, ratelimit = null) },
+                    warn = UsageHeadWarn(warnPct = 0, warnTokens5h = 0),
+                    sinks = UsageHeadSinks(
+                        perfRows = PerfRowsFileSource(paths.perfStatsFile(removed.key), paths.perfArchiveDir),
+                    ),
+                )
+            }
 
         override fun billing(key: String): UsageBilling? {
             val head = resolver.headByName(key).firstOrNull { it.head.key == key } ?: return null

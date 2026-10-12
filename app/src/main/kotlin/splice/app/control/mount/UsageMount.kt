@@ -17,6 +17,7 @@ import splice.app.control.api.HeadResolver
 import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
 import splice.core.perf.KeptHistory
+import splice.core.retired.RetiredHeads
 import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
 import splice.head.perf.TurnTallies
@@ -55,6 +56,8 @@ internal class UsageMount(
     private val usageLookup = UsageHeadAdapter.lookup(
         resolver,
         DeclaredHeads { ports.declaredHeads?.invoke().orEmpty() },
+        RetiredHeads(config.statePaths.stateDir),
+        config.statePaths,
     )
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)

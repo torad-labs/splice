@@ -69,6 +69,10 @@ public fun interface UsageHeadLookup {
 
     /** Provider billing facts, keyed by the resolved head, independent of quota or account metadata. */
     public fun billing(key: String): UsageBilling? = null
+
+    /** The commands a person removed that [name] (a key or a wrapper command) names: their rows stay on disk and Requests
+     *  still reads them. Only the by-name turns read asks, because a removed command has no quota or account to show. */
+    public fun retired(name: String): List<UsageHead> = emptyList()
 }
 
 /** How the configured provider runs; declared token rates remain equivalent API estimates for every kind. */

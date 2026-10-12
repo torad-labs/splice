@@ -221,7 +221,30 @@ class ColdUsageReadRouteTest {
         }
     }
 
-    private class Fixture(dir: Path, private val projected: Boolean = false) {
+    @Test
+    fun `hourly totals are ready before the request window finishes warming, so the first open is not held`(
+        @TempDir dir: Path,
+    ) = runBlocking<Unit> {
+        val fixture = Fixture(dir, holdWindow = true)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val heads = UsageHeadAdapter.heads(mapOf("synthetic" to fixture.managed()))
+        try {
+            fixture.release.countDown()
+            val warmup = UsageReadWarmup(scope, heads, Dispatchers.IO)
+            warmup.start()
+            val head = heads.all().single()
+            withTimeout(5_000) { while (!warmup.economicsReady(head)) kotlinx.coroutines.yield() }
+            val since = System.currentTimeMillis() - 60_000
+            assertEquals(false, warmup.requestsReady(head, since), "the window is still held")
+        } finally {
+            fixture.windowGate.countDown()
+            scope.cancel()
+            fixture.closeUnstarted()
+        }
+    }
+
+    private class Fixture(dir: Path, private val projected: Boolean = false, holdWindow: Boolean = false) {
+        val windowGate = CountDownLatch(if (holdWindow) 1 else 0)
         val entered = CompletableDeferred<Unit>()
         val release = CountDownLatch(1)
         val perfScans = AtomicInteger()
@@ -351,6 +374,7 @@ class ColdUsageReadRouteTest {
         private fun scan(): PerfRowsWindow {
             entered.complete(Unit)
             check(release.await(10, TimeUnit.SECONDS)) { "the synthetic scan was not released" }
+            check(windowGate.await(10, TimeUnit.SECONDS)) { "the synthetic request window was not released" }
             return PerfRowsWindow(
                 listOf(1L, 2L).map { index ->
                     PerfRow(

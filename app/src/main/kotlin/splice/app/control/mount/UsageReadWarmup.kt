@@ -55,7 +55,7 @@ internal class UsageReadWarmup(
     /** Reads a prepared head's hourly totals again, so the hours since the last read are held before anyone asks. */
     private suspend fun keepWarm(head: UsageHead) {
         val state = states[head.key] ?: return
-        if (synchronized(state) { state.readySince == null || state.loading }) return
+        if (synchronized(state) { !state.economicsReady || state.loading }) return
         admission.withPermit {
             val read = Cancellables.runCatchingBestEffort { head.sinks.economics?.read() }
             Cancellables.discard(read, KEEP_WARM_BEST_EFFORT)
@@ -74,27 +74,51 @@ internal class UsageReadWarmup(
                 state.failure = null
                 throw failure
             }
-            val ready = state.readySince
-            val satisfied = ready != null && (sinceMs == null || sinceMs >= ready)
-            if (!satisfied && !state.loading) {
-                state.loading = true
-                scope.launch(io) {
-                    try {
-                        admission.withPermit { load(head, state) }
-                    } finally {
-                        synchronized(state) { state.loading = false }
-                    }
-                }
-            }
-            satisfied && !state.loading
+            // Hourly totals need only their own read: a person who opens Accounts first is not made to wait for the
+            // request window the Requests page needs, which is warmed after every head's totals.
+            val satisfied = satisfied(state, sinceMs)
+            if (!satisfied && !state.loading) launch(head, state)
+            satisfied && (sinceMs == null || !state.loading)
         }
     }
 
-    private suspend fun load(head: UsageHead, state: State) {
+    private fun satisfied(state: State, sinceMs: Long?): Boolean {
+        val ready = state.readySince
+        return if (sinceMs == null) state.economicsReady else ready != null && sinceMs >= ready
+    }
+
+    private fun launch(head: UsageHead, state: State) {
+        state.loading = true
+        scope.launch(io) {
+            try {
+                // two turns at the permit: every head's totals queue ahead of any head's request window
+                val totals = admission.withPermit { loadTotals(head, state) }
+                totals.onSuccess { read -> admission.withPermit { loadWindow(head, state, read) } }
+            } finally {
+                synchronized(state) { state.loading = false }
+            }
+        }
+    }
+
+    private suspend fun loadTotals(head: UsageHead, state: State): Result<EconomicsRead?> {
+        val context = currentCoroutineContext()
+        val economics = Cancellables.runCatchingCancellable {
+            context.ensureActive()
+            head.sinks.economics?.read()
+        }
+        synchronized(state) {
+            economics.fold(
+                onSuccess = { state.economicsReady = true },
+                onFailure = { failure -> state.failure = failure },
+            )
+        }
+        return economics
+    }
+
+    /** The request window, after every head's hourly totals: it starts at the oldest hour those totals hold. */
+    private suspend fun loadWindow(head: UsageHead, state: State, economics: EconomicsRead?) {
         val context = currentCoroutineContext()
         val loaded = Cancellables.runCatchingCancellable {
-            context.ensureActive()
-            val economics = head.sinks.economics?.read()
             context.ensureActive()
             val first = (economics as? EconomicsRead.Rows)?.rows?.minOfOrNull { it.hour }
                 ?: (clock() - DEFAULT_REQUEST_WINDOW_MS)
@@ -127,6 +151,7 @@ internal class UsageReadWarmup(
 
     private class State {
         var wanted: Long? = null
+        var economicsReady = false
         var readySince: Long? = null
         var loading = false
         var failure: Throwable? = null

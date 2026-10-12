@@ -296,7 +296,7 @@ class CodeModeHostPoolTest {
         Unit
     }
 
-    // hostshield's contract: a host the idle sweep emptied closes its JVM, and the next turn boots a fresh one.
+    // The host's contract: a code-mode host the idle sweep emptied closes its JVM, and the next turn boots a fresh one.
     @Test
     fun `an idle host closes its worker process and the next session runs on a fresh host`() = runBlocking {
         val clock = AtomicLong()

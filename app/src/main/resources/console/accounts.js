@@ -640,7 +640,9 @@ const SESS_SHOWN = 4;
 function sessionsHtml(a) {
   const on = a.sessions || [];
   if (!on.length) return "";
-  const door = (x) => `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(x.name || x.title || String(x.session_id).slice(0, 8))}</a>`;
+  // each name carries the lamp Sessions gives a running session (kit.js look), so it reads as an agent on this login now
+  const lamp = (x) => (/^(working|busy)$/.test(x.status) ? `<span class="lamp working" aria-hidden="true">${ICON.trace}</span>` : `<span class="lamp idle" aria-hidden="true"><i></i></span>`);
+  const door = (x) => `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${lamp(x)}<span>${esc(x.name || x.title || String(x.session_id).slice(0, 8))}</span></a>`;
   const more = on.length > SESS_SHOWN ? `<a class="sdoor more" href="sessions.html">+${on.length - SESS_SHOWN}</a>` : "";
   return `<div class="onlogin">${on.slice(0, SESS_SHOWN).map(door).join("")}${more}</div>`;
 }

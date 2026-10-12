@@ -572,6 +572,9 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 
 /* Accounts: the sessions on a login now, under its card, each a door to Sessions (v0.4.0 section 9) */
 .card .onlogin { display: flex; flex-wrap: wrap; gap: .5rem .6rem; margin-top: 1rem; }
-.card .onlogin .sdoor { font: 500 .98rem/1 var(--font-name); color: var(--text-body); text-decoration: none; padding: .4rem .65rem; border: .12rem solid var(--track-line); border-radius: .4rem; }
-.card .onlogin .sdoor:hover { border-color: var(--ink); color: var(--text); }
+.card .onlogin .sdoor { display: inline-flex; align-items: center; gap: .5rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
+.card .onlogin .sdoor:hover span { color: var(--text); text-decoration: underline; }
+.card .onlogin .sdoor .lamp { position: static; width: 1.6rem; height: 1.6rem; flex: none; }
+.card .onlogin .sdoor .lamp svg { width: 1rem; height: 1rem; }
+.card .onlogin .sdoor .lamp i { width: .5rem; height: .5rem; }
 .card .onlogin .sdoor.more { color: var(--text-mute); }

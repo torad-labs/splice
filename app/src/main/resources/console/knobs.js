@@ -97,8 +97,12 @@ const KNOBS = (() => {
     K("mcpMaxServers", "Run at most", { k: "count", opts: [8, 16, 32, 64], unit: "servers" }, 32,
       { home: "mcp", also: "most servers at once ceiling" }),
     K("mcpIdleTimeoutMs", "Stop an unused server after", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN, { home: "mcp" }),
-    K("mcpRequestTimeoutMs", "Cut off a tool call after", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN,
-      { home: "mcp", also: "longest tool call" }),
+    // WHOSE CALL IT IS, IN THE NAME (fin, Marlin's ruling after the walk of Oct 12): this is the budget for one request
+    // splice forwards to an MCP server, and in Claude Code "tool call" means its own Bash too. Both walkers came here
+    // to stop a hung test command and left half-believing this covered it. Splice never runs that command. The old
+    // words are gone from the search as well: a search for a hung command that finds nothing is the honest answer.
+    K("mcpRequestTimeoutMs", "Give up on a server's reply after", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN,
+      { home: "mcp", also: "mcp server reply request timeout wait" }),
     K("mcpInitializeTimeoutMs", "Give up on a starting server after", { k: "dur", opts: [30 * SEC, 60 * SEC, 2 * MIN], unit: "s" }, 60 * SEC,
       { home: "mcp", also: "wait for a server to start handshake" }),
     // THE KIT HOLDS THE VALUE, SETTINGS DRAWS THE ROW: a list of folders is a row of its own, each path with the way to

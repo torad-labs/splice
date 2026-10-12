@@ -23,7 +23,7 @@
 const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
 const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
-  shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null };
+  shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
 const root = document.getElementById("sessions");
 const wide = sideBySide;
@@ -233,7 +233,7 @@ const RANK = (s) => (s.state === "needs" || stranded(s) || gaveUpNeeds(s) ? 0 : 
 const matches = (s) => !ui.q || [s.name, s.first, s.repo, s.cmd, s.row.repo?.root, s.row.cwd, s.project?.label, s.project?.name]
   .some((v) => v && v.toLowerCase().includes(ui.q));
 function sorted() { // what waits on him: the longest waiting first; the rest: the latest first
-  const list = state.rows.filter((s) => (s.state !== "ended" || stranded(s)) && matches(s))
+  const list = state.rows.filter((s) => (s.state !== "ended" || stranded(s)) && matches(s) && inPick(s))
     .sort((a, b) => RANK(a) - RANK(b) || (RANK(a) <= 1 ? a.at - b.at : b.at - a.at));
   if (!ui.hold) return list;
   // while he works in the list it holds the order last drawn, so a card never moves under his pointer; a new one joins
@@ -252,6 +252,11 @@ const projName = (s) => s.project?.label || s.project?.name || "No project";
  *  every live session and never off the search, so a search that happens to land inside one project keeps the
  *  headers it had: it hides the groups it does not match, it does not undo the grouping (Marlin). */
 const grouped = () => new Set(state.rows.filter((s) => s.state !== "ended" || stranded(s)).map(projKey)).size >= 2;
+// THE PICK (kit PICK): one project, or every project. It only exists where there are two groups to pick between, so a
+// first-time user with one project never meets it, and a pick left over from another page's desk filters nothing here
+// until there are two. A picked project that has gone keeps its pick: the list says "No sessions" and the doors stay.
+const picked = () => (grouped() ? ui.project : null);
+const inPick = (s) => picked() == null || projKey(s) === picked();
 /** By each group's most urgent card in the cards' own rank, then its last activity, ties by name, No project last.
  *  While his pointer is in the list the groups hold the order they were last drawn in, as the cards do. */
 function groupsOf(list) {
@@ -268,11 +273,9 @@ function groupsOf(list) {
 // fin's header: the name, then one lamp and its count for each live state present, in the cards' rank, then the
 // muted total. No state words: the lamps are the words, and Idle and Ended are in the total.
 const STATES = [["needs", 0], ["stalled", 1], ["working", 2]];
-const WORD = { needs: "needs you", stalled: "stalled", working: "working" };
 const BIG = { needs: ICON.input, stalled: ICON.flat, working: ICON.trace };
 const countsOf = (g) => STATES.map(([k, r]) => [k, g.filter((s) => RANK(s) === r).length]).filter(([, n]) => n);
 const bigCount = ([k, n]) => `<span class="pc big ${k}"><span class="lamp ${k}" aria-hidden="true">${BIG[k]}</span><b>${n}</b></span>`;
-const countWords = (counts, n) => [...counts.map(([k, c]) => `${c} ${WORD[k]}`), `${n} ${n === 1 ? "session" : "sessions"}`].join(", ");
 /** A project's ended cards under one line at its end, closed until he opens it; a search opens every one, because no
  *  fold may hide a match. Only Ended folds: Idle stays up, and nothing here knows which replies he has read. */
 function restHtml(key, ended) {
@@ -287,20 +290,55 @@ function groupHtml([key, g], ended) {
   const shown = shut ? g.filter((s) => RANK(s) === 0) : g;
   const go = key === NO_PROJECT ? ""
     : `<a class="pgo" href="requests.html?project=${encodeURIComponent(key)}">${ICON.door}<span>Open on Requests</span></a>`;
-  return `<section class="pgroup${shut ? " shut" : ""}" data-key="g:${esc(key)}" aria-label="${esc(`${projName(g[0])}, ${countWords(counts, total)}`)}">`
+  return `<section class="pgroup${shut ? " shut" : ""}" data-key="g:${esc(key)}" aria-label="${esc(`${projName(g[0])}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(projName(g[0]))}</span></button>`
     + `<span class="pcounts">${counts.map(bigCount).join("")}<span class="ptotal">${total}</span></span>${go}</header>`
     + `${shown.map(cardHtml).join("")}${shut ? "" : restHtml(key, ended)}</section>`;
+}
+/** Every project in the groups' order, and the ones with someone waiting: what the picker lists and the doors are. */
+function pickOptions() {
+  const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
+  const groups = groupsOf(live);
+  return {
+    projects: groups.map(([k, g]) => [k, projName(g[0])]),
+    doors: groups.map(([k, g]) => [k, projName(g[0]), g.filter((s) => RANK(s) === 0).length]),
+  };
+}
+function listHead() {
+  const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
+  if (!live.length) return "";
+  // one project and nothing outside it: no picker and no headers, its name where the picker would be (Marlin)
+  if (!grouped()) return live[0].project ? `<div class="lhead"><span class="pname solo">${esc(projName(live[0]))}</span></div>` : "";
+  if (ui.wide) return ""; // the tiles across the page are the picker and the doors
+  const { projects, doors } = pickOptions();
+  return `<div class="lhead">${pickerHtml(projects, picked(), ui.pmenu, doors)}</div>`;
+}
+/** The tiles, in the groups' order after Every project. A tile's total counts its sessions with the ended ones, which
+ *  is what its header's total says; its lamps count the live states, as the header's do. */
+function sessionTiles() {
+  const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
+  const ended = state.rows.filter((s) => s.state === "ended" && !stranded(s));
+  const items = groupsOf(live).map(([k, g]) => {
+    const counts = countsOf(g), total = g.length + ended.filter((s) => projKey(s) === k).length;
+    return [k, projName(g[0]), counts, total, countWords(counts, total, "session")];
+  });
+  const every = sumCounts(items.map((x) => x[2])), all = state.rows.length;
+  return tilesHtml([["", "Every project", every, all, countWords(every, all, "session")], ...items], picked());
 }
 function listHtml() {
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   const list = sorted(); ui.order = list.map((s) => s.id);
-  const ended = state.rows.filter((s) => s.state === "ended" && !stranded(s) && matches(s)).sort((a, b) => b.at - a.at);
+  const ended = state.rows.filter((s) => s.state === "ended" && !stranded(s) && matches(s) && inPick(s)).sort((a, b) => b.at - a.at);
+  const head = listHead();
   if (!list.length && !ended.length) {
-    return ui.q ? `<div class="list"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`
-      : `<div class="list"><div class="nomatch"><span class="state">No sessions</span></div></div>`;
+    // a picked project with nothing in it says so plainly, and its doors stay in the head (fin)
+    return ui.q ? `<div class="list">${head}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`
+      : `<div class="list">${head}<div class="nomatch"><span class="state">No sessions</span></div></div>`;
   }
+  // PICKED, THE LIST IS THAT PROJECT'S CARDS, WITH NO HEADER: the picker already names it. Its ended cards fold under
+  // its own line, as they do in its group
+  if (picked() != null) return `<div class="list">${head}${list.map(cardHtml).join("")}${restHtml(picked(), ended)}</div>`;
   let cards, loose = ended;
   if (ui.grouped) {
     const groups = groupsOf(list); ui.gorder = groups.map(([k]) => k);
@@ -310,7 +348,7 @@ function listHtml() {
   } else { ui.gorder = null; cards = list.map(cardHtml).join(""); }
   const fold = loose.length ? `<button class="act quiet fold" data-act="ended" aria-expanded="${ui.ended}">${loose.length} ended${ICON.caret}</button>` : "";
   const endedList = ui.ended && loose.length ? `<div class="ended">${loose.map(cardHtml).join("")}</div>` : "";
-  return `<div class="list">${cards}${fold}${endedList}</div>`;
+  return `<div class="list">${head}${cards}${fold}${endedList}</div>`;
 }
 
 // ---------- the open session ----------
@@ -465,6 +503,10 @@ function render({ stick = true, slide = false } = {}) {
   const say = document.activeElement?.id === "say" ? document.activeElement : null, caret = say ? [say.selectionStart, say.selectionEnd] : null;
   root.className = `sessions${ui.open ? " open" : ""}`;
   ui.grouped = grouped(); // before anything draws: the cards and the pane read it, and one session has one name on every page
+  ui.wide = ui.grouped && !state.loading && tilesWide();
+  const tiles = document.getElementById("ptiles");
+  tiles.hidden = !ui.wide;
+  tiles.innerHTML = ui.wide ? sessionTiles() : "";
   root.innerHTML = listHtml() + paneHtml();
   for (const p of root.querySelectorAll(".unmoved .screen")) p.scrollTop = p.scrollHeight; // the cause is in its last lines (hitstop)
   const field = root.querySelector("#say");
@@ -774,6 +816,7 @@ document.getElementById("q").addEventListener("input", (e) => {
 document.addEventListener("click", (e) => {
   // a press anywhere but the menu or its button closes Continue on's menu, as a console menu does
   if (ui.menu && !e.target.closest(".menu.models, [data-act=menu]")) { ui.menu = null; render({ stick: false }); }
+  if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; render({ stick: false }); }
   const el = e.target.closest("[data-act], [data-open]");
   if (!el) return;
   if (!el.dataset.act) { // a card: open it
@@ -784,6 +827,11 @@ document.addEventListener("click", (e) => {
   switch (el.dataset.act) {
     case "theme": toggleTheme(); break;
     case "ended": ui.ended = !ui.ended; render({ stick: false }); break;
+    case "projmenu": ui.pmenu = !ui.pmenu; render({ stick: false }); break;
+    // a pick is the same pick on Teams and Requests; the open session goes if it is not in the project he picked
+    case "pickproj": { ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project);
+      if (ui.open && !inPick(find(ui.open) ?? {})) { ui.open = null; ui.auto = false; }
+      render({ stick: false }); if (!ui.open) autoOpen(); break; }
     // a group he folded, and a project's Ended line he opened, stay that way across every reload of this tab
     case "fold": { const p = el.dataset.p; ui.shut.has(p) ? ui.shut.delete(p) : ui.shut.add(p); remember("splice.shut", ui.shut); render({ stick: false }); break; }
     case "rest": { const p = el.dataset.p; ui.rest.has(p) ? ui.rest.delete(p) : ui.rest.add(p); remember("splice.rest", ui.rest); render({ stick: false }); break; }

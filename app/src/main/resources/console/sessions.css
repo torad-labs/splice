@@ -326,7 +326,7 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .pgo { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .4rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); text-decoration: none; }
 .pgo:hover { color: var(--text); }
 .pgo svg { width: .95rem; height: .95rem; }
-.pgroup + .pgroup { margin-top: 1.4rem; }
+.pgroup + .pgroup, .lhead + .pgroup { margin-top: 1.4rem; }
 .rested { display: flex; flex-direction: column; gap: .9rem; }
 .rested .s { padding: .8rem 1.3rem; box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .rested .lamp { top: .55rem; }

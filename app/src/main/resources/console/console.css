@@ -459,3 +459,57 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .meter.windows.spend:has(> span.money.line) > .money { grid-column: 2 / -1; }
 .meter.windows.spend:has(> span.money.line) > .act { grid-row: 2; grid-column: 3; }
 .meter.windows.spend:has(> span.money.line) > .when { grid-row: 2; grid-column: 4; }
+
+/* ---------- the project picker (Marlin, fin, Oct 11; hitstop's mock): one pick shared by Sessions, Teams and
+   Requests, and the doors to projects elsewhere with someone waiting (kit pickerHtml) ---------- */
+.lhead { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+.lhead .pname.solo { font: 500 1.5rem/1.1 var(--font-name); color: var(--text); }
+.pwrap { position: relative; display: inline-flex; }
+.ppick, .pdoor { display: inline-flex; align-items: center; gap: .6rem; padding: .72rem .9rem; font: 500 1.05rem/1 var(--font-name); white-space: nowrap;
+  background: var(--obj-sunk); border: .12rem solid var(--track-line); border-radius: var(--r-in); cursor: pointer; color: var(--text-body); }
+.ppick:hover { color: var(--text); border-color: var(--text-mute); }
+.ppick.on { color: var(--text); border-color: var(--key-ink); }
+.ppick .caret { width: .95rem; height: .95rem; color: var(--text-mute); transform: rotate(90deg); }
+.pmenu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 42rem; overflow-y: auto; }
+.pmenu button { position: relative; white-space: nowrap; }
+.pmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--key-ink); border-radius: 0 .15rem .15rem 0; }
+/* someone waiting in another project while one is picked: a door that picks it, in Needs you's ink (fin); key ink,
+   because the pale key washes out on cream in day */
+.pdoor { border-color: var(--key-ink); color: var(--key-ink); }
+.pdoor:hover { background: color-mix(in oklab, transparent 85%, var(--key-light)); }
+.pdoor .pname { font: inherit; }
+.pc { display: inline-flex; align-items: center; gap: .3rem; }
+.pc.needs { color: var(--key-ink); } .pc.stalled { color: var(--limit); } .pc.working { color: var(--live); }
+.plamp { display: inline-grid; place-items: center; }
+.plamp svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- the project tiles (Marlin, fin, Oct 11; hitstop's mock 4e4f391): at a 150rem page and wider, every
+   project at once, on Sessions, Teams and Requests (kit tilesHtml, tilesWide) ---------- */
+#ptiles { margin: 0 0 2.6rem; }
+.ptiles { display: flex; flex-wrap: wrap; gap: 1rem; }
+/* each tile at least its content, the rest of the row shared equally: a 4-digit total beside three lamps never spills */
+.ptile { flex: 1 1 auto; min-width: max-content; display: flex; flex-direction: column; gap: 1rem; padding: 1.1rem 1.2rem 1.2rem;
+  text-align: left; cursor: pointer; color: var(--text-body); font: 500 1.6rem/1.1 var(--font-name);
+  background: var(--obj-sunk); border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj); }
+.ptile:hover { color: var(--text); border-color: var(--text-mute); }
+/* picked by its look, no word (fin): the Teams tab's raised card */
+.ptile.on { color: var(--text); background: var(--obj); border-color: var(--ink); box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
+.ptop { display: flex; align-items: baseline; gap: .8rem; min-width: 0; }
+/* the name takes the room left beside the total and adds nothing to the tile's least width, so it truncates first */
+.ptile .tname { flex: 1 1 0; width: 0; min-width: 0; font: 500 1.6rem/1.1 var(--font-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptile .ptotal { flex: none; color: var(--text-mute); font: 500 1.35rem/1 var(--font-data); }
+.plamps { display: flex; align-items: center; gap: .7rem; min-height: 2.6rem; }  /* a project with nothing live keeps the row, empty */
+.ptile .pc.big { gap: .35rem; font: 600 1.35rem/1 var(--font-data); }
+/* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
+.tlamp { flex: none; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; color: var(--text-mute);
+  background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail); }
+[data-theme="day"] .tlamp { --live: #5bb59c; --limit: #f06a4c; }  /* the socket is dark in both themes, so it keeps night's ink */
+.tlamp svg { width: 1.55rem; height: 1.55rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tlamp svg.wave { width: 1.95rem; height: 1.95rem; stroke-width: 3.6; }
+.tlamp.working { color: var(--live); }
+.tlamp.working .base { opacity: .32; }
+.tlamp.working .beat { stroke-dasharray: 16 64; animation: tlamp-trace 2.2s linear infinite; }
+@keyframes tlamp-trace { from { stroke-dashoffset: 80; } to { stroke-dashoffset: 0; } }
+.tlamp.needs { color: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .22rem var(--key-light), 0 0 1.4rem .15rem rgba(255, 215, 154, .4); }
+.tlamp.needs svg { width: 1.35rem; height: 1.35rem; }
+.tlamp.stalled { color: var(--limit); }

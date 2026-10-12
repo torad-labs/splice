@@ -170,3 +170,114 @@ test("inside a group a card is titled by what was asked of it, never by its fold
     await p.close();
   }
 }, 60_000);
+
+// ---------- the pick: one project, or every project, the same pick on every page ----------
+/** The page opened at [query], e.g. "?project=/work/temple", in a fresh browser so no earlier pick carries over. */
+async function pageAt(rows: Row[], query = ""): Promise<Page> {
+  sessions = rows;
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1200 } });
+  const p = await ctx.newPage();
+  await p.goto(`http://127.0.0.1:${server.port}/sessions.html${query}`);
+  await expect(p.locator(".list")).toBeVisible({ timeout: 15_000 });
+  return p;
+}
+
+test("picking a project shows only its cards, with no header, and keeps the pick in the address", async () => {
+  const p = await pageAt(THREE);
+  try {
+    await p.locator(".ppick").click();
+    await p.locator(".pmenu button", { hasText: "website" }).click();
+    await expect(p.locator(".pgroup")).toHaveCount(0);
+    await expect(p.locator(".list .card.s")).toHaveCount(2);
+    await expect(p.locator(".ppick")).toHaveText("website");
+    expect(new URL(p.url()).searchParams.get("project")).toBe("/work/website");
+    expect(await p.evaluate(() => localStorage.getItem("splice.project"))).toBe("/work/website");
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+// THE DOORS are what keep one shared pick safe: while he looks at one project, someone waiting in another is one press away.
+test("while one project is picked, another with someone waiting is a door that picks it", async () => {
+  const p = await pageAt(THREE, "?project=/work/website");
+  try {
+    const door = p.locator(".pdoor");
+    await expect(door).toHaveCount(1); // temple waits on him; No project does not
+    await expect(door).toContainText("temple");
+    await expect(door.locator(".pc.needs b")).toHaveText("1");
+    await door.click();
+    await expect(p.locator(".ppick")).toHaveText("temple");
+    await expect(p.locator(".list .card.s", { hasText: "asking" })).toBeVisible();
+    await expect(p.locator(".pdoor")).toHaveCount(0); // nobody waits anywhere else
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+test("Every project brings the groups back", async () => {
+  const p = await pageAt(THREE, "?project=/work/website");
+  try {
+    await p.locator(".ppick").click();
+    await p.locator(".pmenu button", { hasText: "Every project" }).click();
+    await expect(p.locator(".pgroup")).toHaveCount(3);
+    expect(new URL(p.url()).searchParams.get("project")).toBeNull();
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+test("a picked project with nothing in it says No sessions, and its doors stay", async () => {
+  const p = await pageAt(THREE, "?project=/work/gone");
+  try {
+    await expect(p.locator(".list .nomatch")).toContainText("No sessions");
+    await expect(p.locator(".pdoor")).toContainText("temple");
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+test("with one project the head names it, and there is nothing to pick", async () => {
+  const p = await pageAt([working("w-1", "api", "website"), row("i-1", "notes", "website")], "?project=/work/temple");
+  try {
+    await expect(p.locator(".ppick")).toHaveCount(0);
+    await expect(p.locator(".lhead .pname.solo")).toHaveText("website");
+    await expect(p.locator(".list .card.s")).toHaveCount(2); // a pick from another desk filters nothing here
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+// ---------- the tiles: at a 150rem page and wider, every project at once, in place of the picker and the doors ----------
+test("on a wide screen every project is a tile, Every project first, and pressing one is the pick", async () => {
+  sessions = [...THREE, ended("e-1", "done", "temple")];
+  const ctx = await browser.newContext({ viewport: { width: 3828, height: 2130 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${server.port}/sessions.html`);
+    const tiles = p.locator("#ptiles .ptile");
+    await expect(tiles).toHaveCount(4, { timeout: 15_000 });
+    expect(await p.locator("#ptiles .tname").allTextContents()).toEqual(["Every project", "temple", "website", "No project"]);
+    await expect(p.locator(".ppick")).toHaveCount(0); // the tiles are the picker
+    const temple = tiles.filter({ hasText: "temple" });
+    await expect(temple.locator(".ptotal")).toHaveText("3");
+    await expect(temple.locator(".pc.needs b")).toHaveText("1");
+    await expect(tiles.first().locator(".ptotal")).toHaveText("6"); // every session, the ended one too
+    await expect(tiles.first()).toHaveAttribute("aria-pressed", "true");
+    await temple.click();
+    await expect(temple).toHaveAttribute("aria-pressed", "true");
+    await expect(p.locator(".pgroup")).toHaveCount(0);
+    await expect(p.locator(".list > .card.s")).toHaveCount(2);
+  } finally {
+    await ctx.close();
+  }
+}, 60_000);
+
+test("below the tiles' width the picker stands in their place", async () => {
+  const p = await pageAt(THREE);
+  try {
+    await expect(p.locator("#ptiles")).toBeHidden();
+    await expect(p.locator(".ppick")).toBeVisible();
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);

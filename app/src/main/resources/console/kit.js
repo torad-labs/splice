@@ -390,3 +390,70 @@ function drawNav() {
   side.insertBefore(nav, side.querySelector(".foot"));
 }
 drawNav();
+
+// ---------- the project pick: ONE PICK across Sessions, Teams and Requests (Marlin, Oct 11) ----------
+// Choosing a project on any of them changes it on all of them, so it lives in this browser and in the address: the
+// address wins when he arrives by a link ("Open on Requests"), and what he picked last carries to the next page he
+// opens. The key is the project's id as the daemon writes it (ProjectWire), the one thing every page's rows share.
+// The doors are what keep one shared pick safe: while a project is picked, every other project with someone waiting
+// on him stands beside the picker as its name and its Needs-you count, one press from being the pick.
+const PICK_STORE = "splice.project";
+const PICK = {
+  get() {
+    const at = new URLSearchParams(location.search).get("project");
+    return at !== null ? at || null : localStorage.getItem(PICK_STORE) || null;
+  },
+  set(key) {
+    if (key) localStorage.setItem(PICK_STORE, key); else localStorage.removeItem(PICK_STORE);
+    const q = new URLSearchParams(location.search);
+    if (key) q.set("project", key); else q.delete("project");
+    const s = q.toString();
+    history.replaceState(history.state, "", `${location.pathname}${s ? `?${s}` : ""}${location.hash}`);
+  },
+};
+// a door's count is the button's size: its glyph is Needs you's, small, in Needs you's ink
+const NEEDS_LAMP = (n) => `<span class="pc needs"><span class="plamp" aria-hidden="true">${ICON.input}</span><b>${n}</b></span>`;
+/** The picker and the doors. [projects] is [[key, label]] in the pages' group order; [doors] is [[key, label, waiting]]
+ *  for the projects with someone waiting, drawn only while one project is picked; [open] whether the menu is down. */
+function pickerHtml(projects, pick, open, doors) {
+  const label = (k) => projects.find(([key]) => key === k)?.[1] ?? doors.find(([key]) => key === k)?.[1] ?? "Every project";
+  const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}">${esc(text)}</button>`;
+  const menu = open ? `<div class="menu pmenu" role="menu">${item("", "Every project")}${projects.map(([k, l]) => item(k, l)).join("")}</div>` : "";
+  const ways = pick == null ? "" : doors.filter(([k, , n]) => k !== pick && n)
+    .map(([k, l, n]) => `<button class="pdoor" data-act="pickproj" data-p="${esc(k)}" aria-label="${esc(`${l}, ${n} needs you`)}"><span class="pname">${esc(l)}</span>${NEEDS_LAMP(n)}</button>`).join("");
+  return `<span class="pwrap"><button class="ppick${pick != null ? " on" : ""}" data-act="projmenu" aria-haspopup="menu" aria-expanded="${Boolean(open)}">`
+    + `<span class="pname">${esc(pick == null ? "Every project" : label(pick))}</span>${ICON.caret}</button>${menu}</span>${ways}`;
+}
+
+// ---------- the project tiles: at a 150rem page and wider (2560 and up), every project at once (Marlin, fin) ----------
+// A row of tiles across the page replaces the picker and the doors on Sessions, Teams and Requests alike: a tile is its
+// project's header in another place, the name, the muted total beside it, and a card-size lamp and count per live
+// state. "Every project" comes first and sums them. Pressing a tile is the pick, and the picked tile is raised like a
+// Teams tab, with no word. Measured on the page's own content box, so every page agrees on when it is wide.
+const TILES_AT_REM = 150;
+function tilesWide() {
+  const p = document.querySelector(".page");
+  if (!p) return false;
+  const cs = getComputedStyle(p), rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return (p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / rem >= TILES_AT_REM;
+}
+const TLAMP = { needs: ICON.input, stalled: ICON.flat, working: ICON.trace };
+const tlampHtml = ([k, n]) => `<span class="pc big ${k}"><span class="tlamp ${k}" aria-hidden="true">${TLAMP[k]}</span><b>${n}</b></span>`;
+// the brief's own words for a header read aloud: "temple, 1 needs you, 3 working, 7 sessions" (Marlin)
+const STATE_WORDS = { needs: "needs you", stalled: "stalled", working: "working" };
+/** "1 needs you, 3 working, 7 sessions": what a tile says to a screen reader, in the lamps' order. */
+const countWords = (counts, total, unit) => [...counts.filter(([, n]) => n).map(([k, n]) => `${n} ${STATE_WORDS[k]}`),
+  `${total.toLocaleString("en-US")} ${total === 1 ? unit : `${unit}s`}`].join(", ");
+const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, lists.flat().filter(([x]) => x === k).reduce((a, [, n]) => a + n, 0)]);
+/** [items] is [[key, label, counts, total, words]] with Every project's key "". Each tile's preferred width is its name
+ *  in its own font plus the total, so the row's room goes where the names are, and in a crowded row a long name
+ *  truncates before its total does (the total sits beside the name, never at the lamps' end, where "4" and "1,300"
+ *  would read as one number). */
+function tilesHtml(items, pick) {
+  return `<nav class="ptiles" aria-label="Projects">${items.map(([k, label, counts, total, words]) => {
+    const on = (pick ?? "") === k, figure = total.toLocaleString("en-US");
+    return `<button class="ptile${on ? " on" : ""}" style="flex-basis: calc(${[...label].length}ch + ${figure.length * 0.6 + 3.2}rem)" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}">`
+      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span></span>`
+      + `<span class="plamps">${counts.filter(([, n]) => n).map(tlampHtml).join("")}</span></button>`;
+  }).join("")}</nav>`;
+}

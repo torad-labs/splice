@@ -15,7 +15,7 @@ class ResponsesSystemPromptTest {
     private val prompt = ResponsesSystemPrompt()
 
     @Test
-    fun `append adds one trailing developer item and leaves the client input byte-identical`() {
+    fun `append adds one developer item first and leaves the client input byte-identical`() {
         val request = json.parseToJsonElement(
             """{"instructions":"house rules",""" +
                 """"input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}]}""",
@@ -25,14 +25,14 @@ class ResponsesSystemPromptTest {
         val updated = prompt.apply(request, "Be terse.", SystemPromptMode.APPEND)
         val input = updated.getValue("input").jsonArray
 
-        assertEquals(before, input.dropLast(1).map { it.toString() })
-        assertEquals("developer", input.last().jsonObject.getValue("role").jsonPrimitive.content)
-        assertEquals("Be terse.", input.last().jsonObject.getValue("content").jsonPrimitive.content)
+        assertEquals(before, input.drop(1).map { it.toString() })
+        assertEquals("developer", input.first().jsonObject.getValue("role").jsonPrimitive.content)
+        assertEquals("Be terse.", input.first().jsonObject.getValue("content").jsonPrimitive.content)
         assertEquals("house rules", updated.getValue("instructions").jsonPrimitive.content)
     }
 
     @Test
-    fun `append leaves lite's leading developer item alone and adds a second one at the tail`() {
+    fun `append leaves lite's leading developer item alone and adds a second one right after it`() {
         val request = json.parseToJsonElement(
             """{"input":[{"role":"developer","content":"client instructions"},""" +
                 """{"role":"user","content":[{"type":"input_text","text":"hi"}]}]}""",
@@ -41,13 +41,29 @@ class ResponsesSystemPromptTest {
         val input = prompt.apply(request, "Be terse.", SystemPromptMode.APPEND)
             .getValue("input").jsonArray
 
-        val clientItem = input[1].jsonObject
+        val clientItem = input[2].jsonObject
         val clientText = clientItem.getValue("content").jsonArray.single().jsonObject
 
         assertEquals(3, input.size)
         assertEquals("client instructions", input[0].jsonObject.getValue("content").jsonPrimitive.content)
         assertEquals("hi", clientText.getValue("text").jsonPrimitive.content)
-        assertEquals("Be terse.", input[2].jsonObject.getValue("content").jsonPrimitive.content)
+        assertEquals("Be terse.", input[1].jsonObject.getValue("content").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `layers keep their order after lite's tools and base instructions, and the user turn stays behind them`() {
+        val request = json.parseToJsonElement(
+            """{"input":[{"type":"additional_tools","role":"developer","tools":[]},""" +
+                """{"role":"developer","content":"base"},{"role":"user","content":"hi"}]}""",
+        ).jsonObject
+
+        val first = prompt.apply(request, "head layer", SystemPromptMode.APPEND)
+        val input = prompt.apply(first, "project layer", SystemPromptMode.APPEND).getValue("input").jsonArray
+
+        assertEquals(
+            listOf("additional_tools", "base", "head layer", "project layer", "hi"),
+            input.map { (it.jsonObject["type"] ?: it.jsonObject.getValue("content")).jsonPrimitive.content },
+        )
     }
 
     @Test
@@ -146,7 +162,7 @@ class ResponsesSystemPromptTest {
         val afterStrip = prompt.apply(afterAppend, hedges, SystemPromptMode.STRIP)
 
         assertEquals("House rules.", afterStrip.getValue("instructions").jsonPrimitive.content)
-        val appended = afterStrip.getValue("input").jsonArray.last().jsonObject
+        val appended = afterStrip.getValue("input").jsonArray.first().jsonObject
         val kept = appended.getValue("content").jsonPrimitive.content
         assertEquals("Extra house rule.", kept, "the append layer survives")
     }

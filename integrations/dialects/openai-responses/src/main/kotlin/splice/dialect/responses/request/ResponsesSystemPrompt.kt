@@ -1,7 +1,7 @@
-// NEW: v0.4.0 (operator ask 2026-09-15) — the head's standing system prompt on the responses wire.
-// Sibling of ResponsesCompactionTail (tail append, every existing item byte-identical), with the
-// item's role being the one difference: a system prompt rides as `developer`, the role the
-// responses dialect already uses for base instructions (ResponsesLite.kt).
+// NEW: v0.4.0 (operator ask 2026-09-15) — the head's standing system prompt on the responses wire. A prompt rides as a
+// `developer` item, the role the responses dialect already uses for base instructions (ResponsesLite.kt). Oct 12, 2026:
+// an append no longer goes at the tail of the input. It goes after the leading developer text items, so it keeps one
+// place from turn to turn and the cached prefix holds. The old tail placement is changed on purpose.
 package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonArray
@@ -69,8 +69,15 @@ internal class ResponsesSystemPrompt {
     private fun rewrittenItem(item: JsonObject, text: String): JsonObject =
         JsonObject(item.toMutableMap().apply { put(CONTENT, JsonPrimitive(text)) })
 
-    private fun appended(request: JsonObject, input: JsonArray, text: String): JsonObject =
-        JsonObject(request.toMutableMap().apply { put(INPUT, JsonArray(input + developerItem(text))) })
+    /** The item lands right after the leading developer items (lite's tools and base instructions, then any layer
+     *  already placed), or first when there are none. The client never carries our item into its next turn, so a
+     *  tail append would sit at a new index each turn and its tokens would miss the prompt cache every time. Here
+     *  the position and everything before it are the same on every turn, and layers keep their order. */
+    private fun appended(request: JsonObject, input: JsonArray, text: String): JsonObject {
+        val at = input.takeWhile { isDeveloperItem(it) }.size
+        val placed = JsonArray(input.take(at) + developerItem(text) + input.drop(at))
+        return JsonObject(request.toMutableMap().apply { put(INPUT, placed) })
+    }
 
     /** Substitutes the client's system text wherever the dialect placed it. A lite turn moved it
      *  into a leading developer item (the top-level field is omitted, or carries codex's empty
@@ -95,6 +102,10 @@ internal class ResponsesSystemPrompt {
         )
         return JsonObject(fields)
     }
+
+    /** Any developer item: lite's `additional_tools`, its base instructions, or a layer already placed. */
+    private fun isDeveloperItem(item: JsonElement): Boolean =
+        JsonScalars.str(item as? JsonObject ?: return false, ROLE) == DEVELOPER
 
     /** The base-instructions item the lite shape builds: a developer item whose content is text.
      *  `additional_tools` is also a developer item but carries tools, never a string content. */

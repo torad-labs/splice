@@ -116,7 +116,8 @@ class TurnPreparationSystemPromptTest {
         val entries = prepared.requestBody.getValue("input").jsonArray
 
         assertEquals(1, entries.count { it.toString().contains("Be terse.") })
-        assertEquals("developer", entries.last().jsonObject.getValue("role").jsonPrimitive.content)
+        val ours = entries.single { it.toString().contains("Be terse.") }
+        assertEquals("developer", ours.jsonObject.getValue("role").jsonPrimitive.content)
         assertEquals("Be terse.", prepared.meta.standingPrompt.text)
         assertEquals("head:codex append", prepared.meta.standingPrompt.source)
         assertEquals("house rules", prepared.requestBody.getValue("instructions").jsonPrimitive.content)
@@ -304,12 +305,10 @@ class TurnPreparationSystemPromptTest {
         val second = preparedTurn(preparation(tmp, responsesProvider(), prompt), RESPONSES_FOLLOW_UP)
             .requestBody.getValue("input").jsonArray
 
-        assertEquals(first.last().toString(), second.last().toString())
+        val at = first.indexOfFirst { it.toString().contains("Be terse.") }
+        assertEquals(at, second.indexOfFirst { it.toString().contains("Be terse.") })
         assertEquals(1, second.count { it.toString().contains("Be terse.") })
-        assertEquals(
-            first.dropLast(1).map { it.toString() },
-            second.dropLast(1).take(first.size - 1).map { it.toString() },
-        )
+        assertEquals(first.take(at + 1).map { it.toString() }, second.take(at + 1).map { it.toString() })
     }
 
     @Test

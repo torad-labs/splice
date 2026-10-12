@@ -50,6 +50,9 @@ internal data class AddCandidate(
      *  listAuthoritative decides the models check. */
     val resolved: AddProfile,
 ) {
+    /** The provider the new head sends through: [key]'s own, or one the file already holds (a second command). */
+    val providerKey: String get() = topology.heads[key]?.provider ?: key
+
     /** The wrapper command the head is launched by, as the resolved profile names it. */
     val command: String get() = resolved.head.command
 }
@@ -118,10 +121,12 @@ internal class AddPrepare(
         val conflict = keyConflict(resolved, current, key)
         val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved)
         if (problem != null) return AddPrepared.Refused(problem, conflict = conflict != null)
+        val shared = sharedProvider(args, resolved, current, key)
+        val rendered = shared?.let { onShared(resolved, current.providers.getValue(it)) } ?: resolved
         val floor = ports.floor(current)
         val port = ports.choose(current, resolved.baseUrl, floor)
             ?: return AddPrepared.Refused(AddRefusal.PortUnavailable(floor, lastHeadPort), conflict = true)
-        val appended = profiles.toml(resolved, key, port)
+        val appended = profiles.toml(rendered, key, port, shared)
         return checks.parses(existing + appended).fold(
             onSuccess = { topology ->
                 AddPrepared.Ready(
@@ -129,10 +134,10 @@ internal class AddPrepare(
                         file = AddFileEdit(path, existing, appended),
                         topology = topology,
                         key = key,
-                        provider = topology.providers.getValue(key),
-                        models = resolved.models.map { it.id },
+                        provider = topology.providers.getValue(shared ?: key),
+                        models = rendered.models.map { it.id },
                         args = args,
-                        resolved = resolved,
+                        resolved = rendered,
                     ),
                 )
             },
@@ -140,6 +145,26 @@ internal class AddPrepare(
                 AddPrepared.Refused(AddRefusal.Unparseable(SafeFailureText.render(e)), conflict = true)
             },
         )
+    }
+
+    /** A second command on a profile whose provider the file already holds is a head on that provider, sending to its
+     *  address with its key and its models, never a new provider named after the command (marlin, Oct 12: a second
+     *  OpenRouter command listed under This computer, its key under no provider). An address the operator gave that is
+     *  not the provider's is another endpoint, and gets a provider of its own as before. */
+    private fun sharedProvider(args: AddArgs, profile: AddProfile, current: Topology, key: String): String? {
+        val own = profile.head.key.takeIf { it.isNotEmpty() && it != key }
+        val provider = own?.let { current.heads[it]?.provider ?: it.takeIf { k -> k in current.providers } }
+        val address = provider?.let { current.providers[it]?.baseUrl?.trimEnd('/') }
+        val same = address != null && (args.baseUrl == null || args.baseUrl.trimEnd('/') == address)
+        return provider.takeIf { same }
+    }
+
+    /** On a provider the file holds: its address, and the profile's rows that provider declares (all of its own rows
+     *  when it declares none of them), so the head names only models its provider serves. */
+    private fun onShared(profile: AddProfile, provider: ProviderConfig): AddProfile {
+        val ids = provider.models.map { it.id }.toSet()
+        val rows = profile.models.filter { it.id in ids }
+        return profile.copy(baseUrl = provider.baseUrl, models = rows.ifEmpty { profile.models })
     }
 
     /** The profile with the operator's flags and model rows applied. */

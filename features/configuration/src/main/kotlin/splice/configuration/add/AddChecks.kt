@@ -83,7 +83,7 @@ internal class AddChecks(
      *  V4-220: one list for the CLI and the console, so neither can save past a check the other runs. */
     fun all(c: AddCandidate, live: Boolean, env: EnvReader): List<AddCheck> {
         val local = c.resolved.provider.authKind == API_KEY && !c.resolved.provider.requiresKey
-        val keyEnv = c.provider.auth.effectiveApiKeyEnv(c.key)
+        val keyEnv = c.provider.auth.effectiveApiKeyEnv(c.providerKey)
         // Local runtimes need no operator key. Checks present only the non-secret placeholder,
         // never a real key the operator may have stored under the same env name.
         val checkEnv = if (local) {
@@ -91,7 +91,7 @@ internal class AddChecks(
         } else {
             env
         }
-        val listed = listedModels(c.provider, c.key, checkEnv)
+        val listed = listedModels(c.provider, c.providerKey, checkEnv)
         val runtime = if (local) {
             localRows(c.provider.baseUrl, c.provider.models.associate { row -> row.id to row.contextWindow })
         } else {
@@ -105,7 +105,7 @@ internal class AddChecks(
             modelWindows(c.provider.models, listed.withServed(runtime.windows)),
         ) + listOfNotNull(
             refused.ifEmpty { null }?.let { AddCheck("local runtime", false, "the runtime refuses $it") },
-            if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null,
+            if (live) liveTurn(c.provider, c.providerKey, c.models.first(), checkEnv) else null,
         )
     }
 
@@ -122,7 +122,7 @@ internal class AddChecks(
         if (c.resolved.provider.authKind == API_KEY && !c.resolved.provider.requiresKey) {
             AddCheck("credential", true, "local runtime needs no operator key")
         } else {
-            credential(c.key, c.provider, env)
+            credential(c.providerKey, c.provider, env)
         }
 
     /** Present AND usable: an OAuth file must carry token material the daemon could serve or refresh. */

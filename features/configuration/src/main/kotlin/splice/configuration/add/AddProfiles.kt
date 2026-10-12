@@ -132,17 +132,18 @@ public class AddProfiles {
     public fun apiKeyEnv(key: String): String = key.uppercase().replace('-', '_') + "_API_KEY"
 
     /** One provider table and one head table for [key], appended verbatim; every value quoted.
-     *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command. */
-    internal fun toml(profile: AddProfile, key: String, port: Int): String {
+     *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command. [shared] names a provider the file already holds: only the head
+     *  is written, on that provider. */
+    internal fun toml(profile: AddProfile, key: String, port: Int, shared: String? = null): String {
         val models = profile.models
         val auth = if (profile.provider.authKind == API_KEY) {
             """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
         } else {
             """auth = { kind = "${profile.provider.authKind}" }"""
         }
-        val provider = listOf(
-            "",
-            "# Added by `${profile.origin}`.",
+        val on = shared?.let { ", a command on [providers.$it]" }.orEmpty()
+        val origin = listOf("", "# Added by `${profile.origin}`$on.")
+        val tables = listOf(
             "[providers.$key]",
             "dialect = \"${profile.provider.dialect}\"",
             "base_url = \"${profile.baseUrl.orEmpty()}\"",
@@ -155,12 +156,13 @@ public class AddProfiles {
                 "context_window = ${m.contextWindow}",
             ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
         }
+        val provider = origin + tables.takeIf { shared == null }.orEmpty()
         val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
         val pinned = models.first()
-        val head = listOf(
-            "",
+        val head = listOfNotNull(
+            "".takeIf { shared == null },
             "[heads.$key]",
-            "provider = \"$key\"",
+            "provider = \"${shared ?: key}\"",
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
             "pinned_model = \"${pinned.id}\"",

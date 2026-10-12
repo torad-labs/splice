@@ -624,6 +624,9 @@ const taken = (p) => p.command && data.heads.some((h) => h.label === p.command |
 // profile's stock one (marlin p226: a second OpenRouter command tried openrouter.ai where the first sends to a stand-in)
 const twinUrl = (p) => commandsOf().find((c) => c.key === p.head_key || c.cmd === p.command)?.url || p.base_url || "";
 // the address is a field when the profile asks for it, for a second command, and once the address did not answer
+// a second command at its provider's own address is a command on that provider (splice add, AddPrepare.sharedProvider):
+// it sends with the provider's key, so the form asks for none and never writes over the one the provider has
+const sharesKey = (p, a) => second(p) && a.url.trim().replace(/\/+$/, "") === twinUrl(p).replace(/\/+$/, "");
 const showsUrl = (p, a) => p.asks.includes("base_url") || second(p) || Boolean(a.urlFailed);
 function addPaneHtml() {
   const a = ui.add;
@@ -643,7 +646,7 @@ function addPaneHtml() {
   let f = "";
   if (asks("name") || second(p)) f += field("a-name", "Name", a.name);
   if (showsUrl(p, a)) f += field("a-url", "URL", a.url);
-  if (p.requires_key || (p.auth_kind === "api-key" && p.asks.length)) f += field("a-key", "Key", a.key, 'type="password"');
+  if (!sharesKey(p, a) && (p.requires_key || (p.auth_kind === "api-key" && p.asks.length))) f += field("a-key", "Key", a.key, 'type="password"');
   if (asks("models")) {
     const rows = a.rows.map((r, i) => `<div class="mrow"><input class="field" id="a-m${i}" data-i="${i}" data-f="id" value="${esc(r.id)}" spellcheck="false" autocomplete="off" aria-label="Model">`
       + `<input class="field win" id="a-w${i}" data-i="${i}" data-f="win" value="${esc(r.win)}" spellcheck="false" autocomplete="off" aria-label="Window"></div>`).join("");
@@ -694,7 +697,7 @@ async function startAdd() {
   const res = await API.post("/api/add", body);
   if (!res.ok) { a.busy = false; a.said = failWord(res); render(); return; }
   a.id = res.body.id; a.env = res.body.key_env;
-  if (res.body.sign_in_by === "key" && a.key.trim()) {
+  if (res.body.sign_in_by === "key" && a.key.trim() && !sharesKey(p, a)) {
     const put = await API.put(`/api/keys/${encodeURIComponent(res.body.key_env)}`, { value: a.key.trim() });
     if (!put.ok) { a.busy = false; a.said = "Key not saved"; render(); return; }
   }

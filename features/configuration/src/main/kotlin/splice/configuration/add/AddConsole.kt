@@ -155,7 +155,7 @@ public class AddConsole(
     }
 
     /** The env var an api-key candidate reads its key from, as its heads will. */
-    internal fun keyEnv(s: AddSession): String = s.candidate.provider.auth.effectiveApiKeyEnv(s.candidate.key)
+    internal fun keyEnv(s: AddSession): String = s.candidate.provider.auth.effectiveApiKeyEnv(s.candidate.providerKey)
 
     internal fun verify(s: AddSession, live: Boolean): List<AddCheck> =
         checks.all(s.candidate, live, env).also { s.checks = it }

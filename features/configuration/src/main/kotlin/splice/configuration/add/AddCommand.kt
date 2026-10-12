@@ -63,7 +63,7 @@ internal class AddCommand(
     private suspend fun authenticate(c: AddCandidate, env: EnvReader): Boolean = when {
         c.provider.auth.kind == AuthKind.Client.wire ->
             true.also { output.line("  ${"auth".padEnd(ADD_PAD)} your own Claude login is forwarded at launch") }
-        checks.credential(c.key, c.provider, env).ok ->
+        checks.credential(c.providerKey, c.provider, env).ok ->
             true.also { output.line("  ${"auth".padEnd(ADD_PAD)} credential already present") }
         c.args.yes || confirm("Sign in to '${c.key}' now?", default = true) ->
             ports.login(c.key, c.provider, c.topology)

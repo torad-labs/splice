@@ -19,14 +19,10 @@ package splice.head
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.JsonObject
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.ForeignHostLog
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.model.CompactionBudgets
-import splice.core.model.ModelCatalog
-import splice.core.turn.TurnMeta
 import splice.core.usage.QuotaFull
 import splice.head.admission.AdmissionErrorBody
 import splice.head.admission.AdmissionGate
@@ -36,7 +32,6 @@ import splice.head.admission.AdmissionWindow
 import splice.head.admission.GateRefusals
 import splice.head.admission.HeadAdmission
 import splice.head.compaction.CompactionReplay
-import splice.head.perf.PerfStats
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
 import splice.http.ingress.HeapIngress
@@ -258,38 +253,5 @@ public class HeadServer(
         // Spent: a second stop of a head that is already down drains an engine that is no longer
         // running, finds nothing that was running to report, and so is not a transition twice over.
         drainedWasRunning = null
-    }
-}
-
-/** The client compacts reactively only when a size refusal is HTTP 400 before SSE commits 200.
- * A refusal needs a preserved, backend-measured prefix and a text-only growth bound. Cold, rewritten
- * or media-bearing histories go upstream; bytes/3 cannot justify blocking a real conversation. */
-internal class CompactionPreflight(private val catalog: ModelCatalog, private val perf: PerfStats) {
-    fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
-        val budget = CompactionBudgets.forRow(catalog, meta.route.originalModel) ?: return null
-        val window = budget.serveWindow
-        val estimate = perf.measuredInputs.estimate(
-            meta.scope.sessionId,
-            meta.scope.conversationKey,
-            meta.route.upstreamModel,
-            request,
-        ) ?: return null
-        // An ordinary continuation may compact early, so use the conservative upper bound.
-        // Compact and first-exchange refusals have no recovery behind them: only measured
-        // input alone beyond W proves overflow. Generation p99 is not a required minimum.
-        val ordinary = hasPriorExchange && !meta.compact
-        val allowance = if (ordinary) budget.totalTokens else 0L
-        val bound = if (ordinary) estimate.upperTokens else estimate.lowerTokens
-        val explanation = if (ordinary) {
-            "estimated $bound input tokens plus $allowance reserved context tokens " +
-                "exceed the $window-token window of ${meta.route.upstreamModel} " +
-                "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
-        } else {
-            val request = if (meta.compact) "This compaction" else "This first request"
-            "at least $bound input tokens exceed the $window-token window of ${meta.route.upstreamModel}. " +
-                "$request cannot fit here. Resume on a model with a larger context window, " +
-                "or start a fresh conversation."
-        }
-        return if (bound > window - allowance) "prompt is too long: $explanation" else null
     }
 }

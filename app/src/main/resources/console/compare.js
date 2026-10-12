@@ -26,17 +26,17 @@ const canSend = (a) => Boolean(a) && (a.account_pool ? poolSends(a) : a.present 
 async function read() {
   tick();
   const [heads, models, auth, accts] = await Promise.all(["/api/heads", "/api/models", "/api/auth", "/api/accounts"].map((p) => API.get(p)));
-  if (!heads.ok || !models.ok) { ui.error = heads.status === 0 ? "splice is not answering" : `splice answered ${heads.status}`; ui.cmds = []; return; }
+  if (!heads.ok || !models.ok) { console.warn(heads.ok ? `compare: /api/models answered ${models.status}` : `compare: /api/heads answered ${heads.status}`); ui.error = "Not read"; ui.cmds = []; return; }
   const label = Object.fromEntries((heads.body?.heads || []).map((h) => [h.key, h.label || h.key]));
   const rows = accts.body?.accounts || [];
   ui.cmds = (models.body?.heads || []).flatMap((row) => {
     const a = auth.body?.[row.head], list = (row.models || []).filter((m) => m.resolved !== false && m.id);
     if (!canSend(a) || !list.length) return [];
     const pool = a.account_pool, name = pool ? (pool.next_target ?? pool.selected_label) : (a.display_name ?? null);
-    const known = rows.find((r) => (r.heads || []).includes(row.head) && (!name || r.label === name || r.display_name === name));
+    const known = rows.find((r) => (r.heads || []).includes(row.head) && (!name || r.label === name || `native:${r.label}` === name || r.display_name === name));
     return [{
       key: row.head, command: label[row.head] ?? row.head, family: PROVIDER_FAMILY[row.provider] ?? row.provider,
-      models: list.map((m) => ({ id: m.id, label: modelName({ [m.id]: m.label }, m.id) })), acct: name ?? "", plan: known?.plan ?? "",
+      models: list.map((m) => ({ id: m.id, label: modelName({ [m.id]: m.label }, m.id) })), acct: known?.display_name ?? name ?? "", plan: known?.plan ? known.plan[0].toUpperCase() + known.plan.slice(1) : "",
     }];
   });
 }
@@ -91,9 +91,9 @@ function failWord(status, body, said) {
   if (status === 401 || status === 403) return OUTCOME_WORD["failure:authentication_error"];
   if (status >= 500 && status < 600) return OUTCOME_WORD["error:upstream-failed"];
   if (status >= 400 && status < 500) return OUTCOME_WORD["failure:invalid_request_error"];
-  if (/timed? ?out|HttpRequestTimeout/i.test(said)) return "Timed out";
+  if (/timed? ?out|HttpRequestTimeout/i.test(said)) return OUTCOME_WORD["error:turn-cap"];
   if (/no credential|forwards the caller/.test(said)) return OUTCOME_WORD["error:auth-missing"];
-  if (/no running provider/.test(said)) return "Not started";
+  if (/no running provider/.test(said)) return "Not running";
   if (/failed:/.test(said)) return OUTCOME_WORD["error:conn-reset"];
   return OUTCOME_WORD["error:unexpected"];
 }
@@ -231,7 +231,7 @@ function paneHtml(p, i) {
   if (p.st === "sending") {
     body = `${askedHtml(p)}<div class="pg-wait"><span class="lamp working" aria-hidden="true">${ICON.trace}</span><span class="detail" data-t0="${p.t0}">${ICON.watch(Math.floor((Date.now() - p.t0) / 1000))}<span>${counter(Date.now() - p.t0)}</span></span></div>`;
   } else if (p.st === "failed") body = `${askedHtml(p)}<div class="pg-fix${p.tries > 1 ? " again" : ""}">${fixHtml(p, i)}</div>`;
-  else if (p.st === "done") body = `${askedHtml(p)}<div class="msg agent"><div class="body">${md(p.text)}</div></div>`;
+  else if (p.st === "done") body = `${askedHtml(p)}<div class="msg agent"><div class="body">${mdPlan(p.text)}</div></div>`;
   const back = p.st === "done" || p.st === "failed";
   const toks = (a, b) => `<span class="toks"><b>${a}</b> tokens in<i class="sep">·</i><b>${b}</b> out</span>`;
   const figs = (p.tin != null && p.tout != null ? toks(p.tin, p.tout) : "") + (back ? `<span>${secs(p.ms)}</span>` : "");

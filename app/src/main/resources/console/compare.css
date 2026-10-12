@@ -97,8 +97,7 @@
 /* ---------- the panes: one per model he has on, the answer is the page ---------- */
 /* one column per model, all in one row, so the answers are read side by side; a row wraps only when a column would drop
    under a readable width (three fit at 1440, four at 3828) */
-.panes { display: grid; grid-template-columns: repeat(var(--cols), minmax(min(100%, 24rem), 1fr)); gap: var(--gap-col); align-items: start; }  /* a pane keeps its own height: nothing in it moves when a neighbour's answer lands (p97) */
-@container (max-width: 76rem) { .panes { grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr)); } }
+.panes { display: grid; grid-template-columns: repeat(auto-fit, minmax(max(min(100%, 24rem), calc((100% - (var(--cols) - 1) * var(--gap-col)) / var(--cols))), 1fr)); gap: var(--gap-col); align-items: start; }  /* a pane keeps its own height: nothing in it moves when a neighbour's answer lands (p97) */
 .pgp {
   --c: var(--text-mute); display: flex; flex-direction: column; min-width: 0;  /* a pane fits its answer; its menu may leave it */
   background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);

@@ -802,6 +802,17 @@ origin.
   first line of its first message, cut to 80 characters, and request rows carry that title and their project.
 - **Settings Version can take you on.** One card per version there is, a Check that reads the newest published release once
   per tap, and Upgrade and Restart splice from the same card.
+- **Accounts are shown by a name, never an email or an account id.** Every login carries a short reference and shows the
+  name you gave it, or "<Plan> · <reference>" until you do. Any login can be named, your own Claude login included, from
+  Accounts: Name it on a default, Rename, and Add, which asks for a name prefilled "<Provider> N". The names live in
+  splice's own state (`account-names.json`, `PUT /api/accounts/names/{ref}`), so no credential file is written. Requests
+  and Usage name each recorded account the same way, and an old row recorded with an email is shown by its reference and
+  never rewritten.
+- **Requests can be ordered by highest price.** Dearest first, requests with no price last, a plan request's value under
+  "On your plan", and the footer names the highest-priced request kept. `GET /api/perf/turns?order=price` asks the
+  daemon for it.
+- **The sessions list names the command a session arrived on,** where it used to print "unknown head" for a session that had
+  registered.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -960,6 +971,7 @@ origin.
   other short hold.
 - **Compare models sends every model the same system line,** "You are a helpful assistant.", so no answer comes from an
   instruction another model did not get, and each request shows it as its system.
+- **Teams, Usage and Settings draw their own shape while loading,** like Requests, instead of a blank page.
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
@@ -1459,6 +1471,25 @@ origin.
   the check.
 - **The MCP timeout says whose reply it waits for:** "Cut off a tool call after" is the budget for one request splice forwards
   to an MCP server.
+- **"Waited in line" counts only a request the gate held because its command's limit was full.** A pass through an open gate
+  records a wait of a millisecond or so, and on a busy day over a thousand of them read as waiting under a peak of 33 and
+  a limit of 100. A held request now records how long it was held, and the peak and the Requests filter read that.
+- **A client that sends its session only in the request body still gets its session.** The session id is read from the
+  body's `metadata.user_id` first and the header second, and a compaction finds its project from it.
+- **A session whose transcript is gone is never a door to nothing.** Open session no longer leads to a Sessions page
+  reading "No sessions".
+- **Every page marks its own nav item** whatever address it was opened at.
+- **A request splice ended before any attempt shows no token tiles.** Attempts 0 stands alone, like Cost.
+- **Requests reads as its own shape arriving** instead of a dashed "Reading" box, so loading no longer looks like an
+  empty day.
+- **A plan request's "≈$X at API prices" sits on the top line before "On your plan"** in Highest price.
+- **A project, head or project-head prompt keeps one place in the input on the OpenAI Responses dialect,** so its
+  tokens hit the prompt cache again on claudex, where a replace-mode system prompt had been moving it between turns.
+- **Usage and Requests load on a week of history.** A read asks the login files once per distinct recorded account,
+  not once per row.
+- **Teams' account picker lists your logins,** reading the real shape the accounts route answers.
+- **Usage's No project shows only requests with no project.**
+- **Compare shows which account the next turn uses,** read from where the daemon publishes it.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

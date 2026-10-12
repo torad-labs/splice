@@ -6,7 +6,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,7 +19,6 @@ import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SharedSummaryParts
-import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
@@ -39,33 +37,24 @@ import splice.upstream.TurnSignals
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
-/** [suspending] makes a signature write suspend first, as a contended client write does. */
-private class ProgressSink(
-    private val recorded: RecordingSink = RecordingSink(),
-    private val suspending: Boolean = false,
-) : WireSink by recorded {
+/** What the runtime observed of the script, and every call the client sink received. */
+private class ProgressSink(private val recorded: RecordingSink = RecordingSink()) : WireSink by recorded {
     val calls: List<String> get() = recorded.calls
-    val signatures = mutableListOf<String>()
     val source = mutableListOf<CustomToolSource>()
     val deltas: List<String> get() = source.filterIsInstance<CustomToolSource.Delta>().map { it.text }
 
-    /** What the runtime observed and what the client was shown, in one order. */
-    val timeline = mutableListOf<String>()
-
     override suspend fun customToolSource(event: CustomToolSource) {
         source += event
-        if (event is CustomToolSource.Delta) timeline += "runtime:${event.text}"
-    }
-
-    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        timeline += "shown:$thinking"
-        recorded.thinkingDelta(index, thinking)
     }
 
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        if (suspending) yield()
-        signatures += signature
-        recorded.calls += "signature#${index.value}:$signature"
+        recorded.calls.add("signature#${index.value}:$signature")
+    }
+
+    /** Nothing a client renders: no block was opened, written to, signed or closed for the script. */
+    fun assertNothingShown() {
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("think") || it.startsWith("openThinking") })
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("signature") || it.startsWith("close") })
     }
 }
 
@@ -121,17 +110,17 @@ class ResponsesCustomCallTest {
         assertEquals(2, outcome.handoffs.customCalls.size)
     }
 
-    /** V4-456: the script streams to the client while the model writes it, and the runtime still
-     *  observes every delta. Oct 1's version fed only the runtime, and the client saw the step at once. */
+    /** Oct 12 (Marcos's decision, reversing afb7a1f87's display): the runtime observes every delta of the script as the
+     *  model writes it, and no byte of it reaches the client. */
     @Test
-    fun `exec input is visible before completion and its signed progress does not change replay`() = runTest {
+    fun `exec input reaches the runtime as it streams and none of it reaches the client`() = runTest {
         val sink = ProgressSink()
         val script = "text(await tools.Read({file_path: 'a'}));"
         val call = execItem("live")
         val upstream = flow {
             emit(customEvent("response.output_item.added", call))
             emit(customEvent("response.custom_tool_call_input.delta", delta = script))
-            assertTrue(sink.calls.any { it == "think#0:$script" }, "the input must be visible before item-done")
+            assertEquals(listOf(script), sink.deltas, "the runtime has the input before item-done")
             emit(customEvent("response.custom_tool_call_input.done", delta = script))
             emit(customEvent("response.output_item.done", call))
             emit(customEvent("response.output_item.done", call))
@@ -142,23 +131,15 @@ class ResponsesCustomCallTest {
         assertEquals(emptyList<String>(), outcome.handoffs.reasoningEnvelopes)
         assertEquals(call, outcome.handoffs.customCalls.single().raw)
         assertEquals(listOf(script), sink.deltas)
-        assertEquals(listOf("runtime:$script", "shown:$script"), sink.timeline, "showing must never delay a dispatch")
-        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
-        assertEquals(1, sink.calls.count { it.startsWith("openThinking") })
-        assertEquals(1, sink.calls.count { it == "think#0:$script" })
-        assertEquals(1, sink.calls.count { it == "close#0" })
+        sink.assertNothingShown()
+        assertFalse(sink.calls.any { script in it }, "no script byte on the client: ${sink.calls}")
         sink.openTool("client-call", "Read")
-        assertTrue(sink.calls.indexOf("close#0") < sink.calls.indexOf("openTool#1(client-call,Read)"))
-        val replayed = buildJsonObject {
-            put("type", "thinking")
-            put("thinking", script)
-            put("signature", sink.signatures.single())
-        }
-        assertEquals(replayRequest(null).toString(), replayRequest(replayed).toString())
+        assertTrue(sink.calls.contains("openTool#0(client-call,Read)"), "the call it dispatches still shows as a tool")
+        assertEquals(replayRequest(null).toString(), replayRequest(null).toString())
     }
 
     @Test
-    fun `an exec progress block is signed even when item-done is missing`() = runTest {
+    fun `an exec item with no item-done still shows the client nothing`() = runTest {
         val sink = ProgressSink()
         val call = execItem("missing")
         val upstream = flow {
@@ -168,13 +149,11 @@ class ResponsesCustomCallTest {
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
         assertEquals(listOf("return 1;"), sink.deltas)
-        assertEquals(listOf("think#0:return 1;"), sink.calls.filter { it.startsWith("think#") })
-        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
-        assertEquals(1, sink.calls.count { it == "close#0" })
+        sink.assertNothingShown()
     }
 
     @Test
-    fun `another custom tool's input is not rendered as exec progress`() = runTest {
+    fun `another custom tool's input is not fed to the runtime or the client`() = runTest {
         val sink = ProgressSink()
         val call = item("other")
         val upstream = flow {
@@ -184,12 +163,12 @@ class ResponsesCustomCallTest {
             emit(terminal(call))
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
-        assertFalse(sink.calls.any { it.startsWith("think") || it.startsWith("openThinking") })
-        assertEquals(emptyList<String>(), sink.signatures)
+        assertEquals(emptyList<String>(), sink.deltas)
+        sink.assertNothingShown()
     }
 
     @Test
-    fun `cancelling mid-input signs and closes the exec block before propagation`() = runTest {
+    fun `cancelling mid-input leaves nothing open on the client`() = runTest {
         val sink = ProgressSink()
         val upstream = flow {
             emit(customEvent("response.output_item.added", execItem("cancelled")))
@@ -200,33 +179,13 @@ class ResponsesCustomCallTest {
             ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
         }
         assertEquals(listOf("await tools.Read("), sink.deltas)
-        assertTrue(sink.calls.contains("think#0:await tools.Read("))
         turn.cancelAndJoin()
         assertTrue(turn.isCancelled)
-        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
-        assertEquals(1, sink.calls.count { it == "close#0" })
-    }
-
-    /** The cleanup runs NonCancellable: a client write that suspends in a cancelled turn still signs and
-     *  closes the script, where a cancellable one would throw before the signature. */
-    @Test
-    fun `cancelling mid-input signs the exec block even when the client write suspends`() = runTest {
-        val sink = ProgressSink(suspending = true)
-        val upstream = flow {
-            emit(customEvent("response.output_item.added", execItem("contended")))
-            emit(customEvent("response.custom_tool_call_input.delta", delta = "await tools.Read("))
-            awaitCancellation()
-        }
-        val turn = async(start = CoroutineStart.UNDISPATCHED) {
-            ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
-        }
-        turn.cancelAndJoin()
-        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
-        assertEquals(1, sink.calls.count { it == "close#0" })
+        sink.assertNothingShown()
     }
 
     @Test
-    fun `index reuse closes progress before tools and stale input does not enter the replacement`() = runTest {
+    fun `index reuse keeps stale input out of the replacement and shows the client no script`() = runTest {
         val sink = ProgressSink()
         val upstream = flow {
             emit(customEvent("response.output_item.added", execItem("original")))
@@ -245,13 +204,13 @@ class ResponsesCustomCallTest {
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
         assertEquals(listOf("return ", " "), sink.deltas)
-        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
-        assertTrue(sink.calls.indexOf("close#0") < sink.calls.indexOf("openTool#1(client-tool,Read)"))
-        assertEquals(listOf("think#0:return ", "think#0: "), sink.calls.filter { it.startsWith("think#") })
+        sink.assertNothingShown()
+        val shown = sink.calls.any { it.startsWith("openTool#0(client-tool,Read)") }
+        assertTrue(shown, "the tool still shows: ${sink.calls}")
     }
 
     @Test
-    fun `stale input on a reused exec index is dropped and a malformed done still closes its block`() = runTest {
+    fun `stale input on a reused exec index is dropped and a malformed done shows nothing`() = runTest {
         val sink = ProgressSink()
         val upstream = flow {
             emit(customEvent("response.output_item.added", execItem("first")))
@@ -265,10 +224,7 @@ class ResponsesCustomCallTest {
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
         assertEquals(listOf("first", "second"), sink.deltas)
-        assertEquals(listOf("think#0:first", "think#1:second"), sink.calls.filter { it.startsWith("think#") })
-        assertEquals(listOf(SpliceNotice.SIGNATURE, SpliceNotice.SIGNATURE), sink.signatures)
-        assertEquals(1, sink.calls.count { it == "close#0" })
-        assertEquals(1, sink.calls.count { it == "close#1" })
+        sink.assertNothingShown()
     }
 
     private fun execItem(id: String): JsonObject = JsonObject(

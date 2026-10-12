@@ -19,7 +19,6 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.turn.CacheWrite
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
-import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.RedirectableRoundPost
@@ -212,10 +211,11 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
             }
         }
 
+        /** What the upstream's reader does for a script fragment: the model's own reasoning summary reaches the client
+         *  as a thinking block, and the script text goes to the runtime alone (no client block carries it). */
         private suspend fun source(sink: WireSink, text: String) {
             val index = sink.openThinking()
             sink.thinkingDelta(index, "Waiting for the next statement")
-            sink.signatureDelta(index, SpliceNotice.SIGNATURE)
             sink.closeBlock(index)
             sink.customToolSource(CustomToolSource.Delta("outer-call", text))
         }

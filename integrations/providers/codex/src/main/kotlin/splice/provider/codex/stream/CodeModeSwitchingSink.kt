@@ -81,16 +81,9 @@ internal class CodeModeSinkCore(initial: WireSink) {
         text
     }
 
-    /** [block] names the block the write belongs to; a write to a notice spends [notice] instead of the
-     *  model's budget (V4-456). The block table is read under the lock, with the write. */
-    suspend fun write(
-        bytes: Int = 0,
-        block: WireBlockIndex? = null,
-        notice: DetachedSpend = DetachedSpend.NOTICE_TEXT,
-        action: BufferedSinkWrite,
-    ) = mutex.withLock {
-        val spend = if (block != null && blocks.isNotice(block)) notice else DetachedSpend.MODEL
-        writes.deliver(target, bytes, spend, action)
+    /** The block table is read under the lock, with the write. */
+    suspend fun write(bytes: Int = 0, action: BufferedSinkWrite) = mutex.withLock {
+        writes.deliver(target, bytes, action)
     }
 
     suspend fun open(
@@ -102,7 +95,7 @@ internal class CodeModeSinkCore(initial: WireSink) {
         val bytes = JsonWire.byteSize(id) + JsonWire.byteSize(name) + (raw?.let(JsonWire::byteSize) ?: 0L)
         require(bytes <= CodeModeLimits.MAX_FRAME_BYTES) { "stream block exceeds byte budget" }
         val index = blocks.open(null, kind, id, name, raw)
-        writes.deliver(target, bytes.toInt(), DetachedSpend.MODEL) { sink -> blocks.destination(sink, index) }
+        writes.deliver(target, bytes.toInt()) { sink -> blocks.destination(sink, index) }
         index
     }
 
@@ -145,11 +138,6 @@ internal class CodeModeSinkOpens(
 
     override suspend fun openText(): WireBlockIndex = core.open(CodeModeSinkBlocks.Kind.TEXT)
 
-    /** A notice opens in its first delta's own locked write, never here: a cut between the writer's open
-     *  and its first delta then leaves no empty signed block, and the open spends nothing. */
-    override suspend fun openNotice(): WireBlockIndex =
-        core.mutex.withLock { core.blocks.open(null, CodeModeSinkBlocks.Kind.NOTICE) }
-
     override suspend fun openTool(id: String, name: String): WireBlockIndex =
         core.open(CodeModeSinkBlocks.Kind.TOOL, id, name)
 
@@ -173,7 +161,7 @@ internal class CodeModeSinkContent(private val core: CodeModeSinkCore) : BlockDe
     }
 
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        core.write(thinking.encodeToByteArray().size, index) { sink ->
+        core.write(thinking.encodeToByteArray().size) { sink ->
             core.blocks.destination(sink, index)?.let { sink.thinkingDelta(it, thinking) }
         }
     }
@@ -185,7 +173,7 @@ internal class CodeModeSinkContent(private val core: CodeModeSinkCore) : BlockDe
     }
 
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        core.write(signature.encodeToByteArray().size, index, DetachedSpend.NOTICE_FRAME) { sink ->
+        core.write(signature.encodeToByteArray().size) { sink ->
             core.blocks.sign(sink, index, signature)
         }
     }
@@ -211,7 +199,7 @@ internal class CodeModeSinkContent(private val core: CodeModeSinkCore) : BlockDe
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {
-        core.write(block = index, notice = DetachedSpend.NOTICE_FRAME) { core.blocks.close(it, index) }
+        core.write { core.blocks.close(it, index) }
     }
 
     override suspend fun closeAll() {

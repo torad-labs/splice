@@ -56,7 +56,6 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
-import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
@@ -1034,12 +1033,12 @@ class CodeModeCrossScriptSourceTest {
             val history = mutableListOf(opening)
             val a = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
             assertEquals(preludeCalls, toolUses(a).size, "A delivers its real client callback batch")
-            assertSignedNotice(a, "Promise.all")
+            assertNoScriptShown(a, "Promise.all")
             history += returned(a)
             val b = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
             assertEquals(1, toolUses(b).size, "B publishes its first native-only callback while its source is live")
             assertTrue(!b.contains(PRELUDE_COMMENTARY), "B must not emit A commentary")
-            assertSignedNotice(b, "tools.Read")
+            assertNoScriptShown(b, "tools.Read")
             withTimeout(TURN_BOUND_MS) { runtime.delivered.receive() }
             history += returned(b)
             return history
@@ -1058,15 +1057,12 @@ class CodeModeCrossScriptSourceTest {
             upstream.close()
         }
 
-        private fun assertSignedNotice(wire: String, sourceMarker: String) {
+        /** Oct 12 (Marcos's decision): no byte of the live script reaches the client in a thinking or text block. */
+        private fun assertNoScriptShown(wire: String, sourceMarker: String) {
             val blocks = clientBlocks(wire)
             assertTrue(blocks.none { it["type"]?.jsonPrimitive?.content == "redacted_thinking" })
-            val notices = blocks.filter {
-                it["type"]?.jsonPrimitive?.content == "thinking" &&
-                    it["signature"]?.jsonPrimitive?.content == SpliceNotice.SIGNATURE
-            }
-            assertEquals(1, notices.size, "the client echoes the actual signed live-script notice")
-            assertTrue(sourceMarker in notices.single().getValue("thinking").jsonPrimitive.content)
+            val shown = blocks.map { (it["thinking"] ?: it["text"])?.jsonPrimitive?.content.orEmpty() }
+            assertTrue(shown.none { sourceMarker in it }, "the script reached the client: $shown")
         }
 
         private fun clientBlocks(wire: String): List<JsonObject> {

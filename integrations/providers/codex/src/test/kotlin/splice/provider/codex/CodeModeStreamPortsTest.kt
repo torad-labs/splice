@@ -12,8 +12,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.reasoning.ReasoningReplay
-import splice.core.turn.SpliceNotice
-import splice.provider.codex.stream.CodeModeClientStepSink
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.provider.codex.stream.CodeModeSwitchingSink
 import splice.upstream.codemode.CodeModeLimits
@@ -123,30 +121,6 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         assertTrue(bounded, "zero-byte events must not create an unbounded closure queue")
     }
 
-    /** V4-456: a dispatched tool call ends the client step mid-script. The live script block is signed at
-     *  that cut, so Claude Code never replays the script as reasoning, and the script goes on in the next
-     *  client step. */
-    @Test
-    fun `a dispatched call signs the live script at the cut and the script continues in the next step`() =
-        runBlocking {
-            val first = EventSink()
-            val round = CodeModeSwitchingSink(first) {}
-            val script = round.openNotice()
-            round.thinkingDelta(script, "const a = ")
-            CodeModeClientStepSink(round, first).openTool("call-1", "Read")
-            round.thinkingDelta(script, "await tools.Read();")
-            val second = EventSink()
-            round.attach(second)
-            round.signatureDelta(script, SpliceNotice.SIGNATURE)
-            round.closeBlock(script)
-            val signed = "sig#0:${SpliceNotice.SIGNATURE}"
-            assertEquals(
-                listOf("openThinking#0", "think#0:const a = ", signed, "close#0", "openTool#1(call-1,Read)"),
-                first.events,
-            )
-            assertEquals(listOf("openThinking#0", "think#0:await tools.Read();", signed, "close#0"), second.events)
-        }
-
     @Test
     fun `a model thinking block cut by a dispatched call is not signed as splice's own`() = runBlocking {
         val first = EventSink()
@@ -155,82 +129,6 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         round.thinkingDelta(reasoning, "model text")
         round.detach()
         assertEquals(listOf("openThinking#0", "think#0:model text", "close#0"), first.events)
-    }
-
-    @Test
-    fun `a closing signature never reopens a live script that the cut already signed`() = runBlocking {
-        val round = CodeModeSwitchingSink(EventSink()) {}
-        val script = round.openNotice()
-        round.thinkingDelta(script, "return 1;")
-        round.detach()
-        val next = EventSink()
-        round.attach(next)
-        round.signatureDelta(script, SpliceNotice.SIGNATURE)
-        round.closeBlock(script)
-        assertEquals(emptyList<String>(), next.events, "an empty signed block would be drawn in the next step")
-    }
-
-    /** A 65,536-character script sent a character a delta outweighs the detached budget in envelopes. Its
-     *  text is dropped past its own budget, its signature and close are kept, so the block the kept deltas
-     *  reopen is signed and closed, and its open and close spend none of the budget model output is held to:
-     *  a model write at that budget's exact edge still passes. */
-    @Test
-    fun `live script past the detached byte budget is dropped, still signed, and never spends the model's budget`() =
-        runBlocking {
-            val round = CodeModeSwitchingSink(EventSink()) {}
-            val script = round.openNotice()
-            round.thinkingDelta(script, "const a = ")
-            round.detach()
-            repeat(CodeModeLimits.MAX_FRAME_BYTES / 20) { round.thinkingDelta(script, "x") }
-            round.signatureDelta(script, SpliceNotice.SIGNATURE)
-            round.closeBlock(script)
-            val header = """{"type":"content_block_delta","index":0,"delta":{}}""".encodeToByteArray().size
-            val edge = "y".repeat(CodeModeLimits.MAX_FRAME_BYTES - 2 * header)
-            val text = round.openText()
-            round.textDelta(text, edge)
-            val next = EventSink()
-            round.attach(next)
-            val shown = next.events.count { it == "think#0:x" }
-            assertTrue(shown in 1 until CodeModeLimits.MAX_FRAME_BYTES / 20, "the script was not cut: $shown")
-            val closing = next.events.filter { "#0" in it }.drop(shown + 1)
-            val signedClose = listOf("sig#0:${SpliceNotice.SIGNATURE}", "close#0")
-            assertEquals(signedClose, closing, "the reopened script is unsigned")
-            assertTrue(next.events.contains("text#1:$edge"), "model output lost budget to the live script")
-        }
-
-    /** A cut between the writer's open and its first delta: nothing was drawn, so nothing is signed or closed
-     *  in that step, and the script opens where its first delta lands. */
-    @Test
-    fun `a cut before the live script's first delta draws no empty block`() = runBlocking {
-        val first = EventSink()
-        val round = CodeModeSwitchingSink(first) {}
-        val script = round.openNotice()
-        round.detach()
-        round.thinkingDelta(script, "await tools.Read();")
-        val next = EventSink()
-        round.attach(next)
-        round.signatureDelta(script, SpliceNotice.SIGNATURE)
-        round.closeBlock(script)
-        assertEquals(emptyList<String>(), first.events, "an empty signed block would be drawn")
-        val signed = "sig#0:${SpliceNotice.SIGNATURE}"
-        assertEquals(listOf("openThinking#0", "think#0:await tools.Read();", signed, "close#0"), next.events)
-    }
-
-    /** A cut between the writer's signature and its close: the block is closed at the cut, signed once. */
-    @Test
-    fun `a cut after the writer signed the live script never signs it twice`() = runBlocking {
-        val first = EventSink()
-        val round = CodeModeSwitchingSink(first) {}
-        val script = round.openNotice()
-        round.thinkingDelta(script, "return 1;")
-        round.signatureDelta(script, SpliceNotice.SIGNATURE)
-        round.detach()
-        val next = EventSink()
-        round.attach(next)
-        round.closeBlock(script)
-        val signed = "sig#0:${SpliceNotice.SIGNATURE}"
-        assertEquals(listOf("openThinking#0", "think#0:return 1;", signed, "close#0"), first.events)
-        assertEquals(emptyList<String>(), next.events)
     }
 
     @Test

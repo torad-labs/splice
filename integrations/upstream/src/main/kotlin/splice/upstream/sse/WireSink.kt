@@ -11,11 +11,6 @@ import splice.core.index.WireBlockIndex
 public interface SourceProgressSink {
     public suspend fun openThinking(): WireBlockIndex
 
-    /** A thinking block splice writes for the client alone (the live exec script). Its writer signs it
-     *  with the splice notice signature before closing it, which every request parser drops; a sink
-     *  that can cut a block short (a code-mode round between client steps) signs it at the cut. */
-    public suspend fun openNotice(): WireBlockIndex = openThinking()
-
     public suspend fun customToolSource(event: CustomToolSource) {}
 }
 

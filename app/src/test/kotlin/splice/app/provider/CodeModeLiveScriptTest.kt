@@ -1,9 +1,8 @@
-// NEW: V4-456 — a GPT code-mode script reaches the client's wire while the model writes it, not when it ends, before a
-// dispatched tool call and after the client's result resumes the same script. Measured at the client boundary: a
-// scripted upstream sends one script delta at a time and waits, with a deadline, for the client to read a thinking
-// delta from the head's response before it sends the next. A head that holds a delta lets the
-// deadline pass, so that delta is recorded as late. The operator reported the burst back after Oct 2, when afb7a1f87
-// and c55803df6 put the live script on the wire as a signed notice block.
+// NEW: V4-456, reversed Oct 12 (Marcos's decision): a GPT code-mode script never reaches the client, in any block, while
+// the model writes it. What stays live is the connection: a scripted upstream sends one script delta at a time and
+// waits, with a deadline, for the client to read a keepalive from the head's response before it sends the next. A head
+// that stops keeping the stream alive while a long script is written lets the deadline pass, so that delta is recorded
+// as late. Reasoning summaries are pinned in the stream tests; here the client's wire must carry no script text.
 package splice.app.provider
 
 import com.sun.net.httpserver.HttpExchange
@@ -76,8 +75,11 @@ private const val LIVE_TEST_SECONDS = 90L
 // why: the product allows the worker WORKER_START_TIMEOUT_MS to start; the bound adds room for the rest of the turn.
 private const val WORKER_BOUND_MS = WORKER_START_TIMEOUT_MS + 5_000L
 
-// why: longer than a pacer tick plus scheduling jitter, far shorter than the seconds a held script lasted on Oct 2.
-private const val LIVE_BOUND_MS = 400L
+// why: the head's keepalive interval is two seconds; the bound adds room for scheduling jitter on a loaded box.
+private const val LIVE_BOUND_MS = 4_000L
+
+// why: the head writes its keepalive as an SSE comment line starting with this prefix.
+private const val KEEPALIVE_PREFIX = ": ping"
 
 // why: of the script chunks after the first, the one at this index dispatches the tool call and is not timed.
 private const val DISPATCH_CHUNK = 3
@@ -96,7 +98,7 @@ class CodeModeLiveScriptTest {
 
     @Test
     @Timeout(LIVE_TEST_SECONDS)
-    fun `each script delta of a streaming exec reaches the client within a bound of leaving the upstream`(
+    fun `the stream stays alive within a bound of each script delta and no script text reaches the client`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val upstream = TimedScriptUpstream()
@@ -131,6 +133,7 @@ class CodeModeLiveScriptTest {
             val lateness = upstream.timedLateness.toList()
             assertEquals(TIMED_DELTAS, lateness.size, diagnosis(upstream, runtime, lateness, logs))
             assertTrue(lateness.all { it != LATE }, diagnosis(upstream, runtime, lateness, logs))
+            assertTrue(seen.none { "piece" in it || "tools." in it }, "the script reached the client: $seen")
         } finally {
             upstream.close()
             head.stop()
@@ -190,7 +193,7 @@ class CodeModeLiveScriptTest {
         logs: Collection<String>,
     ): String {
         val finished = runtime.completed.takeIf { it.isCompleted }?.await()
-        return "each script delta must reach the client within $LIVE_BOUND_MS ms of leaving the upstream; " +
+        return "the head must keep the stream alive within $LIVE_BOUND_MS ms of each script delta; " +
             "${lateness.size} timed deltas (ms, -1 late): $lateness; ${upstream.scriptEnd}; " +
             "script finished: $finished; calls: ${runtime.calls.size}; " +
             "upstream trail: ${upstream.trail.joinToString(" ")}; " +
@@ -199,7 +202,7 @@ class CodeModeLiveScriptTest {
             "log: ${logs.joinToString(" | ").take(LOG_CHARS)}"
     }
 
-    /** Reads one response as it streams, releasing a permit per thinking delta for the upstream. Answers the assistant
+    /** Reads one response as it streams, releasing a permit per keepalive for the upstream. Answers the assistant
      *  message the client would replay, as its tool_use blocks end it, or null when the response ended without a call.
      *  [onStart] runs once the response is open. */
     private suspend fun reader(
@@ -219,11 +222,11 @@ class CodeModeLiveScriptTest {
             val channel = response.bodyAsChannel()
             var line = channel.readLine()
             while (line != null) {
+                if (line.startsWith(KEEPALIVE_PREFIX)) sawThinking.release()
                 if (line.startsWith("data: ")) {
                     val event = Json.parseToJsonElement(line.removePrefix("data: ")).jsonObject
-                    if (isThinkingDelta(event)) sawThinking.release()
                     replay.take(event)
-                    if (!isThinkingDelta(event)) seen += "${request.length % 1000}:" + event.toString().take(60)
+                    seen += event.toString()
                 }
                 line = channel.readLine()
             }
@@ -242,10 +245,6 @@ class CodeModeLiveScriptTest {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"$callId","content":"read-result"}]}],
             "tools":[{"name":"Read","description":"Read a synthetic fixture","input_schema":{"type":"object"}}]}"""
     }
-
-    private fun isThinkingDelta(event: JsonObject): Boolean =
-        event["type"]?.jsonPrimitive?.content == "content_block_delta" &&
-            event.getValue("delta").jsonObject["type"]?.jsonPrimitive?.content == "thinking_delta"
 
     private fun provider(
         url: String,
@@ -317,7 +316,7 @@ private const val REQUEST =
 
 /** An upstream whose exec script streams one delta at a time. The first leaves at once, so the code-mode worker can
  *  boot. Once the test says the worker is ready, [TIMED_DELTAS] more leave, each only after the client has read a
- *  thinking delta for the one before it, or after [LIVE_BOUND_MS] without one. Then the round completes. */
+ *  keepalive for the one before it, or after [LIVE_BOUND_MS] without one. Then the round completes. */
 private class TimedScriptUpstream {
     val workerReady = CountDownLatch(1)
 
@@ -329,11 +328,11 @@ private class TimedScriptUpstream {
 
     @Volatile var scriptEnd: String = "script completed"
 
-    /** One permit per thinking delta the client read from the first response, and from the resumed one. */
+    /** One permit per keepalive the client read from the first response, and from the resumed one. */
     val beforeDispatch = Semaphore(0)
     val afterResume = Semaphore(0)
 
-    /** For each timed delta, ms from its flush to the client's next thinking delta; null when none came in time. */
+    /** For each timed delta, ms from its flush to the client's next keepalive; null when none came in time. */
     val timedLateness = ConcurrentLinkedQueue<Long>()
     private val pool = Executors.newCachedThreadPool()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)

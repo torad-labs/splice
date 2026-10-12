@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.upstream.RoundResult
@@ -58,8 +57,9 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                 assertFalse(post.complete.isCompleted, "tool callback must precede response.completed")
                 assertEquals(1, post.posts, "results must not POST merely to receive another statement")
                 assertTrue(stateFiles.records().single().toString().contains(callback.id), "callback must be durable")
-                assertTrue(sinks[step].progress.isNotEmpty(), "each attached client sees source progress")
-                assertTrue(SpliceNotice.SIGNATURE in sinks[step].signatures, "progress closes with its replay marker")
+                assertTrue(sinks[step].progress.isNotEmpty(), "each attached client sees the reasoning summary")
+                assertFalse(sinks[step].progress.contains("tools."), "no script byte reaches the client")
+                assertEquals(emptyList<String>(), sinks[step].signatures, "nothing splice wrote is signed as a notice")
             }
             assertSourcePending()
             val final = async {
@@ -99,7 +99,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), second, post)
             assertTrue(second.progress.toString().contains("Waiting"))
-            assertTrue(SpliceNotice.SIGNATURE in second.signatures)
+            assertEquals(emptyList<String>(), second.signatures)
             assertEquals(1, post.posts)
             assertEquals(1, runtime.starts)
         } finally {

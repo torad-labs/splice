@@ -217,7 +217,7 @@ class StatementGatewayTest {
             head.start()
             val first = withTimeout(WORKER_START_BOUND_MS) { send(firstBody).bodyAsText() }
             assertTrue(first.contains("message_stop"), first)
-            assertScriptShownAsNotice(first, "tools.Read")
+            assertNoScriptShown(first, "tools.Read")
             assertEquals(1L, upstream.terminal.count)
             return toolCalls(first).also { calls ->
                 assertEquals(if (batch == null) 1 else 2, calls.size, first)
@@ -259,7 +259,7 @@ class StatementGatewayTest {
             assertTrue(next.contains("\"name\":\"Edit\""), next)
             assertTrue(next.contains(SpliceNotice.SIGNATURE), next)
             assertTrue(next.indexOf("signature_delta") < next.indexOf("\"name\":\"Edit\""), next)
-            assertScriptShownAsNotice(next, "tools.Edit")
+            assertNoScriptShown(next, "tools.Edit")
             assertTrue(next.contains("message_stop"), next)
             assertEquals(1L, upstream.terminal.count, "the callback precedes response.completed")
             assertEquals(1, upstream.posts.get())
@@ -450,13 +450,11 @@ class StatementGatewayTest {
         block.append(delta, listOf("text", "thinking", "partial_json"))
     }
 
-    /** V4-456: the client sees the live script while the model writes it, and only inside thinking blocks
-     *  carrying splice's notice signature, which every request parser drops: never as text, a tool input or
-     *  reasoning the client would replay. */
-    private fun assertScriptShownAsNotice(wire: String, statement: String) {
-        val script = blocks(wire).filter { it.content.contains("tools.") }
-        assertTrue(script.any { it.content.contains(statement) }, wire)
-        assertTrue(script.all { it.type == "thinking" && it.signatures == listOf(SpliceNotice.SIGNATURE) }, wire)
+    /** Oct 12 (Marcos's decision, reversing afb7a1f87's display of V4-456): no byte of the exec script reaches the
+     *  client in a block of any type, while the calls it dispatches still arrive as tool calls. */
+    private fun assertNoScriptShown(wire: String, statement: String) {
+        val script = blocks(wire).filter { it.content.contains("tools.") || it.content.contains(statement) }
+        assertTrue(script.isEmpty(), "the script reached the client as ${script.map { it.type }}: $wire")
     }
 
     private fun toolCalls(wire: String): List<JsonObject> {

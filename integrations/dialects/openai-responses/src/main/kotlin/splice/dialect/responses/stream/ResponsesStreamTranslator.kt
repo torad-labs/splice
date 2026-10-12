@@ -154,9 +154,9 @@ internal class ResponsesStreamTranslator(
             if (!clientSawContent(state)) throw ignored
             unexpected = ignored
         } finally {
-            // Sign and close the live script block even when the upstream omits item-done or the turn aborts.
+            // Forget the exec items even when the upstream omits item-done or the turn aborts.
             withContext(NonCancellable) {
-                itemFold.execProgress.closeAll(sink)
+                itemFold.execProgress.closeAll()
                 if (terminalSeen(state)) sink.customToolSource(CustomToolSource.Terminal)
             }
         }

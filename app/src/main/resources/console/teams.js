@@ -62,7 +62,7 @@ const state = {
   screens: {},
   error: null, loading: true,
 };
-const ui = { team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
+const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
 // From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
 // Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
 const ANSWER_HOLD_MS = 30_000;
@@ -266,6 +266,16 @@ function sinceOf(tm) {
   return oldest && oldest > (tm.created_epoch_millis || 0) ? oldest : null;
 }
 
+// ---------- the pick: Sessions' projects, one pick across the pages (kit PICK) ----------
+// A team is where its repo resolves; with no repo, where its lead works. A pick shows every team with a member in the
+// project, so a team across two projects appears under each of them wherever its people are (PROJECTS.md).
+const leadOf = (tm) => tm.slots.find((s) => s.lead) || tm.slots[0] || null;
+const homeOf = (tm) => (tm.project ? tm : leadOf(tm)?.project ? leadOf(tm) : null);
+const teamKey = (tm) => rowProjKey(homeOf(tm));
+const groupsNow = () => projectGroups(Object.values(state.sessions));
+const picked = () => { const g = groupsNow(); return g.length >= 2 ? (ui.project = reconcilePick(ui.project, g)) : null; };
+const inPick = (tm, pick = picked()) => pick == null || teamKey(tm) === pick || tm.slots.some((s) => rowProjKey(s) === pick);
+
 // ---------- the tabs: one per team, its members' colours on it ----------
 function tabHtml(tm) {
   const needs = tm.slots.some((s) => sessOf(s)?.waiting_for);
@@ -275,13 +285,25 @@ function tabHtml(tm) {
   return `<button class="tab${needs ? " needs" : ""}" data-act="team" data-t="${esc(tm.id)}" title="${esc(dots)}" aria-current="${ui.team === tm.id}">` +
     `<span class="tname">${esc(tm.name)}</span><span class="blots" aria-hidden="true">${blots}</span></button>`;
 }
+/** Every project's teams under its muted name, in Sessions' group order; a project Sessions has no live session in
+ *  follows by name, and No project comes last. One cluster, or a project picked, draws the tabs alone. */
+function clustersHtml(on) {
+  const order = groupsNow().map((g) => g.key);
+  const m = new Map();
+  for (const tm of on) { const k = teamKey(tm); if (!m.has(k)) m.set(k, []); m.get(k).push(tm); }
+  if (picked() != null || m.size < 2) return on.map(tabHtml).join("");
+  const name = (k) => rowProjName(homeOf(m.get(k)[0]));
+  const at = (k) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
+  const keys = [...m.keys()].sort((a, b) => (a === NO_PROJECT_KEY) - (b === NO_PROJECT_KEY) || at(a) - at(b) || name(a).localeCompare(name(b)));
+  return keys.map((k) => `<span class="tcluster" role="group" aria-label="${esc(name(k))}"><span class="tproj">${esc(name(k))}</span>${m.get(k).map(tabHtml).join("")}</span>`).join("");
+}
 function tabsHtml() {
-  const on = state.teams.filter((t) => !t.archived);
-  const off = state.teams.filter((t) => t.archived);
+  const on = state.teams.filter((t) => !t.archived && inPick(t));
+  const off = state.teams.filter((t) => t.archived && inPick(t));
   const fold = off.length ? `<button class="act quiet fold" data-act="archived" aria-expanded="${ui.archived}">${off.length} archived</button>` : "";
   const newT = `<button class="act quiet new" data-act="new" aria-pressed="${ui.compose?.id === null}"><span class="plus" aria-hidden="true">+</span>New team</button>`;
   const offTabs = ui.archived ? `<span class="rule" aria-hidden="true"></span>${off.map(tabHtml).join("")}` : "";
-  return `<nav class="tabs" aria-label="Teams">${on.map(tabHtml).join("")}${newT}${offTabs}${fold}</nav>`;
+  return `<nav class="tabs" aria-label="Teams">${clustersHtml(on)}${newT}${offTabs}${fold}</nav>`;
 }
 
 // ---------- a member: the slot's role on its command, its session's state as the lamp ----------
@@ -574,16 +596,16 @@ function render() {
   const a = document.activeElement;
   const kind = a?.closest?.(".compose") && ["#t-name", "#t-goal", "#t-repo", ".role-in", ".instr"].find((k) => a.matches(k));
   const focus = kind ? { sel: kind.startsWith("#") ? kind : `${kind}[data-i="${a.dataset.i}"]`, pos: a.selectionStart } : null;
-  const shown = state.teams.filter((t) => !t.archived || ui.archived);
-  if (!shown.some((t) => t.id === ui.team)) ui.team = state.teams.find((t) => !t.archived)?.id ?? null;
-  const tm = team();
+  const shown = state.teams.filter((t) => (!t.archived || ui.archived) && inPick(t));
+  if (!shown.some((t) => t.id === ui.team)) ui.team = shown.find((t) => !t.archived)?.id ?? shown[0]?.id ?? null;
+  const tm = shown.length ? team() : null;
   root.innerHTML = state.error
     ? `<p class="empty limit">${esc(state.error)}</p>`
     : state.loading
       ? `<p class="empty">Reading</p>`
       : !state.teams.length
         ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
-        : tabsHtml() + (tm ? boardHtml(tm) : "");
+        : pickLineHtml(groupsNow(), picked(), ui.pmenu) + tabsHtml() + (tm ? boardHtml(tm) : "");
   sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";
   document.querySelector(".app").inert = Boolean(ui.compose);
   for (const log of root.querySelectorAll(".log.chat, .feed .flow")) log.scrollTop = log.scrollHeight;
@@ -739,6 +761,7 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
   const card = e.target.closest(".card[data-go]");
   if (!b && card && !e.target.closest("a, button, input, textarea, select")) { openSession(card); return; }
+  if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; if (!b) { render(); return; } }
   if (!b) {
     if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
     return;
@@ -751,6 +774,10 @@ document.addEventListener("click", async (e) => {
     case "theme": toggleTheme(); break;
     case "read": await read(); break;
     case "team": Object.assign(ui, { team: b.dataset.t, compose: null, pick: null, menu: null, day: 0 }); render(); await readTeam(); break;
+    case "projmenu": ui.pmenu = !ui.pmenu; render(); break;
+    // the same pick as Sessions and Requests; the open team stays when it has a member there, else the first that does
+    case "pickproj": { const was = ui.team; ui.project = b.dataset.p || null; ui.pmenu = false; PICK.set(ui.project);
+      Object.assign(ui, { menu: null, pick: null }); render(); if (ui.team !== was) { ui.day = 0; await readTeam(); } break; }
     case "archived": ui.archived = !ui.archived; render(); break;
     case "new": Object.assign(ui, { compose: composeFrom(null), menu: null, pick: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
     case "edit": Object.assign(ui, { compose: composeFrom(tm), menu: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
@@ -825,3 +852,6 @@ setInterval(() => {
     el.querySelector(".hand")?.style.setProperty("transform", `rotate(${Math.floor(ms / 1000) * 6}deg)`);
   }
 }, 1000);
+// the tiles come and go with the page's width, as Sessions' do
+let wasWide = null;
+addEventListener("resize", () => { const w = tilesWide(); if (w !== wasWide) { wasWide = w; if (!state.loading) render(); } });

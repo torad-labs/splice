@@ -457,3 +457,53 @@ function tilesHtml(items, pick) {
       + `<span class="plamps">${counts.filter(([, n]) => n).map(tlampHtml).join("")}</span></button>`;
   }).join("")}</nav>`;
 }
+
+// ---------- the projects as Teams and Requests see them: off /api/sessions rows, in Sessions' group order ----------
+// Sessions groups its own cards (sessions.js groupsOf); the other pages read the same rows raw. The order is the same
+// rule: the group with the most urgent live session first (waiting on him, then working), then its latest activity,
+// then its name, No project last. A stall is Sessions' own reading of a live turn and is not on the raw row, so a
+// stalled group can sit one place lower here than on Sessions until it is working again.
+const NO_PROJECT_KEY = "-";
+const rowProjKey = (r) => r?.project?.id ?? NO_PROJECT_KEY;
+const rowProjName = (r) => r?.project?.label || r?.project?.name || "No project";
+/** [{key, label, counts, total}] for every project with a live session, in Sessions' group order. */
+function projectGroups(rows) {
+  const live = (r) => r.availability !== "gone";
+  const working = (r) => r.status === "working" || r.status === "busy";
+  const rank = (r) => (r.waiting_for ? 0 : working(r) ? 2 : 3);
+  const m = new Map();
+  for (const r of rows) {
+    const k = rowProjKey(r);
+    if (!m.has(k)) m.set(k, { key: k, label: rowProjName(r), rows: [] });
+    m.get(k).rows.push(r);
+  }
+  const groups = [...m.values()].filter((g) => g.rows.some(live)).map((g) => {
+    const on = g.rows.filter(live);
+    return {
+      key: g.key, label: g.label, total: g.rows.length,
+      counts: [["needs", on.filter((r) => r.waiting_for).length], ["stalled", 0], ["working", on.filter((r) => !r.waiting_for && working(r)).length]],
+      rank: Math.min(...on.map(rank)), at: Math.max(...on.map((r) => Date.parse(r.updated_at) || 0)),
+    };
+  });
+  return groups.sort((a, b) => (a.key === NO_PROJECT_KEY) - (b.key === NO_PROJECT_KEY)
+    || a.rank - b.rank || b.at - a.at || a.label.localeCompare(b.label));
+}
+/** A pick that names a project by its name (an older door: Usage's ?project=splice) is that project's id. */
+function reconcilePick(pick, groups) {
+  if (pick == null || groups.some((g) => g.key === pick)) return pick;
+  const g = groups.find((x) => x.label === pick || x.key.split("/").pop() === pick);
+  if (g) PICK.set(g.key);
+  return g ? g.key : pick;
+}
+/** The pick line Teams and Requests draw: the tiles at a wide page, else the picker and its doors, else, with one
+ *  project, its name; nothing with no live session. The pick only exists where there are two projects to pick between. */
+function pickLineHtml(groups, pick, open) {
+  if (!groups.length) return "";
+  if (groups.length < 2) return groups[0].key === NO_PROJECT_KEY ? "" : `<div class="lhead"><span class="pname solo">${esc(groups[0].label)}</span></div>`;
+  if (tilesWide()) {
+    const items = groups.map((g) => [g.key, g.label, g.counts, g.total, countWords(g.counts, g.total, "session")]);
+    const every = sumCounts(items.map((x) => x[2])), all = groups.reduce((a, g) => a + g.total, 0);
+    return tilesHtml([["", "Every project", every, all, countWords(every, all, "session")], ...items], pick);
+  }
+  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]))}</div>`;
+}

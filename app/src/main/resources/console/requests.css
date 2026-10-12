@@ -8,6 +8,10 @@
 
 /* ---------- the filters: what /api/perf/turns takes, one button each ---------- */
 .filters-row { margin: -1.2rem 0 2.6rem 3.4rem; }
+/* the pick on its own line above the filters (PROJECTS.md): the picker where the filters start, the tiles page-wide */
+.pickline:not(:empty) { margin: -1.2rem 0 1.4rem; }
+.pickline .lhead { margin-left: 3.4rem; }
+.pickline:not(:empty) + .filters-row { margin-top: 0; }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
 .fwrap { position: relative; display: inline-flex; }
 .fbtn {

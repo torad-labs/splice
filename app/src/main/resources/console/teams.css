@@ -25,6 +25,11 @@
 .plus { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: .14rem solid currentColor; display: grid; place-items: center; font: 500 1.05rem/1 var(--font-data); }
 .tabs .rule { width: .16rem; height: 2.4rem; background: var(--track-line); border-radius: .1rem; margin: 0 .3rem; }
 .tabs .fold { margin-left: auto; }
+/* a project's teams sit together under its muted name, in Sessions' group order (PROJECTS.md); the pick line above */
+.tabs .tcluster { display: inline-flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-right: 1.4rem; }
+.tabs .tproj { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); margin-right: .1rem; }
+#teams > .lhead, #teams > .ptiles { margin: -1rem 0 2.2rem; }
+#teams > .lhead + .tabs, #teams > .ptiles + .tabs { margin-top: 0; }
 .team.archived .team-head h2 { color: var(--text-body); }
 
 /* ---------- the team's head: name, goal, where it works and what it has cost ---------- */

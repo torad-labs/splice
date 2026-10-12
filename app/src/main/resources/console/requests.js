@@ -125,7 +125,7 @@ const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the 
 const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.kt)
 
 let state = {
-  loading: true, error: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
+  loading: true, error: null, groups: [], titles: {}, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
   rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
   // what Start saving answered, per command: { word, failed }, the word that stands beside "Not saved" once pressed
   saving: {},
@@ -134,7 +134,7 @@ let state = {
   // when the window lists nothing: the nearest wider window that has matches, and how many (readWider)
   wider: null,
 };
-let ui = { open: null, q: "", win: "24h", cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null,
+let ui = { project: PICK.get(), pmenu: false, open: null, q: "", win: "24h", cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null,
   outcome: "all", why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true };
 const root = document.getElementById("requests");
 const wide = sideBySide;
@@ -142,7 +142,26 @@ const wide = sideBySide;
 // back than the window does. One figure, so the rows, the menus and the search all cover the same ground.
 const since = (win = ui.win) => Math.min(ui.from ?? Infinity, +NOW - WINDOWS[win][1]);
 const providerOfCmd = (cmd) => state.providerOf[(state.heads.find((h) => h.command === cmd) || {}).key];
-const sessTitle = (sid) => { const s = state.sessions[sid]; return s?.name || (sid ? `Session ${String(sid).slice(0, 8)}` : ""); };
+// ONE SESSION, ONE NAME ON EVERY PAGE (PROJECTS.md): its name, else the first line it was asked, as its Sessions card
+// reads; never its folder. The title comes from the session row, or from the request row for a session no longer live.
+const sessTitle = (sid) => {
+  if (!sid) return "";
+  const tag = String(sid).slice(0, 8), s = state.sessions[sid] ?? state.sessions[tag];
+  return s?.name || s?.title || state.titles[tag] || `Session ${tag}`;
+};
+// ---------- the pick: the projects Sessions groups by, one pick across the pages (kit PICK) ----------
+// A pick from a door names a project that may have no live session today; it is listed by the name its requests carry.
+function pickGroups() {
+  const g = state.groups.slice();
+  if (ui.project && !g.some((x) => x.key === ui.project)) {
+    const seen = state.rows.find((r) => rowProjKey(r) === ui.project);
+    g.push({ key: ui.project, label: seen ? rowProjName(seen) : ui.project === NO_PROJECT_KEY ? "No project" : ui.project.split("/").pop(),
+      counts: [["needs", 0], ["stalled", 0], ["working", 0]], total: 0 });
+  }
+  return g;
+}
+const rowProject = (r) => r.project ?? state.sessions[r.sid]?.project ?? state.sessions[String(r.sid ?? "").slice(0, 8)]?.project ?? null;
+const inPick = (r) => !ui.project || rowProjKey({ project: rowProject(r) }) === ui.project;
 
 // ---------- reading splice ----------
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
@@ -172,6 +191,8 @@ async function readStanding() {
     state.sessions[s.session_id] = s;
     state.sessions[String(s.session_id).slice(0, 8)] = s; // a perf row names its session by its first eight characters
   }
+  state.groups = projectGroups(sessions.body?.sessions || []);
+  ui.project = reconcilePick(ui.project, state.groups);
   // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
   // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
   // the row with its variable alone, which is what the row itself proves.
@@ -224,6 +245,9 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD) {
     if (ui.account === "none") p.set("unattributed", "account");
     else if (ui.account) p.set("account", ui.account.split("|").slice(1).join("|"));
     if (ui.sid) p.set("session", String(ui.sid).slice(0, 8));
+    // the daemon narrows to the project's sessions itself (TurnsFilter.inProject), so the newest 2,000 are its own;
+    // No project is not a project it knows, so that pick is narrowed here
+    if (ui.project && ui.project !== NO_PROJECT_KEY) p.set("project", ui.project);
     if (ui.compact) p.set("compact", "1");
     if (ui.to) p.set("until", String(ui.to));
     for (const [key, value] of Object.entries(WHY_ASKS[ui.why] || {})) {
@@ -311,6 +335,7 @@ function mapRow(head, row) {
   const fresh = (row.reanchors_from_scratch ?? 0) > 0;
   const stall = row.stall_ms ?? null;
   const sid = row.session_id || row.session || null;
+  if (sid && row.title) state.titles[String(sid).slice(0, 8)] = row.title;
   return {
     id: `${head.key}:${row.turn || row.turn_id || row.ts}`, head: head.key, cmd: head.command, turn: row.turn ?? null,
     provider: state.providerOf[head.key] ?? null,
@@ -340,6 +365,7 @@ function mapRow(head, row) {
     providerStatus: row.provider_status ?? null, providerMessage: row.provider_message ?? null,
     // the project is the session's repo, named as Sessions names it (its root's last folder); /api/sessions carries the
     // root and never a name (SessionsRoutes repoJson), and /api/projects ids are roots, so a link may name either
+    project: row.project ?? null,
     repo: repoName(state.sessions[sid]?.repo?.root), repoRoot: state.sessions[sid]?.repo?.root ?? null,
   };
 }
@@ -448,7 +474,7 @@ function searched() {
 // ---------- what the daemon cannot filter: a project, a stretch of time and what happened ----------
 // These narrow the rows the read already cut. The read asks for the window's newest 2,000, so a narrow one of these
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
-const narrow = (rows) => rows.filter((r) => (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
+const narrow = (rows) => rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
   && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
@@ -780,6 +806,8 @@ function render({ keep = true } = {}) {
   const pane = paneHtml();
   if (!pane) ui.open = null;
   root.className = `requests${pane ? " open" : ""}`;
+  // the picker and its doors on their own line above the filters, with no group headers: the log keeps time order
+  document.getElementById("pickline").innerHTML = state.loading ? "" : pickLineHtml(pickGroups(), ui.project, ui.pmenu);
   document.getElementById("filters").innerHTML = state.loading ? "" : filtersHtml();
   root.innerHTML = listHtml() + pane;
   // the rest of the day draws as he scrolls: the next rows join when Show more comes into view, and the button stays
@@ -838,12 +866,16 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ui.menu)
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-act], [data-open]");
   if (ui.menu && !e.target.closest(".fmenu, [data-act=menu]")) { ui.menu = null; if (!el) { render(); return; } }
+  if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; if (!el) { render(); return; } }
   if (!el) return;
   if (!el.dataset.act) { if (e.target.closest("a")) return; open(el.dataset.open); return; }
   const v = el.dataset.v, m = el.dataset.m;
   switch (el.dataset.act) {
     case "theme": toggleTheme(); break;
     case "menu": ui.menu = ui.menu === m ? null : m; render(); break;
+    case "projmenu": ui.pmenu = !ui.pmenu; ui.menu = null; render(); break;
+    // the same pick as Sessions and Teams: the list is read again for the project, from the newest
+    case "pickproj": ui.project = el.dataset.p || null; ui.pmenu = false; PICK.set(ui.project); ui.n = 200; again(); break;
     case "set": ui[m] = v || null; if (m === "win") ui.win = v; ui.menu = null; ui.n = 200; again(); break;
     case "unset": ui[m] = null; if (m === "from") ui.to = null; ui.n = 200; again(); break;
     case "outcome": ui.outcome = v; ui.n = 200; again(); break;
@@ -883,7 +915,7 @@ addEventListener("resize", () => { autoOpen(); render(); const r = ui.open && fi
 const ADDR = new URLSearchParams(location.search);
 if (WINDOWS[ADDR.get("win")]) ui.win = ADDR.get("win");
 for (const k of ["cmd", "model", "account", "session"]) if (ADDR.get(k)) ui[k === "session" ? "sid" : k] = ADDR.get(k);
-ui.repo = ADDR.get("project") ?? ADDR.get("repo") ?? ui.repo;
+ui.repo = ADDR.get("repo") ?? ui.repo; // ?project= is the pick (kit PICK), read where ui is made
 if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +ADDR.get("to") : null; } // no end: through now
 if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");

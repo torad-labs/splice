@@ -130,6 +130,15 @@ internal class CredentialHoldAdmission(
         plan.windowSeconds?.let { admitted.perf.setCount(PerfKeys.LIMIT_WINDOW_SECONDS, it) }
     }
 
+    /** A rate limit has no window, but when the provider said when it clears, the row says so too, for Requests'
+     *  "Resets" beside the word (marlin's p225 walk). A local-only hold with no provider reset stays unknown (V4-46). */
+    private fun countReset(plan: PlanLimit?, reset: Long?, admitted: AdmittedTurn, trace: TurnTrace?) {
+        when {
+            plan != null -> countSpentWindow(plan, admitted, trace)
+            reset != null -> admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
+        }
+    }
+
     private suspend fun respond(
         call: ApplicationCall,
         prepared: Preparation.Ready,
@@ -147,7 +156,7 @@ internal class CredentialHoldAdmission(
         val reset = cooldown.providerUnavailableForMs().takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
         // V4-444: the held turn speaks the window on the trace AND counts its reset, so the row says when the window
         // comes back to a surface that reads only the perf file.
-        plan?.let { countSpentWindow(it, admitted, trace) }
+        countReset(plan, reset, admitted, trace)
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,

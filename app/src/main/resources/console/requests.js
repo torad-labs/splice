@@ -61,6 +61,9 @@ function outcomeOf(r) {
   if (r.outcome === "failure:overloaded_error" && isCutOff(r)) return { ...base, word: WHY.cutoff.word };
   if (r.outcome === "failure:overloaded_error" && isStalled(r)) return { ...base, word: OUTCOME_WORD["error:turn-cap"] };
   if (r.outcome === "error:upstream-failed" && r.cause === "VENDOR_RATE_LIMITED") return OUTCOME["error:rate-limited"];
+  // the provider's plan limit names itself on the row, and the account beside it says whose plan; kit.js keeps "" for
+  // Sessions, where "At limit" describes an account and not a request (fin, Oct 12)
+  if (r.outcome === "error:plan-limit") return { ...base, word: "Plan limit" };
   return base || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
 }
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
@@ -69,11 +72,12 @@ function outcomeOf(r) {
 // in its row at all — 156 of them in one live day. Reading the lock off the tag would promise a time no row holds.
 // THE LOCK NAMES ITS WINDOW the way Accounts names its rows (accounts.js LEN: "5 hours", "Day", "Week", "Month"), from
 // the length the provider's own refusal gave (limit_window_seconds), so the two pages agree by construction. A refusal
-// that named no window reads "At limit", the kit's limit word, and names none (fin, Oct 10): p157 and p158 each called
+// that named no window names none and gives its reset alone (fin, Oct 10 and 12): p157 and p158 each called
 // the lock's cause a guess when it gave a time and no window.
 const WINDOW_WORD = { 18000: "5 hours", 86400: "Day", 604800: "Week", 2592000: "Month" };
-const lockWord = (r) => WINDOW_WORD[r.window] ?? "At limit";
-const resetWord = (r) => `${lockWord(r)} · Resets ${dayOf(r.reset)}${clock(r.reset)}`;
+// A refusal that named no window gives the reset alone: the row's word already says what stopped it (fin, Oct 12)
+const lockWord = (r) => WINDOW_WORD[r.window] ?? "";
+const resetWord = (r) => `${lockWord(r) ? `${lockWord(r)} · ` : ""}Resets ${dayOf(r.reset)}${clock(r.reset)}`;
 // Then what splice did inside the request: a broken stream it resumed or started over, in the timeline's tick word and
 // the tick's colour (.mend, hitstop 8405b48), so a walker finds docs-site without timing it (p157), and its retries.
 const besideOf = (r) => {
@@ -299,9 +303,9 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
   // local=0 on both reads, so the menus count the same requests the list does
   const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(held) : "1", local: "0" });
   if (filtered) {
-    // a one-row filtered read is a count (the tiles and Compare's group): the window's totals it would fold are dropped
-    // here, and each fold held the command's read for a whole week (splice-usage, desk c, Oct 12)
-    if (held === 1) p.set("usage", "0");
+    // a filtered read is rows or a count, never totals: the menus' totals come from the unfiltered read alone, and each
+    // fold this dropped held the command's read for a whole week (splice-usage, desk c, Oct 12)
+    p.set("usage", "0");
     if (ui.outcome === "fail") p.set("outcome", "failed");
     if (ui.outcome === "stopped") p.set("outcome", "stopped");
     if (ui.order === "price") p.set("order", "price"); // the daemon keeps each command's highest priced, not its newest
@@ -586,7 +590,7 @@ function menuHtml(key) {
   if (key === "win") {
     // a time to start from, as far back as the widest window reads: the list then holds the requests up to it, newest first
     const local = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60e3); return d.toISOString().slice(0, 16); };
-    const goto = `<div class="goto"><label for="goto">Go to</label><input id="goto" type="datetime-local" min="${local(+NOW - WINDOWS["7d"][1])}" max="${local(+NOW)}" value="${local(ui.to ?? +NOW)}"><button class="act quiet" data-act="goto">Go</button></div>`;
+    const goto = `<div class="goto"><label for="goto">Up to</label><input id="goto" type="datetime-local" min="${local(+NOW - WINDOWS["7d"][1])}" max="${local(+NOW)}" value="${local(ui.to ?? +NOW)}"><button class="act quiet" data-act="goto">Show</button></div>`;
     return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}${goto}</div>`;
   }
   if (key === "cmd") return `<div class="menu fmenu" role="menu">${item("", "Every command", !ui.cmd)}${state.heads.map((h) => item(h.command, esc(h.command) + (h.retired ? REMOVED_TAG : ""), ui.cmd === h.command, `<i class="blot" style="--c:${colorOf(state.providerOf[h.key])}"></i>`)).join("")}</div>`;

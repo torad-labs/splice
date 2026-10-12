@@ -101,6 +101,12 @@ const KNOBS = (() => {
       { home: "mcp", also: "longest tool call" }),
     K("mcpInitializeTimeoutMs", "Give up on a starting server after", { k: "dur", opts: [30 * SEC, 60 * SEC, 2 * MIN], unit: "s" }, 60 * SEC,
       { home: "mcp", also: "wait for a server to start handshake" }),
+    // THE KIT HOLDS THE VALUE, SETTINGS DRAWS THE ROW: a list of folders is a row of its own, each path with the way to
+    // remove it and the projects it makes under it, which no control in this kit draws. `paths` is a kind ctlHtml has
+    // no branch for, so the generic row would be a name with nothing beside it; Settings skips the key and draws its
+    // own card. Here for the value, the search words and the daemon's live/restart answer.
+    K("projectsFolders", "Projects folder", { k: "paths" }, "",
+      { home: "projects", also: "projects folder folders group grouping workspace monorepo" }),
   ];
   const KNOB = Object.fromEntries(LIST.map((k) => [k.key, k]));
 

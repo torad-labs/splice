@@ -623,3 +623,19 @@ button.count:hover { color: var(--text); }
 #st .fig3 .pct b { display: block; width: var(--w); height: 100%; border-radius: .35rem; background: var(--live); }
 #st .fig3 .pct.over b { background: var(--limit); }
 #st .fig3 .pct i { position: absolute; top: -.25rem; bottom: -.25rem; left: var(--warn); width: .18rem; border-radius: .09rem; background: var(--text-mute); }
+
+/* ---------- Projects: the folders under which each child folder is a project of its own ----------
+   One row, drawn here rather than by the kit: a list of paths is not one of its controls. Each path stands as it was
+   typed, with the way to drop it; under it, the projects the daemon says it makes; beside it, "Not found" when the
+   folder has gone, which never stops splice (its sessions fall back to the git-repo rule). */
+#st .plist { display: grid; gap: .9rem; width: 100%; }
+#st .prow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; }
+#st .ppath { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .25rem .25rem .7rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+#st .ppath code { background: none; padding: 0; font: 500 1.08rem/1.4 var(--font-data); color: var(--text); }
+#st .ppath .icon { width: 1.8rem; height: 1.8rem; }
+#st .ppath .icon svg { width: .95rem; height: .95rem; }
+/* the projects a path makes sit under it, quiet: they are what the path means, not a second setting */
+#st .pmakes { display: flex; flex-wrap: wrap; gap: .45rem; margin: -.35rem 0 .3rem 0; }
+#st .mchip.quiet { color: var(--text-body); border-color: var(--track-line); background: transparent; }
+#st .pacts { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; }
+#st .field.wide { width: 26rem; text-align: left; }

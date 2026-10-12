@@ -14,6 +14,8 @@ const SV = {
   reasoning: G('<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.4 1 2.5h6c0-1.1.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>'),
   plan: G('<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/>'),
   mcp: G('<path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0z"/><path d="M12 17v4"/>'),
+  projects: G('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  plus: G('<path d="M12 5v14M5 12h14"/>'),  // the kit's own PLUS lives inside its closure
   version: G('<path d="M12 19V5M6 11l6-6 6 6"/>'),
   data: G('<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/>'),
 };
@@ -30,6 +32,7 @@ const TOPICS = [
   { id: "reasoning", name: "Reasoning", also: "thinking summary show hide progress line replay" },
   { id: "plan", name: "Plan limits", also: "quota usage warning budget spend limit" },
   { id: "mcp", name: "MCP servers", also: "tools servers model context protocol" },
+  { id: "projects", name: "Projects", also: "folder folders group grouping workspace monorepo sessions by project" },
   { id: "data", name: "Your data", also: "privacy prompts saved keep delete disk history logs" },
   { id: "version", name: "Version", also: "update upgrade new release roll back restart" },
 ];
@@ -48,7 +51,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, err: null };
+const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, projects: undefined, addPath: null, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -81,6 +84,9 @@ function readKept() {
   get("/api/mcp", (r) => { ui.mcp = r.ok ? r.body : r.status === 404 ? false : null; });
   // the plan windows Accounts draws, read here for the highest of each against the warn line these settings set
   get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; });
+  // the projects the saved folders actually make, and whether each folder is still on disk (ProjectsRoutes.kt): the
+  // row under each path is the daemon's own answer, never a listing this page takes itself
+  get("/api/projects", (r) => { ui.projects = r.ok ? r.body : null; });
   // a rollback already running (started elsewhere) is picked up once the version is known: it names the release it goes back to
   get("/api/upgrade", (r) => { ui.ver = r.ok ? r.body : null; }).then(async () => {
     const upgradeRun = await API.get("/api/upgrade/run");
@@ -726,12 +732,69 @@ function foldCard() {
     + `<div class="line"><span class="upto">${hl(times.label)}</span>${ctlHtml(times, val(times.key))}${saidHtml(times.key)}</div></div>`);
 }
 
+// ---------- Projects ----------
+// WHAT A PROJECT IS, AND NOTHING ELSE: one row, the folders under which each child folder is a project of its own.
+// With none saved, a project is the git repo, which is the rule in force and what the rail says. The row is drawn
+// here rather than by the kit because a list of paths is not one of its controls: each path carries the way to drop
+// it, the projects it makes, and whether it is still on disk. The value is the kit's (PATCH /api/config
+// projectsFolders, colon-separated), so a change reads "Applied" in the same place every other setting does.
+const FOLDER_SEP = ":";
+const foldersNow = () => String(val("projectsFolders") || "").split(FOLDER_SEP).map((s) => s.trim()).filter(Boolean);
+/** What the daemon says about each saved folder: whether it is on disk, and the projects it makes. */
+const folderFacts = () => {
+  const rows = ui.projects?.folders || [];
+  const by = Object.fromEntries(rows.map((f) => [f.path, f]));
+  return foldersNow().map((path) => ({
+    path,
+    found: by[path] ? by[path].found !== false : null, // null while /api/projects has not answered
+    makes: (ui.projects?.projects || []).filter((p) => p.folder === path).map((p) => p.name || p.label).filter(Boolean).sort(),
+  }));
+};
+function pathRow(f) {
+  const drop = `<button class="icon" data-act="dropfolder" data-path="${esc(f.path)}" aria-label="Remove ${esc(f.path)}">${ICON.close}</button>`;
+  // a folder that has vanished still holds its place: splice never stops over it, and its sessions fall back to repos
+  const gone = f.found === false ? `<span class="state limit">Not found</span>` : "";
+  const makes = f.makes.length ? `<div class="pmakes">${f.makes.map((n) => `<span class="mchip quiet">${hl(n)}</span>`).join("")}</div>` : "";
+  return `<div class="prow"><span class="ppath"><code>${hl(f.path)}</code>${drop}</span>${gone}</div>${makes}`;
+}
+function projectsHtml() {
+  const k = KNOB.projectsFolders, folders = folderFacts();
+  const adding = ui.addPath !== null
+    ? `<span class="custom"><input class="field wide" data-pfield value="${esc(ui.addPath)}" placeholder="/home/you/code" aria-label="Projects folder">`
+      + `<button class="act primary small" data-act="savefolder">Save</button>`
+      + `<button class="act quiet small" data-act="cancelfolder">Cancel</button></span>`
+      + (ui.bad.projectsFolders ? `<span class="said limit">${esc(ui.bad.projectsFolders)}</span>` : "")
+    : `<button class="act quiet small" data-act="addfolder">${SV.plus}Add</button>${saidHtml("projectsFolders")}`;
+  const body = `<div class="plist">${folders.map(pathRow).join("")}<div class="pacts">${adding}</div></div>`;
+  return `<section class="sub">${cardRow([kcard(`<div class="lbl" data-row="${k.key}">${hl(k.label)}</div><div class="ctl col">${body}</div>`)])}</section>`;
+}
+
+/** The saved folders with [typed] added, trimmed, with no empty and no repeat. */
+const withPath = (typed) => [...new Set([...foldersNow(), String(typed).trim()])].filter(Boolean);
+/** Save the list and say what happened where every other setting says it. A path the daemon will not take is refused
+ *  in the console's own words, never the daemon's: it answers one message for the whole key, and he typed one path. */
+async function saveFolders(paths) {
+  const was = ui.addPath;
+  const r = await KNOBS.patch("projectsFolders", paths.join(FOLDER_SEP));
+  if (r.ok) { ui.addPath = null; delete ui.bad.projectsFolders; render(); await refreshProjects(); return; }
+  ui.addPath = was;
+  ui.bad.projectsFolders = was === null ? "Not saved" : "Not found";
+  render();
+}
+/** The projects the folders make, re-read after a change so the chips under each path are the daemon's answer. */
+async function refreshProjects() {
+  const r = await API.get("/api/projects");
+  ui.projects = r.ok ? r.body : null;
+  render();
+}
+
 const PANES = {
   busy: busyHtml,
   silent: silentHtml,
   reasoning: () => `<section class="sub">${blocks(keysOf("reasoning", FOLD), [foldCard()])}</section>`,
   plan: planHtml,
   mcp: mcpHtml,
+  projects: projectsHtml,
   data: dataHtml,
   version: versionHtml,
 };
@@ -749,6 +812,8 @@ function summary(id) {
   if (id === "reasoning") return [KNOB.showReasoning && !needsRestart("showReasoning") ? `Shows it ${word(KNOB.showReasoning, val("showReasoning")).toLowerCase()}` : `Progress line ${val("progressLine") ? "on" : "off"}`];
   if (id === "plan") return [`Warns at ${word(KNOB.usageWarnPct, val("usageWarnPct"))}`];
   if (id === "mcp") return [`${word(KNOB.mcpMaxServers, val("mcpMaxServers"))} at most`];
+  // with nothing saved the rail says the rule in force, which is the one a first-time user is already under
+  if (id === "projects") { const f = foldersNow(); return f.length ? f : ["One per repo"]; }
   if (id === "busy" && weekTotal("overloaded") !== null && weekTotal("queued") !== null) return [`${fmt(weekTotal("overloaded"))} overloaded today`, `${fmt(weekTotal("queued"))} waited in line`];
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
   if (DATA_ROWS.some(stillReading)) return ["Reading"];
@@ -865,6 +930,10 @@ document.addEventListener("click", (e) => {
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;
     case "unask": ui.ask = null; break;
+    case "addfolder": ui.addPath = ""; delete ui.bad.projectsFolders; break;
+    case "cancelfolder": ui.addPath = null; delete ui.bad.projectsFolders; break;
+    case "savefolder": saveFolders(withPath(root.querySelector("[data-pfield]")?.value ?? "")); return;
+    case "dropfolder": saveFolders(foldersNow().filter((p) => p !== d.path)); return;
     default: return;
   }
   render();

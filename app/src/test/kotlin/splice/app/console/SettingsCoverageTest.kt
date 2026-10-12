@@ -9,7 +9,6 @@ import splice.core.config.Knob
 
 private const val NO_JOB = "no job among the six the page offers"
 private const val NOT_DRAWN = "live, but the drawing of Many agents at once leaves it off (Marlin, Oct 10)"
-private const val DRAWN_BY_CONSOLE = "the Projects folder row is console-lead's to draw (Oct 11)"
 private const val ENV_OPT_IN = "an environment opt-in: its only measured effect is thinner reasoning (Marlin, Oct 12)"
 
 class SettingsCoverageTest {
@@ -40,7 +39,6 @@ class SettingsCoverageTest {
         // live and deliberately off the page, each with the reason: no job among the six holds it
         val offPage = mapOf(
             "statuslineGitRoots" to NO_JOB,
-            "projectsFolders" to DRAWN_BY_CONSOLE,
             "replayReasoning" to ENV_OPT_IN,
             "requestReadTimeoutMs" to NOT_DRAWN,
             "ingressReadIdleMs" to NOT_DRAWN,

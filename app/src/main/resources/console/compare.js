@@ -58,6 +58,7 @@ const sendable = () => ui.prompt.trim() && ui.panes.length > 0 && !busy();
 const stale = (p) => p.asked != null && p.st !== "sending" && p.asked !== ui.prompt;
 const hasRaw = (p) => p.trace != null;
 const secs = REQVIEW.secs; // one number, one form: the footer and the request's rail read the same
+const n0 = REQVIEW.n0;
 
 // ---------- reading the answer: the provider's stream, frame by frame ----------
 function framesOf(raw) {
@@ -292,7 +293,7 @@ function paneHtml(p, i) {
   const back = p.st === "done" || p.st === "failed";
   const toks = (a, b) => `<span class="toks"><b>${a}</b> tokens in<i class="sep">·</i><b>${b}</b> out</span>`;
   const word = costText(p.cost), price = word ? `<span class="cost${p.cost.usd == null ? " word" : ""}">${esc(word)}</span>` : "";
-  const what = p.tin != null && p.tout != null ? `<span class="pg-what">${toks(p.tin, p.tout)}${price}</span>` : "";
+  const what = p.tin != null && p.tout != null ? `<span class="pg-what">${toks(n0(p.tin), n0(p.tout))}${price}</span>` : "";
   const end = `<span class="pg-end"><span>${secs(p.ms)}</span>${hasRaw(p) ? `<button class="act quiet small" data-act="raw" data-i="${i}" aria-pressed="${raw}">Request</button>` : ""}</span>`;
   const foot = back ? `<footer>${what}${end}</footer>` : "";
   return `<section class="pgp${stale(p) ? " stale" : ""}" style="--c:${colorOf(c?.family)}" data-key="pane:${i}">${head}${body ? `<div class="answer">${body}</div>` : ""}${foot}</section>`;

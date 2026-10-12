@@ -143,6 +143,7 @@ names = [
     "ConsolePresence",
     "ContentReached",
     "CopyingOriginals",
+    "DaemonDraining",
     "DaemonRestart",
     "DaemonSuccessor",
     "DaemonSupervised",
@@ -174,6 +175,9 @@ DaemonSupervised ASKS whether the unit brings it back; DaemonSuccessor ACTS only
 not, while DaemonRestart is the external command that waits for the new health response. \
 Swapping their Boolean signatures would start a competing daemon under systemd or drain an \
 unsupervised daemon with no successor. \
+DaemonDraining (a736f4592) asks whether the daemon's ordered stop has begun, so the turn-path \
+probe counts no stall while a planned drain or restart closes the heads; read in place of \
+DaemonSupervised it would hide every real stall on a daemon systemd started. \
 SessionTranscriptViewEnabled (V4-354, 2026-09-27) reads the live global transcript-view knob \
 before either the sessions or turns route opens a Claude Code transcript; one port owned by \
 sessions serves both routes, and confusing it with a client disconnect or daemon-state probe \

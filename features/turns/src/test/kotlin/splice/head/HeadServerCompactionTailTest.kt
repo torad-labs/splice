@@ -27,6 +27,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.compaction.CompactionConfig
 import splice.core.compaction.CompactionInstructions
+import splice.core.compaction.CompactionModelConfig
 import splice.core.compaction.CompactionProjectConfig
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -46,6 +47,7 @@ import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 private const val TAIL = "KEEP EVERY OPEN CONSTRAINT VERBATIM"
+private const val MODEL_TAIL = "KEEP THIS MODEL'S SUMMARY SHORT"
 private const val PROJECT_TAIL = "KEEP THIS REPO'S DECISIONS"
 private const val SUMMARIZER = "You are tasked with summarizing conversations for another agent."
 
@@ -116,13 +118,18 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
     }
 
     /** Posts a turn whose system prompt is [system] and returns the body the upstream received for it. */
-    private suspend fun upstreamBodyFor(head: HeadServer, system: String, marker: String): String {
+    private suspend fun upstreamBodyFor(
+        head: HeadServer,
+        system: String,
+        marker: String,
+        model: String = "claude-codex--gpt-5.6-sol",
+    ): String {
         val before = mock.upstreamBodies.size
         val reply = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", "sess-tail")
             setBody(
-                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,""" +
+                """{"model":"$model","stream":true,"max_tokens":64,""" +
                     """"system":"$system SCENARIO:basic $marker",""" +
                     """"messages":[{"role":"user","content":"carry on"}]}""",
             )
@@ -162,6 +169,23 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
             "the project's text replaces the global",
         )
         assertTrue(outside.contains(TAIL) && !outside.contains(PROJECT_TAIL), "no project: the global text")
+    }
+
+    // The client spells one model several ways (the discovery alias, a [1m] window suffix); the rule is keyed by the id.
+    @Test
+    fun `every spelling of one model picks the same model rule`() = runBlocking {
+        val config = CompactionConfig(
+            instructions = TAIL,
+            model = listOf(CompactionModelConfig("gpt-5.6-sol", instructions = MODEL_TAIL)),
+        )
+        val server = head("spellings", config)
+
+        val spellings = listOf("claude-codex--gpt-5.6-sol", "claude-codex--gpt-5.6-sol[1m]", "gpt-5.6-sol")
+        val bodies = spellings.mapIndexed { i, model -> upstreamBodyFor(server, SUMMARIZER, "compaction-s$i", model) }
+
+        bodies.forEachIndexed { i, body ->
+            assertTrue(body.contains(MODEL_TAIL) && !body.contains(TAIL), "${spellings[i]} picks the model rule")
+        }
     }
 
     @Test

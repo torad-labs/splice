@@ -59,6 +59,8 @@ test("Requests opens a listed session, and draws no door for one Sessions no lon
     await page.goto(`http://127.0.0.1:${server.port}/requests.html`);
     await page.locator('article[data-open="alpha:t-live"]').click({ timeout: 15_000 });
     await expect(page.locator(".pane a", { hasText: "Open session" })).toBeVisible();
+    // below the two-column width an open pane takes the page, so the list comes back only once it closes
+    await page.locator('.pane [data-act="close"]').click();
     await page.locator('article[data-open="alpha:t-gone"]').click();
     await expect(page.locator(".pane")).toBeVisible();
     await expect(page.locator(".pane a", { hasText: "Open session" })).toHaveCount(0);
@@ -72,9 +74,9 @@ test("Sessions reached for a session it cannot find says No transcript where the
   try {
     await page.goto(`http://127.0.0.1:${server.port}/sessions.html#0296ce46-dead`);
     await expect(page.locator(".pane.missing .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
-    await expect(page.locator(".card.s", { hasText: "builder" })).toBeVisible(); // the list he has is still there
     await page.locator(".pane.missing [data-act=close]").click();
     await expect(page.locator(".pane.missing")).toHaveCount(0);
+    await expect(page.locator(".card.s", { hasText: "builder" })).toBeVisible(); // the list he has is still there
   } finally {
     await page.close();
   }
@@ -87,6 +89,7 @@ test("a log that is gone says No transcript, one that cannot be read says Not re
   try {
     await page.goto(`http://127.0.0.1:${server.port}/sessions.html#live0001-0000`);
     await expect(page.locator(".pane .log .empty")).toHaveText("No transcript", { timeout: 15_000 });
+    await page.goto("about:blank"); // a hash-only move would keep the page, and its pane, as they were
     await page.goto(`http://127.0.0.1:${server.port}/sessions.html#unread01-0000`);
     await expect(page.locator(".pane .log .empty")).toHaveText("Not read", { timeout: 15_000 });
     await expect(page.locator("body")).not.toContainText("AccessDenied");

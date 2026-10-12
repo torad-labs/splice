@@ -6,7 +6,7 @@
 // WHERE EVERY VALUE COMES FROM.
 //   GET /api/heads · /api/models            the commands, each one's provider, and its models' own labels
 //   GET /api/heads/retired                  the commands removed from Models, each its key and name: their requests stay
-//                                           listed and findable ("History stays", Marlin), though no trace answers
+//                                           listed, searched and opened ("History stays", Marlin)
 //   GET /api/perf/turns?head=…              one head's window of requests, filtered BY THE DAEMON (TurnsFilter.kt):
 //                                           since, n, outcome, model, account, session, unattributed, local, compact
 //                                           (always local=0: a code-mode step posts nothing upstream and is no request,
@@ -455,7 +455,7 @@ function mapHit(head, hit) {
 /** The search over what was sent and what came back, one head at a time, each saying how far back it read. */
 async function readSearch() {
   if (ui.q.length < SEARCH_MIN) { state.search = null; return; }
-  const heads = askedHeads().filter((h) => !h.retired); // no trace answers for a removed command (TraceRoute: unknown head)
+  const heads = askedHeads(); // a removed command's trace answers through its retired record (builder3, 0680d2ae9)
   const q = encodeURIComponent(ui.q);
   const reads = await Promise.all(heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/trace/search?q=${q}&since=${since()}&limit=100`)));
   const hits = [], errors = [];

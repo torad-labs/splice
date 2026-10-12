@@ -1,8 +1,9 @@
 // A command removed from Models keeps its history findable (marlin's ruling on Remove: "History stays" must mean
 // findable). Both walkers removed claude-openrouter, read "History stays · 81 requests · 5 sessions", searched its name
 // on Requests and Sessions, and got No match. Through the real pages, against a daemon that lists the command under
-// /api/heads/retired: its requests are listed and found by its name, the Command filter names it Removed, a session on
-// it reads its name and is found by it, and neither page asks a removed command for what only a live one answers.
+// /api/heads/retired: its requests are listed and found by its name and by what was said in them (its trace answers
+// through its retired record, builder3 0680d2ae9), the Command filter names it Removed, a session on it reads its name
+// and is found by it, and neither page asks a removed command for what only a running one answers.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -33,7 +34,11 @@ const server = Bun.serve({
       return Response.json({ heads: [{ key: head, label: head, count: rows.length, returned: rows.length, truncated: false, rows,
         usage: { models: [], accounts: [], sessions: [] } }] });
     }
-    if (/^\/api\/heads\/openrouter\/(turns\/live|capture|trace)/.test(path)) return Response.json({ error: "unknown head: openrouter" }, { status: 400 });
+    if (path === "/api/heads/openrouter/trace/search") {
+      const said = url.searchParams.get("q") === "flaky fixture";
+      return Response.json({ hits: said ? [{ ...turn("t-gone", 60), where: "sent", text: "why is the flaky fixture flaky" }] : [] });
+    }
+    if (/^\/api\/heads\/openrouter\/(turns\/live|capture)/.test(path)) return Response.json({ error: "unknown head: openrouter" }, { status: 400 });
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path.slice(1));
     return existsSync(file) && file.startsWith(consoleDir) ? new Response(Bun.file(file)) : new Response("no", { status: 404 });
@@ -47,7 +52,7 @@ afterAll(async () => {
   await browser.close();
   server.stop(true);
 });
-const askedRemovedLive = () => asked.filter((a) => /^\/api\/heads\/openrouter\/(turns\/live|capture|trace\/search)/.test(a));
+const askedRemovedLive = () => asked.filter((a) => /^\/api\/heads\/openrouter\/(turns\/live|capture)/.test(a));
 
 test("Requests lists a removed command's requests, finds them by its name, and names it Removed", async () => {
   asked.length = 0;
@@ -60,6 +65,17 @@ test("Requests lists a removed command's requests, finds them by its name, and n
     const removed = page.locator('.fmenu [data-v="claude-openrouter"]');
     expect(await removed.innerText()).toContain("Removed");
     expect(askedRemovedLive()).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("Requests finds a removed command's request by what was said in it", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  try {
+    await page.goto(`http://127.0.0.1:${server.port}/requests.html?q=${encodeURIComponent("flaky fixture")}`);
+    await page.locator('article[data-open="openrouter:t-gone"]').waitFor({ timeout: 15_000 });
+    expect(await page.locator('article[data-open="alpha:t-live"]').count()).toBe(0);
   } finally {
     await page.close();
   }

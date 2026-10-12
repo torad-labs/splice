@@ -41,7 +41,7 @@ internal class AdmissionGate(
     suspend fun acceptingOrRespond(call: ApplicationCall): Boolean {
         if (window.isOpen) return true
         refusals.refused(OutcomeTag.RESTARTED, call.request.headers[SESSION_HEADER])
-        responses.respondAtCapacity(call, "head is stopping; retry")
+        responses.respondStopping(call)
         return false
     }
 
@@ -77,7 +77,7 @@ internal class AdmissionGate(
             withContext(NonCancellable) { slot.release() }
             beforeRefusal?.ended()
             refusals.refused(OutcomeTag.RESTARTED, session)
-            responses.respondAtCapacity(call, "head is stopping; retry")
+            responses.respondStopping(call)
             return null
         }
         return slot

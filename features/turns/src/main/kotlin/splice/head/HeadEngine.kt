@@ -35,6 +35,7 @@ import io.netty.channel.socket.SocketChannelConfig
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
+import splice.head.admission.AdmissionWindow
 import splice.head.admission.HeadAdmission
 import splice.http.ingress.HeapIngress
 import splice.http.listen.AdoptedBootstrap
@@ -192,6 +193,13 @@ internal class HeadEngine(
                 calls.decrementAndGet()
             }
         }
+    }
+
+    /** The start of a drain: no new turn is admitted, and a head on an inherited socket stops taking new connections,
+     *  which wait in the kernel for the next daemon. A head that bound its own port has nothing to pause. */
+    fun closeAdmission(window: AdmissionWindow) {
+        window.close()
+        listen.adopted?.pauseAccepting()
     }
 
     fun stop() {

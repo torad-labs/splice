@@ -33,6 +33,11 @@ public sealed class Adoption {
 /** Everything an engine needs to serve on a socket it did not open, applied inside Ktor's `configureBootstrap`. */
 public fun interface AdoptedBootstrap {
     public fun applyTo(bootstrap: ServerBootstrap)
+
+    /** Stops accepting on the socket this bootstrap serves, keeping every connection already accepted. The descriptor
+     *  stays open and listening, so a client that connects after this waits in the kernel's accept queue for the next
+     *  engine over it. Nothing to pause for a bootstrap that holds no channel. */
+    public fun pauseAccepting() {}
 }
 
 /**
@@ -52,11 +57,7 @@ public class AdoptedListeners internal constructor(private val fds: Map<String, 
     /** The bootstrap setup for [name]'s descriptor. Call it per engine start; each start gets its own channel. */
     public fun bootstrapFor(name: String): AdoptedBootstrap {
         val fd = fds.getValue(name)
-        return AdoptedBootstrap { bootstrap ->
-            bootstrap
-                .channelFactory(ChannelFactory<ServerChannel> { EpollServerSocketChannel(fd) })
-                .handler(InheritedSocketHandler())
-        }
+        return AdoptedServer(fd)
     }
 }
 
@@ -76,6 +77,22 @@ private class InheritedSocketHandler : ChannelOutboundHandlerAdapter() {
 
     override fun close(ctx: ChannelHandlerContext, promise: ChannelPromise) {
         ctx.deregister(promise)
+    }
+}
+
+/** One adopted descriptor, served by one engine at a time; the channel of the engine now serving is what a pause acts on. */
+private class AdoptedServer(private val fd: Int) : AdoptedBootstrap {
+    @Volatile
+    private var serving: ServerChannel? = null
+
+    override fun applyTo(bootstrap: ServerBootstrap) {
+        bootstrap
+            .channelFactory(ChannelFactory<ServerChannel> { EpollServerSocketChannel(fd).also { serving = it } })
+            .handler(InheritedSocketHandler())
+    }
+
+    override fun pauseAccepting() {
+        serving?.deregister()
     }
 }
 

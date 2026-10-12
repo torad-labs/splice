@@ -219,7 +219,7 @@ public class HeadServer(
         // Refuse new turns FIRST so the drain can actually converge, then drain in-flight turns
         // so clients get honest terminals (driveSealingCancellation's cancellation seal) before
         // Netty tears the engine. Bounded wait — never block restart forever.
-        window.close()
+        engine.closeAdmission(window)
         // V4-134: reported only when there was something running to drain, so a stop of a head
         // that never started does not tell the console it went down.
         val wasRunning = engine.isRunning

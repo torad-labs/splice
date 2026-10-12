@@ -56,6 +56,13 @@ internal class AdmissionResponses {
         )
     }
 
+    /** The refusal of a request that reaches a head that is stopping. The connection closes after it, so the client's
+     *  retry opens a new one, and a new one waits for the next daemon instead of coming back to this one. */
+    suspend fun respondStopping(call: ApplicationCall) {
+        call.response.header(HttpHeaders.Connection, "close")
+        respondAtCapacity(call, "head is stopping; retry")
+    }
+
     /** The client-400: an unparseable body, or a model this head does not proxy. */
     suspend fun respondInvalidRequest(call: ApplicationCall, message: String) {
         call.respondText(

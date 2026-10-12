@@ -3,6 +3,7 @@
 // connection being refused. The manager here is this test: it opens the listener and keeps it, exactly as PID 1 does.
 package splice.http.listen
 
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -20,13 +21,18 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertInstanceOf
+import org.junit.jupiter.api.assertThrows
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 private const val CONTROL = "control"
 private const val GRACE_MS = 100L
 private const val TIMEOUT_MS = 15_000L
+private const val QUIET_MS = 1_500
 
 @Timeout(60)
 class DescriptorAdoptionTest {
@@ -62,17 +68,34 @@ class DescriptorAdoptionTest {
         }
     }
 
-    private fun serve(port: Int, adopted: AdoptedListeners, body: String) =
-        embeddedServer(
+    private fun serve(
+        port: Int,
+        adopted: AdoptedListeners,
+        body: String,
+        bootstrap: AdoptedBootstrap = adopted.bootstrapFor(CONTROL),
+        slow: CountDownLatch? = null,
+    ): EmbeddedServer<*, *> {
+        val server = embeddedServer(
             Netty,
             configure = {
                 connector {
                     host = "127.0.0.1"
                     this.port = port
                 }
-                configureBootstrap = { adopted.bootstrapFor(CONTROL).applyTo(this) }
+                configureBootstrap = { bootstrap.applyTo(this) }
             },
-        ) { routing { get("/hi") { call.respondText(body) } } }.also { it.start(wait = false) }
+        ) {
+            routing {
+                get("/hi") { call.respondText(body) }
+                get("/slow") {
+                    slow?.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    call.respondText("slow-done")
+                }
+            }
+        }
+        server.start(wait = false)
+        return server
+    }
 
     private fun ready(fd: Int, port: Int): AdoptedListeners {
         val adoption = DescriptorAdoption().adopt(mapOf(CONTROL to fd), mapOf(CONTROL to port))
@@ -84,10 +107,15 @@ class DescriptorAdoptionTest {
         get(client)
     }
 
-    private fun get(client: Socket): String {
+    private fun request(path: String): ByteArray =
+        "GET $path HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".toByteArray()
+
+    private fun get(client: Socket, send: Boolean = true): String {
         client.soTimeout = TIMEOUT_MS.toInt()
-        client.getOutputStream().write("GET /hi HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".toByteArray())
-        client.getOutputStream().flush()
+        if (send) {
+            client.getOutputStream().write(request("/hi"))
+            client.getOutputStream().flush()
+        }
         return client.getInputStream().readBytes().decodeToString()
     }
 
@@ -129,6 +157,54 @@ class DescriptorAdoptionTest {
                 engine.stop(GRACE_MS, TIMEOUT_MS)
             }
             assertTrue(manager.channel.isActive, "the manager's own channel is untouched by the engines over it")
+        } finally {
+            manager.close()
+        }
+    }
+
+    @Test
+    fun `a draining engine stops accepting, finishes its turn, and the next engine answers the queued client`() {
+        val manager = Manager()
+        try {
+            val adopted = ready(manager.fd, manager.port)
+            val bootstrap = adopted.bootstrapFor(CONTROL)
+            val release = CountDownLatch(1)
+            val draining = serve(manager.port, adopted, "draining", bootstrap, release)
+
+            // A turn in flight when the drain starts: connected and asking before accepting stops.
+            val inFlight = Socket()
+            inFlight.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), manager.port), TIMEOUT_MS.toInt())
+            inFlight.getOutputStream().write(request("/slow"))
+            inFlight.getOutputStream().flush()
+
+            bootstrap.pauseAccepting()
+
+            // A request queued at the start of a long drain: the kernel completes the connect, nobody accepts it.
+            val queued = Socket()
+            queued.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), manager.port), TIMEOUT_MS.toInt())
+            queued.getOutputStream().write(request("/hi"))
+            queued.getOutputStream().flush()
+            queued.soTimeout = QUIET_MS
+            assertThrows<SocketTimeoutException>("a paused engine must not answer a new connection") {
+                queued.getInputStream().read()
+            }
+
+            // The drain finishes the turn it holds, whole, on the connection it already had.
+            release.countDown()
+            inFlight.use { assertTrue(get(it, send = false).endsWith("slow-done"), "the in-flight turn must finish") }
+
+            // Stopping a paused engine closes its channel a second time; that must not fail, and the descriptor must
+            // stay listening for the daemon that comes next, which answers the connection that waited the whole time.
+            draining.stop(GRACE_MS, TIMEOUT_MS)
+            assertTrue(manager.channel.isActive, "the manager's socket outlives the paused engine")
+            val next = serve(manager.port, adopted, "next")
+            queued.use {
+                it.soTimeout = TIMEOUT_MS.toInt()
+                val answer = it.getInputStream().readBytes().decodeToString()
+                assertTrue(answer.startsWith("HTTP/1.1 200"), "the queued request was answered, not reset: $answer")
+                assertTrue(answer.endsWith("next"), "and answered by the engine that came up after the drain: $answer")
+            }
+            next.stop(GRACE_MS, TIMEOUT_MS)
         } finally {
             manager.close()
         }

@@ -32,7 +32,7 @@ class ProbeEconomicsHoursTest {
         now = 20 * PROBE_HOUR + 123
         recordWork(store)
         now = 21 * PROBE_HOUR + 123
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         recordWork(store)
         val read = shown(store, file)
         assertEquals(listOf(19 * PROBE_HOUR, 21 * PROBE_HOUR), read.rows.map { it.hour })
@@ -54,7 +54,7 @@ class ProbeEconomicsHoursTest {
         val store = store(dir, WallClock { now })
         recordWork(store)
         now = 20 * PROBE_HOUR + 123
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         recordWork(store)
         now = 22 * PROBE_HOUR + 123
         recordWork(store)

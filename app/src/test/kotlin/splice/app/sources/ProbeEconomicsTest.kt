@@ -26,11 +26,11 @@ class ProbeEconomicsTest {
     fun `a reconciled probe cannot erase a real request whose usage is unreported`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         val unreported =
-            """{"ts":3600123,"model":"synthetic","outcome":"failed","req_bytes":100,"upstream_req_bytes":50,""" +
+            """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,""" +
                 """"tools_eager":3,"tools_deferred":2}"""
         Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n" + unreported + "\n")
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         store.record(
             turn("synthetic", 0, 100, 50, 3L to 2L).copy(
                 tokens = TurnTokens(inTokens = null, cachedTokens = null, cacheWriteTokens = null, outTokens = null),
@@ -53,7 +53,7 @@ class ProbeEconomicsTest {
             listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW).joinToString("\n") + "\n",
         )
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         recordWork(store)
         store.flushNow()
         val original = Files.readString(dir.resolve("economics.json"))
@@ -81,7 +81,7 @@ class ProbeEconomicsTest {
             val file = dir.resolve("head-${torn.length}-perf.jsonl")
             Files.writeString(file, (rows + torn).joinToString("\n") + "\n")
             val store = store(dir.resolve("store-${torn.length}"))
-            store.record(turn("", 0, 30, 15, 2L to 1L))
+            store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
             recordWork(store)
             return EconomicsStoreSource(store, PerfRowsFileSource(file))
         }
@@ -112,7 +112,7 @@ class ProbeEconomicsTest {
         val script = AbsorbedRounds(rounds = 1, inputTokens = 4, cachedTokens = 1, cacheWriteTokens = 1)
             .copy(outputTokens = 3)
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         store.record(absorbing(script))
         val control = store(dir.resolve("control"))
         control.record(absorbing(script))
@@ -127,7 +127,7 @@ class ProbeEconomicsTest {
         val file = dir.resolve("head-perf.jsonl")
         Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n")
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
     }
 
@@ -163,7 +163,7 @@ class ProbeEconomicsTest {
     fun `a torn probe cannot freeze an empty correction and its repaired evidence is retried`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + "\n")
         val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
         assertEquals(ProbeGap.UNREADABLE.sentence, source.gap())
@@ -175,7 +175,7 @@ class ProbeEconomicsTest {
     fun `rotated-away probe evidence cannot leave contaminated usage looking clean`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         recordWork(store)
         Files.writeString(file, MODELED_WORK_ROW + "\n" + LOCAL_WORK_ROW + "\n")
         assertEquals(ProbeGap.UNRECONCILED.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
@@ -189,7 +189,7 @@ class ProbeEconomicsTest {
             SYNTHETIC_PROBE_ROW + "\n" + MODELED_WORK_ROW.replace("3600123", "7200123") + "\n",
         )
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
     }
 
@@ -198,7 +198,7 @@ class ProbeEconomicsTest {
         val file = dir.resolve("head-perf.jsonl")
         Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + ""","response_message_id":"synthetic-id"}""" + "\n")
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
     }
 
@@ -215,7 +215,7 @@ class ProbeEconomicsTest {
             ).joinToString("\n") + "\n",
         )
         val store = store(dir)
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         recordWork(store)
         val control = store(dir.resolve("control"))
         recordWork(control)
@@ -238,7 +238,7 @@ class ProbeEconomicsTest {
         val store = store(dir, WallClock { now })
         store.record(turn("synthetic", 5, 100, 50, 3L to 2L))
         now = PROBE_HOUR
-        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         val original = store.read()
         assertEquals(ProbeGap.SPLIT_HOUR.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
         assertEquals(original, store.read(), "uncertainty never mutates the genuine bucket")
@@ -254,7 +254,7 @@ class ProbeEconomicsTest {
         // The probe's own row rotated away, so its rollup cannot be cleaned.
         Files.writeString(file, MODELED_WORK_ROW + "\n" + LOCAL_WORK_ROW + "\n")
         val contaminated = store(dir.resolve("contaminated"))
-        contaminated.record(turn("", 0, 30, 15, 2L to 1L))
+        contaminated.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
         recordWork(contaminated)
         val healthy = store(dir.resolve("healthy"))
         recordWork(healthy)

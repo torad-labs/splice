@@ -814,6 +814,8 @@ origin.
 - **The sessions list names the command a session arrived on,** where it used to print "unknown head" for a session that had
   registered.
 - **Settings lists your MCP servers** with a Test act on each row.
+- **When you add an account to a command after hitting its plan limit, the sessions the limit stopped continue on
+  their own.** Each gets "A new account is available. Continue where you left off."
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -980,6 +982,10 @@ origin.
 - **Restart splice, pressed while requests are in flight, names the agents mid-request** and how long they get to finish
   before it restarts.
 - **The streaming-idle limit, the activity retention and message edges apply without a restart.**
+- **A team member stopped at Claude Code's folder trust question waits for you** instead of timing out (Marlin,
+  Oct 12). The Locked state shows on every page, and Teams and the trust page read as walked.
+- **Models and MCP read better when a save is refused:** the refusal says why, and an MCP row shows its working
+  folder.
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
@@ -1503,6 +1509,8 @@ origin.
 - **The Usage summary and Highest price read a week of requests faster:** each request is priced once, not once per
   comparison.
 - **A failed request that reported no usage counts as failed,** not unpriced, in the economics and budget figures.
+- **A planned restart no longer logs as a stalled turn path.** The probe counts no failure while the daemon drains
+  for a stop, and /health stays ok.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

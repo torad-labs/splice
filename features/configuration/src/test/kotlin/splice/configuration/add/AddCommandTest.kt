@@ -33,6 +33,9 @@ class AddCommandTest {
     /** How many times the checkup ran. */
     private var doctored = 0
 
+    /** How many times the live check turn was sent. */
+    private var liveTurns = 0
+
     /** Whether the asked-for restart succeeds; one test turns it off. */
     private var restartOk = true
 
@@ -82,7 +85,10 @@ class AddCommandTest {
             },
             daemonUp = { daemonUp },
             prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
-            liveTurn = { _, _, _ -> AddLiveResult(true, "the head answered the check turn") },
+            liveTurn = { _, _, _ ->
+                liveTurns += 1
+                AddLiveResult(true, "the head answered the check turn")
+            },
             doctor = {
                 doctored += 1
                 true
@@ -135,6 +141,35 @@ class AddCommandTest {
         assertEquals(listOf("fw"), installed)
         assertEquals(0, restarted, "no daemon was up, nothing to restart")
         assertEquals(1, doctored, "a saved head ends with the checkup run, not a hint to run it")
+    }
+
+    @Test
+    fun `a config that does not parse is left byte-identical and nothing is asked or installed`(
+        @TempDir home: Path,
+    ) = withHome(home) {
+        Files.createDirectories(config().parent)
+        Files.writeString(config(), "not = [toml")
+        val args = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
+            listOf("--model", "m:1000", "--yes")
+
+        val ok = runCatching { runBlocking { command(http(fwRoutes)).add(args, env) } }.getOrDefault(false)
+
+        assertFalse(ok)
+        assertEquals("not = [toml", Files.readString(config()))
+        assertTrue(installed.isEmpty())
+        assertEquals(0, restarted)
+    }
+
+    @Test
+    fun `the live check turn is not sent unless asked for`(@TempDir home: Path) = withHome(home) {
+        starter()
+        val args = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
+            listOf("--model", "m:1000", "--yes")
+
+        val ok = runBlocking { command(http(fwRoutes)).add(args, env) }
+
+        assertTrue(ok)
+        assertEquals(0, liveTurns, "yes to the questions is not yes to the live turn")
     }
 
     @Test
@@ -293,16 +328,15 @@ class AddCommandTest {
         }
 
     @Test
-    fun `a model list the endpoint cannot serve refuses the add instead of trusting the rows`(
+    fun `a server with no model list lets the add go on with the models the person typed`(
         @TempDir home: Path,
     ) = withHome(home) {
-        val before = starter()
+        starter()
         val noList = fwRoutes.filterKeys { !it.endsWith("/models") }
         val args = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
             listOf("--model", "m:1000", "--yes")
-        assertFalse(runBlocking { command(http(noList)).add(args, env) })
-        assertEquals(before, Files.readString(config()))
-        assertTrue(installed.isEmpty())
+        assertTrue(runBlocking { command(http(noList)).add(args, env) })
+        assertTrue(Files.readString(config()).contains("m"), "the typed model was saved")
     }
 
     @Test

@@ -153,6 +153,7 @@ public class EconomicsStoreSource(
             cost = EconomicsCost(
                 costUsd = it.costUsd,
                 unpricedTurns = it.unpricedTurns,
+                failedTurns = it.failedTurns,
                 planTurns = it.cost.planTurns,
                 planValueUsd = it.cost.planValueUsd,
                 planUnpricedTurns = it.cost.planUnpricedTurns,

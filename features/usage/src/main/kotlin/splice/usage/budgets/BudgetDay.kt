@@ -12,6 +12,10 @@ internal class DayTally(val day: Long) {
     var unpriced: Long = 0L
         private set
 
+    /** Requests that ended failed and reported no usage: they spent nothing, so they are not "unpriced". */
+    var failed: Long = 0L
+        private set
+
     /** Rows whose usage was incomplete, so a refusal must not attribute every missing price to a rate card. */
     var inexactRows: Long = 0
         private set
@@ -32,14 +36,18 @@ internal class DayTally(val day: Long) {
     /** The unpriced models already named in the log today. */
     private val unpricedModels: MutableSet<String> = HashSet()
 
-    /** One turn at [usd], or an unpriced one when [usd] is null. */
-    fun add(usd: Double?) {
-        if (usd != null) this.usd += usd else unpriced += 1
+    /** One turn at [usd], or an unpriced one when [usd] is null, or a failed one when it failed with no usage. */
+    fun add(usd: Double?, failedNoUsage: Boolean = false) {
+        when {
+            usd != null -> this.usd += usd
+            failedNoUsage -> failed += 1
+            else -> unpriced += 1
+        }
     }
 
     /** A reported charge still enforces the budget, but cannot claim the whole day's spend. */
-    fun addLowerBound(usd: Double?) {
-        add(usd)
+    fun addLowerBound(usd: Double?, failedNoUsage: Boolean = false) {
+        add(usd, failedNoUsage)
         inexactRows++
         historyReadable = false
     }
@@ -49,6 +57,7 @@ internal class DayTally(val day: Long) {
         if (seeded) return
         usd += before.usd
         unpriced += before.unpriced
+        failed += before.failed
         inexactRows += before.inexactRows
         historyReadable = historyReadable && before.historyReadable
         seeded = true

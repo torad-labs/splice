@@ -2,6 +2,8 @@
 package splice.head.usage
 
 import splice.core.model.TurnBill
+import splice.core.perf.PerfKeys
+import splice.core.perf.PerfSnapshot
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.CacheWrite
 import splice.core.turn.Usage
@@ -84,3 +86,32 @@ public data class TurnTools(
     val toolsEager: Long?,
     val toolsDeferred: Long?,
 )
+
+/** The economics one perf row stands for: the row's own counters read back, so rollup and log agree. */
+internal class SnapshotEconomics {
+    fun of(
+        snap: PerfSnapshot,
+        model: String,
+        rateLimited: Boolean = false,
+    ): TurnEconomics = TurnEconomics(
+        model = model,
+        localStep = snap.counters[PerfKeys.LOCAL_STEP] == 1L,
+        tokens = TurnTokens(
+            inTokens = snap.counters[PerfKeys.IN_TOKENS],
+            cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS],
+            cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS],
+            outTokens = snap.counters[PerfKeys.OUT_TOKENS],
+            cacheWriteHourlyTokens = snap.counters[PerfKeys.CACHE_WRITE_1H_TOKENS],
+        ),
+        bytes = TurnBytes(
+            reqBytes = snap.counters[PerfKeys.REQ_BYTES],
+            upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],
+        ),
+        tools = TurnTools(
+            toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
+            toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
+        ),
+        rateLimited = rateLimited,
+        history = TurnBill.history(snap.counters),
+    )
+}

@@ -107,6 +107,8 @@ public class EconomicsPayloads(
                 // V4-221: null is "not priced then" (an hour from before the field).
                 put("cost_usd", b.cost.costUsd)
                 put("unpriced_turns", b.cost.unpricedTurns)
+                // Oct 12: null is an hour from before the field; failed requests with no usage are counted here, not above.
+                put("failed_turns", b.cost.failedTurns)
                 // Oct 11: null on all three is an hour never split, whose figures above mix plan and key requests.
                 put("plan_turns", b.cost.planTurns)
                 put("plan_value_usd", b.cost.planValueUsd)

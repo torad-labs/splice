@@ -18,6 +18,7 @@ import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
@@ -67,12 +68,13 @@ internal class BudgetLedger(
 
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = spentOn(null, atMs, model, counters)
 
-    override fun spentOn(account: String?, atMs: Long, model: String, counters: Map<String, Long>) {
+    override fun spentOn(account: String?, atMs: Long, model: String, counters: Map<String, Long>, outcome: String) {
         if (plans(account)) return // a plan covered it: not a key's spend, and not a request without a price
         val usd = measuredCost(model, counters, atMs)
-        synchronized(lock) { tallyAt(atMs)?.let { charge(it, usd, counters) } }
+        synchronized(lock) { tallyAt(atMs)?.let { charge(it, usd, counters, outcome) } }
         val limit = limit() ?: return
-        if (usd == null && counters[PerfKeys.LOCAL_STEP] != 1L) noteUnpriced(atMs, model)
+        val noPrice = usd == null && counters[PerfKeys.LOCAL_STEP] != 1L
+        if (noPrice && !OutcomeTags.isFailedWithoutUsage(outcome, counters)) noteUnpriced(atMs, model)
         if (limit.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
     }
 
@@ -85,7 +87,7 @@ internal class BudgetLedger(
             val complete = tally.seeded && tally.historyReadable && tally.unpriced == 0L
             val used = tally.usd.takeIf { complete }
             val remaining = used?.let { spend -> limit()?.usd?.let { (it - spend).coerceAtLeast(0.0) } }
-            BudgetSpend(used, remaining, tally.unpriced, complete, pending = tally.seeding)
+            BudgetSpend(used, remaining, tally.unpriced, complete, pending = tally.seeding, failedTurns = tally.failed)
         }
     }
 
@@ -157,7 +159,7 @@ internal class BudgetLedger(
             unread("${window.skipped} historical request records could not be read")
         }
         window.rows.filter { it.ts in dayStart until context.bootMs && !plans(it.facts.account) }
-            .forEach { charge(before, measuredCost(it.facts.model, it.fields, it.ts), it.fields) }
+            .forEach { charge(before, measuredCost(it.facts.model, it.fields, it.ts), it.fields, it.outcome) }
         return before
     }
 
@@ -167,9 +169,10 @@ internal class BudgetLedger(
 
     /** Dollars are charged for every row. A request with no price is COUNTED only when the Requests page lists it, and
      *  that page leaves out the steps splice answered itself, so a local step with no price is no request to count. */
-    private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>) {
+    private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>, outcome: String) {
         if (usd == null && fields[PerfKeys.LOCAL_STEP] == 1L) return
-        if (TurnBill.fullyReported(fields)) tally.add(usd) else tally.addLowerBound(usd)
+        val failed = OutcomeTags.isFailedWithoutUsage(outcome, fields)
+        if (TurnBill.fullyReported(fields)) tally.add(usd, failed) else tally.addLowerBound(usd, failed)
     }
 
     /** Today's earlier spend is short by what could not be read, and the head's log says so. */

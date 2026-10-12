@@ -100,6 +100,7 @@ class EconomicsCostRouteTest {
                 "priced" to managedHead("priced", pricedStore()),
                 "legacy" to managedHead("legacy", legacyStore()),
                 "unknown" to managedHead("unknown", unknownStore()),
+                "failing" to managedHead("failing", failingStore()),
             ),
             config = ConfigService(paths),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
@@ -146,6 +147,19 @@ class EconomicsCostRouteTest {
         return store
     }
 
+    /** A priced answer, a failed request that reported nothing, and two requests with tokens but no card (one failed). */
+    private fun failingStore(): EconomicsStore {
+        val store = EconomicsStore(tmp.resolve("failing.json"), TurnPrice(catalog), WallClock { 10 * HOUR_MS })
+        store.record(turn(HAIKU, inTokens = 100, cached = 0, cacheWrite = 0, out = 7))
+        repeat(2) {
+            store.record(turn(HAIKU, null, null, null, null), outcome = "error:upstream-failed")
+        }
+        store.record(turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
+        val answered = turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100)
+        store.record(answered, outcome = "error:upstream-failed")
+        return store
+    }
+
     /** An hour written before the cost field existed. */
     private fun legacyStore(): EconomicsStore {
         val file = tmp.resolve("legacy.json")
@@ -181,6 +195,16 @@ class EconomicsCostRouteTest {
     }
 
     @Test
+    fun `a failed request that reported no usage counts as failed, not unpriced, and an old hour reads null`() =
+        runBlocking<Unit> {
+            awaitPort()
+            val bucket = bucketOf("failing")
+            assertEquals(2L, bucket.getValue("failed_turns").jsonPrimitive.long, "$bucket")
+            assertEquals(2L, bucket.getValue("unpriced_turns").jsonPrimitive.long, "with tokens, no card: $bucket")
+            assertEquals(JsonNull, bucketOf("legacy").getValue("failed_turns"), "not counted then is not zero")
+        }
+
+    @Test
     fun `unknown usage reaches the API as an additive count without erasing known sums`() = runBlocking<Unit> {
         awaitPort()
         val bucket = bucketOf("unknown")
@@ -201,7 +225,7 @@ class EconomicsCostRouteTest {
         return row.getValue("buckets").jsonArray.single().jsonObject
     }
 
-    private fun turn(model: String, inTokens: Long, cached: Long, cacheWrite: Long, out: Long) =
+    private fun turn(model: String, inTokens: Long?, cached: Long?, cacheWrite: Long?, out: Long?) =
         TurnEconomics(
             model,
             TurnTokens(inTokens, cached, cacheWrite, out),

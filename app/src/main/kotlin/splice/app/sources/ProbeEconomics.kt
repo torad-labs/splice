@@ -2,6 +2,7 @@
 package splice.app.sources
 
 import splice.core.model.TurnBill
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.head.usage.BucketBytes
 import splice.head.usage.BucketTokens
@@ -185,7 +186,12 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
                 deferralTurns = bucket.deferralTurns +
                     if (!local && row.fields.containsKey(PerfKeys.TOOLS_EAGER)) 1 else 0,
             ),
-            cost = bucket.cost.copy(unpricedTurns = bucket.unpricedTurns + 1),
+            // The live rollup counts a failed probe with no usage as failed, so the probes do the same.
+            cost = if (OutcomeTags.isFailedWithoutUsage(row.outcome, row.fields)) {
+                bucket.cost.copy(failedTurns = bucket.cost.failedTurns?.plus(1))
+            } else {
+                bucket.cost.copy(unpricedTurns = bucket.unpricedTurns + 1)
+            },
         )
     }
 
@@ -214,7 +220,8 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         bucket.toolsDeferred to probes.toolsDeferred,
         bucket.deferralTurns to probes.deferralTurns,
     ).all { (total, probe) -> probe in 0..total } &&
-        (unpricedHour(bucket) || probes.unpricedTurns in 0..bucket.unpricedTurns)
+        (unpricedHour(bucket) || probes.unpricedTurns in 0..bucket.unpricedTurns) &&
+        (bucket.cost.failedTurns == null || (probes.cost.failedTurns ?: 0L) in 0..bucket.cost.failedTurns)
 
     // Old unpriced hours have no count to subtract; their cost remains unknown.
     private fun unpricedHour(bucket: EconomicsBucket): Boolean = bucket.costUsd == null && bucket.unpricedTurns == 0L
@@ -232,6 +239,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         ),
         cost = bucket.cost.copy(
             unpricedTurns = if (unpricedHour(bucket)) 0 else bucket.unpricedTurns - probes.unpricedTurns,
+            failedTurns = bucket.cost.failedTurns?.let { it - (probes.cost.failedTurns ?: 0L) },
         ),
     )
 }

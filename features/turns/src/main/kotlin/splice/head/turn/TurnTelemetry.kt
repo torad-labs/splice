@@ -35,10 +35,7 @@ import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
 import splice.head.usage.EconomicsStore
-import splice.head.usage.TurnBytes
-import splice.head.usage.TurnEconomics
-import splice.head.usage.TurnTokens
-import splice.head.usage.TurnTools
+import splice.head.usage.SnapshotEconomics
 import splice.head.wire.TurnTrace
 
 // V4-122: ERR_SNIPPET lives in splice.core.util now, at the same 200 this declaration carried.
@@ -176,7 +173,9 @@ internal class TurnTelemetry(
             ending.at,
             // The hourly rollup counts this turn only once its request-log line is whole on disk, so a
             // stop or halt never leaves a rollup ahead of the log it is read against.
-            whole = FileIoTask { recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel) },
+            whole = FileIoTask {
+                recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel, outcomeTag)
+            },
         )
         account?.switch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
@@ -186,7 +185,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
-        recordSpend(rowTs, drive.upstreamModel, snap.counters, accountLabel)
+        recordSpend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
     }
 
     private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
@@ -217,9 +216,15 @@ internal class TurnTelemetry(
      *  facts a restarted daemon reads back from the file. Best-effort like [recordEconomics]: a
      *  budget that throws must never fail the turn it is weighing. A local refusal writes no spend,
      *  because it spent nothing. */
-    private fun recordSpend(rowTs: Long, model: String, counters: Map<String, Long>, account: String?) {
+    private fun recordSpend(
+        rowTs: Long,
+        model: String,
+        counters: Map<String, Long>,
+        account: String?,
+        outcome: String,
+    ) {
         Cancellables.discard(
-            Cancellables.runCatchingCancellable { budget.spentOn(account, rowTs, model, counters) },
+            Cancellables.runCatchingCancellable { budget.spentOn(account, rowTs, model, counters, outcome) },
             "telemetry is best-effort; a turn must never fail on its budget",
         )
     }
@@ -227,38 +232,17 @@ internal class TurnTelemetry(
     /** Fold this turn into the hourly quota rollup. The perf snapshot is the single source for
      *  BOTH the JSONL row and this store, so the dashboard can never disagree with the log line.
      *  Wrapped because recordPerf's contract is never-throws and telemetry must not fail a turn. */
-    private fun recordEconomics(snap: PerfSnapshot, model: String, rateLimited: Boolean, account: String?) {
+    private fun recordEconomics(
+        snap: PerfSnapshot,
+        model: String,
+        rateLimited: Boolean,
+        account: String?,
+        outcome: String,
+    ) {
         val store = economics ?: return
         Cancellables.discard(
             Cancellables.runCatchingCancellable {
-                store.record(
-                    TurnEconomics(
-                        // V4-221: priced at THIS turn's card, the model the perf row names.
-                        model = model,
-                        localStep = snap.counters[PerfKeys.LOCAL_STEP] == 1L,
-                        tokens = TurnTokens(
-                            inTokens = snap.counters[PerfKeys.IN_TOKENS],
-                            cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS],
-                            cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS],
-                            outTokens = snap.counters[PerfKeys.OUT_TOKENS],
-                            cacheWriteHourlyTokens = snap.counters[PerfKeys.CACHE_WRITE_1H_TOKENS],
-                        ),
-                        bytes = TurnBytes(
-                            reqBytes = snap.counters[PerfKeys.REQ_BYTES],
-                            upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],
-                        ),
-                        // Absent (not zero) on a head whose dialect cannot defer — the chat dialect
-                        // has no tool_search at all, and the ledger must render that as "n/a",
-                        // never as a deferral rate of zero.
-                        tools = TurnTools(
-                            toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
-                            toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
-                        ),
-                        rateLimited = rateLimited,
-                        history = TurnBill.history(snap.counters),
-                    ),
-                    account,
-                )
+                store.record(SnapshotEconomics().of(snap, model, rateLimited), account, outcome)
             },
             "telemetry is best-effort; a turn must never fail on the quota rollup",
         )

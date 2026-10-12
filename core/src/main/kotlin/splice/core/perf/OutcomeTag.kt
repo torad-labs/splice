@@ -20,6 +20,7 @@
 // suffix is not known until the call site.
 package splice.core.perf
 
+import splice.core.model.TurnBill
 import splice.core.turn.ErrorType
 
 /** Every fixed outcome tag. [wire] is what the JSONL and the journal carry verbatim. */
@@ -95,6 +96,12 @@ public object OutcomeTags {
     /** Unknown attribution is not failure; an unfamiliar recorded ending still is. */
     public fun isFailed(tag: String): Boolean =
         !isClean(tag) && tag != "?" && !isStopped(tag)
+
+    /** A request that ended failed and reported no usage at all: it spent nothing the card could price, so it counts as
+     *  failed, never as unpriced (Marlin's Accounts walk, Oct 12: "71 requests with no price" were failed DeepSeek
+     *  turns). "Failed" is the Requests page's own Outcome switch ([isFailed]). */
+    public fun isFailedWithoutUsage(tag: String, row: Map<String, Long>): Boolean =
+        row[PerfKeys.LOCAL_STEP] != 1L && isFailed(tag) && TurnBill.isEmpty(row)
 }
 
 // The two prefixes, kept private so the only way to build a tag is through the helpers above.

@@ -10,6 +10,8 @@
 // and :app hands each head its own ledger (HeadServerFactory, from ConsoleEventPublisher.budgets).
 package splice.core.budget
 
+import splice.core.perf.OutcomeTag
+
 /** A refused turn: [message] is what the client is shown, [detail] is the log and perf-row detail. */
 public data class BudgetBlock(val message: String, val detail: String)
 
@@ -26,7 +28,14 @@ public interface HeadBudget {
 
     /** [spent] for a turn that [account] carried. A ledger that keeps a plan's requests out of a key's budget reads the
      *  account here; any other budget takes the turn as [spent] does. */
-    public fun spentOn(account: String?, atMs: Long, model: String, counters: Map<String, Long>) {
+    public fun spentOn(
+        account: String?,
+        atMs: Long,
+        model: String,
+        counters: Map<String, Long>,
+        /** The row's outcome tag: a failed request with no usage is counted as failed, not as a request with no price. */
+        outcome: String = OutcomeTag.OK.wire,
+    ) {
         spent(atMs, model, counters)
     }
 }

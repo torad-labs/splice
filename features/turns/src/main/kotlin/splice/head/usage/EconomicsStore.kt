@@ -40,6 +40,8 @@ import splice.core.model.TurnPrice
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
 import splice.core.perf.KeptHistory
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -82,11 +84,12 @@ public class EconomicsStore(
 
     /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. [account] is the label
      *  that carried it, asked of the head's plans to say whether a plan or a key paid. */
-    public fun record(turn: TurnEconomics, account: String? = null) {
+    public fun record(turn: TurnEconomics, account: String? = null, outcome: String = OutcomeTag.OK.wire) {
         val now = clock()
         val hour = now / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
         val usd = price.usd(turn.model, turn.counters(), now)
+        val failed = OutcomeTags.isFailedWithoutUsage(outcome, turn.counters())
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)
@@ -106,7 +109,7 @@ public class EconomicsStore(
                     deferralTurns = b.deferralTurns + deferralTurn(turn),
                 ),
                 rateLimited = b.rateLimited + if (turn.rateLimited) 1 else 0,
-                cost = priced(b.cost, usd, localStep, !localStep && plans(account)),
+                cost = priced(b.cost, usd, localStep, !localStep && plans(account), failed),
             )
             trimUnderLock()
             version += 1
@@ -150,20 +153,8 @@ public class EconomicsStore(
 
     /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card or incomplete usage. A null hour (one
      *  written before the field) stays null: a partial sum must not read as the hour's cost. */
-    private fun priced(cost: BucketCost, usd: Double?, localStep: Boolean, onPlan: Boolean): BucketCost =
-        if (onPlan) {
-            // A plan covered the request: its API-rate value is kept apart and is no cost. An hour never split stays so.
-            cost.copy(
-                planTurns = cost.planTurns?.plus(1),
-                planValueUsd = cost.planValueUsd?.plus(usd ?: 0.0),
-                planUnpricedTurns = cost.planUnpricedTurns?.plus(if (usd == null) 1 else 0),
-            )
-        } else {
-            cost.copy(
-                costUsd = cost.costUsd?.plus(usd ?: 0.0),
-                unpricedTurns = cost.unpricedTurns + if (usd == null && !localStep) 1 else 0,
-            )
-        }
+    private fun priced(cost: BucketCost, usd: Double?, localStep: Boolean, onPlan: Boolean, failed: Boolean) =
+        if (onPlan) cost.onPlan(usd) else cost.paidByKey(usd, noPrice = usd == null && !localStep, failed)
 
     /** Buckets inside the retention window, oldest first. */
     public fun read(): List<EconomicsBucket> {
@@ -324,6 +315,7 @@ public class EconomicsStore(
                                 put("rate_limited", b.rateLimited)
                                 put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
                                 put("unpriced_turns", b.unpricedTurns)
+                                put("failed_turns", b.cost.failedTurns) // null writes JSON null: not counted then
                                 put("plan_turns", b.cost.planTurns) // null writes JSON null: never split
                                 put("plan_value_usd", b.cost.planValueUsd)
                                 put("plan_unpriced_turns", b.cost.planUnpricedTurns)
@@ -388,6 +380,8 @@ public class EconomicsStore(
                     // unpriceable) reads null too.
                     costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
                     unpricedTurns = longOr(o, "unpriced_turns"),
+                    // Oct 12: an hour written before the field has no key and reads NULL, never zero.
+                    failedTurns = long(o, "failed_turns"),
                     // Oct 11: an hour written before the split has no `plan_turns` key and reads NULL, never zero: its
                     // cost above mixes plan and key requests, which is the true historical value.
                     planTurns = long(o, "plan_turns"),

@@ -60,6 +60,7 @@ public data class EconomicsBucket(
     val deferralTurns: Long get() = tools.deferralTurns
     val costUsd: Double? get() = cost.costUsd
     val unpricedTurns: Long get() = cost.unpricedTurns
+    val failedTurns: Long? get() = cost.failedTurns
 }
 
 /** One hour's token sums. Observed values only; the unreported-usage count beside them records the unknown turns. */
@@ -98,6 +99,11 @@ public data class BucketCost(
     val costUsd: Double? = 0.0,
     /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
     val unpricedTurns: Long = 0,
+    /** Oct 12: the non-plan requests that ended failed and reported no usage, so they have no price. They are NOT in
+     *  [unpricedTurns], which counts only answered requests with no rate. NULL for an hour recorded before the field
+     *  ("not counted then", never 0), and it stays null if this daemon adds requests to that hour, for the reason
+     *  [costUsd] does. */
+    val failedTurns: Long? = 0,
     /** Oct 11 (fin): the requests an account with a plan carried, priced or not. Their dollars are NOT in [costUsd]
      *  and they are not in [unpricedTurns]: a plan covered them. NULL for an hour recorded before the split, whose
      *  [costUsd] and [unpricedTurns] mix plan and key requests, and it stays null if this daemon adds requests to
@@ -107,4 +113,18 @@ public data class BucketCost(
     val planValueUsd: Double? = 0.0,
     /** The plan requests the rate card cannot value. Null as [planTurns]. */
     val planUnpricedTurns: Long? = 0,
-)
+) {
+    /** A plan covered the request: its API-rate value is kept apart and is no cost. An hour never split stays so. */
+    fun onPlan(usd: Double?): BucketCost = copy(
+        planTurns = planTurns?.plus(1),
+        planValueUsd = planValueUsd?.plus(usd ?: 0.0),
+        planUnpricedTurns = planUnpricedTurns?.plus(if (usd == null) 1 else 0),
+    )
+
+    /** A key paid. A request with no price that failed without reporting usage spent nothing: failed, not unpriced. */
+    fun paidByKey(usd: Double?, noPrice: Boolean, failed: Boolean): BucketCost = copy(
+        costUsd = costUsd?.plus(usd ?: 0.0),
+        unpricedTurns = unpricedTurns + if (noPrice && !failed) 1 else 0,
+        failedTurns = failedTurns?.plus(if (noPrice && failed) 1 else 0),
+    )
+}

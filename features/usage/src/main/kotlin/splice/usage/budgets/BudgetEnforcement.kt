@@ -82,4 +82,6 @@ internal data class BudgetSpend(
     val complete: Boolean,
     /** True only while the daemon is still reading this day's pre-boot history. */
     val pending: Boolean = false,
+    /** The day's requests that ended failed and reported no usage: they spent nothing and are not in [unpricedTurns]. */
+    val failedTurns: Long = 0,
 )

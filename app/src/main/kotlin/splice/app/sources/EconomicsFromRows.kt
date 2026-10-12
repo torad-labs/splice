@@ -13,6 +13,7 @@ package splice.app.sources
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.head.usage.AccountOnPlan
 import splice.head.usage.BucketBytes
@@ -129,6 +130,7 @@ internal class EconomicsFromRows(private val price: TurnPrice, private val plans
     private fun cost(client: List<PerfRow>): BucketCost {
         var usd = 0.0
         var unpriced = 0L
+        var failed = 0L
         var planTurns = 0L
         var planValue = 0.0
         var planUnpriced = 0L
@@ -139,7 +141,8 @@ internal class EconomicsFromRows(private val price: TurnPrice, private val plans
                 planTurns += 1
                 if (amount == null) planUnpriced += 1 else planValue += amount
             } else if (amount == null) {
-                unpriced += 1
+                // A failed request that reported no usage spent nothing: failed, never unpriced.
+                if (OutcomeTags.isFailedWithoutUsage(row.outcome, row.fields)) failed += 1 else unpriced += 1
             } else {
                 usd += amount
             }
@@ -149,6 +152,7 @@ internal class EconomicsFromRows(private val price: TurnPrice, private val plans
         return BucketCost(
             costUsd = usd,
             unpricedTurns = unpriced,
+            failedTurns = failed,
             planTurns = planTurns,
             planValueUsd = planValue,
             planUnpricedTurns = planUnpriced,

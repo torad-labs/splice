@@ -196,6 +196,37 @@ class BudgetSpendTest {
     }
 
     @Test
+    fun `the budgets reply counts a failed request with no usage as failed, beside the unpriced ones`() {
+        val store = BudgetStore(directory.resolve("budgets.json"))
+        store.replace(listOf(Budget("head", 5.0, BudgetActions.BLOCK)))
+        val paths = StatePaths(baseOverride = directory.resolve("state"))
+        val facts = PerfTurnFacts(model = "priced")
+        val failedBeforeBoot = PerfRow(SPEND_BOOT_MS - 2, "error:upstream-failed", emptyMap(), facts = facts)
+        val unpricedBeforeBoot = PerfRow(SPEND_BOOT_MS - 1, "ok", emptyMap(), facts = facts)
+        val earlier = PerfRowsWindow(listOf(failedBeforeBoot, unpricedBeforeBoot))
+        val history = HeadPerfHistory { PerfRowsSource { earlier } }
+        val owner = BudgetEnforcement(
+            store,
+            BudgetAlert { _, _ -> },
+            history,
+            {},
+            WallClock { SPEND_BOOT_MS },
+            immediateSeed(),
+            ZoneOffset.UTC,
+        )
+        val head = owner.forHead("head", catalog)
+        head.spentOn(null, SPEND_BOOT_MS, "priced", emptyMap(), "error:upstream-failed")
+        head.spentOn(null, SPEND_BOOT_MS, "priced", emptyMap(), "error:upstream-failed")
+        head.spentOn(null, SPEND_BOOT_MS, "priced", tokens(1), "ok")
+        head.spentOn(null, SPEND_BOOT_MS, "unpriced", mapOf(PerfKeys.IN_TOKENS to 5L), "error:upstream-failed")
+
+        val reply = BudgetRoutes(BudgetSource { store }, ConfigService(paths)).read(owner).body
+        assertTrue(reply.contains("\"failed_turns\":3"), reply)
+        assertTrue(reply.contains("\"unpriced_turns\":2"), reply)
+        assertTrue(reply.contains("\"used_usd\":null"), "spend with an unpriced request is still not exact: $reply")
+    }
+
+    @Test
     fun `the budgets reply says when the budget day next rolls over, drawn in the ledger's own zone`() {
         val store = BudgetStore(directory.resolve("budgets.json"))
         val paths = StatePaths(baseOverride = directory.resolve("state"))

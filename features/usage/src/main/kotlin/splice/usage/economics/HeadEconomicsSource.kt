@@ -76,6 +76,9 @@ public data class EconomicsCost(
     val costUsd: Double?,
     /** V4-221: turns whose model had no rate card, so their dollars are not in [costUsd]. */
     val unpricedTurns: Long,
+    /** Oct 12: the non-plan requests that ended failed and reported no usage, which are not in [unpricedTurns]; null for
+     *  an hour recorded before the field ("not counted then", never 0). */
+    val failedTurns: Long? = null,
     /** Oct 11: the requests an account with a plan carried, priced or not, whose cost is NOT in [costUsd]; null for an
      *  hour whose requests were never split (then [costUsd] and [unpricedTurns] mix plan and key requests). */
     val planTurns: Long? = null,

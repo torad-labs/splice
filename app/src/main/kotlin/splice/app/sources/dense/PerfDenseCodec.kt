@@ -79,7 +79,7 @@ internal data class PerfDenseState(var ts: Long = 0L, var end: Long = 0L)
 internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<String>) {
     private val kept = keys.filter { it != "ts" }
     private val strings = PerfStringTable()
-    private val schemas = HashMap<Int, PerfNumericSchema>()
+    private val schemas = HashMap<Long, PerfNumericSchema>()
     private val scratch = PerfBytes()
     private val noTurns = PerfTurnIds()
     private val noDrops = PerfDropsHint(candidate = false, count = null)
@@ -201,16 +201,16 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
 
     private fun numbers(row: PerfRow) {
         val values = LongArray(kept.size)
-        var mask = 0
+        var mask = 0L
         var count = 0
         kept.forEachIndexed { bit, key ->
             row.fields[key]?.let {
-                mask = mask or (1 shl bit)
+                mask = mask or (1L shl bit)
                 values[count++] = it
             }
         }
         val packed = PerfNumericPacking.pack(values, count)
-        scratch.putVarint(mask.toLong())
+        scratch.putVarint(mask)
         scratch.putVarint(packed.size.toLong())
         scratch.putAll(packed)
     }
@@ -224,7 +224,7 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
         val session = textAt(cursor)
         val account = textAt(cursor)
         val sessionId = textAt(cursor)
-        val mask = cursor.varint().toInt()
+        val mask = cursor.varint()
         val packed = cursor.bytes(cursor.varint().toInt())
         return PerfRow(
             ts = ts,
@@ -244,9 +244,9 @@ internal class PerfDenseCodec(private val names: PerfFieldNames, keys: List<Stri
         )
     }
 
-    private fun schemaOf(mask: Int): PerfNumericSchema {
+    private fun schemaOf(mask: Long): PerfNumericSchema {
         schemas[mask]?.let { return it }
-        val schema = names.schema(kept.filterIndexed { bit, _ -> mask and (1 shl bit) != 0 })
+        val schema = names.schema(kept.filterIndexed { bit, _ -> mask and (1L shl bit) != 0L })
         if (schemas.size < SCHEMAS_KEPT) schemas[mask] = schema
         return schema
     }

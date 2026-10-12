@@ -416,12 +416,12 @@ function byHtml() {
 // time, as high as it took, and every failure a tick that opens it, so where the dots rise or the ticks begin is since when.
 // From the newest requests the command returned: a command that holds more says so on its card.
 const LOG = (ms) => Math.min(1, Math.max(0, (Math.log10(Math.max(ms, 100)) - 2) / (Math.log10(180000) - 2)));
-const LAT_HEAD = `<div class="lat-head"><span>Typical</span><span>Slowest</span></div>`;
+const LAT_HEAD = `<div class="lat-head"><span>Typical</span><span>95th</span><span>Slowest</span></div>`; // 95th: 19 in 20 requests were faster
 function strip(label, xs, scaleWords = false) {
   if (!xs.length) return "";
   const p50 = q(xs, .5), p95 = q(xs, .95), max = Math.max(...xs), at = (ms) => `${(LOG(ms) * 100).toFixed(2)}%`;
   const ticks = [1000, 10000, 60000].map((ms) => `<span class="tk" style="left:${at(ms)}">${scaleWords ? `<span>${secs(ms).replace(" min 0 s", " min")}</span>` : ""}</span>`).join("");
-  return `<div class="lat"><span class="label">${label}</span><span class="vals"><span>${secs(p50)}</span><span>${secs(max)}</span></span>`
+  return `<div class="lat"><span class="label">${label}</span><span class="vals"><span>${secs(p50)}</span><span>${secs(p95)}</span><span>${secs(max)}</span></span>`
     + `<div class="scale">${ticks}<span class="span" style="left:${at(p50)};width:calc(${at(p95)} - ${at(p50)})"></span><span class="mk max" style="left:${at(max)}"></span></div></div>`;
 }
 // the stretch the rows in hand cover: the whole window, or, for a command that holds more than it returned, from its oldest
@@ -478,6 +478,8 @@ function flagHtml(head, f) {
   const vs = f.kind === "slow" ? `<span class="vs"><b>${secs(f.now)}</b> since then<span class="dot"></span><b>${secs(f.typ)}</b> before today</span>` : `<span class="vs"><b>${f.n}</b> failed</span>`;
   return `<p class="flag"><a href="${href}">${word}${OPEN}</a>${vs}</p>`;
 }
+/** What share of the requests in hand failed, in words a reader can place: under one in a hundred says so. */
+const failShare = (n, of) => (!of ? "" : n / of < 0.005 ? "under 1%" : `${Math.round((100 * n) / of)}%`);
 function headCard(head, f = null, foldable = !f) {
   const rs = D.rows.filter((r) => r.head === head), fails = rs.filter(failed), held = D.held[head];
   const counts = new Map(); for (const r of fails) counts.set(r.outcome, (counts.get(r.outcome) || 0) + 1);
@@ -490,7 +492,7 @@ function headCard(head, f = null, foldable = !f) {
   return `<article class="card head-card${f ? " lead" : ""}" style="--c:${colorOf(providerOfHead(head))}"><header>${chip(head)}<a class="count" href="${reqUrl({ cmd: cmdOf(head) })}">${n0(total)} requests${OPEN}</a>${fold}</header>`
     + (f ? flagHtml(head, f) : "") + `<p class="models">${models.map(esc).join('<span class="dot"></span>')}</p>${cut}`
     + LAT_HEAD + strip("First byte", rs.filter((r) => r.ttfb != null).map((r) => r.ttfb)) + strip("Whole request", rs.map((r) => r.total), true) + trail(rs, f, held?.truncated === true)
-    + `<p class="fails${fails.length ? " bad" : ""}">${fails.length ? `<a class="all" href="${reqUrl({ cmd: cmdOf(head), outcome: "fail" })}"><b>${n0(fails.length)}</b> failed${OPEN}</a>` : `<span><b>0</b> failed</span>`}${kinds}</p></article>`;
+    + `<p class="fails${fails.length ? " bad" : ""}">${fails.length ? `<a class="all" href="${reqUrl({ cmd: cmdOf(head), outcome: "fail" })}"><b>${n0(fails.length)}</b> failed${OPEN}</a><span class="share">${failShare(fails.length, rs.length)}</span>` : `<span><b>0</b> failed</span>`}${kinds}</p></article>`;
 }
 function headRow(head) {
   const rs = D.rows.filter((r) => r.head === head), fails = rs.filter(failed).length;

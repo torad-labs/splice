@@ -80,6 +80,8 @@ test("Usage: a week's figures are the daemon's totals, not the rows returned; a 
     const key = p.locator(".brow", { hasText: "OPENROUTER_API_KEY" }).first();
     await expect(key.locator(".cost .money")).toHaveText("≈$1.25");
     await expect(p.locator(".pcard .thru")).toContainText("Counted by splice");
+    await p.getByRole("button", { name: /^plan / }).click();
+    await expect(p.locator(".head-card .lat-head").first()).toContainText("95th");
   } finally {
     await p.context().close();
   }

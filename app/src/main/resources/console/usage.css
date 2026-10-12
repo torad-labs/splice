@@ -120,10 +120,11 @@
 .head-card .count .go { color: var(--text-mute); }
 .head-card .count:hover { background: var(--track); color: var(--text); }
 .head-card .models { margin: .7rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 0; font: 500 .92rem/1.2 var(--font-data); color: var(--text-mute); }
-.lat-head, .lat .vals { display: grid; grid-template-columns: repeat(2, 6.4rem); column-gap: 1rem; justify-items: end; }
+.lat-head, .lat .vals { display: grid; grid-template-columns: repeat(3, 6.4rem); column-gap: 1rem; justify-items: end; }
 .lat-head { width: max-content; margin: 1.3rem 0 0 auto; font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
 .lat { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 1.2rem; row-gap: .7rem; margin-top: 1.3rem; }
 .lat-head + .lat { margin-top: .6rem; }
+.head-card .fails .share { margin-left: .6rem; color: var(--text-mute); font: 500 .92rem/1 var(--font-data); }
 .lat:has(.tk span) { padding-bottom: 1.3rem; }
 .lat .label { font: 500 1rem/1 var(--font-name); color: var(--text-body); align-self: baseline; white-space: nowrap; }
 .lat .scale { grid-column: 1 / -1; grid-row: 2; }

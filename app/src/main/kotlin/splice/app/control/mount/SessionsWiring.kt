@@ -5,10 +5,10 @@ package splice.app.control.mount
 
 import splice.app.control.ConsolePorts
 import splice.app.control.LimitResume
-import splice.app.control.LimitTurnEnded
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
 import splice.app.control.SessionPerfFacts
+import splice.app.control.TranscriptLimitEnding
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
 import splice.client.resume.ModelMoves
@@ -49,40 +49,9 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
-import splice.sessions.transcript.TranscriptLookup
-import splice.sessions.transcript.TranscriptMessage
-import splice.sessions.transcript.TranscriptRole
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
-
-// why: Claude Code writes a turn's limit as its own API error record, which the reader pages as a system message
-// opening with these words; the perf row already says the ending was the limit.
-private const val LIMIT_ERROR = "API error"
-
-// why: the limit's error, the client's own "continuing automatically" line and the prompt it writes back after them
-// all sit in a turn's last few messages; this many covers them with room.
-private const val LIMIT_TAIL = 8
-
-/** Whether a conversation's newest messages end at the limit: the limit's error, with nothing he or the model said
- *  after it. Claude Code 2.1.296 writes the stopped prompt back AFTER the error in the file but stamped before it
- *  (limit walk, Oct 12, 6:24 PM CT), so "after" is by time; a message with no time is ordered by its place. */
-private object LimitEnding {
-    private val spoken = setOf(TranscriptRole.USER, TranscriptRole.ASSISTANT)
-
-    fun ended(messages: List<TranscriptMessage>): Boolean {
-        val at = messages.indexOfLast { it.role == TranscriptRole.SYSTEM && it.text.startsWith(LIMIT_ERROR, true) }
-        if (at < 0) return false
-        val error = messages[at]
-        return messages.withIndex().none { (i, m) -> m.role in spoken && later(m, i, error, at) }
-    }
-
-    private fun later(m: TranscriptMessage, i: Int, error: TranscriptMessage, at: Int): Boolean {
-        val mine = m.ts
-        val its = error.ts
-        return if (mine != null && its != null) mine > its else i > at
-    }
-}
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -158,15 +127,7 @@ internal class SessionsWiring(
     /** What a login added after a plan limit does for the sessions it stopped. Null with no session registry. */
     val limitResume = sessions?.let {
         val io = ProcessDispatchers().io()
-        val transcripts = TranscriptReader()
-        val roots = TranscriptRoots(sessionHeads)
-        // reading off, splice opens no conversation: the perf row's ending and the console's own marks decide alone
-        val ended = LimitTurnEnded { record ->
-            if (!config.getConfig().transcriptView) return@LimitTurnEnded true
-            val id = record.sessionId
-            val page = id?.let { transcripts.pageBefore(it, roots.treesFor(record.head), null, LIMIT_TAIL) }
-            LimitEnding.ended((page as? TranscriptLookup.Found)?.page?.messages.orEmpty())
-        }
+        val ended = TranscriptLimitEnding(config, TranscriptReader(), TranscriptRoots(sessionHeads))
         LimitResume(it, perfFacts.endingOf(), PeerNoteSocket(io), LifecycleScope(io), log, ended)
     }
 

@@ -39,6 +39,7 @@ import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.FileIoTask
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.JsonlSink
@@ -224,6 +225,7 @@ public class PerfStats(
 
     private val skippedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
     private val appendDrops = PerfAppendDrops(log)
+    private val lane = PerfLineAppend(file, maxBytes, archive, appendDrops)
 
     /** Count perf rows rejected by the bounded file-lane admission boundary. */
     public val droppedRowCount: Long get() = appendDrops.count
@@ -243,7 +245,13 @@ public class PerfStats(
     // under it (PerfRoutes), so it is what the console's turn.end carries to join the stream to the
     // poll. Two rows of one head stamped in the same millisecond share it; that is the route's
     // existing key, and a new id here would be one the route could not look up.
-    public fun record(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject? = null, at: Long = clock()): Long {
+    public fun record(
+        meta: PerfRowMeta,
+        snap: PerfSnapshot,
+        request: JsonObject? = null,
+        at: Long = clock(),
+        whole: FileIoTask = FileIoTask { },
+    ): Long {
         measuredInputs.remember(meta, snap, request)
         // A row held for a streaming round is appended late with the time its turn ended, so a row can follow
         // newer ones in the file: a reader that wants the newest rows orders them by ts, not by position.
@@ -276,22 +284,7 @@ public class PerfStats(
                 "telemetry is best-effort; a turn must never fail on its session's running total",
             )
         }
-        val accepted = AsyncFileIo.submitFor(file) {
-            Cancellables.runCatchingCancellable {
-                Files.createDirectories(file.parent)
-                JsonlSink.appendLine(
-                    file,
-                    row,
-                    maxBytes = maxBytes,
-                    archive = archive,
-                    force = JsonlSink.PAGE_CACHE_FORCE,
-                )
-                // The next successful row ends a prior explicit deletion, on the same file lane.
-                Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
-                Unit
-            }.onFailure { appendDrops.writeFailed() }.getOrThrow()
-        }
-        appendDrops.accepted(accepted)
+        lane.append(row, whole)
         return ts
     }
 
@@ -417,6 +410,35 @@ public class PerfStats(
         val target = dir.resolve(archiveName.of(clock()))
         Files.copy(rolled, target, StandardCopyOption.REPLACE_EXISTING)
         sweepArchive(dir)
+    }
+
+    /** One request-log line onto the file lane. */
+    private class PerfLineAppend(
+        private val file: Path,
+        private val maxBytes: Long,
+        private val archive: RotationArchive,
+        private val appendDrops: PerfAppendDrops,
+    ) {
+        /** [whole] runs after the line is on disk, or at once when the lane refused the row. */
+        fun append(row: String, whole: FileIoTask) {
+            val accepted = AsyncFileIo.submitFor(file) {
+                Cancellables.runCatchingCancellable {
+                    Files.createDirectories(file.parent)
+                    JsonlSink.appendLine(
+                        file,
+                        row,
+                        maxBytes = maxBytes,
+                        archive = archive,
+                        force = JsonlSink.PAGE_CACHE_FORCE,
+                    )
+                    // The next successful row ends a prior explicit deletion, on the same file lane.
+                    Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
+                    Unit
+                }.onFailure { appendDrops.writeFailed() }.also { whole() }.getOrThrow()
+            }
+            appendDrops.accepted(accepted)
+            if (!accepted) whole()
+        }
     }
 
     /** A perf-specific loss counter, separate from the lane's all-task drop count. */

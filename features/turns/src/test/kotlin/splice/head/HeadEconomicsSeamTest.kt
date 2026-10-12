@@ -235,7 +235,7 @@ class HeadEconomicsSeamTest {
         try {
             rig.turn("basic")
 
-            val bucket = rig.economics.read().single()
+            val bucket = rig.economics.also { AsyncFileIo.drain() }.read().single()
             assertEquals(1, bucket.turns, "one completed turn is one recorded turn")
             assertTrue(bucket.inTokens > 0, "the metered input must reach the rollup, got $bucket")
 
@@ -259,7 +259,7 @@ class HeadEconomicsSeamTest {
         try {
             rig.turn("quota429")
 
-            val bucket = rig.economics.read().single()
+            val bucket = rig.economics.also { AsyncFileIo.drain() }.read().single()
             assertEquals(1, bucket.turns, "a refused turn is still a turn the rollup saw")
             assertEquals(1, bucket.rateLimited, "the 429 must be counted, not just logged: $bucket")
         } finally {
@@ -289,7 +289,7 @@ class HeadEconomicsSeamTest {
 
             rig.telemetry.recordPerf(drive, "ok")
 
-            val bucket = rig.economics.read().single()
+            val bucket = rig.economics.also { AsyncFileIo.drain() }.read().single()
             assertEquals(
                 12_000,
                 bucket.cacheWriteTokens,
@@ -325,7 +325,7 @@ class HeadEconomicsSeamTest {
 
             rig.telemetry.recordPerf(drive, "ok")
 
-            val bucket = rig.economics.read().single()
+            val bucket = rig.economics.also { AsyncFileIo.drain() }.read().single()
             assertEquals(160_000, bucket.inTokens, "the final round's input and both absorbed rounds': $bucket")
             assertEquals(140_000, bucket.cachedTokens, "the read bucket of every request")
             assertEquals(4_000, bucket.cacheWriteTokens, "the write bucket an absorbed round paid")
@@ -350,7 +350,7 @@ class HeadEconomicsSeamTest {
 
             rig.telemetry.recordPerf(drive, "ok")
 
-            val bucket = rig.economics.read().single()
+            val bucket = rig.economics.also { AsyncFileIo.drain() }.read().single()
             assertEquals(1, bucket.turns, "the turn is still recorded")
             assertEquals(0, bucket.cacheWriteTokens, "an absent counter is 0, never a dropped turn")
             assertEquals(1_000, bucket.inTokens)

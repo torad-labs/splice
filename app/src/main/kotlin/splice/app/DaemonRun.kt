@@ -67,7 +67,12 @@ internal class DaemonRun(
         } finally {
             try {
                 withContext(NonCancellable) {
-                    val halt = HaltJvm { exitCode -> Runtime.getRuntime().halt(exitCode) }
+                    val halt = HaltJvm { exitCode ->
+                        // The lane is a daemon thread apart from whatever wedged the stop: give the lines already queued a
+                        // short window to land whole, then end the process.
+                        AsyncFileIo.drain(HALT_DRAIN_MS)
+                        Runtime.getRuntime().halt(exitCode)
+                    }
                     process.runBoundedTeardown(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, halt) {
                         startup.cancel()
                         shutdown(daemon, lock, startup)

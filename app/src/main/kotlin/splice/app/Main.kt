@@ -282,6 +282,9 @@ internal data class StartState(
 internal const val STOP_DEADLINE_MS = 55_000L
 internal const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 
+// The halt floor waits this long for request-log lines already on the file lane before it ends the process: 57s + 1s stays under the CLI rung.
+internal const val HALT_DRAIN_MS = 1_000L
+
 // The exit status of a stop the halt watchdog cut off. Not 0 (a clean exit) and not 143 (the unit's SuccessExitStatus),
 // so systemd and anything else reading the status can tell a forced halt from a stop that finished.
 internal const val STOP_OVERRAN_EXIT_CODE = 70

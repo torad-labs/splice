@@ -21,6 +21,7 @@ import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
+import splice.core.util.FileIoTask
 import splice.core.util.LogSink
 import splice.head.HeadEvents
 import splice.head.NoHeadEvents
@@ -168,6 +169,9 @@ internal class TurnTelemetry(
             snap,
             drive.requestBody,
             ending.at,
+            // The hourly rollup counts this turn only once its request-log line is whole on disk, so a
+            // stop or halt never leaves a rollup ahead of the log it is read against.
+            whole = FileIoTask { recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel) },
         )
         account?.switch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
@@ -177,7 +181,6 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
-        recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel)
         recordSpend(rowTs, drive.upstreamModel, snap.counters, accountLabel)
     }
 

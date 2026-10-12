@@ -179,7 +179,7 @@ class NoRequestAccountingTest(@param:TempDir private val tmp: Path) {
                 assertEquals(0.0, TurnBill.usd(row, rates))
                 assertNull(row[PerfKeys.CACHED_TOKENS])
                 assertNull(row[PerfKeys.CACHE_WRITE_TOKENS])
-                val hour = economics.read().single()
+                val hour = economics.also { AsyncFileIo.drain() }.read().single()
                 assertEquals(0L, hour.counts.unreportedUsageTurns)
                 assertEquals(0L, hour.unpricedTurns)
                 assertEquals(0.0, hour.costUsd)
@@ -233,7 +233,7 @@ class NoRequestAccountingTest(@param:TempDir private val tmp: Path) {
             assertEquals(0L, row[PerfKeys.TRANSPORT_ATTEMPT_STARTS])
             assertEquals(0.0, TurnBill.usd(row, rates))
             assertNull(row[PerfKeys.IN_TOKENS])
-            val hour = economics.read().single()
+            val hour = economics.also { AsyncFileIo.drain() }.read().single()
             assertEquals(0L, hour.counts.unreportedUsageTurns)
             assertEquals(0L, hour.unpricedTurns)
         } finally {
@@ -301,7 +301,7 @@ class NoRequestAccountingTest(@param:TempDir private val tmp: Path) {
                 assertEquals(1L, row[PerfKeys.TRANSPORT_ATTEMPT_STARTS])
                 assertFalse(TurnBill.fullyReported(row))
                 assertNull(TurnBill.usd(row, rates))
-                val hour = economics.read().single()
+                val hour = economics.also { AsyncFileIo.drain() }.read().single()
                 assertEquals(1L, hour.counts.unreportedUsageTurns)
                 assertEquals(1L, hour.unpricedTurns)
             } finally {

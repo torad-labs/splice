@@ -28,6 +28,7 @@ import splice.core.model.CompactionBudgets
 import splice.core.model.ModelCatalog
 import splice.core.turn.TurnMeta
 import splice.core.usage.QuotaFull
+import splice.core.util.AsyncFileIo
 import splice.head.admission.AdmissionErrorBody
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
@@ -251,6 +252,8 @@ public class HeadServer(
         engine.stop()
         provider.onHeadStop()
         driver.flushHeldRows()
+        // Request-log lines queued on the file lane land before the rollup is saved: the rollup counts a turn from the lane.
+        AsyncFileIo.drain()
         deps.stores.usageStore.flushNow()
         deps.stores.economicsStore?.flushNow()
         deps.stores.perfStats.totals?.flushNow()

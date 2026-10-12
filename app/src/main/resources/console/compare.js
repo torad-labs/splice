@@ -21,7 +21,14 @@ const keep = () => { try { sessionStorage.setItem(KEPT, ui.prompt); } catch { /*
 const RV = REQVIEW.view(() => ui.rv);
 
 // ---------- reading what can send ----------
-const poolSends = (a) => a.account_pool.accounts.some((x) => x.credential_present && x.available !== false);
+// The playground sends as the login a real turn would use next (UpstreamPlaygroundProbe): the pool's next target, else the one
+// pinned. It can send only when that is an account added to splice; the client's own sign-in (auth kind "client") is forwarded
+// by the client itself, so there is nothing of it to send.
+const nextIn = (a) => {
+  const want = a.account_pool.next_target ?? a.account_pool.pinned_label ?? a.account_pool.selected_label;
+  return a.account_pool.accounts.find((x) => x.label === want && x.credential_present && x.available !== false && x.auth?.kind !== "client");
+};
+const poolSends = (a) => Boolean(nextIn(a));
 const canSend = (a) => Boolean(a) && (a.account_pool ? poolSends(a) : a.present === true && !a.refusal && a.verdict?.state !== "rejected");
 async function read() {
   tick();
@@ -32,7 +39,7 @@ async function read() {
   ui.cmds = (models.body?.heads || []).flatMap((row) => {
     const a = auth.body?.[row.head], list = (row.models || []).filter((m) => m.resolved !== false && m.id);
     if (!canSend(a) || !list.length) return [];
-    const pool = a.account_pool, name = pool ? (pool.next_target ?? pool.selected_label) : (a.display_name ?? null);
+    const pool = a.account_pool, name = pool ? nextIn(a)?.label : (a.display_name ?? null);
     const known = rows.find((r) => (r.heads || []).includes(row.head) && (!name || r.label === name || `native:${r.label}` === name || r.display_name === name));
     return [{
       key: row.head, command: label[row.head] ?? row.head, family: PROVIDER_FAMILY[row.provider] ?? row.provider,

@@ -129,7 +129,7 @@ const KNOBS = (() => {
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
   async function load(cmds) {
     const read = await API.get("/api/config");
-    if (!read.ok || read.body === null) return read.status === 0 ? "splice is not answering" : `splice answered ${read.status}`;
+    if (!read.ok || read.body === null) { console.warn(`knobs: ${read.status || "no answer"}`); return read.status === 0 ? "Not answering" : "Not read"; }
     st.cfg = read.body;
     if (cmds) st.cmds = cmds;
     return null;

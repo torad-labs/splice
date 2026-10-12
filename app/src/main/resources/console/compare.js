@@ -138,7 +138,7 @@ async function ask(p) {
   p.ms = ms;
   const reply = res.body;
   if (!res.ok || !reply?.response) { // splice's own refusal, or a call that never reached the provider
-    const said = reply?.error ?? (res.status === 0 ? "splice is not answering" : `splice answered ${res.status}`);
+    const said = reply?.error ?? (console.warn(`compare: ${res.status || "no answer"}`), res.status === 0 ? "Not answering" : "Not read");
     Object.assign(p, { st: "failed", fail: { word: failWord(0, null, said), retry: res.status !== 400, said } });
     p.trace = null;
     return;

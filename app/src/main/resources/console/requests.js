@@ -260,10 +260,12 @@ function idleTier(head) {
   return idleTierOf(state.config, head.key);
 }
 
-/** A refusal in the words the daemon used, under the name of what was being read, so a page never says "none" where
- *  it means "could not read" and never shows a bare sentence a reader cannot place. */
-const refusalOf = (res, subject) => (res.status === 0 ? `${subject}: splice is not answering`
-  : `${subject}: ${res.body?.error || `splice answered ${res.status}`}`);
+/** A refusal under the name of what was being read, in the console's two words, so a page never says "none" where it
+ *  means "could not read"; the daemon's sentence goes to the log, never the page (fin, Marlin, Oct 12). */
+const refusalOf = (res, subject) => {
+  console.warn(`${subject}: ${res.body?.error || res.status || "no answer"}`); // the daemon's sentence goes to the log (fin, Marlin)
+  return `${subject}: ${res.status === 0 ? "Not answering" : "Not read"}`;
+};
 
 /** One head's window: the rows the filters asked for, and the window's own menus from an unfiltered read. */
 // WHY_ASKS (what a door's "what happened" asks the daemon for) lives in kit.js, where Settings counts the same requests.

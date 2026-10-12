@@ -63,14 +63,12 @@ val censusNotSwept: List<String> = listOf("build", ".git", ".gradle", "node_modu
 // reads and the other does not is an UP-TO-DATE green over a sweep that never ran. The walk RECORDS
 // a nested repository and never enters it — descending would read a whole second checkout at
 // configuration time, on every invocation, to reach directories this list is about to exclude.
-fun nestedRepositoriesBelow(dir: File): List<File> =
-    dir.listFiles().orEmpty()
-        .filter { it.isDirectory && it.name !in censusNotSwept }
-        .flatMap { child -> if (File(child, ".git").exists()) listOf(child) else nestedRepositoriesBelow(child) }
-
-val nestedRepositories: List<String> = nestedRepositoriesBelow(repoRoot.asFile)
-    .map { it.relativeTo(repoRoot.asFile).invariantSeparatorsPath }
-    .sorted()
+// Read as a ValueSource (splice.lawsuite.NestedRepositories): a plain File.listFiles here made every directory the walk opened a
+// configuration-cache input, so any file added anywhere under the root discarded the cache and stored a new 65 MB report.
+val nestedRepositories: List<String> = providers.of(splice.lawsuite.NestedRepositories::class.java) {
+    parameters.root.set(repoRoot)
+    parameters.notSwept.set(censusNotSwept)
+}.get()
 
 // PR 6 review (F3): WHICH PATHS ARE TRACKED is an input of these laws. `claude-dir-untracked`, `tracked-capture-artifacts`,
 // `tracked-agents`, `settings-hook` and `hook-tracked` ask `git ls-files` which paths are tracked, and the conventional-type

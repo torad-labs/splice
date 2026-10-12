@@ -114,3 +114,6 @@ Marcos's standing rulings for splice, one per line.
 - GitHub settings, branch protection, rulesets and required checks are Marcos's to change.
 - No detekt or ast-grep ignores, with one exception: LongParameterList skips @Serializable classes, which mirror an outside format (splice.toml, saved state, wire bodies) field by field (Marcos, 2026-10-09).
 - splice is installed and restarted only at a major milestone or for a live fix, by splice-lead alone (Marcos, 2026-10-10).
+- A screen fix takes seconds: the walker names the broken thing to the page's owner, the owner fixes it, the walker reloads the desk, which serves the live console folder, and the owner commits. No test suite, no screenshot set and no rewalk per fix. One look at every page at his width in dark mode comes before Marcos is asked to look (Marcos, 2026-10-12).
+- No test asserts code usage: no call counts, no "method X was called", no file-read counts. A fix lands without a new test unless the test checks what a user sees or a route returns. Speed is proven by timing on a desk (Marcos, 2026-10-12).
+- The push's pre-push is the only gradle run a change needs. No seat runs a separate proof, exact-tree check or duplicate suite before handing builder2 a sha (Marcos, 2026-10-12).

@@ -11,9 +11,9 @@ import kotlinx.coroutines.withContext
 import splice.app.control.ManagedHead
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.sessions.end.SessionEnd
 import splice.sessions.http.KeptActivity
 import splice.sessions.http.SessionContinue
-import splice.sessions.http.SessionEnd
 import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes

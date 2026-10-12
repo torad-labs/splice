@@ -10,7 +10,7 @@
 //
 //   200  {"members": [{"slot", "session_id", "status", "reason"?}]}   404  no such team.
 //   409  {"reason": "costs", "members": [{"slot", "session_id", "reason", "draft"?}]}   503  no team store.
-package splice.sessions.http
+package splice.sessions.end
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -19,6 +19,10 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
+import splice.sessions.http.NO_SUCH_TEAM
+import splice.sessions.http.Refusals
+import splice.sessions.http.TEAMS_UNWIRED
+import splice.sessions.http.TeamSource
 
 public class TeamEnd(
     private val teams: TeamSource,

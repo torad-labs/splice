@@ -13,13 +13,13 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.core.config.UserHome
 import splice.core.util.JsonScalars
+import splice.sessions.end.SessionEnd
+import splice.sessions.end.TeamEnd
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ProjectAt
 import splice.sessions.http.ProjectLookup
 import splice.sessions.http.ProjectOf
 import splice.sessions.http.SentTextSource
-import splice.sessions.http.SessionEnd
-import splice.sessions.http.TeamEnd
 import splice.sessions.http.TeamScreen
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamStart

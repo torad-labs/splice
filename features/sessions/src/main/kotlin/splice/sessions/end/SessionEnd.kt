@@ -13,7 +13,7 @@
 //   200  it ended: {"session_id", "state": "ended"}.   404  no such running session.
 //   409  it would lose something (working, or draft with the words), or splice cannot reach its terminal.
 //   503  no terminal.   504  its turn did not stop, or its client did not exit, in time.
-package splice.sessions.http
+package splice.sessions.end
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -24,6 +24,12 @@ import splice.core.session.SessionPane
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
+import splice.sessions.http.NO_TERMINAL_TO_DRIVE
+import splice.sessions.http.Refusal
+import splice.sessions.http.Refusals
+import splice.sessions.http.SessionDrive
+import splice.sessions.http.SessionDriver
+import splice.sessions.http.SessionHandover
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource

@@ -123,6 +123,9 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("description", entry.description)
                     put("context_window", entry.contextWindow)
                     put("context_window_source", resolvedWindowSource(entry, catalog))
+                    // The largest window the provider itself publishes for this model, absent where it publishes none:
+                    // the number the console caps a window field at, and says so where there is none.
+                    entry.maxContextWindow?.takeIf { it > 0 }?.let { put("max_context_window", it) }
                     put("resolved", true)
                     put("slot", declared?.firstOrNull { it.id == entry.id }?.slot)
                     put("pinned", isPinned(catalog, entry))

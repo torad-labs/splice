@@ -84,6 +84,20 @@ class ModelsWindowSourceTest {
     }
 
     @Test
+    fun `a model the provider publishes a ceiling for reports it, whatever window the head runs it at`() {
+        val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000)
+        val discovered = listOf(DiscoveredModel("grok-4.7", contextWindow = 128_000, maxContextWindow = 1_048_576))
+        val payload = ModelsRoute(listOf(RosterHead("xai", provider.catalogFor(head, discovered = discovered))))
+            .modelsJson(declared)
+        val rows = Json.parseToJsonElement(payload).jsonObject.getValue("heads").jsonArray.single().jsonObject
+            .getValue("models").jsonArray.associate { row ->
+                row.jsonObject.getValue("id").jsonPrimitive.content to row.jsonObject
+            }
+        assertEquals(1_048_576L, rows.getValue("grok-4.7").getValue("max_context_window").jsonPrimitive.long)
+        assertEquals(null, rows.getValue("grok-4.6")["max_context_window"], "a declared row has no published ceiling")
+    }
+
+    @Test
     fun `a live window edit carries where the new numbers came from`() {
         val boot = provider.catalogFor(HeadConfig("xai", 4104, "claude-grok--", "grok-4.6"))
         val edited = provider.catalogFor(HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000))

@@ -44,7 +44,9 @@ set) and `GET /api/ps` (the window the server allocated for a loaded model). A l
 `num_ctx` (the server may cap or override what the modelfile asks for); without either the served
 window is Ollama's own default, which is only known once the model is loaded — until then only the
 model card can refuse a row, and `doctor --live` loads the model with its one tiny request so the
-verdict is exact. Tested 2026-09-13: Ollama 0.30.5, qwen3:4b.
+verdict is exact. Tested 2026-09-13: Ollama 0.30.5, qwen3:4b. The first live run of `e2e.ts` passed every
+check on 2026-10-12 against Ollama 0.30.5 and qwen3:4b Q4_K_M (digest `359d7dd4bcda`, card 262144, served
+32768), on the daemon jar built from c9e94a95d (sha256 `daa384f84053`).
 
 **LM Studio** (`base_url = "http://localhost:1234/v1"`): splice reads `GET /api/v0/models`,
 taking `loaded_context_length` when the model is loaded and `max_context_length` otherwise.

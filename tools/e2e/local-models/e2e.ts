@@ -30,6 +30,8 @@
  *      the "[daemon] up" wait, the process-GROUP SIGTERM/SIGKILL escalation), check_boot's refusal
  *      line reading, check_cancellation's journal evidence, and check_doctor's Java invocation.
  *      Treat the first live run as the real acceptance, not a formality.
+ *      That run passed every check on 2026-10-12 against Ollama 0.30.5 and qwen3:4b (README.md, Ollama);
+ *      the LM Studio half has still not run live.
  *
  *  Three Python behaviours are carried deliberately rather than translated:
  *

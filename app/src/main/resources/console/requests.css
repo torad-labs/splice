@@ -12,6 +12,8 @@
 .pickline:not(:empty) { margin: -1.2rem 0 1.4rem; }
 .pickline .lhead { margin-left: 3.4rem; }
 .pickline:not(:empty) + .filters-row { margin-top: 0; }
+/* the tiles run from the page's edge, so the filters under them start there too (Marlin, 3828) */
+.pickline:has(> .ptiles) + .filters-row { margin-left: 0; }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
 .fwrap { position: relative; display: inline-flex; }
 .fbtn {

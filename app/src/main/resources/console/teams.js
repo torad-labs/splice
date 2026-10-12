@@ -272,8 +272,13 @@ function sinceOf(tm) {
 const leadOf = (tm) => tm.slots.find((s) => s.lead) || tm.slots[0] || null;
 const homeOf = (tm) => (tm.project ? tm : leadOf(tm)?.project ? leadOf(tm) : null);
 const teamKey = (tm) => rowProjKey(homeOf(tm));
-const groupsNow = () => projectGroups(Object.values(state.sessions));
+const groupsNow = () => projectGroups(Object.values(state.sessions), state.live, state.heads);
 const picked = () => { const g = groupsNow(); return g.length >= 2 ? (ui.project = reconcilePick(ui.project, g)) : null; };
+// a tile counts the teams its pick would show, archived ones left out as the tabs leave them
+const teamCount = () => {
+  const on = state.teams.filter((t) => !t.archived);
+  return { of: (k) => on.filter((t) => inPick(t, k)).length, all: on.length, unit: "team" };
+};
 const inPick = (tm, pick = picked()) => pick == null || teamKey(tm) === pick || tm.slots.some((s) => rowProjKey(s) === pick);
 
 // ---------- the tabs: one per team, its members' colours on it ----------
@@ -605,7 +610,7 @@ function render() {
       ? `<p class="empty">Reading</p>`
       : !state.teams.length
         ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
-        : pickLineHtml(groupsNow(), picked(), ui.pmenu) + tabsHtml() + (tm ? boardHtml(tm) : "");
+        : pickLineHtml(groupsNow(), picked(), ui.pmenu, teamCount()) + tabsHtml() + (tm ? boardHtml(tm) : "");
   sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";
   document.querySelector(".app").inert = Boolean(ui.compose);
   for (const log of root.querySelectorAll(".log.chat, .feed .flow")) log.scrollTop = log.scrollHeight;

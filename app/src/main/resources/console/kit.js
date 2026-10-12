@@ -305,6 +305,17 @@ const GAVE_UP_NEEDS_MS = 30 * 60_000;
 const gaveUpNeeds = (s) => gaveUp(s)
   && (s.state !== "working" || (s.stall.since != null && s.stall.at - s.stall.since >= GAVE_UP_NEEDS_MS));
 const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s) : s.state === "idle" && heldByEnding(s));
+/** A /api/sessions row as every page reads it: its state, and its stall from the live turn splice holds for it (the
+ *  head's re-anchor tier from /api/heads). Sessions draws its cards from this; Teams and Requests rank projects by it. */
+function rowLook(row, turn, reanchorMs) {
+  const ended = row.availability === "gone";
+  const working = !ended && (Boolean(turn) || row.status === "working" || row.status === "busy");
+  const state = ended ? "ended" : row.waiting_for ? "needs" : working ? "working" : "idle";
+  return { state, stall: state === "working" || state === "idle" ? stallOf(turn, reanchorMs, row.ended_by) : null };
+}
+/** How urgent a session is, in the cards' rank: waiting on him, stalled, working, the rest. */
+const rankOf = (s) => (s.state === "needs" || gaveUpNeeds(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
+const rowAt = (row) => +new Date(row.updated_at || row.status_updated_at || row.started_at || 0);
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
   if (gaveUp(s)) {
@@ -451,7 +462,7 @@ const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, list
  *  would read as one number). */
 function tilesHtml(items, pick) {
   return `<nav class="ptiles" aria-label="Projects">${items.map(([k, label, counts, total, words]) => {
-    const on = (pick ?? "") === k, figure = total.toLocaleString("en-US");
+    const on = (pick ?? "") === k, figure = total == null ? "" : total.toLocaleString("en-US");
     return `<button class="ptile${on ? " on" : ""}" style="flex-basis: calc(${[...label].length}ch + ${figure.length * 0.6 + 3.2}rem)" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}">`
       + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span></span>`
       + `<span class="plamps">${counts.filter(([, n]) => n).map(tlampHtml).join("")}</span></button>`;
@@ -460,17 +471,20 @@ function tilesHtml(items, pick) {
 
 // ---------- the projects as Teams and Requests see them: off /api/sessions rows, in Sessions' group order ----------
 // Sessions groups its own cards (sessions.js groupsOf); the other pages read the same rows raw. The order is the same
-// rule: the group with the most urgent live session first (waiting on him, then working), then its latest activity,
-// then its name, No project last. A stall is Sessions' own reading of a live turn and is not on the raw row, so a
-// stalled group can sit one place lower here than on Sessions until it is working again.
+// rule and the same reading (rowLook, rankOf, from the same live turns): the group with the most urgent live session
+// first, then its latest activity, then its name, No project last. ONE ORDER (Marlin): a project that ranked one way
+// here and another on Sessions would read as two facts.
 const NO_PROJECT_KEY = "-";
 const rowProjKey = (r) => r?.project?.id ?? NO_PROJECT_KEY;
 const rowProjName = (r) => r?.project?.label || r?.project?.name || "No project";
-/** [{key, label, counts, total}] for every project with a live session, in Sessions' group order. */
-function projectGroups(rows) {
+/** [{key, label, counts, total}] for every project with a live session, in Sessions' group order. [turns] is the live
+ *  turns by session id, [heads] the commands with their reanchorMs, as each page reads them for its own cards. */
+function projectGroups(rows, turns = {}, heads = []) {
   const live = (r) => r.availability !== "gone";
-  const working = (r) => r.status === "working" || r.status === "busy";
-  const rank = (r) => (r.waiting_for ? 0 : working(r) ? 2 : 3);
+  const ranks = new Map(rows.map((r) => {
+    const turn = turns[r.session_id] ?? null;
+    return [r, rankOf(rowLook(r, turn, heads.find((h) => h.key === turn?.head)?.reanchorMs))];
+  }));
   const m = new Map();
   for (const r of rows) {
     const k = rowProjKey(r);
@@ -481,8 +495,8 @@ function projectGroups(rows) {
     const on = g.rows.filter(live);
     return {
       key: g.key, label: g.label, total: g.rows.length,
-      counts: [["needs", on.filter((r) => r.waiting_for).length], ["stalled", 0], ["working", on.filter((r) => !r.waiting_for && working(r)).length]],
-      rank: Math.min(...on.map(rank)), at: Math.max(...on.map((r) => Date.parse(r.updated_at) || 0)),
+      counts: ["needs", "stalled", "working"].map((k, i) => [k, on.filter((r) => ranks.get(r) === i).length]),
+      rank: Math.min(...on.map((r) => ranks.get(r))), at: Math.max(...on.map(rowAt)),
     };
   });
   return groups.sort((a, b) => (a.key === NO_PROJECT_KEY) - (b.key === NO_PROJECT_KEY)
@@ -496,14 +510,18 @@ function reconcilePick(pick, groups) {
   return g ? g.key : pick;
 }
 /** The pick line Teams and Requests draw: the tiles at a wide page, else the picker and its doors, else, with one
- *  project, its name; nothing with no live session. The pick only exists where there are two projects to pick between. */
-function pickLineHtml(groups, pick, open) {
+ *  project, its name; nothing with no live session. The pick only exists where there are two projects to pick between.
+ *  EACH PAGE COUNTS ITS OWN THING (Marlin): [count] is the tiles' totals, { of(key), all, unit }, teams on Teams and
+ *  requests on Requests; a figure the page has not read is left off. The lamps stay the sessions', so someone waiting
+ *  shows from every page. */
+function pickLineHtml(groups, pick, open, count) {
   if (!groups.length) return "";
   if (groups.length < 2) return groups[0].key === NO_PROJECT_KEY ? "" : `<div class="lhead"><span class="pname solo">${esc(groups[0].label)}</span></div>`;
   if (tilesWide()) {
-    const items = groups.map((g) => [g.key, g.label, g.counts, g.total, countWords(g.counts, g.total, "session")]);
-    const every = sumCounts(items.map((x) => x[2])), all = groups.reduce((a, g) => a + g.total, 0);
-    return tilesHtml([["", "Every project", every, all, countWords(every, all, "session")], ...items], pick);
+    const words = (c, n) => (n == null ? countWords(c, 0, count.unit).replace(/(, )?0 \w+$/, "") : countWords(c, n, count.unit));
+    const items = groups.map((g) => { const n = count.of(g.key); return [g.key, g.label, g.counts, n, words(g.counts, n)]; });
+    const every = sumCounts(items.map((x) => x[2]));
+    return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick);
   }
   return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]))}</div>`;
 }

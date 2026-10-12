@@ -111,6 +111,30 @@ const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h"
 // priced at the model's card, with kit's zero and floor (dollars): exactly 0 is "$0", under a hundredth of a cent "<$0.0001"
 const money = (usd) => (usd === 0 || usd < 0.0001 ? dollars(usd) : `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
+/** What each tile counts at a wide page: the requests in the window under the filters he set, as the daemon counts
+ *  them for that project (one n=1 read per project and command). No project is not a project the daemon filters by,
+ *  so its figure is every request less the projects', which holds while every project with requests in the window is
+ *  among those counted: the live sessions' projects and every project a read row names. */
+async function readTileCounts() {
+  const groups = pickGroups();
+  if (groups.length < 2 || !tilesWide()) return;
+  const heads = askedHeads();
+  const named = new Set([...groups.map((g) => g.key), ...state.rows.map((r) => rowProjKey({ project: rowProject(r) }))]);
+  const keys = [null, ...[...named].filter((k) => k !== NO_PROJECT_KEY)];
+  const reads = await Promise.all(keys.flatMap((k) => heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, k)))));
+  const counts = new Map();
+  keys.forEach((k, i) => {
+    let n = 0;
+    heads.forEach((h, j) => {
+      const r = reads[i * heads.length + j], a = (r.body?.heads || []).find((x) => x.key === h.key);
+      n = n == null || !r.ok || !a || a.error || a.read_pending ? null : n + (a.count ?? 0);
+    });
+    counts.set(k ?? "", n);
+  });
+  const all = counts.get(""), parts = keys.slice(1).map((k) => counts.get(k));
+  counts.set(NO_PROJECT_KEY, all == null || parts.some((n) => n == null) ? null : Math.max(0, all - parts.reduce((a, n) => a + n, 0)));
+  state.tileCounts = counts;
+}
 /** The first read: enough rows per command to draw the newest screens at once (ui.n starts at 200). */
 const FIRST_HELD = 200;
 const PENDING_RETRY_MS = 2000;
@@ -125,7 +149,7 @@ const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the 
 const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.kt)
 
 let state = {
-  loading: true, error: null, groups: [], titles: {}, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
+  loading: true, error: null, groups: [], titles: {}, tileCounts: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
   rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
   // what Start saving answered, per command: { word, failed }, the word that stands beside "Not saved" once pressed
   saving: {},
@@ -171,7 +195,7 @@ async function readStanding() {
   ]);
   state.error = heads.ok ? null : LIST_NOT_READ;
   if (!heads.ok) console.warn(`commands: ${refusalOf(heads, "no answer")}`);
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
   // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called:
   // his own model servers and the tunnel to a rented GPU both answer at 127.0.0.1 (splice.toml base_url), and both
   // draw in the one colour the kit gives a local provider. The address is the fact; the name is not.
@@ -191,7 +215,11 @@ async function readStanding() {
     state.sessions[s.session_id] = s;
     state.sessions[String(s.session_id).slice(0, 8)] = s; // a perf row names its session by its first eight characters
   }
-  state.groups = projectGroups(sessions.body?.sessions || []);
+  // the projects in Sessions' order, ranked by the same reading of the same live turns (kit rowLook)
+  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
+  const turns = {};
+  state.heads.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
+  state.groups = projectGroups(sessions.body?.sessions || [], turns, state.heads);
   ui.project = reconcilePick(ui.project, state.groups);
   // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
   // every one it replaced (/api/keys serves both, KeyReaders.kt). A fingerprint this daemon has never seen leaves
@@ -234,7 +262,7 @@ const refusalOf = (res, subject) => (res.status === 0 ? `${subject}: splice is n
 
 /** One head's window: the rows the filters asked for, and the window's own menus from an unfiltered read. */
 // WHY_ASKS (what a door's "what happened" asks the daemon for) lives in kit.js, where Settings counts the same requests.
-function turnsPath(head, filtered, win = ui.win, held = MAX_HELD) {
+function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.project) {
   // local=0 on both reads, so the menus count the same requests the list does
   const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(held) : "1", local: "0" });
   if (filtered) {
@@ -247,7 +275,7 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD) {
     if (ui.sid) p.set("session", String(ui.sid).slice(0, 8));
     // the daemon narrows to the project's sessions itself (TurnsFilter.inProject), so the newest 2,000 are its own;
     // No project is not a project it knows, so that pick is narrowed here
-    if (ui.project && ui.project !== NO_PROJECT_KEY) p.set("project", ui.project);
+    if (project && project !== NO_PROJECT_KEY) p.set("project", project);
     if (ui.compact) p.set("compact", "1");
     if (ui.to) p.set("until", String(ui.to));
     for (const [key, value] of Object.entries(WHY_ASKS[ui.why] || {})) {
@@ -807,7 +835,9 @@ function render({ keep = true } = {}) {
   if (!pane) ui.open = null;
   root.className = `requests${pane ? " open" : ""}`;
   // the picker and its doors on their own line above the filters, with no group headers: the log keeps time order
-  document.getElementById("pickline").innerHTML = state.loading ? "" : pickLineHtml(pickGroups(), ui.project, ui.pmenu);
+  const tc = state.tileCounts;
+  document.getElementById("pickline").innerHTML = state.loading ? ""
+    : pickLineHtml(pickGroups(), ui.project, ui.pmenu, { of: (k) => tc?.get(k) ?? null, all: tc?.get("") ?? null, unit: "request" });
   document.getElementById("filters").innerHTML = state.loading ? "" : filtersHtml();
   root.innerHTML = listHtml() + pane;
   // the rest of the day draws as he scrolls: the next rows join when Show more comes into view, and the button stays
@@ -840,7 +870,7 @@ async function reload({ standing = false } = {}) {
   // the newest requests first, drawn as soon as they answer; the rest of the window follows behind them
   await Promise.all([readRows(FIRST_HELD), readSearch()]);
   if (gen !== readGen) return;
-  await readWider();
+  await Promise.all([readWider(), readTileCounts()]);
   state.loading = false;
   autoOpen();
   render({ keep: false });
@@ -904,7 +934,7 @@ const autoOpen = () => {
 };
 // a window widened past side-by-side opens the top request, and that request's records are read like any other open
 // (the 3828 look, Oct 10: the pane sat on Reading because nothing asked)
-addEventListener("resize", () => { autoOpen(); render(); const r = ui.open && find(ui.open); if (r) readTrace(r); });
+addEventListener("resize", () => { if (!state.loading && !state.tileCounts && tilesWide()) readTileCounts().then(() => render()); autoOpen(); render(); const r = ui.open && find(ui.open); if (r) readTrace(r); });
 
 // A door from another page carries its filters in the address (?win=7d&cmd=claude-grok&why=cut): the list opens
 // filtered, with each filter as its chip, and the top match open where there's room. The project is spelled

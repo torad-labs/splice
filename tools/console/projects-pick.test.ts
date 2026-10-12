@@ -41,13 +41,15 @@ const TEAMS = [
 ];
 
 const asked: string[] = [];
+let sessions: Row[] = SESSIONS, teams: Row[] = TEAMS, liveTurns: Row[] = [];
 const server = Bun.serve({
   port: 0,
   fetch(req) {
     const url = new URL(req.url), path = url.pathname;
-    if (path === "/api/sessions") return Response.json({ sessions: SESSIONS, reading: true });
+    if (path === "/api/sessions") return Response.json({ sessions, reading: true });
+    if (path === "/api/heads/alpha/turns/live") return Response.json({ turns: liveTurns });
     if (path === "/api/heads") return Response.json({ heads: [{ key: "alpha", label: "alpha" }] });
-    if (path === "/api/teams") return Response.json({ teams: TEAMS });
+    if (path === "/api/teams") return Response.json({ teams });
     if (path === "/api/models") return Response.json({ heads: [] });
     if (path === "/api/keys") return Response.json({ keys: [] });
     if (path === "/api/topology") return Response.json({ topology: { providers: {} } });
@@ -152,6 +154,62 @@ test("Teams: a pick shows every team with a member in the project, wherever its 
     await p.locator(".pdoor", { hasText: "temple" }).click();
     await expect(p.locator(".tabs .tab .tname")).toHaveText(["Gate crew"]);
     await expect(p.locator('.tab[aria-current="true"] .tname')).toHaveText("Gate crew");
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+// ONE ORDER (Marlin): a stalled project outranks a working one on every page, read from the same live turns. Here
+// website's session is the newer, so an order that missed the stall would put website above temple.
+test("Sessions, Teams and Requests order projects alike, a stalled project above a working one", async () => {
+  sessions = [
+    sess("gggggggg-1", "asking", "garden", { waiting_for: "input" }),
+    sess("tttttttt-1", "quiet", "temple", { status: "working", updated_at: new Date(now - 5 * 3_600_000).toISOString() }),
+    sess("wwwwwwww-1", "busy", "website", { status: "working" }),
+    sess("eeeeeeee-1", "stray", null),
+  ];
+  liveTurns = [{ session: "tttttttt-1", idle_ms: 20 * 60_000, seen_output: true, retries: 0 }];
+  teams = ["garden", "temple", "website"].map((p, i) => ({ id: `o${i}`, name: `${p} crew`, repo: `/work/${p}`, project: proj(p), slots: [slot("lead", null, p, true)] }));
+  const order = ["garden", "temple", "website", "No project"];
+  try {
+    const s = await open("sessions.html");
+    await expect(s.locator(".pgroup .pname").first()).toBeVisible({ timeout: 20_000 });
+    expect(await s.locator(".pgroup .pname").allTextContents()).toEqual(order);
+    await s.context().close();
+    const t = await open("teams.html");
+    await expect(t.locator(".tabs .tproj").first()).toBeVisible({ timeout: 20_000 });
+    expect(await t.locator(".tabs .tproj").allTextContents()).toEqual(order.slice(0, 3));
+    await t.context().close();
+    const r = await open("requests.html");
+    await r.locator("#pickline .ppick").click({ timeout: 20_000 });
+    expect(await r.locator(".pmenu button").allTextContents()).toEqual(["Every project", ...order]);
+    await r.context().close();
+  } finally {
+    sessions = SESSIONS; teams = TEAMS; liveTurns = [];
+  }
+}, 90_000);
+
+// EACH PAGE COUNTS ITS OWN THING (Marlin): a tile's figure is teams on Teams and requests on Requests; the lamps stay
+// the sessions', so someone waiting shows from every page.
+const tileTotals = (p: Page) => p.locator("#ptiles .ptile, .ptiles .ptile").evaluateAll((els) =>
+  els.map((e) => [e.querySelector(".tname")?.textContent, e.querySelector(".ptotal")?.textContent]));
+test("on a wide Teams the tiles count teams, a team under every project it has a member in", async () => {
+  const p = await open("teams.html", "", 3828);
+  try {
+    await expect(p.locator(".ptiles .ptile")).toHaveCount(4, { timeout: 20_000 });
+    expect(await tileTotals(p)).toEqual([["Every project", "3"], ["temple", "1"], ["website", "2"], ["No project", "1"]]);
+    await expect(p.locator(".ptiles .ptile", { hasText: "temple" }).locator(".pc.needs b")).toHaveText("1");
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+test("on a wide Requests the tiles count the requests in the window, and the filters start where the tiles do", async () => {
+  const p = await open("requests.html", "", 3828);
+  try {
+    await expect(p.locator(".ptiles .ptotal").first()).toHaveText("3", { timeout: 20_000 });
+    expect(await tileTotals(p)).toEqual([["Every project", "3"], ["temple", "2"], ["website", "1"], ["No project", "0"]]);
+    const left = (sel: string) => p.locator(sel).first().evaluate((e) => Math.round(e.getBoundingClientRect().left));
+    expect(await left(".filters")).toBe(await left(".ptiles"));
   } finally {
     await p.context().close();
   }

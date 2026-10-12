@@ -88,18 +88,17 @@ const fixOf = (stall, head) => (stall?.kind !== "signout" || !head ? stall
 /** One /api/sessions row in the drawing's session shape: the state the kit's look() reads, and what the card shows. */
 function sessionOf(row) {
   const turn = state.live[row.session_id] ?? null;
-  const ended = row.availability === "gone";
-  const working = !ended && (Boolean(turn) || row.status === "working" || row.status === "busy");
   const asked = (row.last?.asks || [])[0];
-  const st = ended ? "ended" : row.waiting_for ? "needs" : working ? "working" : "idle";
+  // the one reading Teams and Requests rank projects by (kit rowLook)
+  const { state: st, stall } = rowLook(row, turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs);
   return {
     id: row.session_id, row, name: row.name || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     project: row.project ?? null, // as the daemon resolved it (ProjectWire); absent is "No project", never a guess here
     head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
     model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
-    team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? fixOf(stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by), row.head) : null,
+    team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: fixOf(stall, row.head),
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
-    at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
+    at: new Date(rowAt(row)),
   };
 }
 
@@ -227,7 +226,8 @@ function cardHtml(s) {
 // ---------- the list: what needs him first, then what runs, then what rests ----------
 // a session a failed move left with nothing running waits on him as Needs you does: ranked, coloured and listed with it (Marlin, 6:08 AM)
 const stranded = (s) => s.state === "ended" && ui.failed.get(s.id)?.unmoved === true && !ui.failed.get(s.id).back;
-const RANK = (s) => (s.state === "needs" || stranded(s) || gaveUpNeeds(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
+// a move that failed here is this page's own fact, so it lifts the card only here; the rest is the kit's rank
+const RANK = (s) => (stranded(s) ? 0 : rankOf(s));
 // a project's name matches every session in it, so typing "temple" keeps that whole group rather than the one card
 // whose folder happens to be spelled that way (Marlin)
 const matches = (s) => !ui.q || [s.name, s.first, s.repo, s.cmd, s.row.repo?.root, s.row.cwd, s.project?.label, s.project?.name]

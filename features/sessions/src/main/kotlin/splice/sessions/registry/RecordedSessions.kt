@@ -1,6 +1,11 @@
 // NEW: Oct 10, 2026 — the session listing with the sessions Claude Code has already forgotten put back as ended.
 package splice.sessions.registry
 
+import splice.core.config.StatePaths
+import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
+import splice.core.util.EnvReader
+
 /** [source]'s listing, every session it names noted in [seen], and every recorded session it no longer names
  *  added as GONE: a card to open on Sessions' Ended fold, and a name for Requests' rows. A recorded session carries
  *  only what the record keeps, so its status and client are unknown and it has no process to reach.
@@ -67,3 +72,13 @@ public class ArrivalJoinedSessions(
         return record.copy(route = SessionRoute.Head(head))
     }
 }
+
+/** [ArrivalJoinedSessions] over the heads the daemon recorded under the state directory [env] names, whole history
+ *  kept: the listing the console draws, for the command line to print the same head. */
+public class SeenArrivalSessions(source: SessionSource, env: EnvReader) : SessionSource by ArrivalJoinedSessions(
+    source,
+    HeadOfSession { session ->
+        val dir = StatePaths(envReader = env).stateDir.resolve(SEEN_SESSIONS_DIR)
+        SeenSessions(dir, KeptHistory { HistoryWindow(days = null) }).headOf(session)
+    },
+)

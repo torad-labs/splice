@@ -51,7 +51,7 @@ public class QuotaReadFailures : QuotaReadFailureSource {
     /** Where [head]'s login [label] reports each read; a null label is a single-login head's own. */
     public fun outcome(head: String, label: String?): QuotaReadOutcome = QuotaReadOutcome { failure ->
         val key = listOf(head, label ?: SINGLE_LOGIN)
-        if (failure == null) byLogin.remove(key) else byLogin[key] = failure
+        if (failure == null) byLogin.remove(key) else byLogin.put(key, failure)
     }
 
     override fun failure(head: String, label: String?): QuotaReadFailure? = byLogin[listOf(head, label ?: SINGLE_LOGIN)]

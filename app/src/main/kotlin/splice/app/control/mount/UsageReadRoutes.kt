@@ -6,8 +6,10 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.application
 import io.ktor.server.routing.get
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splice.core.perf.KeptHistory
+import splice.core.util.Cancellables
 import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
@@ -34,7 +36,13 @@ internal class UsageReadRoutes(
     fun register(route: Route) {
         val warmup = UsageReadWarmup(route.application, heads, io)
         perf.preparation = warmup
-        route.application.monitor.subscribe(ApplicationStarted) { warmup.start() }
+        route.application.monitor.subscribe(ApplicationStarted) {
+            warmup.start()
+            // the first project snapshot decodes every transcript head once; build it now, not on the first read
+            route.application.launch(io) {
+                Cancellables.discard(Cancellables.runCatchingBestEffort { perf.projects() }, TAGS_WARM_BEST_EFFORT)
+            }
+        }
         route.get("/api/perf/turns") {
             guard.guarded(call) { withContext(io) { perf.turns(call) } }
         }
@@ -52,3 +60,6 @@ internal class UsageReadRoutes(
         }
     }
 }
+
+// why: the first request that needs the project snapshot builds it again, so a failure here costs only the head start.
+private const val TAGS_WARM_BEST_EFFORT = "the first project snapshot is rebuilt by the request that needs it"

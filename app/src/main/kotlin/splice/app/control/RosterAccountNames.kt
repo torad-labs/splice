@@ -37,10 +37,17 @@ internal class RosterAccountNames(
         val byValue = HashMap<String, NamedAccount>()
         rows(head).forEach { row -> recordedAs(row, head).forEach { byValue.putIfAbsent(it, named(row)) } }
         val places = logins()
+        // why: accountLabel reads and parses the login files from disk, and this is asked once per request row under
+        // the perf file lock, so a week of rows starved every Usage and Requests read (desk c jstack, Oct 12). Each
+        // distinct value is resolved once per read, a miss included: getOrPut would re-ask on every null.
+        val resolved = HashMap<String, NamedAccount?>()
         return HeadAccountNames { recorded ->
-            byValue[recorded]
-                ?: places?.accountLabel(head, recorded)?.let(byValue::get)
-                ?: signedOut(recorded)
+            byValue[recorded] ?: if (recorded in resolved) {
+                resolved[recorded]
+            } else {
+                (places?.accountLabel(head, recorded)?.let(byValue::get) ?: signedOut(recorded))
+                    .also { resolved[recorded] = it }
+            }
         }
     }
 

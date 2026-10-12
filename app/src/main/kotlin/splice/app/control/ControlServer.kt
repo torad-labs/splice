@@ -32,9 +32,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CancellationException
-import splice.accounts.claude.ClaudeLoginPlacesSource
-import splice.accounts.pool.ACCOUNT_NAMES_FILE
-import splice.accounts.pool.AccountNameStore
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
@@ -126,14 +123,7 @@ internal class ControlServer(
     private val removal = HeadRemovalAssembly(config, ports, runtime, heads).build()
     private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard, removal)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
-    private val accounts = AccountsMount(
-        heads,
-        resolver,
-        ports,
-        guard,
-        log,
-        AccountNameStore(config.statePaths.stateDir.resolve(ACCOUNT_NAMES_FILE)),
-    )
+    private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val trace = TraceMount(heads, resolver, config, ports, guard)
     private val sessionWiring = SessionsWiring(sessions, heads, config, ports)
@@ -150,7 +140,7 @@ internal class ControlServer(
             usage.tagProjects(RequestProjectTags(known, TeamSource { ports.teams }, routes))
         }
         // Requests and Usage name a login by the label Accounts shows, never by the email a row recorded.
-        usage.nameAccounts(RosterAccountNames(accounts, ClaudeLoginPlacesSource { ports.claudeLogins }))
+        usage.nameAccounts(accounts.recordedNames())
     }
 
     private val events = EventsMount(ports, guard)

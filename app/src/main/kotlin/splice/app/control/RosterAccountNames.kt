@@ -7,7 +7,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.accounts.claude.ClaudeLoginPlacesSource
-import splice.app.control.mount.AccountsMount
 import splice.core.auth.AccountRef
 import splice.core.util.JsonScalars
 import splice.usage.perf.HeadAccountNames
@@ -19,9 +18,14 @@ private const val SIGNED_OUT = "Signed-out account"
 private const val SINGLE_LOGIN = "primary"
 private const val NATIVE_PREFIX = "native:"
 
+/** The Accounts roster as /api/accounts serves it: what every recorded login is named by. */
+internal fun interface AccountRoster {
+    suspend fun json(): String
+}
+
 internal class RosterAccountNames(
     /** The roster /api/accounts serves, read once per head per request. */
-    private val roster: AccountsMount,
+    private val roster: AccountRoster,
     private val logins: ClaudeLoginPlacesSource,
 ) : RecordedAccounts {
     private val json = Json { ignoreUnknownKeys = true }
@@ -41,7 +45,7 @@ internal class RosterAccountNames(
     }
 
     private suspend fun rows(head: String): List<JsonObject> {
-        val body = JsonScalars.objectOrNull(json, roster.accountsJson())
+        val body = JsonScalars.objectOrNull(json, roster.json())
         val all = body?.get("accounts") as? JsonArray ?: return emptyList()
         return all.mapNotNull { it as? JsonObject }.filter { row ->
             JsonScalars.str(row, "ref") != null &&

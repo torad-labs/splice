@@ -14,6 +14,7 @@ import splice.accounts.edit.AccountEditRoutes
 import splice.accounts.keys.KeyRoutes
 import splice.accounts.keys.KeyStoreSource
 import splice.accounts.order.AccountOrderRoute
+import splice.accounts.pool.ACCOUNT_NAMES_FILE
 import splice.accounts.pool.AccountNameRoute
 import splice.accounts.pool.AccountNameStore
 import splice.accounts.pool.AccountsRoute
@@ -23,8 +24,10 @@ import splice.accounts.signin.ConsoleAccountsSource
 import splice.accounts.signin.LoginRoutes
 import splice.accounts.status.AuthStatusRoutes
 import splice.app.control.AccountHeadAdapter
+import splice.app.control.AccountRoster
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
+import splice.app.control.RosterAccountNames
 import splice.app.control.api.HeadResolver
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
@@ -38,9 +41,11 @@ internal class AccountsMount(
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
     log: LogSink,
-    /** The names a person gave logins (labels only): splice's own state, never a credential file. */
-    names: AccountNameStore? = null,
+    /** Where splice keeps the names a person gave logins (labels only): its own state, never a credential file. */
+    stateDir: Path? = null,
 ) {
+    private val names = stateDir?.let { AccountNameStore(it.resolve(ACCOUNT_NAMES_FILE)) }
+    private val logins = ClaudeLoginPlacesSource { ports.claudeLogins }
     private val accountHeads = AccountHeadAdapter.adapt(heads)
     private val accountResolver = AccountHeadAdapter.resolver(resolver)
     private val authStatusRoutes = AuthStatusRoutes(accountHeads, accountResolver)
@@ -55,7 +60,7 @@ internal class AccountsMount(
     )
     private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts(), names)
     private val nameRoute = names?.let(::AccountNameRoute)
-    private val claudeRoutes = ClaudeLoginRoutes(ClaudeLoginPlacesSource { ports.claudeLogins }, names)
+    private val claudeRoutes = ClaudeLoginRoutes(logins, names)
     private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
@@ -63,6 +68,9 @@ internal class AccountsMount(
 
     /** The /api/auth body, for the daemon's own doctor (V4-230). */
     suspend fun authJson(): String = authStatusRoutes.authJson()
+
+    /** How Requests and Usage name a recorded login: by the label this roster shows, never by an email a row kept. */
+    fun recordedNames(): RosterAccountNames = RosterAccountNames(AccountRoster { accountsJson() }, logins)
 
     /** The route and in-process doctor read one authoritative roster at call time. */
     suspend fun accountsJson(): String {

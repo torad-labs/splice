@@ -148,6 +148,10 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         val cached = measured.sumOf { it.fields.getValue(PerfKeys.CACHED_TOKENS) }
         put("cache_hit_ratio", if (inTokens > 0) cached.toDouble() / inTokens else null)
         put("peak_inflight", rows.maxOfOrNull { it.fields[PerfKeys.INFLIGHT] ?: 0L })
+        // The first turn on a login after a switch starts on a cold cache: its slowness is the switch, not the provider.
+        // Null when no row was asked (a head with no accounts), so "never asked" is not drawn as "never cold".
+        val asked = rows.filter { it.facts.cacheCold != null }
+        put("cache_cold", if (asked.isEmpty()) null else asked.count { it.facts.cacheCold == true })
     }
 
     /** The per-row counter is cumulative for the daemon process: the drops that happened inside the

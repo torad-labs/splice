@@ -121,8 +121,12 @@ async function readAll() {
   const [teams, sessions, heads, models, auth] = await Promise.all([
     API.get("/api/teams"), API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"), API.get("/api/auth"),
   ]);
-  state.error = teams.ok ? null : refusalOf(teams, "The teams could not be read");
-  state.teams = teams.body?.teams || [];
+  // one read that fails keeps the teams already on the page and says so above them; only a first read that fails
+  // has nothing to show but its refusal (Marlin p223: a failed launch's reread blanked every team)
+  const refused = teams.ok ? null : refusalOf(teams, "The teams could not be read");
+  state.error = refused && !state.everRead ? refused : null;
+  state.stale = refused && state.everRead ? refused : null;
+  if (teams.ok) { state.teams = teams.body?.teams || []; state.everRead = true; }
   state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
   state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
@@ -477,7 +481,9 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model, ended = false }) {
     // one word for a member that did not come up, whoever ended it; only the timeout has a screen he has not seen, behind
     // a door that stays shut until he opens it (fin; hitstop da3d8b2)
     word = `<span class="word limit">Not started</span>`;
-    if (unstarted.path) why = `<div class="ask trust"><p class="cmd">${esc(unstarted.path)}</p></div>`;
+    // why it did not come up, on the card, as a given-up row says why (Marlin p223)
+    why = (unstarted.why ? `<p class="why limit">${esc(unstarted.why)}</p>` : "")
+      + (unstarted.path ? `<div class="ask trust"><p class="cmd">${esc(unstarted.path)}</p></div>` : "");
     acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
     if (unstarted.screen) {
       const open = ui.screenOpen.has(key);
@@ -682,7 +688,8 @@ function render() {
       ? `<div class="ghost-teams" aria-busy="true" aria-label="Reading teams">${[[11, 26, 18], [9, 22, 15], [12, 24, 17]].map((w, i) => GHOST.card(w, i)).join("")}</div>`
       : !state.teams.length
         ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
-        : pickLineHtml(groupsNow(), picked(), ui.pmenu, teamCount()) + tabsHtml() + (tm ? boardHtml(tm) : "");
+        : (state.stale ? `<p class="why limit stale">${esc(state.stale)} These are the teams as last read.</p>` : "")
+          + pickLineHtml(groupsNow(), picked(), ui.pmenu, teamCount()) + tabsHtml() + (tm ? boardHtml(tm) : "");
   sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";
   document.querySelector(".app").inert = Boolean(ui.compose);
   for (const log of root.querySelectorAll(".log.chat, .feed .flow")) log.scrollTop = log.scrollHeight;
@@ -776,15 +783,23 @@ async function startSlot(tm, slot, path = null) {
   // the daemon's sentence goes to the console's log; the card says the fact and keeps what he has not seen (fin)
   if (answer.status === 504) {
     console.warn(`start ${key}: ${answer.body?.error || 504}`);
-    ui.unstarted.set(key, { screen: answer.body?.screen || "" });
+    ui.unstarted.set(key, { screen: answer.body?.screen || "", why: reasonOf(answer.body?.error) });
   } else if (answer.status === 409 && answer.body?.reason === "closed") {
-    ui.unstarted.set(key, { path });
+    ui.unstarted.set(key, { path, why: "Its terminal closed before it came up" });
   } else if (!answer.ok) {
     ui.failed.set(key, refusalOf(answer, "The member did not start"));
   }
   await read();
 }
 
+/** The daemon's reason a start gave up, without the slot it names first: "Claude Code had not registered after 45s"
+ *  reads "Claude Code did not come up within 45 s". */
+const reasonOf = (said) => {
+  const why = String(said || "").replace(/^[^:]*did not start:\s*/, "").replace(/;.*$/, "").trim();
+  const waited = why.match(/had not registered after (\d+)\s*s/);
+  if (waited) return `Claude Code did not come up within ${waited[1]} s`;
+  return why ? why[0].toUpperCase() + why.slice(1) : "It did not come up";
+};
 /** The folder a question names: its panel's line that is a path, as the client drew it. */
 const pathOf = (offer) => (offer?.panel || []).map((l) => l.text).find((t) => /^[~/]/.test(t)) || null;
 /** The client's question in its own words: the panel's lines up to its question mark, from after the last line that

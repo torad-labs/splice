@@ -218,6 +218,7 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .no-teams p { margin: 0; font: 500 1.3rem/1 var(--font-name); color: var(--text-body); }
 .teams > .empty { margin: 0; font: 500 1.2rem/1.45 var(--font-name); color: var(--text-mute); max-width: 60rem; }
 .teams > .empty.limit { color: var(--limit); }
+.teams > .why.stale { margin: 0 0 1.2rem; font: 400 1.05rem/1.45 var(--font-name); color: var(--limit); max-width: 60rem; }
 
 /* both lines of each picker's menu: an absolutely placed grid item's auto end is the grid's edge */
 .pick-menu[data-what="head"] { grid-column: 2 / 3; }

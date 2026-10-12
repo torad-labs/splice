@@ -21,25 +21,25 @@ const keep = () => { try { sessionStorage.setItem(KEPT, ui.prompt); } catch { /*
 const RV = REQVIEW.view(() => ui.rv);
 
 // ---------- reading what can send ----------
-// The playground sends as the login a real turn would use next (UpstreamPlaygroundProbe): the pool's next target, else the one
-// pinned. It can send only when that is an account added to splice; the client's own sign-in (auth kind "client") is forwarded
-// by the client itself, so there is nothing of it to send.
-const nextIn = (a) => {
-  const want = a.account_pool.next_target ?? a.account_pool.pinned_label ?? a.account_pool.selected_label;
-  return a.account_pool.accounts.find((x) => x.label === want && x.credential_present && x.available !== false && x.auth?.kind !== "client");
-};
-const poolSends = (a) => Boolean(nextIn(a));
-const canSend = (a) => Boolean(a) && (a.account_pool ? poolSends(a) : a.present === true && !a.refusal && a.verdict?.state !== "rejected");
+// The playground sends as the login a real turn would use next: the pool's next target and nothing else
+// (PlaygroundProviders.login). /api/auth lists a pool's accounts but never says which is next; GET /api/auth/{head}/order
+// publishes it as next_target. It can send only when that is an account added to splice; the client's own sign-in (auth kind
+// "client") is forwarded by the client itself, so there is nothing of it to send.
+const nextIn = (a, next) => a.account_pool.accounts.find((x) => x.label === next && x.credential_present && x.available !== false && x.auth?.kind !== "client");
+const canSend = (a, next) => Boolean(a) && (a.account_pool ? Boolean(nextIn(a, next)) : a.present === true && !a.refusal && a.verdict?.state !== "rejected");
 async function read() {
   tick();
   const [heads, models, auth, accts] = await Promise.all(["/api/heads", "/api/models", "/api/auth", "/api/accounts"].map((p) => API.get(p)));
   if (!heads.ok || !models.ok) { console.warn(heads.ok ? `compare: /api/models answered ${models.status}` : `compare: /api/heads answered ${heads.status}`); ui.error = "Not read"; ui.cmds = []; return; }
   const label = Object.fromEntries((heads.body?.heads || []).map((h) => [h.key, h.label || h.key]));
   const rows = accts.body?.accounts || [];
+  const pooled = Object.keys(auth.body || {}).filter((h) => auth.body[h]?.account_pool);
+  const orders = await Promise.all(pooled.map((h) => API.get(`/api/auth/${encodeURIComponent(h)}/order`)));
+  const next = Object.fromEntries(pooled.map((h, i) => [h, orders[i].body?.next_target ?? null]));
   ui.cmds = (models.body?.heads || []).flatMap((row) => {
     const a = auth.body?.[row.head], list = (row.models || []).filter((m) => m.resolved !== false && m.id);
-    if (!canSend(a) || !list.length) return [];
-    const pool = a.account_pool, name = pool ? nextIn(a)?.label : (a.display_name ?? null);
+    if (!canSend(a, next[row.head]) || !list.length) return [];
+    const pool = a.account_pool, name = pool ? nextIn(a, next[row.head])?.label : (a.display_name ?? null);
     const known = rows.find((r) => (r.heads || []).includes(row.head) && (!name || r.label === name || `native:${r.label}` === name || r.display_name === name));
     return [{
       key: row.head, command: label[row.head] ?? row.head, family: PROVIDER_FAMILY[row.provider] ?? row.provider,

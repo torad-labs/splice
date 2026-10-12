@@ -27,6 +27,8 @@ let named = false; // while set, the daemon serves the label contract (ref + lab
 let twoLabels = false; // while set, the plan account reaches splice under two labels
 const askedAccounts: (string | null)[] = []; // the account each plan read named
 let slowWeek = false; // while set, the 5-hour read stays pending
+const NOPROJ = group("primary", { requests: 3, input_tokens: 9_000, output_tokens: 1_000, plan_requests: 3, plan_value_usd: 0.01 }); // its requests with no project
+const askedProjects: (string | null)[] = []; // the project each read named
 const WEEK_DAY = new Date().toLocaleDateString("en-CA");
 
 const server = Bun.serve({
@@ -46,7 +48,8 @@ const server = Bun.serve({
       if (url.searchParams.get("since") && slowWeek && head === "plan" && held === 1 && url.searchParams.getAll("ask").length) await Bun.sleep(4000);
       if (head === "plan") askedAccounts.push(url.searchParams.get("account"));
       const asked = url.searchParams.get("account"), both = head === "plan" && twoLabels && !asked && !named;
-      const g = head === "plan" ? (named ? NAMED : asked === "plan-selector" ? SECOND : PLAN) : KEY;
+      askedProjects.push(url.searchParams.get("project"));
+      const g = url.searchParams.get("project") === "none" ? NOPROJ : head === "plan" ? (named ? NAMED : asked === "plan-selector" ? SECOND : PLAN) : KEY;
       const totals = group("totals", both ? { ...g, requests: (PLAN.requests as number) + (SECOND.requests as number) } : g);
       const usage = { totals, accounts: both ? [PLAN, SECOND] : [g], models: [], sessions: [], days: [group(WEEK_DAY, g)] };
       const rows = held > 1 && head === "plan" ? [row("a", "s1"), row("b", "s1"), row("c", "s1")] : [];
@@ -173,5 +176,19 @@ test("Usage: a breakdown row opens its requests on Requests with the account car
     expect(href.searchParams.get("order")).toBe("price");
   } finally {
     await p.context().close();
+  }
+}, 60_000);
+
+test("Usage: the No project pick reads only the requests with no project, as project=none", async () => {
+  askedProjects.length = 0;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const p = await context.newPage();
+  try {
+    await p.goto(`http://127.0.0.1:${server.port}/usage.html?project=-`);
+    await expect(p.locator(".brow .num.open").first()).toHaveText("3", { timeout: 20_000 });
+    expect(askedProjects).toContain("none");
+    expect(askedProjects).not.toContain("-");
+  } finally {
+    await context.close();
   }
 }, 60_000);

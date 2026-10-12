@@ -45,7 +45,7 @@ async function reading(page: string, check?: (p: import("@playwright/test").Page
   }
 }
 
-for (const page of ["requests", "teams", "usage"]) {
+for (const page of ["requests", "teams", "usage"] as const) {
   test(`${page} draws its shape while it reads`, () => reading(page), 30_000);
 }
 
@@ -57,4 +57,13 @@ test("settings draws its own cards while it reads, each line's bar where its fig
   }));
   expect(lines.length).toBeGreaterThan(5);
   expect(lines.every((d) => d === 0)).toBe(true);
+}), 30_000);
+
+test("teams keeps Read again off while its read is out", () => reading("teams", async (p) => {
+  expect(await p.locator('.head [data-act="read"]').isDisabled()).toBe(true);
+}), 30_000);
+
+test("usage draws Breakdown and Commands in the frames they land in, one card each", () => reading("usage", async (p) => {
+  expect(await p.locator(".breakdown > .card .ghost").count()).toBeGreaterThan(3);
+  expect(await p.locator(".lower .card.gcard").count()).toBe(2);
 }), 30_000);

@@ -97,7 +97,9 @@ function filterParams(p, f, label) {
   if (label != null) p.set("account", label);
   if (f.model) p.set("model", f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
-  if (ui.project && ui.project !== NO_PROJECT_KEY && !f.wide) p.set("project", ui.project);
+  // No project is a pick of its own: the daemon reads it as project=none (TurnsFilter.kt), the way Requests asks
+  // (splice-builder, Oct 12: the pick sent nothing and showed every project's figures under its name)
+  if (ui.project && !f.wide) p.set("project", ui.project === NO_PROJECT_KEY ? "none" : ui.project);
   return p;
 }
 // each 15-minute column of the 5-hour window is one more question on the same read (`ask`), so the whole window is read once
@@ -534,7 +536,7 @@ function render() {
   const waiting = reading(), hold = (title, body) => `<section aria-busy="true"><header><h2>${title}</h2></header>${body}</section>`;
   const money = plansHtml() + keysHtml();
   const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
-  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? hold("Over time", GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61])) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.lines([18, 14, 16, 11]) : byHtml()}</section>${waiting ? hold("Commands", [0, 1].map((i) => GHOST.card([8, 14], i)).join("")) : headsHtml()}</div>`;
+  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? hold("Over time", GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61])) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${waiting ? hold("Commands", GHOST.card([8, 22, 18])) : headsHtml()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading

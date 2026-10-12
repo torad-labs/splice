@@ -100,7 +100,19 @@ async function readLive() {
   });
 }
 
+// Read again stays off until the read it started has landed, its team's own reads included (splice-lead, Oct 12): a
+// second click mid-read started a second read racing the first.
 async function read() {
+  const again = document.querySelector('.head [data-act="read"]');
+  if (again) again.disabled = true;
+  try {
+    await readAll();
+  } finally {
+    if (again) again.disabled = false;
+  }
+}
+
+async function readAll() {
   state.loading = true;
   render();
   const [teams, sessions, heads, models, auth] = await Promise.all([
@@ -118,12 +130,12 @@ async function read() {
     state.providerOf[row.head] = row.provider;
     state.models[row.head] = (row.models || []).filter((m) => m.resolved !== false).map((m) => ({ id: m.id, label: m.label || m.id }));
   }
-  // /api/auth answers one row per ACCOUNT, each naming the heads that can send as it; a slot picks by head.
+  // /api/auth answers one entry per HEAD, keyed by its key; a head with two or more logins lists them under account_pool
+  // (AccountPoolJson). A slot picks by head, so each head offers its own pool's labels; a head with one login offers none.
   state.accounts = {};
-  for (const account of auth.body?.accounts || []) {
-    for (const head of account.heads || []) {
-      if (account.label) (state.accounts[head] ??= []).push(account.label);
-    }
+  for (const [head, entry] of Object.entries(auth.body || {})) {
+    const labels = (entry?.account_pool?.accounts || []).map((account) => account.label).filter(Boolean);
+    if (labels.length) state.accounts[head] = labels;
   }
   if (!state.teams.some((t) => t.id === ui.team)) ui.team = state.teams.find((t) => !t.archived)?.id ?? state.teams[0]?.id ?? null;
   state.loading = false;

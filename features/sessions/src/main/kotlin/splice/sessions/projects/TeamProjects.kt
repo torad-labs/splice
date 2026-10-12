@@ -11,8 +11,8 @@ import splice.sessions.registry.ProjectRef
 import splice.sessions.teams.Team
 
 /** The project the session [sessionId] works in, or null when the registry does not know it. */
-public fun interface SessionProjectOf {
-    public operator fun invoke(sessionId: String): ProjectRef?
+internal fun interface SessionProjectOf {
+    operator fun invoke(sessionId: String): ProjectRef?
 }
 
 internal class TeamProjects(private val projectAt: ProjectAt, private val sessionProject: SessionProjectOf) {

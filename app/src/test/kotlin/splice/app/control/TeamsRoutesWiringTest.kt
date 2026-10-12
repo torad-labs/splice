@@ -55,7 +55,8 @@ class TeamsRoutesWiringTest {
             port = 0,
             // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
-            config = ConfigService(paths),
+            // the repo sits under the test's temp folder, which a default install does not trust as a git root
+            config = ConfigService(paths).also { it.patch(mapOf("statuslineGitRoots" to tmp.toString())) },
             runtime = ControlRuntime(sessions = rig.registry),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
@@ -89,13 +90,17 @@ class TeamsRoutesWiringTest {
     @Test
     fun `every team and project route is routed, guarded, and answers its payload`() {
         val team = """{"name":"atlas","repo":"${rig.repo}","slots":[{"id":"b1","role":"builder","head":"codex"}]}"""
-        val project = "/api/projects/" + URLEncoder.encode(rig.repo.toString(), Charsets.UTF_8)
         serve(wired = true) { call ->
             val created = call(HttpMethod.Put, "/api/teams", team, true)
             assertEquals(201, created.status.value, created.bodyAsText())
             val id = rig.json(created.bodyAsText()).getValue("id").jsonPrimitive.content
             val again = call(HttpMethod.Put, "/api/teams", team, true)
             assertEquals(200, again.status.value, "the Idempotency-Key header reaches the store: no second team")
+            // a project is addressed by the id its row carries
+            val listed = rig.json(call(HttpMethod.Get, "/api/projects", null, true).bodyAsText())
+            val projectId = listed.getValue("projects").jsonArray.single().jsonObject.getValue("id")
+                .jsonPrimitive.content
+            val project = "/api/projects/" + URLEncoder.encode(projectId, Charsets.UTF_8)
             val routes = listOf(
                 Triple(HttpMethod.Get, "/api/teams", null),
                 Triple(HttpMethod.Put, "/api/teams/$id", team),
@@ -116,7 +121,7 @@ class TeamsRoutesWiringTest {
                 assertEquals(401, call(method, path, body, false).status.value, "${method.value} $path is guarded")
             }
             val row = rig.json(call(HttpMethod.Get, project, null, true).bodyAsText())
-            assertEquals(rig.repo.toString(), row.getValue("id").jsonPrimitive.content, "an encoded root decodes")
+            assertEquals(projectId, row.getValue("id").jsonPrimitive.content, "an encoded id decodes")
             val composite = call(HttpMethod.Get, "/api/teams/$id", null, true)
             assertEquals(404, composite.status.value, "no composite team read (6.1)")
         }

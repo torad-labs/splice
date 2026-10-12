@@ -221,7 +221,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         bucket.deferralTurns to probes.deferralTurns,
     ).all { (total, probe) -> probe in 0..total } &&
         (unpricedHour(bucket) || probes.unpricedTurns in 0..bucket.unpricedTurns) &&
-        (bucket.cost.failedTurns == null || (probes.cost.failedTurns ?: 0L) in 0..bucket.cost.failedTurns)
+        (bucket.cost.failedTurns?.let { (probes.cost.failedTurns ?: 0L) in 0..it } ?: true)
 
     // Old unpriced hours have no count to subtract; their cost remains unknown.
     private fun unpricedHour(bucket: EconomicsBucket): Boolean = bucket.costUsd == null && bucket.unpricedTurns == 0L

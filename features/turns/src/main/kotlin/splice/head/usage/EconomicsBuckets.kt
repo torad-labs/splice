@@ -115,14 +115,14 @@ public data class BucketCost(
     val planUnpricedTurns: Long? = 0,
 ) {
     /** A plan covered the request: its API-rate value is kept apart and is no cost. An hour never split stays so. */
-    fun onPlan(usd: Double?): BucketCost = copy(
+    public fun onPlan(usd: Double?): BucketCost = copy(
         planTurns = planTurns?.plus(1),
         planValueUsd = planValueUsd?.plus(usd ?: 0.0),
         planUnpricedTurns = planUnpricedTurns?.plus(if (usd == null) 1 else 0),
     )
 
     /** A key paid. A request with no price that failed without reporting usage spent nothing: failed, not unpriced. */
-    fun paidByKey(usd: Double?, noPrice: Boolean, failed: Boolean): BucketCost = copy(
+    public fun paidByKey(usd: Double?, noPrice: Boolean, failed: Boolean): BucketCost = copy(
         costUsd = costUsd?.plus(usd ?: 0.0),
         unpricedTurns = unpricedTurns + if (noPrice && !failed) 1 else 0,
         failedTurns = failedTurns?.plus(if (noPrice && failed) 1 else 0),

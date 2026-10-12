@@ -193,16 +193,16 @@ function paneHtml() {
     + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save</button>${saidHtml}${restart}</div></section>`;
   const lines = logsOf(c.key);
   const ev = eventsOf(lines ?? []);
-  const raw = (lines ?? []).filter((l) => l.text).slice(-60).reverse();
+  const raw = (lines ?? []).filter((l) => l.raw).slice(-60);
   const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">Nothing to report</p>`}`
-    + `<details class="rawlog"><summary>Raw log</summary><ol>${raw.map((l) => `<li><time>${esc(l.at)}</time><span>${esc(l.text)}</span></li>`).join("")}</ol></details></section>`;
+    + `<details class="rawlog"><summary>Raw log</summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
 // daemon.log lines: "[2026-10-12 04:12:52] [claudex] text"; the log is already this command's, so its tag drops
 function parseLog(lines) {
   return lines.map((raw) => {
     const m = /^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\]\s*(?:\[([^\]]+)\]\s*)?(.*)$/.exec(raw);
-    return m ? { at: m[2], tag: m[3] ?? "", text: m[4] } : { at: "", tag: "", text: raw };
+    return m ? { at: m[2], tag: m[3] ?? "", text: m[4], raw } : { at: "", tag: "", text: raw, raw };
   });
 }
 const EVENTS = [
@@ -215,7 +215,7 @@ const EVENTS = [
   [/\b(head )?(started|booted)\b|listening on/i, "Started"],
   [/\bstopped\b|shut ?down/i, "Stopped"],
 ];
-const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b/i;
+const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b|upstream \d+\/\d+/i;
 const ampm = (hms) => { // 8:02 AM, the way a message's time is written; the raw log keeps its seconds
   const [h, m] = hms.split(":").map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;

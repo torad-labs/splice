@@ -75,7 +75,7 @@ public class ArrivalJoinedSessions(
 
 /** [ArrivalJoinedSessions] over the heads the daemon recorded under the state directory [env] names, whole history
  *  kept: the listing the console draws, for the command line to print the same head. */
-public class SeenArrivalSessions(source: SessionSource, env: EnvReader) : SessionSource by ArrivalJoinedSessions(
+internal class SeenArrivalSessions(source: SessionSource, env: EnvReader) : SessionSource by ArrivalJoinedSessions(
     source,
     HeadOfSession { session ->
         val dir = StatePaths(envReader = env).stateDir.resolve(SEEN_SESSIONS_DIR)

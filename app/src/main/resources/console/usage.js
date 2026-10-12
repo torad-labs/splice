@@ -27,6 +27,7 @@ const failed = (r) => isFailed(r.outcome);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds days in the viewer's zone
 const HOUR = 3600e3, DAY_MS = 86400e3;
 const WINDOWS = { "5h": { label: "5 hours", ms: 5 * HOUR }, "7d": { label: "7 days", ms: 7 * DAY_MS } };
+const SEP = "\u001f"; // one account can carry several labels (its email, its selector name); a merged key joins them after the head
 const MAX_HELD = 2000; // the most rows one read of a command carries (PerfRoutes.kt MAX_TURNS)
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200 };
 const FAMILY = PROVIDER_FAMILY;
@@ -92,22 +93,22 @@ function slices() {
   });
 }
 const since = () => slices()[0].from;
-function filterParams(p, f) {
-  if (f.account) p.set("account", refOf(f.account));
+function filterParams(p, f, label) {
+  if (label != null) p.set("account", label);
   if (f.model) p.set("model", f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
   if (ui.project && ui.project !== NO_PROJECT_KEY && !f.wide) p.set("project", ui.project);
   return p;
 }
 // each 15-minute column of the 5-hour window is one more question on the same read (`ask`), so the whole window is read once
-function turnsUrl(head, held, f) {
-  const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f);
+function turnsUrl(head, held, f, label) {
+  const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f, label);
   if (held > 1) p.set("usage", "0");
-  else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f).toString());
+  else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f, label).toString());
   return `/api/perf/turns?${p}`;
 }
-/** An account filter is `head|ref` for a login (the daemon's opaque id for it) or `head|VAR:fingerprint` for a key. */
-const refOf = (account) => account.split("|").slice(1).join("|");
+/** The labels one account filter reads: the daemon matches one label exactly, so an account with several is asked once per label and summed. */
+const labelsOf = (f) => (f.account ? f.account.split("|").slice(1).join("|").split(SEP) : [null]);
 const headsFor = (f) => S.heads.filter((h) => !f.account || f.account.split("|")[0] === h.key);
 
 const ZERO = () => ({ requests: 0, in: 0, cached: 0, out: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0 });
@@ -149,10 +150,10 @@ async function readWindow() {
   const gen = ++D.gen;
   const wide = { wide: true }; // every project, for the tiles' figures
   const scopes = [...(hasFilter() ? [ui.f, {}] : [{}]), ...(ui.project ? [wide] : [])];
-  const asks = scopes.flatMap((f) => headsFor(f).map((h) => ({ f, h, held: 1 })));
-  const rowAsks = headsFor(ui.f).map((h) => ({ f: ui.f, h, held: MAX_HELD }));
+  const asks = scopes.flatMap((f) => headsFor(f).flatMap((h) => labelsOf(f).map((label) => ({ f, h, held: 1, label }))));
+  const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).map((label) => ({ f: ui.f, h, held: MAX_HELD, label })));
   const [totals, rows] = await Promise.all([
-    Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f)))), Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f))))]);
+    Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label)))), Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))))]);
   if (gen !== D.gen) return;
   const split = (scope) => { const idx = asks.map((a, i) => (a.f === scope ? i : -1)).filter((i) => i >= 0); return foldWindow(idx.map((i) => totals[i]), idx.map((i) => asks[i].h)); };
   D.scoped = split(scopes[0]);
@@ -168,6 +169,13 @@ async function readWindow() {
     D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
   });
+  if (rowAsks.length > headsFor(ui.f).length) { // several labels: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
+    D.rows.sort((x, y) => y.ts - x.ts);
+    for (const [head, h] of Object.entries(D.held)) {
+      const mine = D.rows.filter((r) => r.head === head);
+      if (mine.length > MAX_HELD) { const drop = new Set(mine.slice(MAX_HELD)); D.rows = D.rows.filter((r) => !drop.has(r)); h.returned = MAX_HELD; h.truncated = true; }
+    }
+  }
   D.pending = pending; D.loading = false;
   render();
   if (pending) setTimeout(() => { if (gen === D.gen) readWindow(); }, 2000);
@@ -197,6 +205,8 @@ function costCell(s) {
 }
 const chip = (head) => `<span class="chip" style="--c:${colorOf(providerOfHead(head))}">${esc(cmdOf(head))}</span>`;
 const acctKeyOf = (head, label) => `${head}|${label}`;
+/** The key of an account that may carry several labels: the one with the most requests first. */
+const acctKeyOfAll = (entries) => { const e = entries.slice().sort((a, b) => b.requests - a.requests); return acctKeyOf(e[0].head, e.map((x) => x.label).join(SEP)); };
 const keyNameOf = (label) => { const s = String(label ?? ""), at = s.lastIndexOf(":"); return at < 0 ? s : s.slice(0, at); };
 const keyRecord = (label) => {
   const name = keyNameOf(label), print = String(label).slice(name.length + 1);
@@ -208,12 +218,16 @@ const keyRecord = (label) => {
   }
   return null;
 };
-/** The login the daemon calls `ref`; its `label` is the only name Usage shows (never an email or an account id). */
-const planRowOf = (ref) => S.accounts.find((a) => a.kind !== "api-key" && a.ref === ref);
-/** An account as every page names it: a plan by its label, a key by its variable and the day splice first saw it. */
-function acctLabel(label, name) {
-  const plan = planRowOf(label);
-  if (plan) return esc(plan.label);
+/** The plan account a usage entry belongs to. A login the daemon names carries a `ref` and a `label`: it matches by the ref
+ *  and reads by the label alone. A row without them (a daemon before the label contract) matches by every name it has and reads
+ *  as it always did, so the page changes by itself the moment the daemon serves the ref. */
+const planRowOf = (head, label) => S.accounts.find((a) => (a.heads || []).includes(head) && a.kind !== "api-key"
+  && (a.ref ? a.ref === label : [a.account?.email, a.account_labels?.[head], a.selector_key, a.label, a.display_name].some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
+const planName = (row, fallback) => (row.ref ? row.label : row.account?.email || row.display_name || fallback || "");
+/** An account as every page names it: a plan by its name, a key by its variable and the day splice first saw it. */
+function acctLabel(head, label, name) {
+  const plan = planRowOf(head, label);
+  if (plan) return esc(planName(plan, label));
   const key = keyRecord(label);
   if (key) return `<span class="var">${esc(key.name)}</span>${key.seen ? ` · ${dayWord(new Date(key.seen * 1000))}` : ""}`;
   return esc(name ?? label);
@@ -242,7 +256,7 @@ const isKeyHead = (key) => {
 };
 /** The window's usage entries that belong to one plan account. */
 const reading = () => D.loading || !D.scoped;
-const usageOfPlan = (row) => !D.all ? [] : [...D.all.accounts.values()].filter((e) => (row.heads || []).includes(e.head) && e.label === row.ref);
+const usageOfPlan = (row) => !D.all ? [] : [...D.all.accounts.values()].filter((e) => (row.heads || []).includes(e.head) && planRowOf(e.head, e.label) === row);
 const sumOf = (entries) => entries.reduce((t, e) => fold2(t, e), ZERO());
 function fold2(t, e) {
   t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local;
@@ -263,11 +277,11 @@ function plansHtml() {
       + `<span class="pct${w.used >= 100 ? " limit" : ""}">${w.used}%<span class="used">used</span></span><span class="when">${w.left != null ? `${ring(w.len, w.left)}Resets ${backWord(new Date(w.resetMs))}` : ""}</span>`).join("")}`
       + (stale ? `<span class="stale-at">${EYE}Read ${backWord(new Date(stale))}</span>` : "") + `</div>` : `<p class="state">No limits reported</p>`;
     const heads = row.heads || [];
-    const lead = mine.slice().sort((a, b) => b.requests - a.requests)[0] ?? null;
+    const lead = mine.length ? mine[0] : null;
     const ranOut = reading() ? null : D.rows.filter((r) => r.outcome === "error:plan-limit" && r.reset && r.reset - r.ts > 5 * HOUR && mine.some((e) => e.head === r.head && e.label === r.account)).sort((a, b) => a.ts - b.ts)[0];
-    const door = lead ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
+    const door = lead ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOfAll(mine))}" tabindex="0"` : "";
     return `<article class="card pcard${held ? " held" : ""}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
-      + `<header><span class="nm">${esc(row.label)}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}${row.plan ? ` · ${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}` : ""}</span><span class="cmds">${heads.map(chip).join("")}</span></header>`
+      + `<header><span class="nm">${esc(planName(row))}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}${row.plan ? ` · ${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}` : ""}</span><span class="cmds">${heads.map(chip).join("")}</span></header>`
       + wins + (ranOut ? `<p class="since"><a href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}</a></p>` : "")
       + `<footer><span class="thru">${reading() ? `<span class="ctd">Counted by splice</span>Reading` : s.requests ? `<span class="ctd">Counted by splice</span><b>${tokWord(tokensOf(s))}</b> tokens<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
   });
@@ -307,7 +321,7 @@ const nextBy = (d) => DRILL.find((x) => x !== d && !isSet(x)) ?? "model";
 function reqUrl(extra = {}, f = ui.f) {
   const p = new URLSearchParams({ win: ui.win });
   if (ui.project) p.set("project", ui.project);
-  if (f.account) p.set("account", f.account);
+  if (f.account) p.set("account", f.account.split(SEP)[0]);
   if (f.model) p.set("model", f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
@@ -322,7 +336,12 @@ const unionHeads = (a, b) => new Set([...a, ...b]);
 /** The breakdown's rows: the daemon's totals for the window under the filters, folded by what they are grouped by. */
 function groupsOf(by) {
   const w = D.scoped;
-  if (by === "account") return [...w.accounts.values()].map((e) => ({ k: acctKeyOf(e.head, e.label), label: acctLabel(e.label, e.name), sub: PROVIDER_NAME[providerOfHead(e.head)] ?? "", heads: e.heads, s: e }));
+  if (by === "account") { // one plan account can reach splice under more than one label (its email, its selector name): one row
+    const m = new Map();
+    for (const e of w.accounts.values()) { const id = planRowOf(e.head, e.label) ? `${e.head}|${S.accounts.indexOf(planRowOf(e.head, e.label))}` : acctKeyOf(e.head, e.label); (m.get(id) ?? m.set(id, []).get(id)).push(e); }
+    return [...m.values()].map((es) => { const lead = es.slice().sort((a, b) => b.requests - a.requests)[0], s = es.reduce((t, e) => fold2(t, e), ZERO());
+      return { k: acctKeyOfAll(es), many: es.length > 1, label: acctLabel(lead.head, lead.label, lead.name), sub: PROVIDER_NAME[providerOfHead(lead.head)] ?? "", heads: lead.heads, s }; });
+  }
   if (by === "model") return [...w.models.values()].map((e) => ({ k: e.id, label: esc(modelName(S.labels, e.id)), sub: "", heads: e.heads, s: e }));
   const byRow = rowProjects();
   if (by === "agent") return [...w.sessions.values()].map((e) => ({ k: e.sid, label: esc(sessTitle(String(e.sid).slice(0, 8))), sub: esc(projectOfSid(e.sid, byRow).label), heads: e.heads, s: e }));
@@ -374,7 +393,7 @@ function tipHtml(x, n) {
 function filterChips() {
   const chip1 = (d, text) => `<span class="fwrap"><span class="fbtn on"><em>${DIMS[d].one}</em>${text}</span><button class="fclear" data-act="unpick" data-d="${d}" aria-label="Clear">${ICON.close}</button></span>`;
   return Object.entries(ui.f).map(([d, v]) => {
-    const text = d === "account" ? acctLabel(refOf(v), D.all?.accounts.get(v)?.name) : d === "model" ? esc(modelName(S.labels, v)) : esc(sessTitle(String(v).slice(0, 8)));
+    const text = d === "account" ? acctLabel(v.split("|")[0], v.split("|").slice(1).join("|").split(SEP)[0], D.all?.accounts.get(v.split(SEP)[0])?.name) : d === "model" ? esc(modelName(S.labels, v)) : esc(sessTitle(String(v).slice(0, 8)));
     return chip1(d, text);
   }).join("");
 }
@@ -386,7 +405,7 @@ function byHtml() {
     return `<div class="brow" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" tabindex="0">`
       + `<div class="who"><span class="nm">${e.label}</span><span class="sb">${e.sub ? `<span class="st">${e.sub}</span>` : ""}${[...e.heads].map(chip).join("")}</span></div>`
       + `<div class="share"><div class="sbar" style="width:${((tokensOf(e.s) / max) * 100).toFixed(2)}%"></div><span class="num">${tokWord(tokensOf(e.s))}</span></div>`
-      + `<a class="num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${n0(e.s.requests)}${OPEN}</a><span class="cost">${costCell(e.s)}</span></div>`;
+      + `${e.many ? `<span class="num">${n0(e.s.requests)}</span>` : `<a class="num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${n0(e.s.requests)}${OPEN}</a>`}<span class="cost">${costCell(e.s)}</span></div>`;
   };
   const sw = `<div class="switch" role="group" aria-label="Group by">${Object.entries(DIMS).map(([k, v]) => `<button data-act="by" data-v="${k}" aria-pressed="${ui.by === k}">${v.word}</button>`).join("")}</div>`;
   const open = hasFilter() ? `<a class="act" href="${reqUrl()}">${OPEN}Open on Requests</a>` : "";

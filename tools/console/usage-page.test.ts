@@ -1,7 +1,8 @@
 // Usage on the real page: a week's figures are the daemon's totals over every request, never a count of the rows the
 // read returned; a plan's requests read "On your plan" with their API-price value and never as money, a key's are
 // money; a window change reads "Reading" until the new figures land, never the old ones under the new heading; and a
-// breakdown row opens its requests on Requests with its filter carried.
+// breakdown row opens its requests on Requests with its filter carried. A login the daemon names (ref + label) is read by
+// them alone; a daemon that does not serve them yet is drawn as before.
 import { afterAll, beforeAll, test } from "bun:test";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -16,10 +17,14 @@ const group = (key: string, over: Row): Row => ({
   unpriced_uncounted_requests: 0, unpriced_undeclared_requests: 0, unpriced_local_requests: 0, unanswered_requests: 0, ...over,
 });
 // a plan head answering 1,234,567 requests with only 3 rows returned, and a key head that spent money
-const REF = "a1b2c3d4"; // the daemon's opaque id for the login; its label is the only name the page shows
-const PLAN = group(REF, { label: "Primary",  requests: 1_234_567, input_tokens: 9_000_000_000, output_tokens: 100_000_000, plan_requests: 1_234_567, plan_value_usd: 4321.5 });
+const PLAN = group("primary", { requests: 1_234_567, input_tokens: 9_000_000_000, output_tokens: 100_000_000, plan_requests: 1_234_567, plan_value_usd: 4321.5 });
 const KEY = group("OPENROUTER_API_KEY:abc123", { requests: 40, input_tokens: 80_000, output_tokens: 20_000, cost_usd: 1.25 });
-const row = (t: string, session: string): Row => ({ turn: t, ts: now - 60_000, outcome: "ok", model: "m", session, total: 1000, account: REF, account_label: "Primary" });
+const row = (t: string, session: string): Row => ({ turn: t, ts: now - 60_000, outcome: "ok", model: "m", session, total: 1000, account: "primary" });
+const SECOND = group("plan-selector", { requests: 7, input_tokens: 4_000, output_tokens: 1_000, plan_requests: 7, plan_value_usd: 0.5 }); // the same plan account under its selector name
+const REF = "a1b2c3d4"; // the daemon's opaque id for a login; its label is the only name the page shows
+const NAMED = group(REF, { label: "Primary", requests: 1_234_567, input_tokens: 9_000_000_000, output_tokens: 100_000_000, plan_requests: 1_234_567, plan_value_usd: 4321.5 });
+let named = false; // while set, the daemon serves the label contract (ref + label) for the plan login
+let twoLabels = false; // while set, the plan account reaches splice under two labels
 const askedAccounts: (string | null)[] = []; // the account each plan read named
 let slowWeek = false; // while set, the 5-hour read stays pending
 const WEEK_DAY = new Date().toLocaleDateString("en-CA");
@@ -31,7 +36,7 @@ const server = Bun.serve({
     if (path === "/api/heads") return Response.json({ heads: [{ key: "plan", label: "plan" }, { key: "keyed", label: "keyed" }] });
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "openai", models: [] }, { head: "keyed", provider: "openrouter", models: [] }] });
     if (path === "/api/status") return Response.json({ registry: [{ key: "plan", family: "openai", authKind: "chatgpt-oauth" }, { key: "keyed", family: "openrouter", authKind: "api-key" }] });
-    if (path === "/api/accounts") return Response.json({ accounts: [{ provider: "codex", label: "Primary", label_default: false, ref: REF, kind: "chatgpt-oauth", heads: ["plan"], credential_present: true, plan: "pro", seven_day_used_percent: 39, seven_day_reset_epoch_seconds: Math.floor(now / 1000) + 86400, seven_day_window_seconds: 604800, seven_day_current: true }] });
+    if (path === "/api/accounts") return Response.json({ accounts: [{ provider: "codex", ...(named ? { label: "Primary", label_default: false, ref: REF } : { display_name: "Primary", account_labels: { plan: null }, selector_key: "plan-selector" }), kind: "chatgpt-oauth", heads: ["plan"], credential_present: true, plan: "pro", seven_day_used_percent: 39, seven_day_reset_epoch_seconds: Math.floor(now / 1000) + 86400, seven_day_window_seconds: 604800, seven_day_current: true }] });
     if (path === "/api/keys") return Response.json({ keys: [{ name: "OPENROUTER_API_KEY", fingerprint: "abc123", first_seen_epoch_seconds: Math.floor(now / 1000) - 5 * 86400, replaced: [], heads: [{ head: "keyed", source: "env" }] }] });
     if (path === "/api/sessions") return Response.json({ sessions: [] });
     if (path === "/api/topology") return Response.json({ topology: { providers: {} } });
@@ -40,9 +45,10 @@ const server = Bun.serve({
       const head = url.searchParams.get("head"), held = Number(url.searchParams.get("n"));
       if (url.searchParams.get("since") && slowWeek && head === "plan" && held === 1 && url.searchParams.getAll("ask").length) await Bun.sleep(4000);
       if (head === "plan") askedAccounts.push(url.searchParams.get("account"));
-      const g = head === "plan" ? PLAN : KEY;
-      const totals = group("totals", g);
-      const usage = { totals, accounts: [g], models: [], sessions: [], days: [group(WEEK_DAY, g)] };
+      const asked = url.searchParams.get("account"), both = head === "plan" && twoLabels && !asked && !named;
+      const g = head === "plan" ? (named ? NAMED : asked === "plan-selector" ? SECOND : PLAN) : KEY;
+      const totals = group("totals", both ? { ...g, requests: (PLAN.requests as number) + (SECOND.requests as number) } : g);
+      const usage = { totals, accounts: both ? [PLAN, SECOND] : [g], models: [], sessions: [], days: [group(WEEK_DAY, g)] };
       const rows = held > 1 && head === "plan" ? [row("a", "s1"), row("b", "s1"), row("c", "s1")] : [];
       return Response.json({ heads: [{ key: head, label: head, count: g.requests, returned: rows.length, truncated: held > 1 && rows.length < (g.requests as number), rows, ...(held > 1 ? {} : { usage }), asks: [] }] });
     }
@@ -100,19 +106,40 @@ test("Usage: a window change reads Reading until its figures land, never the old
   }
 }, 60_000);
 
-test("Usage: a login is named by its label alone, and opening it asks the daemon for its ref", async () => {
+test("Usage: one plan account under two labels is one Breakdown row, and opening it reads both labels", async () => {
+  twoLabels = true;
+  const p = await open();
+  try {
+    const rows = p.locator(".brow", { hasText: "Primary" });
+    await expect(rows.first().locator(".num").nth(1)).toContainText("1,234,574", { timeout: 20_000 });
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first().locator("a.open")).toHaveCount(0);
+    askedAccounts.length = 0;
+    await rows.first().click();
+    await expect(p.locator(".fchips")).toContainText("Primary", { timeout: 20_000 });
+    await expect.poll(() => [...new Set(askedAccounts)].filter(Boolean).sort().join(",")).toBe("plan-selector,primary");
+  } finally {
+    twoLabels = false;
+    await p.context().close();
+  }
+}, 60_000);
+
+test("Usage: a login the daemon names is read by its label alone and asked for by its ref", async () => {
+  named = true;
   const p = await open();
   try {
     const rows = p.locator(".brow", { hasText: "Primary" });
     await expect(rows.first().locator(".num").nth(1)).toContainText("1,234,567", { timeout: 20_000 });
     await expect(rows).toHaveCount(1);
     await expect(p.locator(".pcard .nm")).toHaveText("Primary");
+    await expect(rows.first().locator("a.open")).toHaveAttribute("href", new RegExp(`account=plan%7C${REF}`));
     askedAccounts.length = 0;
     await rows.first().click();
     await expect(p.locator(".fchips")).toContainText("Primary", { timeout: 20_000 });
     await expect.poll(() => [...new Set(askedAccounts)].filter(Boolean).join(",")).toBe(REF);
     await expect(p.locator("main")).not.toContainText("@");
   } finally {
+    named = false;
     await p.context().close();
   }
 }, 60_000);
@@ -141,7 +168,7 @@ test("Usage: a breakdown row opens its requests on Requests with the account car
     await expect(link).toBeVisible({ timeout: 20_000 });
     const href = new URL((await link.getAttribute("href")) ?? "", "http://x/");
     expect(href.pathname).toBe("/requests.html");
-    expect(href.searchParams.get("account")).toBe(`plan|${REF}`);
+    expect(href.searchParams.get("account")).toBe("plan|primary");
     expect(href.searchParams.get("win")).toBe("7d");
     expect(href.searchParams.get("order")).toBe("price");
   } finally {

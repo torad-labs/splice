@@ -6,6 +6,10 @@ public interface UsageReadPreparation {
     public fun economicsReady(head: UsageHead): Boolean
 
     public fun requestsReady(head: UsageHead, sinceMs: Long): Boolean
+
+    /** The keys of [heads] whose request window from [sinceMs] is still being read, each asked once. */
+    public fun requestsPending(heads: List<UsageHead>, sinceMs: Long): Set<String> =
+        heads.filterNot { requestsReady(it, sinceMs) }.mapTo(HashSet()) { it.key }
 }
 
 /** Only management readers opting in receive additive pending replies. Upstream requests never use it. */

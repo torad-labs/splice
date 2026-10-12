@@ -120,15 +120,23 @@ public class PerfRoutes(
             return
         }
 
-        val asked = askedWindow(call) ?: return
+        val tags = RequestedTags(projects)
+        val asked = askedWindow(call, tags) ?: return
 
         val wired = matches.filter { it.sinks.perfRows != null }
         if (wired.isEmpty()) {
             refuse(call, UNWIRED_TURNS, HttpStatusCode.ServiceUnavailable)
             return
         }
+        // a head still preparing answers pending, decided first: its reply reads no row, so it asks neither the roster
+        // nor the session registry (a pending reply that built both waited 27 s on desk d in the startup scan, Oct 12)
+        val pending = preparation?.takeIf { call.request.headers[USAGE_READ_PENDING_HEADER] == "1" }
+            ?.requestsPending(wired, asked.since).orEmpty()
+        val read = wired.filter { it.key !in pending }
+        // taken here, outside every head's row lock, rather than by the first row that asks
+        if (read.isNotEmpty()) tags.take()
         // read before the body is built: naming a login asks the roster, which suspends
-        val names = wired.associate { it.key to accounts.forHead(it.key) }
+        val names = read.associate { it.key to accounts.forHead(it.key) }
 
         call.respondText(
             buildJsonObject {
@@ -147,9 +155,7 @@ public class PerfRoutes(
                                 put("label", head.label)
                                 put("error", UNWIRED_TURNS)
                             }
-                        } else if (call.request.headers[USAGE_READ_PENDING_HEADER] == "1" &&
-                            preparation?.requestsReady(head, asked.since) == false
-                        ) {
+                        } else if (head.key in pending) {
                             addJsonObject {
                                 put("key", head.key)
                                 put("label", head.label)
@@ -170,7 +176,7 @@ public class PerfRoutes(
      *  the request is validated in two independent steps and the route body would otherwise carry four
      *  exits — the wall's point, and the right split: this function answers "what was asked", the
      *  caller answers "what can be served". */
-    private suspend fun askedWindow(call: ApplicationCall): AskedWindow? {
+    private suspend fun askedWindow(call: ApplicationCall, tags: ProjectTags): AskedWindow? {
         // A `since` that is not a number is REFUSED, never replaced by the default. Substituting 24h
         // for a request the caller spelled differently answers a question nobody asked while looking
         // exactly like an answer to the one that was — the class of defect this route's count/returned
@@ -190,7 +196,6 @@ public class PerfRoutes(
             refuse(call, "unknown time_zone: $zoneText", HttpStatusCode.BadRequest)
             return null
         }
-        val tags = projects()
         val asks = call.request.queryParameters.getAll("ask").orEmpty()
             .map { askedOf(parseQueryString(it), since, zone, tags) }
         val asked = askedOf(call.request.queryParameters, since, zone, tags)

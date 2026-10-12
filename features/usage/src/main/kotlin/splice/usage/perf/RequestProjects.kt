@@ -31,3 +31,20 @@ internal object NoProjectTags : ProjectTags {
 public fun interface RequestProjects {
     public operator fun invoke(): ProjectTags
 }
+
+/** One request's snapshot, taken the first time a row or a project filter asks: a reply that reads no row (a head
+ *  still preparing answers pending) never walks the session registry. */
+internal class RequestedTags(projects: RequestProjects) : ProjectTags {
+    private val snapshot by lazy { projects() }
+
+    /** Takes the snapshot now, so no row lock is held while it is built. */
+    fun take() {
+        snapshot
+    }
+
+    override fun of(tag: String): JsonObject? = snapshot.of(tag)
+
+    override fun tagsOf(id: String): Set<String> = snapshot.tagsOf(id)
+
+    override fun titleOf(tag: String): String? = snapshot.titleOf(tag)
+}

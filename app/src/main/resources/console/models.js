@@ -285,6 +285,45 @@ function limitHtml(model, sel, over) {
   if (!sel.model || !model) return "";
   return model.max ? `<span class="said${over ? " limit" : ""}">Max ${big(model.max)}</span>` : `<span class="said">No max reported</span>`;
 }
+// ---------- a command just added (spec 1i): how to start it, what doctor says of it, and one test request on offer ----------
+// doctor's checks that are this command's own, in his words: its sign-in or key, its port, its command, its runtime
+function doctorOf(c) {
+  const name = (x) => x.id.startsWith("auth/") ? (/key/i.test(c.auth) ? "Key" : "Sign-in") : x.id.startsWith("daemon/head") ? "Running"
+    : x.id === "installation/wrapper" ? "Command" : x.id === `local:${c.provKey}` ? "Runtime" : x.id.split("/").slice(1).join("/");
+  return (data.doctor?.checks ?? []).filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}`
+    || (x.id === "installation/wrapper" && x.detail?.includes(c.cmd)) || x.id === `local:${c.provKey}` || x.id.startsWith(`local:${c.provKey}/`))
+    .map((x) => ({ name: name(x), ok: x.status === "ok" || x.status === "info", soft: x.status === "warn" }));
+}
+const LIVE_PROMPT = "Reply with the single word pong.";
+function addedHtml(c) {
+  if (ui.added?.key !== c.key) return "";
+  const checks = doctorOf(c).map((x) => `<li class="${x.ok ? "pass" : "fail"}"><span class="lamp ${x.ok ? "ready" : x.soft ? "unchecked" : "stalled"}">${x.ok || x.soft ? "<i></i>" : GL.notstarted}</span><span class="cname">${esc(x.name)}</span></li>`).join("");
+  const l = ui.added.live;
+  const said = l === "sending" ? `<span class="said">${ICON.wait}Sending</span>` : l?.ok ? `<span class="said ok">Answered · ${(l.ms / 1000).toFixed(1)} s</span>`
+    : l ? `<span class="said limit">${esc(l.word)}</span>` : "";
+  return `<span class="lbl">In a terminal</span><div class="ctl"><code class="launch">${esc(c.cmd)}</code><button class="act quiet small" data-act="copy-launch" data-h="${esc(c.key)}">Copy</button></div>`
+    + (checks ? `<span class="lbl">Doctor</span><div class="ctl"><ol class="checks inline">${checks}</ol></div>` : "")
+    + `<span class="lbl">Test</span><div class="ctl"><button class="act quiet" data-act="try-live" data-h="${esc(c.key)}"${l === "sending" ? " disabled" : ""}>Send one request</button>${said}</div>`;
+}
+// one short request through the command itself (POST /api/playground), only when pressed: it spends a little, so it is
+// offered and never sent on its own (v0.4.0 section 1, Resolved: the one live check, offered, skipped by default)
+async function tryLive(key) {
+  const c = cmdByKey(key);
+  if (!c || ui.added?.key !== key) return;
+  ui.added.live = "sending"; render();
+  const began = performance.now();
+  const res = await API.post("/api/playground", { head: key, prompt: LIVE_PROMPT, model: c.pinned || c.models[0]?.id });
+  const ms = Math.round(performance.now() - began), r = res.body?.response;
+  const raw = typeof r?.body?.raw === "string" ? r.body.raw : JSON.stringify(r?.body ?? "");
+  const streamErr = /event:\s*error|"type"\s*:\s*"error"/.test(raw);
+  if (ui.added?.key !== key) return;
+  if (res.ok && r && r.status < 400 && !streamErr) ui.added.live = { ok: true, ms };
+  else {
+    if (res.body?.error) console.warn(`add test: ${res.body.error}`);
+    ui.added.live = { ok: false, word: res.status === 0 ? "Not answering" : r?.status >= 400 ? `Failed · HTTP ${r.status}` : "Failed" };
+  }
+  render();
+}
 function paneHtml() {
   if (ui.add) return addPaneHtml();
   const c = cmdByKey(ui.open);
@@ -322,6 +361,7 @@ function paneHtml() {
   const saidHtml = ui.said ? `<span class="said${calm ? "" : " limit"}">${ui.said === "Restarting" ? ICON.wait : ""}${esc(ui.said)}</span>` : "";
   const restart = ui.said === "Saved" && ui.pending ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
   const form = `<section class="form">`
+    + addedHtml(c)
     + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to">`
     + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
     + runtimeHtml(c)
@@ -675,7 +715,7 @@ async function verifyAndSave() {
     if (up.ok) {
       await readAll();
       const added = commandsOf().find((c) => c.key === key || c.cmd === s.body?.saved?.command) ?? commandsOf().at(-1);
-      ui.add = null; ui.open = added?.key ?? null; ui.draft = null; render();
+      ui.add = null; ui.open = added?.key ?? null; ui.draft = null; ui.added = added ? { key: added.key, live: null } : null; render();
       return;
     }
   }
@@ -772,6 +812,8 @@ function onClick(e) {
     case "add": startAdd(); break;
     case "open-signin": { const sg = a?.sign ?? ui.sign; if (sg?.url) window.open(sg.url, "_blank", "noopener"); break; }
     case "copy-code": navigator.clipboard?.writeText((a?.sign ?? ui.sign).code).catch(() => {}); break;
+    case "copy-launch": navigator.clipboard?.writeText(cmdByKey(d.h)?.cmd ?? "").catch(() => {}); break;
+    case "try-live": tryLive(d.h); break;
     case "savekey": saveKey(); break;
     case "cancel-key": ui.keyin = null; render(); break;
     case "cancel-signin": if (a?.sign) { a.sign = null; a.busy = false; } else ui.sign = null; render(); break;

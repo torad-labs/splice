@@ -89,6 +89,8 @@
 .checks .lamp { position: static; width: 2.1rem; height: 2.1rem; }
 .checks .lamp svg { width: 1.25rem; height: 1.25rem; }
 .checks .lamp i { width: .65rem; height: .65rem; }
+.checks.inline { flex-direction: row; flex-wrap: wrap; gap: .9rem 1.6rem; }  /* a new command's doctor checks, on one line (spec 1i) */
+code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: .5rem .75rem; border: .12rem solid var(--track-line); border-radius: .4rem; }
 .checks .lamp.idle i { background: var(--track-line); }
 .checks li.pending .cname { color: var(--text-mute); }
 /* a check splice didn't run: a hollow lamp and its word, never the passed one */

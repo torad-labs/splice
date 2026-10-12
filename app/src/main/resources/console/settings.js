@@ -646,7 +646,7 @@ const note = (s) => (s ? `<p class="knote">${esc(s)}</p>` : "");
 // server is not shared as a stable key (McpSharing.kt, McpInventory.kt) with the value it names; this table is the only
 // place those keys become words. A key it does not know reads "Not shared" and nothing more, never a guess.
 const MCP_STATE = {
-  cwd: { word: "Per agent" },
+  cwd: { word: "Per agent", line: "Starts in its own folder" },
   variable: { word: "Per agent", line: "A different value in each agent" },
   relative_path: { word: "Per project", line: "A different folder in each project" },
   location_flag: { word: "Per project", line: "A different place in each project" },

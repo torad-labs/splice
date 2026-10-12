@@ -654,10 +654,10 @@ function cardHtml(p, c, a, i, serves) {
 function addTileHtml(p, c) {
   const t = `add:${c.cmd}`, s = ui.signin[t];
   if (s) return `<div class="add signing${s.state === "fail" ? " failed" : ""}" data-key="${t}"><span class="socket"></span>${signingHtml(t)}</div>`;
-  if (ui.naming?.cmd === c.cmd) { // a new login is named before it signs in; the name prefilled so Enter takes it as is
+  if (ui.naming?.cmd === c.cmd) { // a new login may be named before it signs in; left empty, Enter signs in and splice names it
     const d = `data-p="${p.id}" data-c="${c.cmd}"`, err = ui.naming.err;
     return `<div class="add signing naming${err ? " failed" : ""}" data-key="${t}"><span class="socket"></span>`
-      + `<input class="field add-name" value="${esc(ui.naming.draft)}" aria-label="Name" spellcheck="false" maxlength="48"${err ? ' aria-invalid="true"' : ""}>`
+      + `<input class="field add-name" value="${esc(ui.naming.draft)}" placeholder="Name" aria-label="Name" spellcheck="false" maxlength="48"${err ? ' aria-invalid="true"' : ""}>`
       + `<button class="act primary" data-act="add-go" ${d}>Sign in</button><button class="act quiet" data-act="cancel-add">Cancel</button>`
       + `${err ? `<span class="state limit" role="status">${esc(err)}</span>` : ""}</div>`;
   }
@@ -823,18 +823,15 @@ function addAccount(pid, cmd) {
   const { c } = findCmd(cmd);
   startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head });
 }
-// The next free "<Provider> N": what the name field opens with, so Enter alone adds the login under it.
-function firstFree(p) {
-  for (let n = p.accounts.length + 1; ; n++) if (!p.accounts.some((x) => x.name === `${p.name} ${n}`)) return `${p.name} ${n}`;
-}
-// The typed name is kept against the ref the new login proves once it lands (AccountNameRoute.kt): the sign-in itself
-// still mints its own folder label, which stays the pool selector.
+// A typed name is kept against the ref the new login proves once it lands (AccountNameRoute.kt); Enter alone signs in
+// with no chosen name, and the login reads splice's default for its plan (Marlin, Oct 12). The sign-in itself still mints
+// its own folder label, which stays the pool selector.
 function startAdd(p, cmd, field) {
-  const v = field.value.trim() || firstFree(p), err = refNameError(p, {}, v);
+  const v = field.value.trim(), err = v ? refNameError(p, {}, v) : null;
   if (err) { ui.naming = { cmd, draft: v, err }; render(); return; }
   const { c } = findCmd(cmd), before = new Set(p.accounts.map((x) => x.row?.ref).filter(Boolean));
   ui.naming = null;
-  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head, name: v, before });
+  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head, name: v || null, before });
 }
 async function nameAdded(how) {
   const added = data.flatMap((p) => p.accounts).find((x) => x.row?.ref && !how.before.has(x.row.ref) && x.row.heads.includes(how.poll));
@@ -1010,7 +1007,7 @@ document.addEventListener("click", async (e) => {
     case "use": k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) }); await refresh(); break;
     case "unpin": k.pin = null; render({ flip: true }); await API.del(headPath(k, "switch")); await refresh(); break;
     case "lane": ui.lane[p.id] = k.cmd; closeAll(); render({ flip: true }); break; // the rail shows that command's order
-    case "add": closeAll(); ui.naming = { cmd: k.cmd, draft: firstFree(p) }; render(); board.querySelector(".add-name")?.select(); break;
+    case "add": closeAll(); ui.naming = { cmd: k.cmd, draft: "" }; render(); board.querySelector(".add-name")?.focus(); break;
     case "add-go": { const f = board.querySelector(".add-name"); if (f) startAdd(p, k.cmd, f); break; }
     case "cancel-add": ui.naming = null; render(); break;
     case "signin": startSignin(`out:${a.id}`, howFor(p, a, null)); break;

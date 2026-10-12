@@ -9,7 +9,6 @@ package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -52,12 +51,12 @@ public class AccountsRoute(
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
         val naming = AccountNaming(names?.names().orEmpty())
+        val poolRows = joined.values.map { row -> buildJsonObject { write(this, row, nowSeconds, providers, naming) } }
         val nativeRows = ClaudeLoginRows(naming).list(native, providers, carrying, heads, nowSeconds)
+        // every row is named before any is settled: whether a ref shows depends on the whole roster
+        val rows = naming.settle(poolRows + nativeRows)
         return buildJsonObject {
-            putJsonArray("accounts") {
-                joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers, naming) } }
-                nativeRows.forEach { add(it) }
-            }
+            putJsonArray("accounts") { rows.forEach { add(it) } }
             extras.pools(this)
         }.toString()
     }

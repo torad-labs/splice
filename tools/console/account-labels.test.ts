@@ -141,7 +141,7 @@ test("Name it keeps the name against the login's ref, never its sign-in files", 
   }
 }, 30_000);
 
-test("Add asks for a name first, prefilled so Enter takes it, and gives it to the login that lands", async () => {
+test("Add opens an empty name: Enter alone signs in unnamed, and a typed name is given to the login that lands", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   puts.length = 0;
   try {
@@ -149,11 +149,19 @@ test("Add asks for a name first, prefilled so Enter takes it, and gives it to th
     await page.locator('[data-act="add"]').first().click();
     const field = page.locator(".add-name");
     await field.waitFor({ timeout: 5_000 });
-    const prefilled = await field.inputValue();
-    expect(prefilled).toMatch(/^\S.* 3$/);
+    expect(await field.inputValue()).toBe(""); // no "<Provider> N" saved as if he chose it (Marlin, Oct 12)
     await field.press("Enter");
+    await until(() => ROSTER.some((r) => r.ref === ADDED), 10_000);
+    await Bun.sleep(500);
+    expect(puts).toEqual([]); // unnamed: the daemon's default names it
+
+    ROSTER.splice(ROSTER.findIndex((r) => r.ref === ADDED), 1);
+    await page.reload();
+    await page.locator('[data-act="add"]').first().click();
+    await page.locator(".add-name").fill("Side gig");
+    await page.locator(".add-name").press("Enter");
     await until(() => puts.length === 1, 10_000);
-    expect(puts[0]).toEqual({ path: `/api/accounts/names/${ADDED}`, body: { name: prefilled } });
+    expect(puts[0]).toEqual({ path: `/api/accounts/names/${ADDED}`, body: { name: "Side gig" } });
   } finally {
     await page.close();
   }

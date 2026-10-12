@@ -57,10 +57,11 @@ class AccountLabelsTest {
     )
 
     @Test
-    fun `a login reads a chosen name or its plan and ref, and only a default is offered for naming`() = runBlocking {
+    fun `an unnamed login reads its plan, its ref only where another shares it, and is offered naming`() = runBlocking {
         val pool = mapOf(
             "plus-$stored" to ("plus" to "acct-stored"),
             "codex-2" to ("pro" to "acct-ordinal"),
+            "codex-3" to ("plus" to "acct-third"),
             "work" to ("plus" to "acct-named"),
         )
         val body = AccountsRoute(mapOf("codex" to head(pool))).accountsJson()
@@ -69,11 +70,12 @@ class AccountLabelsTest {
             .mapValues { (_, row) -> row.jsonObject }
         fun read(label: String, field: String) = rows.getValue(label).getValue(field).jsonPrimitive.content
 
+        // two unnamed Plus logins are told apart by their refs; a named one never counts toward the sharing
         assertEquals("Plus · $stored", read("plus-$stored", "display_name"))
+        assertEquals("Plus · ${AccountRef.of("acct-third")}", read("codex-3", "display_name"))
         assertEquals("true", read("plus-$stored", "label_default"))
         assertEquals(stored, read("plus-$stored", "ref"), "a stored default ends in the ref the account proves")
-        val ordinal = AccountRef.of("acct-ordinal")
-        assertEquals("Pro · $ordinal", read("codex-2", "display_name"))
+        assertEquals("Pro", read("codex-2", "display_name"), "a lone plan needs no ref")
         assertEquals("true", read("codex-2", "label_default"))
         assertEquals("work", read("work", "display_name"))
         assertEquals("false", read("work", "label_default"))
@@ -123,6 +125,6 @@ class AccountLabelsTest {
             HttpStatusCode.OK,
             client.put("/api/accounts/names/$ordinal") { setBody("""{"name":" "}""") }.status,
         )
-        assertEquals("Pro · $ordinal" to "true", shown("codex-2"))
+        assertEquals("Pro" to "true", shown("codex-2"))
     }
 }

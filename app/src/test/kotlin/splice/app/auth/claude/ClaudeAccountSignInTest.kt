@@ -224,10 +224,12 @@ class ClaudeAccountSignInTest {
     }
 
     @Test
-    fun `a login added with no label is shown as its plan and a short hash of its account id, never the id`() {
+    fun `a lone login added with no label is shown as its plan alone, with its ref kept for naming, never the id`() {
         val minted = add(HEAD, label = null, account = "uuid-home")
         val row = roster(minted.label!!, "max")
-        assertEquals("Max · ${AccountRef.of("uuid-home")}", row.getValue("display_name").jsonPrimitive.content)
+        // the only unnamed Max login needs no ref on screen (Marlin, Oct 12); the row still carries it for naming
+        assertEquals("Max", row.getValue("display_name").jsonPrimitive.content)
+        assertEquals(AccountRef.of("uuid-home"), row.getValue("ref").jsonPrimitive.content)
         assertEquals("true", row.getValue("label_default").jsonPrimitive.content, "a default is offered its one naming")
         assertFalse(row.toString().contains("uuid-home") || row.toString().contains("@"), row.toString())
     }

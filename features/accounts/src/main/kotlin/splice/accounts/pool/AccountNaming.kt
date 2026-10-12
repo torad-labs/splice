@@ -2,9 +2,12 @@
 // by splice's default, never by an email or an account id; this is the one rule every row kind is named by.
 package splice.accounts.pool
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
 import splice.core.auth.AccountRef
+import splice.core.util.JsonScalars
 
 // why: what a default reads when neither the provider's plan nor anything else names the account's kind.
 private const val FALLBACK_WORD = "Account"
@@ -28,8 +31,11 @@ internal data class AccountNameFacts(
     val plan: String?,
 )
 
-/** [chosen] is the names a person gave, by ref (AccountNameStore): read first, for every kind of login. */
+/** [chosen] is the names a person gave, by ref (AccountNameStore): read first, for every kind of login. One instance
+ *  names one roster: it notes each default it hands out, so [settle] can drop the ref a plan word does not need. */
 internal class AccountNaming(private val chosen: Map<String, String> = emptyMap()) {
+    // the plan word each unnamed login with a ref was given, by ref, over the whole roster named so far
+    private val words = HashMap<String, String>()
     private val hashTail = Regex("-([0-9a-f]{${AccountRef.CHARS}})$")
 
     // why: the ordinal splice mints when no name was given (`claude-2`, `codex-3`, `grok-2`), whatever the vendor.
@@ -50,7 +56,19 @@ internal class AccountNaming(private val chosen: Map<String, String> = emptyMap(
 
     private fun fallback(plan: String?, ref: String?): AccountName {
         val word = plan?.takeIf(String::isNotBlank)?.replaceFirstChar(Char::uppercaseChar) ?: FALLBACK_WORD
+        ref?.let { words[it] = word }
         return AccountName(ref?.let { "$word · $it" } ?: word, ref, isDefault = true)
+    }
+
+    /** The interim words (Marlin, Oct 12): an unnamed login shows its ref only where another unnamed login shares
+     *  its plan word anywhere on [rows]; a lone one reads its word alone, "Max" or "Account". */
+    fun settle(rows: List<JsonObject>): List<JsonObject> {
+        val shared = words.values.groupingBy { it }.eachCount()
+        return rows.map { row ->
+            val word = JsonScalars.str(row, "ref")?.let(words::get)
+            val lone = word != null && JsonScalars.str(row, "label_default") == "true" && shared[word] == 1
+            if (lone) JsonObject(row + ("display_name" to JsonPrimitive(word))) else row
+        }
     }
 
     private fun madeUp(label: String): Boolean =

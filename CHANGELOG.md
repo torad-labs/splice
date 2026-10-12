@@ -768,6 +768,40 @@ origin.
   open with "this session isn't eligible… ask your gateway to implement", and an interactive auto-mode session held
   its first checked action until it was answered. The launch now tells Claude Code the server-side checks are not
   available there, so it runs its own and shows nothing.
+- **Compare models.** Ask several commands and models the same plan and read their answers side by side. The plan is
+  written as markdown and rendered the way it will be read. Any command and model that can send is listed, which for a
+  Claude command means an account added to splice, never the client's own sign-in. Each answer arrives on its own
+  clock with its tokens, its time and its price. The price is the one Requests would show: "On your plan" with its
+  value at API prices, "≈$…" for a key, "No price" for a model with no rate. A plan window that is spent shows a lock and
+  when it frees, and no Try again. A reply is priced by `GET /api/perf/price`, from the head, account, model and
+  the tokens it reported. **Request** on an answer opens that exact request in Requests' own view.
+- **Models is a page.** Every command is listed with its state and the fix splice offers (Start, Restore). The open command
+  shows the slots it really sends, its own settings, and a log of its events, newest first, with repeats folded and
+  the daemon's own lines behind Raw log. Saving and Restart splice are two acts, so edits to several commands restart
+  once. A command's own value on a Settings row is set through `PATCH /api/config?head=<command>`, which edits that
+  command's overrides in `splice.toml` and keeps its comments.
+- **A command can be removed, and its history stays findable.** Remove takes two presses on the open command, and a command a
+  live session is on says In use and opens those sessions. `GET /api/heads/{key}/removal` says what stays and who is on it.
+  `DELETE /api/heads/{key}` drops the command and its project layers from `splice.toml` (a backup first), unlinks its
+  wrapper unless another command shares it, and empties its account order. It is refused with the live sessions named
+  while one is on the command. A removed command's requests, sessions and files stay findable, and adding the command back
+  drops that record.
+- **Usage is a page.** Plans show each provider window as Accounts reads it, Keys show a key's spend as money, and a plan's
+  requests read "On your plan" with their value at API prices, never as money. Columns cover 7 days from the daemon's day
+  totals and the last 5 hours by quarter hour. A breakdown by account, project, agent and model comes from the daemon's own
+  totals over every request, not the newest 2,000. Each command's speed and failures read from its newest requests, and a
+  card says so when it holds more. One plan account under several labels is one row. Every figure opens its requests on
+  Requests with its filters carried, and a new window reads "Reading", never the old figures under the new heading.
+- **Requests can show the requests that ran in no project.** `GET /api/perf/turns?project=none` lists them, the rows that
+  print `project: null`, and Requests' No project pick and its figure ask the daemon for them.
+- **One project pick across Sessions, Teams, Requests and Usage.** One resolver answers "which project is this?" for a
+  session, a team slot, a request row and `GET /api/projects`. Settings has a Projects topic for the folders under which
+  each child folder is a project of its own, written the way people type them (`~`, `~/work`). Sessions are grouped by
+  project and a fold never hides a session that waits on you. Each project's figure shows in the picker and its menu.
+  A session row says where it is: the working directory with the home written as `~`. A session with no name shows the
+  first line of its first message, cut to 80 characters, and request rows carry that title and their project.
+- **Settings Version can take you on.** One card per version there is, a Check that reads the newest published release once
+  per tap, and Upgrade and Restart splice from the same card.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -911,6 +945,19 @@ origin.
   `KIMI_OAUTH_HOST`, `CLAUDE_OAUTH_USAGE_URL`). Those endpoints receive your token, so splice accepts one only
   when its host is `localhost`, `127.0.0.1` or `::1`; any other host is ignored, the vendor's address is
   used, and the daemon log names the variable once.
+- **A restart no longer refuses the requests that arrive during its drain.** A draining command stops accepting at the start
+  of the drain, so a request that arrives then waits in the kernel for the next daemon. A connection that was kept open
+  and idle when the drain starts is closed, so the client's next request opens a new one that waits too, and is not refused
+  with `error:restarted`. `tools/probes/restart-drain-read.ts` reads how a drain went at any install.
+- **Accounts and Usage open quickly after the daemon has been idle.** The economics read stays warm between opens and is
+  ready after a head's own hourly totals are read, not after its whole request window, so the first open no longer
+  queues behind every head. The turns route reads a week from an in-memory store, and the session history index
+  refreshes incrementally, reading only a transcript that is new or changed.
+- **A chunked request body is admitted with a small charge that grows per chunk,** so four small chunked requests no longer
+  fill the budget. One past the size cap or the heap is answered mid-body and its charge returned.
+- **A hold says what happened.** "The provider limited this account, so this gateway is holding new requests for Ns"
+  replaces a sentence that claimed retries which a relayed 429 never made, and a relayed vendor 429 hold waits like any
+  other short hold.
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
@@ -1392,6 +1439,24 @@ origin.
 - **Continue on is honest about what it can do.** It says a command is not installed, with its `splice install` line,
   before the press; drops a plan window whose reset has gone by; and, with reading off, still knows the model a session
   is on.
+- **`replay_reasoning = false` keeps an earlier turn's reasoning out of the request.** The gateway cache put it back before
+  every client call and code mode re-emitted it; the one place that builds the request now drops reasoning from before the
+  last real prompt, and the current turn keeps its own. A compaction follows the same rule.
+- **A round the model answers with nothing is re-sent once, with the same body.** On `claude-splice` the client's own
+  re-send came back with an answer in 52 of 84 cases, so the identical bytes heal most of them. A second empty answer ends as
+  before, a finished empty message is never re-sent, and the first round's billed input reaches the request's row.
+- **A thinking block replayed with its token estimate no longer fails every retry.** Claude Code stores a counter from a
+  streamed thinking delta and replays it, and the vendor refuses it with a 400 that named it. The key is dropped from thinking
+  blocks, and a 400 that names a path into `messages`, `system` or `tools` is sent once and answered with the vendor's own
+  message, not re-sent four times.
+- **Upgrading works where there is no user systemd.** The console's Upgrade starts on macOS, in a container and in a session
+  without a bus: when `systemd-run --user` fails or is absent, the same run starts detached from the daemon, and
+  the reason both failed is said when both do. `splice upgrade` on an install no unit supervises comes back on the new release,
+  not the old one, and systemd-run's complaint about a missing user bus goes to its own log, not the run's output.
+- **A Projects folder typed the way people type paths works.** `~` and `~/work` are the home's folders, in Save, at boot and in
+  the check.
+- **The MCP timeout says whose reply it waits for:** "Cut off a tool call after" is the budget for one request splice forwards
+  to an MCP server.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

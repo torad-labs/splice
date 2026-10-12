@@ -103,7 +103,10 @@ const OUTCOME_WORD = { client_abort: "Stopped in Claude Code", "error:stopped": 
 // A turn splice gave up on after no progress from the model for the limit reads "Given up". splice writes the tag
 // as of V4-444 (CancellationSeal's TotalCap arm, OutcomeTag.TURN_CAP): before that it landed as a plain
 // error:cancelled and a quiet model was indistinguishable from a provider under load.
-OUTCOME_WORD["error:turn-cap"] = "Given up";
+// Its row says why (fin, Marlin, Oct 12): "No output", with no figure. The limit counts only protocol progress and
+// ignores pings (Watchdog.kt:148-150), while up_gap_max_ms counts every event, pings included (UpstreamEventTiming.kt),
+// so a provider that pings while thinking leaves that figure at seconds. The row never shows a guessed number.
+OUTCOME_WORD["error:turn-cap"] = "Given up · No output";
 // THE `failure:` FAMILY CLOSES IN CODE: splice writes `failure:` plus one of seven ErrorType names
 // (TurnOutcome.kt:138-146, OutcomeTags.failure), so all seven are worded here and the reader below rarely fires.
 // Rate limited is the SAME FACT as error:rate-limited and takes the same word, and api_error the same fact as

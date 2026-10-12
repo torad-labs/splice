@@ -242,7 +242,8 @@ public class PerfRoutes(
         names: HeadAccountNames,
     ): JsonObject {
         if (source is ProjectedPerfRowsSource) {
-            return source.projected(asked.since) { projection -> turnsJson(head, projection, asked, names) }
+            val gaps = decisions(head)
+            return source.projected(asked.since) { projection -> turnsJson(head, projection, asked, names, gaps) }
         }
         val read = source.window(asked.since)
         return turnsJson(
@@ -253,14 +254,23 @@ public class PerfRoutes(
             },
             asked,
             names,
+            decisions(head),
         )
     }
+
+    /** One classification for a read's counters and for each row's own figure (TurnPriceGap), priced on one catalog
+     *  snapshot: live() asks splice.toml's stamp, and asking it per row was a file stat per priced row (jstack on desk c,
+     *  Oct 12). */
+    private fun decisions(head: UsageHead): TurnPriceGap =
+        TurnPriceGap(head.statusline.catalog?.live()?.let(::TurnPrice), AccountPlans(head, heads.billing(head.key)))
 
     private fun turnsJson(
         head: UsageHead,
         projection: PerfRowsProjection,
         asked: AskedWindow,
         names: HeadAccountNames,
+        /** The read's pricing decisions, shared with every further question of it, so an ask prices no row twice. */
+        gaps: TurnPriceGap,
     ): JsonObject {
         val read = projection.window
         // an account filter asks by ref, and a row reads its ref and label, whatever value the row was written with
@@ -269,10 +279,6 @@ public class PerfRoutes(
         // The filters narrow the WINDOW, then the clamp takes the newest of what matched: a filter run
         // after the clamp finds nothing older than the slice (V4-444).
         val matching = read.rows.filter(filter::matches)
-        val price = head.statusline.catalog?.let(::TurnPrice)
-        val plans = AccountPlans(head, heads.billing(head.key))
-        // One classification for the window's counters and for each row's own figure (TurnPriceGap).
-        val gaps = TurnPriceGap(price, plans)
         val rows = projection.complete(kept(matching, asked.rows, gaps))
         return buildJsonObject {
             put("key", head.key)
@@ -288,7 +294,7 @@ public class PerfRoutes(
             if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only
             // `count` and `rows` (Settings asks about a hundred such counts) must not pay for figures it drops.
-            if (asked.figures.usage) put("usage", TurnUsage(matching, price, plans, asked.zone, reading).json())
+            if (asked.figures.usage) put("usage", TurnUsage(matching, gaps, asked.zone, reading).json())
             // Over every row of the window the filters matched, never the newest n: a busy command's day is more than n rows.
             if (asked.figures.peak) put("at_once", PerfPeak(matching).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps, asked.tags, reading)) } }
@@ -299,7 +305,7 @@ public class PerfRoutes(
             // Each further question the request carried reads the window already in hand: the cost of a read is the
             // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).
             if (asked.asks.isNotEmpty()) {
-                putJsonArray("asks") { asked.asks.forEach { add(turnsJson(head, projection, it, names)) } }
+                putJsonArray("asks") { asked.asks.forEach { add(turnsJson(head, projection, it, names, gaps)) } }
             }
         }
     }

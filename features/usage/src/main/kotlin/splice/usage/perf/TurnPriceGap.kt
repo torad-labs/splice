@@ -21,6 +21,7 @@ import splice.core.turn.FailureCause
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import java.util.IdentityHashMap
 
 /** Why a request has no dollar figure. [wire] is the console's own word for it. */
 internal enum class PriceGap(val wire: String) {
@@ -65,31 +66,45 @@ private object ProviderRefusal {
 /** One row's price and, when it has none, the reason. Built once per window from the head's own card and
  *  plans, so the window's counters and each row's own figure are the same decision read twice. */
 internal class TurnPriceGap(private val price: TurnPrice?, private val plans: AccountPlans) {
+    // why: each row is decided once per read. The totals, the price order and the row's own three fields each ask for
+    // its cost, value and reason, and each asked again priced the row; a week's Usage read priced every row three times
+    // (jfr on desk c, Oct 12). One instance serves one read, on one thread.
+    private val decided = IdentityHashMap<PerfRow, Decided>()
+
+    /** One row's three answers, read together. */
+    private data class Decided(val value: Double?, val onPlan: Boolean, val gap: PriceGap?)
+
+    private fun decided(row: PerfRow): Decided = decided.getOrPut(row) {
+        val value = price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields, row.ts)
+        val onPlan = row.fields[PerfKeys.LOCAL_STEP] != 1L && !unanswered(row) && plans.covers(row.facts.account)
+        Decided(value, onPlan, gapOf(row, onPlan, value.takeUnless { onPlan }))
+    }
+
     /** The dollars this row billed to a key, or null when [of] has a reason instead. A request on an account with a
      *  plan billed nothing: the plan covered it, so its API-rate figure is [value] and never a cost. */
-    fun usd(row: PerfRow): Double? = if (onPlan(row)) null else value(row)
+    fun usd(row: PerfRow): Double? = decided(row).let { if (it.onPlan) null else it.value }
 
     /** What this row would cost at the API rates on the head's card, whoever paid for it; null with no card or
      *  without both reported token totals. */
-    fun value(row: PerfRow): Double? =
-        price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields, row.ts)
+    fun value(row: PerfRow): Double? = decided(row).value
 
     /** Whether a plan covered this request: its account has a plan (Oct 11, fin: "on your plan" is a fact about the
      *  account, never about the card having no price for the model). A local runtime has none, and a code-mode step
      *  or an unanswered failure sent nothing a plan could cover. */
-    fun onPlan(row: PerfRow): Boolean =
-        row.fields[PerfKeys.LOCAL_STEP] != 1L && !unanswered(row) && plans.covers(row.facts.account)
+    fun onPlan(row: PerfRow): Boolean = decided(row).onPlan
 
     /** Null when [usd] has a figure, and for a code-mode step, which has neither: a reply splice wrote itself
      *  asked no provider, so it has no price AND no reason for the absence. Before V4-444 a step fell through to
      *  "uncounted" on a command that prices its model, or to "plan" on a plan, which read on the Requests list as
      *  a request splice could not price rather than one it never sent. The totals count steps apart
      *  (TurnUsage.Counters.add), so no figure on the page loses its explanation. */
-    fun of(row: PerfRow): PriceGap? = when {
+    fun of(row: PerfRow): PriceGap? = decided(row).gap
+
+    private fun gapOf(row: PerfRow, onPlan: Boolean, usd: Double?): PriceGap? = when {
         row.fields[PerfKeys.LOCAL_STEP] == 1L -> null
         unanswered(row) -> PriceGap.UNANSWERED
-        onPlan(row) -> PriceGap.PLAN
-        usd(row) != null -> null
+        onPlan -> PriceGap.PLAN
+        usd != null -> null
         HeadPriceGap.of(plans.kind) != null -> HeadPriceGap.of(plans.kind)
         declares(row) -> PriceGap.UNCOUNTED
         else -> PriceGap.UNDECLARED

@@ -7,7 +7,6 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.usage.AccountPlanLookup
 import splice.usage.UsageBilling
@@ -19,8 +18,8 @@ import java.time.ZoneId
 /** [reading] groups a login by its ref and names it by its label: no account group is keyed by an email or an id. */
 internal class TurnUsage(
     rows: List<PerfRow>,
-    price: TurnPrice?,
-    plans: AccountPlans,
+    /** The read's own decisions, so a row priced for the totals is the row the list shows, priced once. */
+    gaps: TurnPriceGap,
     zone: ZoneId,
     reading: AccountReading = AccountReading(HeadAccountNames { null }),
 ) {
@@ -33,7 +32,6 @@ internal class TurnUsage(
     private val lastModels = mutableMapOf<String, LastModel>()
 
     init {
-        val gaps = TurnPriceGap(price, plans)
         rows.forEach { row ->
             val cost = gaps.usd(row)
             val value = gaps.value(row).takeIf { gaps.onPlan(row) }

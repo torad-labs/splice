@@ -27,9 +27,10 @@ internal class RequestProjectTags(
     override fun invoke(): ProjectTags {
         val byTag = LinkedHashMap<String, ProjectRef>()
         val unnamed = HashMap<String, SessionRecord>()
+        val places = Places(routes)
         sessions.read().forEach { record ->
             val id = record.sessionId ?: return@forEach
-            routes.projects.of(record)?.let { byTag.putIfAbsent(id.take(REQUEST_TAG_CHARS), it) }
+            places.of(record)?.let { byTag.putIfAbsent(id.take(REQUEST_TAG_CHARS), it) }
             if (record.name.isNullOrBlank()) unnamed.putIfAbsent(id.take(REQUEST_TAG_CHARS), record)
         }
         teams()?.teams().orEmpty().forEach { team ->
@@ -37,6 +38,17 @@ internal class RequestProjectTags(
             team.slots.flatMap { it.sessionsHistory }.forEach { byTag.putIfAbsent(it.take(REQUEST_TAG_CHARS), own) }
         }
         return Snapshot(byTag, unnamed, routes.titleOf)
+    }
+
+    // why: one resolution per folder and head, not per session: each one reads the merged config twice, and a registry
+    // holds thousands of sessions in a few dozen folders (jfr on desk c, Oct 12: a fifth of a Usage read)
+    private class Places(private val routes: SessionsRoutes) {
+        private val known = HashMap<Pair<String, String?>, ProjectRef?>()
+
+        fun of(record: SessionRecord): ProjectRef? = record.process.cwd?.let { cwd ->
+            val place = cwd to record.head
+            if (place in known) known[place] else routes.projects.at(cwd, record.head).also { known[place] = it }
+        }
     }
 
     private class Snapshot(

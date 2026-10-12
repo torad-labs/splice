@@ -7,8 +7,8 @@ private const val NUMERIC_ARRAY_OVERHEAD_BYTES = 64L
 // Covers schema/name-key arrays, lookup indexes, map entry and aligned headers.
 private const val NUMERIC_SCHEMA_OVERHEAD_BYTES = 160L
 
-// why: 20 bytes cover each 8-byte name reference, 4-byte lookup index and aligned array capacity.
-private const val NUMERIC_SCHEMA_FIELD_BYTES = 20L
+// why: 24 bytes cover each 8-byte name reference, 4-byte lookup index, 4-byte name hash and aligned array capacity.
+private const val NUMERIC_SCHEMA_FIELD_BYTES = 24L
 
 // Covers String/backing headers, both name tables, collision nodes and capacity with 64-bit references.
 private const val FIELD_NAME_OVERHEAD_BYTES = 320L
@@ -129,21 +129,36 @@ internal class PerfFieldNames(private val limitBytes: Long, numeric: Collection<
 
 /** Immutable schema identity is an internal storage detail; callers still see an ordinary Map. */
 internal class PerfNumericSchema(val names: List<String>, val shared: Boolean) {
-    private val order = names.indices.sortedBy { names[it] }.toIntArray()
+    // why: ordered by each name's hash, so a lookup compares cached ints and tests one name for equality; a search by
+    // string compares walked every key's characters, and a week's Usage read asks a row for a field ten times or more
+    // (jfr on desk c, Oct 12: the lookup was the read's largest cost)
+    private val order = names.indices.sortedBy { names[it].hashCode() }.toIntArray()
+    private val hashes = IntArray(order.size) { names[order[it]].hashCode() }
     val retainedBytes: Long get() = NUMERIC_SCHEMA_OVERHEAD_BYTES + names.size * NUMERIC_SCHEMA_FIELD_BYTES
 
     fun index(key: String): Int {
+        val hash = key.hashCode()
         var low = 0
-        var high = order.lastIndex
+        var high = hashes.lastIndex
         while (low <= high) {
             val middle = (low + high) ushr 1
-            val index = order[middle]
-            val comparison = names[index].compareTo(key)
             when {
-                comparison < 0 -> low = middle + 1
-                comparison > 0 -> high = middle - 1
-                else -> return index
+                hashes[middle] < hash -> low = middle + 1
+                hashes[middle] > hash -> high = middle - 1
+                else -> return named(key, middle)
             }
+        }
+        return -1
+    }
+
+    /** The field called [key] among the run of equal hashes around [at], or -1 when the hash alone matched. */
+    private fun named(key: String, at: Int): Int {
+        var first = at
+        while (first > 0 && hashes[first - 1] == hashes[at]) first--
+        var position = first
+        while (position < hashes.size && hashes[position] == hashes[at]) {
+            if (names[order[position]] == key) return order[position]
+            position++
         }
         return -1
     }

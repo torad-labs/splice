@@ -403,7 +403,10 @@ async function save() {
   const res = await API.put("/api/topology", { topology: next });
   ui.saving = false;
   if (!res.ok || !res.body?.ok) {
-    ui.said = res.body?.findings?.[0]?.message ?? "Not saved";
+    // the daemon's sentences are for the log; the page says a config finding in fin's word for it, never the sentence
+    const found = res.body?.findings ?? [];
+    if (found.length) console.warn(`models: saving  refused: `);
+    ui.said = found.length ? "Config error" : "Not saved";
     render();
     return;
   }

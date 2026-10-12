@@ -13,6 +13,7 @@ import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.sessions.http.KeptActivity
 import splice.sessions.http.SessionContinue
+import splice.sessions.http.SessionEnd
 import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
@@ -55,6 +56,9 @@ internal class SessionsMount(
         home = UserHome.dir(),
         ledger = wiring.moveLedger,
     )
+
+    /** End: the session closed where it runs, armed by what it would lose (SessionEnd, Marlin's p218 ruling). */
+    private val ends = SessionEnd(wiring.drive, RegistryHandover(sessions, ProcessWaiter()), sessions)
 
     /** V4-444: the console's note to one live session, written to its inbox socket. */
     private val noteRoute = sessions?.let { SessionNoteRoute(it, PeerNoteSocket(fileIo)) }
@@ -120,6 +124,9 @@ internal class SessionsMount(
         }
         route.get("/api/sessions/{id}/screen") {
             guard.guarded(call) { drive.screen(call.parameters["id"].orEmpty()).send(call) }
+        }
+        route.post("/api/sessions/{id}/end") {
+            guard.guarded(call) { ends.endJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
         }
         route.post("/api/sessions/{id}/continue") {
             guard.guarded(call) { continueOn.moveJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }

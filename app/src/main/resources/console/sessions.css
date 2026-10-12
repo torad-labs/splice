@@ -347,3 +347,10 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
   .pgroup, .rested, .sessions div.ended { display: grid; grid-template-columns: subgrid; column-gap: 6.6rem; align-items: stretch; }
   .sessions .list > .fold, .pgroup > .fold { justify-self: start; }
 }
+
+/* End armed in the pane: what ending would lose, then the danger End and Keep running (fin, Marlin p218) */
+.pane .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .8rem 1.4rem; border-bottom: var(--ink-w) solid var(--ink); }
+.pane .armed.end .said { display: inline-flex; align-items: center; gap: .4rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.pane .armed.end .said svg { width: 1rem; height: 1rem; }
+.pane .armed.end .unsent { font: 400 1rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
+.pane .act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }

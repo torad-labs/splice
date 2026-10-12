@@ -18,6 +18,8 @@ import splice.sessions.http.ProjectAt
 import splice.sessions.http.ProjectLookup
 import splice.sessions.http.ProjectOf
 import splice.sessions.http.SentTextSource
+import splice.sessions.http.SessionEnd
+import splice.sessions.http.TeamEnd
 import splice.sessions.http.TeamScreen
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamStart
@@ -57,12 +59,22 @@ internal class TeamsMount(
         home = UserHome.dir(),
     )
 
+    /** End all: every started member ended as its own End would, armed by what any would lose (TeamEnd). */
+    private val endAll = TeamEnd(
+        TeamSource { ports.teams },
+        SessionEnd(wiring.drive, RegistryHandover(sessions, ProcessWaiter()), sessions),
+    )
+
     /** What a member's screen is offering right now, read through Sessions' own drive, launch records included. */
     private val screen = TeamScreen(TeamSource { ports.teams }, wiring.drive)
 
     /** There is deliberately no GET /api/teams/{id}; the board composes from these and /api/sessions. */
     fun register(route: Route) {
         teams?.let { registerTeams(route, it) }
+        // End all: every started member's session ended, the team kept (TeamEnd)
+        route.post("/api/teams/{id}/end") {
+            guard.guarded(call) { endAll.endJson(id(call), call.receiveText()).send(call) }
+        }
     }
 
     private fun registerTeams(route: Route, teams: TeamsRoutes) {

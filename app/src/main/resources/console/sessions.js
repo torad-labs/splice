@@ -23,7 +23,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
+const ui = { ending: new Map(), armedEnd: new Map(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
@@ -483,7 +483,7 @@ function paneHtml() {
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
-    + `<div class="acts">${stop}${cont}${close}</div></header>${failedHtml(s, failed, true)}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
+    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
 }
 
 // A door to a session splice no longer lists, by link or address: its pane says No transcript where the log would be,
@@ -641,6 +641,35 @@ async function stop(s) {
   ui.stopping.delete(s.id);
   const refused = stopRefusal(res);
   if (refused) ui.failed.set(s.id, refused);
+  await reload();
+}
+
+// ---------- End ----------
+// End closes the session where it runs, in any state; Stop only halts a turn and keeps the agent (fin, Marlin p218).
+// With nothing to lose it goes on the first press; a turn mid-work or unsent words arm it, Restart's pattern.
+const endHtml = (s) => !drivable(s) || ui.armedEnd.has(s.id) ? ""
+  : ui.ending.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Ending · ${Math.floor((Date.now() - ui.ending.get(s.id)) / 1000)} s</button>`
+  : `<button class="act" data-act="end" data-s="${esc(s.id)}">End</button>`;
+function armedEndHtml(s) {
+  const armed = ui.armedEnd.get(s.id);
+  if (!armed) return "";
+  const lost = armed.draft != null ? `<span class="said">Unsent</span><span class="unsent">${esc(armed.draft)}</span>`
+    : `<span class="said">${ICON.wait}Working</span>`;
+  return `<div class="armed end">${lost}<button class="act danger" data-act="end-now" data-s="${esc(s.id)}">End</button>` +
+    `<button class="act quiet" data-act="end-keep" data-s="${esc(s.id)}">Keep running</button></div>`;
+}
+async function endSession(s, confirm) {
+  ui.armedEnd.delete(s.id); ui.failed.delete(s.id);
+  ui.ending.set(s.id, Date.now()); render({ stick: false });
+  const tick = setInterval(() => render({ stick: false }), 1000);
+  const res = await API.post(sessionPath(s, "end"), confirm ? { confirm: true } : {});
+  clearInterval(tick); ui.ending.delete(s.id);
+  const why = res.body?.reason;
+  if (!res.ok && why !== "ended") {
+    if (!confirm && why === "working") ui.armedEnd.set(s.id, {});
+    else if (!confirm && why === "draft") ui.armedEnd.set(s.id, { draft: res.body?.draft ?? "" });
+    else { if (res.body?.error) console.warn("end refused:", res.body.error); ui.failed.set(s.id, why === "not_ours" ? "Not ended · Started elsewhere" : "Not ended"); }
+  }
   await reload();
 }
 
@@ -813,6 +842,7 @@ async function send(s, text, clear = false) {
 }
 // Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.armedEnd.size) { ui.armedEnd.clear(); render({ stick: false }); return; }
   if (e.key === "Escape" && ui.open != null && ui.held[ui.open]) { delete ui.held[ui.open]; render({ stick: false }); return; }
   if (e.key === "Escape" && ui.menu) { ui.menu = null; render({ stick: false }); return; }
   if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
@@ -859,6 +889,9 @@ document.addEventListener("click", (e) => {
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.missing = null; ui.auto = false; render(); break;
     case "stop": if (s) stop(s); break;
+    case "end": if (s) endSession(s, false); break;
+    case "end-now": if (s) endSession(s, true); break;
+    case "end-keep": if (s) { ui.armedEnd.delete(s.id); render({ stick: false }); } break;
     case "menu": if (s) openChoices(s); break;
     case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
     case "copy-resume": if (s) { navigator.clipboard?.writeText(ui.failed.get(s.id)?.resume ?? "").catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;

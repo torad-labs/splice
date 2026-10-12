@@ -231,3 +231,13 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .card.m.trust .ask .cmd { margin-top: .6rem; }
 /* "Last screen": the client's screen as splice last read it, opened on his press, in a sunk mono well (fin; hitstop da3d8b2) */
 .slot-acts .screen { flex-basis: 100%; margin: .2rem 0 0; max-height: 18rem; overflow: auto; font: 400 .95rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .7rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* End armed: what ending would lose, then the danger End and Keep running, Restart's pattern on Settings (fin, Marlin p218) */
+.card.m .armed.end, .team-head .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-top: .8rem; }
+.team-head .armed.end { margin-top: 0; }
+.armed.end .said { font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.armed.end .unsent { font: 400 1rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 14rem; min-width: 0; }
+.armed.end .word.working { display: inline-flex; align-items: center; gap: .4rem; }
+.armed.end .chip i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--track-line); }
+.armed.end .chip.live i { background: var(--live); }
+.act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }

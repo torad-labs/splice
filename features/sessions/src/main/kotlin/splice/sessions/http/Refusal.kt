@@ -35,6 +35,9 @@ internal enum class Refusal(val key: String) {
 
     /** The screen no longer shows the choice the page drew under the click, so nothing was pressed. */
     SCREEN_MOVED("screen_moved"),
+
+    /** A turn is running, which ending the session would cut: shown to the person, ended only on his say-so (Marlin). */
+    WORKING("working"),
 }
 
 /** A refusal's reply: its sentence, for the log, and its [Refusal] key when it has one, which is what a page names

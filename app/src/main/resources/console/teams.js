@@ -65,7 +65,7 @@ const state = {
   pending: {},
   error: null, loading: true,
 };
-const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
+const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), ending: new Map(), armedEnd: new Map(), failed: new Map(), stopping: new Set(), answered: new Map() };
 // From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
 // Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
 const ANSWER_HOLD_MS = 30_000;
@@ -345,15 +345,20 @@ function memberHtml(tm, slot) {
   const chip = `<span class="chip">${s && liveNow(s) ? "<i></i>" : ""}${esc(command)}</span>`;
   // the model its session runs, which the sessions route carries; the slot's own only until the session says
   const model = s?.model ? modelLabel(slot.head, s.model) : modelLabel(slot.head, slot.model);
-  if (!s) return vacantHtml(tm, slot, { key, ro, lead, chip, model });
+  if (!s || s.availability === "gone") return vacantHtml(tm, slot, { key, ro, lead, chip, model, ended: Boolean(s) });
   state.stalls[slot.id] = null;
   const L = stallLook(slot, s) ?? stateOf(s);
   const stop = !liveNow(s) || ro ? ""
     : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
     : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
   // a refused Stop leaves the card where it is, Stop back in its place, and the refusal beside it
-  const refused = ui.failed.get(`stop:${key}`);
+  const refused = ui.failed.get(`stop:${key}`) || ui.failed.get(`end:${key}`);
   const refusal = refused ? `<span class="refusal" role="status">${esc(refused)}</span>` : "";
+  // End closes the session in any state, beside Stop, which only halts a turn and keeps the agent (fin, Marlin p218)
+  const ending = ui.ending.get(key);
+  const end = ro || ui.armedEnd.has(key) ? ""
+    : ending ? `<button class="act quiet small stopping" disabled>${ICON.wait}Ending${secsSince(ending) ? ` · ${secsSince(ending)} s` : ""}</button>`
+    : `<button class="act quiet small" data-act="end" data-s="${esc(slot.id)}">End</button>`;
   const now = L.cls === "ended" ? null : lastActivity(slot.id);
   const body = L.cls === "needs" && s.waiting_for ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
   // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
@@ -364,10 +369,22 @@ function memberHtml(tm, slot) {
   const opens = slot.session ? ` go" tabindex="0" data-go="${esc(slot.session)}` : "";
   return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
-    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +
+    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}${end}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` +
-    `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
+    `${body}${armedEndHtml(key, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
+}
+
+const secsSince = (t) => Math.floor((Date.now() - t) / 1000);
+/** End armed: what ending would lose, the Working word or his unsent words verbatim and muted, then the danger End and
+ *  Restart's own no, Keep running. Nothing of ours is said: his words after Unsent say what goes (fin, Marlin p218). */
+function armedEndHtml(key, slotId) {
+  const armed = ui.armedEnd.get(key);
+  if (!armed) return "";
+  const lost = armed.draft != null ? `<span class="said">Unsent</span><span class="unsent">${esc(armed.draft)}</span>`
+    : `<span class="word working">${ICON.wait}Working</span>`;
+  return `<div class="armed end">${lost}<button class="act danger small" data-act="end-now" data-s="${esc(slotId)}">End</button>` +
+    `<button class="act quiet small" data-act="end-keep" data-s="${esc(slotId)}">Keep running</button></div>`;
 }
 
 // ---------- what a waiting member is asking, and answering it where it waits ----------
@@ -439,9 +456,10 @@ const turnsOf = (session) => {
 };
 
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
-function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
+function vacantHtml(tm, slot, { key, ro, lead, chip, model, ended = false }) {
   const failed = ui.failed.get(key), unstarted = ui.unstarted.get(key), asked = state.pending[slot.id];
-  let word = `<span class="word">No session</span>`;
+  // a slot whose session ended reads the word Sessions shows for it; one that never had one, No session (fin)
+  let word = `<span class="word">${ended ? "Ended" : "No session"}</span>`;
   let acts = "";
   let why = "";
   let lamp = `<span class="lamp open" aria-hidden="true"></span>`;
@@ -561,7 +579,17 @@ function feedHtml(tm) {
 function boardHtml(tm) {
   const T = totals(tm);
   const ro = tm.archived;
-  const more = ro ? "" : `<button class="act" data-act="edit">Edit</button>` +
+  // End all: every started member's session ended, the team kept; armed with a chip per member it would cost (fin)
+  const started = tm.slots.filter((x) => { const s = sessOf(x); return s && s.availability !== "gone"; });
+  const tkey = `team:${tm.id}`, armed = ui.armedEnd.get(tkey), endingAll = ui.ending.get(tkey);
+  const endAll = ro || !started.length ? ""
+    : armed ? `<div class="armed end">${armed.members.map((m) => { const x = tm.slots.find((y) => y.id === m.slot);
+        return `<span class="chip${m.reason === "working" ? " live" : ""}" title="${m.reason === "draft" ? esc(`Unsent: ${m.draft || ""}`) : "Working"}"><i aria-hidden="true"></i>${esc(x?.role || m.slot)}</span>`; }).join("")}` +
+      `<button class="act danger small" data-act="end-all-now">End all</button><button class="act quiet small" data-act="end-all-keep">Keep running</button></div>`
+    : endingAll ? `<button class="act quiet small stopping" disabled>${ICON.wait}Ending · ${secsSince(endingAll)} s</button>`
+    : `<button class="act quiet" data-act="end-all">End all</button>`;
+  const allFailed = ui.failed.get(tkey) ? `<span class="refusal" role="status">${esc(ui.failed.get(tkey))}</span>` : "";
+  const more = ro ? "" : allFailed + endAll + `<button class="act" data-act="edit">Edit</button>` +
     `<button class="icon" data-act="more" aria-label="More" aria-expanded="${ui.menu === "more"}">${GLYPH.more}</button>` +
     (ui.menu === "more" ? `<div class="menu"><button data-act="archive">Archive</button></div>` : "");
   const day = `<div class="day"><button class="icon" data-act="day" data-d="1" aria-label="Earlier day"${ui.day >= 6 ? " disabled" : ""}>${GLYPH.back}</button>` +
@@ -784,6 +812,45 @@ function trustHtml(slotId, offer, pressed) {
     `<div class="answers">${acts}</div></div>`;
 }
 
+/** End: the member's session closed where it runs. With nothing to lose it goes on the first press; a turn mid-work or
+ *  unsent words arm the card instead, and the second press ends it anyway. A refusal reads Not ended, its cause in the
+ *  log (fin). */
+async function endSlot(tm, slot, confirm) {
+  const key = `${tm.id}/${slot.id}`;
+  ui.armedEnd.delete(key); ui.failed.delete(`end:${key}`);
+  ui.ending.set(key, Date.now());
+  render();
+  const tick = setInterval(render, 1000);
+  const res = await API.post(`/api/sessions/${slot.session}/end`, confirm ? { confirm: true } : {});
+  clearInterval(tick);
+  ui.ending.delete(key);
+  if (res.ok || res.body?.reason === "ended") { await read(); return; }
+  const why = res.body?.reason;
+  if (!confirm && why === "working") ui.armedEnd.set(key, {});
+  else if (!confirm && why === "draft") ui.armedEnd.set(key, { draft: res.body?.draft ?? "" });
+  else {
+    if (res.body?.error) console.warn(`end ${key}:`, res.body.error);
+    ui.failed.set(`end:${key}`, why === "not_ours" ? "Not ended · Started elsewhere" : "Not ended");
+  }
+  render();
+}
+
+/** End all: every started member ended; armed first with a chip for each member that is working or holds unsent words. */
+async function endTeam(tm, confirm) {
+  const key = `team:${tm.id}`;
+  ui.armedEnd.delete(key);
+  ui.ending.set(key, Date.now());
+  render();
+  const tick = setInterval(render, 1000);
+  const res = await API.post(`/api/teams/${tm.id}/end`, confirm ? { confirm: true } : {});
+  clearInterval(tick);
+  ui.ending.delete(key);
+  if (!confirm && res.status === 409 && res.body?.reason === "costs") ui.armedEnd.set(key, { members: res.body.members || [] });
+  else if (!res.ok) { console.warn(`end all ${tm.id}:`, res.body?.error || res.status); ui.failed.set(key, "Not ended"); }
+  else for (const m of res.body?.members || []) if (m.status >= 400 && m.reason !== "ended") ui.failed.set(`end:${tm.id}/${m.slot}`, m.reason === "not_ours" ? "Not ended · Started elsewhere" : "Not ended");
+  await read();
+}
+
 /** His answer to the question a start stopped on, then the start again on that same terminal: after Yes it waits for
  *  the member to come up, after No the terminal has closed and the slot is given back. */
 async function answerTrust(tm, slot, choice, label) {
@@ -850,6 +917,7 @@ sheet.addEventListener("input", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.armedEnd.size) { ui.armedEnd.clear(); render(); return; }
   if (e.key !== "Escape") return;
   if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
   else if (ui.compose) { ui.compose = null; ui.pick = null; render(); }
@@ -868,6 +936,8 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]");
   const card = e.target.closest(".card[data-go]");
   if (!b && card && !e.target.closest("a, button, input, textarea, select")) { openSession(card); return; }
+  // an armed End is disarmed by a tap anywhere but its own row, as Restart's is (fin)
+  if (ui.armedEnd.size && !e.target.closest(".armed.end")) { ui.armedEnd.clear(); if (!b) { render(); return; } }
   if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; if (!b) { render(); return; } }
   if (!b) {
     if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
@@ -913,6 +983,12 @@ document.addEventListener("click", async (e) => {
     }
     case "answer": await answerSlot(tm, slot, Number(b.dataset.i)); break;
     case "trust": await answerTrust(tm, slot, Number(b.dataset.i), b.dataset.l); break;
+    case "end": await endSlot(tm, slot, false); break;
+    case "end-now": await endSlot(tm, slot, true); break;
+    case "end-keep": ui.armedEnd.delete(`${tm.id}/${slot.id}`); render(); break;
+    case "end-all": await endTeam(tm, false); break;
+    case "end-all-now": await endTeam(tm, true); break;
+    case "end-all-keep": ui.armedEnd.delete(`team:${tm.id}`); render(); break;
     case "screen": { const k = `${tm.id}/${slot.id}`; if (!ui.screenOpen.delete(k)) ui.screenOpen.add(k); render(); break; }
     // the composer
     case "pick": ui.pick = ui.pick?.i === i && ui.pick.what === b.dataset.what ? null : { i, what: b.dataset.what }; render(); break;

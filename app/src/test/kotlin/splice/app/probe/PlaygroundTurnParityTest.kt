@@ -44,7 +44,7 @@ private const val PROMPT = "Say hello and name your model."
 
 /** The one-message turn Claude Code would send with this prompt: what the probe must hand the production builder. */
 private fun onePrompt(model: String): String =
-    """{"model":"$model","max_tokens":1024,"stream":true,""" +
+    """{"model":"$model","max_tokens":1024,"system":"You are a helpful assistant.","stream":true,""" +
         """"messages":[{"role":"user","content":[{"type":"text","text":"$PROMPT"}]}]}"""
 
 private fun topology(root: Path): String = """
@@ -188,6 +188,16 @@ class PlaygroundTurnParityTest {
         for ((name, value) in turn.extraHeaders) {
             assertEquals(value, headers[name.lowercase()], "the turn's own header $name")
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["claudex", "platformy", "chatty", "anthropicy"])
+    fun `every head is sent the same one system line, so no model answers under an instruction another did not get`(
+        key: String,
+        @TempDir root: Path,
+    ) = runTest {
+        val body = bodyOf(sent(root, key))
+        assertTrue(body.contains("You are a helpful assistant."), "the system line in the body sent to $key")
     }
 
     /** The concrete refusal marlin hit: ChatGPT answers 400 "Input must be a list" to a plain-string input. */

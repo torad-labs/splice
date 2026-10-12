@@ -49,8 +49,22 @@ class AddListedModelsTest {
     }
 
     @Test
-    fun `an openai-chat list that cannot be read still refuses the add`() {
-        val checks = AddChecks(TerminalOutput { }, AddHttp { _, _, _, _ -> AddHttpReply(500, "") })
+    fun `an openai-chat server with no model list lets the add go on with the entered models`() {
+        listOf(404, 500).forEach { status ->
+            val checks = AddChecks(TerminalOutput { }, AddHttp { _, _, _, _ -> AddHttpReply(status, "") })
+
+            val verdict = checks.modelsListed(
+                listOf("m"),
+                checks.listedModels(provider(Dialect.OPENAI_CHAT), "chat", env),
+            )
+
+            assertTrue(verdict.ok, "HTTP $status from /models must not refuse the add: $verdict")
+        }
+    }
+
+    @Test
+    fun `an openai-chat server that refuses the credential still stops the add`() {
+        val checks = AddChecks(TerminalOutput { }, AddHttp { _, _, _, _ -> AddHttpReply(401, "") })
 
         val verdict = checks.modelsListed(
             listOf("m"),

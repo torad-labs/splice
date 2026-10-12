@@ -22,6 +22,7 @@ import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.core.wire.HttpStatus
 import splice.oauth.StoredCredential
 import splice.topology.TopologyLoader
 import java.nio.file.Path
@@ -134,19 +135,25 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
      *  cannot serve is [ListedModels.Unreadable]; on openai-responses it does not stop the add. */
     fun listedModels(provider: ProviderConfig, key: String, env: EnvReader): ListedModels {
         if (provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH) return ListedModels.NoCredential
-        val blocking = provider.dialect == Dialect.OPENAI_CHAT
+        // A server with no model list is normal, and the person typed the models themselves, so a missing or
+        // unreadable list never stops an add (Marlin's walk, Oct 12). Only a credential the server refuses on an
+        // openai-chat endpoint does: the key would fail the first request too.
+        val refusesCredential = provider.dialect == Dialect.OPENAI_CHAT
         val url = provider.rosterUrl
         val reply = http("GET", url, credentials.bearer(provider, key, env), null)
         return when {
-            reply == null -> ListedModels.Unreadable("nothing answers at $url", blocking)
-            reply.status != HTTP_OK -> ListedModels.Unreadable("HTTP ${reply.status} from $url", blocking)
-            else -> parsedList(reply.body, url, blocking)
+            reply == null -> ListedModels.Unreadable("nothing answers at $url", blocking = false)
+            reply.status != HTTP_OK -> ListedModels.Unreadable(
+                "HTTP ${reply.status} from $url",
+                blocking = refusesCredential && reply.status in listOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN),
+            )
+            else -> parsedList(reply.body, url)
         }
     }
 
     /** Both envelopes in the wild: `{"data": [...]}` (OpenAI-compatible) and `{"models": [...]}` (the Codex backend,
      *  which names a row by `slug`). */
-    private fun parsedList(body: String, url: String, blocking: Boolean): ListedModels =
+    private fun parsedList(body: String, url: String): ListedModels =
         Cancellables.runCatchingCancellable {
             val root = json.parseToJsonElement(body).jsonObject
             val entries = ((root["data"] ?: root["models"]) as? JsonArray).orEmpty()
@@ -160,7 +167,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             ListedModels.Listed(entries.mapNotNull { rowId(it.jsonObject) }, windows)
         }.fold(
             onSuccess = { it },
-            onFailure = { ListedModels.Unreadable("$url did not answer with a model list", blocking) },
+            onFailure = { ListedModels.Unreadable("$url did not answer with a model list", blocking = false) },
         )
 
     private fun rowId(row: JsonObject): String? =

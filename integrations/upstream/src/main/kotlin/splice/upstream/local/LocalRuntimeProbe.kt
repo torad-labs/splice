@@ -96,12 +96,17 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         when (runtime.kind) {
             LocalRuntimeKind.LM_STUDIO -> get("$root/api/v0/models")?.let { body ->
                 data(body).map { m ->
+                    // An unloaded model reports only its maximum, and LM Studio loads it with its own default window
+                    // (measured: max 32768, loaded 8192), so the maximum is a ceiling, as Ollama's card is. A
+                    // declared row is held to the served window once loaded; an undeclared one takes the maximum last.
+                    val id = JsonScalars.strOrEmpty(m["id"])
                     val loaded = JsonScalars.long(m, "loaded_context_length")?.takeIf { it > 0 }
                     val max = JsonScalars.long(m, "max_context_length")?.takeIf { it > 0 }
                     LocalModel(
-                        JsonScalars.strOrEmpty(m["id"]),
-                        loaded ?: max,
+                        id,
+                        loaded ?: max?.takeIf { id in inferred },
                         JsonScalars.str(m, "state"),
+                        ceiling = max,
                         tools = shapes.reportsTool(m, "tool_use"),
                     )
                 }

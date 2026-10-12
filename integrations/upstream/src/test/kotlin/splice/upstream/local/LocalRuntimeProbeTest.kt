@@ -311,4 +311,27 @@ class LocalRuntimeProbeTest {
         assertFalse(refused.detail.contains("SECRET") || refused.detail.contains("private"), refused.detail)
         assertFalse(refused.detail.contains("\u001b"), refused.detail)
     }
+
+    // An unloaded LM Studio model reports only its maximum; LM Studio loads it with its own default window, so the
+    // maximum is a ceiling until a load says what is served (measured: max 32768, loaded 8192).
+    @Test
+    fun `an unloaded LM Studio model is held to its ceiling and, once loaded, to the window it serves`() {
+        fun lmStudio(row: String) = LocalRuntimeProbe(
+            "http://localhost:1/v1",
+            http(mapOf("GET /api/v0/models" to """{"data":[$row]}""")),
+        )
+        val unloaded = lmStudio("""{"id":"qwen/qwen3-4b","max_context_length":32768,"state":"not-loaded"}""")
+        val listed = unloaded.listed(checkNotNull(unloaded.detect()))
+        val trusted = unloaded.validate(mapOf("qwen/qwen3-4b" to 32768L), listed).single()
+        assertTrue(trusted.ok)
+        assertTrue(trusted.reason.contains("served window unknown until loaded (at most 32768)"), trusted.reason)
+        assertFalse(unloaded.validate(mapOf("qwen/qwen3-4b" to 65536L), listed).single().ok)
+
+        val loaded = lmStudio(
+            """{"id":"qwen/qwen3-4b","max_context_length":32768,"state":"loaded","loaded_context_length":8192}""",
+        )
+        val served = loaded.validate(mapOf("qwen/qwen3-4b" to 32768L), loaded.listed(checkNotNull(loaded.detect())))
+        assertFalse(served.single().ok)
+        assertTrue(served.single().reason.contains("runtime serves 8192"), served.single().reason)
+    }
 }

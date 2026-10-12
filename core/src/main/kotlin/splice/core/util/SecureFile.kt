@@ -8,7 +8,10 @@
 // (JDK-only here), so every provider + app can depend on this.
 package splice.core.util
 
+import java.nio.ByteBuffer
 import java.nio.channels.Channels
+import java.nio.channels.FileChannel
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -127,20 +130,7 @@ public object SecureFile {
         // as its parent instead of null.
         val parent = path.toAbsolutePath().parent
         Files.createDirectories(parent)
-        val tmp = try {
-            Files.createTempFile(parent, ".secure", ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY))
-        } catch (_: UnsupportedOperationException) {
-            // IO-004: no POSIX attribute support at creation — the file briefly exists at default
-            // (often world-readable) perms. Close the window before any content is written: set
-            // owner-only perms first, best-effort (a non-POSIX filesystem has no perms to set, and
-            // the atomic move afterward still holds), THEN write the credential.
-            val fallback = Files.createTempFile(parent, ".secure", ".tmp")
-            Cancellables.discard(
-                Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(fallback, OWNER_ONLY) },
-                "POSIX perms unsupported on this filesystem, so there is nothing to lock down",
-            )
-            fallback
-        }
+        val tmp = ownerOnlyTemp(parent)
         Cancellables.runCatchingCancellable {
             Files.writeString(tmp, content)
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
@@ -159,11 +149,46 @@ public object SecureFile {
 
     /**
      * V4-275: create [path] holding [bytes], owner-only (0600) from the instant it exists, and only
-     * when nothing is there: CREATE_NEW, so a file (or a dangling link) that appeared since the caller
-     * looked is never written through or over; that throws FileAlreadyExistsException. On a non-POSIX
-     * filesystem the mode is best-effort, as in [writeAtomic0600].
+     * when nothing is there: a file (or a dangling link) that appeared since the caller looked is never
+     * written through or over; that throws FileAlreadyExistsException. On a non-POSIX filesystem the
+     * mode is best-effort, as in [writeAtomic0600].
+     *
+     * The name appears whole or not at all (Oct 12, splice-config's spec pass, §1 "failed setup leaves
+     * the previous config usable"): the bytes go to a 0600 sibling, reach the disk, and are then hard-
+     * linked to [path], which is atomic and refuses an existing name. Written in place, a first run
+     * killed mid-write left a partial splice.toml that boot refused and never wrote again. A filesystem
+     * that keeps no hard links falls back to that in-place write.
      */
     public fun createNew0600(path: Path, bytes: ByteArray) {
+        val parent = path.toAbsolutePath().parent
+        val temp = ownerOnlyTemp(parent)
+        try {
+            FileChannel.open(temp, StandardOpenOption.WRITE).use { channel ->
+                channel.write(ByteBuffer.wrap(bytes))
+                channel.force(true)
+            }
+            linkOrWrite(path, temp, bytes)
+        } finally {
+            Cancellables.discard(
+                Cancellables.runCatchingBestEffort { Files.deleteIfExists(temp) },
+                "the sibling is only a staging name; the created file is the link or the in-place write",
+            )
+        }
+    }
+
+    private fun linkOrWrite(path: Path, temp: Path, bytes: ByteArray) {
+        try {
+            Files.createLink(path, temp)
+        } catch (_: UnsupportedOperationException) {
+            createInPlace(path, bytes)
+        } catch (_: FileSystemException) {
+            // The name is taken, or the filesystem refuses link(2) (EPERM on vfat and some mounts). The in-place write
+            // answers both: CREATE_NEW refuses a taken name with FileAlreadyExistsException before writing a byte.
+            createInPlace(path, bytes)
+        }
+    }
+
+    private fun createInPlace(path: Path, bytes: ByteArray) {
         val options = setOf(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
         val channel = try {
             Files.newByteChannel(path, options, PosixFilePermissions.asFileAttribute(OWNER_ONLY))
@@ -172,6 +197,23 @@ public object SecureFile {
         }
         Channels.newOutputStream(channel).use { it.write(bytes) }
     }
+
+    /** An empty owner-only file beside the eventual one in [parent], so a later move or link stays on its volume. */
+    private fun ownerOnlyTemp(parent: Path): Path =
+        try {
+            Files.createTempFile(parent, ".secure", ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY))
+        } catch (_: UnsupportedOperationException) {
+            // IO-004: no POSIX attribute support at creation — the file briefly exists at default
+            // (often world-readable) perms. Close the window before any content is written: set
+            // owner-only perms first, best-effort (a non-POSIX filesystem has no perms to set, and
+            // the atomic move afterward still holds), THEN write the content.
+            val fallback = Files.createTempFile(parent, ".secure", ".tmp")
+            Cancellables.discard(
+                Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(fallback, OWNER_ONLY) },
+                "POSIX perms unsupported on this filesystem, so there is nothing to lock down",
+            )
+            fallback
+        }
 }
 
 /** V4-284: how a directory's entries are read. A port, so a test can fail a listing partway: Files.list

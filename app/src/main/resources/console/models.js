@@ -15,7 +15,7 @@ KNOBS.wire(root, () => render());
 // ---------- what the daemon says ----------
 const data = { heads: [], topo: null, models: [], projects: [], sessions: [], doctor: null, claude: null, accounts: [], profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
-const ui = { view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
+const ui = { sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
   logs: {}, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
 async function readAll() {
@@ -60,7 +60,7 @@ function commandsOf() {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? provKey,
       url: pcfg.base_url ?? "", models, slots, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
-      up: h.running && h.healthy, live: h.running,
+      up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
     };
   });
 }
@@ -71,9 +71,10 @@ function stateOf(c) {
   const bad = mine.find((x) => x.status === "fail" || x.status === "warn");
   if (!c.live) return { state: "stopped", word: "Not started", fix: bad?.fix_id ? { id: bad.fix_id, label: "Start" } : { head: c.key, label: "Start" } };
   if (!bad) return null;
-  const word = bad.id.startsWith("auth/") ? "Signed out" : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
-  const label = bad.id.startsWith("auth/") ? "Sign in" : bad.id === "installation/wrapper" ? "Restore" : "Start";
-  return { state: bad.id, word, fix: bad.fix_id ? { id: bad.fix_id, label } : null };
+  const auth = bad.id.startsWith("auth/"), keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
+  const word = auth ? (keyed ? (refused ? "Credentials refused" : "No key") : "Signed out") : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
+  const label = auth ? (keyed ? (refused ? "Replace key" : "Add key") : "Sign in") : bad.id === "installation/wrapper" ? "Restore" : "Start";
+  return { state: bad.id, word, fix: auth ? { signin: true, label } : bad.fix_id ? { id: bad.fix_id, label } : null };
 }
 const cmdByKey = (k) => commandsOf().find((c) => c.key === k);
 
@@ -100,8 +101,10 @@ const pfile = (name) => `<span class="pfile">${GL.file}<span>${esc(name)}</span>
 
 // ---------- a command's lamp and word ----------
 function look(c) {
+  if (ui.sign?.key === c.key) return { cls: "working", lamp: '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>', word: "Signing in" };
   if (ui.fixing[c.key]) return { cls: "working", lamp: '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>', word: ui.fixing[c.key] };
   const s = stateOf(c);
+  if (ui.keyin?.key === c.key) return { cls: "working", lamp: ICON.signout, word: "Add key" };
   if (s?.state === "stopped") return { cls: "stalled", lamp: GL.notstarted, word: s.word };
   if (s?.state === "installation/wrapper") return { cls: "stalled", lamp: GL.relink, word: s.word };
   if (s) return { cls: "stalled", lamp: ICON.signout, word: s.word };
@@ -109,13 +112,25 @@ function look(c) {
   return { cls: "ready", lamp: "<i></i>", word: "Ready" };
 }
 const order = (cs) => [...cs.filter((c) => stateOf(c)), ...cs.filter((c) => !stateOf(c))];
+function signHtml(c) {
+  const kf = ui.keyin;
+  if (kf?.key === c.key) {
+    return `<div class="outbox"><input class="field code-in" id="k-in" type="password" placeholder="Paste key" autocomplete="off" aria-label="Paste key">`
+      + `<button class="act primary" data-act="savekey">Add</button><button class="act quiet" data-act="cancel-key">Cancel</button>${kf.said ? `<span class="said limit">${esc(kf.said)}</span>` : ""}</div>`;
+  }
+  const sg = ui.sign;
+  if (sg?.key !== c.key) return "";
+  return `<div class="outbox"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Signing in</span></span>`
+    + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
+    + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>`;
+}
 function cardHtml(c) {
   const k = look(c), s = stateOf(c);
-  const fix = s?.fix && !ui.fixing[c.key] ? `<div class="fix"><button class="act primary" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button></div>` : "";
+  const fix = s?.fix && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key ? `<div class="fix"><button class="act primary" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button></div>` : "";
   return `<article class="card h ${k.cls}" style="--c:${colorOf(c.family)}" data-open="${esc(c.key)}" aria-current="${ui.open === c.key && !ui.add}">`
     + `<span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span>`
     + `<div class="top"><span class="chip">${c.running && !s ? "<i></i>" : ""}${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></div>`
-    + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span><span>${esc(c.model)}</span>${c.window ? `<span>${big(c.window)}</span>` : ""}</div>${fix}</article>`;
+    + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span><span>${esc(c.model)}</span>${c.window ? `<span>${big(c.window)}</span>` : ""}</div>${fix}${signHtml(c)}</article>`;
 }
 
 // ---------- the open command: its settings, and its log ----------
@@ -124,6 +139,7 @@ const modeSwitch = (id, mode) => `<div class="switch" role="group">${["append", 
 // the project layers the topology declares for one command: [projects."ROOT".heads.KEY], by project root
 const perOf = (c) => Object.fromEntries(Object.entries(topology().projects ?? {}).map(([root, p]) => [root, p?.heads?.[c.key]]).filter(([, l]) => l)
   .map(([root, l]) => [root, { mode: l.system_prompt_mode ?? "append", text: l.system_prompt ?? "", file: l.system_prompt_file ?? "" }]));
+const homeRel = (p) => (p ?? "").replace(/^(\/home|\/Users)\/[^/]+/, "~");
 const projectOf = (root) => data.projects.find((p) => p.root === root || p.id === root);
 const nameOfRoot = (root) => projectOf(root)?.name ?? root.split("/").filter(Boolean).pop();
 function draftOf(c) {
@@ -148,45 +164,73 @@ function paneHtml() {
   if (!c) return "";
   ui.draft ??= draftOf(c);
   const d = ui.draft, k = look(c), st = draftState(c), s = stateOf(c);
-  const fix = s?.fix && !ui.fixing[c.key] ? `<button class="act primary small" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button>` : "";
+  const fix = s?.fix && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key ? `<button class="act primary small" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button>` : "";
   const head = `<header style="--c:${colorOf(c.family)}"><span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span><div class="who"><div class="top"><span class="name">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></div>`
-    + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span>${fix}</div></div>`
+    + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span>${fix}</div>${signHtml(c)}</div>`
     + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div></header>`;
   const tierRows = TIERS.map((t) => {
     const sel = d.tiers[t], ts = st.tiers[t];
     const items = [`<button role="menuitem" data-act="tier" data-t="${t}" data-v=""><span>None</span></button>`,
       ...c.models.map((x) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"><span>${esc(x.label)}</span><span class="mmeta">${big(x.window)}</span></button>`)].join("");
     const picked = c.models.find((x) => x.id === sel.model);
+    const sends = picked ? null : c.models.find((x) => x.label === c.model);
     const win = sel.model ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
-    return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${sel.model ? "" : " empty"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${esc(picked?.label ?? "None")}${ICON.caret}</button>`
+    return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${sel.model ? "" : " empty"}" title="${sel.model ? "" : "No slot is set: it sends its default"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${esc(picked?.label ?? sends?.label ?? "None")}${ICON.caret}</button>`
       + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${ts.ok ? "" : `<span class="said limit">Not a window</span>`}</div>`;
   }).join("");
   const per = Object.entries(d.per).map(([root, l]) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
     + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove">${GL.close}</button></div>${l.file ? pfile(l.file) : `<textarea class="field ptext" data-ptext="${esc(root)}" rows="2">${esc(l.text)}</textarea>`}</div>`).join("");
   const free = data.projects.filter((p) => !d.per[p.root]);
   const addPer = free.length ? `<div class="menuwrap"><button class="act quiet" data-act="perpick">Add project</button>${ui.pick === "per" ? `<div class="menu">${free.map((p) => `<button data-act="per" data-p="${esc(p.root)}">${esc(p.name)}</button>`).join("")}</div>` : ""}</div>` : "";
-  const saidHtml = ui.said ? `<span class="said${ui.said === "Applied" || ui.said === "Saved" ? "" : " limit"}">${esc(ui.said)}</span>` : "";
-  const restart = ui.said === "Saved" && ui.pending ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
+  const calm = ["Applied", "Saved", "Restarting"].includes(ui.said);
+  const saidHtml = ui.said ? `<span class="said${calm ? "" : " limit"}">${ui.said === "Restarting" ? ICON.wait : ""}${esc(ui.said)}</span>` : "";
+  const restart = "";
   const form = `<section class="form">`
     + `<span class="lbl">Sends to</span><div class="ctl"><span class="urlread">${esc(c.url)}</span></div>`
-    + tierRows
+    + `<span class="lbl"></span><div class="ctl"><span class="said">When Claude Code asks for a tier, ${esc(c.cmd)} sends</span></div>` + tierRows
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
-    + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save</button>${saidHtml}${restart}</div></section>`;
+    + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save and restart splice</button>${saidHtml}${restart}</div></section>`;
   const lines = logsOf(c.key);
-  const log = `<section class="hlog"><h3>Log</h3><ol>${(lines ?? []).map((l) => `<li><time>${esc(l.at)}</time><span>${esc(l.text)}</span></li>`).join("")}</ol></section>`;
+  const ev = eventsOf(lines ?? []);
+  const raw = (lines ?? []).filter((l) => l.text).slice(-60).reverse();
+  const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(e.at)}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">Nothing to report</p>`}`
+    + `<details class="rawlog"><summary>Raw log</summary><ol>${raw.map((l) => `<li><time>${esc(l.at)}</time><span>${esc(l.text)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
 // daemon.log lines: "[2026-10-12 04:12:52] [claudex] text"; the log is already this command's, so its tag drops
 function parseLog(lines) {
   return lines.map((raw) => {
-    const m = /^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\]\s*(?:\[[^\]]+\]\s*)?(.*)$/.exec(raw);
-    return m ? { at: m[2], text: m[3] } : { at: "", text: raw };
+    const m = /^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\]\s*(?:\[([^\]]+)\]\s*)?(.*)$/.exec(raw);
+    return m ? { at: m[2], tag: m[3] ?? "", text: m[4] } : { at: "", tag: "", text: raw };
   });
 }
+const EVENTS = [
+  [/did not answer with (JSON|a model list)|no list was kept/, "Model list not read"],
+  [/model list (read|loaded)|discovered \d+ model/i, "Model list read"],
+  [/signed out|not signed in|login required/i, "Signed out"],
+  [/credentials? (refused|rejected)/i, "Credentials refused"],
+  [/rate.?limited/i, "Rate limited"],
+  [/command not found/i, "Command not found"],
+  [/\b(head )?(started|booted)\b|listening on/i, "Started"],
+  [/\bstopped\b|shut ?down/i, "Stopped"],
+];
+const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b/i;
+function eventsOf(lines) {
+  const folded = new Map();
+  for (const l of lines) {
+    if (REQUEST_LINE.test(l.text)) continue;
+    const hit = EVENTS.find(([re]) => re.test(l.text));
+    if (!hit) continue;
+    const e = folded.get(hit[1]) ?? { text: hit[1], at: l.at, n: 0 };
+    e.n += 1; e.at = l.at;
+    folded.set(hit[1], e);
+  }
+  return [...folded.values()].sort((a, b) => b.at.localeCompare(a.at));
+}
 async function readLog(key) {
-  const res = await API.get(`/api/logs/${encodeURIComponent(key)}?tail=40`);
-  ui.logs[key] = res.ok ? parseLog(res.body?.lines ?? []) : [];
+  const res = await API.get(`/api/logs/${encodeURIComponent(key)}?tail=2000`);
+  ui.logs[key] = res.ok ? parseLog(res.body?.lines ?? []).filter((l) => l.tag === key) : [];
   render();
 }
 
@@ -247,16 +291,16 @@ async function save() {
     render();
     return;
   }
-  ui.pending = res.body.restart_required;
-  ui.said = ui.pending ? "Saved" : "Applied";
   ui.draft = null;
+  if (res.body.restart_required) { await restartSplice(); return; }
+  ui.said = "Applied";
   await readAll();
   render();
 }
 async function restartSplice() {
   ui.said = "Restarting"; render();
   const res = await API.post("/api/daemon/restart");
-  if (!res.ok) { ui.said = "Not restarted"; render(); return; }
+  if (!res.ok) { ui.said = "Not restarted"; ui.draft = null; render(); return; }
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const up = await API.get("/api/heads");
@@ -274,7 +318,8 @@ function everyHtml() {
     const body = rows.map((x) => {
       const r = x.rates;
       const price = r ? `<td class="num">${usd(r.input ?? r.i)}</td><td class="num">${usd(r.output ?? r.o)}</td>` : `<td class="num unpriced" colspan="2">No price</td>`;
-      return `<tr><td class="mname">${esc(x.label)}</td><td class="num">${big(x.window)}</td>${price}</tr>`;
+      const lc = r?.long_context ? `<tr class="tier"><td></td><td class="num">${big(r.long_context.over_input_tokens)}+</td><td class="num">${usd(r.long_context.input)}</td><td class="num">${usd(r.long_context.output)}</td></tr>` : "";
+      return `<tr><td class="mname">${esc(x.label)}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
     }).join("");
     return `<tbody style="--c:${colorOf(c.family)}"><tr class="grp"><td colspan="4"><span class="chip">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></td></tr>${body}</tbody>`;
   }).join("");
@@ -298,7 +343,7 @@ function projectsHtml() {
   const cs = commandsOf();
   const c = cs.find((x) => x.key === ui.projCmd) ?? cs[0];
   loadProject(p.id);
-  const list = ps.map((x) => `<button class="proj-tab" data-act="proj" data-p="${esc(x.id)}" aria-current="${x.id === p.id}"><span class="pname">${esc(x.name)}</span><span class="ppath">${esc(x.place ?? x.root ?? "")}</span></button>`).join("");
+  const list = ps.map((x) => `<button class="proj-tab" data-act="proj" data-p="${esc(x.id)}" aria-current="${x.id === p.id}"><span class="pname">${esc(x.name)}</span><span class="ppath" title="${esc(x.root ?? "")}"><bdo dir="ltr">${esc(x.place ?? homeRel(x.root))}</bdo></span></button>`).join("");
   if (!c) return `<div class="projects"><nav class="proj-list">${list}</nav><p class="none">No commands</p></div>`;
   const got = ui.files[p.id] ?? { files: [], compaction: [] };
   const mine = got.files.filter((f) => !f.head || f.head === c.key);
@@ -312,7 +357,7 @@ function projectsHtml() {
   };
   const open = mine.find((f) => `${f.kind}:${f.path}` === ui.file);
   const files = `<section class="pblock">${kind("instructions", "Instructions")}${kind("memory", "Memory")}${open ? `<pre class="ftext">${esc(open.text)}</pre>` : ""}</section>`;
-  const chips = `<div class="cmdpick">${cs.map((x) => `<button class="chip${x.key === c.key ? " on" : ""}" style="--c:${colorOf(x.family)}" data-act="projcmd" data-h="${esc(x.key)}" aria-pressed="${x.key === c.key}">${esc(x.cmd)}</button>`).join("")}</div>`;
+  const chips = `<div class="cmdpick"><span class="clabel">As run by</span>${cs.map((x) => `<button class="chip${x.key === c.key ? " on" : ""}" style="--c:${colorOf(x.family)}" data-act="projcmd" data-h="${esc(x.key)}" aria-pressed="${x.key === c.key}">${esc(x.cmd)}</button>`).join("")}</div>`;
   const projTopo = (topology().projects ?? {})[p.root] ?? {};
   const layers = [
     { who: `<span class="chip" style="--c:${colorOf(c.family)}">${esc(c.cmd)}</span>`, ...c.prompt },
@@ -329,7 +374,7 @@ function projectsHtml() {
     ? `<ol class="ladder">${rows.map((r, i) => `<li class="${i === lit ? "lit" : ""}"><span class="rung"></span><span class="rname">${esc(r.scope)}</span>${i === lit ? `<span class="rfile">${esc(r.source)}</span>${r.chars === 0 ? `<span class="rempty">Empty</span>` : ""}` : ""}</li>`).join("")}</ol>`
     : `<p class="none">Claude Code's own</p>`;
   const bar = c.window ? `<div class="winbar" style="--c:${colorOf(c.family)}"><div class="bar"><span class="tick" style="left:85%"></span></div><span class="wlabel">${big(c.window)}</span></div>` : "";
-  const right = `<div class="proj"><header><h2>${esc(p.name)}</h2><span class="ppath">${esc(p.place ?? p.root ?? "")}</span></header>${files}`
+  const right = `<div class="proj"><header><h2>${esc(p.name)}</h2><span class="ppath" title="${esc(p.root ?? "")}"><bdo dir="ltr">${esc(p.place ?? homeRel(p.root))}</bdo></span></header>${files}`
     + `<section class="pblock">${chips}<div class="twin"><div><h3>System prompt</h3>${stack}</div><div><h3>Compaction</h3>${ladder}${bar}</div></div></section></div>`;
   return `<div class="projects"><nav class="proj-list">${list}</nav>${right}</div>`;
 }
@@ -341,9 +386,9 @@ function claudeHtml() {
   const through = m === "wrapped";
   const can = Boolean(data.claude.shim_path);
   const said = ui.claudeSaid ? `<span class="said limit">${esc(ui.claudeSaid)}</span>` : "";
-  return `<span class="clabel">claude</span><div class="switch" role="group">`
+  return `<span class="clabel">Your claude command</span><div class="switch" role="group">`
     + `<button data-act="claude" data-v="wrap" aria-pressed="${through}"${can ? "" : " disabled"}>Through splice</button>`
-    + `<button data-act="claude" data-v="unwrap" aria-pressed="${!through}"${can ? "" : " disabled"}>Direct</button></div>${said}`;
+    + `<button data-act="claude" data-v="unwrap" aria-pressed="${!through}"${can ? "" : " disabled"}>Straight to Anthropic</button></div>${said}`;
 }
 async function setClaude(v) {
   const res = await API.post(`/api/claude-head/${v}`);
@@ -358,7 +403,9 @@ function viewsHtml() {
 }
 
 // ---------- a new command: a template, what it asks, its sign-in, splice's checks, then Save and the restart ----------
-const askable = (p) => p.name !== "claude" || !data.heads.some((h) => h.key === p.head_key);
+const tplName = (p) => PROVIDER_NAME[PROVIDER_FAMILY[p.head_key] ?? p.head_key] ?? (p.name === "local" ? "Local model" : p.name === "api-key" ? "Other provider" : p.name);
+const second = (p) => Boolean(p.command) && taken(p);
+const commandFor = (p, a) => (p.command ? (second(p) ? `${p.command}-${a.name.trim()}` : p.command) : a.name.trim() ? `claude-${a.name.trim()}` : "");
 const taken = (p) => p.command && data.heads.some((h) => h.label === p.command || h.key === p.head_key);
 function addPaneHtml() {
   const a = ui.add;
@@ -366,18 +413,17 @@ function addPaneHtml() {
   const head = `<header style="--c:${p ? colorOf(PROVIDER_FAMILY[p.head_key] ?? p.head_key) : "var(--key-light)"}"><div class="who"><div class="top"><span class="name">New command</span></div></div>`
     + `<div class="acts"><button class="icon close" data-act="cancel-add" aria-label="Close">${GL.close}</button></div></header>`;
   if (!p) {
-    const tiles = data.profiles.filter(askable).map((x) => {
+    const tiles = data.profiles.map((x) => {
       const fam = PROVIDER_FAMILY[x.head_key] ?? x.head_key, off = taken(x);
-      const label = PROVIDER_NAME[fam] ?? (x.name === "local" ? "Local model" : x.name === "api-key" ? "Other provider" : x.name);
-      return `<button class="pick tpl" style="--c:${colorOf(fam)}" data-act="tpl" data-t="${esc(x.name)}"${off ? " disabled" : ""}><span class="blot"></span><span class="tname">${esc(label)}</span>`
-        + `${off ? `<span class="said">Added</span>` : ""}<span class="chip ghost">${esc(x.command || "claude-…")}</span></button>`;
+      return `<button class="pick tpl" style="--c:${colorOf(fam)}" data-act="tpl" data-t="${esc(x.name)}"><span class="blot"></span><span class="tname">${esc(tplName(x))}</span>`
+        + `${off ? `<span class="said">Added</span>` : ""}${x.command ? `<span class="chip">${esc(x.command)}</span>` : ""}</button>`;
     }).join("");
     return `<div class="pane add-pane">${head}<div class="body"><div class="tpls">${tiles}</div></div></div>`;
   }
   const asks = (k) => p.asks.includes(k);
   const field = (id, lbl, val, extra = "") => `<label class="lbl" for="${id}">${lbl}</label><div class="ctl"><input class="field" id="${id}" value="${esc(val)}" spellcheck="false" autocomplete="off" ${extra}></div>`;
   let f = "";
-  if (asks("name")) f += field("a-name", "Name", a.name);
+  if (asks("name") || second(p)) f += field("a-name", "Name", a.name);
   if (asks("base_url")) f += field("a-url", "URL", a.url);
   if (p.requires_key || (p.auth_kind === "api-key" && p.asks.length)) f += field("a-key", "Key", a.key, 'type="password"');
   if (asks("models")) {
@@ -386,24 +432,43 @@ function addPaneHtml() {
     f += `<span class="lbl"></span><div class="ctl col"><div class="mrow labels"><span>Model</span><span>Window</span></div>${rows}<button class="act quiet" data-act="addrow">Add model</button></div>`;
   }
   const fam = PROVIDER_FAMILY[p.head_key] ?? p.head_key;
-  const cmd = p.command || (a.name ? `claude-${a.name}` : "");
-  const headRow = `<div class="tplhead"><span class="blot"></span><span class="tname">${esc(PROVIDER_NAME[fam] ?? p.name)}</span><span class="chip${cmd ? "" : " ghost"}">${esc(cmd || "claude-…")}</span></div>`;
-  const checks = a.checks ? `<ol class="checks">${a.checks.map((c) => `<li class="${c.ok ? "pass" : "fail"}"><span class="lamp ${c.ok ? "ready" : "stalled"}">${c.ok ? "<i></i>" : GL.notstarted}</span><span class="cname">${esc(c.name)}</span>${c.ok ? "" : `<span class="said limit">${esc(c.detail ?? "")}</span>`}</li>`).join("")}</ol>` : "";
+  const cmd = commandFor(p, a);
+  const headRow = `<div class="tplhead"><span class="blot"></span><span class="tname">${esc(tplName(p))}</span>${cmd ? `<span class="chip">${esc(cmd)}</span>` : ""}</div>`;
+  const checks = a.checks ? `<ol class="checks">${a.checks.map((c) => {
+    const soft = !c.ok && SOFT.has(c.name);
+    const cls = c.ok ? "ready" : soft ? "unchecked" : "stalled";
+    const mark = c.ok ? "<i></i>" : soft ? "<i></i>" : GL.notstarted;
+    const word = c.ok ? "" : `<span class="said${soft ? "" : " limit"}">${esc(failWordOf(c, p))}</span>`;
+    return `<li class="${c.ok ? "pass" : "fail"}"><span class="lamp ${cls}">${mark}</span><span class="cname">${esc(c.name === "credential" && /oauth|login|sign/i.test(p.auth_kind) ? "Sign-in" : CHECK_NAME[c.name] ?? c.name)}</span>${word}</li>`;
+  }).join("")}</ol>` : "";
   const sg = a.sign;
   const sign = sg ? `<div class="outbox"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Signing in</span></span>`
     + `${sg.code ? `<button class="usercode" data-act="copy-code">${esc(sg.code)}</button><span class="code-hint">Enter this code on the sign-in page</span>` : ""}`
     + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>` : "";
   const said = a.said ? `<span class="said limit">${esc(a.said)}</span>` : "";
-  const ready = (!asks("name") || a.name.trim()) && (!asks("base_url") || a.url.trim()) && (!asks("models") || a.rows.some((r) => r.id.trim()));
+  const ready = ((!asks("name") && !second(p)) || a.name.trim()) && (!asks("base_url") || a.url.trim()) && (!asks("models") || a.rows.some((r) => r.id.trim()));
   const foot = `<div class="foot"><button class="act primary" data-act="add"${ready && !a.busy ? "" : " disabled"}>${a.busy ? "Adding" : "Add"}</button><button class="act quiet" data-act="cancel-add">Cancel</button>${said}</div>`;
   return `<div class="pane add-pane" style="--c:${colorOf(fam)}">${head}<div class="body">${headRow}${f ? `<section class="form">${f}</section>` : ""}${checks}${sign}${foot}</div></div>`;
 }
+const CHECK_NAME = { credential: "Key", "base url": "URL", models: "Models", windows: "Windows", "live turn": "Live request" };
+function failWordOf(c, p) {
+  const d = c.detail ?? "", http = /HTTP (\d{3})/.exec(d);
+  console.warn(`add check ${c.name}: ${d}`);
+  if (c.name === "credential") return /oauth|login|sign/i.test(p.auth_kind) ? "Signed out" : "No key";
+  if (c.name === "base url") return "No answer";
+  if (c.name === "models") return http ? `HTTP ${http[1]}` : /did not answer with a model list|not a list/i.test(d) ? "No list" : /not listed|missing/i.test(d) ? "Not listed" : "No answer";
+  if (c.name === "windows") return "Too large";
+  return http ? `HTTP ${http[1]}` : "No answer";
+}
+// a runtime that keeps no model list is normal: its rows are the picker
+const SOFT = new Set(["models"]);
 const failWord = (r) => (r.status === 409 ? "Already added" : "Not added");
 async function startAdd() {
   const a = ui.add, p = data.profiles.find((x) => x.name === a.profile);
   a.busy = true; a.said = null; a.checks = null; render();
   const body = { profile: p.name };
-  if (p.asks.includes("name")) body.name = a.name.trim();
+  if (p.asks.includes("name") || second(p)) body.name = a.name.trim();
+  if (second(p)) body.command = commandFor(p, a);
   if (p.asks.includes("base_url")) body.base_url = a.url.trim();
   if (p.asks.includes("models")) body.models = a.rows.filter((r) => r.id.trim()).map((r) => ({ id: r.id.trim(), context_window: parseWindow(r.win) ?? undefined }));
   const res = await API.post("/api/add", body);
@@ -421,10 +486,10 @@ async function signIn() {
   a.sign = { code: null, url: null };
   render();
   const res = await API.post(`/api/add/${encodeURIComponent(a.id)}/login`, {});
-  if (!res.ok) { a.sign = null; a.busy = false; a.said = "Not signed in"; render(); return; }
+  if (!res.ok) { a.sign = null; a.busy = false; a.said = "Not completed"; render(); return; }
   for (let i = 0; i < 300 && a.sign; i++) {
     const st = (await API.get(`/api/add/${encodeURIComponent(a.id)}`)).body?.sign_in ?? {};
-    if (st.state === "failed") { a.sign = null; a.busy = false; a.said = "Not signed in"; render(); return; }
+    if (st.state === "failed") { a.sign = null; a.busy = false; a.said = "Not completed"; render(); return; }
     if (st.state === "signed_in" || st.state === "live_after_restart") { a.sign = null; await verifyAndSave(); return; }
     const url = st.verification_uri || st.browser_url || null;
     if (url !== a.sign.url || (st.user_code || null) !== a.sign.code) { a.sign = { code: st.user_code || null, url }; render(); }
@@ -435,7 +500,7 @@ async function verifyAndSave() {
   const a = ui.add;
   const v = await API.post(`/api/add/${encodeURIComponent(a.id)}/verify`, {});
   a.checks = v.body?.checks ?? [];
-  if (!v.ok || a.checks.some((c) => !c.ok)) { a.busy = false; a.said = null; render(); return; }
+  if (!v.ok || a.checks.some((c) => !c.ok && !SOFT.has(c.name))) { a.busy = false; a.said = null; render(); return; }
   render();
   const s = await API.post(`/api/add/${encodeURIComponent(a.id)}/save`, {});
   if (!s.ok) { a.busy = false; a.said = "Not added"; render(); return; }
@@ -454,10 +519,38 @@ async function verifyAndSave() {
 }
 function dropAdd() { if (ui.add?.id && !ui.add.saved) API.del(`/api/add/${encodeURIComponent(ui.add.id)}`); }
 
+async function saveKey() {
+  const kf = ui.keyin, c = cmdByKey(kf.key), field = document.getElementById("k-in");
+  const env = topology().providers?.[c.provKey]?.auth?.env, value = field?.value.trim();
+  if (!env || !value) { kf.said = "Not saved"; render(); return; }
+  const res = await API.put(`/api/keys/${encodeURIComponent(env)}`, { value });
+  if (!res.ok) { kf.said = "Not saved"; render(); return; }
+  ui.keyin = null;
+  await readAll();
+  render();
+}
+async function signinCommand(key) {
+  const c = cmdByKey(key);
+  if (/key/i.test(c.auth)) { ui.keyin = { key, said: null }; render(); document.getElementById("k-in")?.focus(); return; }
+  ui.sign = { key, code: null, url: null };
+  render();
+  const res = await API.post(`/api/auth/${encodeURIComponent(key)}/login`, {});
+  if (!res.ok || !res.body?.id) { ui.sign = null; ui.said = "Not completed"; render(); return; }
+  const sg = ui.sign;
+  for (let i = 0; i < 300 && ui.sign === sg; i++) {
+    const st = (await API.get(`/api/auth/${encodeURIComponent(key)}/login/${encodeURIComponent(res.body.id)}`)).body ?? {};
+    if (st.state === "failed") { ui.sign = null; ui.said = "Not completed"; render(); return; }
+    if (st.state === "signed_in" || st.state === "live_after_restart") { ui.sign = null; await readAll(); render(); return; }
+    const url = st.verification_uri || st.browser_url || null;
+    if (url !== sg.url || (st.user_code || null) !== sg.code) { Object.assign(sg, { url, code: st.user_code || null }); render(); }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
 // ---------- the fix splice offers: Start, Sign in, Restore ----------
 async function fix(key) {
   const c = cmdByKey(key), s = stateOf(c);
   if (!s?.fix) return;
+  if (s.fix.signin) { signinCommand(key); return; }
   ui.fixing[key] = s.fix.label === "Start" ? "Starting" : s.fix.label === "Restore" ? "Restoring" : "Signing in";
   render();
   const res = s.fix.id ? await API.post(`/api/doctor/fix/${encodeURIComponent(s.fix.id)}`, {}) : await API.post(`/api/heads/${encodeURIComponent(key)}/start`, {});
@@ -513,9 +606,11 @@ function onClick(e) {
     case "tpl": a.profile = d.t; render(); break;
     case "addrow": a.rows.push({ id: "", win: "" }); render(); document.getElementById(`a-m${a.rows.length - 1}`)?.focus(); break;
     case "add": startAdd(); break;
-    case "open-signin": if (a?.sign?.url) window.open(a.sign.url, "_blank", "noopener"); break;
-    case "copy-code": navigator.clipboard?.writeText(a.sign.code).catch(() => {}); break;
-    case "cancel-signin": a.sign = null; a.busy = false; render(); break;
+    case "open-signin": { const sg = a?.sign ?? ui.sign; if (sg?.url) window.open(sg.url, "_blank", "noopener"); break; }
+    case "copy-code": navigator.clipboard?.writeText((a?.sign ?? ui.sign).code).catch(() => {}); break;
+    case "savekey": saveKey(); break;
+    case "cancel-key": ui.keyin = null; render(); break;
+    case "cancel-signin": if (a?.sign) { a.sign = null; a.busy = false; } else ui.sign = null; render(); break;
     case "tierpick": ui.pick = ui.pick === `tier:${d.t}` ? null : `tier:${d.t}`; render(); break;
     case "tier": {
       const c = cmdByKey(ui.open), m = c.models.find((x) => x.id === d.v);
@@ -569,6 +664,6 @@ async function init() {
   else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
   render();
   if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
-  setInterval(async () => { if (!ui.draft && !ui.add && !ui.saving && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
+  setInterval(async () => { if (!ui.draft && !ui.add && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
 }
 init();

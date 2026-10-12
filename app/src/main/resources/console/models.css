@@ -185,5 +185,18 @@
 /* the command that shares this address: the fork, then its chip, one unit */
 .also { display: inline-flex; align-items: center; gap: .45rem; color: var(--text-mute); }
 .also svg { width: 1.5rem; height: 1.5rem; flex: none; }
-.hlog ol { max-height: 26rem; overflow-y: auto; }
+
 .proj-tab { min-width: 0; } .proj-tab .ppath, .proj > header .ppath { overflow-wrap: anywhere; line-height: 1.3; }
+
+/* round two: what the page says it is */
+.add-pane { height: auto !important; position: static !important; }
+.cmds:not(.open) .list { max-width: 64rem; }
+.every { max-width: 84rem; }
+.lbl.head2 { color: var(--text-mute); }
+.proj-tab .ppath, .proj > header .ppath { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
+.cmdpick .clabel { align-self: center; font-size: 1rem; color: var(--text-mute); }
+.rawlog { margin-top: 1.2rem; }
+.rawlog summary { cursor: pointer; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.rawlog ol { margin-top: .9rem; max-height: 26rem; overflow-y: auto; }
+.said .wait { width: 1.3rem; height: 1.3rem; vertical-align: middle; margin-right: .5rem; }
+.said .wait circle { stroke: var(--live); }

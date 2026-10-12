@@ -18,6 +18,7 @@ public object PerfProjectedKeys {
         PerfKeys.UP_GAP_MAX_MS,
         PerfKeys.UP_GAP_MAX_START_EPOCH_MS,
         PerfKeys.ADMIT_WAIT_MS,
+        PerfKeys.ADMIT_HELD_MS,
         PerfKeys.INFLIGHT,
         PerfKeys.REANCHORS,
         PerfKeys.REANCHORS_FROM_SCRATCH,

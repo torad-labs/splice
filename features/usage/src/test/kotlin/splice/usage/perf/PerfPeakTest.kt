@@ -22,15 +22,19 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 
 class PerfPeakTest {
-    private fun row(ts: Long, total: Long, waited: Long = 0L) = PerfRow(
+    private fun row(ts: Long, total: Long, waited: Long = 0L, held: Long? = null) = PerfRow(
         ts = ts,
         outcome = "ok",
-        fields = mapOf("total" to total, "admit_wait_ms" to waited),
+        fields = mapOf("total" to total, "admit_wait_ms" to waited) +
+            listOfNotNull(held?.let { "admit_held_ms" to it }),
     )
 
     // Five requests overlap early in a day that holds 2,500: the newest 2,000 do not include them.
     private val day = List(5) { row(10_000L + it, total = 1_000) } +
-        List(2_495) { row(100_000L + it * 10L, total = 1, waited = if (it == 7) 1L else 0L) }
+        List(2_495) {
+            // every third passed an open gate in 1 ms; only one was held behind a full limit
+            row(100_000L + it * 10L, total = 1, waited = if (it % 3 == 0) 1L else 0L, held = if (it == 7) 40L else null)
+        }
 
     private fun answer(rows: List<PerfRow>, query: String): kotlinx.serialization.json.JsonObject {
         val head = UsageHead(
@@ -66,7 +70,11 @@ class PerfPeakTest {
             atOnce.getValue("counted").jsonPrimitive.content,
             "every row of the window, not the newest 2,000",
         )
-        assertEquals("1", atOnce.getValue("queued").jsonPrimitive.content, "the one that waited in line")
+        assertEquals(
+            "1",
+            atOnce.getValue("queued").jsonPrimitive.content,
+            "the one the gate held; a 1 ms pass through an open gate is not waiting",
+        )
     }
 
     @Test

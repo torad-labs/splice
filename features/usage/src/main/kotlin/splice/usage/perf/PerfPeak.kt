@@ -15,7 +15,9 @@ import splice.core.perf.PerfKeys
  * counts first, so two back-to-back requests are one at a time and never two.
  */
 internal class PerfPeak(private val rows: List<PerfRow>) {
-    /** The peak, the first instant it was reached, the requests counted and how many of them waited in line. */
+    /** The peak, the first instant it was reached, the requests counted and how many of them the gate HELD because the
+     *  limit was full (ADMIT_HELD_MS). A pass through an open gate records a wait of a millisecond or so and is not
+     *  waiting: on his Oct 12 day 1,151 rows carried such a wait under a peak of 33 and a limit of 100 (Marlin). */
     private data class Reading(val peak: Int, val at: Long, val counted: Int, val queued: Int)
 
     private fun read(): Reading {
@@ -34,7 +36,7 @@ internal class PerfPeak(private val rows: List<PerfRow>) {
                 at = slot.at
             }
         }
-        return Reading(peak, at, rows.size, rows.count { (it.fields[PerfKeys.ADMIT_WAIT_MS] ?: 0L) > 0L })
+        return Reading(peak, at, rows.size, rows.count { PerfKeys.ADMIT_HELD_MS in it.fields })
     }
 
     private data class Slot(val at: Long, val step: Int)

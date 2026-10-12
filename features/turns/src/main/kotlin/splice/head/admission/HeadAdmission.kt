@@ -47,7 +47,7 @@ internal class HeadAdmission(
         val perf = telemetry.begin(arrivalAt)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
-        telemetry.markAdmitted(perf, t0)
+        telemetry.markAdmitted(perf, t0, slot.heldMs)
         // A detached compaction takes the slot with it (TurnStreamer.driveDetachable): the drive
         // releases it when the upstream turn ends, not this call when its client has gone. The flag
         // is this call's from the start, never a return value: the drive's cancelled-call path

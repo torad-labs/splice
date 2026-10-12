@@ -752,6 +752,8 @@ class AdmissionTimingTest {
         }
         assertEquals(HttpStatusCode.OK, client.post("/probe").status)
         assertEquals(307L, perf.snapshot().counters[PerfKeys.ADMIT_WAIT_MS])
+        // the fresh permit sat in the gate's queue behind a full limit, so the request waited in line
+        assertTrue(PerfKeys.ADMIT_HELD_MS in perf.snapshot().counters)
         assertEquals(90L, perf.snapshot().counters[PerfKeys.PREP_MS])
         assertEquals(0L, perf.snapshot().marks[PerfKeys.GATE], "the legacy gate origin stays fixed")
         perf.firstClientByte()

@@ -30,8 +30,11 @@ internal class AdmissionTelemetry(
         }
     }
 
-    fun markAdmitted(perf: TurnPerf, waitingSince: Long = clock()) {
+    /** [heldMs] is the gate's own answer: how long it held this request behind a full limit, or null when it went
+     *  straight in. Only a held request carries ADMIT_HELD_MS, the field "Waited in line" counts. */
+    fun markAdmitted(perf: TurnPerf, waitingSince: Long = clock(), heldMs: Long? = null) {
         perf.setCount(PerfKeys.ADMIT_WAIT_MS, clock() - waitingSince)
+        if (heldMs != null) perf.setCount(PerfKeys.ADMIT_HELD_MS, heldMs)
         perf.mark(PerfKeys.GATE)
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
         perf.setCount(PerfKeys.ASYNC_IO_DROPS, AsyncFileIo.droppedCount().toLong())

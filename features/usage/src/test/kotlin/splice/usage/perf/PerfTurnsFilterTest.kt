@@ -47,13 +47,14 @@ class PerfTurnsFilterTest {
         ts = 5_000L,
         outcome = "error:rate-limited",
         session = "s2",
-        fields = mapOf(PerfKeys.ADMIT_WAIT_MS to 1_200L),
+        fields = mapOf(PerfKeys.ADMIT_WAIT_MS to 1_200L, PerfKeys.ADMIT_HELD_MS to 1_200L),
     )
     private val unknown = row(
         ts = 6_000L,
         outcome = "?",
         session = "s1",
-        fields = mapOf(PerfKeys.UP_GAP_MAX_MS to 5_000L),
+        // a 1 ms pass through an open gate: recorded as a wait, never as a hold, so never "waited in line"
+        fields = mapOf(PerfKeys.UP_GAP_MAX_MS to 5_000L, PerfKeys.ADMIT_WAIT_MS to 1L),
         compact = true,
     )
     private val bare = PerfRow(ts = 7_000L, outcome = "ok", fields = emptyMap())
@@ -307,7 +308,8 @@ class PerfTurnsFilterTest {
         assertEquals(emptyList<Long>(), stamps(above), "a floor over every silence finds none")
         assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1")), "the one request splice re-anchored")
         assertEquals(2_008L, count(ask(client, "resumed=0")), "every other request, a row with no counter included")
-        assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1&silence_ms=1&queued_ms=0")), "the floors stack")
+        assertEquals(listOf(9_300L), stamps(ask(client, "resumed=1&silence_ms=1")), "the floors stack")
+        assertEquals(1L, count(ask(client, "queued_ms=0")), "only the request the gate held, even at a floor of 0")
         val over = ask(client, "started_over=1")
         assertEquals(listOf(9_300L), stamps(over), "the one round splice re-posted verbatim")
         assertEquals(2_008L, count(ask(client, "started_over=0")), "every request that started over nothing")

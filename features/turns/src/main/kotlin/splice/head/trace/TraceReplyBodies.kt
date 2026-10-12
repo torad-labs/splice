@@ -74,6 +74,7 @@ internal class TraceReplyBodies(private val heap: HeapReservations = JvmHeap.bud
         put("first_byte", end.marks[PerfKeys.FIRST_BYTE])
         put("first_delta", end.marks[PerfKeys.FIRST_DELTA])
         put("admit_wait_ms", end.counters[PerfKeys.ADMIT_WAIT_MS])
+        put("admit_held_ms", end.counters[PerfKeys.ADMIT_HELD_MS])
         put("in_tokens", end.counters[PerfKeys.IN_TOKENS])
         put("out_tokens", end.counters[PerfKeys.OUT_TOKENS])
         put("cached_tokens", end.counters[PerfKeys.CACHED_TOKENS])

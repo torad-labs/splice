@@ -186,7 +186,7 @@ const REQVIEW = (() => {
       // a silence splice waited out, as the stretch it was, and a resume where the stream broke and splice re-sent: from the
       // partial answer, or the round over from scratch
       const quiet = r.silent ? `<span class="quiet${r.silentFrom / total > .6 ? " late" : ""}" style="left:${pct(r.silentFrom)};width:${pct(r.silent)}"><span>Waited out ${secs(r.silent)}</span></span>` : "";
-      // the wait for a free slot, before splice sent it (admit_wait_ms)
+      // the time the gate held it behind a full limit, before splice sent it (admit_held_ms)
       const line = r.queued ? `<span class="quiet" style="left:0;width:${pct(r.queued)}"><span>Waited in line ${secs(r.queued)}</span></span>` : "";
       // a resume ends the silence before it, so both labels would stand at one place: the resume's goes a line higher
       const resumed = r.resumed ? `<span class="resume${r.resumedAt / total > .6 ? " late" : ""}${r.silent ? " stack" : ""}" style="left:${pct(r.resumedAt)}"><span>${r.resumedFresh ? "Started over" : "Resumed"}</span></span>` : "";

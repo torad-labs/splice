@@ -374,7 +374,8 @@ function mapRow(head, row) {
     account: row.account ?? null, compact: row.compact === true,
     attempts: row.attempts ?? 0, retries: row.retries ?? 0,
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
-    queued: row.admit_wait_ms ?? 0,
+    // how long the gate held it behind a full limit, null when it went straight in (a 1 ms pass is not waiting)
+    queued: row.admit_held_ms ?? null,
     silent: waited ? waited.ms : 0, silentFrom: waited ? waited.at - started : 0,
     resumed, resumedAt: resumed && waited ? waited.at + waited.ms - started : 0, resumedFresh: fresh, stallMs: stall,
     // the cache-write figure is LEFT OUT when the row carries none, like the other two: a refused request reports no
@@ -444,7 +445,7 @@ const oneLine = (text) => String(text ?? "").replace(/\\+[nrt]/g, " ").replace(/
 
 function mapHit(head, hit) {
   const row = {
-    ts: hit.ts, total: hit.total, first_byte: hit.first_byte, first_delta: hit.first_delta, admit_wait_ms: hit.admit_wait_ms,
+    ts: hit.ts, total: hit.total, first_byte: hit.first_byte, first_delta: hit.first_delta, admit_wait_ms: hit.admit_wait_ms, admit_held_ms: hit.admit_held_ms ?? undefined,
     in_tokens: hit.in_tokens, out_tokens: hit.out_tokens, cached_tokens: hit.cached_tokens, cache_write_tokens: hit.cache_write_tokens,
     outcome: hit.outcome ?? "ok", model: hit.model, session: hit.session, compact: hit.compact, attempts: hit.attempts,
     turn: hit.turn, cost_usd: hit.cost_usd, cost_reason: hit.cost_usd == null ? "uncounted" : null,

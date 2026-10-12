@@ -181,7 +181,7 @@ public class InflightGate(
     /** A delivered permit becomes a live slot: counted, its wait added when it queued, and listed
      *  until it is released. Only a caller that got its permit reaches here. */
     private fun deliver(waitedMs: Long?): Slot {
-        val slot = Slot(this, clock)
+        val slot = Slot(this, clock, heldMs = waitedMs)
         synchronized(lock) {
             acquired += 1
             if (waitedMs != null) {
@@ -318,6 +318,10 @@ public class InflightGate(
         private val gate: InflightGate,
         private val clock: ElapsedClock,
         private val original: Slot? = null,
+        /** How long the gate HELD this request because its command's limit was full, or null when it went straight
+         *  in. A pass through an open gate is not waiting, however long the clock says it took: only a request that
+         *  sat in the queue has a hold. A borrowed handle reuses a permit already held, so it has none of its own. */
+        public val heldMs: Long? = null,
     ) {
         private val released = AtomicBoolean(false)
         private val state: InflightSlotState = original?.state ?: InflightSlotState(clock)

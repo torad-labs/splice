@@ -23,7 +23,8 @@ internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("ac
  *  or a flag, and each reads the counter the turn already recorded:
  *
  *   [silenceMs]   the longest upstream silence this request sat through (UP_GAP_MAX_MS), at or over this
- *   [queuedMs]    how long it waited for a free slot at its command's limit (ADMIT_WAIT_MS), at or over this
+ *   [queuedMs]    how long the gate HELD it because its command's limit was full (ADMIT_HELD_MS), at or over this;
+ *                 a request that went straight in carries no hold and never matches, even at 0 (Marlin, Oct 12)
  *   [resumed]     whether splice re-anchored it at all (REANCHORS), true for the ones it did and false for the rest
  *   [startedOver] whether any of those re-anchors re-posted the request verbatim (REANCHORS_FROM_SCRATCH), which is
  *                 a round STARTED OVER rather than an answer resumed from its partial
@@ -39,7 +40,7 @@ internal data class TurnsWaits(
 ) {
     fun matches(row: PerfRow): Boolean = listOf(
         silenceMs == null || counted(row, PerfKeys.UP_GAP_MAX_MS) >= silenceMs,
-        queuedMs == null || counted(row, PerfKeys.ADMIT_WAIT_MS) >= queuedMs,
+        queuedMs == null || (row.fields[PerfKeys.ADMIT_HELD_MS] ?: -1L) >= queuedMs,
         resumed == null || (counted(row, PerfKeys.REANCHORS) > 0) == resumed,
         startedOver == null || (counted(row, PerfKeys.REANCHORS_FROM_SCRATCH) > 0) == startedOver,
         test == null || test.matches(row, silenceMs),

@@ -42,6 +42,8 @@ internal class AdmittedTurn(
                 admission.acquireFreshSlotOrRespond(call, TurnEnd(::releaseMaterialized))
             } ?: return false
             slot = fresh
+            // a fresh permit the gate held behind a full limit is a wait in line too
+            fresh.heldMs?.let { perf.setCount(PerfKeys.ADMIT_HELD_MS, it) }
             replaced = true
             true
         } finally {

@@ -53,6 +53,7 @@ import kotlin.time.Duration.Companion.seconds
 private const val TIMING_WAIT_MS = 300L
 private const val TIMING_TIMEOUT_MS = 10_000L
 private const val ADMIT_KEY = "admit_wait_ms"
+private const val HELD_KEY = "admit_held_ms"
 private const val LEASE_KEY = "lease_wait_ms"
 private const val PREP_KEY = "prep_ms"
 private const val CLIENT_BYTE_KEY = "arrival_to_first_client_byte_ms"
@@ -100,6 +101,10 @@ class RequestStartTimingTest {
                 assertTrue(second.await().contains("message_stop"))
                 val row = timingRow(root)
                 assertTrue(duration(row, ADMIT_KEY) >= TIMING_WAIT_MS, row.toString())
+                // the gate held it behind the first, so it waited in line; the first went straight in and did not
+                assertTrue(duration(row, HELD_KEY) >= TIMING_WAIT_MS, row.toString())
+                val straight = timingRow(root, "blocked")
+                assertTrue(HELD_KEY !in straight, "a pass through an open gate is not waiting: $straight")
                 assertTrue(duration(row, CLIENT_BYTE_KEY) >= duration(row, ADMIT_KEY), row.toString())
                 duration(row, LEASE_KEY)
                 duration(row, PREP_KEY)

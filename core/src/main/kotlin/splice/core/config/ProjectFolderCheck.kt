@@ -7,9 +7,23 @@ import splice.core.util.PathProbe
 import java.nio.file.Files
 
 public object ProjectFolderCheck {
-    /** Whether [folder] is a directory this process can read. */
+    /** Whether [entry] names a place from the root: an absolute path, or one from the home as `~` or `~/...`. */
+    public fun absolute(entry: String): Boolean =
+        entry.trim().let { it.startsWith("/") || it == "~" || it.startsWith("~/") }
+
+    /** [entry] as the filesystem spells it: a leading `~` is the home folder, any other spelling is kept. The one
+     *  expansion boot, Save and the resolver share, so they agree on which folder was typed. */
+    public fun expanded(entry: String): String = entry.trim().let { typed ->
+        when {
+            typed == "~" -> UserHome.dir().toString()
+            typed.startsWith("~/") -> UserHome.dir().resolve(typed.substring(2)).toString()
+            else -> typed
+        }
+    }
+
+    /** Whether [folder], spelled as typed, is a directory this process can read. */
     public fun found(folder: String): Boolean =
-        PathProbe.spelled(folder)?.let { Files.isDirectory(it) && Files.isReadable(it) } == true
+        PathProbe.spelled(expanded(folder))?.let { Files.isDirectory(it) && Files.isReadable(it) } == true
 
     /** The sentence naming the first entry of the colon-separated [raw] that is not a readable folder, or null. */
     public fun refusal(raw: String): String? =

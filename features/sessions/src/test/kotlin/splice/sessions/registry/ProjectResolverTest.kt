@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.UserHome
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -57,6 +58,19 @@ class ProjectResolverTest {
             Files.createDirectories(main.resolve("features/deep")),
             projects.resolve("mythos"),
         ).forEach { assertEquals(expected, resolver.of(it.toString()), it.toString()) }
+    }
+
+    @Test
+    fun `a Projects folder typed with a tilde is the home work folder, shown back as typed`() {
+        val home = tmp.toRealPath()
+        val work = Files.createDirectories(home.resolve("work"))
+        val billing = repo(work.resolve("billing-api"))
+        UserHome.within(home) {
+            val project = resolver(home, listOf("~/work")).of(billing.toString())
+            val id = work.resolve("billing-api").toString()
+            val expected = ProjectRef(id, "billing-api", "billing-api", ProjectSource.FOLDER, "~/work")
+            assertEquals(expected, project)
+        }
     }
 
     @Test

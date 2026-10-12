@@ -221,7 +221,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // A Projects folder is an ABSOLUTE path: a relative one names a different folder per process, so it is refused by
         // name (the same reject log, doctor row, PATCH answer and boot finding as every other bad value).
         knob == Knob.PROJECTS_FOLDERS -> coerceString(raw)
-            ?.takeIf { text -> text.split(':').all { it.trim().startsWith("/") } }
+            ?.takeIf { text -> text.split(':').all(ProjectFolderCheck::absolute) }
         else -> when (knob.kind) {
             KnobKind.BOOL -> coerceBool(raw)
             KnobKind.NUMBER -> coerceNumber(knob, raw)

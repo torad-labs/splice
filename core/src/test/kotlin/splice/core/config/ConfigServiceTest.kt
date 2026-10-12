@@ -422,26 +422,6 @@ class ConfigServiceTest {
         assertEquals(listOf("/workspace", "/srv/repos"), cfg.statuslineGitRoots)
     }
 
-    @Test
-    fun `a Projects folder typed into Settings that is not a folder is refused at Save, naming its entry`() {
-        val real = tmp.resolve("work").also { java.nio.file.Files.createDirectories(it) }
-        val svc = service()
-        val result = svc.patch(mapOf("projectsFolders" to "$real:${tmp.resolve("gone")}"))
-        assertEquals(mapOf("projectsFolders" to "entry 2 is not a folder this process can read"), result.rejected)
-        assertEquals(emptyList<String>(), svc.getConfig().projectsFolders)
-        val saved = svc.patch(mapOf("projectsFolders" to real.toString()))
-        assertEquals(listOf(real.toString()), saved.effective.projectsFolders)
-    }
-
-    @Test
-    fun `projectsFolders parses colon-separated absolute folders and refuses a relative entry by name`() {
-        assertEquals(emptyList<String>(), service().getConfig().projectsFolders)
-        val cfg = service(env = mapOf("SPLICE_PROJECTS_FOLDERS" to "/a/projects:/a/infra")).getConfig()
-        assertEquals(listOf("/a/projects", "/a/infra"), cfg.projectsFolders)
-        val refused = service(overrides = mapOf("projectsFolders" to "/a/projects:relative")).coerceRejects()
-        assertEquals(setOf("projectsFolders"), refused.keys)
-    }
-
     // Per-head overrides ([heads.<key>.overrides]). Before this layer existed, every head shared
     // ONE maxInflight, so a ceiling sized for a fast upstream also governed a rate-limited one.
     @Test

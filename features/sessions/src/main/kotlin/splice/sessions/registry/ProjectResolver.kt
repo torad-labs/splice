@@ -16,6 +16,7 @@
 // every configured folder; in repo mode they are the repos this resolver has been asked about.
 package splice.sessions.registry
 
+import splice.core.config.ProjectFolderCheck
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.core.util.PathProbe
@@ -59,7 +60,7 @@ internal class ProjectResolver(
     /** Each folder as its realpath, so a symlinked cwd lands where the operator meant. */
     private val spelledAs = HashMap<Path, String>()
     private val roots: List<Path> = folders.mapNotNull { raw ->
-        val real = PathProbe.spelled(raw)?.let { PathProbe.resolved(it) ?: it.normalize() }
+        val real = PathProbe.spelled(ProjectFolderCheck.expanded(raw))?.let { PathProbe.resolved(it) ?: it.normalize() }
         real?.also { spelledAs.putIfAbsent(it, raw) }
     }
     private val seen = LinkedHashMap<String, Pair<String, String?>>()

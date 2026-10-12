@@ -25,7 +25,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
 
 /** The launch tuple that IS a hosted server's identity: same tuple, same process. */
 public data class McpServerSpec(
@@ -87,17 +86,14 @@ public class McpSharing(
     /** Read at plan time, never cached: the key may be minted after this object exists. */
     private val bearer: McpBearer,
     private val isDirectory: DirectoryProbe = DirectoryProbe { Files.isDirectory(Path.of(it)) },
+    /** The launch tuples a hosted copy has seen asking its client for roots, kept across restarts by the daemon. */
+    private val rootsBound: McpRootsVerdicts = McpRootsVerdicts(),
 ) {
-    /** Launch tuples (command, args, env) a hosted copy has asked for its client's roots. */
-    private val rootsBound: MutableSet<List<Any>> = ConcurrentHashMap.newKeySet()
-
     /** A hosted server asked its client for roots, so it depends on them: no later plan shares its launch tuple,
      *  and every session from the next on starts its own copy, as for a server that names a project directory. */
     public fun rootsAsked(spec: McpServerSpec) {
-        rootsBound.add(launchTuple(spec))
+        rootsBound.record(spec)
     }
-
-    private fun launchTuple(spec: McpServerSpec): List<Any> = listOf(spec.command, spec.args, spec.env)
 
     public fun plan(global: JsonObject, headKey: String? = null): McpPlan {
         if (!enabled) {
@@ -146,7 +142,7 @@ public class McpSharing(
     ): McpServerSpec? {
         val entry = Entry(element as? JsonObject)
         val spec = entry.command?.let { McpServerSpec(name, it, entry.args, entry.env) }
-        val rejection = rejection(name, entry) ?: spec?.takeIf { launchTuple(it) in rootsBound }?.let {
+        val rejection = rejection(name, entry) ?: spec?.takeIf(rootsBound::asked)?.let {
             Rejected("asks the client for its roots (project-scoped)", McpWhy("roots"))
         }
         return if (rejection == null && spec != null) {

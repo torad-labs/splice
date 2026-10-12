@@ -42,6 +42,7 @@ import splice.app.provider.ProviderAssembly
 import splice.app.sources.PerfSourceFiles
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.McpAccessKey
+import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
 import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeAcrossHeads
@@ -270,12 +271,7 @@ internal class ControlPlane(
         // is the one production read of the knob — the accessor had no consumer before V4-110.
         if (config.getConfig().debug) log("[daemon] debug logging enabled\n")
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
-        val sharing = McpSharing(
-            enabled = mcpHosting.enabled,
-            exclude = mcpHosting.exclude,
-            endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
-            bearer = McpAccessKey(mgmtKey::get),
-        )
+        val sharing = mcpSharing(controlPort)
         val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
         val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() })
         // The request cap is asked for at every request, not resolved here once: the console's own PATCH of
@@ -403,6 +399,16 @@ internal class ControlPlane(
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
     private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
         heads.entries.firstOrNull { it.value.launchSpec?.gateway?.port == port }?.key
+
+    /** The daemon's one MCP sharing planner. §8 8c: a server seen asking for roots stays per-session after a restart,
+     *  so no session loses it mid-work; the verdicts live in the state dir. */
+    private fun mcpSharing(controlPort: Int): McpSharing = McpSharing(
+        enabled = mcpHosting.enabled,
+        exclude = mcpHosting.exclude,
+        endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
+        bearer = McpAccessKey(mgmtKey::get),
+        rootsBound = McpRootsVerdicts(statePaths.stateDir.resolve("mcp-roots-bound"), log),
+    )
 
     /** V4-146: one McpGlobalRead instance for both the rewrite pipeline and the census — a second
      *  one would double the "malformed"/"unreadable" diagnostics on the same file. Split out of

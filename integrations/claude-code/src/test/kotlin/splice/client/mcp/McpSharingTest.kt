@@ -4,9 +4,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
 
 class McpSharingTest {
 
@@ -156,5 +160,35 @@ class McpSharingTest {
         assertTrue(plan.passthrough.getValue("rootpair").contains("--root repo"))
         assertTrue(plan.passthrough.getValue("dir").contains("--dir x"))
         assertTrue(plan.passthrough.getValue("slash").contains("src/server.js"))
+    }
+
+    // §8 8c: a server seen asking for its client's roots stays unshared after a restart, so the first session after
+    // one launches its own copy instead of losing a shared one mid-work. A changed argument is a new tuple, probed
+    // again, and the file holds digests, never an env value.
+    @Test
+    fun `a roots verdict survives a restart and a changed tuple is probed again`(@TempDir dir: Path) {
+        val file = dir.resolve("mcp-roots-bound")
+        fun started() = McpSharing(
+            enabled = true,
+            exclude = emptySet(),
+            endpointPrefix = "http://127.0.0.1:1/mcp/",
+            bearer = { "K" },
+            isDirectory = DirectoryProbe { false },
+            rootsBound = McpRootsVerdicts(file),
+        )
+        val before = started()
+        before.rootsAsked(before.plan(global).hosted.getValue("exa"))
+
+        val restarted = started()
+        val plan = restarted.plan(global)
+        assertEquals("roots", plan.why.getValue("exa").key)
+        assertTrue(plan.passthrough.getValue("exa").contains("roots"))
+        assertEquals(global.getValue("exa"), plan.rewritten.getValue("exa"))
+
+        val changed = Json.parseToJsonElement(
+            """{"exa": {"command": "npx", "args": ["-y", "exa-mcp@2"], "env": {"EXA_API_KEY": "k"}}}""",
+        ).jsonObject
+        assertEquals(setOf("exa"), restarted.plan(changed).hosted.keys)
+        assertFalse(Files.readString(file).contains("EXA_API_KEY"))
     }
 }

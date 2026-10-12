@@ -19,7 +19,8 @@ import splice.configuration.add.AddPrompter
 import splice.configuration.add.AddVerb
 import splice.configuration.add.DaemonRestart
 import splice.configuration.add.DaemonUpProbe
-import splice.configuration.add.LocalWindows
+import splice.configuration.add.LocalRowsAnswer
+import splice.configuration.add.LocalRuntimeRows
 import splice.configuration.add.WrapperInstall
 import splice.core.config.InstallPaths
 import splice.core.terminal.TerminalOutput
@@ -62,7 +63,7 @@ internal object AddWiring {
             liveTurn = CommandLiveTurn(),
             doctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
         ),
-        localWindows = RuntimeWindows(),
+        localRows = RuntimeRows(),
     )
 
     /** V4-220 item 3: `splice add` as the console runs it — its own sign-in sessions, the wrapper linked
@@ -75,7 +76,7 @@ internal object AddWiring {
             install = LinkerInstall(InstallCommand(lines, lines)),
             env = EnvReader(System::getenv),
             output = lines,
-            localWindows = RuntimeWindows(),
+            localRows = RuntimeRows(),
         )
     }
 
@@ -85,16 +86,20 @@ internal object AddWiring {
     )
 }
 
-/** The local runtime's own window per row, asked through the probe the boot check uses (LocalProbeInputs), so `splice add`
- *  and boot read one answer: the served window when the runtime reports one, else an Ollama card's ceiling. */
-internal class RuntimeWindows : LocalWindows {
-    override fun invoke(baseUrl: String, ids: Set<String>): Map<String, Long> {
+/** The local runtime's answer about an add's rows, through the probe boot uses (LocalProbeInputs), so `splice add` and boot
+ *  refuse the same rows: validate()'s verdicts refuse (tool support, the card ceiling only while the served window is
+ *  unknown, a generic server's one listed row trusted), and the served windows are only shown (splice-providers, Oct 12). */
+internal class RuntimeRows : LocalRuntimeRows {
+    override fun invoke(baseUrl: String, rows: Map<String, Long?>): LocalRowsAnswer {
         val probe = LocalRuntimeProbe(baseUrl, JdkLocalHttp())
-        val listed = probe.detect()?.let { runtime -> probe.models(runtime, ids) }.orEmpty()
-        return ids.mapNotNull { id ->
+        val runtime = probe.detect() ?: return LocalRowsAnswer()
+        val listed = probe.models(runtime, rows.keys) ?: return LocalRowsAnswer()
+        val windows = rows.keys.mapNotNull { id ->
             val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
-            (model?.contextLength ?: model?.ceiling)?.takeIf { it > 0 }?.let { id to it }
+            model?.contextLength?.takeIf { it > 0 }?.let { id to it }
         }.toMap()
+        val refused = probe.validate(rows, listed, runtime.kind).filterNot { it.ok }.associate { it.id to it.reason }
+        return LocalRowsAnswer(windows, refused)
     }
 }
 

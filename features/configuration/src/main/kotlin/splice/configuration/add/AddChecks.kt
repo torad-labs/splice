@@ -72,7 +72,7 @@ internal sealed class ListedModels {
 internal class AddChecks(
     output: TerminalOutput,
     private val http: AddHttp = JdkAddHttp(),
-    private val localWindows: LocalWindows = LocalWindows { _, _ -> emptyMap() },
+    private val localRows: LocalRuntimeRows = LocalRuntimeRows { _, _ -> LocalRowsAnswer() },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val presence = CredentialPresence(output)
@@ -92,13 +92,21 @@ internal class AddChecks(
             env
         }
         val listed = listedModels(c.provider, c.key, checkEnv)
-        val served = { p: ProviderConfig -> localWindows(p.baseUrl, p.models.map { row -> row.id }.toSet()) }
+        val runtime = if (local) {
+            localRows(c.provider.baseUrl, c.provider.models.associate { row -> row.id to row.contextWindow })
+        } else {
+            LocalRowsAnswer()
+        }
+        val refused = runtime.refused.entries.joinToString("; ") { (id, why) -> "$id: $why" }
         return listOf(
             credential(c, env),
             reachable(c.provider.baseUrl),
             modelsListed(c.models, listed, c.resolved.policy.listAuthoritative),
-            modelWindows(c.provider.models, if (local) listed.withServed(served(c.provider)) else listed),
-        ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null)
+            modelWindows(c.provider.models, listed.withServed(runtime.windows)),
+        ) + listOfNotNull(
+            refused.ifEmpty { null }?.let { AddCheck("local runtime", false, "the runtime refuses $it") },
+            if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null,
+        )
     }
 
     /** The well-known local runtime endpoints that answer a model list right now, in the order they are probed.

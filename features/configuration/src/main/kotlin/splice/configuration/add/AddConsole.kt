@@ -95,9 +95,9 @@ public class AddConsole(
     install: WrapperInstall,
     private val env: EnvReader,
     private val output: TerminalOutput,
-    localWindows: LocalWindows = LocalWindows { _, _ -> emptyMap() },
+    localRows: LocalRuntimeRows = LocalRuntimeRows { _, _ -> LocalRowsAnswer() },
 ) {
-    private val checks = AddChecks(output, localWindows = localWindows)
+    private val checks = AddChecks(output, localRows = localRows)
 
     // No terminal: every question takes its default, so a profile that ships no models refuses
     // ("no models: ...") instead of waiting on a prompt nobody sees.

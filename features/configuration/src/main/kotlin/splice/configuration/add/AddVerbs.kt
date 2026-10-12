@@ -15,9 +15,9 @@ public class AddVerb(
     output: TerminalOutput,
     errors: TerminalOutput,
     ports: AddPorts,
-    localWindows: LocalWindows = LocalWindows { _, _ -> emptyMap() },
+    localRows: LocalRuntimeRows = LocalRuntimeRows { _, _ -> LocalRowsAnswer() },
 ) {
-    private val command = AddCommand(output, errors, AddChecks(output, localWindows = localWindows), ports)
+    private val command = AddCommand(output, errors, AddChecks(output, localRows = localRows), ports)
     private val runtime = RuntimeHeadAdd(output, command)
 
     /** True when the head was saved and is reachable as printed; false leaves splice.toml unchanged

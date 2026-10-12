@@ -35,11 +35,18 @@ public fun interface DaemonRestart {
     public operator fun invoke(): Boolean
 }
 
-/** What a user-managed local runtime at [baseUrl] reports as the window of each row in [ids] it serves, read from the
- *  runtime's own answer (Ollama's /api/show and /api/ps, LM Studio's /api/v0/models), which a plain /v1/models leaves
- *  out. A row it does not report is absent; nothing answering is an empty map. */
-public fun interface LocalWindows {
-    public operator fun invoke(baseUrl: String, ids: Set<String>): Map<String, Long>
+/** A user-managed local runtime's answer about the rows an add declares: the window it serves for each row it reports
+ *  one for ([windows], shown beside the declaration), and the rows its own rules refuse ([refused], id to the reason): a
+ *  window past what it allows, a model it says cannot call tools. Nothing answering is an empty answer. */
+public data class LocalRowsAnswer(
+    public val windows: Map<String, Long> = emptyMap(),
+    public val refused: Map<String, String> = emptyMap(),
+)
+
+/** Asks the runtime at [baseUrl] about [rows], id to the declared window (null when none is declared), the way boot asks
+ *  it (LocalRuntimeProbe), since a plain /v1/models leaves the window out on Ollama and LM Studio. */
+public fun interface LocalRuntimeRows {
+    public operator fun invoke(baseUrl: String, rows: Map<String, Long?>): LocalRowsAnswer
 }
 
 /** The result of checking the newly written command, without exposing its raw output. */

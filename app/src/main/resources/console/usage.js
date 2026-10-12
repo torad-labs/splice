@@ -223,7 +223,7 @@ const keyRecord = (label) => {
  *  as it always did, so the page changes by itself the moment the daemon serves the ref. */
 const planRowOf = (head, label) => S.accounts.find((a) => (a.heads || []).includes(head) && a.kind !== "api-key"
   && (a.ref ? a.ref === label : [a.account?.email, a.account_labels?.[head], a.selector_key, a.label, a.display_name].some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
-const planName = (row, fallback) => (row.ref ? row.label : row.account?.email || row.display_name || fallback || "");
+const planName = (row, fallback) => (row.ref ? row.display_name : row.account?.email || row.display_name || fallback || "");
 /** An account as every page names it: a plan by its name, a key by its variable and the day splice first saw it. */
 function acctLabel(head, label, name) {
   const plan = planRowOf(head, label);

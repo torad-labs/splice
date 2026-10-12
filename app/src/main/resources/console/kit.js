@@ -218,6 +218,16 @@ const stopRefusal = (res) => {
 // know it, and `String(undefined)` prints "undefined" on the screen as though splice knew that. Caught by
 // splice-builder3 reading teams.js against this file (Oct 10, 2026) before it reached a page.
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// WHAT IS NOT READ YET DRAWS AS ITS OWN SHAPE (Marcos, Oct 12: "we can do better than that reading indicator"): a
+// figure or a line is a striped bar the size of what will land there, a card a drawn card of such bars, a chart its
+// columns, so a page reads as arriving, never as empty or as a lone word. Widths are in rem; console.css draws them.
+const GHOST = {
+  bar: (rem, cls = "") => `<i class="ghost${cls ? ` ${cls}` : ""}" style="width:${rem}rem" aria-hidden="true"></i>`,
+  lines: (widths) => `<div class="ghost-lines" aria-hidden="true">${widths.map((w) => GHOST.bar(w)).join("")}</div>`,
+  // [i] fades the card down the page: the first is whole, each later one lighter
+  card: (widths, i = 0, cls = "") => `<article class="card ghosted gcard${cls ? ` ${cls}` : ""}" style="--i:${i}" aria-hidden="true">${GHOST.bar(widths[0], "big")}${GHOST.lines(widths.slice(1))}</article>`,
+  chart: (heights) => `<div class="card ghost-chart" aria-hidden="true">${heights.map((h) => `<i class="ghost" style="--h:${h}%"></i>`).join("")}</div>`,
+};
 const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
   return `${h}:${String(m).padStart(2, "0")} ${ap}`;

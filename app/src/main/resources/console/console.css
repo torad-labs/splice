@@ -522,3 +522,31 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .tlamp.needs { color: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .22rem var(--key-light), 0 0 1.4rem .15rem rgba(255, 215, 154, .4); }
 .tlamp.needs svg { width: 1.35rem; height: 1.35rem; }
 .tlamp.stalled { color: var(--limit); }
+
+/* ---------- reading: a page arriving, never an empty one (Marcos, Oct 12: "we can do better than that reading
+   indicator") ----------
+   What is not read yet draws as its own shape: a figure or a line is a bar in the stripes a meter draws while it reads
+   (.bar.reading), sized like what will land there, and a card is drawn like a real one, outline and edge, its words
+   such bars. Ghost cards rise in and fade down the page. GHOST in kit.js writes the markup. */
+.ghost { display: inline-block; flex: none; height: .95rem; border-radius: .3rem; background-color: var(--obj-sunk);
+  background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem);
+  background-size: 200% 100%; animation: ghost-stripes .9s linear infinite; vertical-align: middle; }
+.ghost.chip { height: 2.5rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.ghost.big { height: 1.6rem; }
+/* the hour tag is a dark pill in both themes, so its stripes are light in both */
+.hour .ghost { height: .8rem; background-color: transparent;
+  background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, rgba(255, 244, 222, .28) .45rem .9rem); }
+.ghost-lines { display: flex; flex-direction: column; gap: .8rem; padding: .3rem 0; }
+.ghosted { cursor: default; pointer-events: none; opacity: calc(1 - var(--i, 0) * .17);
+  animation: ghost-in .45s var(--e-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.card.gcard { padding: 1.1rem 1.3rem 1.2rem; }
+.card.gcard .ghost-lines { gap: .9rem; }
+.ghost-chart { display: flex; align-items: flex-end; gap: .7rem; height: 18rem; padding: 2rem 1.6rem 1.4rem; }
+.ghost-chart .ghost { flex: 1; height: var(--h); border-radius: .3rem .3rem 0 0; }
+@keyframes ghost-in { from { opacity: 0; transform: translateY(.5rem); } }
+/* its own name: settings.css keeps a "reading" of its own, a sweep, which would carry the bars sideways there */
+@keyframes ghost-stripes { to { background-position: -1.27rem 0; } }
+.ghost-teams { display: flex; flex-direction: column; gap: var(--gap-card); max-width: 64rem; }
+.money-band > .card.gcard { width: 36rem; }
+.card.gcard > .ghost.big { margin-bottom: 1rem; }
+.lower .card.gcard + .card.gcard { margin-top: var(--gap-card); }

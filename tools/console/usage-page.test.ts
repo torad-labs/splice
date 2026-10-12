@@ -1,6 +1,6 @@
 // Usage on the real page: a week's figures are the daemon's totals over every request, never a count of the rows the
 // read returned; a plan's requests read "On your plan" with their API-price value and never as money, a key's are
-// money; a window change reads "Reading" until the new figures land, never the old ones under the new heading; and a
+// money; a window change draws its striped shapes until the new figures land, never the old ones under the new heading; and a
 // breakdown row opens its requests on Requests with its filter carried. A login the daemon names (ref + label) is read by
 // them alone; a daemon that does not serve them yet is drawn as before.
 import { afterAll, beforeAll, test } from "bun:test";
@@ -91,13 +91,13 @@ test("Usage: a week's figures are the daemon's totals, not the rows returned; a 
   }
 }, 60_000);
 
-test("Usage: a window change reads Reading until its figures land, never the old window's under the new heading", async () => {
+test("Usage: a window change draws its shapes until its figures land, never the old window's under the new heading", async () => {
   const p = await open();
   try {
     await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
     slowWeek = true;
     await p.locator("[data-act=win][data-v='5h']").click();
-    await expect(p.locator("#usage")).toContainText("Reading");
+    await expect(p.locator("#usage .ghost").first()).toBeVisible(); // the reading shape (Marcos, Oct 12), never the old figures
     await expect(p.locator("#usage .brow")).toHaveCount(0);
     slowWeek = false;
     await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
@@ -144,7 +144,7 @@ test("Usage: a login the daemon names is read by its label alone and asked for b
   }
 }, 60_000);
 
-test("Usage: a window change keeps the plans and the headings drawn and reads Reading only where the window's figures go", async () => {
+test("Usage: a window change keeps the plans and the headings drawn and stripes only where the window's figures go", async () => {
   const p = await open();
   try {
     await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
@@ -152,7 +152,7 @@ test("Usage: a window change keeps the plans and the headings drawn and reads Re
     await p.locator("[data-act=win][data-v='5h']").click();
     await expect(p.locator(".pcard .cmds")).toBeVisible();
     await expect(p.locator(".pcard .windows")).toBeVisible();
-    await expect(p.locator(".pcard .thru")).toContainText("Reading");
+    await expect(p.locator(".pcard .thru .ghost")).toBeVisible();
     await expect(p.locator(".keys")).toBeVisible();
     slowWeek = false;
     await expect(p.locator(".pcard .thru")).toContainText("Counted by splice", { timeout: 20_000 });

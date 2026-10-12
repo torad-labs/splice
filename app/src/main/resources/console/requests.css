@@ -141,19 +141,9 @@
    so the top line, where the session name already gives way, is what makes room (hitstop baa64db, Oct 12) */
 .rq .top .worth { font: 500 .86rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 
-/* ---------- reading: the list's own shape, hollow (Marcos, Oct 12) ----------
-   Each word is a bar in the stripes a meter draws while it reads (.bar.reading), so "not here yet" is one look across
-   the console. The slips are drawn like real ones, outline and edge, and fade down the rail as they rise in. */
-.ghost { display: inline-block; flex: none; height: .95rem; border-radius: .3rem; background-color: var(--obj-sunk);
-  background-image: repeating-linear-gradient(-45deg, transparent 0 .45rem, var(--track) .45rem .9rem);
-  background-size: 200% 100%; animation: reading .9s linear infinite; }
+/* ---------- reading: the list's own shape, hollow (Marcos, Oct 12); the bars themselves are console.css's .ghost ---------- */
 .ghost.nm { height: 1.2rem; }
 .ghost.end { margin-left: auto; }
-.ghost.chip { height: 2.5rem; border-radius: var(--r-obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 .rq .meta .ghost.chip { height: 1.6rem; box-shadow: 0 0 0 .1rem var(--ink); }
-.ghost-rq { --c: var(--track); cursor: default; opacity: calc(1 - var(--i) * .17); animation: ghost-in .45s var(--e-out) both;
-  animation-delay: calc(var(--i) * 70ms); }
-.ghost-rq:hover { background: var(--obj); }
+.ghost-rq { --c: var(--track); }
 .ghost-rq .meta { display: flex; align-items: center; }
-.hour .ghost { height: .8rem; vertical-align: middle; background-color: transparent; }
-@keyframes ghost-in { from { opacity: 0; transform: translateY(.5rem); } }

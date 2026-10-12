@@ -283,7 +283,7 @@ function plansHtml() {
     return `<article class="card pcard${held ? " held" : ""}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + `<header><span class="nm">${esc(planName(row))}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}${row.plan ? ` · ${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}` : ""}</span><span class="cmds">${heads.map(chip).join("")}</span></header>`
       + wins + (ranOut ? `<p class="since"><a href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}</a></p>` : "")
-      + `<footer><span class="thru">${reading() ? `<span class="ctd">Counted by splice</span>Reading` : s.requests ? `<span class="ctd">Counted by splice</span><b>${tokWord(tokensOf(s))}</b> tokens<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
+      + `<footer><span class="thru">${reading() ? `<span class="ctd">Counted by splice</span>${GHOST.bar(16)}` : s.requests ? `<span class="ctd">Counted by splice</span><b>${tokWord(tokensOf(s))}</b> tokens<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
   });
   return cards.length ? `<section class="plans"><header><h2>Plans</h2></header><div class="grid">${cards.join("")}</div></section>` : "";
 }
@@ -300,7 +300,7 @@ function keysHtml() {
       const door = s.requests && !reading() ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
       cards.push({ s, html: `<article class="card kcard" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
         + `<header><span class="nm"><span class="var">${esc(k.name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}${replaced ? `<span class="detail">Replaced</span>` : ""}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}</span><span class="cmds">${[...new Set(heads)].map(chip).join("")}</span></header>`
-        + (reading() ? `<div class="spent"><span class="none">Reading</span></div>` : s.requests ? `<div class="spent"><span class="label">Cost</span>${s.cost != null ? `<span class="money">${dollars(s.cost)}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer><span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
+        + (reading() ? `<div class="spent"><span class="label">Cost</span>${GHOST.bar(6, "big")}</div>` : s.requests ? `<div class="spent"><span class="label">Cost</span>${s.cost != null ? `<span class="money">${dollars(s.cost)}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer><span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
           : `<div class="spent"><span class="none">No requests</span></div>`) + `</article>` });
     }
   }
@@ -529,9 +529,12 @@ function render() {
   document.getElementById("hf").innerHTML = n ? filterChips() + (n > 1 ? `<button class="act quiet small" data-act="clear">Clear all</button>` : "") : "";
   document.getElementById("win").innerHTML = Object.entries(WINDOWS).map(([k, v]) => `<button data-act="win" data-v="${k}" aria-pressed="${ui.win === k}">${v.label}</button>`).join("");
   if (S.error) { root.innerHTML = `<p class="empty">${S.error}</p>`; return; }
-  const waiting = reading(), hold = (title) => `<section><header><h2>${title}</h2></header><p class="empty">Reading</p></section>`;
+  // while the window is read, each section draws its own shape: a chart's columns, the breakdown's rows, the commands'
+  // cards, and a card in the money band until the plans and keys arrive (Marcos, Oct 12)
+  const waiting = reading(), hold = (title, body) => `<section aria-busy="true"><header><h2>${title}</h2></header>${body}</section>`;
+  const money = plansHtml() + keysHtml();
   const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
-  root.innerHTML = `${note}<div class="money-band">${plansHtml()}${keysHtml()}</div>${waiting ? hold("Over time") : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? `<p class="empty">Reading</p>` : byHtml()}</section>${waiting ? hold("Commands") : headsHtml()}</div>`;
+  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? hold("Over time", GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61])) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.lines([18, 14, 16, 11]) : byHtml()}</section>${waiting ? hold("Commands", [0, 1].map((i) => GHOST.card([8, 14], i)).join("")) : headsHtml()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading

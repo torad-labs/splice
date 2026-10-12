@@ -1066,4 +1066,11 @@ document.addEventListener("click", (e) => {
   render();
 });
 if (TOPIC[location.hash.slice(1)]) { ui.open = location.hash.slice(1); ui.shown = true; }
+// before the first read answers, the rail draws its cards: their names and marks are this page's own, and each card's
+// line is a striped bar until its figure lands (Marcos, Oct 12: a blank page under its title read as broken)
+const SKETCH_LINES = [7, 10, 9, 6.5, 9, 6, 8];
+const ghostHtml = () => `<div class="jobs"><div class="list rail" aria-busy="true" aria-label="Reading settings">${TOPICS.map((x, i) => `<article class="card job ghosted" aria-hidden="true">`
+  + `<span class="lamp idle sock">${SV[x.id]}</span><div class="top"><span class="jname">${esc(x.name)}</span></div>`
+  + `${SKETCH_LINES[i] ? `<div class="meta">${GHOST.bar(SKETCH_LINES[i])}</div>` : ""}</article>`).join("")}</div></div>`;
+root.innerHTML = ghostHtml();
 refresh();

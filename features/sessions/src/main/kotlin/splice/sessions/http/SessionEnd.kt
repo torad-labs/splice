@@ -67,7 +67,7 @@ public class SessionEnd(
         if (record.status.state in busy) {
             Refusals.reply(HttpStatusCode.Conflict, "it is working; ending it cuts the turn", Refusal.WORKING)
         } else {
-            drive.drafted(record.sessionId)
+            drive.drafted(record.sessionId.orEmpty())
         }
 
     private fun running(session: String): SessionRecord? = registry?.read().orEmpty()
@@ -84,7 +84,7 @@ public class SessionEnd(
         val failed = Cancellables.runCatchingCleanup { driving.terminal.press(pane, SessionKey.STOP) }.exceptionOrNull()
         return when {
             failed != null -> refused()
-            working && !handover.stopped(record.sessionId, END_STOP_SECONDS) ->
+            working && !handover.stopped(record.sessionId.orEmpty(), END_STOP_SECONDS) ->
                 Refusals.reply(HttpStatusCode.GatewayTimeout, "its turn did not stop within ${END_STOP_SECONDS}s")
             else -> null
         }
@@ -101,11 +101,11 @@ public class SessionEnd(
             !exited(driving, pane, record) ->
                 Refusals.reply(HttpStatusCode.GatewayTimeout, "its client did not exit within ${END_EXIT_SECONDS}s")
             else -> {
-                driving.panes.forget(record.sessionId)
+                driving.panes.forget(record.sessionId.orEmpty())
                 JsonReply(
                     HttpStatusCode.OK,
                     buildJsonObject {
-                        put("session_id", record.sessionId)
+                        put("session_id", record.sessionId.orEmpty())
                         put("state", "ended")
                     }.toString(),
                 )
@@ -118,6 +118,6 @@ public class SessionEnd(
 
     /** Whether the client is gone: its process left, or, with no process known, its terminal closed. */
     private suspend fun exited(driving: SessionDriver, pane: SessionPane, record: SessionRecord): Boolean =
-        record.process.pid?.let { handover.left(record.sessionId, it, END_EXIT_SECONDS) }
+        record.process.pid?.let { handover.left(record.sessionId.orEmpty(), it, END_EXIT_SECONDS) }
             ?: !driving.terminal.isOpen(pane)
 }

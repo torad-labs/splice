@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -81,10 +82,19 @@ internal class TranscriptSeek(private val opener: TranscriptOpener) {
     }
 
     /** The lines whose start is at or after [from]: read from the byte before it through the end of that byte's line,
-     *  so a [from] that is itself a line start keeps its line. */
+     *  so a [from] that is itself a line start keeps its line. The caller closes it; a failure while passing the
+     *  partial line closes it here. */
     private fun lines(file: Path, from: Long): Lines {
-        if (from == 0L) return Lines(opener.open(file, 0L), 0L, RecordStamp(::stamp))
-        return Lines(opener.open(file, from - 1), from - 1, RecordStamp(::stamp)).also { it.skipPartial() }
+        val start = (from - 1).coerceAtLeast(0L)
+        val lines = Lines(opener.open(file, start), start, RecordStamp(::stamp))
+        if (from == 0L) return lines
+        try {
+            lines.skipPartial()
+        } catch (failed: IOException) {
+            lines.close()
+            throw failed
+        }
+        return lines
     }
 
     private fun stamp(bytes: ByteArray?): Long? {

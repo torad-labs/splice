@@ -130,6 +130,7 @@ button { font: inherit; color: inherit; }
   background: var(--obj-high); color: var(--text); border: var(--ink-w) solid var(--ink);
   box-shadow: .22rem .22rem 0 var(--ink); transition: transform 90ms var(--e-out), box-shadow 90ms var(--e-out);
 }
+a.act { text-decoration: none; }  /* an act that happens to be a link still looks like an act, never an underlined word */
 .act:hover { transform: translate(-.06rem, -.06rem); box-shadow: .28rem .28rem 0 var(--ink); }
 .act:active { transform: translate(.18rem, .18rem); box-shadow: .04rem .04rem 0 var(--ink); }
 .act.primary { background: var(--key-light); color: #241d14; }

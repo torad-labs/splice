@@ -213,9 +213,13 @@ button.count:hover { color: var(--text); }
    (.fig3 .big, 4.2rem), never as a word in a label column */
 .vcard .v { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
 .vcard .state { font: 400 2.8rem/1 var(--font-lead); color: var(--text-mute); }
+/* a read that did not come back wears the kit's own ink for it, as every other unread figure on this page does: the
+   version's own .state colour was quietly winning the cascade and drawing "Not read" the same as "Not checked" */
+#st .vcard .state.limit { color: var(--limit); }
 .vcard .vwhy { margin: 0; font: 500 1.15rem/1.4 var(--font-name); color: var(--text-body); }
 /* the version and the button that acts on it share a line; the sentence saying what the card means is the row under them */
 #st .vcard .ctl { gap: 1rem 1.4rem; }
+#st .vcard .act .wait { --c: currentColor; }  /* the ring while his tap reads, in the button's own ink */
 #st .vcard .ctl > .vwhy { flex: 1 0 100%; }
 /* on a card wide enough to read along, what acts on the version sits at the far edge, as a lone figure's doors do:
    number at one end, action at the other, instead of both clumped in the first third of a 3828 row */
@@ -630,12 +634,20 @@ button.count:hover { color: var(--text); }
    folder has gone, which never stops splice (its sessions fall back to the git-repo rule). */
 #st .plist { display: grid; gap: .9rem; width: 100%; }
 #st .prow { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; }
-#st .ppath { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .25rem .25rem .7rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
-#st .ppath code { background: none; padding: 0; font: 500 1.08rem/1.4 var(--font-data); color: var(--text); }
-#st .ppath .icon { width: 1.8rem; height: 1.8rem; }
-#st .ppath .icon svg { width: .95rem; height: .95rem; }
-/* the projects a path makes sit under it, quiet: they are what the path means, not a second setting */
-#st .pmakes { display: flex; flex-wrap: wrap; gap: .45rem; margin: -.35rem 0 .3rem 0; }
-#st .mchip.quiet { color: var(--text-body); border-color: var(--track-line); background: transparent; }
+#st .ppath { display: inline-flex; align-items: center; gap: .3rem; padding: .4rem .3rem .4rem .8rem; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
+#st .ppath code { background: none; padding: 0; font: 500 1.3rem/1.4 var(--font-data); color: var(--text); }
+#st .ppath .icon { width: 2.2rem; height: 2.2rem; }
+#st .ppath .icon svg { width: 1.15rem; height: 1.15rem; }
+/* WHAT HE SET IS NEVER QUIETER THAN WHAT IT MAKES (Marlin, Oct 12, hitstop's mocks ef69781 and eb1c855): the projects
+   a path makes sit under it, each in the name font it wears on Sessions, Teams and Requests, at the size of the path
+   that made them. At .95rem mono and muted they were 17 px at 3828 and he had to lean in. */
+#st .pmakes { display: flex; flex-wrap: wrap; gap: .6rem; margin: -.35rem 0 .3rem 0; }
+#st .pmakes .mchip.quiet { padding: .45rem .8rem; font: 500 1.3rem/1 var(--font-name); color: var(--text-body); border-color: var(--track-line); background: transparent; }
+#st .pform .lbl { font-size: 1.3rem; }
+/* THE MEDIUM BUTTON, NOT THE COMPACT ONE, on both rows that stand beside something large: a 17 px act next to a
+   1.3rem chip or a 4.2rem version is one he has to lean in to read. Same four values console.css gives every other
+   medium act, with the glyph up from the 1rem sessions.css gives every act to the 1.15rem these two rows read at. */
+#st .pform .act, #st .vcard .act { display: inline-flex; align-items: center; gap: .5rem; padding: .65rem 1.05rem; font-size: 1.02rem; }
+#st .pform .act svg, #st .vcard .act svg { width: 1.15rem; height: 1.15rem; }
 #st .pacts { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; }
-#st .field.wide { width: 26rem; text-align: left; }
+#st .pform .field.wide { width: 30rem; text-align: left; font: 500 1.3rem/1 var(--font-data); }  /* its height is --ctl-h, every field's */

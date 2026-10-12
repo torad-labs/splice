@@ -51,7 +51,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, projects: undefined, addPath: null, err: null };
+const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -679,27 +679,54 @@ function versionHtml() {
   if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
   const checked = v.checked_at_epoch_millis ? `<p class="kel">Checked ${esc(atWord(v.checked_at_epoch_millis))}</p>` : "";
-  const releases = `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}Releases</a>`;
-  // A STATE AND A DOOR, NOT A SENTENCE (fin, Marlin approved, Oct 12). Never checked is the state "Not checked"; a
-  // check that succeeded shows the newest version, or "Newest" when he is already on it; a check that failed after one
-  // succeeded is "Not read", the word every other unread figure uses, and when the check happened is an element.
-  // Marlin wants a "Check" act in this door's place, which needs a fetch-only route the daemon does not have.
-  const newest = v.latest
-    ? v.latest === v.installed ? `<span class="state">Newest</span>` : vnum(v.latest)
+  const releases = `<a class="act quiet" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}Releases</a>`;
+  // A STATE AND AN ACT, NOT A SENTENCE (fin, Marlin approved, Oct 12). What the check could not give him is a state on
+  // this card: "Not checked" before any tap, "Not read" when a tap answered nothing, "Newest" when he is already on
+  // the newest. A newer version is a version there is, so it takes a card of its own below instead of standing as a
+  // second bare number under "Running"; when the check happened is an element.
+  const news = v.latest && v.latest !== v.installed;
+  const newest = news ? ""
+    : v.latest ? `<span class="state">Newest</span>`
     : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : `<span class="state">Not checked</span>`;
-  const cards = [vcard("Running", `${vnum(v.installed)}${newest}${releases}${checked}`)];
+  // ONLY HIS TAP READS THE NETWORK (Marlin's privacy line, Oct 12): nothing here polls, and the page never checks when
+  // it opens. GET /api/upgrade answers the snapshot a past tap left, and POST /api/upgrade/check is the only fetch.
+  const act = `<button class="act quiet" data-act="check"${ui.checking ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
+    + (ui.checkSaid ? `<span class="said limit">${esc(ui.checkSaid)}</span>` : "");
+  const cards = [vcard("Running", `${vnum(v.installed)}${newest}${act}${checked}`)];
+  // the releases page is a door only beside a version he does not have: that is the one state on this pane with
+  // something to go and read, and it is also his only way on, since nothing here installs a release
+  if (news) cards.push(vcard("Newest", `${vnum(v.latest)}${releases}`));
   // Previous is a card only when there is a release to go back to, or when the read that would have found one failed:
   // "None" under a name is not news, and three cards of which two held no number read as a broken row.
   if (back) {
     cards.push(vcard("Previous", `${vnum(back)}${ui.armed === "rollback"
-      ? `<button class="act primary small" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet small" data-act="disarm">Stay on ${esc(v.installed)}</button>`
-      : `<button class="act quiet small" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}`,
-    "The release splice would go back to"));
+      ? `<button class="act primary" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet" data-act="disarm">Stay on ${esc(v.installed)}</button>`
+      : `<button class="act quiet" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}`));
+    // no line under it: "Previous" and "Go back to 0.3.2" already say what the card is (Marlin, Oct 12)
   } else if (v.rollback_unavailable_reason) {
     cards.push(vcard("Previous", `<span class="state">Not read</span>`, v.rollback_unavailable_reason));
   }
   const ran = run ? `<section class="run"><header><h3>${runWord[run.state] ?? "Going back to"} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
   return cardRow(cards, " vcards") + ran;
+}
+/** His tap, and the only thing on this page that reaches the network: POST /api/upgrade/check reads once and answers
+ *  the snapshot, which the card then reads as its own state. A refusal is said beside the act in the console's words,
+ *  never the daemon's sentence: already running, checked a moment ago, or not read. */
+async function check() {
+  if (ui.checking) return;
+  ui.checking = true; ui.checkSaid = null; render();
+  const r = await API.post("/api/upgrade/check", {});
+  ui.checking = false;
+  if (r.ok && r.body) {
+    const s = r.body;
+    ui.ver = { ...ui.ver, latest: s.latest ?? null, checked_at_epoch_millis: s.read_at_epoch_millis ?? ui.ver?.checked_at_epoch_millis ?? null };
+    // a read that answered nothing is "Not read" on the card itself, so nothing is said twice
+    if (s.state === "not_read" && s.reason) console.warn(`upgrade check: ${s.reason}`);
+  } else {
+    ui.checkSaid = r.status === 409 ? "Already checking" : r.status === 429 ? "Checked a moment ago" : "Not read";
+    if (r.body?.error) console.warn(`upgrade check: ${r.body.error}`);
+  }
+  render();
 }
 async function goBack() {
   const to = ui.ver?.rollback_target;
@@ -759,14 +786,17 @@ function pathRow(f) {
 }
 function projectsHtml() {
   const k = KNOB.projectsFolders, folders = folderFacts();
+  // WHAT HE SET IS NEVER QUIETER THAN WHAT IT MAKES (Marlin, Oct 12, from hitstop's mock eb1c855): the label, the path
+  // and the field it is typed in stand at the project chips' size, and these acts take the medium button, not the
+  // compact one, so Add is as tall as a chip. The pform class is what carries all of it.
   const adding = ui.addPath !== null
     ? `<span class="custom"><input class="field wide" data-pfield value="${esc(ui.addPath)}" placeholder="/home/you/code" aria-label="Projects folder">`
-      + `<button class="act primary small" data-act="savefolder">Save</button>`
-      + `<button class="act quiet small" data-act="cancelfolder">Cancel</button></span>`
+      + `<button class="act primary" data-act="savefolder">Save</button>`
+      + `<button class="act quiet" data-act="cancelfolder">Cancel</button></span>`
       + (ui.bad.projectsFolders ? `<span class="said limit">${esc(ui.bad.projectsFolders)}</span>` : "")
-    : `<button class="act quiet small" data-act="addfolder">${SV.plus}Add</button>${saidHtml("projectsFolders")}`;
+    : `<button class="act quiet" data-act="addfolder">${SV.plus}Add</button>${saidHtml("projectsFolders")}`;
   const body = `<div class="plist">${folders.map(pathRow).join("")}<div class="pacts">${adding}</div></div>`;
-  return `<section class="sub">${cardRow([kcard(`<div class="lbl" data-row="${k.key}">${hl(k.label)}</div><div class="ctl col">${body}</div>`)])}</section>`;
+  return `<section class="sub">${cardRow([kcard(`<div class="lbl" data-row="${k.key}">${hl(k.label)}</div><div class="ctl col">${body}</div>`, " pform")])}</section>`;
 }
 
 /** The saved folders with [typed] added, trimmed, with no empty and no repeat. */
@@ -916,7 +946,8 @@ document.addEventListener("click", (e) => {
   if (ui.armed && !e.target.closest("[data-act=delete], [data-act=arm]")) { ui.armed = null; if (!t) { render(); return; } }
   if (!t) return;
   const d = t.dataset;
-  if (d.open && !d.act) { ui.open = d.open; ui.shown = true; ui.armed = null; ks.custom = null; render(); return; }
+  // leaving a job drops what was said on it: a refusal he has walked away from is stale by the time he comes back
+  if (d.open && !d.act) { ui.open = d.open; ui.shown = true; ui.armed = null; ui.checkSaid = null; ks.custom = null; render(); return; }
   switch (d.act) {
     case "theme": toggleTheme(); return;
     case "close": ui.shown = false; break;
@@ -927,6 +958,7 @@ document.addEventListener("click", (e) => {
     case "arm": ui.armed = d.id; delete ui.bad[d.id]; break;
     case "disarm": ui.armed = null; break;
     case "rollback": ui.armed = null; goBack(); return;
+    case "check": check(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;
     case "unask": ui.ask = null; break;

@@ -1,0 +1,248 @@
+/* Usage build 3, in the console language (console.css): the plans and the keys first, each a door, then the window's bars
+   at their full width, then where it went (grouped by one thing, filters carried) beside how each command answered.
+   Built for 3828 first; below 104rem of page everything stacks. Class names checked against console.css: .card, .bar,
+   .windows, .when, .ring, .stale-at, .state and .act are its own and are used as Accounts uses them. */
+
+.page { container-type: inline-size; }
+.usage { display: flex; flex-direction: column; gap: 3.4rem; }
+.usage section > header { display: flex; align-items: center; gap: 1.2rem; margin-bottom: 1.4rem; min-height: 3.2rem; }
+.usage section > header .hn { font: 500 1.3rem/1 var(--font-data); color: var(--text-body); }
+.usage .dot { display: inline-block; width: .3rem; height: .3rem; border-radius: 50%; background: var(--text-mute); margin: 0 .6rem; vertical-align: .2rem; }
+.usage .go { width: 1rem; height: 1rem; flex: none; }
+
+/* ---------- plans and keys: one card each, the card a door to what it used ---------- */
+.money-band { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3.4rem; }
+.plans .grid, .keys .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(29rem, 1fr)); gap: 1.8rem; }
+.plans .grid { grid-template-columns: repeat(auto-fill, minmax(33rem, 1fr)); }  /* room for a window's bar beside its whole reset time */
+.pcard, .kcard { cursor: pointer; display: flex; flex-direction: column; gap: 1.1rem; }
+.pcard:hover, .kcard:hover { background: color-mix(in oklab, var(--obj) 92%, var(--key-light)); }
+.pcard > header, .kcard > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem .9rem; min-height: 0; margin: 0; }
+.pcard .nm, .kcard .nm { font: 500 1.35rem/1.1 var(--font-name); color: var(--text); }
+.kcard .nm .var { font: 500 1.15rem/1.1 var(--font-data); letter-spacing: .01em; }
+.pcard .pv, .kcard .pv { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.pcard .cmds, .kcard .cmds { display: inline-flex; gap: .45rem; margin-left: auto; }
+.pcard .windows { margin-top: 0; }
+.pcard .bar > b { transition: none; }
+.pcard .state { margin: .2rem 0; color: var(--text-mute); }
+.pcard .since { margin: -.2rem 0 0; display: flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--limit); }
+.pcard .since svg { width: 1.05rem; height: 1.05rem; }
+.pcard .since a { color: inherit; text-decoration-color: color-mix(in srgb, var(--limit) 50%, transparent); text-underline-offset: .22rem; }
+.pcard .since a:hover { text-decoration-color: var(--limit); }
+.pcard > footer, .kcard > footer { display: flex; align-items: flex-end; gap: 1.4rem; margin-top: auto; padding-top: 1rem; border-top: .12rem solid var(--track); }
+.thru { margin-left: auto; font: 500 .98rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
+.thru b { font-weight: 600; color: var(--text); }
+.kcard .spent { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem 1.1rem; }
+.kcard .spent .money { font: 600 2.3rem/1 var(--font-data); color: var(--text); }
+.kcard .spent .none { font: 500 1.3rem/2.3rem var(--font-name); color: var(--text-mute); }
+.kcard .was { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
+.kcard .was b { font: 500 1.05rem/1 var(--font-data); color: var(--text-body); }
+/* its use across the window, a column per slice, today's lit */
+.spark { flex: 1; max-width: 22rem; height: 2.6rem; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .22rem; align-items: end; }
+.spark i { display: block; background: color-mix(in oklab, var(--c) 55%, var(--track)); border-radius: .12rem .12rem 0 0; min-height: 0; }
+.spark i.now { background: var(--c); }
+
+/* ---------- over time, at its full width ---------- */
+.chart { --c: var(--rail); display: flex; flex-direction: column; }
+.chart > header { margin-bottom: 1rem; }
+.plot { position: relative; flex: 1; min-height: 24rem; margin: 1.4rem 0 0 5.4rem; border-bottom: .14rem solid var(--track-line); }
+.gl { position: absolute; left: 0; right: 0; border-top: .1rem dashed var(--track); }
+.gl span { position: absolute; right: calc(100% + .8rem); top: 0; transform: translateY(-50%); font: 500 .92rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; align-items: end; }
+.col { position: relative; height: 100%; display: flex; align-items: flex-end; }
+.col .stack { width: 100%; display: flex; flex-direction: column-reverse; border: .12rem solid var(--ink); border-radius: .3rem .3rem 0 0; overflow: hidden; min-height: 0; }
+.col .stack:not([style*="height:0.00%"]) { min-height: .35rem; }
+.col .stack[style*="height:0.00%"] { border: 0; }
+.col .stack a { display: block; background: var(--c); min-height: .12rem; }
+.col .stack a + a { border-bottom: .1rem solid var(--ink); }
+.col .stack a:hover { filter: brightness(1.18); }
+.col .stack a.alt, .legend .key i.alt, .tip p i.alt { background: repeating-linear-gradient(135deg, var(--c) 0 .5rem, color-mix(in srgb, var(--c) 68%, var(--ink)) .5rem .75rem); }
+.col.on .stack { box-shadow: 0 0 0 .2rem var(--key-light); }
+.col .x { position: absolute; top: calc(100% + .7rem); left: 0; font: 500 .92rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: .6rem 1.4rem; margin: 3rem 0 0 5.4rem; }
+.legend .key { display: inline-flex; align-items: center; gap: .5rem; font: 500 .98rem/1 var(--font-data); color: var(--text-body); }
+.legend .key i, .tip p i { width: .85rem; height: .85rem; border-radius: .2rem; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
+.tip {
+  position: absolute; top: 0; z-index: 5; min-width: 19rem; padding: .9rem 1.1rem; transform: translateX(1.4rem); pointer-events: none;
+  background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
+}
+.tip.lefty { transform: translateX(calc(-100% - 1.4rem)); }
+.tip p { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .98rem/1.7 var(--font-data); color: var(--text-body); }
+.tip p b { margin-left: auto; padding-left: 1.4rem; color: var(--text); font-weight: 600; }
+.tip .tw { font: 500 1rem/1 var(--font-name); color: var(--text-mute); margin-bottom: .5rem; }
+.tip .sum { margin-top: .35rem; padding-top: .35rem; border-top: .1rem solid var(--track-line); }
+.tip .none { color: var(--text-mute); }
+
+/* ---------- where it went: grouped by one thing, the filters on top ---------- */
+.lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3.2rem; align-items: start; }
+.by { --c: var(--rail); }
+.by > header { flex-wrap: wrap; }
+.by > header .act { margin-left: auto; display: inline-flex; align-items: center; gap: .5rem; }
+.by > header .act + .act { margin-left: 0; }  /* Back and Open on Requests sit together at the end */
+.fchips { display: flex; flex-wrap: wrap; gap: .7rem; }
+.fchips:empty { display: none; }
+.fwrap { position: relative; display: inline-flex; }
+.fbtn { display: inline-flex; align-items: center; gap: .6rem; font: 500 1.05rem/1 var(--font-name); color: var(--text); white-space: nowrap; background: var(--obj-sunk); border: .12rem solid var(--key-light); border-radius: var(--r-in); padding: .72rem 2.9rem .72rem .9rem; }
+.fbtn em { font-style: normal; color: var(--text-mute); }
+.fbtn .var { font: 500 1rem/1 var(--font-data); }
+.fclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); width: 2.1rem; height: 2.1rem; display: grid; place-items: center; border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer; }
+.fclear:hover { background: var(--track); color: var(--text); }
+.fclear svg { width: .95rem; height: .95rem; }
+.brow {
+  display: grid; grid-template-columns: minmax(19rem, 1.5fr) minmax(12rem, 1.2fr) 9rem 9.6rem; gap: 1.4rem; align-items: center;
+  padding: 1rem .6rem; margin: 0 -.6rem; border-top: .12rem solid var(--track); border-radius: .3rem; cursor: pointer;
+}
+.brow:hover { background: color-mix(in oklab, var(--obj) 90%, var(--key-light)); }
+.brow.bhead { cursor: default; border-top: 0; padding: 0 .6rem .55rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.brow.bhead:hover { background: none; }
+.brow .who { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.brow .nm { font: 500 1.2rem/1.15 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow .nm .var { font: 500 1.08rem/1.15 var(--font-data); letter-spacing: .01em; }
+.brow .sb { font: 500 .92rem/1.2 var(--font-data); color: var(--text-mute); display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; min-width: 0; }
+.brow .sb:empty { display: none; }
+.share { display: flex; align-items: center; gap: .9rem; min-width: 0; }
+.sbar { height: 1.25rem; min-width: .3rem; background: var(--c); border: .12rem solid var(--ink); border-radius: .25rem; flex: none; max-width: calc(100% - 5.5rem); }
+.share .num { flex: none; }
+.brow .num { font: 500 1.05rem/1 var(--font-data); color: var(--text); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.brow a.open { display: inline-flex; align-items: center; justify-content: flex-end; gap: .45rem; color: var(--text); text-decoration: none; border-radius: .3rem; padding: .35rem .4rem; margin: -.35rem -.4rem; }
+.brow a.open .go { color: var(--text-mute); }
+.brow a.open:hover { background: var(--track); }
+.brow a.open:hover .go { color: var(--key-light); }
+.brow .cost { text-align: right; }
+.brow .cost .money { font: 500 1.05rem/1 var(--font-data); color: var(--text); }
+.brow .cost .gap { font: 500 1.02rem/1 var(--font-name); color: var(--text-mute); }
+.brow.bhead .num, .brow.bhead .cost { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.by > .act { margin-top: 1rem; }
+.by .empty { margin: 1rem 0; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }
+
+/* the filters in the page head, so one picked down the page stays in sight */
+.hfilters { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-right: auto; }
+
+/* ---------- each command ---------- */
+.head-card > header { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; }
+.head-card .count { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); text-decoration: none; padding: .3rem .4rem; border-radius: .3rem; }
+.head-card .count .go { color: var(--text-mute); }
+.head-card .count:hover { background: var(--track); color: var(--text); }
+.head-card .models { margin: .7rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 0; font: 500 .92rem/1.2 var(--font-data); color: var(--text-mute); }
+.lat-head, .lat .vals { display: grid; grid-template-columns: repeat(2, 6.4rem); column-gap: 1rem; justify-items: end; }
+.lat-head { width: max-content; margin: 1.3rem 0 0 auto; font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
+.lat { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 1.2rem; row-gap: .7rem; margin-top: 1.3rem; }
+.lat-head + .lat { margin-top: .6rem; }
+.lat:has(.tk span) { padding-bottom: 1.3rem; }
+.lat .label { font: 500 1rem/1 var(--font-name); color: var(--text-body); align-self: baseline; white-space: nowrap; }
+.lat .scale { grid-column: 1 / -1; grid-row: 2; }
+.scale { position: relative; height: 1.3rem; background: var(--track); border-radius: .25rem; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.scale .tk { position: absolute; top: 0; bottom: 0; width: .1rem; background: var(--track-line); }
+.scale .tk span { position: absolute; top: calc(100% + .3rem); left: 0; transform: translateX(-50%); font: 500 .78rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.scale .span { position: absolute; top: .18rem; bottom: .18rem; background: var(--c); border: .1rem solid var(--ink); border-radius: .2rem; min-width: .3rem; }
+.scale .mk.max { position: absolute; top: 50%; width: .22rem; height: 1.7rem; margin: -.85rem 0 0 -.11rem; border-radius: .1rem; background: var(--text-body); }
+.lat .vals { grid-column: 2; grid-row: 1; justify-self: end; align-self: baseline; font: 500 .98rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.lat .vals > span { white-space: nowrap; }
+/* the window, left to right: a dot per request as high as it took, a tick per failure that opens it */
+.trail { margin-top: 1.5rem; padding-top: 1.2rem; border-top: .12rem solid var(--track); }
+.trail .field { position: relative; height: 4.6rem; background: var(--track); border-radius: .25rem; box-shadow: inset 0 0 0 .1rem var(--track-line); }
+.trail .field i { position: absolute; width: .5rem; height: .5rem; margin: 0 0 -.25rem -.25rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .08rem var(--ink); }
+.trail .field .base { position: absolute; left: 0; right: 0; border-top: .12rem dashed var(--track-line); }
+.trail .ft { position: absolute; top: -.35rem; bottom: -.35rem; width: .2rem; margin-left: -.1rem; background: var(--limit); border-radius: .1rem; }
+.trail .ft:hover { box-shadow: 0 0 0 .16rem var(--text); }
+.trail .xw { position: relative; height: 1.5rem; margin-top: .45rem; }
+.trail .xw span { position: absolute; top: 0; font: 500 .82rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.fails { margin: 1.1rem 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1rem; font: 500 1rem/1.2 var(--font-name); color: var(--text-mute); }
+.fails b { font: 600 1rem/1 var(--font-data); }
+.fails.bad > span:first-child { color: var(--text); }
+.fails .f { color: var(--limit); }
+.fails .lk { display: inline-flex; align-items: center; gap: .3rem; font: 500 .95rem/1 var(--font-data); }
+.fails .lk svg { width: 1rem; height: 1rem; }
+/* the command that's slow or failing today leads, with since when; its stretch is lit on the trail */
+.heads, .breakdown { display: flex; flex-direction: column; gap: 2rem; }  /* the table and Commands: one heading, then their cards on one line */
+.heads > header { margin-bottom: -.6rem; }
+.head-card .fold { margin-left: auto; }
+.head-card.lead { box-shadow: var(--cast) var(--cast) 0 var(--limit), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
+.flag { margin: 1.1rem 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1.4rem; }
+.flag a { display: inline-flex; align-items: center; gap: .45rem; font: 500 1.35rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
+.flag a .go { width: 1.1rem; height: 1.1rem; }
+.flag a:hover { text-decoration: underline; }
+.flag .vs { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.flag .vs b { font: 600 1.02rem/1 var(--font-data); color: var(--text); }
+.trail .field .since { position: absolute; top: 0; bottom: 0; min-width: .35rem; background: color-mix(in srgb, var(--limit) 16%, transparent); border-left: .12rem solid var(--limit); }
+/* the rest, one line each; a line opens its card in place */
+.hlist { display: flex; flex-direction: column; padding: .5rem 1.5rem; }
+.hlist > .head-card { margin: 1rem -1.5rem; box-shadow: none; border-width: 0; border-top: .12rem solid var(--track); border-bottom: .12rem solid var(--track); border-radius: 0; }
+.hlist > .head-card:first-child { margin-top: -.5rem; border-top: 0; }
+.hlist > .head-card:last-child { margin-bottom: -.5rem; border-bottom: 0; }
+.hrow {
+  display: grid; grid-template-columns: minmax(14rem, auto) 1fr 11rem 10rem 1.2rem; align-items: center; gap: 1.2rem; width: 100%; padding: 1rem 0;
+  background: none; border: 0; border-bottom: .12rem solid var(--track); cursor: pointer; text-align: left; font: 500 1rem/1 var(--font-data); color: var(--text-body);
+}
+.hlist > :last-child.hrow { border-bottom: 0; }
+.hrow .chip { justify-self: start; }
+.hrow em { font: 500 .95rem/1 var(--font-name); font-style: normal; color: var(--text-mute); margin-right: .5rem; }
+.hrow .t, .hrow .fl { text-align: right; font-variant-numeric: tabular-nums; }
+.hrow .fl { color: var(--text-mute); }
+.hrow .fl.bad b { color: var(--limit); }
+.hrow svg { width: 1rem; height: 1rem; color: var(--text-mute); }
+.hrow:hover { color: var(--text); }
+.hrow:hover svg { color: var(--key-light); }
+.quiet-heads { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin: 1.6rem 0 0; }
+.quiet-heads > span:first-child { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); margin-right: .4rem; }
+.quiet-heads .chip { opacity: .7; }
+
+/* side by side where both fit */
+@container (min-width: 104rem) {
+  .money-band { grid-template-columns: minmax(0, 2.6fr) minmax(0, 1fr); align-items: start; }
+  .keys .grid { grid-template-columns: minmax(0, 1fr); }
+  .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@container (min-width: 150rem) { .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); } }
+/* under last week: what grew, each agent this week against last week, the biggest change first; a line opens its requests */
+.kcard .grew { display: flex; flex-direction: column; margin: .3rem 0 -.2rem; border-top: .12rem solid var(--track); }
+.kcard .gline {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 1rem; row-gap: .25rem;
+  padding: .55rem .5rem; margin: 0 -.5rem; border-radius: .3rem; text-decoration: none;
+}
+/* the rule between lines sits at the card's own width, like the border over and under the list */
+.kcard .gline + .gline::before { content: ""; position: absolute; left: .5rem; right: .5rem; top: 0; border-top: .12rem solid var(--track); }
+.kcard .gline:hover { background: var(--track); }
+.kcard .gline .who { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.kcard .gline .nm { font: 500 1.08rem/1.15 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kcard .gline .st { font: 500 .9rem/1.15 var(--font-name); color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kcard .gline .vals { display: inline-flex; align-items: center; gap: 1.1rem; }
+.kcard .gline .pair { display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; }
+.kcard .gline .pair b { font: 500 1rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
+.kcard .gline .pair b:last-child { font-weight: 600; color: var(--text); }
+.kcard .gline .pair i { font-style: normal; font-size: 1rem; line-height: 1; color: var(--text-mute); }
+.kcard .gline .pair em { font: 500 .95rem/1 var(--font-name); font-style: normal; color: var(--text-mute); }
+.kcard .gline .chg { font: 600 1.05rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; text-align: right; min-width: 4.3rem; font-variant-numeric: tabular-nums; }
+.kcard .gline .chg.up { color: var(--limit); }
+.kcard .gline .go { color: var(--text-mute); }
+.kcard .gline:hover .go { color: var(--key-light); }
+/* under one key: this week, last week and what changed, the share bar and the request link kept */
+.brow.cmp { grid-template-columns: minmax(10rem, 1.1fr) minmax(4.5rem, .9fr) 5.2rem 5.6rem 5.6rem 7.4rem; gap: .8rem; }
+.brow.cmp .share { gap: .55rem; }
+.brow.cmp .sbar { max-width: calc(100% - 3.8rem); }
+.brow .chg { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.brow .chg b { font: 600 1.1rem/1 var(--font-data); color: var(--text-body); }
+.brow .chg b.up { color: var(--limit); }
+.brow .chg .new { font: 500 .88rem/1 var(--font-name); font-style: normal; color: var(--text-mute); border: .1rem solid var(--track-line); border-radius: .25rem; padding: .18rem .36rem; }
+
+/* where a plan or key card goes when clicked: the breakdown's word and an arrow down, at the foot's right */
+.pcard .drill, .kcard .drill { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pcard .drill .go, .kcard .drill .go { color: var(--text-mute); }
+.pcard:hover .drill, .kcard:hover .drill, .pcard:hover .drill .go, .kcard:hover .drill .go { color: var(--key-light); }
+/* a plan card's foot is full with its three figures, so where it goes takes the line under them, at the right */
+.pcard > footer { flex-wrap: wrap; row-gap: .8rem; }
+.pcard .drill { flex-basis: 100%; justify-content: flex-end; }
+/* the failed count and each kind open their requests, so they read as doors: the arrow, and the key light on hover */
+.fails a { display: inline-flex; align-items: baseline; gap: .35rem; text-decoration: none; }
+.fails a.all { color: var(--text); }
+.fails a .go { width: .9rem; height: .9rem; align-self: center; color: var(--text-mute); }
+.fails a:hover, .fails a:hover .go { color: var(--key-light); }
+.flag .vs .dot { display: inline-block; width: .3rem; height: .3rem; margin: 0 .6rem; border-radius: 50%; background: var(--text-mute); vertical-align: middle; }
+
+/* ---------- live additions: a plan's value beside "On your plan", splice's own count labelled, a cut read said ---------- */
+.brow .cost { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
+.brow .cost .val { font: 500 1rem/1 var(--font-data); color: var(--text-mute); }
+.ctd { font: 500 1rem/1 var(--font-name); color: var(--text-mute); margin-right: .9rem; }
+.head-card .models.cut { margin-top: .2rem; color: var(--text-mute); }
+.pickline:not(:empty) { margin: 0 0 3rem; }
+.pickline .lhead { margin-left: 0; }
+.usage > .empty { color: var(--text-mute); font: 500 1.2rem/1.4 var(--font-name); }

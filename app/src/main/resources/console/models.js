@@ -10,6 +10,21 @@
 const COMMAND_KNOBS = Object.values(KNOBS.KNOB).filter((k) => k.cmd).map((k) => k.key);
 const TIERS = ["opus", "sonnet", "haiku", "fable"];
 const tierName = (t) => t[0].toUpperCase() + t.slice(1);
+// A model is named the way its catalog names it ("GPT-6 Sol"); a vendor's id with no catalog name is dressed the same
+// way, never printed raw ("gpt-6-sol"). Digits that follow a digit join with a dot, those after "GPT" with a dash.
+const nameOf = (m) => {
+  if (m.label && m.label !== m.id) return m.label;
+  const id = String(m.id).split("/").pop();
+  if (!/^(gpt|claude|codex|grok|gemini|o\d)/i.test(id)) return m.id; // a local model has no catalog name but its own
+  const out = [];
+  for (const p of id.split("-")) {
+    const prev = out[out.length - 1];
+    if (/^\d+$/.test(p) && /^\d+(\.\d+)*$/.test(prev ?? "") && !/^\d{4,}$/.test(p)) out[out.length - 1] = `${prev}.${p}`;
+    else if (/^\d/.test(p) && /^GPT$/i.test(prev ?? "")) out[out.length - 1] = `GPT-${p}`;
+    else out.push(/^gpt$/i.test(p) ? "GPT" : p[0].toUpperCase() + p.slice(1));
+  }
+  return out.join(" ");
+};
 const root = document.getElementById("models");
 KNOBS.wire(root, () => render());
 
@@ -23,7 +38,8 @@ async function readAll() {
   const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head", "/api/accounts"];
   const [heads, topo, models, projects, sessions, claude, accounts] = await Promise.all(paths.map((p) => API.get(p)));
   if (!heads.ok || !topo.ok) {
-    data.err = heads.status === 0 ? "splice is not answering" : `splice answered ${heads.status}`;
+    if (heads.status !== 0) console.warn(`models: /api/heads answered ${heads.status}`);
+    data.err = heads.status === 0 ? "Not answering" : "Not read";
     return;
   }
   data.err = null;
@@ -51,7 +67,7 @@ function commandsOf() {
     const key = h.key, cfg = hs[key] ?? {}, provKey = cfg.provider ?? "", pcfg = ps[provKey] ?? {};
     const row = data.models.find((r) => r.head === key);
     const models = (row?.models ?? []).filter((m) => m.resolved).map((m) => ({
-      id: m.id, label: m.label || m.id, window: window_(m), max: m.max_context_window ?? null, rates: m.rates ?? null, slot: m.slot ?? null,
+      id: m.id, label: nameOf(m), window: window_(m), max: m.max_context_window ?? null, rates: m.rates ?? null, slot: m.slot ?? null,
     }));
     const slots = {};
     for (const m of models) if (m.slot && TIERS.includes(m.slot)) slots[m.slot] = m.id;
@@ -179,7 +195,12 @@ function removeHtml(c) {
     return (stays.length ? `<span class="said">History stays · ${stays.join(" · ")}</span>` : "")
       + `<button class="act danger" data-act="remove">Remove ${esc(c.cmd)}</button><button class="act quiet" data-act="disarm">Keep ${esc(c.cmd)}</button>`;
   }
-  return rm?.failed ? `<span class="said limit">Not removed</span><button class="act quiet" data-act="arm">Remove</button>` : `<button class="act quiet" data-act="arm">Remove</button>`;
+  if (rm?.failed) {
+    const door = rm.failed.act === "reread" ? `<button class="act quiet" data-act="reread">Read again</button>`
+      : rm.failed.act === "raw" ? `<button class="act quiet" data-act="rawopen">Raw log</button>` : "";
+    return `<span class="said limit">${esc(rm.failed.word)}</span>${door}${rm.failed.act === "reread" ? "" : `<button class="act quiet" data-act="arm">Remove</button>`}`;
+  }
+  return `<button class="act quiet" data-act="arm">Remove</button>`;
 }
 async function armRemove(key) {
   ui.rm = { key, armed: true, info: null };
@@ -192,7 +213,16 @@ async function removeCommand(key) {
   render();
   const res = await API.del(`/api/heads/${encodeURIComponent(key)}`);
   if (res.status === 409) { ui.rm = { key, refused: res.body?.live_sessions ?? [] }; render(); return; }
-  if (!res.ok) { ui.rm = { key, failed: true }; render(); return; }
+  if (res.status === 404) { ui.rm = null; ui.gone.add(key); Object.assign(ui, { open: null, draft: null, said: null }); render(); return; }
+  if (!res.ok) {
+    // why it was refused, in the words fin gave each cause; the daemon logged the findings and answers which cause it was
+    console.warn(`models: removing ${key} answered ${res.status}: ${(res.body?.findings ?? []).join("; ")}`);
+    const failed = res.body?.reason === "changed" ? { word: "Changed on disk", act: "reread" }
+      : res.body?.reason === "config" ? { word: "Config error", act: "raw" } : { word: "Not read", act: "" };
+    ui.rm = { key, failed };
+    render();
+    return;
+  }
   ui.rm = null;
   ui.gone.add(key);
   ui.restartDue = true;
@@ -242,7 +272,7 @@ function paneHtml() {
   const ev = eventsOf(lines ?? []);
   const raw = (lines ?? []).filter((l) => l.raw).slice(-60);
   const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">No events</p>`}`
-    + `<details class="rawlog"><summary>Raw log</summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
+    + `<details class="rawlog"${ui.rawOpen ? " open" : ""}><summary>Raw log</summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
 // daemon.log lines: "[2026-10-12 04:12:52] [claudex] text"; the log is already this command's, so its tag drops
@@ -672,6 +702,8 @@ function onClick(e) {
     case "cancel-signin": if (a?.sign) { a.sign = null; a.busy = false; } else ui.sign = null; render(); break;
     case "arm": armRemove(ui.open); break;
     case "disarm": ui.rm = null; render(); break;
+    case "reread": readAll().then(() => armRemove(ui.open)); break;
+    case "rawopen": ui.rawOpen = true; render(); break;
     case "remove": removeCommand(ui.open); break;
     case "tierpick": ui.pick = ui.pick === `tier:${d.t}` ? null : `tier:${d.t}`; render(); break;
     case "tier": {

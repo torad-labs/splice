@@ -32,7 +32,7 @@ const KNOBS = (() => {
     // the no-progress limit, the one wall that ends a turn: every model, tool or reasoning event renews it, so it bounds a
     // silence, never a turn's length (Watchdog.kt:6-7, :148-155, :390-398). The three tiers under it ask whether the
     // provider is alive and never end a turn on their own (Knob.kt:237-300)
-    K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, also: "timeout limit cut off long turn wedged stuck", short: "Give up after" }),
+    K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, also: "timeout limit cut off long turn wedged stuck", }),
     K("firstByteTimeoutMs", "Check the connection after no first word for", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
       { cmd: true, home: "silent", also: "ask if a silent start is alive after first word first byte" }),
     K("streamIdleMs", "Ask if a silent answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "silence idle hang" }),
@@ -225,15 +225,22 @@ const KNOBS = (() => {
     const own = ownValue(k.key, c);
     return `<div class="over">${cmdChip(c, hl)}${ctlHtml(k, own === undefined ? valueOf(k).v : own, c)}${saidHtml(`${k.key}@${c}`)}${backHtml(k, c)}</div>`;
   }
-  /** One command's rows for [keys], for a page that shows one command at a time (a command's pane on Models): each
-   *  setting's name and a control on the value this command runs. A change saves the command's own value through the
-   *  same PATCH as Settings' rows; "Back to" shows only while it holds one. Clicks go through KNOBS.click as any row. */
+  /** One command's own settings, for a page that shows one command at a time (a command's pane on Models). Only the
+   *  settings this command holds its own value for show, each under its Settings name with the control on that value
+   *  and the way back; "Add setting" lists the rest, each beside the value every command uses. A change saves the
+   *  command's own value through the same PATCH as Settings' rows. Clicks go through KNOBS.click as any row. */
   function commandRowsHtml(cmd, keys, { hl = esc } = {}) {
-    return keys.filter((key) => KNOB[key]).map((key) => {
+    const all = keys.filter((key) => KNOB[key]);
+    const held = (key) => ownValue(key, cmd) !== undefined || (st.adding[key] ?? []).includes(cmd);
+    const open = st.menu === `own:${cmd}`, left = all.filter((key) => !held(key));
+    const rows = all.filter(held).map((key) => {
       const k = KNOB[key], own = ownValue(key, cmd);
       return `<div class="lbl" data-row="${key}">${hl(k.label)}</div><div class="ctl col"><div class="line">`
-        + `${ctlHtml(k, own === undefined ? valueOf(k).v : own, cmd)}${saidHtml(`${key}@${cmd}`)}${own === undefined ? "" : backHtml(k, cmd)}</div></div>`;
+        + `${ctlHtml(k, own === undefined ? valueOf(k).v : own, cmd)}${saidHtml(`${key}@${cmd}`)}${backHtml(k, cmd)}</div></div>`;
     }).join("");
+    const add = left.length ? `<div class="lbl"></div><div class="ctl"><span class="menuwrap"><button class="act quiet small" data-kmenu="own:${cmd}" aria-expanded="${open}">${PLUS}Add setting</button>`
+      + (open ? `<div class="menu" role="menu">${left.map((key) => `<button role="menuitem" data-kact="over" data-key="${key}" data-cmd="${cmd}">${esc(KNOB[key].label)}<span class="mmeta">${esc(word(KNOB[key], valueOf(KNOB[key]).v))}</span></button>`).join("")}</div>` : "") + "</span></div>" : "";
+    return rows + add;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
   function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false, el = "" } = {}) {

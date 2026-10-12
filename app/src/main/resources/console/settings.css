@@ -617,7 +617,7 @@ button.count:hover { color: var(--text); }
 /* two lines of room for every name, so the controls of a row start level: with the line under each control the cards
    hold their rows at the top, and a name that wrapped (two of Plan limits' four at 1440) dropped its own control 20px
    below its neighbours'. Reserving the second line costs a one-line card that much height and lines the row up. */
-#st .kin > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); min-height: 2.5em; }
+#st .kin > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); min-height: 2.5em; text-wrap: balance; }  /* a name on two lines splits evenly, never one word alone under it (marlin, Oct 12) */
 /* every control box is at least a control tall, so a row of settings shows a switch and a dropdown at the same height
    instead of the shorter one hanging 4px lower (Plan limits at 1440: three dropdowns and one Warns/Blocks switch) */
 #st .kin > .ctl { align-items: flex-start; min-height: var(--ctl-h); }

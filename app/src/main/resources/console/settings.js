@@ -724,7 +724,8 @@ const testSaid = (name) => {
 };
 // a shared server's one process: the memory it holds now, Running where /proc gave none, Not running until a session
 // asks for it (spec 8i: instance, sessions and memory per server; its sessions are the Used by chips beside it)
-const memWord = (s) => (!s.hosted ? `<span class="state">Not running</span>` : s.rss ? esc(mbWord(s.rss)) : "Running");
+// a server at a web address has no process here, so its cell is empty, never Not running (marlin, Oct 12)
+const memWord = (s) => (s.web ? "" : !s.hosted ? `<span class="state">Not running</span>` : s.rss ? esc(mbWord(s.rss)) : "Running");
 function serverRow(s, dim) {
   const where = s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft" title="${esc(s.from)}">${esc(s.from)}</span>`;
   const from = `<span class="from">${SV.file}${where}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;

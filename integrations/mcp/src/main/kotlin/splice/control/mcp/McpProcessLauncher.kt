@@ -70,7 +70,7 @@ internal class McpStderr(private val log: LogSink) {
 internal sealed class McpResult<out T> {
     data class Served<out T>(val value: T) : McpResult<T>()
 
-    data class Refused(val reason: String) : McpResult<Nothing>()
+    data class Refused(val reason: String, val timedOut: Boolean = false) : McpResult<Nothing>()
 }
 
 private const val STDERR_BUFFER = 512

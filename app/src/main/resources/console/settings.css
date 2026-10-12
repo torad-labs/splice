@@ -191,9 +191,9 @@ button.count:hover { color: var(--text); }
 
 /* ---------- MCP servers ---------- */
 .srvs { display: flex; flex-direction: column; }
-.srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 9rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
+.srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 20rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
 .srv:first-child { border-top: 0; }
-.srv.out { grid-template-columns: 2.6rem minmax(18rem, 1.4fr) minmax(0, 2fr) 10rem; }
+.srv.out .why { grid-column: 3 / 5; }  /* the same columns as a shared row, so a word starts where "Used by" does */
 .srv.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
 .srv .lamp { position: static; }
 .sname { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }
@@ -209,6 +209,20 @@ button.count:hover { color: var(--text); }
 #st .fig3 .by { margin-top: 1.1rem; padding-top: 1rem; border-top: .12rem solid var(--track); display: flex; flex-direction: column; gap: .7rem; align-items: flex-start; }
 #st .fig3 .by .blabel { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
 .srv .always { display: inline-flex; justify-content: center; min-width: 7.28rem; font: 500 1.02rem/1 var(--font-name); color: var(--text-body); }  /* a web server is shared by being one server: the word sits where the switch would */
+/* a shared server's commands after "Used by", with the commands still on an older copy wrapping under them */
+.srv .fig .chip { margin-left: .6rem; }
+.srv .fig .stale .chip { margin-left: .5rem; }
+.srv .fig.uses { display: flex; flex-wrap: wrap; align-items: center; row-gap: .5rem; white-space: normal; min-width: 0; }
+.srv .fig.uses .stale { margin-left: 0; }
+.srv .fig .used { display: inline-flex; align-items: center; }
+.srv .from { display: inline-flex; align-items: center; gap: .6rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.srv .from svg { width: 1.1rem; height: 1.1rem; }
+.srv .from code, .srv .why code { font: 500 1rem/1 var(--font-data); color: var(--text-body); }
+.srv .nm { font: 500 1.2rem/1 var(--font-name); color: var(--text); }
+.srv .said { display: inline-flex; align-items: center; gap: .5rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.srv .said.ok { color: var(--live); }
+.srv .said.limit { color: var(--limit); }
+.srv .said svg { width: 1rem; height: 1rem; }
 
 /* ---------- Version: a card per version there is, its number read at the size every other pane reads a figure at
    (.fig3 .big, 4.2rem), never as a word in a label column */
@@ -481,8 +495,8 @@ button.count:hover { color: var(--text); }
 /* fin, Oct 10: while splice reads what a shorter window would delete, the bar's track is empty with a slow sweep, Cancel
    shows at once and Delete waits, with no count, until the number arrives */
 .hbar.reading .hdays { position: relative; overflow: hidden; background: var(--track-line); opacity: .5; }
-.hbar.reading .hdays::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: linear-gradient(90deg, transparent, var(--track-line), transparent); animation: reading 1.8s ease-in-out infinite; }
-@keyframes reading { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+.hbar.reading .hdays::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: linear-gradient(90deg, transparent, var(--track-line), transparent); animation: hbar-sweep 1.8s ease-in-out infinite; }
+@keyframes hbar-sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .hbar.reading .hdays::after { animation: none; width: 100%; opacity: .4; } }
 
 /* the setting that answers a figure sits apart from it: .kcards carries that margin itself, and .fix is kept for the

@@ -12,8 +12,12 @@ import splice.core.util.LogSink
 // the whole id, which adoption makes a hint a caller may hold rather than a capability.
 private const val SESSION_TAG = 8
 
+/** What a client request says about itself in its headers: the session it holds, the protocol version it negotiated,
+ *  and the command (head) its config was written for. */
+internal data class McpClient(val sessionId: String?, val protocolVersion: String?, val head: String?)
+
 /** A minted session, or why it could not be: both entry points answer the client with the words. */
-internal data class Minted(val session: McpSession?, val failure: String)
+internal data class Minted(val session: McpSession?, val failure: String, val timedOut: Boolean = false)
 
 internal class SessionMinting(
     private val servers: HostedServers,
@@ -22,7 +26,7 @@ internal class SessionMinting(
 ) {
 
     /** A session on [name]'s child: [sessionId] null mints a fresh id, non-null adopts the client's own. */
-    suspend fun mint(name: String, sessionId: String?): Minted {
+    suspend fun mint(name: String, sessionId: String?, head: String? = null): Minted {
         // acquire() reserves the server against eviction until release(); the handshake happens inside
         // that window and the session is registered only if the server is still bound when it ends —
         // so no session is ever created that must then be un-created.
@@ -32,20 +36,24 @@ internal class SessionMinting(
         }
         var initResult: kotlinx.serialization.json.JsonObject? = null
         var failure = ""
+        var timedOut = false
         // The reservation ends in a finally: a client that cancels mid-handshake (review 4) must not
         // leave the server marked "starting" forever, or capacity would refuse every newcomer.
         try {
             when (val started = server.ensureStarted()) {
                 is McpResult.Served -> initResult = started.value
-                is McpResult.Refused -> failure = started.reason
+                is McpResult.Refused -> {
+                    failure = started.reason
+                    timedOut = started.timedOut
+                }
             }
         } finally {
             if (!servers.release(name, server)) {
                 failure = failure.ifEmpty { "hosted MCP server '$name' was replaced while starting" }
             }
         }
-        val session = initResult?.takeIf { failure.isEmpty() }?.let { sessions.create(name, it, sessionId) }
-        return session?.let { Minted(it, "") } ?: Minted(null, failure)
+        val session = initResult?.takeIf { failure.isEmpty() }?.let { sessions.create(name, it, sessionId, head) }
+        return session?.let { Minted(it, "") } ?: Minted(null, failure, timedOut)
     }
 
     /** The session for an id this host does not know — minted under the CLIENT's id, so a restart, an
@@ -59,10 +67,10 @@ internal class SessionMinting(
      *
      *  Refused for anything but a REQUEST (a notification needs no session to be answered), and for an
      *  id the host still holds or the client ended ([McpSessions.adoptable]). */
-    suspend fun adopt(name: String, sessionId: String?, kind: RpcKind, protocolVersion: String?): McpSession? {
-        if (kind != RpcKind.REQUEST || !sessions.adoptable(sessionId)) return null
-        val minted = mint(name, sessionId)
-        minted.session?.let { session -> log(adopted(name, session, protocolVersion)) }
+    suspend fun adopt(name: String, client: McpClient, kind: RpcKind): McpSession? {
+        if (kind != RpcKind.REQUEST || !sessions.adoptable(client.sessionId)) return null
+        val minted = mint(name, client.sessionId, client.head)
+        minted.session?.let { session -> log(adopted(name, session, client.protocolVersion)) }
         return minted.session
     }
 

@@ -35,6 +35,8 @@ internal class McpSession(
     val server: String,
     val initResult: JsonObject,
     val adopted: Boolean = false,
+    /** The command whose config the client read, from its X-Splice-Head header; null when it sent none. */
+    val head: String? = null,
 ) {
     val stream: Channel<String> = Channel(STREAM_BUFFER, BufferOverflow.SUSPEND)
     val openStreams = AtomicInteger()
@@ -100,8 +102,14 @@ internal class McpSessions(private val clock: HostClock) {
 
     /** A session on [server], minted with the child's [initResult]. [id] is the client's own id when
      *  this is an adoption (V4-148); null mints a fresh one. */
-    fun create(server: String, initResult: JsonObject, id: String? = null): McpSession {
-        val session = McpSession(id ?: UUID.randomUUID().toString(), server, initResult, adopted = id != null)
+    fun create(server: String, initResult: JsonObject, id: String? = null, head: String? = null): McpSession {
+        val session = McpSession(
+            id ?: UUID.randomUUID().toString(),
+            server,
+            initResult,
+            adopted = id != null,
+            head = head,
+        )
         touch(session)
         // putIfAbsent, never put: two concurrent adoptions of one id (a client that retried) must keep
         // ONE session, or the loser's stream sits in nobody's map holding its child's notifications.

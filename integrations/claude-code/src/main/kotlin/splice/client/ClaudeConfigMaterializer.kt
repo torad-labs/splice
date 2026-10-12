@@ -160,7 +160,7 @@ public class ClaudeConfigMaterializer(
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache.takeIf { spec.availableModelIds != null },
-            shareMcp = spec.policy.sharesMcp(),
+            mcpHead = spec.signIn.headKey.takeIf { spec.policy.sharesMcp() },
             local = localClaudeJson,
             trust = trust,
         )
@@ -407,7 +407,7 @@ public class ClaudeConfigMaterializer(
     private fun writeClaudeJson(
         configDir: Path,
         modelOptionsCache: JsonElement?,
-        shareMcp: Boolean,
+        mcpHead: String?,
         local: JsonObject,
         trust: TrustedLaunch?,
     ): Int {
@@ -418,10 +418,10 @@ public class ClaudeConfigMaterializer(
         var mcpCount = 0
         val built = buildJsonObject {
             ModelOptionsCache.withLaunchCache(local, modelOptionsCache).forEach { (k, v) -> put(k, v) }
-            val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { shareMcp }
+            val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { mcpHead != null }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size
-                put(Keys.MCP_SERVERS, mcpRewrite?.invoke(globalMcp) ?: globalMcp)
+                put(Keys.MCP_SERVERS, mcpRewrite?.invoke(globalMcp, mcpHead.orEmpty()) ?: globalMcp)
             }
             for (k in portKeys) {
                 // Read once into a local: the map is looked up twice in the old shape and the

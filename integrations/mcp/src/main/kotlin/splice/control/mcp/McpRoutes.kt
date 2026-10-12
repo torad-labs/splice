@@ -16,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
+import splice.client.mcp.MCP_HEAD_HEADER
 import splice.http.SseChannelResponse
 import splice.http.SseWrite
 
@@ -28,13 +29,14 @@ public class McpRoutes(private val host: McpHost) {
     public suspend fun post(call: ApplicationCall) {
         val name = call.parameters["name"].orEmpty()
         val headers = call.request.headers
-        val reply = host.post(name, headers[SESSION_HEADER], call.receiveText(), headers[PROTOCOL_HEADER])
+        val body = call.receiveText()
+        val reply = host.post(name, headers[SESSION_HEADER], body, headers[PROTOCOL_HEADER], headers[MCP_HEAD_HEADER])
         reply.sessionId?.let { call.response.header(SESSION_HEADER, it) }
-        val body = reply.body
-        if (body == null) {
+        val answer = reply.body
+        if (answer == null) {
             call.respond(HttpStatusCode.fromValue(reply.status))
         } else {
-            call.respondText(body, ContentType.Application.Json, HttpStatusCode.fromValue(reply.status))
+            call.respondText(answer, ContentType.Application.Json, HttpStatusCode.fromValue(reply.status))
         }
     }
 

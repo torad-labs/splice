@@ -8,6 +8,7 @@
 
 const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needsRestart } = KNOBS;
 const SV = {
+  file: G('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
   open: G('<path d="M7 17L17 7M9 7h8v8"/>'),
   busy: G('<path d="M4 6h16M4 12h16M4 18h9"/><circle cx="18" cy="18" r="1.6"/>'),
   silent: G('<circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2M9 3h6"/>'),
@@ -51,7 +52,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
+const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -605,7 +606,7 @@ const zeroFig = (what) => `<span class="fig"><b>0</b> ${esc(what)}</span>`;
 function mcpNow() {
   const m = ui.mcp;
   if (m === undefined) return `<div class="card peaks">${READING}</div>`;
-  if (m === false) return `<p class="pidle"><span>splice is not hosting MCP servers, so there is nothing running to show</span></p>`;
+  if (m === false) return "";
   if (!m) return `<p class="pidle"><span class="state limit">Not read</span><span>splice did not answer for its MCP servers</span></p>`;
   const live = Object.entries(m.servers || {}), up = live.filter(([, s]) => s.hosted);
   // one server is written in several files (a head's copy of the canonical home, a repo's own entry), so the figure is
@@ -623,17 +624,12 @@ function mcpNow() {
   } else { zeros.push(zeroFig("Running")); }
   if (set) tiles.push(statTile(fmt(set), "Set up", note(regs.length > set ? `${fmt(regs.length)} entries in your files` : "")));
   if (hosts.length) {
-    // SHARING MADE VISIBLE, NOT EXPLAINED (fin, Marlin approved, Oct 12): the line under this figure said in words
-    // what "1 process · 6 sessions" says as a fact, and the host reports both. The chip is the tile's last row here
-    // as it is in "Running", so the two read alike.
-    const using = live.filter(([n]) => hosts.includes(n)).reduce((n, [, s]) => n + (s.sessions || 0), 0);
-    const share = `${fmt(hosts.length)} ${hosts.length === 1 ? "process" : "processes"} · ${fmt(using)} ${using === 1 ? "session" : "sessions"}`;
-    tiles.push(statTile(fmt(hosts.length), "Hosted by splice", `<p class="kel">${esc(share)}</p>` + chipRow(hosts)));
+    // THE FIGURE AND ITS CHIPS, NO SUB-LINE (fin, Marlin, Oct 12): a process count here is what runs now and so repeats
+    // "Running", and a session count is the agent count the page does not draw, because splice cannot name those sessions.
+    tiles.push(statTile(fmt(hosts.length), "Hosted by splice", chipRow(hosts)));
   } else if (set) { zeros.push(zeroFig("Hosted by splice")); }
-  // the servers splice does not host are a figure of its own beside the ones it does, not a line defending the
-  // difference: "as they did before splice" argued a case the two numbers already make (fin, Oct 12)
-  const own = set - hosts.length;
-  if (own > 0) tiles.push(statTile(fmt(own), "Run by each session"));
+  // no "Run by each session" tile: it added unlike things (a web address, a plugin's server, a per-project one), and each
+  // server's row already says its own reason (fin, Marlin, Oct 12)
   // resident memory of the live hosted processes, read from /proc (McpStatus.kt:100), with the sessions on them under it
   if (held) tiles.push(statTile(mbWord(held), "Memory in use", note(sessions ? `${fmt(sessions)} ${sessions === 1 ? "session" : "sessions"}` : "")));
   const lines = [];
@@ -645,7 +641,113 @@ function mcpNow() {
 }
 const chipRow = (names) => `<div class="cdoors">${names.map(srvChip).join("")}</div>`;
 const note = (s) => (s ? `<p class="knote">${esc(s)}</p>` : "");
-const mcpHtml = () => `<section class="tally">${mcpNow()}</section><section class="sub">${blocks(keysOf("mcp"))}</section>`;
+// ---------- MCP servers: one row each ----------
+// The row is hitstop's drawing (Splice-Animator/design/console, Oct 12) and its words are fin's. The daemon says WHY a
+// server is not shared as a stable key (McpSharing.kt, McpInventory.kt) with the value it names; this table is the only
+// place those keys become words. A key it does not know reads "Not shared" and nothing more, never a guess.
+const MCP_STATE = {
+  cwd: { word: "Per agent" },
+  variable: { word: "Per agent", line: "A different value in each agent" },
+  relative_path: { word: "Per project", line: "A different folder in each project" },
+  location_flag: { word: "Per project", line: "A different place in each project" },
+  directory: { word: "Per project", line: "One project's folder" },
+  no_command: { word: "No command" },
+  unreadable: { word: "Unreadable" },
+  plugin: { word: "Plugin-owned" },
+  repo: { word: "In the repo" },
+  project: { word: "Per project" },
+  other_config: { word: "Other config" },
+  added_in: { word: "Added in", cmd: true },
+  excluded: { word: "Set by you" },
+};
+// keys that say a state and no word: the section's own switch says hosting is off, a race reads only its state, and a
+// web server is shared by being one server (fin, Oct 12)
+const MCP_SILENT = new Set(["hosting_disabled", "race", "transport", "until_restart"]);
+const HOME = /^\/(?:home|Users)\/[^/]+/;
+const homeWord = (p) => String(p || "").replace(HOME, "~");
+// a command's own copy of the config lives in ~/.claude-<key>/.claude.json
+const copyOf = (file) => /\/\.claude-([^/]+)\/\.claude\.json$/.exec(file || "")?.[1] ?? null;
+const fromWord = (e) => {
+  if (!e) return "";
+  if (e.kind === "plugin_mcp_json" || e.kind === "plugin_inline") {
+    const dir = String(e.source_file || "").split("/").slice(0, -1).pop();
+    return dir ? `${dir} plugin` : "a plugin";
+  }
+  return homeWord(e.source_file);
+};
+// a web server's address, without the part of a URL that can carry a credential: the host and path, never a query or a login
+const addressOf = (v) => {
+  try { const u = new URL(v); return u.host + (u.pathname === "/" ? "" : u.pathname); } catch { return ""; }
+};
+/** Every server by name, from what the daemon planned (servers) and what it found in the files (sources). */
+function mcpServerRows(m) {
+  const found = new Map();
+  for (const e of m.sources?.servers || []) { if (!found.has(e.name)) found.set(e.name, []); found.get(e.name).push(e); }
+  const names = new Set([...found.keys(), ...Object.keys(m.servers || {})]);
+  return [...names].map((name) => {
+    const live = m.servers?.[name] || null, entries = found.get(name) || [];
+    const own = entries.find((e) => !copyOf(e.source_file)) || entries[0];
+    const stale = [...new Set(entries.filter((e) => e.why === "until_restart").map((e) => e.value || copyOf(e.source_file)).filter(Boolean))];
+    const added = entries.find((e) => e.why === "added_in");
+    const why = live && !live.eligible ? live.why : !live ? (own?.why ?? added?.why) : null;
+    const value = live && !live.eligible ? live.value : own?.value;
+    const web = why === "transport";
+    const shared = !!live?.eligible || web;
+    const state = shared ? null : (why === "added_in" || (!own && added) ? "added_in" : why);
+    const copy = added || own;
+    if (state && !MCP_STATE[state] && !MCP_SILENT.has(state)) console.warn(`mcp: no word for "${state}" on ${name}: ${live?.reason ?? own?.reason ?? ""}`);
+    return { name, from: fromWord(own || added), shared, web, address: web ? addressOf(value) : "", state, value,
+      cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
+      cmds: live?.commands || [], stale, last: live?.last_activity || 0 };
+  }).sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name));
+}
+const msWord = (ms) => (ms >= 1000 ? `${+(ms / 1000).toFixed(1)} s` : `${ms} ms`);
+const testSaid = (name) => {
+  const r = ui.mtest[name];
+  // counting up, because a server that has to start can take most of a minute and a still word reads as hung
+  if (r === "running") { const secs = Math.floor((Date.now() - (ui.mtestAt[name] || Date.now())) / 1000); return `<span class="said">${ICON.wait}Testing${secs ? ` · ${fmt(secs)} s` : ""}</span>`; }
+  if (r?.ok) return `<span class="said ok">${r.started ? "Started · " : ""}${msWord(r.ms)}${r.tools == null ? "" : ` · ${fmt(r.tools)} ${r.tools === 1 ? "tool" : "tools"}`}</span>`;
+  return r ? `<span class="said limit">${esc(r.word)}</span>` : "";
+};
+function serverRow(s, dim) {
+  const from = `<span class="from">${SV.file}${esc(s.from)}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
+  const name = `<div class="sname"><span class="nm">${esc(s.name)}</span>${from}</div>`;
+  if (!s.shared) {
+    const m = MCP_STATE[s.state];
+    const cmd = m?.cmd && s.cmd ? cmdChip(s.cmd) : "", code = m && s.value && s.state !== "added_in" ? `<code>${esc(homeWord(s.value))}</code>` : "";
+    // a row with a why has no switch, just the word; one the person set keeps a switch reading Not shared, which this
+    // page cannot flip yet, and a row with no word reads only its state
+    const why = m ? `<div class="why"><span class="w">${esc(m.word)}${cmd}${code}</span>${m.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</div>` : "<span></span>";
+    const state = !m || s.state === "excluded" ? `<span class="acts"><span class="always">Not shared</span></span>` : "<span></span>";
+    return `<div class="srv out"><span class="lamp ended" aria-hidden="true"><i></i></span>${name}${why}${state}</div>`;
+  }
+  const used = s.cmds.length ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}</span>` : "";
+  const old = s.stale.map((c) => `<span class="stale">Until restart${cmdChip(c)}</span>`).join("");
+  const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
+  return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
+    + `<span class="fig uses">${used}${old}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}</span>`
+    + `<span class="acts">${test}<span class="always">Shared</span></span></div>`;
+}
+const mcpServersHtml = () => {
+  const m = ui.mcp;
+  if (!m) return "";
+  const rows = mcpServerRows(m);
+  if (!rows.length) return "";
+  return `<section class="sub"><h3>Servers<span class="hn">${fmt(rows.filter((r) => r.shared).length)} of ${fmt(rows.length)} shared</span></h3><div class="srvs${m.hosting === false ? " dim" : ""}">${rows.map(serverRow).join("")}</div></section>`;
+};
+/** POST /api/mcp/{name}/test: the daemon starts the server if it is not running, asks it for its tools, and says how long. */
+async function testServer(name) {
+  ui.mtest[name] = "running"; ui.mtestAt[name] = Date.now(); render();
+  const tick = setInterval(render, 1000);
+  const r = await API.post(`/api/mcp/${encodeURIComponent(name)}/test`, {});
+  const b = r.body || {};
+  clearInterval(tick);
+  ui.mtest[name] = r.ok && b.ok ? { ok: true, started: !!b.started, ms: b.round_trip_ms, tools: b.tools }
+    : { ok: false, word: { timeout: "Given up", spawn: "Not started", unshared: "Not shared" }[b.kind] ?? "Test failed" };
+  render();
+}
+
+const mcpHtml = () => `<section class="tally">${mcpNow()}</section>${mcpServersHtml()}<section class="sub">${blocks(keysOf("mcp"))}</section>`;
 
 // the three settings that cap splice itself, in the order they bite: how many run, how many wait, how big one may be
 const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];

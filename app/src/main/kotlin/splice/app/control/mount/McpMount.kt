@@ -16,6 +16,11 @@ internal class McpMount(private val host: McpHost, private val guard: ControlGua
 
     override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, host.statusJson()) } }
+        route.post("/api/mcp/{name}/test") {
+            guard.guarded(call) {
+                ControlReplies.respond(call, host.probe.test(call.parameters["name"].orEmpty()).json())
+            }
+        }
         route.post("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.post(call) } }
         route.get("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.stream(call) } }
         route.delete("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.delete(call) } }

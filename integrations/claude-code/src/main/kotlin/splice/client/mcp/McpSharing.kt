@@ -32,13 +32,23 @@ public data class McpServerSpec(
     val env: Map<String, String>,
 )
 
+/** A stable key for why a server is not shared, and the value the reason names (the variable, the path, the cwd,
+ *  the URL). The sentence beside it is what the CLI and doctor print; the console words the key, so no page parses
+ *  prose. */
+public data class McpWhy(val key: String, val value: String? = null)
+
 /** One planning pass over the operator's `mcpServers`: what is hosted, what is not and why, and
- *  the object to write into a head's `.claude.json` in place of the original. */
+ *  the object to write into a head's `.claude.json` in place of the original. [why] is [passthrough]'s reason as a
+ *  key and value, under the same names. */
 public data class McpPlan(
     val hosted: Map<String, McpServerSpec>,
     val passthrough: Map<String, String>,
     val rewritten: JsonObject,
+    val why: Map<String, McpWhy> = emptyMap(),
 )
+
+/** One refusal: the sentence the CLI prints and the key and value the console words. */
+private data class Rejected(val words: String, val why: McpWhy)
 
 /** Answers "is this string an existing directory?" — a seam so eligibility is testable without
  *  a filesystem and so the planner never touches disk in the materializer's abort-free window. */
@@ -46,14 +56,20 @@ public fun interface DirectoryProbe {
     public operator fun invoke(candidate: String): Boolean
 }
 
-/** Rewrites a head's shared `mcpServers` object before it is written; the materializer's seam. */
+/** Rewrites a head's shared `mcpServers` object before it is written; the materializer's seam. [headKey] is the
+ *  command the file is written for: a hosted entry names it in a header, so the host can say which commands use a
+ *  server. */
 public fun interface McpRewrite {
-    public operator fun invoke(global: JsonObject): JsonObject
+    public operator fun invoke(global: JsonObject, headKey: String): JsonObject
 }
+
+/** The header a hosted entry carries so the host knows which command a session belongs to. */
+public const val MCP_HEAD_HEADER: String = "X-Splice-Head"
 
 private val LOCATION_FLAG =
     Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|folder|home|base-?dir|work-?dir)")
 private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
+private val VARIABLE = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)""")
 
 /** The MCP-scoped bearer at plan time; generated client configs must not carry management authority. */
 public fun interface McpBearer {
@@ -69,13 +85,21 @@ public class McpSharing(
     private val bearer: McpBearer,
     private val isDirectory: DirectoryProbe = DirectoryProbe { Files.isDirectory(Path.of(it)) },
 ) {
-    public fun plan(global: JsonObject): McpPlan {
-        if (!enabled) return McpPlan(emptyMap(), global.keys.associateWith { "hosting disabled" }, global)
+    public fun plan(global: JsonObject, headKey: String? = null): McpPlan {
+        if (!enabled) {
+            return McpPlan(
+                emptyMap(),
+                global.keys.associateWith { "hosting disabled" },
+                global,
+                global.keys.associateWith { McpWhy("hosting_disabled") },
+            )
+        }
         val hosted = LinkedHashMap<String, McpServerSpec>()
         val passthrough = LinkedHashMap<String, String>()
+        val whys = LinkedHashMap<String, McpWhy>()
         val rewritten = buildJsonObject {
             global.forEach { (name, entry) ->
-                val spec = eligible(name, entry, passthrough)
+                val spec = eligible(name, entry, passthrough, whys)
                 if (spec == null) {
                     put(name, entry)
                 } else {
@@ -83,42 +107,61 @@ public class McpSharing(
                     putJsonObject(name) {
                         put("type", "http")
                         put("url", endpointPrefix + name)
-                        putJsonObject("headers") { put("Authorization", "Bearer " + bearer()) }
+                        putJsonObject("headers") {
+                            put("Authorization", "Bearer " + bearer())
+                            headKey?.takeIf { it.isNotEmpty() }?.let { put(MCP_HEAD_HEADER, it) }
+                        }
                     }
                 }
             }
         }
-        return McpPlan(hosted, passthrough, rewritten)
+        return McpPlan(hosted, passthrough, rewritten, whys)
     }
 
     /** The materializer-facing seam: the rewritten object, nothing else. */
-    public fun rewrite(): McpRewrite = McpRewrite { plan(it).rewritten }
+    public fun rewrite(): McpRewrite = McpRewrite { global, headKey -> plan(global, headKey).rewritten }
 
     /** The spec for [name] as the operator's file declares it now, or null when it is not hosted. */
     public fun hostedSpec(global: JsonObject, name: String): McpServerSpec? = plan(global).hosted[name]
 
-    private fun eligible(name: String, element: JsonElement, reasons: MutableMap<String, String>): McpServerSpec? {
+    private fun eligible(
+        name: String,
+        element: JsonElement,
+        reasons: MutableMap<String, String>,
+        whys: MutableMap<String, McpWhy>,
+    ): McpServerSpec? {
         val entry = Entry(element as? JsonObject)
         val rejection = rejection(name, entry)
         return if (rejection == null && entry.command != null) {
             McpServerSpec(name, entry.command, entry.args, entry.env)
         } else {
-            reasons[name] = rejection ?: "no command"
+            reasons[name] = rejection?.words ?: "no command"
+            whys[name] = rejection?.why ?: McpWhy("no_command")
             null
         }
     }
 
-    private fun rejection(name: String, entry: Entry): String? = when {
-        name in exclude -> "excluded by [daemon] mcp_hosting_exclude"
-        entry.obj == null -> "entry is not an object"
-        entry.malformed != null -> entry.malformed
-        entry.type != null && entry.type != "stdio" -> "transport '${entry.type}' already serves many clients"
-        entry.command == null -> "no command"
-        entry.obj.containsKey("cwd") -> "has a cwd (session-scoped)"
+    private fun rejection(name: String, entry: Entry): Rejected? = when {
+        name in exclude -> Rejected("excluded by [daemon] mcp_hosting_exclude", McpWhy("excluded"))
+        entry.obj == null -> Rejected("entry is not an object", McpWhy("unreadable"))
+        entry.malformed != null -> Rejected(entry.malformed, McpWhy("unreadable"))
+        else -> launchRejection(entry)
+    }
+
+    private fun launchRejection(entry: Entry): Rejected? = when {
+        entry.type != null && entry.type != "stdio" -> Rejected(
+            "transport '${entry.type}' already serves many clients",
+            McpWhy("transport", entry.url ?: entry.type),
+        )
+        entry.command == null -> Rejected("no command", McpWhy("no_command"))
+        entry.obj?.containsKey("cwd") == true -> Rejected(
+            "has a cwd (session-scoped)",
+            McpWhy("cwd", str(entry.obj["cwd"])),
+        )
         else -> valueRejection(listOf(entry.command) + entry.args + entry.env.values)
     }
 
-    private fun valueRejection(values: List<String>): String? {
+    private fun valueRejection(values: List<String>): Rejected? {
         // Every value is checked bare AND as a flag's payload (`--root=./repo`). A RELATIVE path is
         // resolved by the client against ITS cwd, which the host cannot know, so the classification
         // is fail-closed on shape alone (review 3, 2026-09-13): `.`/`./x`/`../x`, any relative token
@@ -130,11 +173,24 @@ public class McpSharing(
         val relative = candidates.firstOrNull(::looksRelative)
         val located = locationFlag(values)
         val directory = candidates.firstOrNull { it.startsWith("/") && isDirectory(it) }
+        val variable = values.firstNotNullOfOrNull { VARIABLE.find(it)?.groupValues?.get(1) }
         return when {
-            values.any { it.contains("\${") } -> "a value expands \${VAR} from the client's environment"
-            relative != null -> "names the relative path '$relative' (project-scoped)"
-            located != null -> "'$located' names a location relative to the client (project-scoped)"
-            directory != null -> "names the directory '$directory' (project-scoped)"
+            values.any { it.contains("\${") } -> Rejected(
+                "a value expands \${VAR} from the client's environment",
+                McpWhy("variable", variable),
+            )
+            relative != null -> Rejected(
+                "names the relative path '$relative' (project-scoped)",
+                McpWhy("relative_path", relative),
+            )
+            located != null -> Rejected(
+                "'$located' names a location relative to the client (project-scoped)",
+                McpWhy("location_flag", located),
+            )
+            directory != null -> Rejected(
+                "names the directory '$directory' (project-scoped)",
+                McpWhy("directory", directory),
+            )
             else -> null
         }
     }
@@ -158,6 +214,7 @@ public class McpSharing(
     private inner class Entry(val obj: JsonObject?) {
         val type: String? = obj?.let { str(it["type"]) }
         val command: String? = obj?.let { str(it["command"]) }
+        val url: String? = obj?.let { str(it["url"]) }
         val args: List<String> = (obj?.get("args") as? JsonArray)?.mapNotNull { str(it) } ?: emptyList()
         val env: Map<String, String> =
             (obj?.get("env") as? JsonObject)?.mapNotNull { (k, v) -> str(v)?.let { k to it } }?.toMap() ?: emptyMap()

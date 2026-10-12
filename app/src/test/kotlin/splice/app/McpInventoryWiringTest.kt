@@ -14,6 +14,7 @@ import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpDisposition
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
+import splice.client.mcp.McpWhy
 import splice.core.util.LogSink
 import splice.launch.HeadTrees
 import splice.launch.LaunchGateway
@@ -105,6 +106,13 @@ class McpInventoryWiringTest {
         }
         assertEquals(McpDisposition.EXCLUDED, stale.disposition, stale.reason)
         assertTrue(stale.reason.contains("stale"), stale.reason)
+        assertEquals(McpWhy("until_restart"), stale.why)
+        assertEquals(McpWhy("other_config"), own.why)
+        assertEquals(null, copy.why, "a shared copy has no reason")
+        val canonical = later.dispositioned.single {
+            it.registration.sourceFile == home.resolve(".claude.json") && it.registration.name == "exa"
+        }
+        assertEquals(McpWhy("cwd", "/x"), canonical.why)
     }
 
     private fun spec(configDir: Path, head: String, policy: ClaudePolicy) = LaunchSpec(

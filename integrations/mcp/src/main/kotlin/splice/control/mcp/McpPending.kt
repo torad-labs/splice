@@ -8,6 +8,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 internal const val RPC_SERVER_EXITED = -32000
+
+// why: a request the child never answered, or a handshake it never finished, told apart by code from a child that
+// exited, so a caller (Settings' Test) can say "given up" without matching the words.
+internal const val RPC_TIMED_OUT = -32003
 private const val PARAMS = "params"
 private const val PROGRESS_TOKEN = "progressToken"
 private const val HOST_TOKEN_PREFIX = "splice-"

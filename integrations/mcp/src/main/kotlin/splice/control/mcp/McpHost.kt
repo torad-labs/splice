@@ -69,6 +69,10 @@ public class McpHost(
     private val minting = SessionMinting(servers, sessions, log)
     private val status = McpStatus(sharing, global, HostedServerLookup(servers::get), sessions, inventory)
 
+    /** `POST /api/mcp/{name}/test`: starts a server when it is not running, lists its tools, and says what came back. */
+    public val probe: McpProbe =
+        McpProbe(this, status, HostedServerLookup(servers::get), config.clock, config.testListTimeout)
+
     @Volatile private var sweeper: ScheduledExecutorService? = null
 
     public fun start() {
@@ -95,17 +99,23 @@ public class McpHost(
 
     /** One client POST. [sessionId] is the `Mcp-Session-Id` header, absent on `initialize`;
      *  [protocolVersion] is the `MCP-Protocol-Version` header a client sends after initialize. */
-    public suspend fun post(name: String, sessionId: String?, body: String, protocolVersion: String? = null): McpReply {
+    public suspend fun post(
+        name: String,
+        sessionId: String?,
+        body: String,
+        protocolVersion: String? = null,
+        head: String? = null,
+    ): McpReply {
         val msg = codec.parse(body)
             ?: return bad(HttpStatus.BAD_REQUEST, JsonPrimitive(0), RPC_INVALID, "not a JSON-RPC object")
         val kind = codec.kind(msg)
         val id = msg["id"] ?: JsonPrimitive(0)
         return when {
             kind == RpcKind.INVALID -> bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "invalid JSON-RPC")
-            kind == RpcKind.REQUEST && codec.method(msg) == "initialize" -> initialize(name, msg)
+            kind == RpcKind.REQUEST && codec.method(msg) == "initialize" -> initialize(name, msg, head)
             !protocolAccepted(name, sessionId, protocolVersion) ->
                 bad(HttpStatus.BAD_REQUEST, id, RPC_INVALID, "unsupported MCP-Protocol-Version '$protocolVersion'")
-            else -> forSession(name, sessionId, msg, kind, protocolVersion)
+            else -> forSession(name, McpClient(sessionId, protocolVersion, head), msg, kind)
         }
     }
 
@@ -168,23 +178,19 @@ public class McpHost(
     /** `/api/mcp`. */
     public fun statusJson(): String = status.json()
 
-    private suspend fun initialize(name: String, msg: JsonObject): McpReply {
+    private suspend fun initialize(name: String, msg: JsonObject, head: String?): McpReply {
         val id = msg.getValue("id")
-        val minted = minting.mint(name, null)
+        val minted = minting.mint(name, null, head)
+        val code = if (minted.timedOut) RPC_TIMED_OUT else RPC_SERVER_ERROR
         return minted.session?.let { McpReply(HTTP_OK, codec.encode(codec.result(id, it.initResult)), it.id) }
-            ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, RPC_SERVER_ERROR, minted.failure)
+            ?: bad(HttpStatus.SERVICE_UNAVAILABLE, id, code, minted.failure)
     }
 
-    private suspend fun forSession(
-        name: String,
-        sessionId: String?,
-        msg: JsonObject,
-        kind: RpcKind,
-        protocolVersion: String? = null,
-    ): McpReply {
+    private suspend fun forSession(name: String, client: McpClient, msg: JsonObject, kind: RpcKind): McpReply {
         val id = msg["id"] ?: JsonPrimitive(0)
+        val sessionId = client.sessionId
         val session = sessions.get(name, sessionId)
-            ?: minting.adopt(name, sessionId, kind, protocolVersion)
+            ?: minting.adopt(name, client, kind)
             ?: return bad(HttpStatus.NOT_FOUND, id, RPC_UNKNOWN_SESSION, "session not found")
         sessions.touch(session)
         val server = servers.reserve(name)

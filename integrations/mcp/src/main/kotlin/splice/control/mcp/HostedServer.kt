@@ -111,7 +111,7 @@ internal class HostedServer(
         // ONE reading for this request: the budget it waits under is the budget it was admitted under.
         return withTimeoutOrNull(config.requestTimeout()) { slot.answer.await() } ?: run {
             pending.remove(hostId)
-            codec.error(clientId, RPC_SERVER_EXITED, "hosted MCP server '${spec.name}' did not answer in time")
+            codec.error(clientId, RPC_TIMED_OUT, "hosted MCP server '${spec.name}' did not answer in time")
         }
     }
 
@@ -212,7 +212,7 @@ internal class HostedServer(
         if (answer == null) {
             pending.remove(hostId)
             tearDown("no initialize answer")
-            return McpResult.Refused("'${spec.name}' did not complete the MCP handshake")
+            return McpResult.Refused("'${spec.name}' did not complete the MCP handshake", timedOut = true)
         }
         val result = answer["result"] as? JsonObject
         if (result == null || !publish(p, result)) {

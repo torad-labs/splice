@@ -18,6 +18,7 @@
 // stronger than a runtime report nobody reads.
 package splice.client.mcp
 
+import kotlinx.serialization.json.JsonObject
 import splice.client.Keys
 import java.nio.file.Path
 
@@ -28,6 +29,8 @@ public data class McpDispositioned(
     val registration: McpRegistration,
     val disposition: McpDisposition,
     val reason: String,
+    /** The same reason as a key and value the console words; null for a server that is shared. */
+    val why: McpWhy? = null,
 )
 
 /** One kind's shape in the report — sizes only; McpStatus renders these onto the wire. */
@@ -84,24 +87,39 @@ public class McpInventory(
 
     private fun disposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when (reg.kind) {
         McpSourceKind.GLOBAL -> globalDisposition(reg, plan)
-        McpSourceKind.PROJECT -> McpDispositioned(reg, McpDisposition.PENDING, McpDispositionReasons.PROJECT)
-        McpSourceKind.REPO -> McpDispositioned(reg, McpDisposition.PENDING, McpDispositionReasons.REPO)
-        McpSourceKind.PLUGIN_MCP_JSON -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.PLUGIN)
-        McpSourceKind.PLUGIN_INLINE -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.PLUGIN)
+        McpSourceKind.PROJECT -> McpDispositioned(
+            reg,
+            McpDisposition.PENDING,
+            McpDispositionReasons.PROJECT,
+            McpWhy("project"),
+        )
+        McpSourceKind.REPO -> McpDispositioned(reg, McpDisposition.PENDING, McpDispositionReasons.REPO, McpWhy("repo"))
+        McpSourceKind.PLUGIN_MCP_JSON -> McpDispositioned(
+            reg,
+            McpDisposition.EXCLUDED,
+            McpDispositionReasons.PLUGIN,
+            McpWhy("plugin"),
+        )
+        McpSourceKind.PLUGIN_INLINE -> McpDispositioned(
+            reg,
+            McpDisposition.EXCLUDED,
+            McpDispositionReasons.PLUGIN,
+            McpWhy("plugin"),
+        )
     }
 
     private fun globalDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
         reg.sourceFile == canonicalGlobalFile -> canonicalDisposition(reg, plan)
         normal(reg.sourceFile) in headCopies -> headCopyDisposition(reg, plan)
-        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.OTHER_HOME)
+        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.OTHER_HOME, McpWhy("other_config"))
     }
 
     private fun canonicalDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
         plan.hosted.containsKey(reg.name) ->
             McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.MIGRATED)
         plan.passthrough.containsKey(reg.name) ->
-            McpDispositioned(reg, McpDisposition.EXCLUDED, plan.passthrough.getValue(reg.name))
-        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE)
+            McpDispositioned(reg, McpDisposition.EXCLUDED, plan.passthrough.getValue(reg.name), plan.why[reg.name])
+        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE, McpWhy("race"))
     }
 
     /** A head's copy is written at that head's LAUNCH and the plan is read now, so the copy speaks for the
@@ -110,17 +128,37 @@ public class McpInventory(
      *  leaves the head running something else, and a name match alone would report the new answer. */
     private fun headCopyDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
         !plan.rewritten.containsKey(reg.name) ->
-            McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.HEAD_COPY_NOT_CANONICAL)
-        plan.rewritten[reg.name] != reg.entry ->
-            McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.HEAD_COPY_STALE)
+            McpDispositioned(
+                reg,
+                McpDisposition.EXCLUDED,
+                McpDispositionReasons.HEAD_COPY_NOT_CANONICAL,
+                McpWhy("added_in"),
+            )
+        plan.rewritten[reg.name] != withoutHeadHeader(reg.entry) ->
+            McpDispositioned(
+                reg,
+                McpDisposition.EXCLUDED,
+                McpDispositionReasons.HEAD_COPY_STALE,
+                McpWhy("until_restart"),
+            )
         plan.hosted.containsKey(reg.name) ->
             McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.HEAD_COPY_MIGRATED)
         plan.passthrough.containsKey(reg.name) -> McpDispositioned(
             reg,
             McpDisposition.EXCLUDED,
             McpDispositionReasons.HEAD_COPY_AS_DECLARED + plan.passthrough.getValue(reg.name),
+            plan.why[reg.name],
         )
-        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE)
+        else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE, McpWhy("race"))
+    }
+
+    /** A head's copy names its command in a header the canonical plan does not write; the copy is still the plan's
+     *  answer when that header is the only difference. */
+    private fun withoutHeadHeader(entry: JsonObject): JsonObject {
+        val headers = entry["headers"] as? JsonObject ?: return entry
+        if (!headers.containsKey(MCP_HEAD_HEADER)) return entry
+        val kept = JsonObject(headers.filterKeys { it != MCP_HEAD_HEADER })
+        return JsonObject(entry + ("headers" to kept))
     }
 
     /** One spelling per file: a head's config dir comes from the topology, a registration's path from a

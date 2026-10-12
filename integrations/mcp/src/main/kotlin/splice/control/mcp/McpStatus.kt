@@ -21,6 +21,7 @@ import splice.client.mcp.McpInventory
 import splice.client.mcp.McpKindCensus
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
+import splice.client.mcp.McpWhy
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -50,11 +51,18 @@ internal class McpStatus(
                     putJsonObject(name) {
                         put("eligible", false)
                         put("reason", reason)
+                        plan.why[name]?.let { why(this, it) }
                     }
                 }
             }
             inventory?.let { putJsonObject("sources") { sources(this, it.census()) } }
         }.toString()
+    }
+
+    /** Why [name] is not shared right now, in the words `/api/mcp` carries; null when the host serves it. */
+    fun unsharedReason(name: String): String? {
+        val plan = sharing.plan(global())
+        return if (name in plan.hosted) null else plan.passthrough[name] ?: "no such server in your MCP configuration"
     }
 
     private fun sources(out: JsonObjectBuilder, report: McpCensusReport) {
@@ -77,6 +85,13 @@ internal class McpStatus(
         d.registration.scope?.let { out.put("scope", it.toString()) }
         out.put("disposition", d.disposition.name.lowercase())
         out.put("reason", d.reason)
+        d.why?.let { why(out, it) }
+    }
+
+    /** The reason as a stable key the console words, with the value it names (the variable, path, cwd or URL). */
+    private fun why(out: JsonObjectBuilder, why: McpWhy) {
+        out.put("why", why.key)
+        why.value?.let { out.put("value", it) }
     }
 
     private fun wireKind(kind: McpSourceKind): String = when (kind) {
@@ -110,6 +125,8 @@ internal class McpStatus(
         val live = sessions.forServer(name)
         out.put("sessions", live.size)
         out.putJsonArray("session_ids") { live.forEach { add(JsonPrimitive(it.id)) } }
+        val commands = live.mapNotNull { it.head }.distinct().sorted()
+        out.putJsonArray("commands") { commands.forEach { add(JsonPrimitive(it)) } }
         out.put("streams", live.sumOf { it.openStreams.get() })
         server?.startedAt?.takeIf { it > 0 }?.let { out.put("started_at", it) }
         live.maxOfOrNull { it.lastActivity }?.let { out.put("last_activity", it) }

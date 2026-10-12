@@ -51,6 +51,11 @@ class McpHostLifecycleTest : McpHostFixture() {
                 refused.await().toString().contains("did not answer in time"),
                 "300 ms is the budget, so the forwarded request must give up and say so",
             )
+            assertEquals(
+                -32003,
+                refused.await().getValue("error").jsonObject.getValue("code").jsonPrimitive.content.toInt(),
+                "a request given up on carries its own code, so a caller never matches the words",
+            )
             host.post("fake", session, FakeMcpServer.RELEASE)
 
             requestBudget = 1.minutes
@@ -133,6 +138,7 @@ class McpHostLifecycleTest : McpHostFixture() {
             refused.body!!.contains("did not complete the MCP handshake"),
             "a zero budget cannot admit any handshake: ${refused.body}",
         )
+        assertTrue(refused.body.contains("-32003"), "a handshake given up on carries the timeout code too")
         assertFalse(hosted("fake"))
 
         handshakeBudget = 1.minutes
@@ -297,6 +303,20 @@ class McpHostLifecycleTest : McpHostFixture() {
         val again = text(call(b, 2, "echo", "y")).substringBefore(" ")
         assertNotEquals(first, again, "respawned under a new pid")
         assertTrue(status("fake")["restarts"]!!.jsonPrimitive.content.toInt() >= 1)
+    }
+
+    @Test
+    fun `a call that crashed the child is not replayed on the one that replaces it`() = runBlocking {
+        boot()
+        val a = init()
+        host.post(
+            "fake",
+            a,
+            """{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"echo","arguments":{"op":"crash"}}}""",
+        )
+        // a replayed crash would kill the replacement too: the call below would fail and the count would be two
+        assertTrue(text(call(a, 2, "echo", "after")).endsWith("echo=after"))
+        assertEquals("1", status("fake")["restarts"]!!.jsonPrimitive.content, "the crash ran once and was not repeated")
     }
 
     @Test

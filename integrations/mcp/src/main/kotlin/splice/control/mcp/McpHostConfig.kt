@@ -14,6 +14,7 @@ package splice.control.mcp
 import splice.core.config.Knob
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 public fun interface HostClock {
     public fun millis(): Long
@@ -59,6 +60,10 @@ public data class McpHostConfig(
      *  (see [McpHandshakeBudget]). */
     val initializeTimeout: McpHandshakeBudget = McpHandshakeBudget { 1.minutes },
     val clock: HostClock = HostClock(System::currentTimeMillis),
+    /** How long Settings' Test waits for a started server to list its tools. The start itself is bounded by
+     *  [initializeTimeout]. This is its own bound, apart from [requestTimeout], which is for real tool calls: a
+     *  server that cannot list its tools in this long is the hung one the person is looking for. */
+    val testListTimeout: Duration = 10.seconds,
     /** V4-176: the slice hosted children are spawned into, by name. splice never creates it — it
      *  asks systemd for the CEILING on it at every spawn and says so in the log when there is none. */
     val slice: String = APP_MCP_SLICE,

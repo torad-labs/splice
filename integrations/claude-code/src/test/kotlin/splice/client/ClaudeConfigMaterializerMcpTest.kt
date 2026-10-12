@@ -46,7 +46,7 @@ class ClaudeConfigMaterializerMcpTest {
     ) {
         seed(home)
         val dir = home.resolve(".claude-codex")
-        val rewrite = McpRewrite { buildJsonObject { put("fs", buildJsonObject { put("type", "http") }) } }
+        val rewrite = McpRewrite { _, _ -> buildJsonObject { put("fs", buildJsonObject { put("type", "http") }) } }
         val result = ClaudeConfigMaterializer(home, mcpRewrite = rewrite).materialize(spec(dir))
         assertEquals(2, result.mcpServers)
         assertEquals(setOf("fs"), servers(dir).keys)
@@ -67,11 +67,17 @@ class ClaudeConfigMaterializerMcpTest {
         val before = Files.readAllBytes(source)
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:3096/mcp/", { "scoped" }, DirectoryProbe { false })
         val dir = home.resolve(".claude-codex")
-        ClaudeConfigMaterializer(home, mcpRewrite = sharing.rewrite()).materialize(spec(dir))
+        ClaudeConfigMaterializer(home, mcpRewrite = sharing.rewrite())
+            .materialize(spec(dir).copy(signIn = MaterializeSignIn(headKey = "codex")))
         val fs = servers(dir)["fs"]!!.jsonObject
         assertEquals("http", fs["type"]?.jsonPrimitive?.content)
         assertEquals("http://127.0.0.1:3096/mcp/fs", fs["url"]?.jsonPrimitive?.content)
         assertEquals("Bearer scoped", fs["headers"]!!.jsonObject["Authorization"]?.jsonPrimitive?.content)
+        assertEquals(
+            "codex",
+            fs["headers"]!!.jsonObject["X-Splice-Head"]?.jsonPrimitive?.content,
+            "the file names the command it was written for",
+        )
         assertEquals(
             Json.parseToJsonElement("""{"type":"http","url":"https://x/mcp"}"""),
             servers(dir)["remote"],

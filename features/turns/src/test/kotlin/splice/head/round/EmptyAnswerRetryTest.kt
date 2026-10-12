@@ -26,9 +26,10 @@ class EmptyAnswerRetryTest {
         val perf = TurnPerf()
         val run = drive(perf, listOf(empty, answered))
 
-        assertSame(answered, run.finished.single())
+        val ended = run.finished.single() as TurnOutcome.Success
+        assertEquals(answered.text, ended.text)
         assertEquals(listOf(BODY, BODY), run.bodies, "the same bytes both times")
-        val billed = (run.finished.single() as TurnOutcome.Success).usage
+        val billed = ended.usage
         assertEquals(1, billed.absorbed.rounds, "the empty round is metered as a request of its own")
         assertEquals(200_000L, billed.absorbed.inputTokens)
         assertEquals(1L, perf.count(PerfKeys.EMPTY_RETRIES))
@@ -39,8 +40,10 @@ class EmptyAnswerRetryTest {
         val perf = TurnPerf()
         val run = drive(perf, listOf(empty, empty, answered))
 
-        assertSame(empty, run.finished.single())
+        val ended = run.finished.single() as TurnOutcome.Success
+        assertEquals(empty.text, ended.text)
         assertEquals(2, run.bodies.size)
+        assertEquals(200_000L, ended.usage.absorbed.inputTokens, "both empty requests are billed")
         assertEquals(1L, perf.count(PerfKeys.EMPTY_RETRIES))
     }
 

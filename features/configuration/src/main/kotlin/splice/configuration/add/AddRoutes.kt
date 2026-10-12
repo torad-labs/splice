@@ -1,7 +1,8 @@
 // NEW: V4-220 item 3 (2026-09-25) — the console's add over HTTP, one route per step of `splice add`:
 //
 //   GET    /api/add/profiles     the catalogue, with what each profile still needs from the operator
-//   POST   /api/add              open an add: {profile, name?, base_url?, command?, models?: [{id, context_window?}]}
+//   POST   /api/add              open an add: {profile, name?, base_url?, command?, models?: [{id, context_window?}], key?}
+//                                key: "own" gives a second command on a provider a key of its own (AddPrepare)
 //   GET    /api/add/{id}         the add as it stands (the credential re-read, the sign-in polled)
 //   POST   /api/add/{id}/login   start the sign-in, or answer the one already running
 //   POST   /api/add/{id}/verify  run the checks: {live?} adds the one short turn an api-key profile allows
@@ -38,6 +39,9 @@ private const val ID_PARAM = "id"
 private const val UNWIRED = "Adding a backend is not wired on this daemon."
 private const val NO_SUCH_ADD = "No add with that id is open."
 
+// why: the body value of `key` that asks a second command on a provider for a key of its own, not the provider's.
+private const val OWN_KEY = "own"
+
 public class AddRoutes(
     private val console: AddConsoleSource,
     private val restart: AddDaemonRestart,
@@ -58,11 +62,12 @@ public class AddRoutes(
     /** POST /api/add: 200 with the new add's view, or the prepare step's own refusal. */
     public suspend fun open(call: ApplicationCall) {
         val adds = console() ?: return refuse(call, UNWIRED, HttpStatusCode.ServiceUnavailable)
-        val args = when (val request = requests.parse(jsonBody.parse(call))) {
-            is AddRequest.Invalid -> return refuse(call, request.reason, HttpStatusCode.BadRequest)
-            is AddRequest.Args -> request.args
+        val request = when (val read = requests.parse(jsonBody.parse(call))) {
+            is AddRequest.Invalid -> return refuse(call, read.reason, HttpStatusCode.BadRequest)
+            is AddRequest.Args -> read
         }
-        when (val opened = adds.open(args)) {
+        val args = request.args
+        when (val opened = adds.open(args, request.ownKey)) {
             is AddOpened.Opened -> {
                 val session = opened.session
                 log(
@@ -187,7 +192,8 @@ public class AddRoutes(
 
 /** POST /api/add's body read into the CLI's own arguments, or why it cannot be. */
 internal sealed class AddRequest {
-    data class Args(val args: AddArgs) : AddRequest()
+    /** [ownKey]: a second command on a provider the file holds sends with a key of its own, not the provider's. */
+    data class Args(val args: AddArgs, val ownKey: Boolean = false) : AddRequest()
 
     data class Invalid(val reason: String) : AddRequest()
 }
@@ -214,6 +220,7 @@ internal class AddRequestReader {
                     command = JsonScalars.str(body, "command"),
                     yes = true,
                 ),
+                ownKey = JsonScalars.str(body, "key") == OWN_KEY,
             )
         }
     }

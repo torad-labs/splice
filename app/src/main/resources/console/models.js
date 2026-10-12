@@ -624,9 +624,13 @@ const taken = (p) => p.command && data.heads.some((h) => h.label === p.command |
 // profile's stock one (marlin p226: a second OpenRouter command tried openrouter.ai where the first sends to a stand-in)
 const twinUrl = (p) => commandsOf().find((c) => c.key === p.head_key || c.cmd === p.command)?.url || p.base_url || "";
 // the address is a field when the profile asks for it, for a second command, and once the address did not answer
-// a second command at its provider's own address is a command on that provider (splice add, AddPrepare.sharedProvider):
-// it sends with the provider's key, so the form asks for none and never writes over the one the provider has
-const sharesKey = (p, a) => second(p) && a.url.trim().replace(/\/+$/, "") === twinUrl(p).replace(/\/+$/, "");
+// a second command at its provider's own address keeps that provider's address and models, and the form asks which key
+// it sends with: the provider's own (the default, a command on that provider), or a new one, saved as another key under
+// that provider with this command on it (key: "own", AddPrepare; marlin, Oct 12, Marcos's Oct 4 rule: a provider is a
+// template). Neither writes over the provider's key.
+const sameUrl = (p, a) => a.url.trim().replace(/\/+$/, "") === twinUrl(p).replace(/\/+$/, "");
+const asksWhichKey = (p, a) => second(p) && sameUrl(p, a) && p.auth_kind === "api-key";
+const sharesKey = (p, a) => second(p) && sameUrl(p, a) && !a.newKey;
 const showsUrl = (p, a) => p.asks.includes("base_url") || second(p) || Boolean(a.urlFailed);
 function addPaneHtml() {
   const a = ui.add;
@@ -646,7 +650,14 @@ function addPaneHtml() {
   let f = "";
   if (asks("name") || second(p)) f += field("a-name", "Name", a.name);
   if (showsUrl(p, a)) f += field("a-url", "URL", a.url);
-  if (!sharesKey(p, a) && (p.requires_key || (p.auth_kind === "api-key" && p.asks.length))) f += field("a-key", "Key", a.key, 'type="password"');
+  if (asksWhichKey(p, a)) {
+    f += `<span class="lbl">Key</span><div class="ctl"><div class="switch" role="radiogroup" aria-label="Key">`
+      + `<button data-act="keychoice" data-v="provider" role="radio" aria-pressed="${!a.newKey}" aria-checked="${!a.newKey}">${esc(tplName(p))}'s key</button>`
+      + `<button data-act="keychoice" data-v="new" role="radio" aria-pressed="${Boolean(a.newKey)}" aria-checked="${Boolean(a.newKey)}">A new key</button></div></div>`;
+  }
+  if (!sharesKey(p, a) && (p.requires_key || (p.auth_kind === "api-key" && p.asks.length))) {
+    f += field("a-key", asksWhichKey(p, a) ? "" : "Key", a.key, 'type="password" aria-label="Key"');
+  }
   if (asks("models")) {
     const rows = a.rows.map((r, i) => `<div class="mrow"><input class="field" id="a-m${i}" data-i="${i}" data-f="id" value="${esc(r.id)}" spellcheck="false" autocomplete="off" aria-label="Model">`
       + `<input class="field win" id="a-w${i}" data-i="${i}" data-f="win" value="${esc(r.win)}" spellcheck="false" autocomplete="off" aria-label="Window"></div>`).join("");
@@ -693,6 +704,7 @@ async function startAdd() {
   if (p.asks.includes("name") || second(p)) body.name = a.name.trim();
   if (second(p)) body.command = commandFor(p, a);
   if (showsUrl(p, a) && a.url.trim()) body.base_url = a.url.trim();
+  if (asksWhichKey(p, a) && a.newKey) body.key = "own";
   if (p.asks.includes("models")) body.models = a.rows.filter((r) => r.id.trim()).map((r) => ({ id: r.id.trim(), context_window: parseWindow(r.win) ?? undefined }));
   const res = await API.post("/api/add", body);
   if (!res.ok) { a.busy = false; a.said = failWord(res); render(); return; }
@@ -849,6 +861,7 @@ function onClick(e) {
     case "new": Object.assign(ui, { open: null, draft: null, add: { profile: null, name: "", url: "", key: "", rows: [{ id: "", win: "" }], checks: null } }); render(); break;
     case "cancel-add": dropAdd(); ui.add = null; render(); break;
     case "tpl": { a.profile = d.t; const pr = data.profiles.find((x) => x.name === d.t); if (pr && second(pr)) a.url = twinUrl(pr); render(); break; }
+    case "keychoice": a.newKey = d.v === "new"; render(); if (a.newKey) document.getElementById("a-key")?.focus(); break;
     case "addrow": a.rows.push({ id: "", win: "" }); render(); document.getElementById(`a-m${a.rows.length - 1}`)?.focus(); break;
     case "add": startAdd(); break;
     case "open-signin": { const sg = a?.sign ?? ui.sign; if (sg?.url) window.open(sg.url, "_blank", "noopener"); break; }

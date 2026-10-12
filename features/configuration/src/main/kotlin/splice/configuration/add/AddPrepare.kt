@@ -7,6 +7,7 @@ package splice.configuration.add
 
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.ProviderConfig
+import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -96,12 +97,12 @@ internal class AddPrepare(
     }
 
     /** V4-220: the same decisions as a value, for a caller that answers them rather than prints them. */
-    fun prepare(asked: AddArgs, env: EnvReader): AddPrepared {
+    fun prepare(asked: AddArgs, env: EnvReader, ownKey: Boolean = false): AddPrepared {
         val profile = asked.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
         val args = discovered(asked, profile)
         val key = args.name ?: profile.head.key
         return when (val rows = modelRows.resolve(args, profile)) {
-            is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env)
+            is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env, ownKey)
             is AddRows.Refused -> AddPrepared.Refused(AddRefusal.Models(rows.problem), conflict = false)
         }
     }
@@ -114,19 +115,30 @@ internal class AddPrepare(
         return (prepared as? AddPrepared.Ready)?.candidate
     }
 
-    private fun assembled(args: AddArgs, resolved: AddProfile, key: String, env: EnvReader): AddPrepared {
+    private fun assembled(
+        args: AddArgs,
+        resolved: AddProfile,
+        key: String,
+        env: EnvReader,
+        ownKey: Boolean = false,
+    ): AddPrepared {
         val path = TopologyLoader.configPath(env)
         val current = TopologyLoader.loadOrMaterialize(path)
         val existing = Files.readString(path).trimEnd('\n') + "\n"
         val conflict = keyConflict(resolved, current, key)
         val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved)
         if (problem != null) return AddPrepared.Refused(problem, conflict = conflict != null)
-        val shared = sharedProvider(args, resolved, current, key)
-        val rendered = shared?.let { onShared(resolved, current.providers.getValue(it)) } ?: resolved
+        // a second command keeps its provider's address and models; with a key of its own it gets a provider of its
+        // own, in that provider's family, so Accounts lists the key under it (marlin, Oct 12: a provider is a template,
+        // many accounts on one command or one command each, Marcos's Oct 4 rule)
+        val twin = sharedProvider(args, resolved, current, key)
+        val shared = twin.takeUnless { ownKey }
+        val family = twin?.takeIf { ownKey }?.let { ProviderFamilyRule().of(it, current.providers.getValue(it)) }
+        val rendered = twin?.let { onShared(resolved, current.providers.getValue(it)) } ?: resolved
         val floor = ports.floor(current)
         val port = ports.choose(current, resolved.baseUrl, floor)
             ?: return AddPrepared.Refused(AddRefusal.PortUnavailable(floor, lastHeadPort), conflict = true)
-        val appended = profiles.toml(rendered, key, port, shared)
+        val appended = profiles.toml(rendered, key, port, shared, family)
         return checks.parses(existing + appended).fold(
             onSuccess = { topology ->
                 AddPrepared.Ready(

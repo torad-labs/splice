@@ -133,8 +133,15 @@ public class AddProfiles {
 
     /** One provider table and one head table for [key], appended verbatim; every value quoted.
      *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command.
-     *  [shared] names a provider the file already holds: only the head is written, on that provider. */
-    internal fun toml(profile: AddProfile, key: String, port: Int, shared: String? = null): String {
+     *  [shared] names a provider the file already holds: only the head is written, on that provider. [family] is the
+     *  family a provider of the head's own keeps when it copies another's (a second command with its own key). */
+    internal fun toml(
+        profile: AddProfile,
+        key: String,
+        port: Int,
+        shared: String? = null,
+        family: String? = null,
+    ): String {
         val models = profile.models
         val auth = if (profile.provider.authKind == API_KEY) {
             """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
@@ -156,7 +163,8 @@ public class AddProfiles {
                 "context_window = ${m.contextWindow}",
             ) + m.clientModel?.let { listOf("client_model = \"$it\"") }.orEmpty() + m.ratesLine()
         }
-        val provider = origin + tables.takeIf { shared == null }.orEmpty()
+        val kin = family?.let { listOf("[providers.$key.discovery]", "family = \"$it\"") }.orEmpty()
+        val provider = origin + (tables + kin).takeIf { shared == null }.orEmpty()
         val mappings = models.flatMap { m -> m.slots.map { slot -> m.id to slot } }
         val pinned = models.first()
         val head = listOfNotNull(

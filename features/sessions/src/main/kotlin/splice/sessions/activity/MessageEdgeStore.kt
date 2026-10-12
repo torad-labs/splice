@@ -28,6 +28,7 @@ import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
+import splice.core.storage.RetentionDays
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
@@ -94,8 +95,8 @@ public fun interface SparedEdges {
 public class MessageEdgeStore(
     private val days: ActivityDays,
     private val files: DayFiles,
-    private val retentionDays: Int,
-    public val storing: Boolean,
+    private val retention: RetentionDays,
+    private val stored: EdgesStored,
     private val decode: MessageEdgeDecode = MessageEdgeCodec(),
     heap: HeapReservations? = null,
     maxCacheBytes: Long = EDGE_CACHE_BYTES,
@@ -104,8 +105,11 @@ public class MessageEdgeStore(
     private val counts = MessageEdgeTotals(days, files, decode, heap, maxCacheBytes)
     private val scans = MessageEdgeScan(days, files, decode, heap, maxCacheBytes)
 
-    public fun inventory(): DayInventory = files.inventory(retentionDays)
-    public fun deleteKept(): DayInventory = files.deleteKept(retentionDays)
+    /** Whether a message is saved now; asked at every write. */
+    public val storing: Boolean get() = stored.on()
+
+    public fun inventory(): DayInventory = files.inventory(retention.days())
+    public fun deleteKept(): DayInventory = files.deleteKept(retention.days())
 
     /**
      * Drop every edge observed before [momentMs], and say how many went. The save on Settings >

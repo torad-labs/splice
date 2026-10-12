@@ -18,24 +18,26 @@ package splice.core.config
 // ingressReadIdleMs (IngressReadIdleMs, per chunk, the control listener's silent-body bound),
 // materializationHeapBytes (MaterializationBudgetBytes, per admission, which the gate caps into the
 // MaterializedByteCap that same guard asks), historyRetentionDays (RetentionDays, per read),
-// firstByteTimeoutMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each request write
-// through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
+// firstByteTimeoutMs, streamIdleMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each
+// request write through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
 // sleep and deadline check), upstreamRetries (LiveRetries, once as each request begins, so a request in flight keeps
 // its bound), progressLine (ProgressLineOn, per heartbeat of a quiet turn),
 // summary, showReasoning and replayReasoning (LiveReasoning, and ReasoningDisplayNow on a chat head, once as each turn
 // is built; effort is not among them, being part of the prompt-cache key),
 // foldReasoningModels, foldMaxContinue, foldMarkerText and foldMaxTier (LiveFoldConfig, once per turn).
+// activityRetentionDays and messageEdges (ActivityStores via LiveEdges, per sweep and per write),
 // Away from the turn: quotaPollIntervalMs (QuotaIntervalMs, per wait between two looks at
 // an account's usage endpoint), all four MCP host knobs — mcpRequestTimeoutMs (McpRequestBudget, per forwarded
 // request), mcpIdleTimeoutMs (McpIdleBudget, per idle sweep), mcpMaxServers (McpServerCeiling, once per spawn
 // attempt and carried into the refusal so the ceiling named is the ceiling that refused) and
 // mcpInitializeTimeoutMs (McpHandshakeBudget, per child handshake) — transcriptView
 // (SessionTranscriptViewEnabled, per console route)
+// activityRetentionDays and messageEdges (LiveEdges on the edge store, per sweep and per write),
 // and the warn pair usageWarnPct and usageWarnTokens5h (UsageWarningSource, per ask). Three more are live
 // WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
 // per-head overridable), projectsFolders (per sessions settings ask, keyed the same way) and
-// budgetDefaultAction (per budget ask, unkeyed). That is thirty-one, which is every knob
+// budgetDefaultAction (per budget ask, unkeyed). That is thirty-four, which is every knob
 // here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
 // agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
@@ -298,7 +300,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
         typedDefault = KnobDefault.Count(90_000L),
-        restartRequired = true,
     ),
 
     // V4-116. The MID-OUTPUT STALL RE-ANCHOR tier: how long a round may sit silent AFTER the client
@@ -516,7 +517,6 @@ public enum class Knob(
         KnobKind.NUMBER,
         listOf("SPLICE_ACTIVITY_RETENTION_DAYS"),
         typedDefault = KnobDefault.Count(90L),
-        restartRequired = true,
     ),
 
     // V4-367: a daemon-wide switch for storing SendMessage metadata. Existing day files remain until
@@ -526,7 +526,6 @@ public enum class Knob(
         KnobKind.BOOL,
         listOf("SPLICE_MESSAGE_EDGES"),
         KnobDefault.Flag(true),
-        restartRequired = true,
     ),
 
     // V4-130: the per-head switch for the activity label store. `*` stores every head, an empty value

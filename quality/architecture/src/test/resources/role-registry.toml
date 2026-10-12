@@ -130,7 +130,7 @@ its own rather than folded onto one of the observers above: an observer is subsc
 is set). Substituting any for any other is not a type error and would be silent: RestoreStep \
 for WsRoundAbort unwinds an upgrade in the middle of a turn. These need MORE naming than a shared shape, not less."""
 
-# ── 17 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 18 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
 dated = "2026-09-27"
@@ -146,6 +146,7 @@ names = [
     "DaemonRestart",
     "DaemonSuccessor",
     "DaemonSupervised",
+    "EdgesStored",
     "KeyPresenceProbe",
     "KeepingRecordings",
     "ProgressLineOn",
@@ -185,6 +186,9 @@ switches: each is asked at the moment its writer is about to put the user's prom
 transcript's original, a parked compaction answer, a code-mode journal save), and each answers the \
 same console choice for a different store. Swapping them would keep what the user stopped, or stop \
 what they kept. \
+EdgesStored (2026-10-12) is the fourth store switch and the only one for metadata: asked at each SendMessage edge before it \
+is written, it answers Settings' "Save who messaged whom", not a prompt store, so wired as one of those it would keep \
+or stop the wrong thing. \
 CodeModeReplayReasoning (2026-10-12) asks whether an earlier turn's reasoning rides back to the model, at each code-mode \
 post; it is the replay_reasoning setting, not a prompt-store switch, so wired as one it would keep reasoning \
 the operator turned off, and read as the others it would stop a journal the operator kept. \

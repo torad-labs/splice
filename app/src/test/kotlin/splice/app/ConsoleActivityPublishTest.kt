@@ -32,6 +32,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityRow
 import splice.sessions.activity.ActivityStores
+import splice.sessions.activity.KeptState
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.RecipientResolution
 import splice.sessions.http.ActivitySource
@@ -51,6 +52,7 @@ import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.TimeUnit
 
 private const val NOW = 1_789_725_600_000L
 
@@ -277,6 +279,41 @@ class ConsoleActivityPublishTest {
         val day = written.filterNot { it.endsWith(".lock") }
         assertEquals(1, day.size, written.toString())
         assertTrue(day.single().matches(Regex("edges-\\d{4}-\\d{2}-\\d{2}\\.jsonl")), written.toString())
+    }
+
+    @Test
+    fun `Save who messaged whom takes effect on the next message, with no restart`() {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
+        val config = ConfigService(statePaths)
+        val stores = ConsoleWiring.activityStores(statePaths, config)
+        stores.edges.record(MessageEdge("s-1", "peer", NOW, "toolu_1"))
+        await({ stores.edges.edges() }, 1)
+
+        val off = config.patch(mapOf("messageEdges" to false))
+        assertTrue(off.restartRequired.isEmpty(), "messageEdges is read at every write: ${off.restartRequired}")
+        stores.edges.record(MessageEdge("s-1", "peer", NOW, "toolu_2"))
+        assertTrue(AsyncFileIo.drain(), "the file lane drained")
+        assertEquals(1, stores.edges.edges().size, "a message sent while the switch is off is not saved")
+        assertEquals(KeptState.OFF, stores.edgeState())
+
+        config.patch(mapOf("messageEdges" to true))
+        stores.edges.record(MessageEdge("s-1", "peer", NOW, "toolu_3"))
+        await({ stores.edges.edges() }, 2)
+        assertEquals(KeptState.ON, stores.edgeState())
+    }
+
+    @Test
+    fun `How long messaging is kept is the window the store reports now, with no restart`() {
+        val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
+        val config = ConfigService(statePaths)
+        val stores = ConsoleWiring.activityStores(statePaths, config)
+        val ninety = stores.oldestEdgeDay()
+
+        val patched = config.patch(mapOf("activityRetentionDays" to 30L))
+
+        assertTrue(patched.restartRequired.isEmpty(), "activityRetentionDays is live: ${patched.restartRequired}")
+        val moved = stores.oldestEdgeDay() - ninety
+        assertEquals(TimeUnit.DAYS.toMillis(60), moved, "the window moved from 90 days to 30")
     }
 
     @Test

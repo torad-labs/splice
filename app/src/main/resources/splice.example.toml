@@ -837,7 +837,7 @@ command = "claude-splice"
 #                                                           #     past this is a PROBE, like streamIdleMs below.
 #                                                           #     Not a socket timeout: a read waits up to
 #                                                           #     upstreamTimeoutMs
-# streamIdleMs = "90000"                                    # ms; stream silence before the stall watchdog ASKS.
+# streamIdleMs = "90000"                                    # ms; (HOT, per turn) stream silence before the stall watchdog ASKS.
 #                                                           #     A breach is a PROBE, not a verdict:
 #                                                           #     the round's path is asked whether it is alive, a live
 #                                                           #     path is HELD (polled on, never reaped short of
@@ -887,8 +887,8 @@ command = "claude-splice"
 # requestReadTimeoutMs = "30000"                            # ms; how long one client request body read may take (HOT)
 # ingressReadIdleMs = "30000"                               # ms; how long the control listener lets a request body sit silent before it closes the connection (HOT)
 # materializationHeapBytes = "0"                           # heap bytes; 0 = JVM max heap minus 384 MiB resident; shared decode/translate budget (6.5 x body bytes) (HOT)
-# activityRetentionDays = "90"                              # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
-# messageEdges = "true"                                    # bool; keep SendMessage edges; false stops new writes after restart, retained days stay until delete/retention
+# activityRetentionDays = "90"                              # days; (HOT) message edges kept, whole days, at least 2 (activity labels: today and yesterday)
+# messageEdges = "true"                                    # bool; (HOT) keep SendMessage edges; false stops new writes at once, retained days stay until delete/retention
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block" (HOT, per ask); PUT /api/budgets fills a bare row
 # perfArchiveRetentionDays = "90"                            # days; SUPERSEDED by historyRetentionDays, read only as its carry-over

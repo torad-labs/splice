@@ -4,6 +4,7 @@ package splice.sessions.activity
 import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
+import splice.core.storage.RetentionDays
 import splice.core.util.WallClock
 import java.nio.file.Path
 import java.time.Instant
@@ -20,13 +21,16 @@ public class ActivityStores(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     messageEdges: Boolean = true,
     heap: HeapReservations? = null,
+    /** When given, the edge window and whether edges are saved are asked at every use, so a change to either takes
+     *  effect with no restart; [retentionDays] and [messageEdges] are then only what a store without it keeps. */
+    live: LiveEdges? = null,
 ) {
-    private val edgeDays = retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS)
+    private val edgeDays = RetentionDays { (live?.days?.days() ?: retentionDays).coerceAtLeast(LOCAL_DAY_UTC_DAYS) }
     public val edges: MessageEdgeStore = MessageEdgeStore(
-        ActivityDays(activityDir, EDGES_PREFIX, edgeDays, clock),
+        ActivityDays(activityDir, EDGES_PREFIX, edgeDays.days(), clock, live = edgeDays),
         DayFiles(activityDir, EDGES_PREFIX),
         edgeDays,
-        messageEdges,
+        live?.stored ?: EdgesStored { messageEdges },
         heap = heap,
     )
     public val activity: ActivityStore = ActivityStore(
@@ -36,7 +40,7 @@ public class ActivityStores(
     )
 
     /** UTC start of each store's actual retained window, using its writer's clock. */
-    public fun oldestEdgeDay(): Long = oldestDay(edgeDays)
+    public fun oldestEdgeDay(): Long = oldestDay(edgeDays.days())
     public fun oldestLabelDay(): Long = oldestDay(LOCAL_DAY_UTC_DAYS)
 
     private fun oldestDay(days: Int): Long = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC)

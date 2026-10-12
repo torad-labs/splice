@@ -46,6 +46,7 @@ import splice.core.config.UserHome
 import splice.core.model.HeadDiscoveredModels
 import splice.core.session.ActivityAction
 import splice.core.storage.ACTIVITY_DIRECTORY
+import splice.core.storage.RetentionDays
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.util.EnvReader
@@ -64,6 +65,8 @@ import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeStatus
 import splice.sessions.activity.ALL_HEADS
 import splice.sessions.activity.ActivityStores
+import splice.sessions.activity.EdgesStored
+import splice.sessions.activity.LiveEdges
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.NameHolders
 import splice.sessions.activity.RecipientResolution
@@ -145,7 +148,9 @@ internal object ConsoleWiring {
 
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out
      *  of ControlPlane.start() (LongMethod, the same reason these ports moved here in V4-161) — the
-     *  same settable-after-construction shape [wire] uses for its four, assigned right after it. */
+     *  same settable-after-construction shape [wire] uses for its four, assigned right after it.
+     *  Deviation from V4-133's "never recorded" (Oct 12, 2026, marlin): the playground probe now records its sends and
+     *  takes the command's budget; docs/specs/v0.4.0.md section 9. */
     internal fun wireV4133(srv: ControlServer, budgets: BudgetStore, alerts: AlertStore, playground: PlaygroundProbe) {
         srv.ports.budgets = budgets
         srv.ports.alerts = alerts
@@ -171,9 +176,10 @@ internal object ConsoleWiring {
         srv.ports.liveTurns = console.liveTurns
     }
 
-    /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory, with
-     *  the two knobs read once (both restartRequired). A retention below one day would keep nothing,
-     *  including today, so it is read as one. */
+    /** V4-130: the daemon's ONE pair of activity stores, under the state dir's activity directory. The edge window and
+     *  the edge switch are read live from the config (S9 #13), so a change on Settings reaches the next write; the
+     *  store-heads list is read once and stays restart-only. A retention below one day would keep nothing, including
+     *  today, so it is read as one. */
     internal fun activityStores(statePaths: StatePaths, config: ConfigService): ActivityStores {
         val knobs = config.getConfig().asMap()
         val days = (knobs[Knob.ACTIVITY_RETENTION_DAYS.key] as? Long ?: Knob.ACTIVITY_RETENTION_DAYS.count())
@@ -185,6 +191,10 @@ internal object ConsoleWiring {
             heads,
             messageEdges = edges,
             heap = JvmHeap.budget,
+            live = LiveEdges(
+                RetentionDays { config.getConfig().activityRetentionDays },
+                EdgesStored { config.getConfig().messageEdges },
+            ),
         )
     }
 

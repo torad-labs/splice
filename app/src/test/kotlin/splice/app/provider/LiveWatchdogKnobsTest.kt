@@ -1,4 +1,4 @@
-// NEW: firstByteTimeoutMs and stallReanchorMs are live knobs. A turn asks the head for its watchdog budget when it
+// NEW: firstByteTimeoutMs, streamIdleMs and stallReanchorMs are live knobs. A turn asks the head for its watchdog budget when it
 // starts, so an operator who PATCHes either one is obeyed by the next turn on the running daemon, and splice says no
 // restart is needed. Driven the way the head is built: a real HeadBuildInputs over one ConfigService, the budget asked
 // before and after the patch from the same head.
@@ -49,24 +49,28 @@ class LiveWatchdogKnobsTest {
     }
 
     @Test
-    fun `a patched first-byte and re-anchor tier govern the next turn of the head that is already built`(
+    fun `a patched first-byte, idle and re-anchor tier govern the next turn of the head that is already built`(
         @TempDir tmp: Path,
     ) {
         val config = ConfigService(StatePaths(baseOverride = tmp), envReader = { null })
         val head = build(config)
         assertEquals(90_000.milliseconds, head.faultPlan.liveWatchdog().firstByteTimeout)
         assertEquals(20_000.milliseconds, head.faultPlan.liveWatchdog().stallReanchor)
+        assertEquals(90_000.milliseconds, head.faultPlan.liveWatchdog().streamIdle)
 
-        val patched = config.patch(mapOf("firstByteTimeoutMs" to 45_000L, "stallReanchorMs" to 8_000L))
+        val patched = config.patch(
+            mapOf("firstByteTimeoutMs" to 45_000L, "streamIdleMs" to 120_000L, "stallReanchorMs" to 8_000L),
+        )
 
         assertTrue(patched.restartRequired.isEmpty(), "both are live: ${patched.restartRequired}")
         val now = head.faultPlan.liveWatchdog()
         assertEquals(45_000.milliseconds, now.firstByteTimeout)
         assertEquals(8_000.milliseconds, now.stallReanchor)
+        assertEquals(120_000.milliseconds, now.streamIdle)
         assertEquals(
-            head.faultPlan.watchdog.streamIdle,
-            now.streamIdle,
-            "the tiers that are still restartRequired stay as the head was built",
+            head.faultPlan.watchdog.totalCap,
+            now.totalCap,
+            "the no-progress limit is still restartRequired and stays as the head was built",
         )
     }
 
@@ -89,6 +93,7 @@ class LiveWatchdogKnobsTest {
         val restartOnly = restartRequiredKnobKeys
         listOf(
             Knob.FIRST_BYTE_TIMEOUT_MS,
+            Knob.STREAM_IDLE_MS,
             Knob.STALL_REANCHOR_MS,
             Knob.RETRY_BACKOFF_BASE_MS,
             Knob.RETRY_BACKOFF_CAP_MS,

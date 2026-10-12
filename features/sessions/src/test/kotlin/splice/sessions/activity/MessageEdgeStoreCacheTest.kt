@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
+import splice.core.storage.RetentionDays
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -127,8 +128,8 @@ class MessageEdgeStoreCacheTest {
     ): MessageEdgeStore = MessageEdgeStore(
         ActivityDays(dir, EDGES_PREFIX, 2, clock),
         DayFiles(dir, EDGES_PREFIX),
-        2,
-        true,
+        RetentionDays { 2 },
+        EdgesStored { true },
         codec,
         heap,
         maxBytes,

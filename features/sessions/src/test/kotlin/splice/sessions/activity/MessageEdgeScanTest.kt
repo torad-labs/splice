@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
+import splice.core.storage.RetentionDays
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.io.IOException
@@ -42,8 +43,8 @@ class MessageEdgeScanTest {
     private fun store(maxBytes: Long = EDGE_CACHE_BYTES): MessageEdgeStore = MessageEdgeStore(
         ActivityDays(dir, EDGES_PREFIX, 7, WallClock { clock }),
         DayFiles(dir, EDGES_PREFIX),
-        7,
-        true,
+        RetentionDays { 7 },
+        EdgesStored { true },
         MessageEdgeCodec(),
         null,
         maxBytes,

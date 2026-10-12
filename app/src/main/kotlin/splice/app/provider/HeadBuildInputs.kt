@@ -162,13 +162,14 @@ internal class HeadBuildInputs(
         )
     }
 
-    /** [built] with the two live tiers, firstByteTimeoutMs and stallReanchorMs, read from head [key]'s own config as it
-     *  stands now: a turn asks this when it starts, so a PATCH governs the next turn and no restart. The other tiers
-     *  (streamIdleMs, upstreamTimeoutMs) stay as built; they are restartRequired. */
+    /** [built] with the three live tiers, firstByteTimeoutMs, streamIdleMs and stallReanchorMs, read from head [key]'s own
+     *  config as it stands now: a turn asks this when it starts, so a PATCH governs the next turn and no restart. The
+     *  no-progress limit (upstreamTimeoutMs) stays as built: it is also the connection's read timeout, restartRequired. */
     private fun liveBudget(key: String, provider: ProviderConfig, built: WatchdogBudget): WatchdogBudget {
         val now = config.getConfig(key)
         return built.copy(
             firstByteTimeout = now.firstByteTimeoutMs.milliseconds,
+            streamIdle = now.streamIdleMs.milliseconds,
             stallReanchor = stallReanchorFor(provider, now),
         )
     }

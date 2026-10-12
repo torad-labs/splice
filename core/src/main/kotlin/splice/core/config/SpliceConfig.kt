@@ -170,6 +170,12 @@ public class SpliceConfig internal constructor(
             return kept.coerceAtLeast(1)
         }
 
+    /** How many UTC days of message edges are kept, at least one; read at every write and sweep of the edge store. */
+    public val activityRetentionDays: Int get() = long(Knob.ACTIVITY_RETENTION_DAYS).toInt().coerceAtLeast(1)
+
+    /** Whether a new message edge is saved; read at every write. */
+    public val messageEdges: Boolean get() = bool(Knob.MESSAGE_EDGES)
+
     /** V4-174: the longest body a trace record keeps whole, in characters; at least one. */
     public val traceMaxBodyChars: Int
         get() = long(Knob.TRACE_MAX_BODY_CHARS).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()

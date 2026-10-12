@@ -38,6 +38,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.WsAttemptTiming
@@ -294,7 +295,7 @@ class NoRequestAccountingTest(@param:TempDir private val tmp: Path) {
                 WsAttemptTiming(drive.perf).sendAccepted()
                 drive.recordRawRound(TurnOutcome.ClientAbandoned())
                 rig.stamp.stampKnownOnCancellation(drive)
-                rig.telemetry.recordPerf(drive, "client_gone")
+                rig.telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
                 assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
                 val row = counters(rig.perfFile)
                 assertEquals(0L, row[PerfKeys.ATTEMPTS])

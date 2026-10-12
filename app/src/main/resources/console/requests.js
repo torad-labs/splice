@@ -657,6 +657,16 @@ function searchFoot() {
 const priceOf = (r) => r.cost ?? r.planValue ?? null;
 const ordered = (rows) => rows.slice().sort(state.order === "price"
   ? (a, b) => (priceOf(b) ?? -1) - (priceOf(a) ?? -1) || +b.ts - +a.ts : (a, b) => +b.ts - +a.ts);
+// WHILE THE FIRST READ IS OUT the list draws its own shape, hollow (Marcos, Oct 12: the dashed "Reading" box "looks
+// awful", and it was the same box No requests uses, so loading read as an empty day). An hour tag and five slips on the
+// rail, their words the striped bars a meter draws while it reads, fading down the page, so the rows land where the
+// eye already is and nothing moves when they do. The filters' row holds ghost chips the same way.
+const GHOST_SLIPS = [[11, 6, 18, 4], [9, 8, 14, 3.4], [13, 5, 16, 4.4], [8, 7, 12, 3.6], [10, 6, 15, 4]];
+const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading requests"><div class="hour"><span><i class="ghost" style="width:2.6rem"></i></span></div>`
+  + GHOST_SLIPS.map(([name, chip, line, dur], i) => `<article class="card rq ghost-rq" style="--i:${i}" aria-hidden="true"><span class="lamp"></span>`
+    + `<div class="top"><i class="ghost" style="width:6.4rem"></i><i class="ghost nm" style="width:${name}rem"></i><i class="ghost end" style="width:${dur}rem"></i></div>`
+    + `<div class="meta"><i class="ghost chip" style="width:${chip}rem"></i><i class="ghost" style="width:${line}rem"></i></div></article>`).join("") + "</div>";
+const ghostFiltersHtml = () => `<div class="filters" aria-hidden="true">${[5.6, 6.6, 6, 5.4, 6.2].map((w) => `<i class="ghost chip" style="width:${w}rem"></i>`).join("")}</div>`;
 function listHtml() {
   const rows = ordered(filtered());
   // a command splice is still reading is not trouble: a quiet line, gone once its rows join (asked again shortly)
@@ -666,7 +676,7 @@ function listHtml() {
   const trouble = wait + said(state.headErrors.concat(names));
   // a command whose search failed sits under the rows the others found (fin)
   const unsearched = said(state.search?.errors || []);
-  if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
+  if (state.loading) return ghostListHtml();
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${unsearched}${searchFoot()}</div>`;
   if (!rows.length) {
@@ -867,7 +877,7 @@ function render({ keep = true } = {}) {
   const tc = state.tileCounts;
   document.getElementById("pickline").innerHTML = state.loading ? ""
     : pickLineHtml(pickGroups(), ui.project, ui.pmenu, { of: (k) => tc?.get(k) ?? null, all: tc?.get("") ?? null, unit: "request" });
-  document.getElementById("filters").innerHTML = state.loading ? "" : filtersHtml();
+  document.getElementById("filters").innerHTML = state.loading ? ghostFiltersHtml() : filtersHtml();
   root.innerHTML = listHtml() + pane;
   // the rest of the day draws as he scrolls: the next rows join when Show more comes into view, and the button stays
   // for a keyboard or a reader that never scrolls (Marlin, Oct 11)

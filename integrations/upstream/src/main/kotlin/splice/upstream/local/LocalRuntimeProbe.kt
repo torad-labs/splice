@@ -172,12 +172,23 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         }
     }
 
-    private fun acceptance(window: Long?, model: LocalModel): String = when {
-        window == null -> "listed; runtime context window ${model.contextLength ?: "unknown"}"
-        model.contextLength != null -> "listed; serves ${model.contextLength} >= declared $window"
-        model.ceiling != null ->
-            "listed; served window unknown until loaded (at most ${model.ceiling}), $window trusted"
-        else -> "listed; the runtime reports no context length, $window trusted"
+    /** An accepted row's line carries the runtime's own answers, its context and whether it says the model calls
+     *  tools, so doctor reports both (v0.4.0 section 10). A model the runtime says cannot call tools never gets
+     *  here: [verdict] refuses it. */
+    private fun acceptance(window: Long?, model: LocalModel): String {
+        val context = when {
+            window == null -> "listed; runtime context window ${model.contextLength ?: "unknown"}"
+            model.contextLength != null -> "listed; serves ${model.contextLength} >= declared $window"
+            model.ceiling != null ->
+                "listed; served window unknown until loaded (at most ${model.ceiling}), $window trusted"
+            else -> "listed; the runtime reports no context length, $window trusted"
+        }
+        val tools = if (model.tools == true) {
+            "the runtime says it calls tools"
+        } else {
+            "the runtime does not say whether it calls tools"
+        }
+        return "$context; $tools"
     }
 
     /** One tiny streamed request with one tool, only when the operator asked (doctor --live). */

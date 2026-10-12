@@ -206,11 +206,15 @@ class LocalRuntimeProbeTest {
         fun verdict(probe: LocalRuntimeProbe) =
             probe.validate(mapOf("qwen3:4b" to 8192L), probe.listed(checkNotNull(probe.detect()))).single()
 
-        assertTrue(verdict(ollamaShowing(""","capabilities":["completion","tools"]""")).ok)
+        val tools = verdict(ollamaShowing(""","capabilities":["completion","tools"]"""))
+        assertTrue(tools.ok)
+        assertTrue(tools.reason.contains("the runtime says it calls tools"), tools.reason)
         val none = verdict(ollamaShowing(""","capabilities":["completion"]"""))
         assertFalse(none.ok)
         assertTrue(none.reason.contains("no tool support"), none.reason)
-        assertTrue(verdict(ollamaShowing("")).ok, "no capability list means the runtime said nothing")
+        val unreported = verdict(ollamaShowing(""))
+        assertTrue(unreported.ok, "no capability list means the runtime said nothing")
+        assertTrue(unreported.reason.contains("does not say whether it calls tools"), unreported.reason)
 
         val lmstudio = LocalRuntimeProbe(
             "http://localhost:1/v1",

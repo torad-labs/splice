@@ -237,6 +237,17 @@ failure and leaves the head saved. A refusal before the save leaves your file by
 
 The control plane's data and control API need a secret key and answer only on this machine. `/health` reports the version without a key. Sessions get a weaker turn key shared across the install, which opens every head's turn, status-line and resume-hook routes, but not management routes. The key lives at `~/.splice/state/mgmt-key` (installs made before v0.4.0 keep theirs at `~/.claude-codex/state/mgmt-key`, which splice keeps reading in place).
 
+### Projects and Compare in the console
+
+Requests, Sessions and Teams group their rows by project, and a session whose directory belongs to no
+project sits under **No project**. On Requests, picking No project shows only the requests that belong to
+no project. (Usage lists No project among its choices too, but its figures still cover every project today.)
+
+**Compare models** sends one prompt to several of your commands and shows the answers side by side with
+what each costs at its published rates. A send is a real request: it goes out on that command's own login,
+counts against its budget (a send over budget is refused), and leaves a row on Requests flagged Compare,
+with no session and no project.
+
 ### Plan usage in Claude Code
 
 splice passes provider-reported usage into Claude Code's status line, including usage windows and reset times where available. On Claude heads, the usage reading comes from the carrying login's quota, then from the next selectable login if no carrying reading is available.

@@ -227,7 +227,7 @@ function paneHtml() {
   const lines = logsOf(c.key);
   const ev = eventsOf(lines ?? []);
   const raw = (lines ?? []).filter((l) => l.raw).slice(-60);
-  const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">Nothing to report</p>`}`
+  const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">No events</p>`}`
     + `<details class="rawlog"><summary>Raw log</summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
@@ -247,7 +247,8 @@ const EVENTS = [
   [/credentials? (refused|rejected)/i, () => "Credentials refused"],
   [/rate.?limited/i, () => "Rate limited"],
   [/command not found/i, () => "Command not found"],
-  [/\bstopped\b|shut ?down/i, () => "Stopped"],
+  [/wrapper (restored|relinked)|restored/i, () => "Restored"],
+  [/settings re-read|config(uration)? re-read/i, () => "Settings re-read"],
 ];
 const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b|upstream \d+\/\d+/i;
 const ampm = (hms) => { // 8:02 AM, the way a message's time is written; the raw log keeps its seconds

@@ -290,6 +290,9 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
   // local=0 on both reads, so the menus count the same requests the list does
   const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(held) : "1", local: "0" });
   if (filtered) {
+    // a one-row filtered read is a count (the tiles and Compare's group): the window's totals it would fold are dropped
+    // here, and each fold held the command's read for a whole week (splice-usage, desk c, Oct 12)
+    if (held === 1) p.set("usage", "0");
     if (ui.outcome === "fail") p.set("outcome", "failed");
     if (ui.outcome === "stopped") p.set("outcome", "stopped");
     if (ui.order === "price") p.set("order", "price"); // the daemon keeps each command's highest priced, not its newest

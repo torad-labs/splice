@@ -13,6 +13,7 @@ import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -26,6 +27,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
+import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.core.wire.RateLimitReply
@@ -40,6 +42,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.RetryNotice
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
@@ -50,6 +53,8 @@ import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
+
+private const val NANOS_PER_MS = 1_000_000L
 
 class CredentialHoldAdmissionPoolTest {
     @Test
@@ -82,7 +87,41 @@ class CredentialHoldAdmissionPoolTest {
             }
         }
 
-    private class Fixture(dir: Path) {
+    @Test
+    fun `a short hold with no spent plan window is waited out and the turn is admitted, never refused`(
+        @TempDir dir: Path,
+    ) = testApplication {
+        val fixture = Fixture(dir, armedMs = 2_000L, relayed = false)
+        fixture.holdAll(2_000L)
+        application { routing { post("/admission") { fixture.respond(call) } } }
+        try {
+            val started = System.nanoTime()
+            val answer = client.post("/admission")
+            val waitedMs = (System.nanoTime() - started) / NANOS_PER_MS
+            assertEquals(HttpStatusCode.OK, answer.status, "a hold of seconds is waited out, not a client 429")
+            assertTrue(waitedMs >= 1_500L, "the turn waited for the hold to clear, took ${waitedMs}ms")
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `a spent plan window is still refused at once even when the gateway hold is short`(@TempDir dir: Path) =
+        testApplication {
+            val fixture = Fixture(dir, armedMs = 2_000L, relayed = false)
+            fixture.holdAll(2_000L)
+            fixture.spendPlanWindow()
+            application { routing { post("/admission") { fixture.respond(call) } } }
+            try {
+                val started = System.nanoTime()
+                assertEquals(HttpStatusCode.TooManyRequests, client.post("/admission").status)
+                assertTrue((System.nanoTime() - started) / NANOS_PER_MS < 1_500L, "a spent window is not waited out")
+            } finally {
+                fixture.close()
+            }
+        }
+
+    private class Fixture(dir: Path, armedMs: Long = 7_200_000L, private val relayed: Boolean = true) {
         val credentialReads = AtomicInteger()
         private val logins = listOf("one", "two").map { label ->
             PoolAccount(
@@ -90,7 +129,7 @@ class CredentialHoldAdmissionPoolTest {
                 label == "one",
                 SyntheticAdmissionAuth(label, credentialReads),
                 AccountQuotaSource { null },
-                RateLimitCooldown(ElapsedClock { 0L }),
+                RateLimitCooldown(ElapsedClock { System.nanoTime() / NANOS_PER_MS }),
             )
         }
         val pool = AccountPool(logins, WallClock(System::currentTimeMillis)).also {
@@ -103,8 +142,8 @@ class CredentialHoldAdmissionPoolTest {
             held.rateLimitReply = RateLimitReply(
                 """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic hold"}}""",
                 emptyMap(),
-            )
-            held.arm(7_200_000L)
+            ).takeIf { relayed }
+            held.arm(armedMs)
         }
 
         private val provider = PassthroughProvider(
@@ -164,7 +203,6 @@ class CredentialHoldAdmissionPoolTest {
             try {
                 when (val answer = holds.admit(call, ready, admitted, null, selected)) {
                     is CredentialHoldAdmission.Outcome.Allowed -> {
-                        assertEquals("two", answer.account?.account?.label)
                         answer.account?.releaseCredentialProbe()
                         call.respondText("admitted")
                     }
@@ -175,11 +213,16 @@ class CredentialHoldAdmissionPoolTest {
             }
         }
 
-        fun holdAll() {
+        fun holdAll(forMs: Long = 7_200_000L) {
             logins.forEach {
-                it.cooldown.rateLimitReply = logins.first().cooldown.rateLimitReply
-                it.cooldown.arm(7_200_000L)
+                if (relayed) it.cooldown.rateLimitReply = logins.first().cooldown.rateLimitReply
+                it.cooldown.arm(forMs)
             }
+        }
+
+        fun spendPlanWindow() {
+            val resetAt = System.currentTimeMillis() / 1_000L + 3_600L
+            logins.forEach { it.cooldown.planHold.hold(PlanLimit("seven_day", resetAt), RetryNotice { }) }
         }
 
         fun close() = providerClient.close()

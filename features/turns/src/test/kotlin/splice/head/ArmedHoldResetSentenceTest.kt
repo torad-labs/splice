@@ -76,6 +76,8 @@ private class BurstHead(tmp: Path, upstreamBody: String) {
             ex.requestBody.readAllBytes()
             val bytes = upstreamBody.toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
+            // A hold past the 30 s admission wait is refused at admission; a shorter one is waited out.
+            ex.responseHeaders.add("Retry-After", "90")
             ex.sendResponseHeaders(TOO_MANY_REQUESTS, bytes.size.toLong())
             ex.responseBody.use { it.write(bytes) }
         }

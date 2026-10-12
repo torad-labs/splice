@@ -22,6 +22,9 @@ import splice.upstream.credentials.AccountSelection
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
 
+/** The longest a turn waits at admission for a gateway hold to clear before the client is told to retry. */
+internal const val MAX_HOLD_WAIT_MS = 30_000L
+
 /** Admission owns the HTTP status until the turn drive starts. Native refusals retain their wire reply. */
 internal class CredentialHoldAdmission(
     private val provider: Provider,
@@ -49,17 +52,39 @@ internal class CredentialHoldAdmission(
             deps.traffic.upstream.rateLimitedForMs > 0L -> resolve(prepared)
             else -> null
         }
-        if (cooldown == null || cooldown.remainingMs() <= 0L) return Outcome.Allowed(account)
-        val next = freeAccount(prepared, account, cooldown)
-        if (next != null) {
-            account?.releaseCredentialProbe()
-            return Outcome.Allowed(next)
-        }
+        if (cooldown == null) return Outcome.Allowed(account)
+        waitOut(prepared, account, cooldown)?.let { return it }
         // A held key head has no pooled login to name, so the refusal records the key that would have sent it.
         val named = accountName(prepared, account) ?: keyAccounts.label()
         respond(call, prepared, admitted, trace, HeldCredential(cooldown, named))
         return Outcome.Refused
     }
+
+    /** Admits the turn once its hold clears or a free login appears, or answers null when the hold must be refused. */
+    private suspend fun waitOut(
+        prepared: Preparation.Ready,
+        account: AccountSelection?,
+        cooldown: RateLimitCooldown,
+    ): Outcome.Allowed? {
+        var waitedMs = 0L
+        while (true) {
+            val remainingMs = cooldown.remainingMs()
+            if (remainingMs <= 0L) return Outcome.Allowed(account)
+            freeAccount(prepared, account, cooldown)?.let { next ->
+                account?.releaseCredentialProbe()
+                return Outcome.Allowed(next)
+            }
+            // A short gateway hold is waited out here, so the client never sees a 429 for seconds.
+            if (!waitable(cooldown, waitedMs + remainingMs)) return null
+            deps.seams.waiter.wait(remainingMs)
+            waitedMs += remainingMs
+        }
+    }
+
+    /** A relayed vendor reply is the client's to back off from, a spent plan window is refused with its reset, and a
+     *  wait past the bound is the client's to retry. */
+    private fun waitable(cooldown: RateLimitCooldown, totalMs: Long): Boolean =
+        cooldown.rateLimitReply == null && cooldown.planHold.live() == null && totalMs <= MAX_HOLD_WAIT_MS
 
     private fun freeAccount(
         prepared: Preparation.Ready,

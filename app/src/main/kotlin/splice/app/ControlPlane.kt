@@ -182,7 +182,8 @@ internal class ControlPlane(
      *  through the head's own request builder rather than a hand-built copy of it. */
     internal val playgroundProviders = PlaygroundProviders()
 
-    /** V4-133: POST /api/playground's ONE upstream probe, sending through [playgroundProviders]. */
+    /** V4-133: POST /api/playground's ONE upstream probe, sending through [playgroundProviders]. Deviation, Oct 12, 2026
+     *  (marlin): the send is recorded like a request and weighed by its command's budget (see UpstreamPlaygroundProbe). */
     internal val playground = UpstreamPlaygroundProbe(playgroundProviders)
 
     /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held

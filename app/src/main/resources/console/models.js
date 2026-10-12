@@ -90,7 +90,7 @@ function commandsOf() {
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? provKey,
-      url: pcfg.base_url ?? "", models, slots, defaults, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
+      url: pcfg.base_url ?? "", models, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
     };
@@ -438,7 +438,9 @@ function everyHtml() {
       const r = x.rates;
       const price = r ? `<td class="num">${usd(r.input ?? r.i)}</td><td class="num">${usd(r.output ?? r.o)}</td>` : `<td class="num unpriced" colspan="2">No price</td>`;
       const lc = r?.long_context ? `<tr class="tier"><td></td><td class="num">${big(r.long_context.over_input_tokens)}+</td><td class="num">${usd(r.long_context.input)}</td><td class="num">${usd(r.long_context.output)}</td></tr>` : "";
-      return `<tr><td class="mname">${esc(x.label)}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
+      // the model the command is pinned to, the one Claude Code offers as its own entry (spec 9h)
+      const pin = x.id === c.pinned ? `<span class="dflt">Pinned</span>` : "";
+      return `<tr><td class="mname">${esc(x.label)}${pin}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
     }).join("");
     return `<tbody style="--c:${colorOf(c.family)}"><tr class="grp"><td colspan="4"><span class="chip">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></td></tr>${body}</tbody>`;
   }).join("");

@@ -51,7 +51,7 @@ function commandsOf() {
     const key = h.key, cfg = hs[key] ?? {}, provKey = cfg.provider ?? "", pcfg = ps[provKey] ?? {};
     const row = data.models.find((r) => r.head === key);
     const models = (row?.models ?? []).filter((m) => m.resolved).map((m) => ({
-      id: m.id, label: m.label || m.id, window: window_(m), rates: m.rates ?? null, slot: m.slot ?? null,
+      id: m.id, label: m.label || m.id, window: window_(m), max: m.max_context_window ?? null, rates: m.rates ?? null, slot: m.slot ?? null,
     }));
     const slots = {};
     for (const m of models) if (m.slot && TIERS.includes(m.slot)) slots[m.slot] = m.id;
@@ -157,7 +157,11 @@ function draftOf(c) {
 }
 function draftState(c) {
   const d = ui.draft;
-  const tiers = Object.fromEntries(TIERS.map((t) => [t, { ok: !d.tiers[t].model || Boolean(parseWindow(d.tiers[t].win)) }]));
+  // a window is a number, and no larger than the most the provider publishes for that model, where it publishes one
+  const tiers = Object.fromEntries(TIERS.map((t) => {
+    const win = parseWindow(d.tiers[t].win), max = c.models.find((m) => m.id === d.tiers[t].model)?.max ?? null;
+    return [t, { ok: !d.tiers[t].model || (Boolean(win) && (max === null || win <= max)), over: Boolean(win) && max !== null && win > max }];
+  }));
   const same = JSON.stringify(d) === JSON.stringify(draftOf(c));
   return { tiers, ok: TIERS.every((t) => tiers[t].ok), same };
 }
@@ -195,6 +199,11 @@ async function removeCommand(key) {
   Object.assign(ui, { open: null, draft: null, said: null });
   render();
 }
+// beside a window field: the most the provider publishes for the model, or that it publishes none
+function limitHtml(model, sel) {
+  if (!sel.model || !model) return "";
+  return model.max ? `<span class="said maxnote">Max ${big(model.max)}</span>` : `<span class="said maxnote">No published max</span>`;
+}
 function paneHtml() {
   if (ui.add) return addPaneHtml();
   const c = cmdByKey(ui.open);
@@ -213,7 +222,7 @@ function paneHtml() {
     const sends = picked ? null : c.models.find((x) => x.label === c.model);
     const win = sel.model ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
     return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${sel.model ? "" : " empty"}" title="${sel.model ? "" : "No slot is set: it sends its default"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${esc(picked?.label ?? sends?.label ?? "None")}${ICON.caret}</button>`
-      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${ts.ok ? "" : `<span class="said limit">Not a window</span>`}</div>`;
+      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${ts.ok ? "" : `<span class="said limit">${ts.over ? "Over the max" : "Not a window"}</span>`}${limitHtml(picked ?? sends, sel)}</div>`;
   }).join("");
   const per = Object.entries(d.per).map(([root, l]) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
     + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove">${GL.close}</button></div>${l.file ? pfile(l.file) : `<textarea class="field ptext" data-ptext="${esc(root)}" rows="2">${esc(l.text)}</textarea>`}</div>`).join("");
@@ -547,7 +556,9 @@ async function verifyAndSave() {
   const a = ui.add;
   const v = await API.post(`/api/add/${encodeURIComponent(a.id)}/verify`, {});
   a.checks = v.body?.checks ?? [];
-  if (!v.ok || a.checks.some((c) => !c.ok && !SOFT.has(c.name))) { a.busy = false; a.said = null; render(); return; }
+  // A press never ends in nothing: a check that stops the add shows beside its own name, and an answer with no checks says so.
+  const hard = a.checks.some((c) => !c.ok && !SOFT.has(c.name));
+  if (hard || (!v.ok && !a.checks.length)) { a.busy = false; a.said = hard ? null : "Not added"; render(); return; }
   render();
   const s = await API.post(`/api/add/${encodeURIComponent(a.id)}/save`, {});
   if (!s.ok) { a.busy = false; a.said = "Not added"; render(); return; }

@@ -1516,6 +1516,10 @@ origin.
 - **A failed request that reported no usage counts as failed,** not unpriced, in the economics and budget figures.
 - **A planned restart no longer logs as a stalled turn path.** The probe counts no failure while the daemon drains
   for a stop, and /health stays ok.
+- **`splice console`, when no browser opens, prints a page that signs you in.** It used to print the bare address,
+  which opened the console signed out. The key stays in a private file and is never printed.
+- **A stop, an answer or a message from any card counts as the person handling the session,** Teams included. A team
+  member that came up and later ended starts again instead of answering "closed".
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

@@ -39,6 +39,7 @@ import splice.core.perf.PerfKeys
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.upstream.Ticker
 import splice.usage.economics.EconomicsBytes
 import splice.usage.economics.EconomicsCost
 import splice.usage.economics.EconomicsRead
@@ -189,10 +190,42 @@ class ColdUsageReadRouteTest {
             }
         }
 
+    @Test
+    fun `a prepared head's hourly totals are read again on a tick, so the first open after hours finds them held`(
+        @TempDir dir: Path,
+    ) = runBlocking<Unit> {
+        val fixture = Fixture(dir)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val heads = UsageHeadAdapter.heads(mapOf("synthetic" to fixture.managed()))
+        val tick = CompletableDeferred<Unit>()
+        val ticks = AtomicInteger()
+        try {
+            fixture.release.countDown()
+            val warmup = UsageReadWarmup(
+                scope,
+                heads,
+                Dispatchers.IO,
+                ticker = Ticker {
+                    tick.await()
+                    ticks.incrementAndGet() == 1
+                },
+            )
+            warmup.start()
+            withTimeout(5_000) { while (!warmup.economicsReady(heads.all().single())) kotlinx.coroutines.yield() }
+            val before = fixture.economicsReads.get()
+            tick.complete(Unit)
+            withTimeout(5_000) { while (fixture.economicsReads.get() == before) kotlinx.coroutines.yield() }
+        } finally {
+            scope.cancel()
+            fixture.closeUnstarted()
+        }
+    }
+
     private class Fixture(dir: Path, private val projected: Boolean = false) {
         val entered = CompletableDeferred<Unit>()
         val release = CountDownLatch(1)
         val perfScans = AtomicInteger()
+        val economicsReads = AtomicInteger()
         val projectedScans = AtomicInteger()
         private val now = System.currentTimeMillis()
         private val paths = StatePaths(baseOverride = dir)
@@ -269,6 +302,7 @@ class ColdUsageReadRouteTest {
         )
 
         private fun economicsSource(): HeadEconomicsSource = HeadEconomicsSource {
+            economicsReads.incrementAndGet()
             entered.complete(Unit)
             check(release.await(10, TimeUnit.SECONDS)) { "the synthetic scan was not released" }
             EconomicsRead.Rows(

@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import splice.usage.UsageReadPreparation
@@ -21,6 +23,13 @@ import java.util.concurrent.ConcurrentHashMap
 // A cold reconciliation retains decoded facts; one scan at a time avoids the measured fleet contention.
 private const val COLD_READS_AT_ONCE = 1
 
+// why: the hours an hour-old read left unsettled grow with every turn since, and a heap left idle is paged out, so the
+// first open after hours paid 6 to 15 s (measured live, Oct 12); a read every few minutes keeps both small and hot.
+private const val KEEP_WARM_MS = 300_000L
+
+// why: a failed refresh costs only the next open its own read, which is what it would have done anyway.
+private const val KEEP_WARM_BEST_EFFORT = "the next economics read does the work this refresh would have"
+
 // why: without hourly history, prepare the same 24-hour window a request with no explicit cutoff defaults to.
 private const val DEFAULT_REQUEST_WINDOW_MS = 86_400_000L
 
@@ -30,6 +39,7 @@ internal class UsageReadWarmup(
     private val heads: UsageHeads,
     private val io: CoroutineDispatcher,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val ticker: Ticker = ProcessTicker(),
 ) : UsageReadPreparation {
     private val admission = Semaphore(COLD_READS_AT_ONCE)
     private val states = ConcurrentHashMap<String, State>()
@@ -37,6 +47,19 @@ internal class UsageReadWarmup(
     /** Called by ApplicationStarted, not by the first Usage route. */
     fun start() {
         heads.all().forEach { prepare(it, null) }
+        scope.launch(io) {
+            while (ticker.awaitTick(KEEP_WARM_MS)) heads.all().forEach { keepWarm(it) }
+        }
+    }
+
+    /** Reads a prepared head's hourly totals again, so the hours since the last read are held before anyone asks. */
+    private suspend fun keepWarm(head: UsageHead) {
+        val state = states[head.key] ?: return
+        if (synchronized(state) { state.readySince == null || state.loading }) return
+        admission.withPermit {
+            val read = Cancellables.runCatchingBestEffort { head.sinks.economics?.read() }
+            Cancellables.discard(read, KEEP_WARM_BEST_EFFORT)
+        }
     }
 
     override fun economicsReady(head: UsageHead): Boolean = prepare(head, null)

@@ -2,6 +2,7 @@
 // implements it; this module owns only the query and response vocabulary its HTTP projections need.
 package splice.sessions.transcript
 
+import splice.sessions.registry.SessionRecord
 import java.nio.file.Path
 
 // why: a transcript page the console renders without pagination controls.
@@ -142,6 +143,12 @@ public data class SentTexts(
 /** The request's remaining read budget, shared across every root and every indexing chunk. */
 public fun interface TranscriptReadBudget {
     public fun hasTime(): Boolean
+}
+
+/** What a session with no name of its own is called: the first line of its first message, or null when it has a name, the
+ *  view is off, or no message of the person's is readable. The one answer session rows and request rows share. */
+public fun interface SessionTitleOf {
+    public operator fun invoke(record: SessionRecord): String?
 }
 
 /** Reads Claude Code transcript data from [roots], in caller-defined priority order. */

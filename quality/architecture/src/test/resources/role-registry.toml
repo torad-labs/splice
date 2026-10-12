@@ -711,8 +711,8 @@ reason = """ReanchorSpentHook stamps one spent re-anchor on the turn's perf row,
 [[groups]]
 signature = "(SessionRecord)->String?"
 dated = "2026-10-11"
-names = ["MovingSessionModel", "SessionRepoNameOf"]
-reason = """MovingSessionModel reads the MODEL the session's row reported, at the one moment Continue on needs it: before the move ends that client, because afterwards the row reports the model it moved to and the mark would name its destination as its origin. SessionRepoNameOf reads the FOLDER a session's row belongs to, for the history route's rows, and is read whenever a row is written. Passing the repo name where the model belongs would write a folder into the transcript's move mark; passing the model where the repo name belongs would group a session's history under its model."""
+names = ["MovingSessionModel", "SessionRepoNameOf", "SessionTitleOf"]
+reason = """MovingSessionModel reads the MODEL the session's row reported, at the one moment Continue on needs it: before the move ends that client, because afterwards the row reports the model it moved to and the mark would name its destination as its origin. SessionRepoNameOf reads the FOLDER a session's row belongs to, for the history route's rows, and is read whenever a row is written. SessionTitleOf reads the first line of a session's first message, for the card heading of an unnamed session, on session rows and request rows. Passing the title where the model belongs would write a sentence of the person's into the transcript's move mark; passing the model where the title belongs would head a card with a model id. Passing the repo name where the model belongs would write a folder into the transcript's move mark; passing the model where the repo name belongs would group a session's history under its model."""
 
 # ── 4 names, (String?) -> Boolean ────────────────────────────────────────────────────────────────
 [[groups]]

@@ -296,6 +296,8 @@ public class PerfRoutes(
         put("session", row.facts.session)
         // The project object the session rows carry; null where the session is unknown or outside every project.
         put("project", row.facts.session?.let(tags::of) ?: JsonNull)
+        // What a session with no name is called, from the same snapshot; null where it has a name or none is readable.
+        put("title", row.facts.session?.let(tags::titleOf))
         put("account", row.facts.account)
         put("cache_cold", row.facts.cacheCold)
         put("compact", row.facts.compact)

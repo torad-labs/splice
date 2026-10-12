@@ -10,7 +10,9 @@ import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.projects.ProjectWire
 import splice.sessions.registry.ProjectRef
+import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.sessions.transcript.SessionTitleOf
 import splice.usage.perf.ProjectTags
 import splice.usage.perf.RequestProjects
 
@@ -24,24 +26,35 @@ internal class RequestProjectTags(
 ) : RequestProjects {
     override fun invoke(): ProjectTags {
         val byTag = LinkedHashMap<String, ProjectRef>()
+        val unnamed = HashMap<String, SessionRecord>()
         sessions.read().forEach { record ->
             val id = record.sessionId ?: return@forEach
             routes.projects.of(record)?.let { byTag.putIfAbsent(id.take(REQUEST_TAG_CHARS), it) }
+            if (record.name.isNullOrBlank()) unnamed.putIfAbsent(id.take(REQUEST_TAG_CHARS), record)
         }
         teams()?.teams().orEmpty().forEach { team ->
             val own = team.repo.takeIf { it.isNotBlank() }?.let { routes.projects.at(it, null) } ?: return@forEach
             team.slots.flatMap { it.sessionsHistory }.forEach { byTag.putIfAbsent(it.take(REQUEST_TAG_CHARS), own) }
         }
-        return Snapshot(byTag)
+        return Snapshot(byTag, unnamed, routes.titleOf)
     }
 
-    private class Snapshot(private val byTag: Map<String, ProjectRef>) : ProjectTags {
+    private class Snapshot(
+        private val byTag: Map<String, ProjectRef>,
+        private val unnamed: Map<String, SessionRecord>,
+        private val titleOf: SessionTitleOf,
+    ) : ProjectTags {
         private val wire = HashMap<String, JsonObject>()
+        private val titles = HashMap<String, String?>()
         private val tagsByProject: Map<String, Set<String>> =
             byTag.entries.groupBy({ it.value.id }, { it.key }).mapValues { it.value.toSet() }
 
         override fun of(tag: String): JsonObject? = byTag[tag]?.let { wire.getOrPut(it.id) { ProjectWire.json(it) } }
 
         override fun tagsOf(id: String): Set<String> = tagsByProject[id].orEmpty()
+
+        // Read when a row asks, never for the whole registry: a title is a file read the first time.
+        override fun titleOf(tag: String): String? =
+            titles.getOrPut(tag) { unnamed[tag]?.let { titleOf(it) } }
     }
 }

@@ -13,6 +13,9 @@ public interface ProjectTags {
 
     /** Every session tag that belongs to the project [id]; empty for an id nothing holds. */
     public fun tagsOf(id: String): Set<String>
+
+    /** The title of the session [tag] starts when it has no name of its own (the first line of its first message), else null. */
+    public fun titleOf(tag: String): String?
 }
 
 /** No project knowledge wired: every row has none. */
@@ -20,6 +23,8 @@ internal object NoProjectTags : ProjectTags {
     override fun of(tag: String): JsonObject? = null
 
     override fun tagsOf(id: String): Set<String> = emptySet()
+
+    override fun titleOf(tag: String): String? = null
 }
 
 /** Taken once per request, so every row of one answer reads the same snapshot. */

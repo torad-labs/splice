@@ -10,6 +10,7 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -47,6 +48,8 @@ class PerfProjectTagTest {
 
         override fun tagsOf(id: String): Set<String> =
             byTag.filterValues { it.getValue("id").jsonPrimitive.content == id }.keys
+
+        override fun titleOf(tag: String): String? = mapOf("aaaaaaaa" to "fix the billing rounding")[tag]
     }
     private val head = UsageHead(
         key = "kimi",
@@ -72,5 +75,13 @@ class PerfProjectTagTest {
             val only = client.rows("project=%2Fp%2Fmythos")
             assertEquals(listOf(1_000L, 2_000L), only.map { it.getValue("ts").jsonPrimitive.content.toLong() })
             assertEquals(emptyList<JsonObject>(), client.rows("project=%2Fp%2Fnothing"))
+        }
+
+    @Test
+    fun `a row carries the title of its session, null where the session has a name or none is known`() =
+        testApplication {
+            application { routing { get("/api/perf/turns") { routes.turns(call) } } }
+            val titles = client.rows("").map { it.getValue("title") }
+            assertEquals(listOf(JsonPrimitive("fix the billing rounding"), JsonNull, JsonNull, JsonNull), titles)
         }
 }

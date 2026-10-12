@@ -58,6 +58,7 @@ import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionActivity
+import splice.sessions.transcript.SessionTitleOf
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
@@ -123,6 +124,12 @@ public class SessionsRoutes(
     public val projects: SessionProjects = SessionProjects(settings)
 
     private val viewEnabled = SessionTranscriptViewEnabled(settings::transcriptView)
+
+    /** A session with no name is called by the first line of its first message; the request rows ask here too. */
+    public val titleOf: SessionTitleOf = SessionTitleOf { record ->
+        record.sessionId?.takeIf { viewEnabled() && record.name.isNullOrBlank() }
+            ?.let { transcripts.title(it, roots.treesFor(record.head), record.process.cwd) }
+    }
 
     /** V4-421: the head trees a resume searches, asked once per listing and held (ResumableSessions). */
     private val resumableSessions = ResumableSessions(
@@ -219,7 +226,7 @@ public class SessionsRoutes(
         val said = if (running) SessionActivity::last else SessionActivity::answered
         put("last", said(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
-        put("title", SessionActivity.title(s, trees, transcripts, viewEnabled))
+        put("title", titleOf(s))
         put("kind", s.client.kind)
         put("version", s.client.version)
         put("cwd", s.process.cwd)

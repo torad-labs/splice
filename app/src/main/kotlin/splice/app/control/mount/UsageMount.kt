@@ -18,6 +18,7 @@ import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
 import splice.core.perf.KeptHistory
 import splice.core.retired.RetiredHeads
+import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
 import splice.head.perf.TurnTallies
@@ -47,6 +48,8 @@ internal class UsageMount(
     clientVersions: ClientVersionTracker,
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
+    /** The daemon log, where the startup scan says when each command's history is ready. */
+    log: LogSink? = null,
 ) {
     // The turn rows each perf file held when last counted, kept across requests so a count reads only what was appended.
     private val turnTallies = TurnTallies()
@@ -67,7 +70,7 @@ internal class UsageMount(
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
     private val kept = KeptHistory { config.getConfig().historyWindow }
-    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, kept)
+    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, kept, log)
 
     // Settings > Your data's one window, with its own wiring: see HistoryWiring.
     private val history = HistoryWiring(ports, config, guard, fileIo, heads)

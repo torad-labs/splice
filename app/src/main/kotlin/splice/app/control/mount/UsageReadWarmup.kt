@@ -9,6 +9,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
@@ -30,6 +32,10 @@ private const val KEEP_WARM_MS = 300_000L
 // why: a failed refresh costs only the next open its own read, which is what it would have done anyway.
 private const val KEEP_WARM_BEST_EFFORT = "the next economics read does the work this refresh would have"
 
+// why: the startup scan's readiness is logged in seconds to a tenth, as long scans are read off the daemon log.
+private const val MS_PER_TENTH = 100L
+private const val TENTHS = 10L
+
 // why: without hourly history, prepare the same 24-hour window a request with no explicit cutoff defaults to.
 private const val DEFAULT_REQUEST_WINDOW_MS = 86_400_000L
 
@@ -40,12 +46,17 @@ internal class UsageReadWarmup(
     private val io: CoroutineDispatcher,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val ticker: Ticker = ProcessTicker(),
+    /** Where each command's history being ready is said, with how long after start: the cold open's own timing. */
+    private val log: LogSink? = null,
 ) : UsageReadPreparation {
     private val admission = Semaphore(COLD_READS_AT_ONCE)
     private val states = ConcurrentHashMap<String, State>()
 
+    @Volatile private var startedMs = 0L
+
     /** Called by ApplicationStarted, not by the first Usage route. */
     fun start() {
+        startedMs = clock()
         heads.all().forEach { prepare(it, null) }
         scope.launch(io) {
             while (ticker.awaitTick(KEEP_WARM_MS)) heads.all().forEach { keepWarm(it) }
@@ -108,7 +119,10 @@ internal class UsageReadWarmup(
         }
         synchronized(state) {
             economics.fold(
-                onSuccess = { state.economicsReady = true },
+                onSuccess = {
+                    state.economicsReady = true
+                    ready(head, "hourly totals")
+                },
                 onFailure = { failure -> state.failure = failure },
             )
         }
@@ -133,10 +147,19 @@ internal class UsageReadWarmup(
         }
         synchronized(state) {
             loaded.fold(
-                onSuccess = { since -> state.readySince = minOf(state.readySince ?: since, since) },
+                onSuccess = { since ->
+                    state.readySince = minOf(state.readySince ?: since, since)
+                    ready(head, "requests")
+                },
                 onFailure = { failure -> state.failure = failure },
             )
         }
+    }
+
+    private fun ready(head: UsageHead, what: String) {
+        val tenths = (clock() - startedMs) / MS_PER_TENTH
+        val after = "${tenths / TENTHS}.${tenths % TENTHS}"
+        log?.invoke("[${LogSafe.str(head.key)}][usage] $what read $after s after start\n")
     }
 
     /** Reads the window the way the turns route will: through its projection where the source keeps one, so the

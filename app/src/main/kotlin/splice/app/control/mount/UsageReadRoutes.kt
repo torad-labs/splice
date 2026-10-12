@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import splice.core.perf.KeptHistory
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
@@ -25,6 +26,7 @@ internal class UsageReadRoutes(
     private val io: CoroutineDispatcher,
     private val guard: ControlGuard,
     kept: KeptHistory,
+    private val log: LogSink? = null,
 ) {
     private val economics = EconomicsPayloads(heads, lookup = lookup, kept = kept)
     private val perf = PerfRoutes(lookup)
@@ -40,7 +42,7 @@ internal class UsageReadRoutes(
     }
 
     fun register(route: Route) {
-        val warmup = UsageReadWarmup(route.application, heads, io)
+        val warmup = UsageReadWarmup(route.application, heads, io, log = log)
         perf.preparation = warmup
         route.application.monitor.subscribe(ApplicationStarted) {
             warmup.start()

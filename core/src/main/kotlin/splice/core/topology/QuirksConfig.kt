@@ -69,7 +69,7 @@ public data class QuirksConfig(
     @SerialName("code_mode_heap") val codeModeHeapMb: Int? = null,
     /** Head-wide host/guest/collector memory reservation in MiB. Absent keeps the 24 GiB admission budget. */
     @SerialName("code_mode_memory_mb") val codeModeMemoryMb: Long? = null,
-    /** Beta ChatGPT responses only: upstream model ids offered the code-mode runner IN ADDITION to those the
+    /** ChatGPT responses only (the Claudex shape): upstream model ids offered the code-mode runner IN ADDITION to those the
      *  backend marks `tool_mode = "code_mode_only"` (V4-441). Absent adds none; a `[Nk|Nm]` context suffix on
      *  the routed model is ignored when matching. */
     @SerialName("code_mode_models") val codeModeModels: List<String>? = null,

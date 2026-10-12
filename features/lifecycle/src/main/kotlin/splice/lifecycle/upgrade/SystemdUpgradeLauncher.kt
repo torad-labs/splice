@@ -29,6 +29,9 @@ private const val LAUNCH_SETTLE_MS = 3_000L
 // why: how often the launch looks for the shell's pid while it settles; a started run answers within one.
 private const val LAUNCH_POLL_MS = 25L
 
+// why: systemd-run's own words (a missing bus, a refused scope) go here, apart from the run's output the console shows.
+private const val SCOPE_LOG = "scope.log"
+
 /** The run's shell: $1 is its directory, the rest the command. Output goes to the run's log, its pid in
  *  first and its exit code last, renamed in so a reader never sees half of it. */
 internal const val RUN_SCRIPT =
@@ -67,27 +70,29 @@ internal class SystemdScope(
         val run = listOf("/bin/sh", "-c", RUN_SCRIPT, "sh", dir.toString(), java, "-jar", liveJar.toString()) + args
         val scope = listOf("systemd-run", "--user", "--scope", "--collect", "--quiet")
         val scoped = scope + "--unit=splice-upgrade-${dir.fileName}" + "--" + run
-        return attempt(dir, scoped)?.let { why -> attempt(dir, run)?.let { why } }
+        // systemd-run speaks to its own log, so a bus that is not there never reaches the run's output the page shows
+        val fallback = { why: String -> attempt(dir, run, dir.resolve(RUN_OUTPUT))?.let { why } }
+        return attempt(dir, scoped, dir.resolve(SCOPE_LOG))?.let(fallback)
     }
 
     /** Null when [command] started the run; otherwise why it did not. */
-    private fun attempt(dir: Path, command: List<String>): String? {
+    private fun attempt(dir: Path, command: List<String>, log: Path): String? {
         val process = try {
-            spawn.spawn(command, dir.resolve(RUN_OUTPUT))
+            spawn.spawn(command, log)
         } catch (error: IOException) {
             return "${command.first()} could not start (${SafeFailureText.render(error)})"
         }
-        return settled(dir, command, process)
+        return settled(dir, command, process, log)
     }
 
-    private fun settled(dir: Path, command: List<String>, process: Process): String? {
+    private fun settled(dir: Path, command: List<String>, process: Process, log: Path): String? {
         val pid = dir.resolve(RUN_PID)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(settleMs)
         while (!Files.exists(pid) && System.nanoTime() < deadline) {
             if (process.waitFor(LAUNCH_POLL_MS, TimeUnit.MILLISECONDS)) break
         }
         if (Files.exists(pid) || process.isAlive) return null
-        val said = Files.readAllLines(dir.resolve(RUN_OUTPUT)).lastOrNull { it.isNotBlank() }?.trim()
+        val said = Files.readAllLines(log).lastOrNull { it.isNotBlank() }?.trim()
         return "${command.first()} exited ${process.exitValue()}" + (said?.let { " ($it)" } ?: "")
     }
 }

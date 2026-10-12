@@ -138,6 +138,8 @@ class UpgradeRunsTest {
         assertEquals(started.run.id, run?.id)
         assertEquals(UpgradeRunState.SUCCEEDED, run?.state)
         assertTrue(run?.output.orEmpty().any { it == "-jar /share/splice.jar upgrade --to v1.2.3" }, "${run?.output}")
+        val said = run?.output.orEmpty()
+        assertTrue(said.none { "bus" in it }, "the bus complaint reached the run: $said")
     }
 
     /** Neither a scope nor a detached shell: the sentence is the scope's, the host's own reason. */

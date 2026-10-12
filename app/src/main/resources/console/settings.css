@@ -522,7 +522,10 @@ button.count:hover { color: var(--text); }
 @media (min-width: 2000px) {
   /* a figure wide enough to hold both reads as one line: the count and its door at the left, each command's share at the
      right edge, instead of a tall box with its words in the top corner */
-  #st .tally > .figs3 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
+  /* align-content: start keeps every number in a row on one line: the tiles stretch to the tallest, so a tile with
+     nothing under its number centred that one row and dropped its number 15px below its neighbours' ("31 Run by each
+     session" beside four tiles that carry a line, splice-lead's walk of round four) */
+  #st .tally > .figs3 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; align-content: start; column-gap: 3rem; }
   /* THE NUMBER AND ITS NAME TAKE THE TWO TRACKS, AND EVERYTHING UNDER THEM TAKES THE WHOLE WIDTH, so the first track is
      sized by the number alone. Left to auto-placement, a line under the number lands in that track and sizes it: "One
      process for every session, started when a session first asks" grew it to 482px of a 595px tile and left the name

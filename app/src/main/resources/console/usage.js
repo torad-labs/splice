@@ -268,10 +268,9 @@ function fold2(t, e) {
 }
 const uncut = (heads) => heads.every((h) => D.held[h] && !D.held[h].truncated);
 const DRILLS = () => `<span class="drill">${DIMS[nextBy("account")].word}${DOWN}</span>`;
-// As Accounts says it (Oct 12): "No limits reported" only when the provider answered with none, "Not read yet" for a login
-// splice has not asked about, and "Not read" for one whose last reading is gone.
-const limitsWord = (row) => row.no_usage_at_epoch_seconds ? "No limits reported"
-  : !row.observed_at_epoch_seconds ? "Not read yet" : "Not read";
+// "No limits reported" only when the provider answered with none (Oct 12). Any other card with no windows is Not read:
+// "Not read yet" is marlin's word for a read in flight, and Usage starts none.
+const limitsWord = (row) => row.no_usage_at_epoch_seconds ? "No limits reported" : "Not read";
 function plansHtml() {
   const cards = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds)).map((row) => {
     const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),

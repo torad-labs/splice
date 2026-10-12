@@ -569,11 +569,31 @@ function chatHtml(tm) {
 }
 
 /** A member or a session outside the team, as the chat and the feed name it: its role in its command's colour. */
+// A PARTY IS NEVER SHOWN AS AN ID (marlin): a session id outside the team takes the name the registry or history
+// gives it, as Usage names an ended agent; a socket, or an id nothing names, reads Outside.
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const pastNames = new Map(); // session id -> its name from history, null when history has none, undefined while asked
+function pastName(id) {
+  if (pastNames.has(id)) return pastNames.get(id);
+  pastNames.set(id, undefined);
+  API.get(`/api/sessions/history?limit=1&query=${encodeURIComponent(id)}`).then((res) => {
+    const row = (res.body?.sessions || []).find((x) => x.session_id === id);
+    pastNames.set(id, row?.name || row?.title || null);
+    if (pastNames.get(id)) render();
+  });
+  return undefined;
+}
+function partyName(address) {
+  const a = String(address || "");
+  if (!a || a.startsWith("uds:")) return "";
+  if (!SESSION_ID.test(a)) return a; // a name the sender typed
+  const live = state.sessions[a];
+  return live?.name || live?.title || pastName(a) || "";
+}
 function party(tm, slotId, address) {
   const s = slotId ? slotOf(tm, slotId) : null;
   if (s) return `<span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span>`;
-  const name = String(address || "").replace(/^uds:.*$/, "");
-  return `<span class="party out">${esc(name || "Outside")}</span>`;
+  return `<span class="party out">${esc(partyName(address) || "Outside")}</span>`;
 }
 
 function feedHtml(tm) {

@@ -189,6 +189,7 @@ class HeadRemovalTest {
         serve(live("gamma", "s-1", SessionAvailability.GONE)) { call ->
             val before = call(HttpMethod.Get, "/api/perf/turns?head=gamma")
             assertEquals(400, before.status.value, "an unknown head is refused until it is retired")
+            assertEquals(400, call(HttpMethod.Get, "/api/heads/gamma/trace?last=1").status.value)
 
             val removed = call(HttpMethod.Delete, "/api/heads/gamma")
             assertEquals(200, removed.status.value)
@@ -199,6 +200,8 @@ class HeadRemovalTest {
             assertEquals(200, after.status.value, "its requests are still read by its key")
             val byCommand = call(HttpMethod.Get, "/api/perf/turns?head=claude-gamma")
             assertEquals(200, byCommand.status.value, "and by the command a person typed")
+            val trace = call(HttpMethod.Get, "/api/heads/gamma/trace?last=1").status.value
+            assertTrue(trace != 400, "its trace records are asked for, not refused as an unknown head: $trace")
             val listed = json(call(HttpMethod.Get, "/api/heads/retired").bodyAsText()).getValue("retired").jsonArray
             assertEquals(listOf("gamma"), listed.map { it.jsonObject.getValue("key").jsonPrimitive.content })
             assertEquals("claude-gamma", listed.single().jsonObject.getValue("command").jsonPrimitive.content)

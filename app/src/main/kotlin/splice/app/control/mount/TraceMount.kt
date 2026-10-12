@@ -12,9 +12,11 @@ import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
 import splice.app.control.TurnsHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.app.head.RetiredTurnsHeads
 import splice.client.transcript.TranscriptMessageLookup
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.core.retired.RetiredHeads
 import splice.core.turn.FailureCause
 import splice.head.trace.TraceDirPort
 import splice.head.trace.TraceFailureCause
@@ -41,7 +43,7 @@ internal class TraceMount(
     private val turnsLookup = TurnsHeadAdapter.lookup(resolver)
     private val fileIo = ProcessDispatchers().io()
     private val traceRoute = TraceRoute(
-        turnsLookup,
+        RetiredTurnsHeads(RetiredHeads(config.statePaths.stateDir), turnsLookup),
         TraceDirPort { ports.traceDir },
         fileIo,
         TraceFailureCause { key, turn, since ->

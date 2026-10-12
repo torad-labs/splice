@@ -25,6 +25,10 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
+import splice.head.TurnsHead
+import splice.head.TurnsHeadLookup
+import splice.head.compact.CompactView
+import splice.head.compact.HeadCompactSource
 import splice.http.JsonReply
 import java.nio.file.Files
 import java.nio.file.Path
@@ -160,4 +164,22 @@ internal class HeadRemovalAssembly(
         config.statePaths,
         HeadRemovalFacts(config.statePaths, heads, RegisteredSessions { runtime.sessions }),
     )
+}
+
+/** The turns routes' head lookup, extended with the commands removed from Models: their trace files stay in place, so a
+ *  removed command's requests open and its prompts and answers search, as they did while it ran. */
+internal class RetiredTurnsHeads(
+    private val retired: RetiredHeads,
+    private val running: TurnsHeadLookup,
+) : TurnsHeadLookup {
+    override fun byName(name: String): List<TurnsHead> = running.byName(name).ifEmpty {
+        retired.all().filter { it.key == name || it.command == name }.map { head ->
+            TurnsHead(
+                head.key,
+                object : HeadCompactSource {
+                    override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+                },
+            )
+        }
+    }
 }

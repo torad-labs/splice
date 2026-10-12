@@ -21,6 +21,7 @@ import splice.lifecycle.restart.DaemonSupervised
 import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeStatus
+import splice.models.list.LocalRuntimes
 import splice.models.list.ModelsReporter
 import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
@@ -173,6 +174,9 @@ public class ConsolePorts {
     /** V4-239: `splice models`' comparison, behind GET /api/models/upstream, over the same splice.toml
      *  and stored credentials the verb reads. Null answers a named 503, never a roster with no rows. */
     public var upstreamModels: ModelsReporter? = null
+
+    /** §9i: each local runtime's own answers, behind GET /api/models/local. Null answers a named 503. */
+    public var localRuntimes: LocalRuntimes? = null
 
     /** V4-239: the trace directory every head's TraceStore writes, behind GET /api/heads/{head}/trace.
      *  Null answers a named 503, never "no turns traced". */

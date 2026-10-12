@@ -170,6 +170,7 @@ internal object ConsoleWiring {
         console: ConsoleEventPublisher,
     ) {
         srv.ports.upstreamModels = topology.path?.let { ModelsWiring.reporter(it) }
+        srv.ports.localRuntimes = topology.path?.let { ModelsWiring.localRuntimes(it) }
         srv.ports.traceDir = statePaths.traceDir
         srv.ports.turnStatistics = statePaths
         srv.ports.wires = console.wires

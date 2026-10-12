@@ -40,7 +40,7 @@ const root = document.getElementById("models");
 KNOBS.wire(root, () => render());
 
 // ---------- what the daemon says ----------
-const data = { heads: [], topo: null, models: [], projects: [], sessions: [], doctor: null, claude: null, accounts: [], profiles: [], loaded: false, err: null };
+const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, accounts: [], profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
   logs: {}, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
@@ -64,6 +64,10 @@ async function readAll() {
   data.loaded = true;
   const doctor = await API.get("/api/doctor");
   data.doctor = doctor.ok ? doctor.body : null;
+  // what each local runtime says about its models, asked of the runtimes themselves (spec 9i)
+  const local = await API.get("/api/models/local");
+  if (!local.ok && local.status !== 0) console.warn(`models: /api/models/local answered ${local.status}`);
+  data.local = local.ok ? local.body?.providers ?? [] : [];
   KNOBS.st.cmds = data.heads.map((h) => h.key);
   KNOBS.st.providerOf = Object.fromEntries(data.heads.map((h) => [h.key, topology().heads?.[h.key]?.provider ?? ""]));
   data.knobsErr = await KNOBS.load();
@@ -249,6 +253,24 @@ async function removeCommand(key) {
   render();
 }
 // beside a window field: the most the provider reports for the model, or that it reports none; a window over it turns the note
+// a local command's runtime, and what it says about one model: the window it serves now (its most, until it loads the
+// model) and whether it calls tools (spec 9i). Null for a command whose runtime lists nothing to read.
+const localOf = (c) => data.local.find((p) => p.provider === c.provKey);
+function runtimeHtml(c) {
+  const r = localOf(c);
+  if (!r) return "";
+  const said = !r.runtime ? `<span class="said limit">Not answering</span>` : !r.models ? `<span class="said limit">List not answering</span>` : "";
+  return `<span class="lbl">Runtime</span><div class="ctl"><span class="urlread">${esc([r.runtime, r.version].filter(Boolean).join(" ") || r.url)}</span>${said}</div>`;
+}
+function runtimeNote(c, id, over) {
+  const r = localOf(c);
+  if (!r?.models || !id) return null;
+  const m = r.models.find((x) => x.id === id) ?? (id.includes(":") ? null : r.models.find((x) => x.id === `${id}:latest`));
+  if (!m) return `<span class="said limit">Not listed</span>`;
+  const win = m.served_window ? `Serves ${big(m.served_window)}` : m.ceiling ? `Max ${big(m.ceiling)}` : "";
+  const tools = m.tools === true ? "Calls tools" : m.tools === false ? "No tool calls" : "";
+  return [win && `<span class="said${over ? " limit" : ""}">${win}</span>`, tools && `<span class="said">${tools}</span>`].filter(Boolean).join("");
+}
 function limitHtml(model, sel, over) {
   if (!sel.model || !model) return "";
   return model.max ? `<span class="said${over ? " limit" : ""}">Max ${big(model.max)}</span>` : `<span class="said">No max reported</span>`;
@@ -277,7 +299,8 @@ function paneHtml() {
     const win = picked ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">`
       : asDefault ? `<input class="field win" id="h-win-${t}" data-hw="1" value="${esc(d.headWin)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
     const bad = picked ? !(ts.ok || ts.over) : asDefault && !st.head.ok && !st.head.over;
-    const note = picked ? limitHtml(picked, sel, ts.over) : asDefault ? limitHtml({ max: st.head.max ?? dm.max }, { model: dm.id }, st.head.over) : "";
+    const note = picked ? runtimeNote(c, picked.id, ts.over) ?? limitHtml(picked, sel, ts.over)
+      : asDefault ? runtimeNote(c, dm.id, st.head.over) ?? limitHtml({ max: st.head.max ?? dm.max }, { model: dm.id }, st.head.over) : "";
     return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${picked ? "" : asDefault ? " dflt-tier" : " empty"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${face}${ICON.caret}</button>`
       + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${bad ? `<span class="said limit">Not a window</span>` : ""}${note}</div>`;
   }).join("");
@@ -290,6 +313,7 @@ function paneHtml() {
   const restart = ui.said === "Saved" && ui.pending ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
   const form = `<section class="form">`
     + `<span class="lbl">Sends to</span><div class="ctl"><span class="urlread">${esc(c.url)}</span></div>`
+    + runtimeHtml(c)
     + tierRows
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)

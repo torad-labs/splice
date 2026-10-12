@@ -1,5 +1,6 @@
 // NEW: compose model listing with the application's configuration, credential readers, and terminal;
 // V4-239: and the same comparison for the console's GET /api/models/upstream.
+// §9i: and each local runtime's own answers for GET /api/models/local.
 package splice.app
 
 import splice.app.auth.StoredModelCredentials
@@ -7,6 +8,9 @@ import splice.app.provider.JdkLocalHttp
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.models.list.LocalListAuthority
+import splice.models.list.LocalRuntimeModel
+import splice.models.list.LocalRuntimeReading
+import splice.models.list.LocalRuntimes
 import splice.models.list.ModelConfiguration
 import splice.models.list.ModelConfigurationSource
 import splice.models.list.ModelsCommand
@@ -42,6 +46,9 @@ internal object ModelsWiring {
         StoredModelCredentials(),
         AuthoritativeLocalList(),
     )
+
+    /** §9i: each local provider in the file the daemon booted from ([path]), re-read per call like [reporter]. */
+    fun localRuntimes(path: Path): LocalRuntimes = ProbedLocalRuntimes(path)
 }
 
 /** Boot's rule for an unlisted local row, asked of the runtime itself (LocalRuntimeProbe.detect): Ollama, LM Studio and
@@ -50,4 +57,18 @@ internal class AuthoritativeLocalList : LocalListAuthority {
     override fun invoke(baseUrl: String): Boolean =
         LocalRuntimeProbe(baseUrl, JdkLocalHttp()).detect()?.kind
             ?.let { kind -> kind != LocalRuntimeKind.OPENAI_COMPATIBLE } == true
+}
+
+/** What each local runtime says about itself, read from the runtime the way doctor reads it (LocalRuntimeProbe): its
+ *  kind and version, and per listed model the window it serves now, its ceiling and its tool answer. Lists only. */
+internal class ProbedLocalRuntimes(private val path: Path) : LocalRuntimes {
+    override fun invoke(): List<LocalRuntimeReading> =
+        TopologyLoader.parse(Files.readString(path)).providers.filterValues { it.isLocal }.map { (key, provider) ->
+            val probe = LocalRuntimeProbe(provider.baseUrl, JdkLocalHttp())
+            val runtime = probe.detect()
+            val models = runtime?.let { probe.models(it) }?.map { m ->
+                LocalRuntimeModel(m.id, m.contextLength, m.ceiling, m.tools)
+            }
+            LocalRuntimeReading(key, provider.baseUrl, runtime?.kind?.label, runtime?.version, models)
+        }
 }

@@ -14,6 +14,7 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.api.ControlBodies
 import splice.core.util.LogSink
+import splice.head.HeadDeps
 import splice.lifecycle.restart.CompactionsInFlight
 import splice.lifecycle.restart.DaemonRestarts
 import splice.lifecycle.restart.DaemonRoutes
@@ -46,7 +47,9 @@ internal class LifecycleMount(
 
     /** The daemon's ONE restart decision and wait; AddMount's save takes its restart through it too. */
     internal val restarts = DaemonRestarts(restart)
-    private val daemonRoutes = DaemonRoutes(restarts)
+
+    // the drain cap the commands themselves stop with (HeadServerFactory builds every head on HeadPolicy's default)
+    private val daemonRoutes = DaemonRoutes(restarts, HeadDeps.HeadPolicy().stopDrainMs)
     private val upgradeRoute = UpgradeRoute()
     private val upgradeRuns = UpgradeRunRoutes(UpgradeRunsSource { ports.upgradeRuns }, log)
     private val upgradeChecks =

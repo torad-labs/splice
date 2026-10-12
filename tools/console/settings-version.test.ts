@@ -107,7 +107,7 @@ async function version(
   started.length = 0;
   restarts.length = 0;
   restartReply = { status: 202, body: { status: "draining" } };
-  restartPhase = { status: "idle" };
+  restartPhase = { status: "idle", drain_ms: 45_000 };
   runNow = run;
   live = [];
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -270,19 +270,22 @@ test("Restart splice takes the restart, and says what it is waiting for while it
   }
 }, 30_000);
 
-test("with requests in flight Restart splice arms: Cut, a chip per agent mid-request opening its session, and only the second press restarts", async () => {
+test("with requests in flight Restart splice arms: Mid-request, a chip per agent opening its session, the daemon's drain cap, and only the second press restarts", async () => {
   const page = await version(NEVER_CHECKED);
   try {
     const pane = page.locator(".pane");
     live = [turn("114e6cb0-9c3a-4d26-b259-f2b7f24ab56c"), turn("5a5a5a5a-0000-4000-8000-000000000000"), { ...turn("80e8a500-0a41-4f21-b707-3d7009e22904"), stopped: true }];
     await pane.getByRole("button", { name: "Restart splice" }).click();
     const armed = pane.locator(".vcard .armed");
-    await expect(armed.locator(".said")).toHaveText("Cut", { timeout: 10_000 });
+    await expect(armed.locator(".said").first()).toHaveText("Mid-request", { timeout: 10_000 });
+    await expect(armed.locator(".said.then")).toHaveText("· 45 s to finish, then cut");
+    await expect(pane.getByRole("button", { name: "Check" })).toHaveCount(0);
     await expect(armed.locator("a.chip")).toHaveText(["changelog-pass", "5a5a5a5a"]);
     await expect(armed.locator("a.chip").first()).toHaveAttribute("href", "sessions.html#114e6cb0-9c3a-4d26-b259-f2b7f24ab56c");
     expect(restarts).toEqual([]);
     await armed.getByRole("button", { name: "Keep running" }).click();
     await expect(pane.locator(".vcard .armed")).toHaveCount(0);
+    await expect(pane.getByRole("button", { name: "Check" })).toBeVisible();
     expect(restarts).toEqual([]);
     await pane.getByRole("button", { name: "Restart splice" }).click();
     await page.locator(".vcard .armed").getByRole("button", { name: "Restart splice" }).click();

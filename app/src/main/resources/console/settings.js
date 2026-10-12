@@ -697,7 +697,7 @@ function versionHtml() {
     : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : "";
   // ONLY HIS TAP READS THE NETWORK (Marlin's privacy line, Oct 12): nothing here polls, and the page never checks when
   // it opens. GET /api/upgrade answers the snapshot a past tap left, and POST /api/upgrade/check is the only fetch.
-  const act = `<button class="act quiet" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
+  const act = ui.armed === "restart" ? "" : `<button class="act quiet" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
     + (ui.checkSaid ? `<span class="said limit">${esc(ui.checkSaid)}</span>` : "");
   const cards = [vcard("Running", `${vnum(v.installed)}${newest}${act}${restartAct(going)}${checked}`)];
   // UPGRADE IS THE SAME ARMING AS GO BACK, on the card that holds the version it would take him to, because it is the
@@ -750,13 +750,15 @@ function runHtml(run, back) {
 }
 /** Restart splice, beside the version it is running. With nothing in flight it is one press: splice is built to come
  *  back from a restart. With requests in flight it arms the way Remove does on Models (Marlin, Oct 12): the first press
- *  names the agents a restart would cut, under fin's word "Cut", each a chip that opens its session, and the second
- *  press restarts. What a restart waits for is said on the button, because a daemon that waits on a compaction looks
+ *  names the agents mid-request, each a chip with the Working lamp that opens its session, says how long the drain lets
+ *  them finish before it cuts them (the daemon's own cap, GET /api/daemon/restart's drain_ms, never a number written
+ *  here), and the second press restarts. fin's words, Marlin approved; Check steps aside while it is armed. What a restart waits for is said on the button, because a daemon that waits on a compaction looks
  *  the same as one that hung. */
 function restartAct(going) {
   if (ui.armed === "restart" && !ui.restarting) {
-    const chips = (ui.cut || []).map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}">${esc(x.name || x.id.slice(0, 8))}</a>`).join("");
-    return `<span class="armed"><span class="said">Cut</span>${chips}<button class="act danger" data-act="restart-now">Restart splice</button><button class="act quiet" data-act="disarm">Keep running</button></span>`;
+    const chips = (ui.cut || []).map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}"><i aria-hidden="true"></i>${esc(x.name || x.id.slice(0, 8))}</a>`).join("");
+    const then = ui.drainMs ? `<span class="said then">· ${KNOBS.dur(ui.drainMs)} to finish, then cut</span>` : "";
+    return `<span class="armed"><span class="said">Mid-request</span>${chips}${then}<button class="act danger" data-act="restart-now">Restart splice</button><button class="act quiet" data-act="disarm">Keep running</button></span>`;
   }
   const wait = ui.restartWait;
   const word = !ui.restarting ? "Restart splice"
@@ -810,11 +812,13 @@ const upgrade = () => startRun("up", ui.ver?.latest, { to: ui.ver?.latest });
 async function pressRestart() {
   if (ui.restarting || ui.restartArming) return;
   ui.restartArming = true; render();
-  const [lives, sessions] = await Promise.all([
+  const [lives, sessions, phase] = await Promise.all([
     Promise.all((ui.heads || []).map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/turns/live`))),
     API.get("/api/sessions"),
+    API.get("/api/daemon/restart"),
   ]);
   ui.restartArming = false;
+  ui.drainMs = phase.body?.drain_ms ?? null;
   const names = new Map((sessions.body?.sessions || []).map((x) => [x.session_id, x.name || x.title]));
   const ids = [...new Set(lives.flatMap((r) => (r.body?.turns || []).filter((t) => t.session && !t.stopped).map((t) => t.session)))];
   if (!ids.length) { restartSplice(); return; }

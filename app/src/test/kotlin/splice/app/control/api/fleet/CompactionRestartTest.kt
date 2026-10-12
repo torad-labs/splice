@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -129,6 +130,17 @@ class CompactionRestartTest {
         assertEquals(1, drainsAfter(TIMEOUT_MS), "the drain follows the compaction's end")
         val after = json.parseToJsonElement(get("/api/daemon/restart").bodyAsText()).jsonObject
         assertEquals("draining", after["status"]!!.jsonPrimitive.content, "and the status says so")
+    }
+
+    /** Settings' armed Restart says how long agents mid-request get before a restart cuts them, in the daemon's own
+     *  number: the route names the drain cap before any restart is asked for (fin and Marlin, Oct 12). */
+    @Test
+    fun `before any restart the status names how long a drain lets a request in flight finish`() = runBlocking {
+        awaitPort()
+        val status = json.parseToJsonElement(get("/api/daemon/restart").bodyAsText()).jsonObject
+        assertEquals("idle", status["status"]!!.jsonPrimitive.content)
+        val drainMs = status["drain_ms"]?.jsonPrimitive?.content?.toLongOrNull()
+        assertTrue(drainMs != null && drainMs > 0, "a drain cap the console can say: $status")
     }
 
     @Test

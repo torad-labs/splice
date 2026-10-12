@@ -168,6 +168,7 @@ button.count:hover { color: var(--text); }
 .ddel { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; }
 .fixed.need { max-width: 11rem; line-height: 1.3; }
 .armed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }  /* Restart splice armed names every agent it would cut, so its row wraps */
+.armed .said.then { color: var(--text-mute); }  /* the drain's "· 45 s to finish, then cut" reads after the chips, quieter than "Mid-request" */
 .dmore { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
 .taps { gap: .6rem 1.1rem; }
 .tap { display: inline-flex; align-items: center; gap: .5rem; }

@@ -199,6 +199,9 @@ class HeadRemovalTest {
             assertEquals(200, after.status.value, "its requests are still read by its key")
             val byCommand = call(HttpMethod.Get, "/api/perf/turns?head=claude-gamma")
             assertEquals(200, byCommand.status.value, "and by the command a person typed")
+            val listed = json(call(HttpMethod.Get, "/api/heads/retired").bodyAsText()).getValue("retired").jsonArray
+            assertEquals(listOf("gamma"), listed.map { it.jsonObject.getValue("key").jsonPrimitive.content })
+            assertEquals("claude-gamma", listed.single().jsonObject.getValue("command").jsonPrimitive.content)
         }
         val stored = TopologyLoader.parse(Files.readString(file))
         assertFalse(stored.heads.containsKey("gamma"))

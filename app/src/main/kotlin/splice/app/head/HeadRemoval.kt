@@ -7,8 +7,10 @@ package splice.app.head
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import splice.accounts.order.ACCOUNT_ORDER_FILE
 import splice.accounts.order.AccountOrderStore
 import splice.app.control.ConsolePorts
@@ -58,6 +60,21 @@ internal class HeadRemoval(
             }.toString(),
         )
     }
+
+    /** The commands removed from splice.toml whose history stays: what Requests and Sessions list beside the live ones. */
+    fun retiredList(): JsonReply = JsonReply(
+        HttpStatusCode.OK,
+        buildJsonObject {
+            putJsonArray("retired") {
+                retired.all().forEach { head ->
+                    addJsonObject {
+                        put("key", head.key)
+                        put("command", head.command)
+                    }
+                }
+            }
+        }.toString(),
+    )
 
     fun remove(key: String): JsonReply {
         val topology = stored()

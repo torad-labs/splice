@@ -40,6 +40,7 @@ internal class ConfigurationMount(
         route.patch("/api/config") {
             guard.guarded(call) { configRoutes.patchConfig(call, call.request.queryParameters["head"]) }
         }
+        route.get("/api/heads/retired") { guard.guarded(call) { removal.retiredList().send(call) } }
         route.get("/api/heads/{key}/removal") {
             guard.guarded(call) { removal.read(call.parameters["key"].orEmpty()).send(call) }
         }

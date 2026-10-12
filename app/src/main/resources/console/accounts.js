@@ -658,8 +658,10 @@ function cardHtml(p, c, a, i, serves) {
     // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
     body = `<div class="keysrc"><span class="state">No limits reported</span></div>${signRow}`;
   } else if (p.kind === "plan" && !a.windows.length) {
-    // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12)
-    body = `<div class="windows"><span class="unproved">${DAY_NOT_READ}</span></div>${signRow}`;
+    // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12); a login
+    // splice has not asked about yet reads Not read yet until its first reading (splice-lead, Oct 12)
+    const never = !a.row?.observed_at_epoch_seconds && !a.row?.no_usage_at_epoch_seconds;
+    body = `<div class="windows"><span class="unproved">${never ? "Not read yet" : DAY_NOT_READ}</span></div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";

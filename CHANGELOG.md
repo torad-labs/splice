@@ -813,6 +813,7 @@ origin.
   daemon for it.
 - **The sessions list names the command a session arrived on,** where it used to print "unknown head" for a session that had
   registered.
+- **Settings lists your MCP servers** with a Test act on each row.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -974,6 +975,11 @@ origin.
 - **Teams, Usage and Settings draw their own shape while loading,** like Requests, instead of a blank page.
 - **`/api/auth` returns only the fields the console and the command line read.** A login whose file cannot be read
   reads "can't read the login file".
+- **GPT sessions no longer show the code-mode script as reasoning;** the reasoning summaries are unchanged (Marcos,
+  Oct 12).
+- **Restart splice, pressed while requests are in flight, names the agents mid-request** and how long they get to finish
+  before it restarts.
+- **The streaming-idle limit, the activity retention and message edges apply without a restart.**
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
@@ -1492,6 +1498,11 @@ origin.
 - **Teams' account picker lists your logins,** reading the real shape the accounts route answers.
 - **Usage's No project shows only requests with no project.**
 - **Compare shows which account the next turn uses,** read from where the daemon publishes it.
+- **Removing a command is no longer refused over another command's finding,** and a refused remove says why.
+- **Models: a command on its default model shows that model** and lets you set its window up to the provider's maximum.
+- **The Usage summary and Highest price read a week of requests faster:** each request is priced once, not once per
+  comparison.
+- **A failed request that reported no usage counts as failed,** not unpriced, in the economics and budget figures.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

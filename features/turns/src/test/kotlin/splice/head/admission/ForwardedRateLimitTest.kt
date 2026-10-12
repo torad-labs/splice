@@ -190,21 +190,19 @@ class ForwardedRateLimitTest {
         }
     }
 
+    // Since the admission wait (Oct 11): the turn that meets a headerless 429 gets it natively and at once, and a LATER
+    // turn into the short hold it armed waits the hold out instead of replaying the refusal (CredentialHoldAdmission).
     @Test
     fun `headerless provider 429 reaches the client immediately without holding another login`() = runBlocking {
         val rig = LimitRig(directory, limits = false)
         rig.head.start()
         try {
-            repeat(2) {
-                val (status, body, headers) = rig.turn("synthetic-refused")
-                assertEquals(HttpStatusCode.TooManyRequests, status)
-                assertEquals(HEADERLESS_LIMIT_BODY, body)
-                assertEquals("true", headers["x-should-retry"])
-                assertEquals(null, headers["retry-after"])
-                assertEquals(null, headers["anthropic-ratelimit-unified-status"])
-            }
-            assertEquals(HttpStatusCode.OK, rig.turn("synthetic-healthy").first)
-            assertEquals(HttpStatusCode.OK, rig.turn("synthetic-new-login").first)
+            val (status, body, headers) = rig.turn("synthetic-refused")
+            assertEquals(HttpStatusCode.TooManyRequests, status)
+            assertEquals(HEADERLESS_LIMIT_BODY, body)
+            assertEquals("true", headers["x-should-retry"])
+            assertEquals(null, headers["retry-after"])
+            assertEquals(null, headers["anthropic-ratelimit-unified-status"])
             assertEquals(1, rig.refused.size, "native backoff belongs to the client, not four hidden proxy retries")
         } finally {
             rig.close()

@@ -81,10 +81,10 @@ internal class CredentialHoldAdmission(
         }
     }
 
-    /** A relayed vendor reply is the client's to back off from, a spent plan window is refused with its reset, and a
-     *  wait past the bound is the client's to retry. */
+    /** A spent plan window is refused with its reset, and a wait past the bound is the client's to retry. A relayed
+     *  vendor reply waits like any other short hold. */
     private fun waitable(cooldown: RateLimitCooldown, totalMs: Long): Boolean =
-        cooldown.rateLimitReply == null && cooldown.planHold.live() == null && totalMs <= MAX_HOLD_WAIT_MS
+        cooldown.planHold.live() == null && totalMs <= MAX_HOLD_WAIT_MS
 
     private fun freeAccount(
         prepared: Preparation.Ready,

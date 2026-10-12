@@ -88,10 +88,10 @@ class CredentialHoldAdmissionPoolTest {
         }
 
     @Test
-    fun `a short hold with no spent plan window is waited out and the turn is admitted, never refused`(
+    fun `a short relayed vendor hold with no spent plan window is waited out and the turn is admitted, never refused`(
         @TempDir dir: Path,
     ) = testApplication {
-        val fixture = Fixture(dir, armedMs = 2_000L, relayed = false)
+        val fixture = Fixture(dir, armedMs = 2_000L)
         fixture.holdAll(2_000L)
         application { routing { post("/admission") { fixture.respond(call) } } }
         try {
@@ -108,7 +108,7 @@ class CredentialHoldAdmissionPoolTest {
     @Test
     fun `a spent plan window is still refused at once even when the gateway hold is short`(@TempDir dir: Path) =
         testApplication {
-            val fixture = Fixture(dir, armedMs = 2_000L, relayed = false)
+            val fixture = Fixture(dir, armedMs = 2_000L)
             fixture.holdAll(2_000L)
             fixture.spendPlanWindow()
             application { routing { post("/admission") { fixture.respond(call) } } }
@@ -121,7 +121,7 @@ class CredentialHoldAdmissionPoolTest {
             }
         }
 
-    private class Fixture(dir: Path, armedMs: Long = 7_200_000L, private val relayed: Boolean = true) {
+    private class Fixture(dir: Path, armedMs: Long = 7_200_000L) {
         val credentialReads = AtomicInteger()
         private val logins = listOf("one", "two").map { label ->
             PoolAccount(
@@ -142,7 +142,7 @@ class CredentialHoldAdmissionPoolTest {
             held.rateLimitReply = RateLimitReply(
                 """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic hold"}}""",
                 emptyMap(),
-            ).takeIf { relayed }
+            )
             held.arm(armedMs)
         }
 
@@ -215,7 +215,7 @@ class CredentialHoldAdmissionPoolTest {
 
         fun holdAll(forMs: Long = 7_200_000L) {
             logins.forEach {
-                if (relayed) it.cooldown.rateLimitReply = logins.first().cooldown.rateLimitReply
+                it.cooldown.rateLimitReply = logins.first().cooldown.rateLimitReply
                 it.cooldown.arm(forMs)
             }
         }

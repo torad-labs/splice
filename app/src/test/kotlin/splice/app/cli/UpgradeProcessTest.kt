@@ -10,14 +10,19 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.GATEWAY_VERSION
+import splice.core.testing.TestPorts
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.LockSupport
+import kotlin.concurrent.thread
 
 private val SELECTOR_PREFIXES = listOf("SPLICE_", "CLAUDEX_", "XDG_", "CONTROL_")
 private const val CHILD_SECONDS = 120L
+private const val POLL_MS = 50L
 private const val NEW_VERSION = "9.9.9"
 private const val SHIM = "#!/bin/sh\necho stock\n"
 
@@ -53,16 +58,16 @@ class UpgradeProcessTest {
     }
 
     /** Fake systemctl (a unit running this install's jar) and java (the candidate reports [reports]) in one dir. */
-    private fun fakeBin(tmp: Path, home: Path, reports: String, doctorExit: Int): Path {
+    private fun fakeBin(tmp: Path, home: Path, reports: String, doctorExit: Int, unit: Boolean): Path {
         val bin = Files.createDirectories(tmp.resolve("fake-bin"))
         script(
             bin.resolve("systemctl"),
             "case \"\$3\" in show) echo \"java -jar ${home.resolve("share/splice.jar")} daemon\";; " +
-                "is-active) echo active;; esac",
+                "is-active) ${if (unit) "echo active" else "echo inactive; exit 3"};; esac",
         )
         script(
             bin.resolve("java"),
-            "for a; do last=\$a; done\n" +
+            "echo \"\$*\" >> \"${tmp.resolve("java-argv.log")}\"\nfor a; do last=\$a; done\n" +
                 "case \"\$last\" in version) echo \"splice $reports\";; --json) echo '{}';; " +
                 "doctor) exit $doctorExit;; esac",
         )
@@ -70,8 +75,8 @@ class UpgradeProcessTest {
     }
 
     /** What the restarted daemon answers on /health: the new release's version. */
-    private fun healthServer(): HttpServer {
-        val health = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    private fun healthServer(port: Int): HttpServer {
+        val health = HttpServer.create(InetSocketAddress("127.0.0.1", port), 0)
         health.createContext("/health") { exchange ->
             val body = """{"version":"$NEW_VERSION","ok":true,"heads":1,"readyHeads":1,"failedHeads":0}"""
                 .toByteArray()
@@ -82,11 +87,24 @@ class UpgradeProcessTest {
         return health
     }
 
-    private fun upgrade(tmp: Path, reports: String, doctorExit: Int, vararg args: String): Ran {
+    private fun upgrade(tmp: Path, reports: String, doctorExit: Int, unit: Boolean, vararg args: String): Ran {
         val home = Files.createDirectories(tmp.resolve("home"))
         val release = install(home)
-        val java = fakeBin(tmp, home, reports, doctorExit).resolve("java")
-        val health = healthServer()
+        val java = fakeBin(tmp, home, reports, doctorExit, unit).resolve("java")
+        val port = TestPorts.reserve()
+        val health = AtomicReference<HttpServer?>(null)
+        // With a unit the daemon is already up. Without one it appears only once the restart has started it, so the
+        // jar the restart ran is read off the daemon it launched.
+        val started = tmp.resolve("java-argv.log")
+        val spawned = { Files.exists(started) && Files.readString(started).lines().any { " daemon" in it } }
+        val appears = thread(isDaemon = true) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CHILD_SECONDS)
+            val waiting = { !unit && !spawned() }
+            while (waiting() && System.nanoTime() < deadline) {
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(POLL_MS))
+            }
+            health.set(healthServer(port))
+        }
         val output = tmp.resolve("upgrade.out")
         val builder = ProcessBuilder(
             ProcessHandle.current().info().command().orElse("java"),
@@ -105,14 +123,15 @@ class UpgradeProcessTest {
             put("SPLICE_BIN_DIR", home.resolve("bin").toString())
             put("SPLICE_RELEASE_BASE_URL", release.toUri().toString().trimEnd('/'))
             put("SPLICE_UPGRADE_JAVA", java.toString())
-            put("SPLICE_CONTROL_PORT", health.address.port.toString())
+            put("SPLICE_CONTROL_PORT", port.toString())
         }
         val process = builder.start()
         try {
             assertTrue(process.waitFor(CHILD_SECONDS, TimeUnit.SECONDS), "splice upgrade ran past $CHILD_SECONDS s")
         } finally {
             process.destroyForcibly()
-            health.stop(0)
+            appears.interrupt()
+            health.get()?.stop(0)
         }
         return Ran(process.exitValue(), Files.readString(output))
     }
@@ -121,7 +140,7 @@ class UpgradeProcessTest {
 
     @Test
     fun `an upgrade to the installed release changes nothing`(@TempDir tmp: Path) {
-        val ran = upgrade(tmp, GATEWAY_VERSION, 0, "--to", "v$GATEWAY_VERSION", "--now")
+        val ran = upgrade(tmp, GATEWAY_VERSION, 0, true, "--to", "v$GATEWAY_VERSION", "--now")
 
         assertEquals(0, ran.exit, ran.stdout)
         assertTrue(ran.stdout.contains("$GATEWAY_VERSION is already installed"), ran.stdout)
@@ -130,7 +149,7 @@ class UpgradeProcessTest {
 
     @Test
     fun `an upgrade swaps the release and keeps the previous one`(@TempDir tmp: Path) {
-        val ran = upgrade(tmp, NEW_VERSION, 0, "--to", "v$NEW_VERSION", "--now")
+        val ran = upgrade(tmp, NEW_VERSION, 0, true, "--to", "v$NEW_VERSION", "--now")
 
         assertEquals(0, ran.exit, ran.stdout)
         assertTrue(ran.stdout.contains("serving $NEW_VERSION"), ran.stdout)
@@ -142,10 +161,19 @@ class UpgradeProcessTest {
 
     @Test
     fun `a red doctor after the upgrade undoes nothing`(@TempDir tmp: Path) {
-        val ran = upgrade(tmp, NEW_VERSION, 1, "--to", "v$NEW_VERSION", "--now")
+        val ran = upgrade(tmp, NEW_VERSION, 1, true, "--to", "v$NEW_VERSION", "--now")
 
         assertEquals(0, ran.exit, ran.stdout)
         assertEquals("new-jar", Files.readString(share(tmp, "splice.jar")))
         assertEquals(NEW_VERSION, Files.readSymbolicLink(share(tmp, "releases/current")).toString())
+    }
+
+    @Test
+    fun `an upgrade with no unit starts the daemon from the live jar, not the release it ran from`(@TempDir tmp: Path) {
+        val ran = upgrade(tmp, NEW_VERSION, 0, false, "--to", "v$NEW_VERSION", "--now")
+
+        val started = Files.readAllLines(tmp.resolve("java-argv.log")).filter { " daemon" in it }
+        val live = "-jar ${share(tmp, "splice.jar")} "
+        assertTrue(started.any { it.contains(live) }, "daemon argv: $started\n${ran.stdout}")
     }
 }

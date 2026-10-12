@@ -10,6 +10,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
+import splice.launch.install.InstallLayout
 import splice.lifecycle.restart.ConfigRepair
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
@@ -21,14 +22,25 @@ internal object LifecycleWiring {
     private val errors = TerminalOutput(System.err::println)
     private val jar = RunningJar(AdminSupport::selfJar)
 
+    /** The jar an upgrade restarts onto: the install's live jar, which the activation just repointed. The jar this
+     *  CLI runs from is the OLD release, so a daemon no unit supervises came back on it (found on a desk, 2026-10-12). */
+    fun installedJar(): RunningJar = RunningJar {
+        InstallLayout().shareDir(EnvReader(System::getenv)).resolve("splice.jar")
+    }
+
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
-     *  upgrade just activated. [waitForCompactions] false skips V4-216's wait (`--now`, upgrade). */
-    fun restart(expectedVersion: String = GATEWAY_VERSION, waitForCompactions: Boolean = true): Boolean =
+     *  upgrade just activated. [waitForCompactions] false skips V4-216's wait (`--now`, upgrade).
+     *  [launchJar] is the jar a cold start runs: this build's own unless an upgrade names the live one. */
+    fun restart(
+        expectedVersion: String = GATEWAY_VERSION,
+        waitForCompactions: Boolean = true,
+        launchJar: RunningJar = jar,
+    ): Boolean =
         RestartCommand(
             output,
             errors,
             EnvReader(System::getenv),
-            jar,
+            launchJar,
             repair = ConfigRepair { ConfigFixOffer().offer() },
         ).restart(expectedVersion, waitForCompactions)
 

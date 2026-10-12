@@ -119,7 +119,9 @@ public sealed class Command {
                 TerminalOutput(System.err::println),
                 EnvReader(System::getenv),
                 // The upgrade waited for every turn itself (or was told --now): no second wait here.
-                VersionedRestart { LifecycleWiring.restart(it, waitForCompactions = false) },
+                VersionedRestart {
+                    LifecycleWiring.restart(it, waitForCompactions = false, launchJar = LifecycleWiring.installedJar())
+                },
             )
             return outcomeExitCode(verb.upgrade(args))
         }

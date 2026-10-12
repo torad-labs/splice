@@ -8,6 +8,7 @@ package splice.core.parse
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
 
 public val lenientJson: Json = Json {
@@ -19,7 +20,16 @@ public val lenientJson: Json = Json {
 public data class AnthropicTurnBody(
     val raw: JsonObject,
     val typed: AnthropicRequest,
-)
+) {
+    /** The session the body names: `metadata.user_id` is itself a JSON string holding `device_id`,
+     *  `account_uuid` and `session_id`. Null when the body carries none or the string is not that. */
+    val sessionId: String?
+        get() {
+            val text = JsonScalars.str((raw["metadata"] as? JsonObject)?.get("user_id")) ?: return null
+            val ids = JsonScalars.objectOrNull(lenientJson, text)
+            return JsonScalars.str(ids, "session_id")?.takeIf(String::isNotBlank)
+        }
+}
 
 /** The two-view parse, as a named object since the 2026-08-16 style migration (HD-M8): it is a
  *  FACTORY for [AnthropicTurnBody] over a raw request string, so it cannot be a member of the type

@@ -129,7 +129,7 @@ internal class TurnPreparation(
         val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
         // The request names its session in metadata.user_id; the header carries the same id and stands in when the body
         // does not (verified on Claude Code 2.1.257, spec 7 identification).
-        val sessionId = SessionFromBody.of(parsed.raw) ?: headerSession
+        val sessionId = parsed.sessionId ?: headerSession
         // Read once as the request arrives: a switch flipped now applies to the next request, never to this one.
         val inbound = deps.stores.captures.trace?.takeIf { it.recording.on }?.let { inbound(call, body.text) }
         refusalOf(parsed, sessionId)?.let { return it }

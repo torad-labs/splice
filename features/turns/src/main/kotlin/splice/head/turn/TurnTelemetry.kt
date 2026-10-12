@@ -19,6 +19,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
+import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.FileIoTask
@@ -119,8 +120,12 @@ internal class TurnTelemetry(
     }
 
     /** Every row still waiting on a source round, written with what is known: a head stop calls this once its
-     *  provider has stopped those rounds, so no row outlives the stop. A hard kill loses them. */
-    fun flushHeld() = held.flush()
+     *  provider has stopped those rounds, so no row outlives the stop. A hard kill loses them. The request-log lines
+     *  queued on the file lane land before this returns, because the rollup counts a turn from that lane. */
+    fun flushHeld() {
+        held.flush()
+        AsyncFileIo.drain()
+    }
 
     /** The turn's ending as it stood when its row was asked for; a held row is written with it later. */
     private data class RowEnding(

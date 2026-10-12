@@ -360,6 +360,10 @@ function spawnEnv(extra: Record<string, string>): Record<string, string> {
   return { ...env, ...extra };
 }
 
+/** The pre-push run's own options. --continue runs every module's suites past a failure, so a red push names every
+ *  failure at once instead of one per 15 to 45 minute run (splice-lead, Oct 12); the push still fails on any of them. */
+const PRE_PUSH_GRADLE_OPTIONS = ["--parallel", "--build-cache", "--continue"];
+
 /** Gradle tasks through the gradle slot (one gradle per tree). The slot is the gate's own verb, so the lock is the
  *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. */
 export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunner {
@@ -367,7 +371,7 @@ export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunne
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
-      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? ["--parallel", "--build-cache"] : []), ...tasks],
+      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? PRE_PUSH_GRADLE_OPTIONS : []), ...tasks],
       {
         cwd: lay.repoRoot,
         env: spawnEnv({

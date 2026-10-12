@@ -2,7 +2,8 @@
 // the removed `splice dashboard` did (2026-09-24). The browser is sent to a 0600 redirect page in the state folder that
 // carries the management key in the address's FRAGMENT, which never reaches the daemon or a log, and only the page's
 // path is on the command line: a key on a command line or in an HTTP answer is readable by every local process
-// (Jupyter's use_redirect_file, for the same reason). The key itself is never printed.
+// (Jupyter's use_redirect_file, for the same reason). The key itself is never printed;
+// when no browser opens, the page's file address is printed, not the bare console address that lands signed out.
 package splice.app.cli.status
 
 import splice.app.LifecycleWiring
@@ -40,7 +41,12 @@ internal class ConsoleCommand(
                 println("splice: the daemon has no management key yet; run `splice restart` and try again.")
             }
         } ?: return false
-        println(if (browser.open(target)) "splice: opened the console at $url" else "splice: open the console at $url")
+        if (browser.open(target)) {
+            println("splice: opened the console at $url")
+        } else {
+            // This page carries the key in its redirect, as the browser path does; the bare address lands signed out.
+            println("splice: no browser opened. Open this page in a browser to sign in: $target")
+        }
         return true
     }
 

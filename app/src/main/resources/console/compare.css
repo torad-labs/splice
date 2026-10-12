@@ -70,7 +70,7 @@
 .pg-id { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem 1.2rem; }
 .pg-plan { font: 500 1.1rem/1.15 var(--font-name); color: var(--text); white-space: nowrap; }  /* what he pays for, read first */
 .pg-pv { font: 500 1rem/1.15 var(--font-name); color: var(--text-mute); white-space: nowrap; }  /* its provider and plan, dimmed, as Accounts heads a card */
-.pgp .acct { display: inline-flex; align-items: baseline; gap: .7rem; }
+.pg-id .acct, .pgp .acct { display: inline-flex; align-items: baseline; gap: .7rem; }
 .pg-group.out .pg-plan { color: var(--text-mute); }
 .pg-gstate { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem 1rem; }
 .pg-gstate .waitbox { display: inline-flex; vertical-align: middle; }

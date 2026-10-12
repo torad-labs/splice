@@ -32,6 +32,9 @@ internal class Pending(val sessionId: String, val clientId: JsonElement, val pro
 internal interface NotificationSink {
     fun onNotification(msg: JsonObject)
     fun onProgress(sessionId: String, msg: JsonObject)
+
+    /** The child asked its client for roots: it depends on them, so it is no longer shared. */
+    fun onRootsAsked()
 }
 
 /** Progress tokens are the CLIENT's: two sessions may both send "1", and the child would answer

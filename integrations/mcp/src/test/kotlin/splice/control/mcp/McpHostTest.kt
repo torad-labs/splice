@@ -182,6 +182,25 @@ class McpHostTest : McpHostFixture() {
         assertNull(host.openStream("fake", "nope"))
     }
 
+    // §8: asking for the client's roots shows a server depends on them. Every name on its launch tuple stops being
+    // shared, so the next session starts its own copy; a server on another tuple stays shared.
+    @Test
+    fun `a server that asks for its client's roots is no longer shared, another tuple still is`() = runBlocking {
+        boot()
+        val s = init()
+        assertEquals("pid", text(call(s, 1, "roots-me")).substringBefore('='))
+        awaitLogged("asks its client for roots")
+
+        for (name in listOf("fake", "alias")) {
+            assertEquals("false", status(name)["eligible"]?.jsonPrimitive?.content, "$name")
+            assertEquals("roots", status(name)["why"]?.jsonPrimitive?.content, "$name")
+        }
+        assertEquals(503, host.post("fake", null, MCP_HOST_INIT).status)
+        assertTrue(hosted("fake2"))
+        init("fake2")
+        Unit
+    }
+
     @Test
     fun `tools list is asked of the child once for every session until the child says it changed`() = runBlocking {
         boot()

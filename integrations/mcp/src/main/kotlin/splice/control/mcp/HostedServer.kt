@@ -6,8 +6,9 @@
 //
 // Server-initiated requests (sampling, elicitation, roots) cannot be multiplexed to one client
 // honestly, so the host answers them itself: `ping` -> {}, `roots/list` -> no roots, anything
-// else -> method-not-found. A server that needs those is not a sharing candidate; the operator
-// excludes it and it keeps launching per session (status quo).
+// else -> method-not-found. The host offers roots in its handshake so a server that depends on them
+// asks: the ask is reported, and its launch tuple launches per session from the next session on.
+// A server needing sampling or elicitation is not a sharing candidate; the operator excludes it.
 package splice.control.mcp
 
 import kotlinx.coroutines.CancellationException
@@ -287,7 +288,10 @@ internal class HostedServer(
                 val slot = hostId?.let(pending::remove)
                 slot?.answer?.complete(codec.withId(msg, slot.clientId))
             }
-            RpcKind.REQUEST -> send(codec.serverReply(msg))
+            RpcKind.REQUEST -> {
+                if (codec.method(msg) == "roots/list") sink.onRootsAsked()
+                send(codec.serverReply(msg))
+            }
             RpcKind.NOTIFICATION -> if (codec.method(msg) == "notifications/progress") {
                 // A missing owner is late or unknown progress, never a global notification.
                 progress.owner(msg, pending)?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }

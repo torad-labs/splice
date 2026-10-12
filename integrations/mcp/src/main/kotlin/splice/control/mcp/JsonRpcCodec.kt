@@ -96,7 +96,8 @@ internal class JsonRpcCodec(private val json: Json = Json { ignoreUnknownKeys = 
         "initialize",
         buildJsonObject {
             put("protocolVersion", "2025-11-25")
-            put("capabilities", buildJsonObject {})
+            // Roots are offered so a server that depends on them asks; the host answers none (serverReply).
+            put("capabilities", buildJsonObject { put("roots", buildJsonObject {}) })
             put(
                 "clientInfo",
                 buildJsonObject {
@@ -107,7 +108,8 @@ internal class JsonRpcCodec(private val json: Json = Json { ignoreUnknownKeys = 
         },
     )
 
-    /** Callback-dependent servers remain operator-excluded; never invent a client's capabilities. */
+    /** The host answers what it can for every client: `ping`, and `roots/list` with none, since a shared copy has no
+     *  one client's roots. Sampling and elicitation are not offered, so a server asking for them is refused. */
     fun serverReply(msg: JsonObject): JsonObject {
         val id = msg.getValue(ID)
         return when (method(msg)) {

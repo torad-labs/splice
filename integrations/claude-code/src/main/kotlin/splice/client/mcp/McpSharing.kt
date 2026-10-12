@@ -11,7 +11,9 @@
 //   - no `cwd`, no `${VAR}` expansion in any value (expanded by the CLIENT from its own
 //     environment, so two heads may not agree on the result), and no arg/env value that is an
 //     existing directory (a project root the server would otherwise be scoped to);
-//   - not on the operator's exclude list.
+//   - not on the operator's exclude list;
+//   - never seen asking its client for roots: the host offers roots and answers none, so a server that
+//     depends on them shows itself by asking, and from then on its launch tuple launches per session.
 package splice.client.mcp
 
 import kotlinx.serialization.json.JsonArray
@@ -23,6 +25,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /** The launch tuple that IS a hosted server's identity: same tuple, same process. */
 public data class McpServerSpec(
@@ -85,6 +88,17 @@ public class McpSharing(
     private val bearer: McpBearer,
     private val isDirectory: DirectoryProbe = DirectoryProbe { Files.isDirectory(Path.of(it)) },
 ) {
+    /** Launch tuples (command, args, env) a hosted copy has asked for its client's roots. */
+    private val rootsBound: MutableSet<List<Any>> = ConcurrentHashMap.newKeySet()
+
+    /** A hosted server asked its client for roots, so it depends on them: no later plan shares its launch tuple,
+     *  and every session from the next on starts its own copy, as for a server that names a project directory. */
+    public fun rootsAsked(spec: McpServerSpec) {
+        rootsBound.add(launchTuple(spec))
+    }
+
+    private fun launchTuple(spec: McpServerSpec): List<Any> = listOf(spec.command, spec.args, spec.env)
+
     public fun plan(global: JsonObject, headKey: String? = null): McpPlan {
         if (!enabled) {
             return McpPlan(
@@ -131,9 +145,12 @@ public class McpSharing(
         whys: MutableMap<String, McpWhy>,
     ): McpServerSpec? {
         val entry = Entry(element as? JsonObject)
-        val rejection = rejection(name, entry)
-        return if (rejection == null && entry.command != null) {
-            McpServerSpec(name, entry.command, entry.args, entry.env)
+        val spec = entry.command?.let { McpServerSpec(name, it, entry.args, entry.env) }
+        val rejection = rejection(name, entry) ?: spec?.takeIf { launchTuple(it) in rootsBound }?.let {
+            Rejected("asks the client for its roots (project-scoped)", McpWhy("roots"))
+        }
+        return if (rejection == null && spec != null) {
+            spec
         } else {
             reasons[name] = rejection?.words ?: "no command"
             whys[name] = rejection?.why ?: McpWhy("no_command")

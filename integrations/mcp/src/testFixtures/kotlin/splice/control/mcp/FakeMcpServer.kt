@@ -25,11 +25,15 @@ private const val STDERR_REPEATS = 10_000
 private const val CRASH_CODE = 3
 private const val RELEASE_METHOD = "notifications/fake/release"
 private const val CANCELLED_METHOD = "notifications/cancelled"
+private const val METHOD = "method"
+
+/** The calls that make the server ask its client something, and the method each asks. */
+private val ASKS = mapOf("ping-me" to "ping", "roots-me" to "roots/list")
 
 /** Answers initialize, lists one `echo` tool, echoes tools/call with its own pid, and misbehaves on demand by the
  *  call's `op`: `crash` halts the process, `stderr` floods stderr, `notify` and `overflow` emit notifications,
- *  `progress`/`late-progress` report progress, `ping-me` pings the client, and `hold`, `slow` and
- *  `timeout-progress` keep the call in flight until the test releases it.
+ *  `progress`/`late-progress` report progress, `ping-me` pings the client, `roots-me` asks it for roots, and
+ *  `hold`, `slow` and `timeout-progress` keep the call in flight until the test releases it.
  *
  *  THE SERVER HAS NO CLOCK. A held call is released by an EVENT the test owns: a [RELEASE] notification posted
  *  through the host (counted, so one that arrives before the call is not lost), the host's own
@@ -76,11 +80,11 @@ public object FakeMcpServer {
     }
 
     private fun dispatch(message: JsonObject) {
-        if (message["method"]?.jsonPrimitive?.contentOrNull == RELEASE_METHOD) releases++ else handle(message)
+        if (message[METHOD]?.jsonPrimitive?.contentOrNull == RELEASE_METHOD) releases++ else handle(message)
     }
 
     private fun handle(message: JsonObject) {
-        val method = message["method"]?.jsonPrimitive?.contentOrNull
+        val method = message[METHOD]?.jsonPrimitive?.contentOrNull
         val id = message["id"]
         val params = message["params"]?.jsonObject
         when (method) {
@@ -123,6 +127,17 @@ public object FakeMcpServer {
         val args = params["arguments"]?.jsonObject ?: JsonObject(emptyMap())
         val op = args["op"]?.jsonPrimitive?.contentOrNull
         val token = params["_meta"]?.jsonObject?.get("progressToken") ?: JsonNull
+        misbehave(op, args, token)
+        ASKS[op]?.let { asked ->
+            send(buildJsonObject { put("jsonrpc", JSONRPC); put("id", "srv-1"); put(METHOD, asked) })
+        }
+        val echoed = args["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        send(reply(id, echoResult(echoed)))
+        if (op == "late-progress" || op == "timeout-progress") send(progress(token, 2))
+    }
+
+    /** What [op] does before the call is answered. */
+    private fun misbehave(op: String?, args: JsonObject, token: JsonElement) {
         when (op) {
             "crash" -> Runtime.getRuntime().halt(CRASH_CODE)
             "hold" -> {
@@ -136,13 +151,7 @@ public object FakeMcpServer {
                 send(notification("notifications/resources/updated") { put("uri", "test://resource") })
             }
             "progress" -> send(progress(token, 1))
-            "ping-me" -> send(
-                buildJsonObject { put("jsonrpc", JSONRPC); put("id", "srv-1"); put("method", "ping") },
-            )
         }
-        val echoed = args["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
-        send(reply(id, echoResult(echoed)))
-        if (op == "late-progress" || op == "timeout-progress") send(progress(token, 2))
     }
 
     private fun echoResult(echoed: String) = buildJsonObject {
@@ -165,7 +174,7 @@ public object FakeMcpServer {
         while (releases == 0) {
             val line = input.readLine()?.trim() ?: return
             if (line.isEmpty()) continue
-            val method = Json.parseToJsonElement(line).jsonObject["method"]?.jsonPrimitive?.contentOrNull
+            val method = Json.parseToJsonElement(line).jsonObject[METHOD]?.jsonPrimitive?.contentOrNull
             if (method != RELEASE_METHOD) queued.addLast(line)
             if (method == RELEASE_METHOD || method == CANCELLED_METHOD) releases++
         }
@@ -179,7 +188,7 @@ public object FakeMcpServer {
 
     private fun notification(method: String, params: (JsonObjectBuilder.() -> Unit)? = null) = buildJsonObject {
         put("jsonrpc", JSONRPC)
-        put("method", method)
+        put(METHOD, method)
         params?.let { put("params", buildJsonObject(it)) }
     }
 

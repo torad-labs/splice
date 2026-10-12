@@ -99,6 +99,11 @@ internal class HostedServers(
             override fun onProgress(sessionId: String, msg: JsonObject) {
                 namesOf(id).forEach { alias -> sessions.deliver(alias, sessionId, codec.encode(msg)) }
             }
+
+            override fun onRootsAsked() {
+                sharing.rootsAsked(spec)
+                log("[mcp-host] ${spec.name}: asks its client for roots, so each later session starts its own\n")
+            }
         }
         val server = HostedServer(spec, config, launcher, codec, log, sink, reaped)
         servers[id] = server

@@ -75,7 +75,7 @@ internal class UsageReadWarmup(
                 throw failure
             }
             // Hourly totals need only their own read: a person who opens Accounts first is not made to wait for the
-            // request window the Requests page needs, which is warmed after every head's totals.
+            // request window the Requests page needs, which is warmed right after its own head's totals.
             val satisfied = satisfied(state, sinceMs)
             if (!satisfied && !state.loading) launch(head, state)
             satisfied && (sinceMs == null || !state.loading)
@@ -91,9 +91,9 @@ internal class UsageReadWarmup(
         state.loading = true
         scope.launch(io) {
             try {
-                // two turns at the permit: every head's totals queue ahead of any head's request window
-                val totals = admission.withPermit { loadTotals(head, state) }
-                totals.onSuccess { read -> admission.withPermit { loadWindow(head, state, read) } }
+                // one turn at the permit for both: a head's request window starts on its own totals, never behind every
+                // other head's, so its Requests is ready a whole totals read sooner (splice-lead, Oct 12)
+                admission.withPermit { loadTotals(head, state).onSuccess { read -> loadWindow(head, state, read) } }
             } finally {
                 synchronized(state) { state.loading = false }
             }
@@ -115,7 +115,7 @@ internal class UsageReadWarmup(
         return economics
     }
 
-    /** The request window, after every head's hourly totals: it starts at the oldest hour those totals hold. */
+    /** The request window, right after this head's hourly totals: it starts at the oldest hour those totals hold. */
     private suspend fun loadWindow(head: UsageHead, state: State, economics: EconomicsRead?) {
         val context = currentCoroutineContext()
         val loaded = Cancellables.runCatchingCancellable {

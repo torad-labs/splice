@@ -162,7 +162,8 @@ async function load({ asks = true } = {}) {
       local: kind === "local", // nothing bills it per token, so no figure and no line
       split,
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
-      budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [] });
+      budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [],
+      moved: au.body?.[h.key]?.last_switch ?? null }); // the command's last move between logins, and why (spec 11h)
   }
   for (const p of provs.values()) {
     const heads = new Set(p.cmds.map((c) => c.head));
@@ -700,6 +701,22 @@ function railHtml(p, c, span = 1) {
 // (AccountOrderStore.kt:1, :24): where a plan provider serves two or more, the pressed tab picks whose order the rail and
 // the switch show.
 const laneOf = (p) => p.cmds.find((c) => c.cmd === ui.lane[p.id]) || p.cmds[0];
+// The last time splice moved a command from one login to another, and why (spec 11h, AccountPoolJson last_switch). The
+// reason is the daemon's own phrase (AccountSwitchReason.kt), said here in his words; one it does not know reads as sent.
+const MOVED_WHY = { "operator pinned this account": "You pinned it", "operator account order": "Your order",
+  "primary account reset": "Main login reset", "quota resets sooner": "Resets sooner", "provider rate limit reached": "Rate limited",
+  "rate limit exceeds turn wait budget": "Rate limited too long to wait", "5-hour quota exhausted": "5-hour limit used up",
+  "7-day quota exhausted": "Weekly limit used up", "quota usage reading full": "Reading was full", "account unavailable": "Login unavailable",
+  "previous login needs sign-in": "Needs sign-in" };
+const movedWhy = (r) => MOVED_WHY[r] ?? (r ? r[0].toUpperCase() + r.slice(1) : "");
+function movedHtml(p) {
+  const nameOn = (c, label) => p.accounts.find((a) => labelOn(a, c.head) === label)?.name ?? label;
+  return p.cmds.filter((c) => c.moved).map((c) => {
+    const m = c.moved, chip = p.cmds.length > 1 ? `<span class="chip">${esc(c.cmd)}</span>` : "";
+    const bits = [`Moved from ${esc(nameOn(c, m.from))} to ${esc(nameOn(c, m.to))}`, m.at_epoch_millis ? backWord(new Date(m.at_epoch_millis)) : "", esc(movedWhy(m.reason))];
+    return `<p class="moved">${chip}${bits.filter(Boolean).join(" · ")}</p>`;
+  }).join("");
+}
 function providerHtml(p, span = 1) {
   const head = (sw) => `<section class="provider${span > 1 ? " wide" : ""}" style="--c:${colorOf(p.id)}${span > 1 ? `;--span:${span}` : ""}" data-key="prov:${p.id}"><header><h2><span class="blot"></span>${esc(p.name)}</h2>${sw}</header>`;
   if (p.kind !== "plan") {
@@ -710,7 +727,7 @@ function providerHtml(p, span = 1) {
   }
   const c = laneOf(p), many = p.cmds.length > 1;
   const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("");
-  return `${head(switchHtml(p, c))}${span > 1 ? `<div class="meters">${meters}</div>` : meters}${railHtml(p, c, span)}</section>`;
+  return `${head(switchHtml(p, c))}${span > 1 ? `<div class="meters">${meters}</div>` : meters}${railHtml(p, c, span)}${movedHtml(p)}</section>`;
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));

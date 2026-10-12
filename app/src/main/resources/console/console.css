@@ -370,6 +370,9 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 /* a plan provider serving two commands: the pressed tab is the command whose order the rail and the switch show; the
    other waits on the wall, quieter, until it's pressed */
 .meter > button.chip.tag { cursor: pointer; }
+/* Accounts: a command's last move between logins, under its rail (spec 11h) */
+.provider .moved { margin: 1rem 0 0; font: 500 1rem/1.4 var(--font-name); color: var(--text-mute); }
+.provider .moved .chip { margin-right: .7rem; }
 .meter > .chip.tag[aria-pressed="false"] { color: var(--text-mute); border-color: var(--track-line); box-shadow: none; }
 .meter > .chip.tag[aria-pressed="false"]:hover { color: var(--text); border-color: var(--ink); }
 .money .glyph { width: 1.1rem; height: 1.1rem; margin-right: .45rem; vertical-align: -.17rem; }

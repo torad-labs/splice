@@ -49,7 +49,7 @@
 .field.ptext { width: 100%; font: 400 1.08rem/1.5 var(--font-name); resize: vertical; }
 .form .menuwrap > .pickbtn { min-width: 19rem; justify-content: space-between; }  /* the tiers' windows line up */
 .pickbtn + .field.win { margin-left: .2rem; }
-.field.url { flex: 1 1 30rem; min-width: 18rem; }
+.field.url { flex: 0 1 29.1rem; min-width: 18rem; }  /* a long address, as wide as a tier's picker and window together (marlin, Oct 12) */
 .shared { display: inline-flex; align-items: center; gap: .5rem; margin-left: .4rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 /* a prompt kept in a file: its name, the way a compaction rung names its file */
 .pfile { display: inline-flex; align-items: center; gap: .55rem; font: 500 1.02rem/1 var(--font-data); color: var(--text); }

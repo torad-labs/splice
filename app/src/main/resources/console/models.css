@@ -210,3 +210,7 @@
 .form .kn { display: contents; }
 /* one picker look in a command's pane: a set value carries the command's colour edge, the settings' pickers like the tiers' */
 .pane .kn .pickbtn { --c: inherit; min-width: 19rem; }
+/* a tier nothing is set for reads the model that answers, in full ink, with the Default mark muted and no colour edge */
+.pickbtn.dflt-tier { box-shadow: none; border-color: var(--track-line); }
+.pickbtn .dflt, .menu .dflt { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
+.menu button .dflt { margin-left: auto; }

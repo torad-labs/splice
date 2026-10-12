@@ -25,6 +25,17 @@ const nameOf = (m) => {
   }
   return out.join(" ");
 };
+// A command that declares no tier is not left empty: its client plants each tier by position (LaunchService
+// positionalTiers): the pinned model's family by name (Sol, Terra, Luna), else catalog order with Haiku preferring a
+// mini or fast model, and Fable on Opus's. The pane reads those so an unset tier shows the model that answers.
+function defaultTiers(ids, pinned) {
+  const all = pinned ? [pinned, ...ids.filter((i) => i !== pinned)] : ids;
+  if (!all.length) return {};
+  const of = (tier) => all.find((i) => i.split("-").pop().toLowerCase() === tier);
+  const frontier = of("sol") ?? all[0], mid = of("terra") ?? all[1] ?? all[0];
+  const fast = of("luna") ?? all.find((i) => /mini|fast/i.test(i)) ?? all[1] ?? all[0];
+  return { opus: frontier, sonnet: mid, haiku: fast, fable: frontier };
+}
 const root = document.getElementById("models");
 KNOBS.wire(root, () => render());
 
@@ -72,13 +83,14 @@ function commandsOf() {
     const slots = {};
     for (const m of models) if (m.slot && TIERS.includes(m.slot)) slots[m.slot] = m.id;
     for (const [slot, id] of Object.entries(cfg.model_slots ?? {})) slots[String(slot).toLowerCase()] ??= id;
-    const first = TIERS.map((s) => slots[s]).find(Boolean) ?? row?.pinned_model ?? models[0]?.id;
+    const defaults = defaultTiers(models.map((m) => m.id), row?.pinned_model || null);
+    const first = TIERS.map((s) => slots[s]).find(Boolean) ?? defaults.opus ?? row?.pinned_model ?? models[0]?.id;
     const shown = models.find((m) => m.id === first);
     const family = PROVIDER_FAMILY[provKey] ?? provKey;
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? provKey,
-      url: pcfg.base_url ?? "", models, slots, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
+      url: pcfg.base_url ?? "", models, slots, defaults, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
     };
@@ -168,6 +180,8 @@ function draftOf(c) {
       const row = c.models.find((m) => m.id === c.slots[t]);
       return [t, { model: row?.id ?? null, win: row ? big(row.window) : "" }];
     })),
+    // with no tier declared, one window serves every default tier: the head's own, shown as the default model's
+    headWin: TIERS.some((t) => c.slots[t]) ? "" : big(c.models.find((m) => m.id === c.defaults.opus)?.window ?? 0),
     mode: c.prompt.mode, text: c.prompt.text, file: c.prompt.file, per: perOf(c),
   };
 }
@@ -178,8 +192,13 @@ function draftState(c) {
     const win = parseWindow(d.tiers[t].win), max = c.models.find((m) => m.id === d.tiers[t].model)?.max ?? null;
     return [t, { ok: !d.tiers[t].model || (Boolean(win) && (max === null || win <= max)), over: Boolean(win) && max !== null && win > max }];
   }));
+  // no tier declared: the one head window, capped at the least the provider publishes for the models those tiers answer with
+  const unset = !TIERS.some((t) => d.tiers[t].model);
+  const hw = parseWindow(d.headWin), caps = unset ? TIERS.map((t) => c.models.find((m) => m.id === c.defaults[t])?.max).filter(Boolean) : [];
+  const hmax = caps.length ? Math.min(...caps) : null;
+  const head = { ok: !unset || (Boolean(hw) && (hmax === null || hw <= hmax)), over: unset && Boolean(hw) && hmax !== null && hw > hmax, max: hmax };
   const same = JSON.stringify(d) === JSON.stringify(draftOf(c));
-  return { tiers, ok: TIERS.every((t) => tiers[t].ok), same };
+  return { tiers, head, ok: TIERS.every((t) => tiers[t].ok) && head.ok, same };
 }
 const logsOf = (key) => ui.logs[key];
 // Remove: two presses, and what stays is said before the second. A command a session is on says who, and each name opens it.
@@ -244,15 +263,23 @@ function paneHtml() {
   const head = `<header style="--c:${colorOf(c.family)}"><span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span><div class="who"><div class="top"><span class="name">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></div>`
     + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span>${fix}</div>${signHtml(c)}</div>`
     + `<div class="acts">${removeHtml(c)}<button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div></header>`;
+  const unset = !TIERS.some((x) => d.tiers[x].model);
   const tierRows = TIERS.map((t) => {
     const sel = d.tiers[t], ts = st.tiers[t];
-    const items = [`<button role="menuitem" data-act="tier" data-t="${t}" data-v=""><span>None</span></button>`,
+    const picked = c.models.find((x) => x.id === sel.model), dm = c.models.find((x) => x.id === c.defaults[t]);
+    const asDefault = !picked && unset && dm;
+    // clearing this tier gives its default back when the other three are unset too, else None (a tier left out is a 400)
+    const alone = TIERS.every((x) => x === t || !d.tiers[x].model);
+    const clear = alone && dm ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "<span>None</span>";
+    const items = [`<button role="menuitem" data-act="tier" data-t="${t}" data-v="">${clear}</button>`,
       ...c.models.map((x) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"><span>${esc(x.label)}</span><span class="mmeta">${big(x.window)}</span></button>`)].join("");
-    const picked = c.models.find((x) => x.id === sel.model);
-    const sends = picked ? null : c.models.find((x) => x.label === c.model);
-    const win = sel.model ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
-    return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${sel.model ? "" : " empty"}" title="${sel.model ? "" : "No slot is set: it sends its default"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${esc(picked?.label ?? sends?.label ?? "None")}${ICON.caret}</button>`
-      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${ts.ok || ts.over ? "" : `<span class="said limit">Not a window</span>`}${limitHtml(picked ?? sends, sel, ts.over)}</div>`;
+    const face = picked ? esc(picked.label) : asDefault ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "None";
+    const win = picked ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">`
+      : asDefault ? `<input class="field win" id="h-win-${t}" data-hw="1" value="${esc(d.headWin)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
+    const bad = picked ? !(ts.ok || ts.over) : asDefault && !st.head.ok && !st.head.over;
+    const note = picked ? limitHtml(picked, sel, ts.over) : asDefault ? limitHtml({ max: st.head.max ?? dm.max }, { model: dm.id }, st.head.over) : "";
+    return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${picked ? "" : asDefault ? " dflt-tier" : " empty"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${face}${ICON.caret}</button>`
+      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${bad ? `<span class="said limit">Not a window</span>` : ""}${note}</div>`;
   }).join("");
   const per = Object.entries(d.per).map(([root, l]) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
     + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove">${GL.close}</button></div>${l.file ? pfile(l.file) : `<textarea class="field ptext" data-ptext="${esc(root)}" rows="2">${esc(l.text)}</textarea>`}</div>`).join("");
@@ -341,6 +368,11 @@ function applyDraft(tree, c, d) {
     const sel = d.tiers[tier], w = parseWindow(sel.win);
     const row = prov?.models?.find((m) => m.id === sel.model);
     if (row && w) row.context_window = w;
+  }
+  // no tier declared: the one window is the head's own, which the head's models all follow
+  if (!TIERS.some((tier) => d.tiers[tier].model)) {
+    const w = parseWindow(d.headWin);
+    if (w && w !== parseWindow(draftOf(c).headWin)) head.context_window = w;
   }
   // the head's prompt
   const set = (o, p) => {
@@ -708,7 +740,11 @@ function onClick(e) {
     case "tierpick": ui.pick = ui.pick === `tier:${d.t}` ? null : `tier:${d.t}`; render(); break;
     case "tier": {
       const c = cmdByKey(ui.open), m = c.models.find((x) => x.id === d.v);
+      const wasUnset = TIERS.every((x) => !ui.draft.tiers[x].model);
+      // from the defaults, picking one tier declares the other three at the defaults they had: Save never turns them into a 400
+      if (wasUnset && d.v) for (const x of TIERS) { const dm = c.models.find((y) => y.id === c.defaults[x]); ui.draft.tiers[x] = { model: dm?.id ?? null, win: dm ? big(dm.window) : "" }; }
       ui.draft.tiers[d.t] = { model: d.v || null, win: m ? big(m.window) : "" };
+      if (!TIERS.some((x) => ui.draft.tiers[x].model)) ui.draft.headWin = draftOf(c).headWin;
       ui.pick = null; ui.said = null; render(); break;
     }
     case "mode": if (d.id === "head") ui.draft.mode = d.v; else ui.draft.per[d.id.slice(4)].mode = d.v; ui.said = null; render(); break;
@@ -739,7 +775,8 @@ function onInput(e) {
     return;
   }
   if (!ui.draft) return;
-  if (t.dataset.t) { ui.draft.tiers[t.dataset.t].win = t.value; ui.said = null; render(); }
+  if (t.dataset.hw) { ui.draft.headWin = t.value; ui.said = null; render(); }
+  else if (t.dataset.t) { ui.draft.tiers[t.dataset.t].win = t.value; ui.said = null; render(); }
   else if (t.id === "h-text") { ui.draft.text = t.value; ui.said = null; render(); }
   else if (t.dataset.ptext) { ui.draft.per[t.dataset.ptext].text = t.value; ui.said = null; render(); }
 }

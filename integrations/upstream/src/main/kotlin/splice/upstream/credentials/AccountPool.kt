@@ -262,8 +262,9 @@ public class AccountPool(
         return AccountAvailability.upNext(order, now()).firstOrNull()?.label
     }
 
-    /** One order for selection and its preview. Default sessions stay on their free login, then spend
-     *  quota that resets soonest. A persisted operator order retains explicit priority, including primary. */
+    /** One order for selection and its preview. A session stays on its free login in either mode, until a limit
+     *  (Marcos, Oct 3: "a session stays put until a limit"); where it moves next is the quota that resets soonest, or
+     *  the person's saved order, which also places a session that has no login yet. */
     private fun candidates(previousLabel: String?, current: AccountMembership, pinLabel: String?): List<PoolAccount> {
         val byLabel = current.byLabel
         val primary = current.primary
@@ -274,7 +275,7 @@ public class AccountPool(
         val policy = if (ordered.isEmpty()) {
             listOfNotNull(previous) + byReset
         } else {
-            ordered + listOfNotNull(primary, previous) + byReset
+            listOfNotNull(previous) + ordered + listOfNotNull(primary) + byReset
         }
         return (listOfNotNull(pin) + policy).distinctBy { it.label }
     }

@@ -16,17 +16,19 @@ import java.util.concurrent.atomic.AtomicReference
 
 class AccountPoolOrderTest {
     @Test
-    fun `policy changes the next turn without losing the explicit pin override`() {
+    fun `a saved order places a new session while a running one stays put, and the pin still wins`() {
         val fixture = Fixture()
         val pool = fixture.pool
         fixture.quota("primary", sevenReset = 1_500L)
         assertEquals("primary", pool.nextTargetLabel())
         pool.select("session")
         pool.order = listOf("higher", "lower", "primary")
-        assertEquals("higher", pool.nextTargetLabel("session"))
-        val changed = (pool.select("session") as Selection.Chosen).account
-        assertEquals("higher", changed.account.label)
-        assertEquals("operator account order", changed.switch?.reason)
+        // Marcos, Oct 3: a session stays put until a limit, in the saved order's mode too.
+        assertEquals("primary", pool.nextTargetLabel("session"))
+        val kept = (pool.select("session") as Selection.Chosen).account
+        assertEquals("primary", kept.account.label)
+        assertEquals(null, kept.switch)
+        assertEquals("higher", (pool.select("another session") as Selection.Chosen).account.account.label)
         assertEquals(listOf("higher", "lower", "primary"), pool.effectiveOrder())
         pool.pin("lower")
         assertEquals(listOf("lower", "higher", "primary"), pool.effectiveOrder())

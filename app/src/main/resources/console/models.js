@@ -7,6 +7,7 @@
 // Remove is not on this page yet.
 "use strict";
 
+const COMMAND_KNOBS = Object.values(KNOBS.KNOB).filter((k) => k.cmd).map((k) => k.key);
 const TIERS = ["opus", "sonnet", "haiku", "fable"];
 const tierName = (t) => t[0].toUpperCase() + t.slice(1);
 const root = document.getElementById("models");
@@ -36,6 +37,9 @@ async function readAll() {
   data.loaded = true;
   const doctor = await API.get("/api/doctor");
   data.doctor = doctor.ok ? doctor.body : null;
+  KNOBS.st.cmds = data.heads.map((h) => h.key);
+  KNOBS.st.providerOf = Object.fromEntries(data.heads.map((h) => [h.key, topology().heads?.[h.key]?.provider ?? ""]));
+  data.knobsErr = await KNOBS.load();
 }
 
 // ---------- the commands: the daemon's heads joined to the topology file and the model roster ----------
@@ -222,6 +226,7 @@ function paneHtml() {
     + `<span class="lbl">Sends to</span><div class="ctl"><span class="urlread">${esc(c.url)}</span></div>`
     + tierRows
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
+    + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
     + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save</button>${saidHtml}${restart}</div></section>`;
   const lines = logsOf(c.key);
@@ -631,7 +636,7 @@ function openCmd(key) {
   readLog(key);
 }
 function onClick(e) {
-  if (KNOBS.click?.(e)) { render(); return; }
+  if (KNOBS.click?.(e, render)) { render(); return; }
   const b = e.target.closest("[data-act]");
   if (!b) {
     const card = e.target.closest(".card.h[data-open]");

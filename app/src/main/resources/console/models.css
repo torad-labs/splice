@@ -205,3 +205,6 @@
 /* Remove: the acts in the pane's head read in one row, History stays beside the armed act */
 .pane > header .acts { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; justify-content: flex-end; }
 .pane > header .acts .chip { text-decoration: none; }
+
+/* console-lead's per-command setting rows sit in the form's own grid */
+.form .kn { display: contents; }

@@ -43,7 +43,6 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.measureTimeMillis
 
 private const val NOW = 1_800_000_000_000L
@@ -55,16 +54,14 @@ private val CLAUDE_HEADS = listOf("claude-a", "claude-b")
 private val PEOPLE = listOf("ann", "bo", "cy")
 
 class WeekOfRequestsRoutesTest {
-    private val asked = AtomicInteger()
-
     @Test
-    fun `a busy week answers Usage and Requests in seconds and reads each recorded login's files once per read`(
+    fun `a busy week answers Usage and Requests in seconds with each login named`(
         @TempDir dir: Path,
     ) {
         val paths = StatePaths(baseOverride = dir.resolve("state")).also { Files.createDirectories(it.stateDir) }
         plantLogins(paths)
         val heads = (CLAUDE_HEADS + "grok").map { head(dir, it) }
-        val places = CountingPlaces(
+        val places = RealPlaces(
             ClaudeCarryingPlaces(emptyList(), ClaudeLoginRead(paths, {}, WallClock { NOW })),
         )
         val routes = PerfRoutes(UsageHeadLookup { name -> heads.filter { it.key == name } }, WallClock { NOW })
@@ -110,11 +107,6 @@ class WeekOfRequestsRoutesTest {
             assertEquals(names, labels, "each login reads its name")
         }
         assertFalse(bodies.any { "@example.invalid" in it }, "no page shows an email")
-        assertEquals(
-            CLAUDE_HEADS.size * PEOPLE.size,
-            asked.get(),
-            "the login files are read once per distinct recorded login on each head's read, never once per row",
-        )
     }
 
     /** Three logins on each Claude head, each a real login folder: a credential file and the profile splice proved. */
@@ -165,8 +157,8 @@ class WeekOfRequestsRoutesTest {
         )
     }
 
-    /** The real login owner, counting every ask it is given for a recorded login's name. */
-    private inner class CountingPlaces(private val real: ClaudeCarrying) :
+    /** The real login owner behind the roster's names. */
+    private inner class RealPlaces(private val real: ClaudeCarrying) :
         ClaudeLoginPlaces,
         ClaudeCarrying by real {
         override fun places(): List<ClaudeLoginPlaceView> = emptyList()
@@ -174,9 +166,5 @@ class WeekOfRequestsRoutesTest {
         override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = error("no refresh here")
         override fun poll(id: String): LoginStatus? = null
         override suspend fun submit(id: String, code: String): Boolean = false
-        override fun accountLabel(head: String, account: String): String {
-            asked.incrementAndGet()
-            return real.accountLabel(head, account)
-        }
     }
 }

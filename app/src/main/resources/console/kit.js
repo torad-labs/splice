@@ -132,9 +132,10 @@ const isClean = (o) => o === "ok" || o === "empty_message";
 const isFailed = (o) => !isClean(o) && !STOPPED.has(o);
 // What happened, as a door on Settings names it and Requests filters it (?why=gaveup). "Overloaded" is every
 // request that came back overloaded, from the provider or from splice (OutcomeTag.kt:68-69). "Waited in line"
-// waited for a free slot at its command's limit (admit_wait_ms). "Waited out" is a silence the watchdog asked
-// about and held (Watchdog.kt:303-362). "Resumed" and "Started over" are a request's re-anchor tick: splice
-// re-sent a broken stream from its partial answer, or ran the round over from scratch (his own two phrases).
+// was held by the gate because its command's limit was full (admit_held_ms), never a pass through an open gate.
+// "Waited out" is a silence the watchdog asked about and held (Watchdog.kt:303-362). "Resumed" and "Started over"
+// are a request's re-anchor tick: splice re-sent a broken stream from its partial answer, or ran the round over
+// from scratch (his own two phrases).
 // "Resumed after a silence" is the stall tier's resume (Knob.kt:270-283), the one Silent models counts.
 // A chat stream that ended before its terminal is tagged overloaded on the wire (WireType.kt) but was cut by the provider, not refused.
 // Who ended a request, not the error splice handed Claude Code: the provider's own overload stays Overloaded, splice's watchdog giving up
@@ -145,7 +146,7 @@ const WHY = {
   gaveup: { word: "Given up", has: (r) => r.outcome === "error:turn-cap" || (r.outcome === "failure:overloaded_error" && isStalled(r)) },
   overloaded: { word: "Overloaded", has: (r) => r.outcome === "failure:overloaded_error" && !isCutOff(r) && !isStalled(r) },
   cutoff: { word: "Cut off", has: (r) => r.outcome === "failure:overloaded_error" && isCutOff(r) },
-  queued: { word: "Waited in line", has: (r) => !!r.queued },
+  queued: { word: "Waited in line", has: (r) => r.queued != null }, // held by the gate behind a full limit (Marlin, Oct 12)
   waited: { word: "Waited out", has: (r) => !!r.silent },
   resumed: { word: "Resumed", has: (r) => !!r.resumed && !r.resumedFresh },
   startedover: { word: "Started over", has: (r) => !!r.resumedFresh },
@@ -163,7 +164,7 @@ const WHY = {
 // re-anchor re-posted it verbatim started over, and the resumed doors leave it out.
 const WHY_ASKS = {
   gaveup: { outcome: "failed" }, overloaded: { outcome: "failure:overloaded_error" }, cutoff: { outcome: "failure:overloaded_error" },
-  restarted: { outcome: "error:restarted" }, queued: { queued_ms: "1" }, waited: { silence_ms: "tier" },
+  restarted: { outcome: "error:restarted" }, queued: { queued_ms: "0" }, waited: { silence_ms: "tier" },
   resumed: { resumed: "1", started_over: "0" }, silentresume: { resumed: "1", started_over: "0" },
   startedover: { started_over: "1" }, silentover: { started_over: "1" },
 };

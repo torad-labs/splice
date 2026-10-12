@@ -64,6 +64,7 @@
   padding: 1.4rem 1.6rem 1.6rem; background: var(--obj-high); border: var(--ink-w) solid var(--ink);
   border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
 }
+.pg:has(.pg-menu) { padding-bottom: min(72vh, 66rem); }  /* the popover floats over the page; while it is open the page is as tall as it, so the nav's band and sticky nav run the whole scroll */
 .pg-menu a.act { text-decoration: none; }
 .pg-group { display: flex; flex-direction: column; align-items: flex-start; gap: .85rem; min-width: 0; }
 .pg-id { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem 1.2rem; }
@@ -152,7 +153,7 @@
 .pgp { container-type: inline-size; }
 @container (max-width: 30rem) { .pgp > footer .pg-end { flex-basis: 100%; justify-content: space-between; } }  /* a narrow pane always stacks the two groups, so Request sits at one height across a row of panes */  /* the seconds and Request hold the right end; a narrow pane wraps between the two groups */
 .pgp .msg .body pre { margin: 0 0 .6rem; padding: .9rem 1.1rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
-.pgp .msg .body pre code { background: none; padding: 0; border-radius: 0; font: 500 .92em/1.55 var(--font-data); white-space: pre; }
+.pgp .msg .body pre code { background: none; padding: 0; border-radius: 0; font: 500 .92em/1.55 var(--font-data); white-space: pre-wrap; overflow-wrap: anywhere; }  /* a long line wraps: nothing is cut off at the card's edge */
 .pgp > footer .cost.word { color: var(--text-mute); }
 .pgp > footer .toks { color: var(--text-mute); }
 .pgp > footer .toks b { font-weight: 600; color: var(--text); }

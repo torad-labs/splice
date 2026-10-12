@@ -132,8 +132,8 @@ public class AddProfiles {
     public fun apiKeyEnv(key: String): String = key.uppercase().replace('-', '_') + "_API_KEY"
 
     /** One provider table and one head table for [key], appended verbatim; every value quoted.
-     *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command. [shared] names a provider the file already holds: only the head
-     *  is written, on that provider. */
+     *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command.
+     *  [shared] names a provider the file already holds: only the head is written, on that provider. */
     internal fun toml(profile: AddProfile, key: String, port: Int, shared: String? = null): String {
         val models = profile.models
         val auth = if (profile.provider.authKind == API_KEY) {

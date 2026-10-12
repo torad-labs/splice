@@ -458,13 +458,14 @@ function everyHtml() {
   const groups = commandsOf().map((c) => {
     const rows = c.models.filter((m) => !q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q));
     if (!rows.length) return "";
-    const body = rows.map((x) => {
+    // each group is one command, already named by its chip: its main model leads, marked in the command's colour at the
+    // row's left edge, with no second chip (spec 9h; marlin, Oct 12)
+    const main = rows.filter((x) => x.id === c.pinned);
+    const body = [...main, ...rows.filter((x) => x.id !== c.pinned)].map((x) => {
       const r = x.rates;
       const price = r ? `<td class="num">${usd(r.input ?? r.i)}</td><td class="num">${usd(r.output ?? r.o)}</td>` : `<td class="num unpriced" colspan="2">No price</td>`;
       const lc = r?.long_context ? `<tr class="tier"><td></td><td class="num">${big(r.long_context.over_input_tokens)}+</td><td class="num">${usd(r.long_context.input)}</td><td class="num">${usd(r.long_context.output)}</td></tr>` : "";
-      // the command whose main model this is wears its chip beside it, no word (spec 9h; marlin, Oct 12)
-      const pin = x.id === c.pinned ? `<span class="chip">${esc(c.cmd)}</span>` : "";
-      return `<tr><td class="mname">${esc(x.label)}${pin}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
+      return `<tr${x.id === c.pinned ? ' class="main"' : ""}><td class="mname">${esc(x.label)}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
     }).join("");
     return `<tbody style="--c:${colorOf(c.family)}"><tr class="grp"><td colspan="4"><span class="chip">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></td></tr>${body}</tbody>`;
   }).join("");

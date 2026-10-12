@@ -559,8 +559,9 @@ function chatHtml(tm) {
   if (!msgs.length) return `<p class="empty">No messages</p>`;
   return keptHtml(panel) + msgs.map((m) => {
     const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
-    const body = m.text == null
-      ? `<div class="body none">${esc(m.missing_reason || "No text")}</div>`
+    // a message whose text was not found says so in two words, never a blank row; the daemon's why is its hover (marlin)
+    const body = !m.text?.trim()
+      ? `<div class="body none" title="${esc(m.missing_reason || "")}">Text not found</div>`
       : `<div class="body">${md(m.text)}</div>`;
     return `<div class="tm${from ? "" : " outside"}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
       `<div class="who">${party(tm, m.from_slot, m.from)}${GLYPH.msg}${party(tm, m.to_slot, m.to)}<time>${hhmm(m.at)}</time></div>${body}</div>`;

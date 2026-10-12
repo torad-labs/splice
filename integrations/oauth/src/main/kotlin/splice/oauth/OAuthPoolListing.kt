@@ -23,7 +23,16 @@ internal class OAuthPoolListing(private val validation: OAuthAccountValidation) 
 
     /** A linked credential is never loaded, so it lists as refused with the reason in words. Its
      *  credential path is not the link, which a reader would follow. */
-    fun refusedLink(label: String, poolDir: Path): OAuthAccountFile? {
+    fun refusedLink(label: String, poolDir: Path): OAuthAccountFile? = refused(
+        label,
+        poolDir,
+        "'$label' is a symbolic link, and splice does not load a linked credential; " +
+            "remove the link and sign in again, or sign in under a different label",
+    )
+
+    /** A credential splice will not load lists as refused, with [reason] in words, so the console shows
+     *  it and the pool's other logins keep serving. */
+    fun refused(label: String, poolDir: Path, reason: String): OAuthAccountFile? {
         if (!usable(label)) return null
         return OAuthAccountFile(
             label,
@@ -31,8 +40,7 @@ internal class OAuthPoolListing(private val validation: OAuthAccountValidation) 
             quota(poolDir, label),
             false,
             credentialPresent = false,
-            refusal = "'$label' is a symbolic link, and splice does not load a linked credential; " +
-                "remove the link and sign in again, or sign in under a different label",
+            refusal = reason,
         )
     }
 

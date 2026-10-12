@@ -142,7 +142,9 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
      *
      *  A label is named by any `.json` entry, credential or quota, so an account whose credential is
      *  gone still lists (V4-405, [OAuthPoolListing.orphanedQuota]) and a linked credential lists as refused
-     *  ([OAuthPoolListing.refusedLink]) instead of vanishing after a restart. Entries sort by their
+     *  ([OAuthPoolListing.refusedLink]) instead of vanishing after a restart. So does a credential signed in
+     *  for another provider, carrying another label, or unreadable: one bad file refuses its own login and
+     *  never the head's pool ([OAuthAccountValidation.poolFile]). Entries sort by their
      *  credential file name, as they always did. */
     public fun discover(kind: AuthKind.OAuth, primaryFile: Path, log: LogSink): List<OAuthAccountFile> {
         val poolDir = poolDir(kind, primaryFile)
@@ -161,7 +163,11 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         val credential = poolDir.resolve("$label$JSON_SUFFIX")
         return when {
             Files.isRegularFile(credential, LinkOption.NOFOLLOW_LINKS) ->
-                validation.validatedLabel(kind, credential, log)?.let { account(it, credential, poolDir, false) }
+                when (val file = validation.poolFile(kind, credential, log)) {
+                    is PoolFile.Account -> account(file.label, credential, poolDir, false)
+                    is PoolFile.Refused -> unloaded.refused(label, poolDir, file.reason)
+                    is PoolFile.Skipped -> null
+                }
             Files.isSymbolicLink(credential) -> unloaded.refusedLink(label, poolDir)
             !Files.exists(credential, LinkOption.NOFOLLOW_LINKS) -> unloaded.orphanedQuota(label, poolDir)
             else -> null
@@ -247,9 +253,9 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
     }
 
     /** PATCH /api/auth/{head}/accounts/{label} (FEATURES.md §6): renames a labeled account's
-     *  credential (and any retained quota) in place, re-embedding the new label — [validatedLabel]
+     *  credential (and any retained quota) in place, re-embedding the new label — [OAuthAccountValidation.poolFile]
      *  requires the file's `splice_account_label` to match its own filename, so a rename that only
-     *  moved the file would make discovery throw on the very next boot. Reuses [decorated] (via
+     *  moved the file would make discovery refuse that login on the very next boot. Reuses [decorated] (via
      *  [writes]) for that re-embedding and its label-syntax check, rather than re-deriving them. */
     public fun relabel(kind: AuthKind.OAuth, primaryFile: Path, label: String, newLabel: String): Path {
         if (label == PRIMARY) refuse("the primary account cannot be relabeled")

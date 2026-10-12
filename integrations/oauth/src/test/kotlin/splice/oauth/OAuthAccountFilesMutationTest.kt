@@ -1,6 +1,6 @@
 // NEW: V4-132 — DELETE and PATCH /api/auth/{head}/accounts/{label} (FEATURES.md §6) reach
 // OAuthAccountFiles.remove/relabel. These tests exercise the filesystem contract directly: the
-// primary is refused for both, a rename re-embeds splice_account_label so validatedLabel's
+// primary is refused for both, a rename re-embeds splice_account_label so discovery's
 // filename/label-match invariant survives the move, and a retained quota file moves with its
 // credential.
 package splice.oauth
@@ -98,7 +98,7 @@ class OAuthAccountFilesMutationTest {
     }
 
     @Test
-    fun `relabel moves the credential and re-embeds the new label, passing validatedLabel's own check`(
+    fun `relabel moves the credential and re-embeds the new label, which discovery then serves`(
         @TempDir tmp: Path,
     ) {
         val files = OAuthAccountFiles()

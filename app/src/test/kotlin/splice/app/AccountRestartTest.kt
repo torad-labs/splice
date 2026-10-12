@@ -8,13 +8,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
-import splice.app.control.ManagedHead
-import splice.app.head.HeadBoot
-import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
 import splice.oauth.OAuthAccountFiles
-import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,27 +43,33 @@ class AccountRestartTest {
     }
 
     @Test
-    fun `a pooled credential labeled for another provider is refused`() {
+    // One bad file refuses its own login, never the pool: the head's other logins keep serving.
+    @Test
+    fun `a pooled credential labeled for another provider is refused while the other logins keep serving`() {
         val store = OAuthAccountFiles()
         val primary = dir.resolve("codex.json")
+        Files.writeString(primary, "{}")
+        store.writeLabeled(AuthKind.ChatgptOAuth, primary, "work", JsonObject(emptyMap()))
         val pool = store.poolDir(AuthKind.ChatgptOAuth, primary)
-        Files.createDirectories(pool)
         Files.writeString(
             pool.resolve("plus-12345678.json"),
             """{"splice_auth_kind":"grok-oauth","splice_account_label":"plus-12345678"}""",
         )
 
-        val failure = assertThrows<IllegalArgumentException> {
-            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
-        }
+        val accounts = store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
 
-        assertEquals("pooled OAuth account file has the wrong auth kind", failure.message)
-        assertFalse(failure.message.orEmpty().contains("grok-oauth"))
+        val refused = accounts.single { it.label == "plus-12345678" }
+        assertFalse(refused.credentialPresent)
+        assertTrue(refused.refusal.orEmpty().contains("another provider"), "${refused.refusal}")
+        assertFalse(refused.refusal.orEmpty().contains("grok-oauth"))
+        assertTrue(accounts.single { it.label == "work" }.credentialPresent)
+        assertTrue(accounts.single { it.primary }.credentialPresent)
     }
 
     @Test
-    fun `reserved automatic and primary labels are refused during discovery`() {
+    fun `reserved automatic and primary labels are skipped during discovery`() {
         for (label in listOf("auto", "primary")) {
+            val logs = mutableListOf<String>()
             val store = OAuthAccountFiles()
             val root = dir.resolve(label)
             val primary = root.resolve("codex.json")
@@ -78,11 +80,11 @@ class AccountRestartTest {
                 """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"$label"}""",
             )
 
-            val failure = assertThrows<IllegalArgumentException> {
-                store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
-            }
+            val accounts = store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
 
-            assertTrue(failure.message.orEmpty().contains("reserved"))
+            assertEquals(listOf("primary"), accounts.map { it.label })
+            assertTrue(accounts.single().primary)
+            assertTrue(logs.single().contains("reserved"), "$logs")
         }
     }
 
@@ -169,7 +171,7 @@ class AccountRestartTest {
     }
 
     @Test
-    fun `a declared credential with mismatched filename remains refused`() {
+    fun `a declared credential with mismatched filename is refused with its reason`() {
         val logs = mutableListOf<String>()
         val store = OAuthAccountFiles()
         val primary = dir.resolve("codex.json")
@@ -179,75 +181,30 @@ class AccountRestartTest {
             """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"personal"}""",
         )
 
-        val failure = assertThrows<IllegalArgumentException> {
-            store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
-        }
+        val accounts = store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
 
-        assertEquals("pooled OAuth account file does not match its filename", failure.message)
-        assertTrue(logs.isEmpty())
+        val refused = accounts.single { it.label == "work" }
+        assertFalse(refused.credentialPresent)
+        assertTrue(refused.refusal.orEmpty().contains("another label"), "${refused.refusal}")
+        assertEquals(1, logs.size, "$logs")
     }
 
     @Test
-    fun `matching unsafe filename metadata is refused without echoing the label`() {
-        val store = OAuthAccountFiles()
-        val primary = dir.resolve("codex.json")
-        val pool = store.poolDir(AuthKind.ChatgptOAuth, primary)
-        Files.createDirectories(pool)
-        Files.writeString(
-            pool.resolve("private@example.com.json"),
-            """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"private@example.com"}""",
-        )
-
-        val failure = assertThrows<IllegalArgumentException> {
-            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
-        }
-
-        assertEquals("invalid OAuth account label", failure.message)
-        assertFalse(failure.message.orEmpty().contains("private@example.com"))
-    }
-
-    @Test
-    fun `boot failure map and log do not echo an unsafe matching label`() {
-        val store = OAuthAccountFiles()
-        val primary = dir.resolve("codex.json")
-        val pool = store.poolDir(AuthKind.ChatgptOAuth, primary)
-        Files.createDirectories(pool)
-        Files.writeString(
-            pool.resolve("private@example.com.json"),
-            """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"private@example.com"}""",
-        )
-        val topology = TopologyLoader.parse(HEAD_TOML)
+    fun `matching unsafe filename metadata is skipped without echoing the label`() {
         val logs = mutableListOf<String>()
-
-        val failed = HeadBoot().assembleDaemonHeads(
-            topology,
-            StatePaths(baseOverride = dir.resolve("state")),
-            mutableMapOf<String, ManagedHead>(),
-            logs::add,
-            HeadAssembly { _, _, _ ->
-                store.discover(AuthKind.ChatgptOAuth, primary, LogSink {})
-                error("unsafe account unexpectedly discovered")
-            },
+        val store = OAuthAccountFiles()
+        val primary = dir.resolve("codex.json")
+        val pool = store.poolDir(AuthKind.ChatgptOAuth, primary)
+        Files.createDirectories(pool)
+        Files.writeString(
+            pool.resolve("private@example.com.json"),
+            """{"splice_auth_kind":"chatgpt-oauth","splice_account_label":"private@example.com"}""",
         )
 
-        assertEquals("invalid OAuth account label", failed["codex"])
-        assertTrue(logs.any { it.contains("invalid OAuth account label") })
-        assertFalse(logs.joinToString("").contains("private@example.com"))
+        val accounts = store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
+
+        assertEquals(listOf("primary"), accounts.map { it.label })
+        assertEquals(listOf("splice: skipped OAuth pool file <unsafe filename> (invalid OAuth account label)\n"), logs)
+        assertFalse(accounts.toString().contains("private@example.com"))
     }
 }
-
-private const val HEAD_TOML = """
-[providers.codex]
-dialect = "openai-responses"
-base_url = "https://example.invalid"
-auth = { kind = "chatgpt-oauth" }
-[[providers.codex.models]]
-id = "gpt-test"
-context_window = 200000
-
-[heads.codex]
-provider = "codex"
-port = 3101
-discovery_prefix = "claude-codex--"
-pinned_model = "gpt-test"
-"""

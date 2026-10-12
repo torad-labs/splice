@@ -628,7 +628,7 @@ function cardHtml(p, c, a, i, serves) {
     body = signRow || `<div class="outbox"><button class="act primary" data-act="signin" data-p="${p.id}" data-a="${a.id}">Sign in</button></div>`;
   } else if (p.kind === "plan" && a.noUsage) {
     // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
-    body = `<div class="keysrc"><span class="state">${esc(p.name)} doesn't report limits</span></div>${signRow}`;
+    body = `<div class="keysrc"><span class="state">No limits reported</span></div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";

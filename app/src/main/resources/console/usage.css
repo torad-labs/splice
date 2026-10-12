@@ -115,16 +115,10 @@
 .hfilters { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-right: auto; }
 
 /* ---------- each command ---------- */
-.head-card > header { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; }
-.head-card .count { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); text-decoration: none; padding: .3rem .4rem; border-radius: .3rem; }
-.head-card .count .go { color: var(--text-mute); }
-.head-card .count:hover { background: var(--track); color: var(--text); }
-.head-card .models { margin: .7rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 0; font: 500 .92rem/1.2 var(--font-data); color: var(--text-mute); }
 .lat-head, .lat .vals { display: grid; grid-template-columns: repeat(3, 6.4rem); column-gap: 1rem; justify-items: end; }
 .lat-head { width: max-content; margin: 1.3rem 0 0 auto; font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
 .lat { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 1.2rem; row-gap: .7rem; margin-top: 1.3rem; }
 .lat-head + .lat { margin-top: .6rem; }
-.head-card .fails .share { margin-left: .6rem; color: var(--text-mute); font: 500 .92rem/1 var(--font-data); }
 .lat:has(.tk span) { padding-bottom: 1.3rem; }
 .lat .label { font: 500 1rem/1 var(--font-name); color: var(--text-body); align-self: baseline; white-space: nowrap; }
 .lat .scale { grid-column: 1 / -1; grid-row: 2; }
@@ -144,17 +138,9 @@
 .trail .ft:hover { box-shadow: 0 0 0 .16rem var(--text); }
 .trail .xw { position: relative; height: 1.5rem; margin-top: .45rem; }
 .trail .xw span { position: absolute; top: 0; font: 500 .82rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.fails { margin: 1.1rem 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem 1rem; font: 500 1rem/1.2 var(--font-name); color: var(--text-mute); }
-.fails b { font: 600 1rem/1 var(--font-data); }
-.fails.bad > span:first-child { color: var(--text); }
-.fails .f { color: var(--limit); }
-.fails .lk { display: inline-flex; align-items: center; gap: .3rem; font: 500 .95rem/1 var(--font-data); }
-.fails .lk svg { width: 1rem; height: 1rem; }
 /* the command that's slow or failing today leads, with since when; its stretch is lit on the trail */
 .heads, .breakdown { display: flex; flex-direction: column; gap: 2rem; }  /* the table and Commands: one heading, then their cards on one line */
 .heads > header { margin-bottom: -.6rem; }
-.head-card .fold { margin-left: auto; }
-.head-card.lead { box-shadow: var(--cast) var(--cast) 0 var(--limit), var(--cast) var(--cast) 0 var(--ink-w) var(--ink); }
 .flag { margin: 1.1rem 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1.4rem; }
 .flag a { display: inline-flex; align-items: center; gap: .45rem; font: 500 1.35rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
 .flag a .go { width: 1.1rem; height: 1.1rem; }
@@ -163,23 +149,6 @@
 .flag .vs b { font: 600 1.02rem/1 var(--font-data); color: var(--text); }
 .trail .field .since { position: absolute; top: 0; bottom: 0; min-width: .35rem; background: color-mix(in srgb, var(--limit) 16%, transparent); border-left: .12rem solid var(--limit); }
 /* the rest, one line each; a line opens its card in place */
-.hlist { display: flex; flex-direction: column; padding: .5rem 1.5rem; }
-.hlist > .head-card { margin: 1rem -1.5rem; box-shadow: none; border-width: 0; border-top: .12rem solid var(--track); border-bottom: .12rem solid var(--track); border-radius: 0; }
-.hlist > .head-card:first-child { margin-top: -.5rem; border-top: 0; }
-.hlist > .head-card:last-child { margin-bottom: -.5rem; border-bottom: 0; }
-.hrow {
-  display: grid; grid-template-columns: minmax(14rem, auto) 1fr 11rem 10rem 1.2rem; align-items: center; gap: 1.2rem; width: 100%; padding: 1rem 0;
-  background: none; border: 0; border-bottom: .12rem solid var(--track); cursor: pointer; text-align: left; font: 500 1rem/1 var(--font-data); color: var(--text-body);
-}
-.hlist > :last-child.hrow { border-bottom: 0; }
-.hrow .chip { justify-self: start; }
-.hrow em { font: 500 .95rem/1 var(--font-name); font-style: normal; color: var(--text-mute); margin-right: .5rem; }
-.hrow .t, .hrow .fl { text-align: right; font-variant-numeric: tabular-nums; }
-.hrow .fl { color: var(--text-mute); }
-.hrow .fl.bad b { color: var(--limit); }
-.hrow svg { width: 1rem; height: 1rem; color: var(--text-mute); }
-.hrow:hover { color: var(--text); }
-.hrow:hover svg { color: var(--key-light); }
 .quiet-heads { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin: 1.6rem 0 0; }
 .quiet-heads > span:first-child { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); margin-right: .4rem; }
 .quiet-heads .chip { opacity: .7; }
@@ -230,17 +199,15 @@
 .pcard > footer { flex-wrap: wrap; row-gap: .8rem; }
 .pcard .drill { flex-basis: 100%; justify-content: flex-end; }
 /* the failed count and each kind open their requests, so they read as doors: the arrow, and the key light on hover */
-.fails a { display: inline-flex; align-items: baseline; gap: .35rem; text-decoration: none; }
-.fails a.all { color: var(--text); }
-.fails a .go { width: .9rem; height: .9rem; align-self: center; color: var(--text-mute); }
-.fails a:hover, .fails a:hover .go { color: var(--key-light); }
 .flag .vs .dot { display: inline-block; width: .3rem; height: .3rem; margin: 0 .6rem; border-radius: 50%; background: var(--text-mute); vertical-align: middle; }
 
 /* ---------- live additions: a plan's value beside "On your plan", splice's own count labelled, a cut read said ---------- */
 .brow .cost { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
 .brow .cost .val { white-space: nowrap; font: 500 1rem/1 var(--font-data); color: var(--text-mute); }
 .ctd { font: 500 1rem/1 var(--font-name); color: var(--text-mute); margin-right: .9rem; }
-.head-card .models.cut { margin-top: .2rem; color: var(--text-mute); }
 .pickline:not(:empty) { margin: 0 0 3rem; }
 .pickline .lhead { margin-left: 0; }
 .usage > .empty { color: var(--text-mute); font: 500 1.2rem/1.4 var(--font-name); }
+/* each command still being read, in a line of its own above the figures it is missing from (marlin, Oct 12) */
+.reading { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.4rem; margin: 0 0 1.4rem; font: 500 1rem/1.3 var(--font-name); color: var(--text-mute); }
+.reading .rd { display: inline-flex; align-items: center; gap: .6rem; }

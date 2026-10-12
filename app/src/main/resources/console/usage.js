@@ -127,11 +127,11 @@ function fold(into, g) {
 }
 /** The window's totals across every command that answered: per account, model, session and day, as the daemon folded them. */
 function foldWindow(reads, heads) {
-  const w = { total: ZERO(), accounts: new Map(), models: new Map(), sessions: new Map(), days: new Map(), slices: new Map(), byHead: new Map(), errors: [], pending: false };
+  const w = { total: ZERO(), accounts: new Map(), models: new Map(), sessions: new Map(), days: new Map(), slices: new Map(), byHead: new Map(), errors: [], pending: false, reading: new Set() };
   heads.forEach((head, i) => {
     const answer = (reads[i].body?.heads || []).find((x) => x.key === head.key);
     if (!reads[i].ok || !answer || answer.error) { w.errors.push(head.command); console.warn(`${head.command}: ${answer?.error ?? reads[i].status}`); return; }
-    if (answer.read_pending) { w.pending = true; return; }
+    if (answer.read_pending) { w.pending = true; w.reading.add(head.key); return; }
     const u = answer.usage;
     const seen = w.byHead.get(head.key);
     w.byHead.set(head.key, { count: (seen?.count ?? 0) + (answer.count ?? 0), returned: (seen?.returned ?? 0) + (answer.returned ?? 0), truncated: seen?.truncated === true || answer.truncated === true });
@@ -165,10 +165,11 @@ async function readWindow() {
   D.every = ui.project ? split(wide) : D.all;
   D.rows = []; D.held = {}; D.errors = [...D.scoped.errors];
   let pending = D.scoped.pending || D.all.pending || D.every.pending;
+  const reading = new Set([...D.scoped.reading, ...D.all.reading, ...D.every.reading]);
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
     if (!rows[i].ok || !answer || answer.error) { if (!D.errors.includes(a.h.command)) D.errors.push(a.h.command); return; }
-    if (answer.read_pending) { pending = true; return; }
+    if (answer.read_pending) { pending = true; reading.add(a.h.key); return; }
     const had = D.held[a.h.key];
     D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
@@ -180,7 +181,7 @@ async function readWindow() {
       if (mine.length > MAX_HELD) { const drop = new Set(mine.slice(MAX_HELD)); D.rows = D.rows.filter((r) => !drop.has(r)); h.returned = MAX_HELD; h.truncated = true; }
     }
   }
-  D.pending = pending; D.loading = false;
+  D.pending = pending; D.reading = reading; D.loading = false;
   render();
   if (pending) setTimeout(() => { if (gen === D.gen) readWindow(); }, 2000);
 }
@@ -465,6 +466,9 @@ function projectFigures() {
   for (const e of w.sessions.values()) { const k = projectOfSid(e.sid, byRow).key; m.set(k, (m.get(k) ?? 0) + tokensOf(e)); }
   return { of: (k) => m.get(k) ?? 0, all: tokensOf(w.total), unit: "token", show: tokWord };
 }
+// Each command whose week is still being read says so in its own place, its share of every figure below still to come, so a
+// half-read week never reads as the whole week (marlin, Oct 12)
+const readingHtml = () => `<p class="reading">${[...(D.reading ?? [])].map((h) => `<span class="rd">${chip(h)}${GHOST.bar(5)}</span>`).join("")}<span class="why">Still reading these commands. Their requests are not in the figures yet.</span></p>`;
 function render() {
   tick();
   document.getElementById("pickline").innerHTML = pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
@@ -476,7 +480,7 @@ function render() {
   // table, and a card in the money band until the plans and keys arrive (Marcos, Oct 12)
   const waiting = reading();
   const money = plansHtml() + keysHtml();
-  const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
+  const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? readingHtml() : "";
   root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${PERF_HEADS.html()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never

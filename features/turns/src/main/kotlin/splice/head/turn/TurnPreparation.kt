@@ -108,25 +108,28 @@ internal class TurnPreparation(
      *  to unwind to. A Preparation case would render it after the lease returned, which is a
      *  different order on the wire. */
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Materialized<Preparation> {
-        val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
-        deps.seams.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
+        val headerSession = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
+        deps.seams.clientVersions.observe(headerSession, call.request.headers[HttpHeaders.UserAgent])
         val body = when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes())) {
             is BodyRead.TooLarge -> return Materialized.TooLarge(read.limit)
             is BodyRead.Received -> read.body
         }
-        return Materialized.Done(preparedFrom(call, perf, sessionId, body))
+        return Materialized.Done(preparedFrom(call, perf, headerSession, body))
     }
 
     private suspend fun preparedFrom(
         call: ApplicationCall,
         perf: TurnPerf,
-        sessionId: String?,
+        headerSession: String?,
         body: ReceivedBody,
     ): Preparation {
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)
         val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
+        // The request names its session in metadata.user_id; the header carries the same id and stands in when the body
+        // does not (verified on Claude Code 2.1.257, spec 7 identification).
+        val sessionId = SessionFromBody.of(parsed.raw) ?: headerSession
         // Read once as the request arrives: a switch flipped now applies to the next request, never to this one.
         val inbound = deps.stores.captures.trace?.takeIf { it.recording.on }?.let { inbound(call, body.text) }
         refusalOf(parsed, sessionId)?.let { return it }

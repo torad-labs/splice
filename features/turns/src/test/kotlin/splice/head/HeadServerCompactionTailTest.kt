@@ -27,6 +27,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.compaction.CompactionConfig
 import splice.core.compaction.CompactionInstructions
+import splice.core.compaction.CompactionProjectConfig
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -34,6 +35,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
 import splice.head.compaction.CompactionTail
+import splice.head.compaction.SessionProjectLookup
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderLocations
@@ -44,6 +46,7 @@ import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 private const val TAIL = "KEEP EVERY OPEN CONSTRAINT VERBATIM"
+private const val PROJECT_TAIL = "KEEP THIS REPO'S DECISIONS"
 private const val SUMMARIZER = "You are tasked with summarizing conversations for another agent."
 
 private class TailAuth : RefreshableAuthProvider {
@@ -77,10 +80,11 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
     private fun head(
         name: String,
         config: CompactionConfig,
+        projectFor: SessionProjectLookup = SessionProjectLookup { null },
         wrap: (Provider) -> Provider = { it },
     ): HeadServer = runBlocking {
         val dir = java.nio.file.Files.createDirectories(root.resolve(name))
-        val tail = CompactionTail(CompactionInstructions(config, dir), projectFor = { null })
+        val tail = CompactionTail(CompactionInstructions(config, dir), projectFor = projectFor)
         val codex = TestResponsesProvider(
             tuning = ProviderTuning(
                 name = ProviderName(key = "codex", label = "claudex"),
@@ -136,6 +140,28 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
 
         assertTrue(compaction.contains(TAIL), "a compaction carries the operator's text")
         assertFalse(ordinary.contains(TAIL), "an ordinary turn never does")
+    }
+
+    // The session id on the wire names the project, and the project's own text wins over the global one.
+    @Test
+    fun `a compaction resolves its project from the session id the request carries`() = runBlocking {
+        val project = java.nio.file.Files.createDirectories(root.resolve("repo-a"))
+        val config = CompactionConfig(
+            instructions = TAIL,
+            project = listOf(CompactionProjectConfig(project.toString(), "gpt-5.6-sol", instructions = PROJECT_TAIL)),
+        )
+        val lookup = SessionProjectLookup { if (it == "sess-tail") project else null }
+        val known = head("project-known", config, projectFor = lookup)
+        val unknown = head("project-unknown", config)
+
+        val inProject = upstreamBodyFor(known, SUMMARIZER, "compaction-4")
+        val outside = upstreamBodyFor(unknown, SUMMARIZER, "compaction-4")
+
+        assertTrue(
+            inProject.contains(PROJECT_TAIL) && !inProject.contains(TAIL),
+            "the project's text replaces the global",
+        )
+        assertTrue(outside.contains(TAIL) && !outside.contains(PROJECT_TAIL), "no project: the global text")
     }
 
     @Test

@@ -85,7 +85,7 @@ test("Requests: picking a project asks the daemon for its requests, in time orde
   const p = await open("requests.html");
   try {
     await expect(card(p, "t-web")).toBeVisible({ timeout: 20_000 });
-    await expect(p.locator("#pickline .ppick")).toHaveText("Every project");
+    await expect(p.locator("#pickline .ppick .pname")).toHaveText("Every project");
     await p.locator("#pickline .ppick").click();
     await p.locator(".pmenu button", { hasText: "temple" }).click();
     await expect(card(p, "t-web")).toHaveCount(0, { timeout: 10_000 });
@@ -116,7 +116,7 @@ test("Requests: while one project is picked, one where someone waits is a door t
     await expect(door).toContainText("temple", { timeout: 20_000 });
     await expect(door.locator(".pc.needs b")).toHaveText("1");
     await door.click();
-    await expect(p.locator("#pickline .ppick")).toHaveText("temple");
+    await expect(p.locator("#pickline .ppick .pname")).toHaveText("temple");
     await expect(card(p, "t-ask")).toBeVisible();
   } finally {
     await p.context().close();
@@ -126,7 +126,7 @@ test("Requests: while one project is picked, one where someone waits is a door t
 test("Requests: an older door that names the project by its name opens on that project", async () => {
   const p = await open("requests.html", "?project=temple");
   try {
-    await expect(p.locator("#pickline .ppick")).toHaveText("temple", { timeout: 20_000 });
+    await expect(p.locator("#pickline .ppick .pname")).toHaveText("temple", { timeout: 20_000 });
     await expect(card(p, "t-web")).toHaveCount(0);
     await expect(card(p, "t-ask")).toBeVisible();
   } finally {
@@ -148,7 +148,7 @@ test("Teams: the tabs sit under their project's name in Sessions' order, a team 
 test("Teams: a pick shows every team with a member in the project, wherever its repo is", async () => {
   const p = await open("teams.html", "?project=/work/website");
   try {
-    await expect(p.locator(".ppick")).toHaveText("website", { timeout: 20_000 });
+    await expect(p.locator(".ppick .pname")).toHaveText("website", { timeout: 20_000 });
     await expect(p.locator(".tabs .tab .tname")).toHaveText(["Site crew", "Gate crew"]);
     await expect(p.locator(".tabs .tproj")).toHaveCount(0);
     await p.locator(".pdoor", { hasText: "temple" }).click();
@@ -182,7 +182,7 @@ test("Sessions, Teams and Requests order projects alike, a stalled project above
     await t.context().close();
     const r = await open("requests.html");
     await r.locator("#pickline .ppick").click({ timeout: 20_000 });
-    expect(await r.locator(".pmenu button").allTextContents()).toEqual(["Every project", ...order]);
+    expect(await r.locator(".pmenu button .pname").allTextContents()).toEqual(["Every project", ...order]);
     await r.context().close();
   } finally {
     sessions = SESSIONS; teams = TEAMS; liveTurns = [];
@@ -214,3 +214,28 @@ test("on a wide Requests the tiles count the requests in the window, and the fil
     await p.context().close();
   }
 }, 60_000);
+
+// A PROJECT'S FIGURE AT EVERY WIDTH (Marlin's walk, Oct 12): both walkers paged through thousands of rows at 1440 to
+// find how many requests temple sent, a figure only the tiles carried. Below the tiles' width the picker and its menu
+// carry the same figure each page's tiles do.
+const menuFigures = (p: Page) => p.locator(".pmenu button").evaluateAll((els) =>
+  els.map((e) => [e.querySelector(".pname")?.textContent, e.querySelector(".pfig")?.textContent ?? null]));
+for (const [page, figures] of [
+  ["sessions.html", [["Every project", "4"], ["temple", "2"], ["website", "1"], ["No project", "1"]]],
+  ["teams.html", [["Every project", "3"], ["temple", "1"], ["website", "2"], ["No project", "1"]]],
+  ["requests.html", [["Every project", "3"], ["temple", "2"], ["website", "1"], ["No project", "0"]]],
+] as const) {
+  test(`at 1440 ${page}'s picker and its menu carry each project's figure, as its tiles do`, async () => {
+    const p = await open(page);
+    try {
+      await expect(p.locator(".ppick .pfig")).toHaveText(figures[0][1], { timeout: 20_000 });
+      await p.locator(".ppick").click();
+      await expect(p.locator(".pmenu button")).toHaveCount(figures.length);
+      await expect.poll(() => menuFigures(p), { timeout: 20_000 }).toEqual(figures.map(([n, f]) => [n, f]));
+      await p.locator(".pmenu button", { hasText: "temple" }).click();
+      await expect(p.locator(".ppick .pfig")).toHaveText(figures[1][1]);
+    } finally {
+      await p.context().close();
+    }
+  }, 60_000);
+}

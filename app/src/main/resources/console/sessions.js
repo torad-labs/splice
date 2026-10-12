@@ -300,9 +300,13 @@ function pickOptions() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
   const groups = groupsOf(live);
   return {
-    projects: groups.map(([k, g]) => [k, projName(g[0])]),
+    projects: groups.map(([k, g]) => [k, projName(g[0]), projTotal(k, g)]),
     doors: groups.map(([k, g]) => [k, projName(g[0]), g.filter((s) => RANK(s) === 0).length]),
   };
+}
+/** A project's sessions with its ended ones, which is what its header's total and its tile say. */
+function projTotal(key, liveInIt) {
+  return liveInIt.length + state.rows.filter((s) => s.state === "ended" && !stranded(s) && projKey(s) === key).length;
 }
 function listHead() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
@@ -311,15 +315,14 @@ function listHead() {
   if (!grouped()) return live[0].project ? `<div class="lhead"><span class="pname solo">${esc(projName(live[0]))}</span></div>` : "";
   if (ui.wide) return ""; // the tiles across the page are the picker and the doors
   const { projects, doors } = pickOptions();
-  return `<div class="lhead">${pickerHtml(projects, picked(), ui.pmenu, doors)}</div>`;
+  return `<div class="lhead">${pickerHtml(projects, picked(), ui.pmenu, doors, state.rows.length)}</div>`;
 }
 /** The tiles, in the groups' order after Every project. A tile's total counts its sessions with the ended ones, which
  *  is what its header's total says; its lamps count the live states, as the header's do. */
 function sessionTiles() {
   const live = state.rows.filter((s) => s.state !== "ended" || stranded(s));
-  const ended = state.rows.filter((s) => s.state === "ended" && !stranded(s));
   const items = groupsOf(live).map(([k, g]) => {
-    const counts = countsOf(g), total = g.length + ended.filter((s) => projKey(s) === k).length;
+    const counts = countsOf(g), total = projTotal(k, g);
     return [k, projName(g[0]), counts, total, countWords(counts, total, "session")];
   });
   const every = sumCounts(items.map((x) => x[2])), all = state.rows.length;

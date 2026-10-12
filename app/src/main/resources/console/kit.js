@@ -428,14 +428,20 @@ const PICK = {
 const NEEDS_LAMP = (n) => `<span class="pc needs"><span class="plamp" aria-hidden="true">${ICON.input}</span><b>${n}</b></span>`;
 /** The picker and the doors. [projects] is [[key, label]] in the pages' group order; [doors] is [[key, label, waiting]]
  *  for the projects with someone waiting, drawn only while one project is picked; [open] whether the menu is down. */
-function pickerHtml(projects, pick, open, doors) {
+// A PROJECT'S FIGURE AT EVERY WIDTH (Marlin's walk, Oct 12): below the tiles' width the picker and its menu carry the
+// same figure each tile does on that page (sessions, teams, or requests in the window), so "how many did temple send"
+// is one glance and the menu says where the work is before he picks. [projects] are [key, label, total]; [all] is
+// Every project's total. A total not read yet is null and draws nothing.
+function pickerHtml(projects, pick, open, doors, all = null) {
   const label = (k) => projects.find(([key]) => key === k)?.[1] ?? doors.find(([key]) => key === k)?.[1] ?? "Every project";
-  const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}">${esc(text)}</button>`;
+  const totalOf = (k) => (k === "" ? all : projects.find(([key]) => key === k)?.[2] ?? null);
+  const fig = (n) => (n == null ? "" : `<span class="pfig">${n.toLocaleString("en-US")}</span>`);
+  const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}"><span class="pname">${esc(text)}</span>${fig(totalOf(k))}</button>`;
   const menu = open ? `<div class="menu pmenu" role="menu">${item("", "Every project")}${projects.map(([k, l]) => item(k, l)).join("")}</div>` : "";
   const ways = pick == null ? "" : doors.filter(([k, , n]) => k !== pick && n)
     .map(([k, l, n]) => `<button class="pdoor" data-act="pickproj" data-p="${esc(k)}" aria-label="${esc(`${l}, ${n} needs you`)}"><span class="pname">${esc(l)}</span>${NEEDS_LAMP(n)}</button>`).join("");
   return `<span class="pwrap"><button class="ppick${pick != null ? " on" : ""}" data-act="projmenu" aria-haspopup="menu" aria-expanded="${Boolean(open)}">`
-    + `<span class="pname">${esc(pick == null ? "Every project" : label(pick))}</span>${ICON.caret}</button>${menu}</span>${ways}`;
+    + `<span class="pname">${esc(pick == null ? "Every project" : label(pick))}</span>${fig(totalOf(pick ?? ""))}${ICON.caret}</button>${menu}</span>${ways}`;
 }
 
 // ---------- the project tiles: at a 150rem page and wider (2560 and up), every project at once (Marlin, fin) ----------
@@ -525,5 +531,5 @@ function pickLineHtml(groups, pick, open, count) {
     const every = sumCounts(items.map((x) => x[2]));
     return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick);
   }
-  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]))}</div>`;
+  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label, count.of(g.key)]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]), count.all)}</div>`;
 }

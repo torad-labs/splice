@@ -189,7 +189,7 @@ test("picking a project shows only its cards, with no header, and keeps the pick
     await p.locator(".pmenu button", { hasText: "website" }).click();
     await expect(p.locator(".pgroup")).toHaveCount(0);
     await expect(p.locator(".list .card.s")).toHaveCount(2);
-    await expect(p.locator(".ppick")).toHaveText("website");
+    await expect(p.locator(".ppick .pname")).toHaveText("website");
     expect(new URL(p.url()).searchParams.get("project")).toBe("/work/website");
     expect(await p.evaluate(() => localStorage.getItem("splice.project"))).toBe("/work/website");
   } finally {
@@ -206,7 +206,7 @@ test("while one project is picked, another with someone waiting is a door that p
     await expect(door).toContainText("temple");
     await expect(door.locator(".pc.needs b")).toHaveText("1");
     await door.click();
-    await expect(p.locator(".ppick")).toHaveText("temple");
+    await expect(p.locator(".ppick .pname")).toHaveText("temple");
     await expect(p.locator(".list .card.s", { hasText: "asking" })).toBeVisible();
     await expect(p.locator(".pdoor")).toHaveCount(0); // nobody waits anywhere else
   } finally {

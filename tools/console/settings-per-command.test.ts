@@ -24,7 +24,7 @@ const server = Bun.serve({
       const head = url.searchParams.get("head");
       const body = (await req.json()) as Record<string, unknown>;
       writes.push({ head, body });
-      const [key, value] = Object.entries(body)[0];
+      const [key, value] = Object.entries(body)[0] ?? ["", null];
       if (refuse) return Response.json({ error: refuse, head, rejected: { [key]: refuse }, applied: {}, persisted: null }, { status: 400 });
       if (head) {
         const mine = { ...(perHead[head] ?? {}) };

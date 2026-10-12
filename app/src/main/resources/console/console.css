@@ -471,7 +471,10 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .ppick.on { color: var(--text); border-color: var(--key-ink); }
 .ppick .caret { width: .95rem; height: .95rem; color: var(--text-mute); transform: rotate(90deg); }
 .pmenu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 42rem; overflow-y: auto; }
-.pmenu button { position: relative; white-space: nowrap; }
+.pmenu button { position: relative; white-space: nowrap; display: flex; align-items: baseline; gap: 2.4rem; }
+/* a project's figure, as its tile shows it: muted data type beside the name, at the menu's right edge */
+.ppick .pfig, .pmenu .pfig { font: 500 1rem/1 var(--font-data); color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.pmenu .pfig { margin-left: auto; }
 .pmenu button[aria-checked="true"]::before { content: ""; position: absolute; left: -.4rem; top: .5rem; bottom: .5rem; width: .22rem; background: var(--key-ink); border-radius: 0 .15rem .15rem 0; }
 /* someone waiting in another project while one is picked: a door that picks it, in Needs you's ink (fin); key ink,
    because the pale key washes out on cream in day */

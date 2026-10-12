@@ -112,13 +112,13 @@ const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h"
 // cent a request keeps a tenth of a cent, so two small requests side by side still differ
 const money = (usd) => (usd < 0.01 ? dollars(usd) : `≈$${usd.toFixed(usd < 1 ? 3 : 2)}`);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
-/** What each tile counts at a wide page: the requests in the window under the filters he set, as the daemon counts
- *  them for that project (one n=1 read per project and command). No project is not a project the daemon filters by,
+/** What a project's figure counts, on its tile or in the picker and its menu: the requests in the window under the
+ *  filters he set, as the daemon counts them for that project (one n=1 read per project and command). No project is not a project the daemon filters by,
  *  so its figure is every request less the projects', which holds while every project with requests in the window is
  *  among those counted: the live sessions' projects and every project a read row names. */
 async function readTileCounts() {
   const groups = pickGroups();
-  if (groups.length < 2 || !tilesWide()) return;
+  if (groups.length < 2) return;
   const heads = askedHeads();
   const named = new Set([...groups.map((g) => g.key), ...state.rows.map((r) => rowProjKey({ project: rowProject(r) }))]);
   const keys = [null, ...[...named].filter((k) => k !== NO_PROJECT_KEY)];
@@ -935,7 +935,7 @@ const autoOpen = () => {
 };
 // a window widened past side-by-side opens the top request, and that request's records are read like any other open
 // (the 3828 look, Oct 10: the pane sat on Reading because nothing asked)
-addEventListener("resize", () => { if (!state.loading && !state.tileCounts && tilesWide()) readTileCounts().then(() => render()); autoOpen(); render(); const r = ui.open && find(ui.open); if (r) readTrace(r); });
+addEventListener("resize", () => { autoOpen(); render(); const r = ui.open && find(ui.open); if (r) readTrace(r); });
 
 // A door from another page carries its filters in the address (?win=7d&cmd=claude-grok&why=cut): the list opens
 // filtered, with each filter as its chip, and the top match open where there's room. The project is spelled

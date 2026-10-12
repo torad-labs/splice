@@ -126,7 +126,10 @@ internal class ControlServer(
     private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
     private val trace = TraceMount(heads, resolver, config, ports, guard)
-    private val sessionWiring = SessionsWiring(sessions, heads, config, ports)
+    private val sessionWiring = SessionsWiring(sessions, heads, config, ports, log)
+
+    /** What a login added after a plan limit does for the sessions it stopped (ControlPlane hooks the pool to it). */
+    internal val limitResume: LimitResume? get() = sessionWiring.limitResume
     private val sessionMount = SessionsMount(sessions, sessionWiring, heads, config, guard)
     private val teams = TeamsMount(sessionWiring, sessions, heads, ports, guard)
     private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)

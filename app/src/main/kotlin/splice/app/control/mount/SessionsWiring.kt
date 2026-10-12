@@ -4,6 +4,7 @@
 package splice.app.control.mount
 
 import splice.app.control.ConsolePorts
+import splice.app.control.LimitResume
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
 import splice.app.control.SessionPerfFacts
@@ -22,6 +23,7 @@ import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
 import splice.core.retired.RetiredHeads
 import splice.core.topology.AuthKindRegistry
+import splice.core.util.LogSink
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.LaunchedTerminal
@@ -36,6 +38,7 @@ import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
 import splice.sessions.http.TranscriptRoots
+import splice.sessions.note.PeerNoteSocket
 import splice.sessions.registry.RecordedSessions
 import splice.sessions.registry.SEEN_SESSIONS_DIR
 import splice.sessions.registry.SeenSessions
@@ -44,6 +47,8 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
+import splice.upstream.LifecycleScope
+import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
@@ -58,6 +63,7 @@ internal class SessionsWiring(
     private val heads: Map<String, ManagedHead>,
     config: ConfigService,
     private val ports: ConsolePorts,
+    log: LogSink,
 ) {
     val sessionHeads = SessionHeadAdapter.adapt(heads)
     val historyIndex = TranscriptHistoryIndex()
@@ -114,6 +120,12 @@ internal class SessionsWiring(
                 }
         },
     )
+
+    /** What a login added after a plan limit does for the sessions it stopped. Null with no session registry. */
+    val limitResume = sessions?.let {
+        val io = ProcessDispatchers().io()
+        LimitResume(it, perfFacts.endingOf(), PeerNoteSocket(io), LifecycleScope(io), log)
+    }
 
     /** Where each session's moves are kept: the transcript route serves them and Continue on completes them. */
     private val moves = ModelMoves(StatePaths().modelMovesDir)

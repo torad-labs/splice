@@ -11,6 +11,11 @@ internal fun interface ClaudePoolChange {
     fun completeWithdrawal(label: String) = publish()
 }
 
+/** What the daemon does when a login joins a head. */
+internal fun interface LoginJoined {
+    fun joined(head: String)
+}
+
 internal class ClaudePoolChanges {
     private val heads = ConcurrentHashMap<String, ClaudePoolChange>()
     private val accounts = ConcurrentHashMap<String, List<WiredAccount>>()
@@ -20,8 +25,12 @@ internal class ClaudePoolChanges {
         return WiredAccountsRead { accounts.getValue(head) }
     }
 
+    /** Called with a head whenever a login joins its pool; the daemon wires what a new login sets off. */
+    var onJoined: LoginJoined = LoginJoined {}
+
     fun accounts(head: String, current: List<WiredAccount>) {
-        accounts[head] = current.toList()
+        val before = accounts.put(head, current.toList())?.map { it.label }?.toSet() ?: return
+        if (current.any { it.label !in before }) onJoined.joined(head)
     }
 
     fun bind(head: String, change: ClaudePoolChange) {

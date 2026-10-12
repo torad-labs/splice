@@ -2,12 +2,14 @@
 // transcripts (features/sessions). V4-444: the team and project routes moved to TeamsMount and ProjectsMount.
 package splice.app.control.mount
 
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.coroutines.withContext
+import splice.app.control.LimitResume
 import splice.app.control.ManagedHead
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
@@ -109,14 +111,15 @@ internal class SessionsMount(
     // Only a session splice can reach has a pane to act in; any other is refused in words (SessionDrive).
     private fun driveRoutes(route: Route) {
         val drive = wiring.drive
+        val resume = wiring.limitResume
         route.post("/api/sessions/{id}/say") {
-            guard.guarded(call) { drive.sayJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
+            guard.guarded(call) { drive.sayJson(acted(resume, call), call.receiveText()).send(call) }
         }
         route.post("/api/sessions/{id}/answer") {
-            guard.guarded(call) { drive.answerJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
+            guard.guarded(call) { drive.answerJson(acted(resume, call), call.receiveText()).send(call) }
         }
         route.post("/api/sessions/{id}/stop") {
-            guard.guarded(call) { drive.stop(call.parameters["id"].orEmpty()).send(call) }
+            guard.guarded(call) { drive.stop(acted(resume, call)).send(call) }
         }
         route.get("/api/sessions/{id}/screen") {
             guard.guarded(call) { drive.screen(call.parameters["id"].orEmpty()).send(call) }
@@ -125,4 +128,9 @@ internal class SessionsMount(
             guard.guarded(call) { continueOn.moveJson(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
         }
     }
+
+    /** The session id a drive act names, noted as something a person just did to it, so a limit it sat at does not
+     *  release it afterwards. */
+    private fun acted(resume: LimitResume?, call: ApplicationCall): String =
+        call.parameters["id"].orEmpty().also { resume?.acted(it) }
 }

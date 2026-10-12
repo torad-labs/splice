@@ -12,6 +12,7 @@ import splice.app.auth.claude.ClaudeAccountsPort
 import splice.app.auth.claude.ClaudeAccountsSource
 import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
+import splice.app.auth.claude.LoginJoined
 import splice.app.cli.AdminSupport
 import splice.app.control.ControlOwnership
 import splice.app.control.ControlReadings
@@ -360,6 +361,7 @@ internal class ControlPlane(
         srv.ports.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLoginOwner
+        providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
         srv.ports.budgetSpending = console.budgets
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.events = console.bus

@@ -31,7 +31,8 @@
 .kn .menu button:has(.blot) { justify-content: flex-start; gap: .7rem; }
 
 /* one command's own value, under the value every other command has, with the way back to it */
-.kn .over { display: flex; align-items: center; gap: .8rem; padding-left: 1.1rem; border-left: .2rem solid var(--track-line); }
+.kn .over { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem .8rem; padding-left: 1.1rem; border-left: .2rem solid var(--track-line); }
+.kn .over .act, .kn .over .back { white-space: nowrap; }
 .kn .only { display: inline-flex; align-items: center; gap: .45rem; }
 .kn .over .pickbtn, .kn .own .pickbtn { min-width: 11rem; }
 .kn .back {

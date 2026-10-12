@@ -609,12 +609,12 @@ button.count:hover { color: var(--text); }
    so the settings in a section keep one shape. */
 @container kcard (min-width: 80rem) {
   #st .kin { grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); align-items: start; column-gap: 3.2rem; }
-  #st .kin > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  #st .kin > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); }
   #st .kin > .kel, #st .kin > .sketch { grid-column: 2; }  /* under the control, not under the name */
 }
 
 /* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
-#st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); align-items: stretch; gap: 1rem 1.6rem; }
+#st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); align-items: stretch; gap: 1rem 1.6rem; }
 #st .kn .ctl.col > .line { grid-column: 1 / -1; }
 #st .kn .ctl.col > .over { padding: .2rem 0 .2rem 1.1rem; }
 /* a quiet line of facts UNDER the tiles, where the head is already carrying the zeros (MCP servers: how many servers

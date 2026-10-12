@@ -215,10 +215,10 @@ const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "num
 // When a window comes back, as Accounts says it: a time today, else the day and the time.
 const backWord = (d) => (d.toDateString() === NOW.toDateString() ? clock(d) : `${d.toLocaleDateString("en-US", { weekday: "short" })} ${clock(d)}`);
 const counter = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-/** A dollar figure as every page says it (Marlin's money form, fin, Oct 10): an estimate from the rate card is "≈",
- *  to four places under a cent so a priced share never reads "$0.00", and "<$0.0001" below that, so a real charge
- *  never reads as zeros; nothing charged is exact, "$0". */
-const dollars = (v) => (v === 0 ? "$0" : v < 0.0001 ? "<$0.0001" : `≈$${v.toLocaleString("en-US", { minimumFractionDigits: v < 0.01 ? 4 : 2, maximumFractionDigits: v < 0.01 ? 4 : 2 })}`);
+/** A dollar figure as every page says it (Marlin's money form, fin, Oct 10 and 12): an estimate from the rate card is
+ *  "≈". Under a cent it keeps two significant digits, so a tiny reply reads "≈$0.00012" and never "<$0.0001" or
+ *  zeros, and "<$0.000001" only below a millionth. A cent and up is cents. Nothing charged is exact, "$0". */
+const dollars = (v) => (v === 0 ? "$0" : v < 0.000001 ? "<$0.000001" : `≈$${v.toLocaleString("en-US", v < 0.0095 ? { minimumSignificantDigits: 2, maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const kTok = (n) => (n >= 999500 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
 const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 function md(text) { // the agent's own text, formatted as it wrote it: paragraphs, lists, code
@@ -374,6 +374,7 @@ const PAGES = [
   ["sessions.html", "Sessions"],
   ["teams.html", "Teams"],
   ["requests.html", "Requests"],
+  ["models.html", "Models"],
   ["compare.html", "Compare models"],
   ["settings.html", "Settings"],
 ];

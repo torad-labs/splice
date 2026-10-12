@@ -108,8 +108,9 @@ const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
 // ---------- the filters, as /api/perf/turns takes them (TurnsFilter.kt), plus the search over bodies ----------
 const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h": ["24 hours", 24 * 3600e3], "7d": ["7 days", 7 * 24 * 3600e3] };
-// priced at the model's card, with kit's zero and floor (dollars): exactly 0 is "$0", under a hundredth of a cent "<$0.0001"
-const money = (usd) => (usd === 0 || usd < 0.0001 ? dollars(usd) : `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`);
+// priced at the model's card: under a cent it is kit's dollars (two significant digits, exactly 0 is "$0"), and from a
+// cent a request keeps a tenth of a cent, so two small requests side by side still differ
+const money = (usd) => (usd < 0.01 ? dollars(usd) : `≈$${usd.toFixed(usd < 1 ? 3 : 2)}`);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
 /** What each tile counts at a wide page: the requests in the window under the filters he set, as the daemon counts
  *  them for that project (one n=1 read per project and command). No project is not a project the daemon filters by,

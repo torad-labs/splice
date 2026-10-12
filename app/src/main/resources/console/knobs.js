@@ -40,9 +40,9 @@ const KNOBS = (() => {
     K("stallReanchorMs", "Resume a silent answer after", { k: "dur", opts: [10 * SEC, 20 * SEC, 30 * SEC, 60 * SEC], unit: "s" }, 20 * SEC,
       { cmd: true, home: "silent", also: "resume", only: [] }),
     // admission per command (Knob.kt:186-194); attempts, the first included
-    K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
+    K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
-    K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8], unit: "tries" }, 4, { cmd: true, home: "busy", also: "retry retries attempts" }),
+    K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8, 10], unit: "tries" }, 4, { cmd: true, home: "busy", also: "retry retries attempts" }),
     K("quotaPoll", "Read plan limits", { k: "pick", opts: [["auto", "On"], ["off", "Off"]] }, "auto", { also: "quota" }),
     K("quotaPollIntervalMs", "Check plan usage every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
       { home: "plan", also: "read plan limits every quota poll" }),
@@ -115,11 +115,15 @@ const KNOBS = (() => {
   const KNOB = Object.fromEntries(LIST.map((k) => [k.key, k]));
 
   // What the daemon answered for GET /api/config, the menu or Custom field a click opened, and what each change did.
-  // `perCommand` stays false until a command's own value can be written (PUT /api/topology, a splice.toml write): a row never offers "One command" it cannot save.
+  // `perCommand` is whether a page offers "One command" on a setting's row. A command's own value is written by
+  // PATCH /api/config?head=<command> (HeadOverrideWrite.kt), which edits [heads.<command>.overrides] in splice.toml.
+  // `adding` holds, per setting, the commands picked from that menu whose own value is not saved yet.
+  // `restart` holds the rows saved while the running splice still reads the old value, until a restart brings them in.
   // `providerOf` maps a command to its provider, which is all kit.js knows a colour by; a page fills it from GET /api/models.
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
-    cfg: null, models: [], providerOf: {}, perCommand: false, cmds: [], said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    cfg: null, models: [], providerOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
+    said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -204,15 +208,31 @@ const KNOBS = (() => {
   }
   function saidHtml(id) {
     if (st.bad[id]) return `<span class="said limit">${esc(st.bad[id])}</span>`;
+    // saved to splice.toml, read by the running splice only once it restarts: the act that brings it in sits beside it
+    if (st.restart[id]) {
+      return st.restarting ? `<span class="said">${ICON.wait}Restarting</span>`
+        : `<span class="said ok">Saved</span><button class="act quiet small" data-kact="restart">Restart splice</button>`;
+    }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
     return st.said[id] ? `<span class="said ok">${esc(st.said[id])}</span>` : "";
   }
-  // why: a command's own value is a splice.toml write the console has no route for yet; true once PUT /api/topology does
-  const OWN_VALUES_WRITABLE = false;
+  // A command's own value: its control, what the change did, and the way back to the value every other command uses.
+  // A command just picked from "One command" has nothing saved yet, so its control shows the shared value until a change.
+  const backHtml = (k, c) =>
+    `<button class="back" data-kact="back" data-key="${k.key}" data-cmd="${esc(c)}">Back to ${esc(word(k, valueOf(k).v))}</button>`;
   function overHtml(k, c, hl = esc) {
-    // the console cannot write a command's own value yet (a splice.toml change, PUT /api/topology), so it is shown as
-    // its value with no act on it: a control whose every press fails is not drawn (fin)
-    return `<div class="over">${cmdChip(c, hl)}<span class="fixed">${esc(word(k, ownValue(k.key, c)))}</span></div>`;
+    const own = ownValue(k.key, c);
+    return `<div class="over">${cmdChip(c, hl)}${ctlHtml(k, own === undefined ? valueOf(k).v : own, c)}${saidHtml(`${k.key}@${c}`)}${backHtml(k, c)}</div>`;
+  }
+  /** One command's rows for [keys], for a page that shows one command at a time (a command's pane on Models): each
+   *  setting's name and a control on the value this command runs. A change saves the command's own value through the
+   *  same PATCH as Settings' rows; "Back to" shows only while it holds one. Clicks go through KNOBS.click as any row. */
+  function commandRowsHtml(cmd, keys, { hl = esc } = {}) {
+    return keys.filter((key) => KNOB[key]).map((key) => {
+      const k = KNOB[key], own = ownValue(key, cmd);
+      return `<div class="lbl" data-row="${key}">${hl(k.label)}</div><div class="ctl col"><div class="line">`
+        + `${ctlHtml(k, own === undefined ? valueOf(k).v : own, cmd)}${saidHtml(`${key}@${cmd}`)}${own === undefined ? "" : backHtml(k, cmd)}</div></div>`;
+    }).join("");
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
   function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false, el = "" } = {}) {
@@ -220,9 +240,10 @@ const KNOBS = (() => {
     if (s.src === "env") { // set in the person's shell: read here, changed there
       return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">Set in your shell, <code>${esc(k.key)}</code></span></div>`;
     }
-    const owners = ownersOf(k.key), left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
+    const owners = [...ownersOf(k.key), ...(st.adding[k.key] ?? []).filter((c) => !ownersOf(k.key).includes(c))];
+    const left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
     const lines = owners.map((c) => overHtml(k, c, hl)).join("");
-    const add = OWN_VALUES_WRITABLE && st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
+    const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(c)}</button>`).join("")}</div>` : "") + "</span>" : "";
     const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     // THE SLOT UNDER A CONTROL HOLDS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the page passes what it already
@@ -239,7 +260,7 @@ const KNOBS = (() => {
     const k = KNOB[key];
     if (k.ask && !sure && !Number.isNaN(v) && st.onAsk(id, v)) return { held: true };
     if (Number.isNaN(v)) { st.bad[id] = "Not saved"; delete st.said[id]; return { bad: true }; }
-    if (cmd) return { unsupported: true }; // a command's own value is a splice.toml write (PUT /api/topology), not this
+    if (cmd) return patchOwn(id, key, cmd, v);
     delete st.bad[id];
     const answer = await API.patch("/api/config", { [key]: v });
     const body = answer.body ?? {};
@@ -256,6 +277,53 @@ const KNOBS = (() => {
     const restart = (body.restart_required ?? []).includes(key) || needsRestart(key);
     if (!restart) st.said[id] = "Applied";
     return { ok: true, restart, persisted: body.persisted ?? null };
+  }
+  // A command's own value: PATCH /api/config?head=<command> writes it to [heads.<command>.overrides], and null clears it
+  // so the command takes the shared value again. The answer names the keys the running splice reads only at start.
+  async function patchOwn(id, key, cmd, v) {
+    delete st.bad[id];
+    const answer = await API.patch(`/api/config?head=${encodeURIComponent(cmd)}`, { [key]: v });
+    const body = answer.body ?? {};
+    const refused = body.rejected?.[key];
+    if (!answer.ok || refused || !(body.applied && key in body.applied)) {
+      console.warn(`${key} for ${cmd}: ${refused ?? body.error ?? "no answer"}`);
+      st.bad[id] = "Not saved";
+      delete st.said[id];
+      return { bad: true, reason: refused };
+    }
+    const mine = { ...(layer("perHead")[cmd] ?? {}) };
+    if (v === null) delete mine[key]; else mine[key] = v;
+    st.cfg = { ...st.cfg, layers: { ...st.cfg?.layers, perHead: { ...layer("perHead"), [cmd]: mine } } };
+    st.adding[key] = (st.adding[key] ?? []).filter((c) => c !== cmd);
+    const restart = (body.restart_required ?? []).includes(key);
+    // a cleared value leaves Settings' row, so what it did is said on the setting's own line there as well
+    const at = v === null ? [id, key] : [id];
+    for (const x of at) {
+      delete st.bad[x];
+      if (restart) { st.restart[x] = true; delete st.said[x]; } else { delete st.restart[x]; st.said[x] = "Applied"; }
+    }
+    return { ok: true, restart, persisted: body.persisted ?? null };
+  }
+  /** Restart splice for the rows saved under it, then read the values it came back with: those rows read Applied. */
+  async function restart(render) {
+    if (st.restarting) return;
+    const ids = Object.keys(st.restart);
+    st.restarting = true; render();
+    const go = await API.post("/api/daemon/restart", {});
+    const done = async (word) => {
+      st.restarting = false;
+      for (const x of ids) { if (word === "Applied") { delete st.restart[x]; st.said[x] = word; } else st.bad[x] = word; }
+      if (word === "Applied") await load();
+      render();
+    };
+    if (!go.ok) { if (go.body?.error) console.warn(`restart: ${go.body.error}`); await done("Not restarted"); return; }
+    // every read fails while splice is down; GET /api/daemon/restart answers idle once the new one is up
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const r = await API.get("/api/daemon/restart");
+      if (r.ok && r.body?.status === "idle") { await done("Applied"); return; }
+    }
+    await done("Not back yet");
   }
   function fromField(id, raw) {
     const [key] = id.split("@"), c = KNOB[key].c, s = String(raw).trim();
@@ -287,6 +355,19 @@ const KNOBS = (() => {
       sent(d.key, (d.kact === "model" ? [...ids, d.m] : ids.filter((x) => x !== d.m)).join(","), render);
       return true;
     }
+    // "One command": the command gets its line, with its value's menu open, and nothing is saved until a value is picked
+    if (d.kact === "over") {
+      st.adding[d.key] = [...(st.adding[d.key] ?? []), d.cmd];
+      if (KNOB[d.key].c.k === "dur" || KNOB[d.key].c.k === "count" || KNOB[d.key].c.opts?.length > 3) st.menu = `pick:${d.key}@${d.cmd}`;
+      return true;
+    }
+    if (d.kact === "back") {
+      const id = `${d.key}@${d.cmd}`;
+      if (ownValue(d.key, d.cmd) === undefined) { st.adding[d.key] = (st.adding[d.key] ?? []).filter((c) => c !== d.cmd); delete st.bad[id]; }
+      else sent(id, null, render);
+      return true;
+    }
+    if (d.kact === "restart") { restart(render); return true; }
     return true;
   }
   /** Sends the change and redraws when the daemon answers; the row says "Saving" with the wait ring while it is out. */
@@ -309,6 +390,6 @@ const KNOBS = (() => {
 
   return {
     fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, needsRestart, ownersOf, ownValue,
-    cmdChip, ctlHtml, saidHtml, rowHtml, patch, sent, click, wire, focusCustom,
+    cmdChip, ctlHtml, saidHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom,
   };
 })();

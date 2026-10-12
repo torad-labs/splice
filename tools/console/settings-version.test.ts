@@ -39,6 +39,8 @@ const started: Record<string, unknown>[] = [];
 const restarts: string[] = [];
 let restartReply: { status: number; body: Record<string, unknown> } = { status: 202, body: { status: "draining" } };
 let restartPhase: Record<string, unknown> = { status: "idle" };
+// the run the daemon reports, when a test sets one: its state and the lines it printed so far
+let runNow: { state: string; output: string[] } | null = null;
 const server = Bun.serve({
   port: Number(process.env.SETTINGS_VERSION_PORT ?? 0),
   async fetch(req) {
@@ -59,8 +61,8 @@ const server = Bun.serve({
     // null until he starts one, as the daemon answers on a machine that has never upgraded from the console
     if (path === "/api/upgrade/run") {
       const last = started.at(-1);
-      const args = !last ? null : last.rollback ? ["upgrade", "--rollback"] : ["upgrade", "--to", String(last.to)];
-      return Response.json({ run: args ? { id: "r1", args, state: "running", output: [] } : null });
+      const args = !last ? (runNow ? ["upgrade", "--to", "0.4.1"] : null) : last.rollback ? ["upgrade", "--rollback"] : ["upgrade", "--to", String(last.to)];
+      return Response.json({ run: args ? { id: "r1", args, state: runNow?.state ?? "running", output: runNow?.output ?? [] } : null });
     }
     if (path === "/api/upgrade") return Response.json(upgrade);
     if (path in answers) return Response.json(answers[path]);
@@ -83,7 +85,11 @@ afterAll(async () => {
 });
 
 /** The Version pane, open, with the daemon answering [body] for /api/upgrade and [reply] for a tap on Check. */
-async function version(body: Record<string, unknown>, reply = { status: 200, body: {} as Record<string, unknown> }): Promise<Page> {
+async function version(
+  body: Record<string, unknown>,
+  reply = { status: 200, body: {} as Record<string, unknown> },
+  run: { state: string; output: string[] } | null = null,
+): Promise<Page> {
   upgrade = body;
   checkReply = reply;
   posts.length = 0;
@@ -91,23 +97,24 @@ async function version(body: Record<string, unknown>, reply = { status: 200, bod
   restarts.length = 0;
   restartReply = { status: 202, body: { status: "draining" } };
   restartPhase = { status: "idle" };
+  runNow = run;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(`http://127.0.0.1:${server.port}/settings.html`);
   await page.getByText("Version").first().click();
   await expect(page.locator(".vcard").first()).toBeVisible({ timeout: 15_000 });
   return page;
 }
-
-// The card is a state and an act, never a sentence (Marlin's ruling on the Settings words, Oct 12): "Not checked"
-// beside the running version, with the one act that would read. The releases page is not a door yet, because until a
-// check has found a newer version there is no news to go and read.
+// The card is a state and an act, never a sentence (Marlin's ruling on the Settings words, Oct 12). "Not checked" sits in
+// the small line where "Checked" and its time would, so the version stays the largest thing on the card (Marlin with
+// hitstop, Oct 12). The releases page is not a door yet: until a check has found a newer version there is no news.
 test("a daemon that has never checked shows its own version, the state and the act, with no empty second card", async () => {
   const page = await version(NEVER_CHECKED);
   try {
     const pane = page.locator(".pane");
     await expect(page.locator(".vcard")).toHaveCount(1);
     await expect(page.locator(".vcard .v")).toHaveText("0.4.0");
-    await expect(page.locator(".vcard .state")).toHaveText("Not checked");
+    await expect(page.locator(".vcard .kel")).toHaveText("Not checked");
+    await expect(page.locator(".vcard .state")).toHaveCount(0);
     await expect(pane.getByRole("button", { name: "Check" })).toBeEnabled();
     await expect(pane.getByRole("link", { name: /Releases/ })).toHaveCount(0);
     // no empty second card, no sentence, and none of the daemon's own words about fetching and verifying
@@ -181,7 +188,7 @@ test("a tap refused because one is already running is said beside the act", asyn
     await pane.getByRole("button", { name: "Check" }).click();
     await expect(pane.locator(".vcard .said")).toHaveText("Already checking", { timeout: 10_000 });
     await expect(pane).not.toContainText("already running"); // the daemon's sentence stays in the log
-    await expect(page.locator(".vcard .state")).toHaveText("Not checked"); // and nothing on the card moved
+    await expect(page.locator(".vcard .kel")).toHaveText("Not checked"); // and nothing on the card moved
   } finally {
     await page.close();
   }
@@ -290,6 +297,61 @@ test("a release the daemon could not read is a card with its reason, not a silen
     const previous = page.locator(".vcard", { hasText: "Previous" });
     await expect(previous).toContainText("Not read");
     await expect(previous).toContainText("permission denied");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+// ---------- a run: its steps, and the log only when it fails (Marlin, Oct 12) ----------
+// The lines an upgrade prints, ANSI already stripped by the route (UpgradeRuns.kt), in the order a real run prints them.
+const CHECKED = [
+  "splice upgrade: from github.com/torad-labs/splice releases",
+  "  ✓ splice.jar      sha256 ok",
+  "  ✓ splice-launch   sha256 ok",
+  "  ✓ staged          0.4.1 -> ~/.local/share/splice/releases/0.4.1",
+  "  ✓ activated       0.4.1 (0.4.0 kept for --rollback)",
+];
+const STOPPING = ["splice: stopping daemon 0.4.0 on :8100…", "splice: waiting up to 60s for in-flight turns to finish"];
+const steps = (page: Page) => page.locator(".run .step");
+
+test("a running upgrade shows its steps, the ones behind it done, and no log", async () => {
+  const page = await version(NEVER_CHECKED, undefined, { state: "running", output: [...CHECKED, ...STOPPING] });
+  try {
+    await expect(page.locator(".run h3")).toHaveText("Upgrading to 0.4.1", { timeout: 10_000 });
+    await expect(steps(page)).toHaveText(["Checked", "Stopping", "Waiting for running turns", "Starting"]);
+    await expect(steps(page).locator(".lamp.done")).toHaveCount(2); // checked, stopped; it waits for the turns now
+    await expect(steps(page).nth(3)).toHaveClass(/pending/);
+    await expect(page.locator(".run .logbtn, .run .rlog")).toHaveCount(0);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a finished upgrade reads Now on its version with every step done, and still no log", async () => {
+  const page = await version(NEVER_CHECKED, undefined, { state: "running", output: CHECKED });
+  try {
+    await expect(page.locator(".run h3")).toHaveText("Upgrading to 0.4.1", { timeout: 10_000 });
+    runNow = { state: "succeeded", output: [...CHECKED, ...STOPPING, "splice: starting the daemon here (restart)…", "  ✓ daemon          restarted, serving 0.4.1"] };
+    await expect(page.locator(".run h3")).toHaveText("Now on 0.4.1", { timeout: 10_000 });
+    await expect(steps(page).locator(".lamp.done")).toHaveCount(4);
+    await expect(page.locator(".run .logbtn, .run .rlog")).toHaveCount(0);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a failed upgrade marks the step it stopped on, and its full log is a door", async () => {
+  const page = await version(NEVER_CHECKED, undefined, { state: "running", output: CHECKED });
+  try {
+    await expect(page.locator(".run h3")).toHaveText("Upgrading to 0.4.1", { timeout: 10_000 });
+    const failed = [...CHECKED, ...STOPPING, "splice: starting the daemon here (restart)…", "  ✗ daemon          did not answer after the restart; run: splice restart"];
+    runNow = { state: "failed", output: failed };
+    await expect(page.locator(".run h3")).toHaveText("Not on 0.4.1", { timeout: 10_000 });
+    await expect(steps(page).nth(3).locator(".lamp.fail")).toHaveCount(1);
+    await expect(page.locator(".run .rlog")).toHaveCount(0);
+    await page.locator(".run .logbtn").click();
+    await expect(page.locator(".run .rlog li")).toHaveCount(failed.length);
+    await expect(page.locator(".run .rlog")).toContainText("did not answer after the restart");
   } finally {
     await page.close();
   }

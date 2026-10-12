@@ -683,16 +683,18 @@ function versionHtml() {
   if (v === undefined) return `<span class="state">Reading</span>`;
   if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
-  const checked = v.checked_at_epoch_millis ? `<p class="kel">Checked ${esc(atWord(v.checked_at_epoch_millis))}</p>` : "";
+  // "Not checked" sits where "Checked Oct 12, 4:10 AM" would, in the same small line, so the version stays the largest
+  // thing on the card (Marlin with hitstop, Oct 12)
+  const checked = `<p class="kel">${v.checked_at_epoch_millis ? `Checked ${esc(atWord(v.checked_at_epoch_millis))}` : "Not checked"}</p>`;
   const releases = `<a class="act quiet" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}Releases</a>`;
-  // A STATE AND AN ACT, NOT A SENTENCE (fin, Marlin approved, Oct 12). What the check could not give him is a state on
-  // this card: "Not checked" before any tap, "Not read" when a tap answered nothing, "Newest" when he is already on
-  // the newest. A newer version is a version there is, so it takes a card of its own below instead of standing as a
-  // second bare number under "Running"; when the check happened is an element.
+  // A STATE AND AN ACT, NOT A SENTENCE (fin, Marlin approved, Oct 12). What the check gave him is a state on this card:
+  // "Not read" when a tap answered nothing, "Newest" when he is already on the newest. A newer version is a version
+  // there is, so it takes a card of its own below instead of standing as a second bare number under "Running"; when
+  // the check happened, or that it never has, is an element.
   const news = v.latest && v.latest !== v.installed;
   const newest = news ? ""
     : v.latest ? `<span class="state">Newest</span>`
-    : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : `<span class="state">Not checked</span>`;
+    : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : "";
   // ONLY HIS TAP READS THE NETWORK (Marlin's privacy line, Oct 12): nothing here polls, and the page never checks when
   // it opens. GET /api/upgrade answers the snapshot a past tap left, and POST /api/upgrade/check is the only fetch.
   const act = `<button class="act quiet" data-act="check"${ui.checking || going ? " disabled" : ""}>${ui.checking ? ICON.wait : ""}Check</button>`
@@ -716,9 +718,35 @@ function versionHtml() {
   } else if (v.rollback_unavailable_reason) {
     cards.push(vcard("Previous", `<span class="state">Not read</span>`, v.rollback_unavailable_reason));
   }
-  const words = RUN_WORD[run?.way === "up" ? "up" : "back"];
-  const ran = run ? `<section class="run"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
-  return cardRow(cards, " vcards") + ran;
+  return cardRow(cards, " vcards") + runHtml(run, back);
+}
+// A RUN IS ITS STEPS, AND THE LOG IS A DOOR ONLY WHEN IT FAILS (Marlin, Oct 12). The steps are read off the lines the
+// run prints (UpgradeCommand, RestartCommand, DaemonStop, DaemonLaunch): a step is done once a later one has begun.
+// The turns a run waits for before it activates are not this step, which is the wait after splice is told to stop.
+const RUN_STEPS = ["Checked", "Stopping", "Waiting for running turns", "Starting"];
+function runStep(output) {
+  let at = 0;
+  for (const l of output) {
+    if (/restarted, serving/.test(l)) return RUN_STEPS.length;
+    if (/stopping daemon/.test(l)) at = Math.max(at, 1);
+    else if (at >= 1 && /waiting up to|in flight|compaction/.test(l)) at = Math.max(at, 2);
+    else if (/starting the daemon/.test(l)) at = Math.max(at, 3);
+  }
+  return at;
+}
+function runHtml(run, back) {
+  if (!run) return "";
+  const words = RUN_WORD[run.way === "up" ? "up" : "back"];
+  const failed = run.state === "failed" || run.state === "lost";
+  const at = run.state === "succeeded" ? RUN_STEPS.length : runStep(run.output || []);
+  const lamp = (i) => (i < at ? `<span class="lamp done" aria-hidden="true"><i></i></span>`
+    : i > at ? `<span class="lamp idle" aria-hidden="true"><i></i></span>`
+    : failed ? `<span class="lamp fail" aria-hidden="true">${ICON.close}</span>` : `<span class="lamp" aria-hidden="true">${ICON.wait}</span>`);
+  const steps = `<ol class="steps">${RUN_STEPS.map((w, i) => `<li class="step${i > at ? " pending" : ""}">${lamp(i)}<span class="what">${esc(w)}</span></li>`).join("")}</ol>`;
+  const door = failed && run.output?.length
+    ? `<button class="logbtn" data-act="runlog" aria-expanded="${!!ui.runLog}">${ICON.caret}Full log</button>${ui.runLog ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}`
+    : "";
+  return `<section class="run"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${steps}${door}</section>`;
 }
 /** Restart splice, beside the version it is running. Not armed: a restart drains in-flight turns and splice is built
  *  to come back from one, so it is an act like any other. What it waits for is said on the button, because a daemon
@@ -1025,6 +1053,7 @@ document.addEventListener("click", (e) => {
     case "upgrade": ui.armed = null; upgrade(); return;
     case "check": check(); return;
     case "restart": restartSplice(); return;
+    case "runlog": ui.runLog = !ui.runLog; render(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;
     case "unask": ui.ask = null; break;

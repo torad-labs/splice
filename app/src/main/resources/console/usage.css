@@ -37,9 +37,6 @@
 .kcard .was { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
 .kcard .was b { font: 500 1.05rem/1 var(--font-data); color: var(--text-body); }
 /* its use across the window, a column per slice, today's lit */
-.spark { flex: 1; max-width: 22rem; height: 2.6rem; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .22rem; align-items: end; }
-.spark i { display: block; background: color-mix(in oklab, var(--c) 55%, var(--track)); border-radius: .12rem .12rem 0 0; min-height: 0; }
-.spark i.now { background: var(--c); }
 
 /* ---------- over time, at its full width ---------- */
 .chart { --c: var(--rail); display: flex; flex-direction: column; }
@@ -88,7 +85,7 @@
 .fclear:hover { background: var(--track); color: var(--text); }
 .fclear svg { width: .95rem; height: .95rem; }
 .brow {
-  display: grid; grid-template-columns: minmax(19rem, 1.5fr) minmax(12rem, 1.2fr) 9rem 9.6rem; gap: 1.4rem; align-items: center;
+  display: grid; grid-template-columns: minmax(19rem, 1.5fr) minmax(12rem, 1.2fr) 8rem 16rem; gap: 1.4rem; align-items: center;
   padding: 1rem .6rem; margin: 0 -.6rem; border-top: .12rem solid var(--track); border-radius: .3rem; cursor: pointer;
 }
 .brow:hover { background: color-mix(in oklab, var(--obj) 90%, var(--key-light)); }
@@ -240,7 +237,7 @@
 
 /* ---------- live additions: a plan's value beside "On your plan", splice's own count labelled, a cut read said ---------- */
 .brow .cost { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
-.brow .cost .val { font: 500 1rem/1 var(--font-data); color: var(--text-mute); }
+.brow .cost .val { white-space: nowrap; font: 500 1rem/1 var(--font-data); color: var(--text-mute); }
 .ctd { font: 500 1rem/1 var(--font-name); color: var(--text-mute); margin-right: .9rem; }
 .head-card .models.cut { margin-top: .2rem; color: var(--text-mute); }
 .pickline:not(:empty) { margin: 0 0 3rem; }

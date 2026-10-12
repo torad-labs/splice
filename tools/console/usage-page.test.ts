@@ -19,6 +19,9 @@ const group = (key: string, over: Row): Row => ({
 const PLAN = group("primary", { requests: 1_234_567, input_tokens: 9_000_000_000, output_tokens: 100_000_000, plan_requests: 1_234_567, plan_value_usd: 4321.5 });
 const KEY = group("OPENROUTER_API_KEY:abc123", { requests: 40, input_tokens: 80_000, output_tokens: 20_000, cost_usd: 1.25 });
 const row = (t: string, session: string): Row => ({ turn: t, ts: now - 60_000, outcome: "ok", model: "m", session, total: 1000, account: "primary" });
+const SECOND = group("plan-selector", { requests: 7, input_tokens: 4_000, output_tokens: 1_000, plan_requests: 7, plan_value_usd: 0.5 }); // the same plan account under its selector name
+let twoLabels = false; // while set, the plan account reaches splice under two labels
+const askedAccounts: (string | null)[] = []; // the account each plan read named
 let slowWeek = false; // while set, the 5-hour read stays pending
 const WEEK_DAY = new Date().toLocaleDateString("en-CA");
 
@@ -29,7 +32,7 @@ const server = Bun.serve({
     if (path === "/api/heads") return Response.json({ heads: [{ key: "plan", label: "plan" }, { key: "keyed", label: "keyed" }] });
     if (path === "/api/models") return Response.json({ heads: [{ head: "plan", provider: "openai", models: [] }, { head: "keyed", provider: "openrouter", models: [] }] });
     if (path === "/api/status") return Response.json({ registry: [{ key: "plan", family: "openai", authKind: "chatgpt-oauth" }, { key: "keyed", family: "openrouter", authKind: "api-key" }] });
-    if (path === "/api/accounts") return Response.json({ accounts: [{ provider: "codex", display_name: "Primary", kind: "chatgpt-oauth", heads: ["plan"], account_labels: { plan: null }, credential_present: true, plan: "pro", seven_day_used_percent: 39, seven_day_reset_epoch_seconds: Math.floor(now / 1000) + 86400, seven_day_window_seconds: 604800, seven_day_current: true }] });
+    if (path === "/api/accounts") return Response.json({ accounts: [{ provider: "codex", display_name: "Primary", kind: "chatgpt-oauth", heads: ["plan"], account_labels: { plan: null }, selector_key: "plan-selector", credential_present: true, plan: "pro", seven_day_used_percent: 39, seven_day_reset_epoch_seconds: Math.floor(now / 1000) + 86400, seven_day_window_seconds: 604800, seven_day_current: true }] });
     if (path === "/api/keys") return Response.json({ keys: [{ name: "OPENROUTER_API_KEY", fingerprint: "abc123", first_seen_epoch_seconds: Math.floor(now / 1000) - 5 * 86400, replaced: [], heads: [{ head: "keyed", source: "env" }] }] });
     if (path === "/api/sessions") return Response.json({ sessions: [] });
     if (path === "/api/topology") return Response.json({ topology: { providers: {} } });
@@ -37,9 +40,11 @@ const server = Bun.serve({
     if (path === "/api/perf/turns") {
       const head = url.searchParams.get("head"), held = Number(url.searchParams.get("n"));
       if (url.searchParams.get("since") && slowWeek && head === "plan" && held === 1 && url.searchParams.getAll("ask").length) await Bun.sleep(4000);
-      const g = head === "plan" ? PLAN : KEY;
-      const totals = group("totals", g);
-      const usage = { totals, accounts: [g], models: [], sessions: [], days: [group(WEEK_DAY, g)] };
+      if (head === "plan") askedAccounts.push(url.searchParams.get("account"));
+      const named = url.searchParams.get("account"), both = head === "plan" && twoLabels && !named;
+      const g = head === "plan" ? (named === "plan-selector" ? SECOND : PLAN) : KEY;
+      const totals = group("totals", both ? { ...g, requests: (PLAN.requests as number) + (SECOND.requests as number) } : g);
+      const usage = { totals, accounts: both ? [PLAN, SECOND] : [g], models: [], sessions: [], days: [group(WEEK_DAY, g)] };
       const rows = held > 1 && head === "plan" ? [row("a", "s1"), row("b", "s1"), row("c", "s1")] : [];
       return Response.json({ heads: [{ key: head, label: head, count: g.requests, returned: rows.length, truncated: held > 1 && rows.length < (g.requests as number), rows, ...(held > 1 ? {} : { usage }), asks: [] }] });
     }
@@ -70,7 +75,7 @@ test("Usage: a week's figures are the daemon's totals, not the rows returned; a 
     const plan = p.locator(".brow", { hasText: "Primary" }).first();
     await expect(plan.locator(".num.open")).toContainText("1,234,567", { timeout: 20_000 });
     await expect(plan.locator(".cost")).toContainText("On your plan");
-    await expect(plan.locator(".cost")).toContainText("≈$4,321.50 value");
+    await expect(plan.locator(".cost")).toContainText("≈$4,321.50 at API prices");
     await expect(plan.locator(".cost .money")).toHaveCount(0);
     const key = p.locator(".brow", { hasText: "OPENROUTER_API_KEY" }).first();
     await expect(key.locator(".cost .money")).toHaveText("≈$1.25");
@@ -90,6 +95,41 @@ test("Usage: a window change reads Reading until its figures land, never the old
     await expect(p.locator("#usage .brow")).toHaveCount(0);
     slowWeek = false;
     await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
+  } finally {
+    await p.context().close();
+  }
+}, 60_000);
+
+test("Usage: one plan account under two labels is one Breakdown row, and opening it reads both labels", async () => {
+  twoLabels = true;
+  const p = await open();
+  try {
+    const rows = p.locator(".brow", { hasText: "Primary" });
+    await expect(rows.first().locator(".num").nth(1)).toContainText("1,234,574", { timeout: 20_000 });
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first().locator("a.open")).toHaveCount(0);
+    askedAccounts.length = 0;
+    await rows.first().click();
+    await expect(p.locator(".fchips")).toContainText("Primary", { timeout: 20_000 });
+    await expect.poll(() => [...new Set(askedAccounts)].filter(Boolean).sort().join(",")).toBe("plan-selector,primary");
+  } finally {
+    twoLabels = false;
+    await p.context().close();
+  }
+}, 60_000);
+
+test("Usage: a window change keeps the plans and the headings drawn and reads Reading only where the window's figures go", async () => {
+  const p = await open();
+  try {
+    await expect(p.locator(".brow .num.open").first()).toContainText("1,234,567", { timeout: 20_000 });
+    slowWeek = true;
+    await p.locator("[data-act=win][data-v='5h']").click();
+    await expect(p.locator(".pcard .cmds")).toBeVisible();
+    await expect(p.locator(".pcard .windows")).toBeVisible();
+    await expect(p.locator(".pcard .thru")).toContainText("Reading");
+    await expect(p.locator(".keys")).toBeVisible();
+    slowWeek = false;
+    await expect(p.locator(".pcard .thru")).toContainText("Counted by splice", { timeout: 20_000 });
   } finally {
     await p.context().close();
   }

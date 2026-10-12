@@ -27,6 +27,7 @@ const failed = (r) => isFailed(r.outcome);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds days in the viewer's zone
 const HOUR = 3600e3, DAY_MS = 86400e3;
 const WINDOWS = { "5h": { label: "5 hours", ms: 5 * HOUR }, "7d": { label: "7 days", ms: 7 * DAY_MS } };
+const SEP = "\u001f"; // one account can carry several labels (its email, its selector name); a merged key joins them after the head
 const MAX_HELD = 2000; // the most rows one read of a command carries (PerfRoutes.kt MAX_TURNS)
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200 };
 const FAMILY = PROVIDER_FAMILY;
@@ -43,7 +44,7 @@ const root = document.getElementById("usage");
 const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, keys: [], accounts: [], registry: [], groups: [], error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, pending: false, all: null, scoped: null, rows: [], held: {}, errors: [], gen: 0 };
+const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: {}, errors: [], gen: 0 };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;
@@ -92,20 +93,22 @@ function slices() {
   });
 }
 const since = () => slices()[0].from;
-function filterParams(p, f) {
-  if (f.account) p.set("account", f.account.split("|").slice(1).join("|"));
+function filterParams(p, f, label) {
+  if (label != null) p.set("account", label);
   if (f.model) p.set("model", f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
-  if (ui.project && ui.project !== NO_PROJECT_KEY) p.set("project", ui.project);
+  if (ui.project && ui.project !== NO_PROJECT_KEY && !f.wide) p.set("project", ui.project);
   return p;
 }
 // each 15-minute column of the 5-hour window is one more question on the same read (`ask`), so the whole window is read once
-function turnsUrl(head, held, f) {
-  const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f);
+function turnsUrl(head, held, f, label) {
+  const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f, label);
   if (held > 1) p.set("usage", "0");
-  else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f).toString());
+  else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f, label).toString());
   return `/api/perf/turns?${p}`;
 }
+/** The labels one account filter reads: the daemon matches one label exactly, so an account with several is asked once per label and summed. */
+const labelsOf = (f) => (f.account ? f.account.split("|").slice(1).join("|").split(SEP) : [null]);
 const headsFor = (f) => S.heads.filter((h) => !f.account || f.account.split("|")[0] === h.key);
 
 const ZERO = () => ({ requests: 0, in: 0, cached: 0, out: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0 });
@@ -126,41 +129,53 @@ function foldWindow(reads, heads) {
     if (!reads[i].ok || !answer || answer.error) { w.errors.push(head.command); console.warn(`${head.command}: ${answer?.error ?? reads[i].status}`); return; }
     if (answer.read_pending) { w.pending = true; return; }
     const u = answer.usage;
-    w.byHead.set(head.key, { count: answer.count ?? 0, returned: answer.returned ?? 0, truncated: answer.truncated === true });
+    const seen = w.byHead.get(head.key);
+    w.byHead.set(head.key, { count: (seen?.count ?? 0) + (answer.count ?? 0), returned: (seen?.returned ?? 0) + (answer.returned ?? 0), truncated: seen?.truncated === true || answer.truncated === true });
     if (!u) return;
     fold(w.total, u.totals);
-    w.slices.set(head.key, (answer.asks || []).map((a) => fold(ZERO(), a.usage?.totals ?? {})));
+    const cols = (answer.asks || []).map((a) => fold(ZERO(), a.usage?.totals ?? {})), had = w.slices.get(head.key);
+    w.slices.set(head.key, had ? had.map((c, i) => fold2(c, cols[i] ?? ZERO())) : cols);
     const into = (map, key, g, extra) => { const e = map.get(key) ?? { ...ZERO(), ...extra, heads: new Set() }; fold(e, g); e.heads.add(head.key); map.set(key, e); };
     for (const g of u.accounts || []) if (g.key != null) into(w.accounts, `${head.key}|${g.key}`, g, { head: head.key, label: g.key });
     for (const g of u.models || []) if (g.key != null) into(w.models, g.key, g, { id: g.key });
     for (const g of u.sessions || []) if (g.key != null) into(w.sessions, g.key, g, { sid: g.key, lastModel: g.last_model });
     for (const g of u.days || []) {
       const byDay = w.days.get(head.key) ?? new Map();
-      byDay.set(g.key, fold(ZERO(), g)); w.days.set(head.key, byDay);
+      byDay.set(g.key, fold(byDay.get(g.key) ?? ZERO(), g)); w.days.set(head.key, byDay);
     }
   });
   return w;
 }
 async function readWindow() {
   const gen = ++D.gen;
-  const scopes = hasFilter() ? [ui.f, {}] : [{}];
-  const asks = scopes.flatMap((f) => headsFor(f).map((h) => ({ f, h, held: 1 })));
-  const rowAsks = headsFor(ui.f).map((h) => ({ f: ui.f, h, held: MAX_HELD }));
+  const wide = { wide: true }; // every project, for the tiles' figures
+  const scopes = [...(hasFilter() ? [ui.f, {}] : [{}]), ...(ui.project ? [wide] : [])];
+  const asks = scopes.flatMap((f) => headsFor(f).flatMap((h) => labelsOf(f).map((label) => ({ f, h, held: 1, label }))));
+  const rowAsks = headsFor(ui.f).flatMap((h) => labelsOf(ui.f).map((label) => ({ f: ui.f, h, held: MAX_HELD, label })));
   const [totals, rows] = await Promise.all([
-    Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f)))), Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f))))]);
+    Promise.all(asks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label)))), Promise.all(rowAsks.map((a) => API.getReady(turnsUrl(a.h, a.held, a.f, a.label))))]);
   if (gen !== D.gen) return;
   const split = (scope) => { const idx = asks.map((a, i) => (a.f === scope ? i : -1)).filter((i) => i >= 0); return foldWindow(idx.map((i) => totals[i]), idx.map((i) => asks[i].h)); };
   D.scoped = split(scopes[0]);
   D.all = hasFilter() ? split(scopes[1]) : D.scoped;
+  D.every = ui.project ? split(wide) : D.all;
   D.rows = []; D.held = {}; D.errors = [...D.scoped.errors];
-  let pending = D.scoped.pending || D.all.pending;
+  let pending = D.scoped.pending || D.all.pending || D.every.pending;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
     if (!rows[i].ok || !answer || answer.error) { if (!D.errors.includes(a.h.command)) D.errors.push(a.h.command); return; }
     if (answer.read_pending) { pending = true; return; }
-    D.held[a.h.key] = { count: answer.count ?? 0, returned: answer.returned ?? 0, truncated: answer.truncated === true };
+    const had = D.held[a.h.key];
+    D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
   });
+  if (rowAsks.length > headsFor(ui.f).length) { // several labels: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
+    D.rows.sort((x, y) => y.ts - x.ts);
+    for (const [head, h] of Object.entries(D.held)) {
+      const mine = D.rows.filter((r) => r.head === head);
+      if (mine.length > MAX_HELD) { const drop = new Set(mine.slice(MAX_HELD)); D.rows = D.rows.filter((r) => !drop.has(r)); h.returned = MAX_HELD; h.truncated = true; }
+    }
+  }
   D.pending = pending; D.loading = false;
   render();
   if (pending) setTimeout(() => { if (gen === D.gen) readWindow(); }, 2000);
@@ -180,16 +195,18 @@ function mapRow(head, r) {
 const tokWord = (n) => (n >= 999.5e6 ? `${+(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} bn` : kTok(n)); // a week of tokens is billions; kTok stops at M
 const tokensOf = (s) => s.in + s.out;
 /** What a group cost, in fin's words: a key's requests are money; a plan's read "On your plan" with their API-price value
- *  as a value; a request nobody could price says why. Plan and key never share one figure. */
+ *  as what they would cost at API prices; a request nobody could price says why. Plan and key never share one figure. */
 function costCell(s) {
   const out = [];
   if (s.cost != null) out.push(`<span class="money">${dollars(s.cost)}</span>`);
-  if (s.plan) out.push(`<span class="gap">On your plan</span>${s.planValue != null ? `<span class="val">${dollars(s.planValue)} value</span>` : ""}`);
+  if (s.plan) out.push(`<span class="gap">On your plan</span>${s.planValue != null ? `<span class="val">${dollars(s.planValue)} at API prices</span>` : ""}`);
   if (!out.length) out.push(`<span class="gap">${s.uncounted ? "Uncounted" : s.undeclared ? "No price" : s.local ? "This computer" : ""}</span>`);
   return out.join("");
 }
 const chip = (head) => `<span class="chip" style="--c:${colorOf(providerOfHead(head))}">${esc(cmdOf(head))}</span>`;
 const acctKeyOf = (head, label) => `${head}|${label}`;
+/** The key of an account that may carry several labels: the one with the most requests first. */
+const acctKeyOfAll = (entries) => { const e = entries.slice().sort((a, b) => b.requests - a.requests); return acctKeyOf(e[0].head, e.map((x) => x.label).join(SEP)); };
 const keyNameOf = (label) => { const s = String(label ?? ""), at = s.lastIndexOf(":"); return at < 0 ? s : s.slice(0, at); };
 const keyRecord = (label) => {
   const name = keyNameOf(label), print = String(label).slice(name.length + 1);
@@ -234,7 +251,8 @@ const isKeyHead = (key) => {
   return h && h.authKind === "api-key" && h.family !== "local" && h.family !== "vast";
 };
 /** The window's usage entries that belong to one plan account. */
-const usageOfPlan = (row) => [...D.all.accounts.values()].filter((e) => (row.heads || []).includes(e.head) && planRowOf(e.head, e.label) === row);
+const reading = () => D.loading || !D.scoped;
+const usageOfPlan = (row) => !D.all ? [] : [...D.all.accounts.values()].filter((e) => (row.heads || []).includes(e.head) && planRowOf(e.head, e.label) === row);
 const sumOf = (entries) => entries.reduce((t, e) => fold2(t, e), ZERO());
 function fold2(t, e) {
   t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local;
@@ -243,13 +261,6 @@ function fold2(t, e) {
   return t;
 }
 const uncut = (heads) => heads.every((h) => D.held[h] && !D.held[h].truncated);
-function spark(entries, heads, val) { // only where every request is in hand: a newest-2,000 column would shrink a busy command's week
-  if (!uncut(heads)) return "";
-  const sl = slices(), v = sl.map(() => 0), mine = new Set(entries.map((e) => acctKeyOf(e.head, e.label)));
-  for (const r of D.rows) if (mine.has(acctKeyOf(r.head, r.account))) { const i = sl.findIndex((b) => r.ts > b.from && r.ts <= b.to); if (i >= 0) v[i] += val(r); }
-  const max = Math.max(...v, 1e-9);
-  return `<div class="spark" style="--n:${sl.length}">${v.map((x, i) => `<i style="height:${x ? Math.max(6, (x / max) * 100).toFixed(1) : 0}%"${i === sl.length - 1 ? ' class="now"' : ""}></i>`).join("")}</div>`;
-}
 const DRILLS = () => `<span class="drill">${DIMS[nextBy("account")].word}${DOWN}</span>`;
 function plansHtml() {
   const cards = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds)).map((row) => {
@@ -260,16 +271,15 @@ function plansHtml() {
     const stale = windows.some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null;
     const wins = out ? `<p class="state">Signed out</p>` : windows.length ? `<div class="windows">${windows.map((w) => `<span class="label">${w.label}</span><div class="bar${w.used >= 100 ? " full" : ""}${w.stale ? " stale" : ""}"><b style="width:${Math.min(w.used, 100)}%"></b></div>`
       + `<span class="pct${w.used >= 100 ? " limit" : ""}">${w.used}%<span class="used">used</span></span><span class="when">${w.left != null ? `${ring(w.len, w.left)}Resets ${backWord(new Date(w.resetMs))}` : ""}</span>`).join("")}`
-      + (stale ? `<span class="stale-at">${EYE}Read ${backWord(new Date(stale))}</span>` : "") + `</div>` : "";
+      + (stale ? `<span class="stale-at">${EYE}Read ${backWord(new Date(stale))}</span>` : "") + `</div>` : `<p class="state">No limits reported</p>`;
     const heads = row.heads || [];
-    const lead = mine.slice().sort((a, b) => b.requests - a.requests)[0];
-    const ranOut = D.rows.filter((r) => r.outcome === "error:plan-limit" && r.reset && r.reset - r.ts > 5 * HOUR && mine.some((e) => e.head === r.head && e.label === r.account)).sort((a, b) => a.ts - b.ts)[0];
-    const sp = spark(mine, heads, (r) => (r.in ?? 0) + (r.out ?? 0));
-    const door = lead ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
+    const lead = mine.length ? mine[0] : null;
+    const ranOut = reading() ? null : D.rows.filter((r) => r.outcome === "error:plan-limit" && r.reset && r.reset - r.ts > 5 * HOUR && mine.some((e) => e.head === r.head && e.label === r.account)).sort((a, b) => a.ts - b.ts)[0];
+    const door = lead ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOfAll(mine))}" tabindex="0"` : "";
     return `<article class="card pcard${held ? " held" : ""}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + `<header><span class="nm">${esc(row.account?.email || row.display_name || "")}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}${row.plan ? ` · ${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}` : ""}</span><span class="cmds">${heads.map(chip).join("")}</span></header>`
       + wins + (ranOut ? `<p class="since"><a href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}</a></p>` : "")
-      + `<footer>${sp}<span class="thru">${s.requests ? `<span class="ctd">Counted by splice</span><b>${tokWord(tokensOf(s))}</b> tokens<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
+      + `<footer><span class="thru">${reading() ? `<span class="ctd">Counted by splice</span>Reading` : s.requests ? `<span class="ctd">Counted by splice</span><b>${tokWord(tokensOf(s))}</b> tokens<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
   });
   return cards.length ? `<section class="plans"><header><h2>Plans</h2></header><div class="grid">${cards.join("")}</div></section>` : "";
 }
@@ -282,12 +292,11 @@ function keysHtml() {
     if (!heads.length) continue;
     for (const [print, seen, replaced] of [[k.fingerprint, k.first_seen_epoch_seconds, false], ...(k.replaced || []).map((r) => [r.fingerprint, r.first_seen_epoch_seconds, true])]) {
       const label = `${k.name}:${print}`;
-      const mine = [...D.all.accounts.values()].filter((e) => heads.includes(e.head) && e.label === label), s = sumOf(mine), lead = mine[0];
-      const sp = spark(mine, heads, (r) => r.cost ?? 0);
-      const door = s.requests ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
+      const mine = !D.all ? [] : [...D.all.accounts.values()].filter((e) => heads.includes(e.head) && e.label === label), s = sumOf(mine), lead = mine[0];
+      const door = s.requests && !reading() ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
       cards.push({ s, html: `<article class="card kcard" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
         + `<header><span class="nm"><span class="var">${esc(k.name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}${replaced ? `<span class="detail">Replaced</span>` : ""}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}</span><span class="cmds">${[...new Set(heads)].map(chip).join("")}</span></header>`
-        + (s.requests ? `<div class="spent"><span class="label">Cost</span>${s.cost != null ? `<span class="money">${dollars(s.cost)}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer>${sp}<span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
+        + (reading() ? `<div class="spent"><span class="none">Reading</span></div>` : s.requests ? `<div class="spent"><span class="label">Cost</span>${s.cost != null ? `<span class="money">${dollars(s.cost)}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer><span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
           : `<div class="spent"><span class="none">No requests</span></div>`) + `</article>` });
     }
   }
@@ -308,7 +317,7 @@ const nextBy = (d) => DRILL.find((x) => x !== d && !isSet(x)) ?? "model";
 function reqUrl(extra = {}, f = ui.f) {
   const p = new URLSearchParams({ win: ui.win });
   if (ui.project) p.set("project", ui.project);
-  if (f.account) p.set("account", f.account);
+  if (f.account) p.set("account", f.account.split(SEP)[0]);
   if (f.model) p.set("model", f.model);
   if (f.agent) p.set("session", String(f.agent).slice(0, 8));
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
@@ -323,7 +332,12 @@ const unionHeads = (a, b) => new Set([...a, ...b]);
 /** The breakdown's rows: the daemon's totals for the window under the filters, folded by what they are grouped by. */
 function groupsOf(by) {
   const w = D.scoped;
-  if (by === "account") return [...w.accounts.values()].map((e) => ({ k: acctKeyOf(e.head, e.label), label: acctLabel(e.head, e.label), sub: PROVIDER_NAME[providerOfHead(e.head)] ?? "", heads: e.heads, s: e }));
+  if (by === "account") { // one plan account can reach splice under more than one label (its email, its selector name): one row
+    const m = new Map();
+    for (const e of w.accounts.values()) { const id = planRowOf(e.head, e.label) ? `${e.head}|${S.accounts.indexOf(planRowOf(e.head, e.label))}` : acctKeyOf(e.head, e.label); (m.get(id) ?? m.set(id, []).get(id)).push(e); }
+    return [...m.values()].map((es) => { const lead = es.slice().sort((a, b) => b.requests - a.requests)[0], s = es.reduce((t, e) => fold2(t, e), ZERO());
+      return { k: acctKeyOfAll(es), many: es.length > 1, label: acctLabel(lead.head, lead.label), sub: PROVIDER_NAME[providerOfHead(lead.head)] ?? "", heads: lead.heads, s }; });
+  }
   if (by === "model") return [...w.models.values()].map((e) => ({ k: e.id, label: esc(modelName(S.labels, e.id)), sub: "", heads: e.heads, s: e }));
   const byRow = rowProjects();
   if (by === "agent") return [...w.sessions.values()].map((e) => ({ k: e.sid, label: esc(sessTitle(String(e.sid).slice(0, 8))), sub: esc(projectOfSid(e.sid, byRow).label), heads: e.heads, s: e }));
@@ -375,7 +389,7 @@ function tipHtml(x, n) {
 function filterChips() {
   const chip1 = (d, text) => `<span class="fwrap"><span class="fbtn on"><em>${DIMS[d].one}</em>${text}</span><button class="fclear" data-act="unpick" data-d="${d}" aria-label="Clear">${ICON.close}</button></span>`;
   return Object.entries(ui.f).map(([d, v]) => {
-    const text = d === "account" ? acctLabel(...[v.split("|")[0], v.split("|").slice(1).join("|")]) : d === "model" ? esc(modelName(S.labels, v)) : esc(sessTitle(String(v).slice(0, 8)));
+    const text = d === "account" ? acctLabel(v.split("|")[0], v.split("|").slice(1).join("|").split(SEP)[0]) : d === "model" ? esc(modelName(S.labels, v)) : esc(sessTitle(String(v).slice(0, 8)));
     return chip1(d, text);
   }).join("");
 }
@@ -387,7 +401,7 @@ function byHtml() {
     return `<div class="brow" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" tabindex="0">`
       + `<div class="who"><span class="nm">${e.label}</span><span class="sb">${e.sub ? `<span class="st">${e.sub}</span>` : ""}${[...e.heads].map(chip).join("")}</span></div>`
       + `<div class="share"><div class="sbar" style="width:${((tokensOf(e.s) / max) * 100).toFixed(2)}%"></div><span class="num">${tokWord(tokensOf(e.s))}</span></div>`
-      + `<a class="num open" href="${reqUrl(extra, f)}">${n0(e.s.requests)}${OPEN}</a><span class="cost">${costCell(e.s)}</span></div>`;
+      + `${e.many ? `<span class="num">${n0(e.s.requests)}</span>` : `<a class="num open" href="${reqUrl(extra, f)}">${n0(e.s.requests)}${OPEN}</a>`}<span class="cost">${costCell(e.s)}</span></div>`;
   };
   const sw = `<div class="switch" role="group" aria-label="Group by">${Object.entries(DIMS).map(([k, v]) => `<button data-act="by" data-v="${k}" aria-pressed="${ui.by === k}">${v.word}</button>`).join("")}</div>`;
   const open = hasFilter() ? `<a class="act" href="${reqUrl()}">${OPEN}Open on Requests</a>` : "";
@@ -494,20 +508,28 @@ function headsHtml() {
 }
 
 // ---------- the page ----------
+/** What each project tile and the picker carry on this page: the window's tokens, written as Breakdown writes them. */
+function projectFigures() {
+  const w = D.every;
+  if (!w || reading()) return { of: () => null, all: null, unit: "token", show: tokWord };
+  const byRow = rowProjects(), m = new Map();
+  for (const e of w.sessions.values()) { const k = projectOfSid(e.sid, byRow).key; m.set(k, (m.get(k) ?? 0) + tokensOf(e)); }
+  return { of: (k) => m.get(k) ?? 0, all: tokensOf(w.total), unit: "token", show: tokWord };
+}
 function render() {
   tick();
-  document.getElementById("pickline").innerHTML = pickLineHtml(S.groups, ui.project, ui.pmenu, { of: () => null, all: null, unit: "request" });
+  document.getElementById("pickline").innerHTML = pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
   const n = Object.keys(ui.f).length;
   document.getElementById("hf").innerHTML = n ? filterChips() + (n > 1 ? `<button class="act quiet small" data-act="clear">Clear all</button>` : "") : "";
   document.getElementById("win").innerHTML = Object.entries(WINDOWS).map(([k, v]) => `<button data-act="win" data-v="${k}" aria-pressed="${ui.win === k}">${v.label}</button>`).join("");
   if (S.error) { root.innerHTML = `<p class="empty">${S.error}</p>`; return; }
-  if (D.loading || !D.scoped) { root.innerHTML = `<p class="empty">Reading</p>`; return; }
-  const note = D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
-  root.innerHTML = `${note}<div class="money-band">${plansHtml()}${keysHtml()}</div>${chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${byHtml()}</section>${headsHtml()}</div>`;
+  const waiting = reading(), hold = (title) => `<section><header><h2>${title}</h2></header><p class="empty">Reading</p></section>`;
+  const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
+  root.innerHTML = `${note}<div class="money-band">${plansHtml()}${keysHtml()}</div>${waiting ? hold("Over time") : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? `<p class="empty">Reading</p>` : byHtml()}</section>${waiting ? hold("Commands") : headsHtml()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading
-const again = () => { D.loading = true; D.scoped = null; D.all = null; D.gen++; render(); readWindow(); };
+const again = () => { D.loading = true; D.scoped = null; D.all = null; D.every = null; D.gen++; render(); readWindow(); };
 document.addEventListener("click", (e) => {
   if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; render(); }
   if (e.target.closest("a")) return; // a link opens its requests

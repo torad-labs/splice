@@ -32,6 +32,7 @@ import splice.sessions.http.MoveLedger
 import splice.sessions.http.ProjectSessions
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
+import splice.sessions.http.SessionActed
 import splice.sessions.http.SessionDrive
 import splice.sessions.http.SessionRowFacts
 import splice.sessions.http.SessionsRoutes
@@ -110,6 +111,7 @@ internal class SessionsWiring(
      *  A session splice did not open is reached through the pane its own launch recorded, while its process runs. */
     val drive = SessionDrive(
         TerminalSource { ports.sessionDriver },
+        acted = SessionActed { limitResume?.acted(it) },
         launched = LaunchedTerminals { id ->
             sessions?.read()
                 ?.firstOrNull { it.sessionId == id && it.availability != SessionAvailability.GONE }

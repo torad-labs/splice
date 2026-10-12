@@ -53,6 +53,11 @@ private const val LAUNCH_PANE_GONE =
 private const val LAUNCH_PANE_TAKEN =
     "the terminal this session was started in is running something else now, so nothing is typed into it"
 
+/** A person acted on the session with this id: said something to it, answered it, or stopped it. */
+public fun interface SessionActed {
+    public fun acted(session: String)
+}
+
 /** The console's hands on one session's terminal, by session id. A session has one when splice opened it (the pane
  *  memory) or when its own launch recorded the terminal it ran in, and only while that terminal still has it in front. */
 public class SessionDrive(
@@ -60,6 +65,8 @@ public class SessionDrive(
     internal val driver: TerminalSource,
     private val choices: ScreenChoices = ScreenChoices(),
     private val launched: LaunchedTerminals = LaunchedTerminals { null },
+    /** Told of each act a person makes on a session, so what waits on that session knows it was handled. */
+    private val acted: SessionActed = SessionActed {},
 ) {
     /** The numbered choices a screen lists, in the order a person reads them. */
     private val choiceKeys = listOf(
@@ -167,6 +174,7 @@ public class SessionDrive(
         val driving = driver() ?: return unwired()
         val at = locate(driving, session, notOurs, closed)
         val pane = at.pane ?: return requireNotNull(at.refusal)
+        acted.acted(session)
         return Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, buildJsonObject { put("session_id", session) }.toString()) },
             onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED) },

@@ -219,6 +219,7 @@ public class SessionsRoutes(
         val said = if (running) SessionActivity::last else SessionActivity::answered
         put("last", said(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
+        put("title", SessionActivity.title(s, trees, transcripts, viewEnabled))
         put("kind", s.client.kind)
         put("version", s.client.version)
         put("cwd", s.process.cwd)

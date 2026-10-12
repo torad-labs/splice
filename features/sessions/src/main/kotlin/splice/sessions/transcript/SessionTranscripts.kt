@@ -159,6 +159,10 @@ public interface SessionTranscripts {
      *  answered. Null when the transcript is not available. */
     public fun tail(sessionId: String, roots: List<Path>, cwd: String? = null): SessionTail? = null
 
+    /** The first line of the first real message the person sent in [sessionId], cut to a card heading and cached by file
+     *  stamp: what a session with no name of its own is called. Null when no message of the person's is readable. */
+    public fun title(sessionId: String, roots: List<Path>, cwd: String? = null): String? = null
+
     /** Where [sessionId] changed model, oldest first; none for a session that was never moved. */
     public fun moves(sessionId: String): List<ModelMove> = emptyList()
 

@@ -115,16 +115,28 @@ public class TranscriptReader(
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
     private val redaction = TranscriptRedaction()
     private val tail = TranscriptTail(opener, TranscriptTailAssembly(TranscriptLineParser(::parse), redaction))
+    private val titles = TranscriptTitle(opener, TranscriptLineParser(::parse), redaction)
     private val back = TranscriptBackPage(opener, TranscriptLineParser(::parse), redaction)
 
     override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? =
         tailOf(sessionId, roots, cwd)?.message
 
+    override fun title(sessionId: String, roots: List<Path>, cwd: String?): String? {
+        val file = if (validSessionId.matches(sessionId)) locator.locate(roots, sessionId, cwd) else null
+        if (file == null) return null
+        // A removed or unreadable transcript has no title; the registry row still exists independently.
+        return try {
+            titles.read(file)
+        } catch (_: IOException) {
+            null
+        }
+    }
+
     override fun tail(sessionId: String, roots: List<Path>, cwd: String?): SessionTail? =
         tailOf(sessionId, roots, cwd)?.let { SessionTail(it.model, it.answered, it.modelAt) }
 
     private fun tailOf(sessionId: String, roots: List<Path>, cwd: String?): TailReading? {
-        val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId, cwd) else null
+        val file = if (validSessionId.matches(sessionId)) locator.locate(roots, sessionId, cwd) else null
         if (file == null) return null
         // A removed or unreadable transcript has no available activity; the registry row still exists independently.
         return try {
@@ -139,7 +151,7 @@ public class TranscriptReader(
         if (!validSessionId.matches(sessionId) || start == null) {
             return TranscriptLookup.Refused(if (start == null) BAD_CURSOR else BAD_ID)
         }
-        val file = locate(roots, sessionId)
+        val file = locator.locate(roots, sessionId)
             ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
@@ -152,7 +164,7 @@ public class TranscriptReader(
             !validSessionId.matches(sessionId) -> BAD_ID
             else -> null
         }
-        val file = if (refusal == null) locate(roots, sessionId) else null
+        val file = if (refusal == null) locator.locate(roots, sessionId) else null
         return when {
             refusal != null -> TranscriptLookup.Refused(refusal)
             file == null -> TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
@@ -168,7 +180,7 @@ public class TranscriptReader(
         budget: TranscriptReadBudget,
     ): MessageConversation {
         if (!validSessionId.matches(sessionId)) return MessageConversation.Refused(BAD_ID)
-        val file = locate(roots, sessionId)
+        val file = locator.locate(roots, sessionId)
             ?: return MessageConversation.Missing("No saved transcript for this session.")
         return when (val indexed = replies.find(file, responseId, budget)) {
             is IndexedReply.Found -> if (budget.hasTime()) {
@@ -208,7 +220,7 @@ public class TranscriptReader(
     /** The `message` of every SendMessage call in [sessionId]'s transcript whose tool_use id is in
      *  [ids] (see the header). A malformed session id finds nothing and reports every id missing. */
     override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts {
-        val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
+        val file = if (validSessionId.matches(sessionId)) locator.locate(roots, sessionId) else null
         if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(Keys.PROJECTS).toString() })
         return sent.read(file, ids)
     }
@@ -234,9 +246,6 @@ public class TranscriptReader(
                 id to ((sent as? JsonPrimitive)?.takeIf { it.isString }?.content ?: sent?.toString().orEmpty())
             }
     }
-
-    private fun locate(roots: List<Path>, sessionId: String, cwd: String? = null): Path? =
-        locator.locate(roots, sessionId, cwd)
 
     /** Lines from [start] until the page is full, the byte budget is spent or the file ends; a line the
      *  assembly declines (it starts the next page's first message) is left unread for that page. */

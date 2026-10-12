@@ -44,6 +44,20 @@ internal object SessionActivity {
         return json(sessionId?.let { source.last(it, roots, cwd) })
     }
 
+    /** What a session with no name of its own is called: the first line of its first message. JSON null when it has a
+     *  name, the view is off, or no message of the person's is readable. */
+    fun title(
+        session: SessionRecord,
+        roots: List<Path>,
+        source: SessionTranscripts,
+        viewEnabled: SessionTranscriptViewEnabled,
+    ): JsonElement {
+        val id = session.sessionId
+        if (!viewEnabled() || id == null) return JsonNull
+        if (!session.name.isNullOrBlank()) return JsonNull
+        return source.title(id, roots, session.process.cwd)?.let(::JsonPrimitive) ?: JsonNull
+    }
+
     /** The model that wrote the session's newest assistant message, or the one a move since then put it on; JSON
      *  null when the view is off or no model is recorded. */
     fun model(

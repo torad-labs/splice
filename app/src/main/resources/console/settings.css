@@ -673,4 +673,5 @@ button.count:hover { color: var(--text); }
 
 /* a job's Advanced disclosure: the button alone until pressed (v0.4.0 section 9) */
 #st .adv .advbtn { display: inline-flex; align-items: center; gap: .4rem; }
-#st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(180deg); }
+#st .adv .advbtn svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
+#st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(90deg); }  /* right when closed, down when open, as Full log does (marlin) */

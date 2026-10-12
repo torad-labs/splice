@@ -145,13 +145,18 @@ public class TopologyWriter(
         keys.canonical(json.encodeToJsonElement(Topology.serializer(), topology)).jsonObject
 
     public fun write(requested: Topology): TopologyWriteResult {
-        val findings = TopologyChecks(requested, discovered, backups, withRosters = true).findings()
-        if (findings.isNotEmpty()) return TopologyWriteResult.Refused(findings)
         val existing = Files.readString(path)
-        val held = Cancellables.runCatchingCancellable { tree(parse(existing)) }.getOrElse { failure ->
-            val why = SafeFailureText.render(failure)
-            return refused("$TOPOLOGY_FILE on disk does not parse, so it cannot be edited: $why")
-        }
+        val (stored, held) = Cancellables.runCatchingCancellable { parse(existing).let { it to tree(it) } }
+            .getOrElse { failure ->
+                val why = SafeFailureText.render(failure)
+                return refused("$TOPOLOGY_FILE on disk does not parse, so it cannot be edited: $why")
+            }
+        // An edit is refused for what it brings: a finding the file already carries (a head whose roster the endpoint
+        // did not list at start) is not the doing of removing another command, or of changing a window.
+        val standing = TopologyChecks(stored, discovered, backups, withRosters = true).findings().toSet()
+        val findings = TopologyChecks(requested, discovered, backups, withRosters = true).findings()
+            .filterNot { it in standing }
+        if (findings.isNotEmpty()) return TopologyWriteResult.Refused(findings)
         val wanted = tree(requested)
         return land(existing, TomlPatch(existing, wanted).compose(held), wanted)
     }

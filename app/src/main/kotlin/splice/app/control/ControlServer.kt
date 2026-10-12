@@ -120,7 +120,7 @@ internal class ControlServer(
 
     // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
     private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)
-    private val removal = HeadRemovalAssembly(config, ports, runtime, heads).build()
+    private val removal = HeadRemovalAssembly(config, ports, runtime, heads, log).build()
     private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard, removal)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir)

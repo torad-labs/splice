@@ -7,6 +7,7 @@ package splice.app.head
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -22,9 +23,11 @@ import splice.core.config.StatePaths
 import splice.core.retired.RetiredHead
 import splice.core.retired.RetiredHeads
 import splice.core.topology.Topology
+import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.compact.CompactView
@@ -33,6 +36,10 @@ import splice.http.JsonReply
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.isSymbolicLink
+
+// why: the writer's own file-level refusals are filed under the file's name, and this phrase is its drift refusal.
+private const val TOPOLOGY_FILE_KEY = "splice.toml"
+private const val CHANGED_ON_DISK = "changed while this write was prepared"
 
 /** Where the wrapper links live; null reads the install's own bin dir. */
 internal fun interface WrapperBinSource {
@@ -44,6 +51,7 @@ internal class HeadRemoval(
     private val wrapperBin: WrapperBinSource,
     private val statePaths: StatePaths,
     private val facts: HeadRemovalFacts,
+    private val log: LogSink,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val retired = RetiredHeads(statePaths.stateDir)
@@ -103,9 +111,13 @@ internal class HeadRemoval(
         // The record comes first: a head gone from splice.toml with no record would lose its history's door.
         retired.retire(RetiredHead(key, command, facts.transcriptRoot(key)?.toString()))
         val result = writer()?.write(without(topology, key))
+        if (result is TopologyWriteResult.Refused) {
+            retired.rejoin(key)
+            return refused(key, result.findings)
+        }
         if (result !is TopologyWriteResult.Written) {
             retired.rejoin(key)
-            return refusal(HttpStatusCode.UnprocessableEntity, "not removed")
+            return refusal(HttpStatusCode.ServiceUnavailable, "topology is not wired")
         }
         val unlinked = unlink(command, topology.heads.filterKeys { it != key }.keys, topology)
         AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE)).set(key, emptyList())
@@ -116,6 +128,21 @@ internal class HeadRemoval(
                 put("restart_required", true)
                 put("wrapper_removed", unlinked)
                 result.backup?.let { put("backup_path", it.toString()) }
+            }.toString(),
+        )
+    }
+
+    /** The writer's refusal, said and logged: a file that changed since splice read it, or a finding the remaining
+     *  config trips, each logged with its key path so the cause is in the daemon log at every refusal. */
+    private fun refused(key: String, findings: List<TopologyFinding>): JsonReply {
+        findings.forEach { log("[models] removing $key refused: ${it.text()}") }
+        val changed = findings.any { it.path == TOPOLOGY_FILE_KEY && it.message.contains(CHANGED_ON_DISK) }
+        return JsonReply(
+            HttpStatusCode.UnprocessableEntity,
+            buildJsonObject {
+                put("error", "not removed")
+                put("reason", if (changed) "changed" else "config")
+                putJsonArray("findings") { findings.forEach { add(JsonPrimitive(it.text())) } }
             }.toString(),
         )
     }
@@ -157,12 +184,14 @@ internal class HeadRemovalAssembly(
     private val ports: ConsolePorts,
     private val runtime: ControlRuntime,
     private val heads: Map<String, ManagedHead>,
+    private val log: LogSink,
 ) {
     fun build(): HeadRemoval = HeadRemoval(
         TopologyWriterSource { ports.topology },
         WrapperBinSource { ports.wrapperBin },
         config.statePaths,
         HeadRemovalFacts(config.statePaths, heads, RegisteredSessions { runtime.sessions }),
+        log,
     )
 }
 

@@ -85,6 +85,103 @@ private val TOML = """
     system_prompt = "Gamma only."
 """.trimIndent() + "\n"
 
+// The walker desk's splice.toml as the second Models walk left it (a command added through Models, then restarted).
+private val DESK_TOML = """
+    # The walker desk. Every credential in this home is a made-up string, and the one upstream is on this machine.
+    [daemon]
+    control_port = 31640
+    
+    [providers.anthropic]
+    dialect = "anthropic-passthrough"
+    base_url = "http://127.0.0.1:31980"
+    auth = { kind = "client" }
+    extra_headers = { anthropic-version = "2023-06-01" }
+    quirks = { reanchor_prefill = true }
+    [[providers.anthropic.models]]
+    id = "claude-opus-5-5"
+    label = "Claude Opus 5.5"
+    context_window = 1000000
+    [[providers.anthropic.models]]
+    id = "claude-fable-5-1"
+    label = "Claude Fable 5.1"
+    context_window = 1000000
+    
+    [providers.codex]
+    dialect = "openai-responses"
+    base_url = "http://127.0.0.1:31981"
+    auth = { kind = "chatgpt-oauth", file = "/tmp/codex.json" }
+    
+    [providers.openrouter]
+    dialect = "openai-chat"
+    base_url = "http://127.0.0.1:31980"
+    auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+    [[providers.openrouter.models]]
+    id = "anthropic/claude-haiku-4.5"
+    label = "Claude Haiku"
+    context_window = 200000
+    
+    [heads.claude-splice]
+    provider = "anthropic"
+    port = 31641
+    discovery_prefix = "claude-splice--"
+    pinned_model = "claude-opus-5-5"
+    models = [{ id = "claude-opus-5-5", slot = "opus" }, { id = "claude-fable-5-1", slot = "fable" }]
+    [heads.claude-splice.claude]
+    command = "claude-splice"
+    [heads.claude-splice.overrides]
+    retryBackoffBaseMs = "3000"
+    retryBackoffCapMs = "10000"
+    trace = "true"   # request capture on: the Requests page opens what was sent and what came back
+    wireTap = "8"
+    
+    [heads.claudex]
+    provider = "codex"
+    port = 31642
+    discovery_prefix = "claudex--"
+    [heads.claudex.claude]
+    command = "claudex"
+    [heads.claudex.overrides]
+    firstByteTimeoutMs = "60000"   # this command asks about a silent start sooner than the shared 90 s
+    trace = "true"   # request capture on: the Requests page opens what was sent and what came back
+    
+    [heads.openrouter]
+    provider = "openrouter"
+    port = 31643
+    discovery_prefix = "claude-openrouter--"
+    pinned_model = "anthropic/claude-haiku-4.5"
+    [heads.openrouter.claude]
+    command = "claude-openrouter"
+    [heads.openrouter.overrides]
+    trace = "true"   # request capture on: the Requests page opens what was sent and what came back
+    
+    [heads.openrouter.rates]
+    "anthropic/claude-haiku-4.5" = { input = 1.0, cache_read = 0.1, output = 5.0 }
+    
+    [heads.claude-splice.rates]
+    claude-opus-5-5 = { input = 4.0, cache_read = 0.2, output = 20.0 }
+    claude-fable-5-1 = { input = 10.0, cache_read = 0.25, output = 50.0 }
+    
+    # Added by `splice add local`.
+    [providers.walk]
+    dialect = "openai-chat"
+    base_url = "http://127.0.0.1:31980/v1"
+    auth = { kind = "api-key", env = "WALK_API_KEY" }
+    [[providers.walk.models]]
+    id = "walk-model"
+    label = "walk-model"
+    context_window = 64000
+    
+    [heads.walk]
+    provider = "walk"
+    port = 31644
+    discovery_prefix = "claude-walk--"
+    pinned_model = "walk-model"
+    context_window = 64000
+    [heads.walk.claude]
+    command = "claude-walk"
+    
+""".trimIndent() + "\n"
+
 class HeadRemovalTest {
     @TempDir
     lateinit var tmp: Path
@@ -238,5 +335,16 @@ class HeadRemovalTest {
             assertEquals(404, call(HttpMethod.Get, "/api/heads/nobody/removal").status.value)
         }
         assertTrue(RetiredHeads(paths.stateDir).all().isEmpty())
+    }
+
+    @Test
+    fun `a keyless idle command on a desk that added a local command is removed`() {
+        check(Files.exists(file))
+        Files.writeString(file, DESK_TOML)
+        serve { call ->
+            val removed = call(HttpMethod.Delete, "/api/heads/openrouter")
+            assertEquals(200, removed.status.value, removed.bodyAsText())
+        }
+        assertFalse(heads().containsKey("openrouter"))
     }
 }

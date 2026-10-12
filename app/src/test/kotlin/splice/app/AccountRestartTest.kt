@@ -42,7 +42,6 @@ class AccountRestartTest {
         assertFalse(restarted.toString().contains("secret"))
     }
 
-    @Test
     // One bad file refuses its own login, never the pool: the head's other logins keep serving.
     @Test
     fun `a pooled credential labeled for another provider is refused while the other logins keep serving`() {

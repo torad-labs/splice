@@ -439,7 +439,7 @@ function splitMeterHtml(c, tag, day) {
   const many = (n, words) => (lead || parts.length ? `${n0(n)} ${words}` : `${reqs(n)} ${words}`);
   if (s.plan) parts.push(many(s.plan, "on your plan"));
   if (s.keyUnpriced) parts.push(many(s.keyUnpriced, "with no price"));
-  if (c.failed) parts.push(`${n0(c.failed)} failed`); // the Outcome switch's word, never "requests failed" (fin, Oct 12)
+  if (c.failed) parts.push(failedCost(c.failed)); // the Outcome switch's word, never "requests failed" (fin, Oct 12)
   if (s.old) parts.push(many(s.old, "not split into plan and key"));
   const body = lead || (parts.length ? "" : `<em>No requests</em>`);
   if (!c.budget) {
@@ -464,7 +464,11 @@ const noPrice = (c) => `${reqs(c.unpriced)} ${c.onPlan ? "on your plan" : "with 
 // a day with an hour splice has not read has no count to share either: its readable hours would undercount it (fin, Oct 11)
 // what the figure leaves out: requests with no price, and failed ones, which cost nothing and are counted as failed, the
 // word Requests' Outcome switch uses (Marlin's Accounts walk, fin's words, Oct 12)
-const asides = (c) => [c.unpriced ? noPrice(c) : "", c.failed ? `${c.failed.toLocaleString("en-US")} failed` : ""].filter(Boolean);
+// A failed request is counted here only when it reported no usage, so nothing was charged for it: one that reported
+// usage is priced into the figure (EconomicsBuckets: failed_turns counts noPrice && failed). The count says what they
+// cost, "10 failed · $0", since a count alone left the walker unsure they were free (marlin p229, Oct 12).
+const failedCost = (n) => `${n.toLocaleString("en-US")} failed · ${money(0)}`;
+const asides = (c) => [c.unpriced ? noPrice(c) : "", c.failed ? failedCost(c.failed) : ""].filter(Boolean);
 const unpriced = (c, lead = "") => ((c.unpriced || c.failed) && !c.local && !c.unread ? `<span class="unpriced own">${[lead, ...asides(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
 // The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
 // the hourly totals cannot split them, so they are said once, apart from the day's figure.

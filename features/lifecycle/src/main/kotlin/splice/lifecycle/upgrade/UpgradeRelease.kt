@@ -43,6 +43,9 @@ internal class UpgradeRelease(
     private val process: UpgradeProcess,
     private val java: String,
 ) {
+    /** The line of the published launch shim that names its release; the workflow tags the release from the same line. */
+    private val launchVersion = Regex("""SPLICE_GATEWAY_VERSION="(\d+\.\d+\.\d+[-+.0-9A-Za-z]*)"""")
+
     /** The release base: SPLICE_RELEASE_BASE_URL wins (the installer's override), else the tag or latest.
      *  Tags are `v<version>` (release.yml); `--to 0.4.0` and `--to v0.4.0` name the same one. */
     fun base(to: String?, override: String?): String =
@@ -58,6 +61,22 @@ internal class UpgradeRelease(
             stageAssets(Fetching(base, staging, String(sums), remote, gap)).then {
                 Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
                 validate(staging.resolve(JAR_ASSET)).then { version -> Upgraded.Ok(Staged(version, gap)) }
+            }
+        }
+    }
+
+    /** The newest published version, learned the way a stage learns anything: the published sums, then the launch
+     *  shim checked against them (and attested when gh can), whose SPLICE_GATEWAY_VERSION line the release workflow
+     *  derives its tag from. No jar is run and nothing is activated; [staging] holds one small file the caller deletes. */
+    fun latest(base: String, staging: Path): Upgraded<String> {
+        val remote = !base.startsWith("file:")
+        val gap = if (remote) attestationGap() else null
+        return fetched(base, SUMS_ASSET).then { sums ->
+            Files.createDirectories(staging)
+            stageAsset(Fetching(base, staging, String(sums), remote, gap), SHIM_ASSET).then {
+                val version = Files.readAllLines(staging.resolve(SHIM_ASSET))
+                    .firstNotNullOfOrNull { launchVersion.matchEntire(it)?.groupValues?.get(1) }
+                version?.let { Upgraded.Ok(it) } ?: Upgraded.Refused("no version line in the published $SHIM_ASSET")
             }
         }
     }

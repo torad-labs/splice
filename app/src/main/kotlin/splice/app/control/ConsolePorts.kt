@@ -18,6 +18,7 @@ import splice.events.bus.EventBus
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.lifecycle.restart.DaemonSupervised
+import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeRuns
 import splice.lifecycle.upgrade.UpgradeStatus
 import splice.models.list.ModelsReporter
@@ -111,6 +112,9 @@ public class ConsolePorts {
     public var declaredHeads: DeclaredHeads? = null
     public var doctor: DoctorReport? = null
     public var upgrade: UpgradeStatus? = null
+
+    /** The Version card's "Check": the snapshot GET /api/upgrade/check reports and the read POST makes. Null answers a named 503. */
+    public var upgradeChecks: UpgradeChecks? = null
 
     /** V4-220 item 4: the fixes POST /api/doctor/fix/{id} runs. Null answers a named 503, never a
      *  fix that silently did nothing. */

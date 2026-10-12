@@ -21,6 +21,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
     testImplementation(testFixtures(project(":core")))
+    testImplementation(libs.ktor.server.test.host) {
+        exclude(group = "io.ktor", module = "ktor-client-apache5")
+    }
+    testImplementation(libs.kotlinx.coroutines.core)
 }
 
 // THE LAW HERE (the shim selector law in SupervisedStartTest.kt) reads the launch script the dist ships, and walks up to

@@ -578,6 +578,8 @@ Small, mostly read-only, all under the existing bearer guard.
 | statusline `rate_limits` capture | record Claude Code's 5h and weekly windows per session and account from the payload the daemon already receives | `StatuslineRoute`, `StatuslineRenderer` (reads `context_window` today) |
 | `POST /api/daemon/restart` | draining restart | V4-74 |
 | `GET /api/upgrade` | installed, latest, rollback available | `upgrade` command |
+| `POST /api/upgrade/check` | one tap reads the newest published release (sums, then launch shim); 409 while a read runs, 429 within 10 s of the last | `upgrade` command |
+| `GET /api/upgrade/check` | the last tap's snapshot: state never_checked / read / not_read, latest, read_at; never fetches | `upgrade` command |
 | `GET /api/sessions/{id}/transcript` | the session's local transcript from its head's `CLAUDE_CONFIG_DIR/projects`, paginated, redacted | `SessionRegistry`, `ProjectsLink` (note: `compaction/SessionProject.kt:24` still hardcodes the vanilla path for its headless fallback; fix in the same campaign) |
 | `GET /api/sessions/{id}/edges`, `GET /api/teams/{id}/edges` | message edges (from, to address, time, direction) derived on the wire, no text, kept by default | new wire observation of the `SendMessage` tool_use input at the point `ActivityLabel` already extracts the block; `SessionRegistry` for addresses |
 | `GET /api/teams/{id}/chat?day=` | the team's group chat: edges joined to the message text read from each member's transcript on demand | edges plus the transcript reader |

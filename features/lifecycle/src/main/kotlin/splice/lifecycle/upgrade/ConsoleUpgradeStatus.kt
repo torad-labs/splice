@@ -14,6 +14,9 @@
 // fixtures are files read back months later. null means the check has NEVER SUCCEEDED: not zero, and
 // not the epoch, either of which would date the absence to 1970 and read as a real measurement.
 //
+// 2026-10-12: latest and checked_at now come from UpgradeChecks, the snapshot of the last TAP on POST /api/upgrade/check.
+// This body still never fetches.
+//
 // THE ROUTE NEVER FETCHES, AND THAT IS A RULED DECISION RATHER THAN A MISSING FEATURE. A polled GET
 // that reached the network would hold a Ktor worker behind a 300-second timeout and aim the daemon's
 // own request pool at a remote host on every poll — a self-inflicted outage wearing a feature. The
@@ -31,7 +34,9 @@
 // cheaper path in the tree. The field says so instead of inventing one.
 package splice.lifecycle.upgrade
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
@@ -49,7 +54,7 @@ internal const val LATEST_NOT_CHECKED =
         "verifying a release, which no poll may do"
 
 /** Reads the release layout under [env]'s share dir; app hands in the process environment. */
-public class ConsoleUpgradeStatus(env: EnvReader) {
+public class ConsoleUpgradeStatus(env: EnvReader, private val checks: UpgradeChecks = UpgradeChecks(env)) {
     private val layout = UpgradeLayout(env)
 
     /** The upgrade bay's payload: the three facts, each with the basis it rests on. */
@@ -59,9 +64,10 @@ public class ConsoleUpgradeStatus(env: EnvReader) {
             // This endpoint answers what the daemon runs, not a release link that a jar-copy install can leave stale.
             put("installed", GATEWAY_VERSION)
 
-            put("latest", JsonNull)
-            put("latest_basis", BASIS_UNAVAILABLE)
-            put("latest_unavailable_reason", LATEST_NOT_CHECKED)
+            val found = checks.snapshot()
+            put("latest", found.latest?.let(::JsonPrimitive) ?: JsonNull)
+            put("latest_basis", if (found.state == UpgradeReadState.READ) BASIS_MEASURED else BASIS_UNAVAILABLE)
+            put("latest_unavailable_reason", latestReason(found))
 
             put("rollback_target", rollback.value)
             put("rollback_basis", rollback.basis)
@@ -72,8 +78,15 @@ public class ConsoleUpgradeStatus(env: EnvReader) {
             }
 
             // Never succeeded — NOT zero and NOT the epoch.
-            put("checked_at_epoch_millis", JsonNull)
+            put("checked_at_epoch_millis", found.readAtMillis?.let(::JsonPrimitive) ?: JsonNull)
         }.toString()
+    }
+
+    /** Why latest has no value: nothing was checked, or the last check could not read the release. Null once it did. */
+    private fun latestReason(found: UpgradeSnapshot): JsonElement = when (found.state) {
+        UpgradeReadState.NEVER -> JsonPrimitive(LATEST_NOT_CHECKED)
+        UpgradeReadState.NOT_READ -> JsonPrimitive("the last check could not read the release: ${found.reason}")
+        UpgradeReadState.READ -> JsonNull
     }
 
     /** The previous release, or the reason the layout could not be read.

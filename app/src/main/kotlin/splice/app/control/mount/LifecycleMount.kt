@@ -20,6 +20,8 @@ import splice.lifecycle.restart.DaemonRoutes
 import splice.lifecycle.restart.RestartAfterCompactions
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.lifecycle.upgrade.CompactionSlot
+import splice.lifecycle.upgrade.UpgradeCheckRoutes
+import splice.lifecycle.upgrade.UpgradeChecksSource
 import splice.lifecycle.upgrade.UpgradeRoute
 import splice.lifecycle.upgrade.UpgradeRunRoutes
 import splice.lifecycle.upgrade.UpgradeRunsSource
@@ -47,6 +49,8 @@ internal class LifecycleMount(
     private val daemonRoutes = DaemonRoutes(restarts)
     private val upgradeRoute = UpgradeRoute()
     private val upgradeRuns = UpgradeRunRoutes(UpgradeRunsSource { ports.upgradeRuns }, log)
+    private val upgradeChecks =
+        UpgradeCheckRoutes(UpgradeChecksSource { ports.upgradeChecks }, ProcessDispatchers().io())
 
     fun register(route: Route) {
         route.post("/api/daemon/shutdown") {
@@ -64,5 +68,7 @@ internal class LifecycleMount(
         route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.upgrade) } }
         route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
         route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
+        route.get("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.snapshot(call) } }
+        route.post("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.check(call) } }
     }
 }

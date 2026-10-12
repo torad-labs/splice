@@ -60,6 +60,7 @@ import splice.head.HeadLifecycle
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
+import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeStatus
 import splice.sessions.activity.ALL_HEADS
 import splice.sessions.activity.ActivityStores
@@ -104,7 +105,9 @@ internal object ConsoleWiring {
         srv.ports.declaredHeads = topology.declaredHeads
         srv.ports.doctor = DoctorReport(DoctorWiring::consoleJson)
         srv.ports.doctorFixes = DoctorWiring.fixes()
-        srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv))::json)
+        val upgradeChecks = UpgradeChecks(EnvReader(System::getenv))
+        srv.ports.upgradeChecks = upgradeChecks
+        srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv), upgradeChecks)::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
         // unassigned is SAFE BY CONSTRUCTION — ConsolePorts.supervised is null until set and the
         // route refuses on null, so an unwired port declines to drain rather than draining a daemon

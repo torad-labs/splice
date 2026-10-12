@@ -85,7 +85,7 @@ class RosterAccountReadsTest {
     private val routes = PerfRoutes(
         UsageHeadLookup { name -> if (name == HEAD) listOf(head) else emptyList() },
         WallClock { 10_000 },
-    ).apply { accounts = RosterAccountNames(roster) { places } }
+    ).apply { accounts = RosterAccountNames(roster, logins = { places }) }
 
     @Test
     fun `thousands of rows on three logins read their labels and ask the login files once per login`() =

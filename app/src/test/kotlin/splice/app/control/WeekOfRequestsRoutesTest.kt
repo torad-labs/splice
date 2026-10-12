@@ -68,7 +68,7 @@ class WeekOfRequestsRoutesTest {
             ClaudeCarryingPlaces(emptyList(), ClaudeLoginRead(paths, {}, WallClock { NOW })),
         )
         val routes = PerfRoutes(UsageHeadLookup { name -> heads.filter { it.key == name } }, WallClock { NOW })
-            .apply { accounts = RosterAccountNames(roster()) { places } }
+            .apply { accounts = RosterAccountNames(roster(), logins = { places }) }
         val payloads = PerfPayloads(UsageHeads { heads }, WallClock { NOW })
         val bodies = ArrayList<String>()
         val millis = HashMap<String, Long>()

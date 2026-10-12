@@ -39,7 +39,8 @@ internal class CodeModeHostPool(
     private val boots = CodeModeHostBoots(scope, start, lock, log)
     private val metrics = CodeModeHostMetrics(times.controlMs)
     private val drains = CodeModeHostDrains(scope, lock, admission, log)
-    private val retirement = CodeModeSessionRetirement(scope, lock, metrics, drains, times.controlMs)
+    private val retirement =
+        CodeModeSessionRetirement(scope, lock, metrics, drains, times.controlMs, SessionLeftHost(::emptied))
     private val hosts = mutableListOf<CodeModePoolHost>()
     private val sessions = mutableMapOf<String, CodeModePoolSession>()
     private var closed = false
@@ -48,10 +49,15 @@ internal class CodeModeHostPool(
         scope.launch {
             val interval = (idleTimeoutMs / IDLE_SWEEP_DIVISOR).coerceIn(MIN_IDLE_SWEEP_MS, MAX_IDLE_SWEEP_MS)
             while (isActive && ticker.awaitTick(interval)) {
-                lock.locked {
-                    sessions.values.filter { it.users == 0 && now() - it.lastUse >= idleTimeoutMs }
-                        .toList().forEach(::retire)
+                val released = lock.locked {
+                    sessions.values.filter { it.users == 0 && now() - it.lastUse >= idleTimeoutMs }.toList().forEach {
+                        it.idleRetired = true
+                        retire(it)
+                    }
+                    hosts.filter { host -> host.emptySince?.let { now() - it >= idleTimeoutMs } == true }
+                        .filter(::releaseIdle)
                 }
+                released.forEach(drains::closeWhenDrained)
             }
         }
     }
@@ -115,6 +121,7 @@ internal class CodeModeHostPool(
             it.lastUse = now()
         }
         host.sessions.add(created)
+        host.emptySince = null
         sessions[key] = created
         return CodeModePlacement.Acquired(created)
     }
@@ -141,6 +148,30 @@ internal class CodeModeHostPool(
         sessions.remove(session.key, session)
         session.pipes.toList().forEach(CellChannel::close)
         retirement.close(session)
+    }
+
+    /** Under [lock], after a confirmed close removed [session] from its host. A host the idle sweep emptied is
+     *  released now: its sessions already sat out the idle time. One emptied by an explicit close or an eviction
+     *  stays warm for the next session, and the sweep releases it once it has sat empty as long. */
+    private fun emptied(session: CodeModePoolSession) {
+        val host = session.host
+        if (host.sessions.isNotEmpty() || host.draining) return
+        if (session.idleRetired) {
+            releaseIdle(host)
+        } else {
+            host.emptySince = now()
+        }
+    }
+
+    /** Under [lock]: an empty healthy host leaves the pool and drains, so no placement can reach it again and its
+     *  JVM closes through [CodeModeHostDrains.closeWhenDrained]. A lease placed before this holds a session on the
+     *  host, which keeps it; one placed after selects another host or boots one, as on first use. */
+    private fun releaseIdle(host: CodeModePoolHost): Boolean {
+        if (closed || host.draining) return false
+        if (host.sessions.isNotEmpty() || !hosts.remove(host)) return false
+        host.emptySince = null
+        host.draining = true
+        return true
     }
 
     suspend fun metric(key: String): Int = metrics.total(lock.locked { hosts.mapNotNull(CodeModePoolHost::boot) }, key)

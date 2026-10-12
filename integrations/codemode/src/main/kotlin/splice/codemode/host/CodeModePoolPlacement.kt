@@ -17,6 +17,9 @@ internal class CodeModePoolHost {
     var draining = false
     val sessions = mutableSetOf<CodeModePoolSession>()
 
+    /** When this host's last session left, while it stays empty; null while it holds one. */
+    var emptySince: Long? = null
+
     fun load(): Int = sessions.size
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,6 +41,9 @@ internal class CodeModePoolSession(val key: String, val id: Long, val host: Code
     @Volatile var opening: Deferred<Unit>? = null
 
     var closing = false
+
+    /** Retired by the idle sweep, so its host is released once this was its last session. */
+    var idleRetired = false
 
     fun used(at: Long) {
         lastUse = at

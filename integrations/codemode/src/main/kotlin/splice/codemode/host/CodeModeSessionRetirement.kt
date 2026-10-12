@@ -11,12 +11,18 @@ import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock as locked
 
+/** Called under the placement lock once a confirmed close has removed a session from its host. */
+internal fun interface SessionLeftHost {
+    fun left(session: CodeModePoolSession)
+}
+
 internal class CodeModeSessionRetirement(
     private val scope: CoroutineScope,
     private val lock: ReentrantLock,
     private val metrics: CodeModeHostMetrics,
     private val drains: CodeModeHostDrains,
     private val timeoutMs: Long,
+    private val left: SessionLeftHost,
 ) {
     fun close(session: CodeModePoolSession) {
         scope.launch {
@@ -44,7 +50,10 @@ internal class CodeModeSessionRetirement(
                 session.retired.completeExceptionally(refusal)
             } finally {
                 if (confirmed) {
-                    lock.locked { session.host.sessions.remove(session) }
+                    lock.locked {
+                        session.host.sessions.remove(session)
+                        left.left(session)
+                    }
                     session.retired.complete(Unit)
                 }
                 drains.closeWhenDrained(session.host)

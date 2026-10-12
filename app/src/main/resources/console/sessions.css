@@ -331,3 +331,19 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .rested .s { padding: .8rem 1.3rem; box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .rested .lamp { top: .55rem; }
 .rested .meta { margin-top: .3rem; }
+
+/* ---------- his width (3394 and 3828, Oct 12): the list in two columns beside the open session ----------
+   One column of 269 cards ran 17,900 px down beside the pane (builder3's sweep, 19f986b75). From a 176rem page the cards
+   flow two across, in the same order read row by row, and the open session keeps the rest (76rem at 3394, 86 at 3828),
+   still pinned as the list scrolls. Headers, folds and notes span both columns; a group's cards, its Ended and the
+   loose ended cards sit on the list's two tracks, so a lamp in the right column has its own gutter. */
+@container (min-width: 176rem) {
+  .sessions .list, .sessions.open .list {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 6.6rem; align-items: stretch;
+    flex: 0 0 calc(3.4rem + 2 * 44rem + 6.6rem);
+  }
+  .sessions .list > :not(.s), .pgroup > :not(.s), .rested > :not(.s), .sessions div.ended > :not(.s) { grid-column: 1 / -1; }
+  /* a subgrid keeps its own gap, and the group's 1.6rem would put a right-hand lamp on its neighbour's edge */
+  .pgroup, .rested, .sessions div.ended { display: grid; grid-template-columns: subgrid; column-gap: 6.6rem; align-items: stretch; }
+  .sessions .list > .fold, .pgroup > .fold { justify-self: start; }
+}

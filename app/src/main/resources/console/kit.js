@@ -474,8 +474,11 @@ const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, list
 function tilesHtml(items, pick, show = showCount) {
   return `<nav class="ptiles" aria-label="Projects">${items.map(([k, label, counts, total, words]) => {
     const on = (pick ?? "") === k, figure = total == null ? "" : show(total);
-    return `<button class="ptile${on ? " on" : ""}" style="flex-basis: calc(${[...label].length}ch + ${figure.length * 0.6 + 3.2}rem)" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}">`
-      + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span></span>`
+    // a name of up to 12 characters is never cut (splice-lead, Oct 12: "twork" read "tw…" at 3394): its whole width is
+    // the tile's least (.tname.short), so a crowded row wraps before it truncates one; a longer name still gives way first
+    const chars = [...label].length;
+    return `<button class="ptile${on ? " on" : ""}" style="flex-basis: calc(${chars}ch + ${figure.length * 0.6 + 3.2}rem)" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}">`
+      + `<span class="ptop"><span class="tname${chars <= 12 ? " short" : ""}">${esc(label)}</span><span class="ptotal">${figure}</span></span>`
       + `<span class="plamps">${counts.filter(([, n]) => n).map(tlampHtml).join("")}</span></button>`;
   }).join("")}</nav>`;
 }

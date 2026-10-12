@@ -104,10 +104,13 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
 **Upgrading.** `splice upgrade` fetches and verifies the latest release the same way (or one
 version with `--to vX.Y.Z`), stages it beside the current one under
 `~/.local/share/splice/releases/`, waits up to 30 minutes for every head's in-flight turns to finish (`--now` skips
-the wait), repoints the live jar, restarts the daemon and runs doctor. If the wait expires, the
-release stays staged. The live launch shim is replaced to match the jar. An edit to a recorded
+the wait; a count it cannot read is waited out the same 30 minutes and then refused), repoints the live jar, restarts the daemon and runs doctor.
+Before anything stops, the new release's own `doctor` must answer and `check-config` must accept your
+config, so a release that refuses your config is never activated. After the restart, a running compaction is waited
+on for up to ten minutes (`--now` skips that too), and `/health` must report the new version within 15 seconds. If the wait expires, the
+release stays staged in `releases/<version>` and the command exits 1. A second upgrade while one runs is refused. The live launch shim is replaced to match the jar. An edit to a recorded
 release's shim is saved as `splice-launch.edited` beside that release, with its diff printed;
-a flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. It is also recorded as the rollback copy. `splice upgrade --rollback` puts the previous release back; it is kept
+a flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. It is also recorded as the rollback copy. `splice upgrade --rollback` puts the previous release back, waits for in-flight turns the same way, and refuses when that release would refuse your config; it is kept
 until the next successful upgrade. Config and credentials are never touched. 0.3.x has no
 `splice upgrade`: re-run the pinned installer above, then follow
 [the 0.4.0 upgrade notes](CHANGELOG.md#upgrading-from-03x).
@@ -218,7 +221,7 @@ splice sessions       # the Claude Code sessions on this machine, joined to thei
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
 splice wire <head>    # the request bodies a head sent upstream; only once you opt that head in
 splice trace <head>   # a head's full request/response trace from disk (--turn ID, --purge); on for every head
-splice restart        # restart; a supervising systemd unit supplies its own environment
+splice restart        # restart, after waiting for running compactions; --now skips the wait; a supervising systemd unit supplies its own environment
 splice init           # write a starter config with no head; install.sh already runs it
 splice install --all  # (re)link the wrapper commands
 <head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi, claude-muse)
@@ -376,7 +379,7 @@ seen at that moment shows no day, and the daemon log says so once.
 `knobs`: its `value`, the `scope` that set it (default, toml, head, file, env or runtime), its
 `disposition` (`live` takes effect on running sessions, `restart` needs a daemon restart), and
 `editable`. A knob that cannot be changed carries a `read_only_reason`. A head-only knob is set in
-`[heads.<key>.overrides]`, never by `PATCH`. `mirrorReasoning` is pinned false: it reads `restart`, is
+`[heads.<key>.overrides]`: `PATCH /api/config?head=<key>` edits that table (comments kept, backup first), while a `PATCH` without `?head=` refuses it. `mirrorReasoning` is pinned false: it reads `restart`, is
 not editable, and any value written for it, in TOML or by `CLAUDEX_MIRROR_REASONING`, is dropped.
 
 ### A second head on the same provider
@@ -524,9 +527,9 @@ These files hold settings and statistics. Custom compaction instructions and tea
 
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
-| `~/.config/splice/splice.toml` | Your topology: providers, heads, models and ports, and any header values you put in `extra_headers` | Only you (0600): the daemon holds it owner-only at every start, and any `splice.toml.bak-<time>-<hash>` an older splice left beside it | Yours. Written once from a template on first run; `PUT /api/topology` and `splice add` edit it, at its target when it is a link; the fix session a `splice` command offers when a boot refusal lists findings edits it too, after a backup | `TopologyLoader.kt`, `TopologyWriter.kt`, `AddWrite.kt`, `ConfigFixSession.kt` |
+| `~/.config/splice/splice.toml` | Your topology: providers, heads, models and ports, and any header values you put in `extra_headers` | Only you (0600): the daemon holds it owner-only at every start, and any `splice.toml.bak-<time>-<hash>` an older splice left beside it | Yours. Written once from a template on first run; `PUT /api/topology`, `PATCH /api/config?head=<key>` and `splice add` edit it, at its target when it is a link; the fix session a `splice` command offers when a boot refusal lists findings edits it too, after a backup | `TopologyLoader.kt`, `TopologyWriter.kt`, `AddWrite.kt`, `ConfigFixSession.kt` |
 | `~/.splice/state/config-backups/splice.toml.bak-<time>-<hash>` | The bytes of `splice.toml` before a `PUT /api/topology` edit, header values included | Only you (0600) | The ten newest, one per distinct version, the one an edit just made always among them; an edit that fails keeps none. Only names in this shape are splice's: a copy of your own, here or beside `splice.toml`, is never touched. `splice add` keeps no backup. The fix session keeps one copy in the same directory before its first change | `TopologyWriter.kt`, `ConfigFixOffer.kt` |
-| `~/.splice/state/config.json` | Settings changed at runtime with `PATCH /api/config` | Only you (0600) | Until changed | `ConfigService.kt` |
+| `~/.splice/state/config.json` | Settings changed at runtime with `PATCH /api/config` (without `?head=`; the per-command form writes `splice.toml`) | Only you (0600) | Until changed | `ConfigService.kt` |
 | `~/.splice/state/launch-owners/<pid>.json` | Launcher-declared PID, process birth, head, base URL, session/login kind and hook origin; no credentials | Only you (0600), in an owner-only directory | Reaped when the PID is gone, on lookup or a new launch; reused PIDs never validate | `LaunchOwners.kt` |
 | `~/.splice/state/worker-artifacts/<pid>-<birth>/<sha256>.jar` and `archive-*.tmp` | The daemon's exact worker archive, hardlinked when possible and copied otherwise; no session content | Only you, in 0700 directories | While its daemon is alive; dead or reused process identities are reaped when the next runtime boots. A live owner with an unavailable birth is retained. Copy stages are removed after publication or failure | `WorkerArtifactPins.kt` |
 | `~/.splice/state/teams.json` (and `.bak`) | Your teams: their slots, heads, bound sessions and each slot's standing instructions | Only you (0600) | Kept; an archived team is flagged, not deleted. `.bak` is the version before the last write | `TeamStore.kt` |
@@ -575,8 +578,8 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | --- | --- | --- | --- | --- |
 | `~/.local/bin/splice` and one command per head | Links to the launcher | Links only | Until `splice uninstall` | `InstallLinker.kt` |
 | `~/.local/share/splice/splice.jar` and `splice-launch` | The live daemon jar and launch shim; after an upgrade the jar links into the current release | Your umask | Replaced at install or upgrade | `UpgradeLayout.kt`, `UpgradeActivation.kt`, `install.sh` |
-| `~/.local/share/splice/releases/<version>/splice.jar`, `splice-launch` and `splice-launch.edited`; `releases/current`, `releases/previous` and `releases/.upgrade.lock` | Installed release bytes, the current and previous links, an empty upgrade lock, and a changed launcher saved before replacement. A flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. Its live bytes are also recorded as the release's rollback copy | A saved launcher keeps its original permissions; other release files use your umask | The current and previous release; older releases are deleted at each upgrade. The empty lock remains | `UpgradeRelease.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |
-| `~/.local/share/splice/releases/.staging-<pid>/splice.jar` and `splice-launch` | Downloaded release bytes awaiting verification and activation | Your umask | Published as the release directory on success; a failed upgrade removes its stage. An interrupted stage can remain until a later upgrade prunes it | `UpgradeRelease.kt`, `UpgradeLayout.kt` |
+| `~/.local/share/splice/releases/<version>/splice.jar`, `splice-launch` and `splice-launch.edited`; `releases/current`, `releases/previous` and `releases/.upgrade.lock` | Installed release bytes, the current and previous links, an empty upgrade lock, and a changed launcher saved before replacement. A flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. Its live bytes are also recorded as the release's rollback copy | A saved launcher keeps its original permissions; other release files use your umask | The current and previous release; older releases are deleted after each successful upgrade (a rollback deletes none). The empty lock remains | `UpgradeRelease.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |
+| `~/.local/share/splice/releases/.staging-<pid>/splice.jar` and `splice-launch` | Downloaded release bytes awaiting verification and activation | Your umask | Renamed to its release directory once verified, and kept there if the in-flight wait then expires; a failed upgrade removes its stage. An interrupted stage can remain until a later upgrade prunes it | `UpgradeRelease.kt`, `UpgradeLayout.kt` |
 | `~/.local/share/splice/upgrade-runs/<run>/run.json`, `output.log`, `pid` and `exit` | An upgrade started with `POST /api/upgrade`: its arguments, output, process id and exit code | Your umask | The newest 5 runs | `UpgradeRuns.kt`, `SystemdUpgradeLauncher.kt` |
 | The file you name in `splice doctor --json --out <file>` | The doctor report, redacted; with `--with-logs`, a tail of `daemon.log` | Your umask | Yours | `DoctorJsonReport.kt` |
 | `.secure*.tmp` beside an atomically written file | Temporary replacement bytes, including credentials or session content | Only you (0600) | Moved into place on success; removed on handled failure | `SecureFile` |
@@ -643,12 +646,11 @@ calling needs `--enable-auto-tool-choice` and a `--tool-call-parser` for the mod
 Every Claude Code session normally starts its own copy of every stdio MCP server in its config.
 splice starts each such server once, in the daemon, and serves it to every session over
 Streamable HTTP on loopback: each head's `.claude.json` is rewritten to point at the hosted URL
-while your own config file is never edited. A server whose launch line names a working directory, relative path, location flag, existing
-directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`); a hosted
+while your own config file is never edited. A server whose launch line names a working directory, a path that starts with `./` or `../` or contains a slash, a location flag such as `--root`, an existing absolute directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`; a bare file name such as `server.js` is not a path, so that server is hosted); a hosted
 server runs in your home directory, so one that reads its working directory without naming it
 (`mcp-server-git` with no `--repository`) belongs in `mcp_hosting_exclude`;
 `http`/`sse`/`ws` servers pass through untouched. Hosted servers start on first use and are reaped when idle. When a new server would exceed
-`mcpMaxServers` under `[defaults]` (32 by default, or `SPLICE_MCP_MAX_SERVERS`), the longest-idle one is evicted. A crash fails pending calls;
+`mcpMaxServers` under `[defaults]` (32 by default, or `SPLICE_MCP_MAX_SERVERS`), the longest-idle one is evicted; if every server is busy, the new one is refused with "MCP host at capacity". A crash fails pending calls;
 the next call restarts the server. Repeated crashes wait five seconds, doubling to a minute,
 while calls during that wait report the failure. `[daemon] mcp_hosting = false` turns hosting off,
 `mcp_hosting_exclude = ["name"]` keeps named servers per session.
@@ -668,15 +670,20 @@ mcpMaxServers = "64"
 messageEdges = "false"
 ```
 
+These `[defaults]` values are read when the daemon starts, so an edit applies after `splice restart`;
+`PATCH /api/config` changes a running daemon where the knob allows it, and the answer lists what still needs a restart under `restart_required`.
+
 ### Compaction instructions
 
 `[compaction]` in `splice.toml` adds your own instructions to Claude Code's compaction requests,
 globally, per upstream model (`[[compaction.model]]`) or per project directory
-(`[[compaction.project]]`, optionally per model). The most specific scope replaces the others;
-`instructions = ""` opts a scope out. The text rides after Claude Code's own summarizer prompt on
-compaction requests only, so the cached request prefix is byte-identical with and without it. Each
-compaction row in `/api/compact` shows the effective text and where it came from;
-`/api/compaction/instructions` lists the rules in effect by scope, source and length, never the text.
+(`[[compaction.project]]`, optionally per model). Each scope takes inline `instructions` or a `file`.
+The most specific scope replaces the others; `instructions = ""` opts a scope out. The text rides
+after Claude Code's own summarizer prompt, as one block at the end of the last user message, on
+compaction requests only, so everything before that message keeps its bytes and its cache (when that
+message is a plain string, splice first rewrites it as a one-block array). Each compaction row in
+`/api/compact` shows where its text came from, never the text. `/api/compaction/instructions?head=<key>`
+lists every rule configured for that command's models by scope, source and length, never the text.
 
 ### Per-head system prompt
 
@@ -688,9 +695,9 @@ load, as is a file that cannot be read). Absent, or `""`, is exactly today's byt
 Code's own system field, so the client's bytes ride through untouched, every existing
 `cache_control` breakpoint survives, and the prompt cache still hits from turn two.
 `"replace"` substitutes the client's system field and any earlier prompt layers.
-`"strip"` deletes blank-line-separated paragraphs matched by your regex lines; unmatched client
+`"strip"` deletes blank-line-separated paragraphs matched by your regex lines (every non-blank line that does not start with `#` is one regex, and a bad one stops the config loading, so put patterns there, not prose); unmatched client
 bytes and cache breakpoints stay unchanged. splice ships no strip patterns. `splice doctor`
-shows information rows for replace and strip, and warns when strip has no pattern list.
+shows information rows for replace and strip, and warns when a head's strip has no pattern list.
 Each head receives only its own configured prompt layers.
 
 A repository can carry its own prompt too. `[projects."<root>"]` takes the same three keys and

@@ -268,6 +268,10 @@ function fold2(t, e) {
 }
 const uncut = (heads) => heads.every((h) => D.held[h] && !D.held[h].truncated);
 const DRILLS = () => `<span class="drill">${DIMS[nextBy("account")].word}${DOWN}</span>`;
+// As Accounts says it (Oct 12): "No limits reported" only when the provider answered with none, "Not read yet" for a login
+// splice has not asked about, and "Not read" for one whose last reading is gone.
+const limitsWord = (row) => row.no_usage_at_epoch_seconds ? "No limits reported"
+  : !row.observed_at_epoch_seconds ? "Not read yet" : "Not read";
 function plansHtml() {
   const cards = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds)).map((row) => {
     const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
@@ -277,7 +281,7 @@ function plansHtml() {
     const stale = windows.some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null;
     const wins = out ? `<p class="state">Signed out</p>` : windows.length ? `<div class="windows">${windows.map((w) => `<span class="label">${w.label}</span><div class="bar${w.used >= 100 ? " full" : ""}${w.stale ? " stale" : ""}"><b style="width:${Math.min(w.used, 100)}%"></b></div>`
       + `<span class="pct${w.used >= 100 ? " limit" : ""}">${w.used}%<span class="used">used</span></span><span class="when">${w.left != null ? `${ring(w.len, w.left)}Resets ${backWord(new Date(w.resetMs))}` : ""}</span>`).join("")}`
-      + (stale ? `<span class="stale-at">${EYE}Read ${backWord(new Date(stale))}</span>` : "") + `</div>` : `<p class="state">No limits reported</p>`;
+      + (stale ? `<span class="stale-at">${EYE}Read ${backWord(new Date(stale))}</span>` : "") + `</div>` : `<p class="state">${limitsWord(row)}</p>`;
     const heads = row.heads || [];
     const lead = mine.length ? mine[0] : null;
     const ranOut = reading() ? null : D.rows.filter((r) => r.outcome === "error:plan-limit" && r.reset && r.reset - r.ts > 5 * HOUR && mine.some((e) => e.head === r.head && e.label === r.account)).sort((a, b) => a.ts - b.ts)[0];

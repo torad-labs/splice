@@ -146,9 +146,45 @@ public class PerfRowsFileSource internal constructor(
     /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. */
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
+        val stamp = files.stamp()
         val scan = settledRead(sinceMs, PerfSelection.ECONOMICS)
-        return EconomicsPerfEvidence(scan.window(), scan.probes, scan.probeTears)
+        val evidence = EconomicsPerfEvidence(scan.window(), scan.probes, scan.probeTears)
+        if (sharing > 0) shared = stamp?.let { SharedEvidence(sinceMs, it, evidence) }
+        return evidence
     }
+
+    /** The evidence from [sinceMs], whose rows may reach further back: for a reader that looks only at the hours
+     *  from [sinceMs] on. Inside [sharingEvidence] it is the read an earlier ask of the same unchanged files already
+     *  took, its probes and torn lines cut at [sinceMs] as that reader's own read would cut them. */
+    @Synchronized
+    internal fun economicsEvidenceSince(sinceMs: Long): EconomicsPerfEvidence {
+        val earlier = shared?.takeIf { sharing > 0 && sinceMs >= it.sinceMs && files.unchanged(it.stamp) }
+            ?: return economicsEvidence(sinceMs)
+        val read = earlier.evidence
+        return read.copy(
+            probes = read.probes.filter { it.ts >= sinceMs },
+            probeTears = read.probeTears.filter { it == null || it >= sinceMs },
+        )
+    }
+
+    // why: one hourly-totals read asked the log three times (backfill, probe check, reprice), each from its own
+    // oldest hour, and a week of whole rows outgrows the full tier, so each ask decoded the week again: two decodes of
+    // every line in the startup scan (jfr on desk d, Oct 12). Held only while that one read runs, never between reads.
+    // Until it is closed, each economics ask that tolerates an earlier cutoff is answered by the read before it.
+    @Synchronized
+    internal fun sharingEvidence(): AutoCloseable {
+        sharing++
+        return AutoCloseable { synchronized(this) { if (--sharing == 0) shared = null } }
+    }
+
+    private var sharing = 0
+    private var shared: SharedEvidence? = null
+
+    private data class SharedEvidence(
+        val sinceMs: Long,
+        val stamp: PerfSourceStamp,
+        val evidence: EconomicsPerfEvidence,
+    )
 
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
         if (rowsCache.since?.let { sinceMs < it } == true) rowsCache.clear()

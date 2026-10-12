@@ -87,7 +87,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     ): Map<Long, Judged>? {
         val since = fresh.minOf { it.hour }
         if (refusal.stands(since)) return null
-        val read = perf.economicsEvidence(since)
+        val read = perf.economicsEvidenceSince(since)
         val unplaced = read.work.readError == null && read.probeTears.any { it == null }
         refusal.note(before, since, unplaced)
         if (read.work.readError != null || unplaced) return null

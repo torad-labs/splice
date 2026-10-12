@@ -100,7 +100,7 @@ internal class EconomicsReprice(
     private fun exact(from: Long): EconomicsPerfEvidence? {
         if (refusal.stands(from)) return null
         val before = perf.files.stamp()
-        val evidence = perf.economicsEvidence(from)
+        val evidence = perf.economicsEvidenceSince(from)
         val tore = evidence.work.readError == null && evidence.probeTears.any { it == null }
         refusal.note(before, from, tore)
         return evidence.takeIf { it.work.readError == null && !tore }

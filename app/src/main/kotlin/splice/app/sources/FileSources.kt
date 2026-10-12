@@ -103,7 +103,7 @@ public class EconomicsStoreSource(
     /** Read by the console AND trimmed by the save on Settings > Your data, which is why the save
      *  reaches it through this source rather than building a second store over the same file. */
     public val store: EconomicsStore,
-    perfRows: PerfRowsFileSource? = null,
+    private val perfRows: PerfRowsFileSource? = null,
     /** The cards splice holds NOW, which price again the hours whose turns had none when they ran. */
     price: TurnPrice? = null,
     /** How far back this install keeps its history: the edge the backfill may reach back to, read
@@ -119,7 +119,9 @@ public class EconomicsStoreSource(
         price?.let { EconomicsBackfill(rows, it, kept, clock, plans) }
     }
 
-    override fun read(): EconomicsRead {
+    override fun read(): EconomicsRead = perfRows?.sharingEvidence().use { reconciled() }
+
+    private fun reconciled(): EconomicsRead {
         val held = store.read()
         // The hours splice holds the turns for and the rollup has none for are written into the
         // rollup first, so every reader below sees one set of hours and the scan happens once.

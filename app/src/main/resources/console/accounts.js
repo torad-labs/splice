@@ -617,8 +617,10 @@ function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
   const cls = ["card", serves.length ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
   const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}">${GLYPH.grip}</button>` : "";
-  // a default name already starts with the plan ("Max · 1a2b3c4d"), so the plan word beside it would say it twice
-  const sub = a.plan && ui.rename !== spot && !a.row?.label_default ? `<span class="plan">${esc(a.plan)}</span>` : "";
+  // a default name starts with its plan word ("Max", "Max · 1a2b3c4d", later "Max 2"): the tag beside it shows only
+  // when it says more than that word, such as a tier "Max 5x" (fin, Oct 12)
+  const said = a.row?.label_default && String(a.name ?? "").split(/[\s·]/)[0].toLowerCase() === String(a.plan ?? "").trim().toLowerCase();
+  const sub = a.plan && ui.rename !== spot && !said ? `<span class="plan">${esc(a.plan)}</span>` : "";
   // labels only (Oct 12): a login splice named itself offers its one naming here, beside the name, and never blocks
   const nameIt = a.row?.label_default && a.row?.can_rename && ui.rename !== spot
     ? `<button class="act quiet small name-it" data-act="rename" data-s="${spot}">Name it</button>` : "";

@@ -114,6 +114,9 @@ test("a login splice named itself offers Name it beside its name, and a named on
     const unnamed = page.locator(".card", { hasText: `Max · ${REF}` });
     await unnamed.waitFor({ timeout: 15_000 });
     expect(await page.locator(".card", { hasText: "Work" }).locator(".name-it").count()).toBe(0);
+    // the plan tag shows beside a chosen name, and never repeats the plan word a default already starts with (fin)
+    expect(await page.locator(".card", { hasText: "Work" }).locator(".plan").count()).toBe(1);
+    expect(await unnamed.locator(".plan").count()).toBe(0);
     await unnamed.locator(".name-it").click();
     const field = page.locator(".field.rename");
     await field.waitFor({ timeout: 5_000 });

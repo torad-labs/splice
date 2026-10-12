@@ -2,7 +2,8 @@
 //
 // THE ONLY WAY LATEST IS EVER LEARNED IS A TAP. No poll, no schedule: [check] runs when POST /api/upgrade/check calls it,
 // and [snapshot] only reports what the last tap found. A tap reads the release the way `splice upgrade` does (the
-// published sums, the launch shim checked against them, [UpgradeRelease.latest]) and sends no credential.
+// published sums, the launch shim checked against them, [UpgradeRelease.latest]) and sends no credential of splice's own:
+// when `gh` is signed in it also runs `gh attestation verify` on the shim, with gh's login, as the upgrade does.
 //
 // A FAILED READ REPLACES THE SNAPSHOT WITH "not read", never keeps an older answer: a number that was true last week and
 // is shown beside today's date is a guess wearing a measurement's clothes.

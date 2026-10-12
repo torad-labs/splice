@@ -2,8 +2,8 @@
 // authenticated only when the DAEMON's own process environment carried the key — export it after
 // the daemon started and the shell saw it but the daemon did not (the #1 documented setup pain).
 // KeyStore is the file fallback ApiKeyAuthProvider reads after env and any explicit auth.file:
-// `splice key set`, `claude-openrouter login`, or a head's token-capture hook writes here once and every
-// later `splice restart` picks the key up from any shell. Flat `NAME = "value"` subset of TOML —
+// `splice key set`, `claude-openrouter login`, or a head's token-capture hook writes here once and the next
+// request picks the key up from any shell, with no restart (the store is read on every resolve). Flat `NAME = "value"` subset of TOML —
 // we are the only writer, so a tolerant line parser is enough and core stays ktoml-free.
 // Lives in core/config beside the layered config it feeds; the path/env readers stay injectable for
 // hermetic tests (StatePaths idiom — JVM cannot setenv), since kt-no-system-getenv walls every direct read.

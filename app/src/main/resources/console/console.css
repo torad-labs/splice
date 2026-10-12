@@ -541,7 +541,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
   animation: ghost-in .45s var(--e-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
 .card.gcard { padding: 1.1rem 1.3rem 1.2rem; }
 .card.gcard .ghost-lines { gap: .9rem; }
-.ghost-chart { display: flex; align-items: flex-end; gap: .7rem; height: 18rem; padding: 2rem 1.6rem 1.4rem; }
+.ghost-chart { --c: var(--rail); display: flex; align-items: flex-end; gap: .7rem; height: 36rem; /* the loaded chart card is 36rem tall at every width (usage.css .plot plus its header) */ padding: 2rem 1.6rem 1.4rem; }
 .ghost-chart .ghost { flex: 1; height: var(--h); border-radius: .3rem .3rem 0 0; }
 @keyframes ghost-in { from { opacity: 0; transform: translateY(.5rem); } }
 /* its own name: settings.css keeps a "reading" of its own, a sweep, which would carry the bars sideways there */

@@ -15,7 +15,7 @@ KNOBS.wire(root, () => render());
 // ---------- what the daemon says ----------
 const data = { heads: [], topo: null, models: [], projects: [], sessions: [], doctor: null, claude: null, accounts: [], profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
-const ui = { sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
+const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
   logs: {}, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
 async function readAll() {
@@ -43,7 +43,7 @@ const topology = () => data.topo?.topology ?? {};
 function window_(row) { return row?.context_window ?? 0; }
 function commandsOf() {
   const t = topology(), hs = t.heads ?? {}, ps = t.providers ?? {};
-  return data.heads.map((h) => {
+  return data.heads.filter((h) => !ui.gone.has(h.key)).map((h) => {
     const key = h.key, cfg = hs[key] ?? {}, provKey = cfg.provider ?? "", pcfg = ps[provKey] ?? {};
     const row = data.models.find((r) => r.head === key);
     const models = (row?.models ?? []).filter((m) => m.resolved).map((m) => ({
@@ -158,6 +158,39 @@ function draftState(c) {
   return { tiers, ok: TIERS.every((t) => tiers[t].ok), same };
 }
 const logsOf = (key) => ui.logs[key];
+// Remove: two presses, and what stays is said before the second. A command a session is on says who, and each name opens it.
+function removeHtml(c) {
+  const rm = ui.rm?.key === c.key ? ui.rm : null;
+  if (rm?.busy) return `<span class="said">${ICON.wait}Removing</span>`;
+  if (rm?.refused) {
+    const chips = rm.refused.map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}">${esc(x.name || x.id)}</a>`).join("");
+    return `<span class="said limit">In use</span>${chips}<button class="act quiet" data-act="disarm">Close</button>`;
+  }
+  if (rm?.armed) {
+    const stays = [rm.info?.requests ? `${rm.info.requests} requests` : "", rm.info?.sessions ? `${rm.info.sessions} sessions` : ""].filter(Boolean);
+    return (stays.length ? `<span class="said">History stays · ${stays.join(" · ")}</span>` : "")
+      + `<button class="act danger" data-act="remove">Remove ${esc(c.cmd)}</button><button class="act quiet" data-act="disarm">Keep ${esc(c.cmd)}</button>`;
+  }
+  return rm?.failed ? `<span class="said limit">Not removed</span><button class="act quiet" data-act="arm">Remove</button>` : `<button class="act quiet" data-act="arm">Remove</button>`;
+}
+async function armRemove(key) {
+  ui.rm = { key, armed: true, info: null };
+  render();
+  const res = await API.get(`/api/heads/${encodeURIComponent(key)}/removal`);
+  if (ui.rm?.key === key && res.ok) { ui.rm.info = res.body; render(); }
+}
+async function removeCommand(key) {
+  ui.rm = { key, busy: true };
+  render();
+  const res = await API.del(`/api/heads/${encodeURIComponent(key)}`);
+  if (res.status === 409) { ui.rm = { key, refused: res.body?.live_sessions ?? [] }; render(); return; }
+  if (!res.ok) { ui.rm = { key, failed: true }; render(); return; }
+  ui.rm = null;
+  ui.gone.add(key);
+  ui.restartDue = true;
+  Object.assign(ui, { open: null, draft: null, said: null });
+  render();
+}
 function paneHtml() {
   if (ui.add) return addPaneHtml();
   const c = cmdByKey(ui.open);
@@ -167,7 +200,7 @@ function paneHtml() {
   const fix = s?.fix && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key ? `<button class="act primary small" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button>` : "";
   const head = `<header style="--c:${colorOf(c.family)}"><span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span><div class="who"><div class="top"><span class="name">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></div>`
     + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span>${fix}</div>${signHtml(c)}</div>`
-    + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div></header>`;
+    + `<div class="acts">${removeHtml(c)}<button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div></header>`;
   const tierRows = TIERS.map((t) => {
     const sel = d.tiers[t], ts = st.tiers[t];
     const items = [`<button role="menuitem" data-act="tier" data-t="${t}" data-v=""><span>None</span></button>`,
@@ -205,15 +238,16 @@ function parseLog(lines) {
     return m ? { at: m[2], tag: m[3] ?? "", text: m[4], raw } : { at: "", tag: "", text: raw, raw };
   });
 }
+// splice's own lines, by the words the mock's table gives them; a line no word names stays in the raw log.
+// A local runtime is never asked for a list, so its hourly "lists the file it loaded" line is no event.
 const EVENTS = [
-  [/did not answer with (JSON|a model list)|no list was kept/, "Model list not read"],
-  [/model list (read|loaded)|discovered \d+ model/i, "Model list read"],
-  [/signed out|not signed in|login required/i, "Signed out"],
-  [/credentials? (refused|rejected)/i, "Credentials refused"],
-  [/rate.?limited/i, "Rate limited"],
-  [/command not found/i, "Command not found"],
-  [/\b(head )?(started|booted)\b|listening on/i, "Started"],
-  [/\bstopped\b|shut ?down/i, "Stopped"],
+  [/^models: (\d+) listed at /, (m) => `Model list read · ${m[1]} models`],
+  [/^models: .*(HTTP \d{3} from|nothing answers at|no answer within|could not ask|did not answer with)/, () => "Model list not read"],
+  [/signed out|not signed in|login required/i, () => "Signed out"],
+  [/credentials? (refused|rejected)/i, () => "Credentials refused"],
+  [/rate.?limited/i, () => "Rate limited"],
+  [/command not found/i, () => "Command not found"],
+  [/\bstopped\b|shut ?down/i, () => "Stopped"],
 ];
 const REQUEST_LINE = /\b(turn|perf|cache|count_tokens|account|activity|re-anchor|mid-stream)\b|upstream \d+\/\d+/i;
 const ampm = (hms) => { // 8:02 AM, the way a message's time is written; the raw log keeps its seconds
@@ -224,11 +258,12 @@ function eventsOf(lines) {
   const folded = new Map();
   for (const l of lines) {
     if (REQUEST_LINE.test(l.text)) continue;
-    const hit = EVENTS.find(([re]) => re.test(l.text));
+    const hit = EVENTS.map(([re, word]) => [re.exec(l.text), word]).find(([m]) => m);
     if (!hit) continue;
-    const e = folded.get(hit[1]) ?? { text: hit[1], at: l.at, n: 0 };
+    const text = hit[1](hit[0]);
+    const e = folded.get(text) ?? { text, at: l.at, n: 0 };
     e.n += 1; e.at = l.at;
-    folded.set(hit[1], e);
+    folded.set(text, e);
   }
   return [...folded.values()].sort((a, b) => b.at.localeCompare(a.at));
 }
@@ -308,7 +343,7 @@ async function restartSplice() {
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const up = await API.get("/api/heads");
-    if (up.ok) { ui.pending = false; ui.said = "Applied"; ui.draft = null; await readAll(); render(); return; }
+    if (up.ok) { ui.pending = false; ui.restartDue = false; ui.gone.clear(); ui.said = "Applied"; ui.draft = null; await readAll(); render(); return; }
   }
   ui.said = "Not restarted"; render();
 }
@@ -386,13 +421,14 @@ function projectsHtml() {
 // ---------- claude: plain `claude`, through splice or direct ----------
 function claudeHtml() {
   const m = data.claude?.mode;
-  if (!data.claude) return "";
+  if (!data.claude) return ui.restartDue ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
   const through = m === "wrapped";
   const can = Boolean(data.claude.shim_path);
+  const due = ui.restartDue ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
   const said = ui.claudeSaid ? `<span class="said limit">${esc(ui.claudeSaid)}</span>` : "";
   return `<span class="clabel">Your claude command</span><div class="switch" role="group">`
     + `<button data-act="claude" data-v="wrap" aria-pressed="${through}"${can ? "" : " disabled"}>Through splice</button>`
-    + `<button data-act="claude" data-v="unwrap" aria-pressed="${!through}"${can ? "" : " disabled"}>Straight to Anthropic</button></div>${said}`;
+    + `<button data-act="claude" data-v="unwrap" aria-pressed="${!through}"${can ? "" : " disabled"}>Straight to Anthropic</button></div>${said}${due}`;
 }
 async function setClaude(v) {
   const res = await API.post(`/api/claude-head/${v}`);
@@ -616,6 +652,9 @@ function onClick(e) {
     case "savekey": saveKey(); break;
     case "cancel-key": ui.keyin = null; render(); break;
     case "cancel-signin": if (a?.sign) { a.sign = null; a.busy = false; } else ui.sign = null; render(); break;
+    case "arm": armRemove(ui.open); break;
+    case "disarm": ui.rm = null; render(); break;
+    case "remove": removeCommand(ui.open); break;
     case "tierpick": ui.pick = ui.pick === `tier:${d.t}` ? null : `tier:${d.t}`; render(); break;
     case "tier": {
       const c = cmdByKey(ui.open), m = c.models.find((x) => x.id === d.v);

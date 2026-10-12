@@ -201,3 +201,7 @@
 .rawlog li { display: block; }
 .said .wait { width: 1.3rem; height: 1.3rem; vertical-align: middle; margin-right: .5rem; }
 .said .wait circle { stroke: var(--live); }
+
+/* Remove: the acts in the pane's head read in one row, History stays beside the armed act */
+.pane > header .acts { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; justify-content: flex-end; }
+.pane > header .acts .chip { text-decoration: none; }

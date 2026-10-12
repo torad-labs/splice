@@ -51,10 +51,11 @@ private class ProgressSink(private val recorded: RecordingSink = RecordingSink()
         recorded.calls.add("signature#${index.value}:$signature")
     }
 
-    /** Nothing a client renders: no block was opened, written to, signed or closed for the script. */
+    /** Nothing a client renders: no block was opened, written to or signed for the script. The turn-end closeAll sweep
+     *  is not counted: with no block open it writes nothing. */
     fun assertNothingShown() {
         assertEquals(emptyList<String>(), calls.filter { it.startsWith("think") || it.startsWith("openThinking") })
-        assertEquals(emptyList<String>(), calls.filter { it.startsWith("signature") || it.startsWith("close") })
+        assertEquals(emptyList<String>(), calls.filter { it.startsWith("signature") })
     }
 }
 

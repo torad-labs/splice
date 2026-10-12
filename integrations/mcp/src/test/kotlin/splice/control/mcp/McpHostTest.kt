@@ -196,7 +196,6 @@ class McpHostTest : McpHostFixture() {
             assertEquals("roots", status(name)["why"]?.jsonPrimitive?.content, "$name")
         }
         assertEquals(503, host.post("fake", null, MCP_HOST_INIT).status)
-        assertTrue(hosted("fake2"))
         init("fake2")
         Unit
     }

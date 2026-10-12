@@ -168,7 +168,7 @@ async function readWindow() {
   const reading = new Set([...D.scoped.reading, ...D.all.reading, ...D.every.reading]);
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
-    if (!rows[i].ok || !answer || answer.error) { if (!D.errors.includes(a.h.command)) D.errors.push(a.h.command); return; }
+    if (!rows[i].ok || !answer || answer.error) { console.warn(`${a.h.command}: ${answer?.error ?? rows[i].status}`); if (!D.errors.includes(a.h.command)) D.errors.push(a.h.command); return; }
     if (answer.read_pending) { pending = true; reading.add(a.h.key); return; }
     const had = D.held[a.h.key];
     D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
@@ -468,7 +468,9 @@ function projectFigures() {
 }
 // Each command whose week is still being read says so in its own place, its share of every figure below still to come, so a
 // half-read week never reads as the whole week (marlin, Oct 12)
-const readingHtml = () => `<p class="reading">${[...(D.reading ?? [])].map((h) => `<span class="rd">${chip(h)}${GHOST.bar(5)}</span>`).join("")}<span class="why">Still reading these commands. Their requests are not in the figures yet.</span></p>`;
+// a command that could not be read: its chip and Not read, the cause in the console (fin, Oct 12)
+const notReadHtml = () => `<p class="reading">${D.errors.map((cmd) => S.heads.find((h) => h.command === cmd)?.key).filter(Boolean).map(chip).join("")}<span class="why">${NOT_READ}</span></p>`;
+const readingHtml = () => `<p class="reading">${[...(D.reading ?? [])].map((h) => `<span class="rd">${chip(h)}${GHOST.bar(5)}</span>`).join("")}<span class="why">Not counted yet</span></p>`;
 function render() {
   tick();
   document.getElementById("pickline").innerHTML = pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
@@ -480,7 +482,7 @@ function render() {
   // table, and a card in the money band until the plans and keys arrive (Marcos, Oct 12)
   const waiting = reading();
   const money = plansHtml() + keysHtml();
-  const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? readingHtml() : "";
+  const note = waiting ? "" : (D.errors.length ? notReadHtml() : "") + (D.pending ? readingHtml() : "");
   root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${PERF_HEADS.html()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never

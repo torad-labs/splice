@@ -35,6 +35,13 @@ public fun interface DaemonRestart {
     public operator fun invoke(): Boolean
 }
 
+/** What a user-managed local runtime at [baseUrl] reports as the window of each row in [ids] it serves, read from the
+ *  runtime's own answer (Ollama's /api/show and /api/ps, LM Studio's /api/v0/models), which a plain /v1/models leaves
+ *  out. A row it does not report is absent; nothing answering is an empty map. */
+public fun interface LocalWindows {
+    public operator fun invoke(baseUrl: String, ids: Set<String>): Map<String, Long>
+}
+
 /** The result of checking the newly written command, without exposing its raw output. */
 public data class AddLiveResult(public val ok: Boolean, public val detail: String)
 

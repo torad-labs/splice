@@ -11,8 +11,13 @@ import java.nio.file.Path
 
 /** `splice add <profile>`. [output] takes every line the verb prints; [errors] only what resolving the
  *  control port says about a splice.toml that does not load. */
-public class AddVerb(output: TerminalOutput, errors: TerminalOutput, ports: AddPorts) {
-    private val command = AddCommand(output, errors, AddChecks(output), ports)
+public class AddVerb(
+    output: TerminalOutput,
+    errors: TerminalOutput,
+    ports: AddPorts,
+    localWindows: LocalWindows = LocalWindows { _, _ -> emptyMap() },
+) {
+    private val command = AddCommand(output, errors, AddChecks(output, localWindows = localWindows), ports)
     private val runtime = RuntimeHeadAdd(output, command)
 
     /** True when the head was saved and is reachable as printed; false leaves splice.toml unchanged

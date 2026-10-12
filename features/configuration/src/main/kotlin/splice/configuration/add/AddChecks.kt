@@ -57,10 +57,23 @@ internal sealed class ListedModels {
     /** The dialect has a list but splice holds no credential of its own to ask for it with. */
     data object NoCredential : ListedModels()
     data class Listed(val ids: List<String>, val windows: Map<String, Long> = emptyMap()) : ListedModels()
+
+    /** These windows with a local runtime's own [served] ones over them: Ollama and LM Studio leave the window out of
+     *  /v1/models, so without them every local row read "unchecked" (splice-providers' spec pass, Oct 12). */
+    fun withServed(served: Map<String, Long>): ListedModels = if (served.isEmpty()) {
+        this
+    } else {
+        val known = this as? Listed ?: Listed(emptyList())
+        known.copy(windows = known.windows + served)
+    }
 }
 
 /** [output] takes the one line an unreadable credential file raises (CredentialPresence, DR-70). */
-internal class AddChecks(output: TerminalOutput, private val http: AddHttp = JdkAddHttp()) {
+internal class AddChecks(
+    output: TerminalOutput,
+    private val http: AddHttp = JdkAddHttp(),
+    private val localWindows: LocalWindows = LocalWindows { _, _ -> emptyMap() },
+) {
     private val json = Json { ignoreUnknownKeys = true }
     private val presence = CredentialPresence(output)
     private val credentialFile = AddCredentialFile(json)
@@ -79,11 +92,12 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             env
         }
         val listed = listedModels(c.provider, c.key, checkEnv)
+        val served = { p: ProviderConfig -> localWindows(p.baseUrl, p.models.map { row -> row.id }.toSet()) }
         return listOf(
             credential(c, env),
             reachable(c.provider.baseUrl),
             modelsListed(c.models, listed, c.resolved.policy.listAuthoritative),
-            modelWindows(c.provider.models, listed),
+            modelWindows(c.provider.models, if (local) listed.withServed(served(c.provider)) else listed),
         ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null)
     }
 

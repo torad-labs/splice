@@ -6,6 +6,7 @@ package splice.app
 import splice.app.auth.AddSignInSessions
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
+import splice.app.provider.JdkLocalHttp
 import splice.configuration.add.AddConsole
 import splice.configuration.add.AddDoctor
 import splice.configuration.add.AddLinked
@@ -18,6 +19,7 @@ import splice.configuration.add.AddPrompter
 import splice.configuration.add.AddVerb
 import splice.configuration.add.DaemonRestart
 import splice.configuration.add.DaemonUpProbe
+import splice.configuration.add.LocalWindows
 import splice.configuration.add.WrapperInstall
 import splice.core.config.InstallPaths
 import splice.core.terminal.TerminalOutput
@@ -31,6 +33,7 @@ import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
 import splice.terminal.TerminalMode
+import splice.upstream.local.LocalRuntimeProbe
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -59,6 +62,7 @@ internal object AddWiring {
             liveTurn = CommandLiveTurn(),
             doctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
         ),
+        localWindows = RuntimeWindows(),
     )
 
     /** V4-220 item 3: `splice add` as the console runs it — its own sign-in sessions, the wrapper linked
@@ -71,6 +75,7 @@ internal object AddWiring {
             install = LinkerInstall(InstallCommand(lines, lines)),
             env = EnvReader(System::getenv),
             output = lines,
+            localWindows = RuntimeWindows(),
         )
     }
 
@@ -78,6 +83,19 @@ internal object AddWiring {
         SelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out),
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out),
     )
+}
+
+/** The local runtime's own window per row, asked through the probe the boot check uses (LocalProbeInputs), so `splice add`
+ *  and boot read one answer: the served window when the runtime reports one, else an Ollama card's ceiling. */
+internal class RuntimeWindows : LocalWindows {
+    override fun invoke(baseUrl: String, ids: Set<String>): Map<String, Long> {
+        val probe = LocalRuntimeProbe(baseUrl, JdkLocalHttp())
+        val listed = probe.detect()?.let { runtime -> probe.models(runtime, ids) }.orEmpty()
+        return ids.mapNotNull { id ->
+            val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
+            (model?.contextLength ?: model?.ceiling)?.takeIf { it > 0 }?.let { id to it }
+        }.toMap()
+    }
 }
 
 /** V4-255: the install verb as the add's wrapper seam, for the CLI and the console alike. A refusal is the linker's own

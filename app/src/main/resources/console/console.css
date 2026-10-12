@@ -490,6 +490,8 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
    project at once, on Sessions, Teams and Requests (kit tilesHtml, tilesWide) ---------- */
 #ptiles { margin: 0 0 2.6rem; }
 .ptiles { display: flex; flex-wrap: wrap; gap: 1rem; }
+/* a removed command's name in a menu, with its one muted word (kit REMOVED_TAG) */
+.rtag { margin-left: .7rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 /* each tile at least its content, the rest of the row shared equally: a 4-digit total beside three lamps never spills */
 /* a tile alone on a wrapped line stops at 40rem, never the page's width with its total at the far end (splice-lead,
    Oct 12: "No project" across 3828); a row of twelve shares about 15rem a tile, so a full row never reaches it */

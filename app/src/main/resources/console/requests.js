@@ -5,6 +5,8 @@
 //
 // WHERE EVERY VALUE COMES FROM.
 //   GET /api/heads · /api/models            the commands, each one's provider, and its models' own labels
+//   GET /api/heads/retired                  the commands removed from Models, each its key and name: their requests stay
+//                                           listed and findable ("History stays", Marlin), though no trace answers
 //   GET /api/perf/turns?head=…              one head's window of requests, filtered BY THE DAEMON (TurnsFilter.kt):
 //                                           since, n, outcome, model, account, session, unattributed, local, compact
 //                                           (always local=0: a code-mode step posts nothing upstream and is no request,
@@ -188,12 +190,14 @@ const inPick = (r) => !ui.project || rowProjKey({ project: rowProject(r) }) === 
 // ---------- reading splice ----------
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
 async function readStanding() {
-  const [heads, models, sessions, keys, topology] = await Promise.all([
+  const [heads, models, sessions, keys, topology, retired] = await Promise.all([
     API.get("/api/heads"), API.get("/api/models"), API.get("/api/sessions"), API.get("/api/keys"), API.get("/api/topology"),
+    API.get("/api/heads/retired"),
   ]);
   state.error = heads.ok ? null : LIST_NOT_READ;
   if (!heads.ok) console.warn(`commands: ${refusalOf(heads, "no answer")}`);
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
+  state.heads.push(...retiredHeads(retired, state.heads));
   // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called:
   // his own model servers and the tunnel to a rented GPU both answer at 127.0.0.1 (splice.toml base_url), and both
   // draw in the one colour the kit gives a local provider. The address is the fact; the name is not.
@@ -214,9 +218,10 @@ async function readStanding() {
     state.sessions[String(s.session_id).slice(0, 8)] = s; // a perf row names its session by its first eight characters
   }
   // the projects in Sessions' order, ranked by the same reading of the same live turns (kit rowLook)
-  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
+  const running = state.heads.filter((h) => !h.retired); // a removed command runs nothing and keeps no capture setting
+  const lives = await Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
   const turns = {};
-  state.heads.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
+  running.forEach((h, i) => { for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) turns[t.session] = { head: h.key, ...t }; });
   state.groups = projectGroups(sessions.body?.sessions || [], turns, state.heads);
   ui.project = reconcilePick(ui.project, state.groups);
   // Each key splice has seen under a variable, by the account label a request row carries: the one in use now and
@@ -236,12 +241,12 @@ async function readStanding() {
   // Whether each command is saving prompts and answers NOW, and for how long it keeps them: the setting's own figure,
   // per command, never a cut this page made up. The files outlive the knob, so a command switched off still has the
   // days it recorded, and this says which state a request with no records is in.
-  const caps = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/capture`)));
-  state.heads.forEach((h, i) => {
+  const caps = await Promise.all(running.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/capture`)));
+  running.forEach((h, i) => {
     const body = caps[i].ok ? caps[i].body : null;
     if (body) state.capture[h.key] = { on: body.enabled === true, days: body.retention_days ?? null };
   });
-  const days = uniq(state.heads.map((h) => state.capture[h.key]?.days).filter((d) => d != null));
+  const days = uniq(running.map((h) => state.capture[h.key]?.days).filter((d) => d != null));
   state.traceDays = days.length === 1 ? days[0] : null; // one figure to say only when every command agrees on it
   const cfg = await API.get("/api/config");
   state.config = cfg.ok ? cfg.body : null;
@@ -450,7 +455,7 @@ function mapHit(head, hit) {
 /** The search over what was sent and what came back, one head at a time, each saying how far back it read. */
 async function readSearch() {
   if (ui.q.length < SEARCH_MIN) { state.search = null; return; }
-  const heads = askedHeads();
+  const heads = askedHeads().filter((h) => !h.retired); // no trace answers for a removed command (TraceRoute: unknown head)
   const q = encodeURIComponent(ui.q);
   const reads = await Promise.all(heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/trace/search?q=${q}&since=${since()}&limit=100`)));
   const hits = [], errors = [];
@@ -488,11 +493,12 @@ function searched() {
   }
   // an agent is searched for by its name too: every request of a session whose name holds the words (Marlin's walk:
   // "infra" read No match with infra's rows in the list), and a request by the ending its row shows: "restart" finds
-  // "splice restarted", "given up" finds Given up (walk p180: both walkers scrolled twenty screens for Saturday's restart)
+  // "splice restarted", "given up" finds Given up (walk p180: both walkers scrolled twenty screens for Saturday's restart).
+  // And by its command's name, so a removed command's requests are found by the name he removed (Marlin's Models walk).
   const q = ui.q.toLowerCase();
-  for (const r of state.rows) {
-    if (!seen.has(r.id) && (state.sessions[r.sid]?.name?.toLowerCase().includes(q) || outcomeOf(r).word.toLowerCase().includes(q))) out.push(r);
-  }
+  const named = (r) => state.sessions[r.sid]?.name?.toLowerCase().includes(q) || r.cmd.toLowerCase().includes(q)
+    || outcomeOf(r).word.toLowerCase().includes(q);
+  for (const r of state.rows) if (!seen.has(r.id) && named(r)) out.push(r);
   return out;
 }
 
@@ -539,7 +545,7 @@ function pickBtn(key, label, on) {
 function menuHtml(key) {
   const item = (v, label, cur, extra = "") => `<button role="menuitemradio" aria-checked="${cur}" data-act="set" data-m="${key}" data-v="${esc(v)}">${extra}${label}</button>`;
   if (key === "win") return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}</div>`;
-  if (key === "cmd") return `<div class="menu fmenu" role="menu">${item("", "Every command", !ui.cmd)}${state.heads.map((h) => item(h.command, esc(h.command), ui.cmd === h.command, `<i class="blot" style="--c:${colorOf(state.providerOf[h.key])}"></i>`)).join("")}</div>`;
+  if (key === "cmd") return `<div class="menu fmenu" role="menu">${item("", "Every command", !ui.cmd)}${state.heads.map((h) => item(h.command, esc(h.command) + (h.retired ? REMOVED_TAG : ""), ui.cmd === h.command, `<i class="blot" style="--c:${colorOf(state.providerOf[h.key])}"></i>`)).join("")}</div>`;
   // the requests splice couldn't put a model or an account on (unattributed=model|account, TurnsFilter.kt)
   if (key === "model") return `<div class="menu fmenu" role="menu">${item("", "Every model", !ui.model)}${state.facets.models.map(([id, label]) => item(id, esc(label), ui.model === id)).join("")}${item("none", "No model", ui.model === "none")}</div>`;
   if (key === "account") { // an account on two commands is two accounts: a key's own variable and day, a plan's label

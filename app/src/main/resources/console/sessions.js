@@ -5,6 +5,8 @@
 //   GET  /api/sessions                      each session as its client registered it: status, what it waits for,
 //                                           whether it still runs, its folder, its command, its team
 //   GET  /api/heads · /api/models           the commands, the provider each runs on and its models' names
+//   GET  /api/heads/retired                 the commands removed from Models: a session on one still reads its name,
+//                                           and a search for that name finds it ("History stays", Marlin)
 //   GET  /api/heads/{head}/turns/live       the turns running now, by session: the one Stop ends and the model it runs
 //   GET  /api/sessions/{id}/transcript      the conversation, newest first, with the cursor to the page before it
 //   POST /api/heads/{head}/turns/{id}/stop  Stop, for a session splice did not open
@@ -20,7 +22,7 @@
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
-const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
+const state = { rows: [], heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
 const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
@@ -37,10 +39,13 @@ function refusalOf(answer, fallback) {
 // ---------- reading ----------
 async function read() {
   tick();
-  const [sessions, heads, models] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models")]);
+  const [sessions, heads, models, retired] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"),
+    API.get("/api/heads/retired")]);
   state.reading = sessions.body?.reading !== false; // off: no question text, no choices, answered in the terminal
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
+  // kept apart from the live commands: nothing runs on a removed one, so Stop, a move and the live reads never ask it
+  state.retired = retiredHeads(retired, state.heads);
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = PROVIDER_FAMILY[row.provider] ?? row.provider;
     learnModels(state.modelLabel, row);
@@ -77,7 +82,8 @@ const UNPLACED = "unknown head";
 // "direct", the spec's word for it (Reading, Oct 10), never "unknown head" (splice-lead, Oct 11: the telegram bridge)
 const DIRECT = "direct";
 const QUIET = new Set([UNPLACED, DIRECT]);
-const commandOf = (head) => state.heads.find((h) => h.key === head)?.command ?? (head === UNPLACED ? head : null);
+const commandOf = (head) => (state.heads.find((h) => h.key === head) ?? state.retired.find((h) => h.key === head))?.command
+  ?? (head === UNPLACED ? head : null);
 const cmdOf = (row) => (row.route === DIRECT ? DIRECT : commandOf(row.head));
 const folderOf = (row) => (row.repo?.root || row.cwd || "").split("/").filter(Boolean).pop() || "";
 
@@ -562,11 +568,12 @@ function open(id) {
 async function readUsage(s) {
   const from = new Date(); from.setHours(0, 0, 0, 0);
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const reads = await Promise.all(state.heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
+  const heads = [...state.heads, ...state.retired]; // a removed command's requests today are still the session's
+  const reads = await Promise.all(heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
     head: h.key, since: String(+from), time_zone: zone, n: "1", local: "0", session: s.id.slice(0, 8) })}`)));
   let seen = false; const used = { requests: 0, tin: 0, tout: 0, noIn: 0, noOut: 0, cost: 0, priced: 0, plan: 0, noPrice: 0, from: +from };
   reads.forEach((r, i) => {
-    const t = (r.body?.heads || []).find((x) => x.key === state.heads[i].key)?.usage?.totals;
+    const t = (r.body?.heads || []).find((x) => x.key === heads[i].key)?.usage?.totals;
     if (!t) return;
     seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0;
     used.noIn += t.missing_input_requests || 0; used.noOut += t.missing_output_requests || 0;

@@ -35,6 +35,18 @@ const PROVIDER_FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai:
 // A provider splice has no colour for draws in the muted text colour rather than in another provider's.
 const colorOf = (provider) => `var(${COLORS[provider] || "--text-mute"})`;
 
+// ---------- a command removed from Models (marlin's ruling: "History stays" must mean findable) ----------
+/** The commands /api/heads/retired lists, as heads beside the live ones: key and name, marked retired, with no
+ *  provider (so the muted colour). A key /api/heads still names wins: re-adding a removed command drops its record
+ *  only at the daemon's next start (builder3, 4e93eb2a3). A daemon that cannot answer leaves the list as it is. */
+function retiredHeads(res, live) {
+  if (!res.ok) { console.warn(`removed commands: ${res.status || "no answer"}`); return []; }
+  return (res.body?.retired || []).filter((r) => r.key && !live.some((h) => h.key === r.key))
+    .map((r) => ({ key: r.key, command: r.command || r.key, reanchorMs: null, retired: true }));
+}
+/** Beside a removed command's name in a menu: one muted word. */
+const REMOVED_TAG = `<span class="rtag">Removed</span>`;
+
 // ---------- what to call a model ----------
 /** How a request's row spells the model it ran on: the declared id without its trailing tier hint, the
  *  `[<digits><k|m>]` grammar ModelTierSuffix owns (DR-27). splice sends the stripped id upstream and records

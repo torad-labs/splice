@@ -7,6 +7,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -50,11 +51,13 @@ public class PerfPayloads(
             put("window", window.label)
             putJsonArray(HEADS) {
                 heads.all().forEach { m ->
-                    val read = windowOf(m.sinks.perfRows, now - window.ms)
+                    val mine = mutableListOf<Long>()
+                    val folded = foldHead(m.sinks.perfRows, window, now, mine)
+                    firstBytes += mine
                     addJsonObject {
                         put(KEY, m.key)
                         put(LABEL, m.label)
-                        summary.json(read, window, now, firstBytes).forEach { (k, v) -> put(k, v) }
+                        folded.forEach { (k, v) -> put(k, v) }
                     }
                 }
             }
@@ -65,10 +68,21 @@ public class PerfPayloads(
     // why: a week of rows is hundreds of MB of file, and the full-row tier holds 16 MiB of it, so reading the summary's
     // window through window() decoded the rest again on every call (desk c: 21 s warm). The compact tier the turns
     // route reads holds every row of the window, so the summary folds that and a second call reads nothing new.
-    private fun windowOf(source: PerfRowsSource?, sinceMs: Long): PerfRowsWindow = when (source) {
-        null -> PerfRowsWindow(emptyList())
-        is ProjectedPerfRowsSource -> source.projected(sinceMs) { it.window }
-        else -> source.window(sinceMs)
+    private fun foldHead(
+        source: PerfRowsSource?,
+        window: PerfWindow,
+        now: Long,
+        firstBytes: MutableList<Long>,
+    ): JsonObject {
+        val since = now - window.ms
+        return when (source) {
+            null -> summary.json(PerfRowsWindow(emptyList()), window, now, firstBytes)
+            is ProjectedPerfRowsSource -> source.projected(since) {
+                firstBytes.clear()
+                summary.json(it.window, window, now, firstBytes)
+            }
+            else -> summary.json(source.window(since), window, now, firstBytes)
+        }
     }
 
     // {heads:[{key,label,count,stages:{<field>:{count,p50,p95,max}}}]} — fields are the TurnPerf

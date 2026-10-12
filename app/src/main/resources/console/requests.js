@@ -818,7 +818,10 @@ function framesOf(text, transport) {
 
 // A LINK IS THERE ONLY ONCE ITS PAGE IS (Marlin, Oct 10), and the kit's PAGES is the one place that knows: this draws
 // the moment Sessions lands and not an hour before, so it is never a 404 with an empty body.
-const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.html")
+// A session Sessions no longer lists has no door: its transcript is gone, and the door would open on nothing (Marlin,
+// Oct 12). A list that could not be read says nothing either way, so the door stays.
+const listed = (sid) => state.sessionsError != null || Boolean(state.sessions[sid] ?? state.sessions[String(sid).slice(0, 8)]);
+const openSession = (r) => (r.sid && listed(r.sid) && PAGES.some(([file]) => file === "sessions.html")
   ? `<a class="act" href="sessions.html#${esc(r.sid)}">Open session</a>` : "");
 
 function paneHtml() {

@@ -23,7 +23,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
+const ui = { open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
@@ -108,13 +108,16 @@ function sessionOf(row) {
   };
 }
 
+const NOT_READ = "Not read";
 /** The conversation, from its newest messages; Show earlier reads the page before. */
 async function readLog(s, before = "end") {
   const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?before=${encodeURIComponent(before)}&limit=200`);
   const held = state.logs[s.id];
   if (!res.ok) {
-    state.logs[s.id] = held && before !== "end" ? { ...held, error: refusalOf(res, "The earlier messages could not be read") }
-      : { messages: null, error: res.status === 404 ? null : refusalOf(res, "The conversation could not be read") };
+    // gone reads No transcript and a failed read Not read; the daemon's own words go to the console, never the page (fin)
+    if (res.status !== 404) console.warn(refusalOf(res, "The conversation could not be read"));
+    state.logs[s.id] = held && before !== "end" ? { ...held, error: NOT_READ }
+      : { messages: null, error: res.status === 404 ? null : NOT_READ };
   } else if (res.body?.state === "off") {
     state.logs[s.id] = { messages: null, off: true }; // reading off: splice does not read his conversations
   } else {
@@ -469,7 +472,7 @@ function jointHtml(mv) {
 
 function paneHtml() {
   const s = state.rows.find((x) => x.id === ui.open);
-  if (!s) return "";
+  if (!s) return ui.missing ? missingHtml(ui.missing) : "";
   const L = movingLook(s) || look(s);
   const stop = stopHtml(s, "act", ICON.stop);
   const cont = movable(s) ? (ui.moving.has(s.id) ? `<button class="act stopping" disabled>${ICON.wait}Moving</button>`
@@ -481,6 +484,14 @@ function paneHtml() {
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
     + `<div class="acts">${stop}${cont}${close}</div></header>${failedHtml(s, failed, true)}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
+}
+
+// A door to a session splice no longer lists, by link or address: its pane says No transcript where the log would be,
+// and nothing else, since nothing about it can be read (Marlin, Oct 12; fin's word).
+function missingHtml(id) {
+  const close = `<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`;
+  return `<section class="pane missing" aria-label="Session"><header><div class="who"><div class="top"><span class="name">Session ${esc(String(id).slice(0, 8))}</span></div></div>`
+    + `<div class="acts">${close}</div></header><div class="log"><p class="empty">No transcript</p></div></section>`;
 }
 
 /** The choice on a permission's screen that refuses it ("No, and tell Claude what to do differently"), or null. */
@@ -510,7 +521,7 @@ function render({ stick = true, slide = false } = {}) {
   const oldLog = root.querySelector(".log"), keep = oldLog && !stick ? oldLog.scrollTop : null;
   // the five-second read redraws the page: the Message field keeps his focus and caret through it
   const say = document.activeElement?.id === "say" ? document.activeElement : null, caret = say ? [say.selectionStart, say.selectionEnd] : null;
-  root.className = `sessions${ui.open ? " open" : ""}`;
+  root.className = `sessions${ui.open || ui.missing ? " open" : ""}`;
   ui.grouped = grouped(); // before anything draws: the cards and the pane read it, and one session has one name on every page
   ui.wide = ui.grouped && !state.loading && tilesWide();
   const tiles = document.getElementById("ptiles");
@@ -521,7 +532,7 @@ function render({ stick = true, slide = false } = {}) {
   const field = root.querySelector("#say");
   if (field && (caret || ui.focusSay)) { field.focus(); if (caret) field.setSelectionRange(...caret); ui.focusSay = false; }
   // the conversation he opened is in the address, on the door Teams and Requests use, so Back returns to it
-  const addr = ui.open && !ui.auto ? `#${ui.open}` : "";
+  const addr = ui.open && !ui.auto ? `#${ui.open}` : ui.missing ? `#${ui.missing}` : "";
   if (location.hash !== addr) history.replaceState(history.state, "", `${location.pathname}${location.search}${addr}`);
   const log = root.querySelector(".log");
   if (log) log.scrollTop = keep ?? log.scrollHeight;
@@ -556,7 +567,7 @@ document.addEventListener("focusout", () => setTimeout(holdList));
 const find = (id) => state.rows.find((s) => s.id === id);
 
 function open(id) {
-  ui.open = id;
+  ui.open = id; ui.missing = null;
   render();
   const s = find(id);
   if (s && !state.logs[id]) readLog(s);
@@ -846,7 +857,7 @@ document.addEventListener("click", (e) => {
     case "fold": { const p = el.dataset.p; ui.shut.has(p) ? ui.shut.delete(p) : ui.shut.add(p); remember("splice.shut", ui.shut); render({ stick: false }); break; }
     case "rest": { const p = el.dataset.p; ui.rest.has(p) ? ui.rest.delete(p) : ui.rest.add(p); remember("splice.rest", ui.rest); render({ stick: false }); break; }
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
-    case "close": ui.open = null; ui.auto = false; render(); break;
+    case "close": ui.open = null; ui.missing = null; ui.auto = false; render(); break;
     case "stop": if (s) stop(s); break;
     case "menu": if (s) openChoices(s); break;
     case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
@@ -872,7 +883,7 @@ function autoOpen() {
   if (top) open(top.id);
 }
 addEventListener("resize", () => {
-  if (!wide() && ui.auto) { ui.open = null; ui.auto = false; render({ stick: false }); } else if (wide() && !ui.open) autoOpen();
+  if (!wide() && ui.auto) { ui.open = null; ui.auto = false; render({ stick: false }); } else if (wide() && !ui.open && !ui.missing) autoOpen();
   else render({ stick: false });
 });
 
@@ -892,9 +903,10 @@ const door = location.hash.slice(1);
 render();
 read().then(() => {
   ui.open = find(door)?.id ?? null; // a member card on Teams, or Open session on Requests, opens it here
+  ui.missing = door && !ui.open ? door : null; // one splice no longer lists says so in the pane, never an empty page
   if (ui.open && find(ui.open).state === "ended") ui.ended = true; // a door to an ended session shows it among the ended
   render();
-  if (ui.open) open(ui.open); else autoOpen();
+  if (ui.open) open(ui.open); else if (!ui.missing) autoOpen();
 });
 // what a session is doing changes on its own clock: the list is read again while the page is open
 setInterval(() => { if (!document.hidden) reload(); }, 5000);

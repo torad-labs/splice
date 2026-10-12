@@ -3,6 +3,7 @@ package splice.sessions.projects
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
+import splice.core.config.UserHome
 import splice.sessions.http.SessionSettings
 import splice.sessions.registry.ProjectRef
 import splice.sessions.registry.ProjectResolver
@@ -28,8 +29,20 @@ public class SessionProjects(private val settings: SessionSettings) {
     /** The Projects folders saved in settings (global), as written. */
     public fun folders(): List<String> = settings.projectFolders(null)
 
-    /** Writes `project` on a row when the session has one. */
+    /** Writes `project` on a row when the session has one, and `place` whenever it has a working directory:
+     *  the folder as a person writes it from home (`~/notes`), or the absolute path outside home. */
     public fun put(row: JsonObjectBuilder, record: SessionRecord) {
         of(record)?.let { row.put("project", ProjectWire.json(it)) }
+        record.process.cwd?.let { row.put("place", place(it)) }
+    }
+
+    /** [cwd] with the home folder written as `~`. */
+    public fun place(cwd: String): String {
+        val home = UserHome.dir().toString()
+        return when {
+            cwd == home -> "~"
+            cwd.startsWith("$home/") -> "~" + cwd.removePrefix(home)
+            else -> cwd
+        }
     }
 }

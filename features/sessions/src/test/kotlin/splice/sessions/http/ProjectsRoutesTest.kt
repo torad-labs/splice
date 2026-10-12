@@ -20,6 +20,7 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionProjectConfig
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.turn.noRequestUsage
@@ -390,6 +391,17 @@ class ProjectsRoutesTest {
 
     private fun projectOnRow(sessions: SessionsRoutes) =
         rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER).getValue("project").jsonObject
+
+    @Test
+    fun `the row says where the session is from home, and the whole path outside it`() {
+        val row = { sessions: SessionsRoutes ->
+            rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER)
+        }
+        val inHome = UserHome.within(tmp.toRealPath()) { row(foldersOver(tmp.toRealPath())) }
+        assertEquals("~/repo", inHome.getValue("place").jsonPrimitive.content)
+        val elsewhere = UserHome.within(tmp.toRealPath().resolve("other")) { row(foldersOver(tmp.toRealPath())) }
+        assertEquals(tmp.toRealPath().resolve("repo").toString(), elsewhere.getValue("place").jsonPrimitive.content)
+    }
 
     @Test
     fun `with a Projects folder the session row names the folder directly under it`() {

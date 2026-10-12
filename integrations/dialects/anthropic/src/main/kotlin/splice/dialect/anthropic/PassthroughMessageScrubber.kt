@@ -61,6 +61,11 @@ private const val SIGNATURE_FIELD = "signature"
 private const val TYPE_REDACTED_THINKING = "redacted_thinking"
 private const val DATA = "data"
 
+/** A streamed thinking_delta carries this counter and Claude Code stores it in the block it replays; the
+ *  vendor refuses a replayed thinking block that holds it: 400 `messages.N.content.0.thinking.estimated_tokens:
+ *  Extra inputs are not permitted` (44-row burst, 2026-10-11; the same history came back on every retry). */
+private const val ESTIMATED_TOKENS = "estimated_tokens"
+
 internal class PassthroughMessageScrubber(
     private val quirks: PassthroughQuirks,
     private val cache: PassthroughCacheControl,
@@ -192,10 +197,14 @@ internal class PassthroughMessageScrubber(
         return JsonScalars.strOrEmpty(block["thinking"]).isBlank()
     }
 
+    /** Keys that never ride upstream: cache_control where the head strips it, and a thinking block's counter. */
+    private fun isStrippedKey(type: String, key: String): Boolean =
+        (key == CACHE_CONTROL && quirks.request.stripCacheControl) || (type == TYPE_THINKING && key == ESTIMATED_TOKENS)
+
     private fun rebuildBlock(block: JsonObject, type: String): JsonObject = buildJsonObject {
         for ((key, value) in block) {
             when {
-                key == CACHE_CONTROL && quirks.request.stripCacheControl -> Unit
+                isStrippedKey(type, key) -> Unit
                 key == CONTENT && type == TYPE_TOOL_RESULT -> put(CONTENT, scrubContent(value))
                 // V4-32: a replayed tool_use must shorten to the SAME string its declaration
                 // did, or the upstream sees a call naming a tool it was never offered.

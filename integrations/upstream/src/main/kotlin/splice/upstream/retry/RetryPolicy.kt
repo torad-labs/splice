@@ -173,6 +173,8 @@ internal class RetryRules(private val maxRetries: Int) {
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"
         policyRefused(failed) -> "is a content-policy refusal (no retry: the same bytes are refused again)"
+        bodyRejected(failed) ->
+            "rejects the request body (no retry: the same bytes are rejected again): ${failed.text.take(ERR_SNIPPET)}"
         // V4-233: the upstream named a PLAN window spent until an instant; a re-send before it meets
         // the same answer. A burst 429 carries no such statement and keeps V4-61's 15s schedule.
         failed.planLimit != null ->
@@ -190,6 +192,14 @@ internal class RetryRules(private val maxRetries: Int) {
             failed.status != HttpStatus.TOO_MANY_REQUESTS &&
             UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
             FailureCause.CONTENT_FILTERED
+
+    /** A 400 invalid_request_error whose message names a field of the body (`messages.342.content.0.thinking.
+     *  estimated_tokens: Extra inputs are not permitted`). The vendor validated the bytes we sent, and the same
+     *  bytes fail the same validation: the 2026-10-11 burst re-sent one such body 4 times, each answered with the
+     *  identical 400. A 400 that names no field of the body (a bare "Error", the muse prefill case that was OUR
+     *  bug) keeps V4-62's curve. */
+    private fun bodyRejected(failed: RetryOutcome.Failed): Boolean =
+        failed.status == HttpStatus.BAD_REQUEST && BODY_FIELD_REJECTION.containsMatchIn(failed.text)
 
     /** V4-167: a 4xx other than a rate limit, whose text says overflow. A 429 reading "too many tokens"
      *  is a per-minute token quota, which heals with time and must reach the cooldown branch; a 5xx is
@@ -309,3 +319,7 @@ private val SERVER_ERRORS = HttpStatus.INTERNAL_SERVER_ERROR..SERVER_ERROR_MAX
 // Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback
 // holds a gate slot for a request nobody is waiting on anymore.
 internal const val RETRY_AFTER_GIVE_UP_MS = 15_000L
+
+/** The vendor's own validation line: type invalid_request_error and a message that opens with a path into the body. */
+private val BODY_FIELD_REJECTION =
+    Regex(""""type"\s*:\s*"invalid_request_error"[^}]*"message"\s*:\s*"(messages|system|tools)[.\[][^"]*:""")

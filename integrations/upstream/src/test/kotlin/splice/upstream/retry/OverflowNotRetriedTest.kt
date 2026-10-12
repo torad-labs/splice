@@ -86,3 +86,33 @@ class OverflowNotRetriedTest {
         assertTrue(sendsFor("nope") > 1)
     }
 }
+
+// The vendor validated the bytes and named the field: the same bytes fail the same way, so one attempt.
+class BodyRejectionNotRetriedTest {
+
+    private suspend fun sendsFor(body: String): Int {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond(body, HttpStatusCode.BadRequest, headersOf())
+        }
+        assertEnds<UpstreamFailed> { postOnce(clientOver(engine)) }
+        return calls.get()
+    }
+
+    @Test
+    fun `a 400 invalid_request_error naming a body field is sent once`() = runTest {
+        val vendor = """{"type":"error","error":{"type":"invalid_request_error","message":""" +
+            """"messages.342.content.0.thinking.estimated_tokens: Extra inputs are not permitted"},""" +
+            """"request_id":"req_1"}"""
+
+        assertEquals(1, sendsFor(vendor))
+    }
+
+    @Test
+    fun `a 400 invalid_request_error that names no body field is still retried`() = runTest {
+        val vendor = """{"type":"error","error":{"type":"invalid_request_error","message":"Error"}}"""
+
+        assertTrue(sendsFor(vendor) > 1)
+    }
+}

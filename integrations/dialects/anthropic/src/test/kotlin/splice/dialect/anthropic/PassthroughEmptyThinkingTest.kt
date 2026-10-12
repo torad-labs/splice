@@ -286,3 +286,27 @@ class PassthroughEmptyThinkingMintTest {
 // enough to reach either, so they are a shape the constructor needs rather than a threshold at test.
 private const val IDLE_CAP_MS = 180_000L
 private const val TOTAL_CAP_MS = 900_000L
+
+/**
+ * A replayed thinking block that carries `estimated_tokens` is refused by the vendor (400 `Extra inputs are not
+ * permitted`, the same history on every retry). The built request must not carry it; every other key stays.
+ */
+class PassthroughEstimatedTokensTest {
+
+    @Test
+    fun `a replayed thinking block loses estimated_tokens and keeps everything else`() {
+        val built = PassthroughRequestBuilder(PassthroughQuirks(providerTag = "claude-splice")).build(
+            AnthropicParse.parseAnthropicBody(
+                """{"model":"m","messages":[{"role":"assistant","content":[
+                    {"type":"thinking","thinking":"plan","signature":"sig","estimated_tokens":null},
+                    {"type":"text","text":"ok"}]}]}""",
+            ),
+            upstreamModel = "k3",
+            originalModel = "claude-splice",
+            compact = false,
+        ).req
+        val thinking = built["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.first().jsonObject
+
+        assertEquals(setOf("type", "thinking", "signature"), thinking.keys)
+    }
+}

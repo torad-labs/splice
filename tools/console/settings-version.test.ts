@@ -41,6 +41,15 @@ let restartReply: { status: number; body: Record<string, unknown> } = { status: 
 let restartPhase: Record<string, unknown> = { status: "idle" };
 // the run the daemon reports, when a test sets one: its state and the lines it printed so far
 let runNow: { state: string; output: string[] } | null = null;
+// the requests in flight on alpha, in GET /api/heads/{head}/turns/live's shape, and the sessions they belong to
+let live: Record<string, unknown>[] = [];
+const turn = (session: string) => ({ id: `t-${session}`, session, model: "claude-opus-5-5", compact: false, age_ms: 42_000, idle_ms: 900,
+  seen_output: true, resumes: 0, retries: 0, will_resume: false, stopped: false });
+const sessions = { sessions: [
+  { session_id: "114e6cb0-9c3a-4d26-b259-f2b7f24ab56c", name: "changelog-pass", status: "busy" },
+  { session_id: "80e8a500-0a41-4f21-b707-3d7009e22904", name: "release-notes", status: "idle" },
+  { session_id: "5a5a5a5a-0000-4000-8000-000000000000", name: null, title: null, status: "busy" },
+] };
 const server = Bun.serve({
   port: Number(process.env.SETTINGS_VERSION_PORT ?? 0),
   async fetch(req) {
@@ -65,6 +74,8 @@ const server = Bun.serve({
       return Response.json({ run: args ? { id: "r1", args, state: runNow?.state ?? "running", output: runNow?.output ?? [] } : null });
     }
     if (path === "/api/upgrade") return Response.json(upgrade);
+    if (path === "/api/heads/alpha/turns/live") return Response.json({ head: "alpha", turns: live });
+    if (path === "/api/sessions") return Response.json(sessions);
     if (path in answers) return Response.json(answers[path]);
     if (path.startsWith("/api/")) return Response.json({});
     const file = join(consoleDir, path === "/" ? "settings.html" : path.slice(1));
@@ -98,6 +109,7 @@ async function version(
   restartReply = { status: 202, body: { status: "draining" } };
   restartPhase = { status: "idle" };
   runNow = run;
+  live = [];
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(`http://127.0.0.1:${server.port}/settings.html`);
   await page.getByText("Version").first().click();
@@ -253,6 +265,28 @@ test("Restart splice takes the restart, and says what it is waiting for while it
     await pane.getByRole("button", { name: "Restart splice" }).click();
     await expect(pane.getByRole("button", { name: "Waiting for 1 compaction" })).toBeDisabled({ timeout: 10_000 });
     expect(restarts).toEqual(["POST"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("with requests in flight Restart splice arms: Cut, a chip per agent mid-request opening its session, and only the second press restarts", async () => {
+  const page = await version(NEVER_CHECKED);
+  try {
+    const pane = page.locator(".pane");
+    live = [turn("114e6cb0-9c3a-4d26-b259-f2b7f24ab56c"), turn("5a5a5a5a-0000-4000-8000-000000000000"), { ...turn("80e8a500-0a41-4f21-b707-3d7009e22904"), stopped: true }];
+    await pane.getByRole("button", { name: "Restart splice" }).click();
+    const armed = pane.locator(".vcard .armed");
+    await expect(armed.locator(".said")).toHaveText("Cut", { timeout: 10_000 });
+    await expect(armed.locator("a.chip")).toHaveText(["changelog-pass", "5a5a5a5a"]);
+    await expect(armed.locator("a.chip").first()).toHaveAttribute("href", "sessions.html#114e6cb0-9c3a-4d26-b259-f2b7f24ab56c");
+    expect(restarts).toEqual([]);
+    await armed.getByRole("button", { name: "Keep running" }).click();
+    await expect(pane.locator(".vcard .armed")).toHaveCount(0);
+    expect(restarts).toEqual([]);
+    await pane.getByRole("button", { name: "Restart splice" }).click();
+    await page.locator(".vcard .armed").getByRole("button", { name: "Restart splice" }).click();
+    await expect.poll(() => restarts).toEqual(["POST"]);
   } finally {
     await page.close();
   }

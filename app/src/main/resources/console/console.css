@@ -211,6 +211,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
   box-shadow: .14rem .14rem 0 var(--c);
 }
 .chip i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--live); box-shadow: 0 0 .5rem var(--live); }
+a.chip { text-decoration: none; }  /* a chip that opens something (a session it names) is still a chip, never an underlined link */
 
 .state { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); display: inline-flex; align-items: center; gap: .5rem; white-space: nowrap; }
 .state.limit { color: var(--limit); }

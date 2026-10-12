@@ -748,15 +748,21 @@ function runHtml(run, back) {
     : "";
   return `<section class="run"><header><h3>${words[run.state] ?? words.running} ${esc(run.to ?? back ?? "")}</h3></header>${steps}${door}</section>`;
 }
-/** Restart splice, beside the version it is running. Not armed: a restart drains in-flight turns and splice is built
- *  to come back from one, so it is an act like any other. What it waits for is said on the button, because a daemon
- *  that waits on a compaction looks the same as one that hung. */
+/** Restart splice, beside the version it is running. With nothing in flight it is one press: splice is built to come
+ *  back from a restart. With requests in flight it arms the way Remove does on Models (Marlin, Oct 12): the first press
+ *  names the agents a restart would cut, under fin's word "Cut", each a chip that opens its session, and the second
+ *  press restarts. What a restart waits for is said on the button, because a daemon that waits on a compaction looks
+ *  the same as one that hung. */
 function restartAct(going) {
+  if (ui.armed === "restart" && !ui.restarting) {
+    const chips = (ui.cut || []).map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}">${esc(x.name || x.id.slice(0, 8))}</a>`).join("");
+    return `<span class="armed"><span class="said">Cut</span>${chips}<button class="act danger" data-act="restart-now">Restart splice</button><button class="act quiet" data-act="disarm">Keep running</button></span>`;
+  }
   const wait = ui.restartWait;
   const word = !ui.restarting ? "Restart splice"
     : wait ? `Waiting for ${fmt(wait)} ${wait === 1 ? "compaction" : "compactions"}`
     : "Restarting";
-  return `<button class="act quiet" data-act="restart"${ui.restarting || going ? " disabled" : ""}>${ui.restarting ? ICON.wait : ""}${word}</button>`
+  return `<button class="act quiet" data-act="restart"${ui.restarting || ui.restartArming || going ? " disabled" : ""}>${ui.restarting ? ICON.wait : ""}${word}</button>`
     + (ui.restartSaid ? `<span class="said limit">${esc(ui.restartSaid)}</span>` : "");
 }
 /** His tap, and the only thing on this page that reaches the network: POST /api/upgrade/check reads once and answers
@@ -799,6 +805,23 @@ const upgrade = () => startRun("up", ui.ver?.latest, { to: ui.ver?.latest });
 /** Restart splice. The 202 says the phase it is entering, never one it has reached: draining, or waiting on the
  *  compactions it names. Then the daemon goes, and GET /api/daemon/restart answers again once its successor is up,
  *  which is the console's one signal that it is back. A refusal is said beside the act in the console's words. */
+/** The first press: which sessions have a request in flight right now, read off each command's live turns the way
+ *  Sessions reads them. None, and it restarts at once; some, and it arms with their names. */
+async function pressRestart() {
+  if (ui.restarting || ui.restartArming) return;
+  ui.restartArming = true; render();
+  const [lives, sessions] = await Promise.all([
+    Promise.all((ui.heads || []).map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/turns/live`))),
+    API.get("/api/sessions"),
+  ]);
+  ui.restartArming = false;
+  const names = new Map((sessions.body?.sessions || []).map((x) => [x.session_id, x.name || x.title]));
+  const ids = [...new Set(lives.flatMap((r) => (r.body?.turns || []).filter((t) => t.session && !t.stopped).map((t) => t.session)))];
+  if (!ids.length) { restartSplice(); return; }
+  ui.cut = ids.map((id) => ({ id, name: names.get(id) }));
+  ui.armed = "restart";
+  render();
+}
 async function restartSplice() {
   if (ui.restarting) return;
   ui.restarting = true; ui.restartSaid = null; ui.restartWait = 0; render();
@@ -1052,7 +1075,9 @@ document.addEventListener("click", (e) => {
     case "rollback": ui.armed = null; goBack(); return;
     case "upgrade": ui.armed = null; upgrade(); return;
     case "check": check(); return;
-    case "restart": restartSplice(); return;
+    case "restart": pressRestart(); return;
+    case "restart-now": ui.armed = null; restartSplice(); return;
+    case "mtest": testServer(d.name); return;
     case "runlog": ui.runLog = !ui.runLog; render(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;
     case "shorten": shorten(); return;

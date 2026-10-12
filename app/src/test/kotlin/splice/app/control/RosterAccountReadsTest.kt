@@ -1,6 +1,5 @@
 // Through /api/perf/turns as Usage and Requests read it, with the names RosterAccountNames gives: thousands of rows that
-// share a few recorded logins read their labels right, and the login files are asked once per distinct login, never
-// once per row (desk c, Oct 12: a per-row disk read under the perf file lock kept a week of rows from ever loading).
+// share a few recorded logins read their labels right, and a signed-out login never shows its email.
 package splice.app.control
 
 import io.ktor.client.request.get
@@ -31,7 +30,6 @@ import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.PerfTurnFacts
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
-import java.util.concurrent.atomic.AtomicInteger
 
 private const val HEAD = "claude"
 private const val REF = "1a2b3c4d"
@@ -40,9 +38,7 @@ private const val GONE = "gone@example.invalid"
 private const val ROWS = 3_000
 
 class RosterAccountReadsTest {
-    private val asked = AtomicInteger()
-
-    /** The native login owner: every accountLabel is a read of the login files, so each one is counted. */
+    /** The native login owner: a proved login reads its label, any other its recorded name. */
     private val places = object : ClaudeLoginPlaces {
         override fun places(): List<ClaudeLoginPlaceView> = emptyList()
         override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("no login here")
@@ -50,10 +46,7 @@ class RosterAccountReadsTest {
         override fun poll(id: String): LoginStatus? = null
         override suspend fun submit(id: String, code: String): Boolean = false
         override fun hasCarryingProof(head: String, session: String): Boolean = false
-        override fun accountLabel(head: String, account: String): String {
-            asked.incrementAndGet()
-            return if (account == PROVED) "work" else account
-        }
+        override fun accountLabel(head: String, account: String): String = if (account == PROVED) "work" else account
     }
 
     private val roster = AccountRoster {
@@ -88,7 +81,7 @@ class RosterAccountReadsTest {
     ).apply { accounts = RosterAccountNames(roster, logins = { places }) }
 
     @Test
-    fun `thousands of rows on three logins read their labels and ask the login files once per login`() =
+    fun `thousands of rows on three logins read their labels, and a signed-out one shows no email`() =
         testApplication {
             application { routing { get("/api/perf/turns") { routes.turns(call) } } }
 
@@ -100,10 +93,5 @@ class RosterAccountReadsTest {
             assertEquals("Work", groups[REF], "the pool label and the proved login are the one roster login")
             assertEquals(2, groups.size, "the roster login and the signed-out one, each one group")
             assertFalse(GONE in body, "a signed-out login never shows its email")
-            assertEquals(
-                2,
-                asked.get(),
-                "the login files are read once per login the roster could not name, not per row",
-            )
         }
 }

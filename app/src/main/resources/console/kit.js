@@ -406,7 +406,10 @@ function toggleTheme() {
 function drawNav() {
   const side = document.querySelector(".side");
   if (!side || PAGES.length < 2 || side.querySelector(".nav")) return;
-  const here = location.pathname.split("/").pop() || PAGES[0][0];
+  // the page names itself by its title, so any address it was opened at (a query, a bare "/", no ".html") marks its own
+  // item, and a page no item names marks none rather than Accounts (splice-lead, Oct 12, from builder2's retake)
+  const own = document.title.split(" · ")[0], file = location.pathname.split("/").pop();
+  const here = PAGES.find(([f, name]) => name === own || f === file)?.[0];
   const links = PAGES.map(([file, name]) =>
     `<a href="${file}"${file === here ? ' aria-current="page"' : ""}>${esc(name)}</a>`).join("");
   const nav = document.createElement("nav");

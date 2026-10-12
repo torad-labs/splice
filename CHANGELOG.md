@@ -972,6 +972,8 @@ origin.
 - **Compare models sends every model the same system line,** "You are a helpful assistant.", so no answer comes from an
   instruction another model did not get, and each request shows it as its system.
 - **Teams, Usage and Settings draw their own shape while loading,** like Requests, instead of a blank page.
+- **`/api/auth` returns only the fields the console and the command line read.** A login whose file cannot be read
+  reads "can't read the login file".
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a

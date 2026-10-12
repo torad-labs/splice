@@ -25,7 +25,10 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
     private val recycler = JsonRecyclerPools.newBoundedPool(1)
     private var factory = JsonFactoryBuilder().disable(JsonFactory.Feature.INTERN_FIELD_NAMES)
         .recyclerPool(recycler).build()
-    private val seen = ArrayList<String>()
+
+    // why: a set, not a list: the duplicate check ran over every earlier name of a 66-field row, a fifth of each
+    // decode in the startup scan (jfr on desk d, Oct 12)
+    private val seen = HashSet<String>()
     private val numbers = PerfNumericBuilder(pool)
     private var unsharedNames = false
 
@@ -41,8 +44,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     val shared = pool.share(key)
                     if (shared !== key || !pool.contains(key)) unsharedNames = true
                     require(seen.size < PERF_STREAM_FIELD_LIMIT) { "wide perf row requires the tree reader" }
-                    require(!seen.contains(key)) { "duplicate perf field requires the tree reader" }
-                    seen.add(key)
+                    require(seen.add(key)) { "duplicate perf field requires the tree reader" }
                     val token = requireNotNull(parser.nextToken())
                     require(token.isScalarValue) { "nested perf input requires the tree reader" }
                     require(token != JsonToken.VALUE_NUMBER_FLOAT) { "noninteger lexeme requires the tree reader" }

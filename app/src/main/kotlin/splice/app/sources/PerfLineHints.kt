@@ -31,6 +31,11 @@ internal object PerfLineHints {
 
     fun dropsOf(line: String, count: Long?): PerfDropsHint = PerfDropsHint(carriesDrops(line), count)
 
+    /** [modelOf] for a line the streaming reader decoded: that reader refuses an empty model, so only the anchored
+     *  start is asked and the whole line is not searched again (jfr on desk d, Oct 12: a tenth of each decode). */
+    fun decodedModelOf(line: String): PerfModelHint =
+        if (namedModel.containsMatchIn(line)) PerfModelHint.NAMED else PerfModelHint.UNSEEN
+
     fun modelOf(line: String): PerfModelHint = when {
         emptyModel.containsMatchIn(line) -> PerfModelHint.EMPTY
         namedModel.containsMatchIn(line) -> PerfModelHint.NAMED

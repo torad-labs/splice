@@ -320,7 +320,7 @@ public class PerfRowsFileSource internal constructor(
                     row = decoded.row,
                     numericBytes = decoded.numericBytes,
                     leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                    model = PerfLineHints.modelOf(line),
+                    model = PerfLineHints.decodedModelOf(line),
                     drops = PerfLineHints.dropsOf(line, decoded.drops),
                     probe = false,
                 )

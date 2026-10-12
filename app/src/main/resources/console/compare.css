@@ -124,6 +124,9 @@
 /* a failure: its word and the one control that fixes it, where the answer would be */
 .pg-fix { margin: 0 auto; width: auto; display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 1rem 1.2rem; }
 .pg-fix .state { font-size: 1.15rem; }
+.pg-fix .upmsg { flex-basis: 100%; }
+.pg-fix .state.lock { display: inline-flex; align-items: center; gap: .5rem; }
+.pg-fix .state.lock svg { width: 1.1rem; height: 1.1rem; }
 .pg-fix .pg-said { text-wrap: pretty; flex-basis: 100%; text-align: center; font: 400 .98rem/1.45 var(--font-name); color: var(--text-mute); }  /* what the provider itself said: whose limit, and when it frees */
 .pg-fix .act { display: inline-flex; align-items: center; gap: .45rem; text-decoration: none; }
 .pg-fix .act .go { width: 1.05rem; height: 1.05rem; }
@@ -153,7 +156,7 @@
 .pgp { container-type: inline-size; }
 @container (max-width: 30rem) { .pgp > footer .pg-end { flex-basis: 100%; justify-content: space-between; } }  /* a narrow pane always stacks the two groups, so Request sits at one height across a row of panes */  /* the seconds and Request hold the right end; a narrow pane wraps between the two groups */
 .pgp .msg .body pre { margin: 0 0 .6rem; padding: .9rem 1.1rem; overflow-x: auto; background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); }
-.pgp .msg .body pre code { background: none; padding: 0; border-radius: 0; font: 500 .92em/1.55 var(--font-data); white-space: pre-wrap; overflow-wrap: anywhere; }  /* a long line wraps: nothing is cut off at the card's edge */
+.pgp .msg .body pre code { background: none; padding: 0; border-radius: 0; font: 500 .92em/1.55 var(--font-data); white-space: pre; }  /* the indentation is the structure: a long line scrolls inside its box */
 .pgp > footer .cost.word { color: var(--text-mute); }
 .pgp > footer .toks { color: var(--text-mute); }
 .pgp > footer .toks b { font-weight: 600; color: var(--text); }

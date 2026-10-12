@@ -50,7 +50,7 @@ const sendCount = () => ui.panes.length;
 const sendable = () => ui.prompt.trim() && ui.panes.length > 0 && !busy();
 const stale = (p) => p.asked != null && p.st !== "sending" && p.asked !== ui.prompt;
 const hasRaw = (p) => p.trace != null;
-const secs = (ms) => (ms >= 60000 ? `${Math.round(ms / 60000)} min` : `${(ms / 1000).toFixed(1)} s`);
+const secs = REQVIEW.secs; // one number, one form: the footer and the request's rail read the same
 
 // ---------- reading the answer: the provider's stream, frame by frame ----------
 function framesOf(raw) {
@@ -98,6 +98,15 @@ function failWord(status, body, said) {
   return OUTCOME_WORD["error:unexpected"];
 }
 
+// A provider that says a plan's window is spent gives its reset (ChatGPT's usage_limit_reached carries resets_at and the window's
+// minutes): the pane shows the lock and when it frees, and no Try again, because pressing it cannot fix a spent window.
+const WINDOW = { 18000: "5 hours", 86400: "Day", 604800: "Week", 2592000: "Month" };
+function spentWindow(body) {
+  const e = body?.error;
+  const at = Number(e?.resets_at) || (Number(e?.resets_in_seconds) ? Date.now() / 1000 + Number(e.resets_in_seconds) : 0);
+  if (!(/usage_limit/.test(e?.type ?? "") && at)) return null;
+  return { until: new Date(at * 1000), word: WINDOW[Number(e.limit_window_minutes) * 60] ?? "At limit" };
+}
 // What a reply cost, in Requests' words (requests.js REASON, money, costText): a figure on a key, else the reason it has none.
 const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
 const money = (usd) => (usd < 0.01 ? dollars(usd) : `≈$${usd.toFixed(usd < 1 ? 3 : 2)}`);
@@ -135,8 +144,8 @@ async function ask(p) {
   if (status >= 400 || read.error) {
     const word = failWord(read.error ? 0 : status, errBody, "");
     const type = errBody?.error?.type ?? errBody?.error?.code ?? "";
-    const told = errBody?.error?.message ?? errBody?.message;
-    Object.assign(p, { st: "failed", fail: { word: /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : word, retry: true, said: typeof told === "string" ? told.slice(0, 200) : "" } });
+    const told = errBody?.error?.message ?? errBody?.message, spent = spentWindow(errBody);
+    Object.assign(p, { st: "failed", fail: { word: /overloaded/.test(type) ? OUTCOME_WORD["failure:overloaded_error"] : word, retry: !spent, spent, code: read.error ? null : status, said: typeof told === "string" ? told.slice(0, 200) : "" } });
     attempt.failure = p.fail.word;
   } else if (!read.text.trim() && !(body && !frames)) {
     Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD.empty_model, retry: true }, tin: read.tin, tout: 0 });
@@ -255,7 +264,9 @@ const fitField = (f) => { f.style.height = "auto"; f.style.height = `${f.scrollH
 // the answer under an older prompt is dimmed, and that prompt sits above it as his message
 const askedHtml = (p) => (stale(p) ? `<div class="msg his"><div class="body">${mdPlan(p.asked)}</div></div>` : "");
 function fixHtml(p, i) { // the failure's word, then the one thing that fixes it
-  const said = p.fail.said ? `<span class="pg-said">${esc(p.fail.said)}</span>` : "";
+  const who = PROVIDER_NAME[cmdOf(p.key)?.family] ?? cmdOf(p.key)?.command ?? "";
+  const said = p.fail.said || p.fail.code ? `<p class="upmsg"><span class="who">${esc(who)}</span>${p.fail.code != null ? `<span class="code">${p.fail.code}</span>` : ""}${p.fail.said ? `<q>${esc(p.fail.said)}</q>` : ""}</p>` : "";
+  if (p.fail.spent) return `<span class="state limit lock">${ICON.lock}<span>${esc(p.fail.spent.word)}</span></span><span class="detail">Resets ${backWord(p.fail.spent.until)}</span>${said}`;
   const word = `<span class="state limit">${esc(p.fail.word)}</span>${p.tries > 1 ? `<span class="pg-try">Try <b>${p.tries}</b></span>` : ""}`;
   if (p.fail.word === OUTCOME_WORD["error:auth-missing"] || p.fail.word === OUTCOME_WORD["failure:authentication_error"]) {
     return `${word}<a class="act" href="accounts.html">Accounts</a>${said}`;

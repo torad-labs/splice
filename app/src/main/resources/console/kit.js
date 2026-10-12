@@ -432,11 +432,13 @@ const NEEDS_LAMP = (n) => `<span class="pc needs"><span class="plamp" aria-hidde
 // A PROJECT'S FIGURE AT EVERY WIDTH (Marlin's walk, Oct 12): below the tiles' width the picker and its menu carry the
 // same figure each tile does on that page (sessions, teams, or requests in the window), so "how many did temple send"
 // is one glance and the menu says where the work is before he picks. [projects] are [key, label, total]; [all] is
-// Every project's total. A total not read yet is null and draws nothing.
-function pickerHtml(projects, pick, open, doors, all = null) {
+// Every project's total. A total not read yet is null and draws nothing. [show] writes a figure: digits grouped unless
+// the page counts something that runs to billions (Usage writes tokens short, "16 bn", Marlin).
+const showCount = (n) => n.toLocaleString("en-US");
+function pickerHtml(projects, pick, open, doors, all = null, show = showCount) {
   const label = (k) => projects.find(([key]) => key === k)?.[1] ?? doors.find(([key]) => key === k)?.[1] ?? "Every project";
   const totalOf = (k) => (k === "" ? all : projects.find(([key]) => key === k)?.[2] ?? null);
-  const fig = (n) => (n == null ? "" : `<span class="pfig">${n.toLocaleString("en-US")}</span>`);
+  const fig = (n) => (n == null ? "" : `<span class="pfig">${show(n)}</span>`);
   const item = (k, text) => `<button role="menuitemradio" aria-checked="${(pick ?? "") === k}" data-act="pickproj" data-p="${esc(k)}"><span class="pname">${esc(text)}</span>${fig(totalOf(k))}</button>`;
   const menu = open ? `<div class="menu pmenu" role="menu">${item("", "Every project")}${projects.map(([k, l]) => item(k, l)).join("")}</div>` : "";
   const ways = pick == null ? "" : doors.filter(([k, , n]) => k !== pick && n)
@@ -462,16 +464,16 @@ const tlampHtml = ([k, n]) => `<span class="pc big ${k}"><span class="tlamp ${k}
 // the brief's own words for a header read aloud: "temple, 1 needs you, 3 working, 7 sessions" (Marlin)
 const STATE_WORDS = { needs: "needs you", stalled: "stalled", working: "working" };
 /** "1 needs you, 3 working, 7 sessions": what a tile says to a screen reader, in the lamps' order. */
-const countWords = (counts, total, unit) => [...counts.filter(([, n]) => n).map(([k, n]) => `${n} ${STATE_WORDS[k]}`),
-  `${total.toLocaleString("en-US")} ${total === 1 ? unit : `${unit}s`}`].join(", ");
+const countWords = (counts, total, unit, show = showCount) => [...counts.filter(([, n]) => n).map(([k, n]) => `${n} ${STATE_WORDS[k]}`),
+  `${show(total)}${total === 1 ? unit : `${unit}s`}`].join(", ");
 const sumCounts = (lists) => ["needs", "stalled", "working"].map((k) => [k, lists.flat().filter(([x]) => x === k).reduce((a, [, n]) => a + n, 0)]);
 /** [items] is [[key, label, counts, total, words]] with Every project's key "". Each tile's preferred width is its name
  *  in its own font plus the total, so the row's room goes where the names are, and in a crowded row a long name
  *  truncates before its total does (the total sits beside the name, never at the lamps' end, where "4" and "1,300"
  *  would read as one number). */
-function tilesHtml(items, pick) {
+function tilesHtml(items, pick, show = showCount) {
   return `<nav class="ptiles" aria-label="Projects">${items.map(([k, label, counts, total, words]) => {
-    const on = (pick ?? "") === k, figure = total == null ? "" : total.toLocaleString("en-US");
+    const on = (pick ?? "") === k, figure = total == null ? "" : show(total);
     return `<button class="ptile${on ? " on" : ""}" style="flex-basis: calc(${[...label].length}ch + ${figure.length * 0.6 + 3.2}rem)" data-act="pickproj" data-p="${esc(k)}" aria-pressed="${on}" aria-label="${esc(`${label}, ${words}`)}">`
       + `<span class="ptop"><span class="tname">${esc(label)}</span><span class="ptotal">${figure}</span></span>`
       + `<span class="plamps">${counts.filter(([, n]) => n).map(tlampHtml).join("")}</span></button>`;
@@ -522,15 +524,16 @@ function reconcilePick(pick, groups) {
  *  project, its name; nothing with no live session. The pick only exists where there are two projects to pick between.
  *  EACH PAGE COUNTS ITS OWN THING (Marlin): [count] is the tiles' totals, { of(key), all, unit }, teams on Teams and
  *  requests on Requests; a figure the page has not read is left off. The lamps stay the sessions', so someone waiting
- *  shows from every page. */
+ *  shows from every page. [count.show] writes a figure (Usage: tokens short), digits grouped when a page gives none. */
 function pickLineHtml(groups, pick, open, count) {
   if (!groups.length) return "";
   if (groups.length < 2) return groups[0].key === NO_PROJECT_KEY ? "" : `<div class="lhead"><span class="pname solo">${esc(groups[0].label)}</span></div>`;
+  const show = count.show ?? showCount;
   if (tilesWide()) {
-    const words = (c, n) => (n == null ? countWords(c, 0, count.unit).replace(/(, )?0 \w+$/, "") : countWords(c, n, count.unit));
+    const words = (c, n) => (n == null ? countWords(c, 0, count.unit).replace(/(, )?0 \w+$/, "") : countWords(c, n, count.unit, show));
     const items = groups.map((g) => { const n = count.of(g.key); return [g.key, g.label, g.counts, n, words(g.counts, n)]; });
     const every = sumCounts(items.map((x) => x[2]));
-    return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick);
+    return tilesHtml([["", "Every project", every, count.all, words(every, count.all)], ...items], pick, show);
   }
-  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label, count.of(g.key)]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]), count.all)}</div>`;
+  return `<div class="lhead">${pickerHtml(groups.map((g) => [g.key, g.label, count.of(g.key)]), pick, open, groups.map((g) => [g.key, g.label, g.counts[0][1]]), count.all, show)}</div>`;
 }

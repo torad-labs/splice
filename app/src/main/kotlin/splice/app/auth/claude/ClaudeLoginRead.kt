@@ -17,6 +17,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginStanding
 import splice.app.head.ProviderHoldFiles
+import splice.core.auth.AccountRef
 import splice.core.auth.CredentialKey
 import splice.core.config.StatePaths
 import splice.core.usage.QuotaSnapshot
@@ -38,6 +39,10 @@ internal class ClaudeLoginRead(
     private val facts = ClaudeLoginFactsReader(ClaudeCredentialProfiles(paths.stateDir, log), profileRefresh)
     private val holds = ProviderHoldFiles(paths, log)
     private val folders = ClaudeAccountFolders(paths.stateDir)
+
+    // why: Claude's account uuid, one of the two values older request rows recorded an account by.
+    private val uuidShape =
+        Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
 
     /** Every place's view. The whole set is read at once because the window join is a property of the SET: one
      *  account's reading is the newest filed under any of its live credentials, in whichever place it signed in. */
@@ -69,15 +74,18 @@ internal class ClaudeLoginRead(
             token != null && CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")) == key
         }?.label
 
-    /** The same proved identities the roster reads, never a copied client-settings account. */
+    /** The same proved identities the roster reads, never a copied client-settings account. A recorded email or id that
+     *  no login proves any more reads as its ref, never as itself (labels only). */
     fun accountLabel(locations: List<ClaudeLoginLocation>, head: String, account: String): String {
         val native = locations.filter { it.target.head.key == head }.mapNotNull { location ->
-            facts.read(location).account?.takeIf { it.uuid == account || it.email == account }?.let { location.id.wire }
+            facts.read(location).account?.takeIf { it.recorded(account) }?.let { location.id.wire }
         }
         val added = folders.accounts(head).mapNotNull { stored ->
-            stored.identity?.takeIf { it.uuid == account || it.email == account }?.let { stored.label }
+            stored.identity?.takeIf { it.recorded(account) }?.let { stored.label }
         }
-        return (native + added).distinct().singleOrNull() ?: account
+        return (native + added).distinct().singleOrNull()
+            ?: account.takeUnless { '@' in it || uuidShape.matches(it) }
+            ?: AccountRef.of(account)
     }
 
     /** No token, digest, account or session identifier enters the missing-login diagnostic. */

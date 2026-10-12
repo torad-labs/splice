@@ -21,6 +21,8 @@ import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
 import splice.accounts.signin.HeadRestart
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
@@ -39,8 +41,7 @@ class ClaudeAccountRowsTest {
             "claude-account",
             mapOf(
                 "auth_path" to "/synthetic/work/.credentials.json",
-                "account_uuid" to "work-account",
-                "account_email" to "work@synthetic.test",
+                ACCOUNT_REF_FIELD to AccountRef.of("work-account"),
             ),
         ),
     )
@@ -63,7 +64,7 @@ class ClaudeAccountRowsTest {
         )
         val refused = pending.copy(identity = ClaudeLoginIdentity(null, ClaudeProfileState.REFUSED))
         for ((view, state) in listOf(pending to "pending", verified to "verified", refused to "refused")) {
-            val row = ClaudeLoginRows.json(view, "synthetic-provider", null, 100)
+            val row = ClaudeLoginRows().json(view, "synthetic-provider", null, 100)
             assertEquals(state, row.getValue("profile_state").jsonPrimitive.content)
             assertFalse(row.toString().contains("credential_key"))
             assertFalse(row.toString().contains("accessToken"))
@@ -111,8 +112,11 @@ class ClaudeAccountRowsTest {
         assertEquals(JsonNull, place["carrying_request"], "before any request matched, no place is carrying")
         assertFalse(work.containsKey("carrying_request"), "an added pool login keeps its own selection fields")
         assertEquals(11.0, work.getValue("five_hour_used_percent").jsonPrimitive.content.toDouble())
-        assertTrue(work["account"] is JsonObject, body)
-        assertEquals("work-account", work.getValue("account").jsonObject.getValue("uuid").jsonPrimitive.content)
+        // Labels only: a row names its account by its ref and label, and no email or id is anywhere in the roster.
+        assertFalse(work.containsKey("account"), body)
+        assertEquals(AccountRef.of("work-account"), work.getValue("ref").jsonPrimitive.content)
+        assertEquals(AccountRef.of("native-account"), place.getValue("ref").jsonPrimitive.content)
+        assertFalse("@" in body || "native-account" in body, body)
         assertEquals("pool", work.getValue("edit_target").jsonObject.getValue("kind").jsonPrimitive.content)
         assertEquals("work", work.getValue("edit_target").jsonObject.getValue("id").jsonPrimitive.content)
         assertEquals("true", work.getValue("can_remove").jsonPrimitive.content)
@@ -196,7 +200,8 @@ class ClaudeAccountRowsTest {
             assertEquals(JsonNull, separate["held"])
             assertEquals("true", native.getValue("carrying_request").jsonPrimitive.content, "the matched place is")
             assertEquals("false", separate.getValue("carrying_request").jsonPrimitive.content, "the sibling is not")
-            assertTrue(body.contains("separate-account"))
+            assertEquals(AccountRef.of("separate-account"), separate.getValue("ref").jsonPrimitive.content)
+            assertFalse(body.contains("separate-account"), "a place names its account by its ref, never its id")
             assertFalse(body.contains("used_usd"))
             assertFalse(body.contains("credential_key"))
         }

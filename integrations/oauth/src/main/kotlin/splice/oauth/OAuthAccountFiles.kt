@@ -3,14 +3,13 @@ package splice.oauth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.core.auth.AccountRef
 import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -18,7 +17,6 @@ internal const val FIELD_KIND = "splice_auth_kind"
 internal const val FIELD_LABEL = "splice_account_label"
 internal const val PRIMARY = "primary"
 internal const val AUTO = "auto"
-private const val HASH_CHARS = 8
 internal const val JSON_SUFFIX = ".json"
 internal const val MAX_LABEL_CHARS = 48
 
@@ -315,9 +313,8 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
 internal object OAuthAccountLabels {
     fun chatGpt(plan: String?, accountId: String): String {
         val safePlan = plan.orEmpty().lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "chatgpt" }
-        val digest = MessageDigest.getInstance("SHA-256").digest(accountId.toByteArray(StandardCharsets.UTF_8))
-        val shortHash = digest.joinToString("") { "%02x".format(it) }.take(HASH_CHARS)
-        return "$safePlan-$shortHash".take(MAX_LABEL_CHARS)
+        // The account's own ref, so the default label and every surface that names this account by its ref agree.
+        return "$safePlan-${AccountRef.of(accountId)}".take(MAX_LABEL_CHARS)
     }
 
     fun ordinal(kind: AuthKind.OAuth, used: Set<String>): String {

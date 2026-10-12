@@ -14,19 +14,25 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
-import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginRows
+import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
+import splice.core.topology.API_KEY_WIRE
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
 
 /** [firsts] answers for a command's first OAuth account, so its row can be renamed and removed. Null leaves it
  *  fixed. */
-public class AccountsRoute(private val heads: Map<String, AccountHead>, private val firsts: FirstAccounts? = null) {
+public class AccountsRoute(
+    private val heads: Map<String, AccountHead>,
+    private val firsts: FirstAccounts? = null,
+    /** The names a person chose on the console, by ref; null names nothing beyond what each login carries. */
+    private val names: AccountNameStore? = null,
+) {
     private val extras = AccountRowExtras(heads)
     private val management = AccountRowManagement()
 
@@ -45,10 +51,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
     ): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
-        val nativeRows = ClaudeLoginRows.list(native, providers, carrying, heads, nowSeconds)
+        val naming = AccountNaming(names?.names().orEmpty())
+        val nativeRows = ClaudeLoginRows(naming).list(native, providers, carrying, heads, nowSeconds)
         return buildJsonObject {
             putJsonArray("accounts") {
-                joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers) } }
+                joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers, naming) } }
                 nativeRows.forEach { add(it) }
             }
             extras.pools(this)
@@ -97,7 +104,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
                     observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                     noUsageAt = quota?.noUsageAt,
                 ),
-                authExclusion = AuthExclusionView(null, null, identity = identityOf(description.fields)),
+                authExclusion = AuthExclusionView(null, null, ref = description.fields[ACCOUNT_REF_FIELD]),
                 flags = AccountFlags(
                     available = null,
                     credentialPresent = description.present,
@@ -159,7 +166,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
             account.credential.excludedUntilEpochMillis,
             account.credential.exclusionReason,
             fields[REFUSAL_FIELD],
-            identityOf(fields),
+            fields[ACCOUNT_REF_FIELD],
             fields["display_name"],
         ),
         flags = AccountFlags(
@@ -192,21 +199,30 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
         row: JoinedAccount,
         nowSeconds: Long,
         providers: Map<String, String>,
+        naming: AccountNaming,
     ) {
         extras.write(into, row.labelsByHead, providers)
         val first = first(row)
-        val name = row.authExclusion.displayName ?: first?.name ?: row.label ?: "Primary"
-        management.write(into, name, row.authExclusion.identity, management.edit(row.label, row.primary, first))
+        // a login with a ref can always be named: the name lives in splice's own state, never in its credential file
+        val edit = management.edit(row.label, row.primary, first)
+            .let { if (row.authExclusion.ref != null) it.copy(canRename = true) else it }
+        management.write(into, name(row, first, naming), row.authExclusion.ref != null, edit)
         writeQuota(into, row, nowSeconds)
         val answer = row.labelsByHead.mapNotNull { (head, label) -> heads[head]?.answers?.answer(label) }
             .maxByOrNull { it.observedAtEpochMs }
         AccountAnswerJson.write(into, answer)
     }
 
-    /** The account a credential proves it signed in as, when its description names one: a Claude login's, or a
-     *  ChatGPT sign-in's user id and email. */
-    private fun identityOf(fields: Map<String, String>): ClaudeAccountIdentity? =
-        fields["account_uuid"]?.takeIf(String::isNotBlank)?.let { ClaudeAccountIdentity(it, fields["account_email"]) }
+    /** A login is named by a person's name, a label a person chose, or its plan and ref (labels only, never an email or
+     *  an id). A key row has no login to name, and keeps the name it always had. */
+    private fun name(row: JoinedAccount, first: FirstAccountEdit?, naming: AccountNaming): AccountName {
+        val given = row.authExclusion.displayName ?: first?.name
+        val ref = row.authExclusion.ref
+        if (row.credential.kind == API_KEY_WIRE) {
+            return AccountName(given ?: row.label ?: "Primary", ref, isDefault = false)
+        }
+        return naming.name(AccountNameFacts(given, row.label, ref, row.quota.plan))
+    }
 
     /** A first OAuth account's name and whether it may be removed; null for every other row. */
     private fun first(row: JoinedAccount): FirstAccountEdit? {
@@ -242,7 +258,7 @@ private data class AuthExclusionView(
     val untilEpochMillis: Long?,
     val reason: String?,
     val refusal: String? = null,
-    val identity: ClaudeAccountIdentity? = null,
+    val ref: String? = null,
     val displayName: String? = null,
 )
 

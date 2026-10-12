@@ -1,7 +1,6 @@
 // NEW: native command rows carry their own identity and measured windows, without pool or money attribution.
 package splice.accounts.claude
 
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -11,6 +10,8 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.AccountHead
 import splice.accounts.pool.AccountAnswerJson
+import splice.accounts.pool.AccountNameFacts
+import splice.accounts.pool.AccountNaming
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.auth.AuthDescription
@@ -18,7 +19,8 @@ import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFreshness
 import splice.core.usage.QuotaJson
 
-internal object ClaudeLoginRows {
+/** [naming] is how each row is called (labels only): the names a person chose, by ref, read first. */
+internal class ClaudeLoginRows(private val naming: AccountNaming = AccountNaming()) {
     suspend fun list(
         native: List<ClaudeLoginPlaceView>,
         providers: Map<String, String>,
@@ -53,11 +55,17 @@ internal object ClaudeLoginRows {
         put("credential_present", view.credential.present)
         put("kind", "client")
         put("label", view.id.wire)
-        put("display_name", view.management?.displayName ?: view.id.command)
+        // Labels only: a saved name a person gave, else `<Plan> · <ref>`; the command word is no account's name.
+        val given = view.management?.takeIf { it.canRename }?.displayName
+        val ref = view.identity.account?.ref
+        val name = naming.name(AccountNameFacts(given, null, ref, view.quota?.plan))
+        // A place no credential has proved yet is still that command's login, so it keeps the command's word.
+        (if (given == null && ref == null) name.copy(shown = view.id.command) else name).write(this)
         put("identity_verified", view.identity.account != null)
         put("profile_state", view.identity.profileState.wire)
         put("can_remove", view.management?.canRemove == true)
-        put("can_rename", view.management?.canRename == true)
+        // a proved login can always be named: its name lives in splice's own state, never in his credential files
+        put("can_rename", view.management?.canRename == true || ref != null)
         putJsonObject("edit_target") {
             put("kind", "native")
             put("id", view.id.wire)
@@ -68,13 +76,6 @@ internal object ClaudeLoginRows {
             put("id", view.id.wire)
             put("command", view.id.command)
         }
-        val account = view.identity.account?.let {
-            buildJsonObject {
-                put("uuid", it.uuid)
-                put("email", it.email)
-            }
-        }
-        put("account", account ?: JsonNull)
         put("plan", view.quota?.plan)
         windows(this, view, nowSeconds)
         put("held", view.standing.held)

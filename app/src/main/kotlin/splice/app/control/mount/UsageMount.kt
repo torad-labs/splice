@@ -28,6 +28,7 @@ import splice.usage.alerts.AlertSource
 import splice.usage.budgets.BudgetRoutes
 import splice.usage.budgets.BudgetSource
 import splice.usage.perf.PerfPayloads
+import splice.usage.perf.RecordedAccounts
 import splice.usage.perf.RequestProjects
 import splice.usage.quota.UsagePayloads
 import splice.usage.statusline.StatuslineRoute
@@ -78,6 +79,8 @@ internal class UsageMount(
 
     /** Which project each request row belongs to, set once the sessions wiring exists. */
     fun tagProjects(tags: RequestProjects) = usageReads.tagProjects(tags)
+
+    fun nameAccounts(names: RecordedAccounts) = usageReads.nameAccounts(names)
 
     fun register(route: Route) {
         usageReads.register(route)

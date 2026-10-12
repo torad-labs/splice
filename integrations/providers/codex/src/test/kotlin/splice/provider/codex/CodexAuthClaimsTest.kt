@@ -1,5 +1,6 @@
-// NEW: Oct 10, 2026 — two ChatGPT accounts on one command are told apart on Accounts by the sign-in's own claims: the
-// description names the user id and email the id_token carries, and never a token.
+// NEW: Oct 10, 2026 — two ChatGPT accounts on one command are told apart on Accounts. Rewritten Oct 12 for labels only
+// (Eli's ruling): the description names the account by its ref, never by the email or user id the id_token carries,
+// masked or not, and never a token.
 package splice.provider.codex
 
 import kotlinx.coroutines.CoroutineScope
@@ -13,6 +14,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AccountRef
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
 import java.nio.file.Path
@@ -46,22 +49,21 @@ class CodexAuthClaimsTest {
     }
 
     @Test
-    fun `describe names the account by a masked user id and email, never the whole of either`(
+    fun `describe names the account by its ref, and no part of its email or user id`(
         @TempDir tmp: Path,
     ) = runTest {
         val id = jwt("""{"sub":"user-abc","email":"work@example.com"}""")
-        val d = provider(tmp, """{"tokens":{"access_token":"secret","id_token":"$id"}}""").describe()
-        assertEquals("user…-abc", d.fields["account_uuid"])
-        assertEquals("w…@example.com", d.fields["account_email"])
-        val whole = d.fields.values.any { it.contains("work@") || it == "user-abc" }
-        assertFalse(whole, "the whole identity never leaves describe")
+        val json = """{"tokens":{"access_token":"secret","account_id":"acct-1","id_token":"$id"}}"""
+        val d = provider(tmp, json).describe()
+        assertEquals(AccountRef.of("acct-1"), d.fields[ACCOUNT_REF_FIELD])
+        val leaked = d.fields.values.any { "@" in it || "user-abc" in it || "acct-1" in it }
+        assertFalse(leaked, "no email, user id or account id leaves describe, masked or whole")
         assertFalse(d.fields.values.any { it.contains("secret") || it == id })
     }
 
     @Test
-    fun `a credential with no id token names no account`(@TempDir tmp: Path) = runTest {
+    fun `a credential with no account id names no account`(@TempDir tmp: Path) = runTest {
         val d = provider(tmp, """{"tokens":{"access_token":"secret"}}""").describe()
-        assertNull(d.fields["account_uuid"])
-        assertNull(d.fields["account_email"])
+        assertNull(d.fields[ACCOUNT_REF_FIELD])
     }
 }

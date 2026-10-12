@@ -29,7 +29,6 @@ internal class AccountRowExtras(private val accounts: Map<String, AccountHead>) 
             labelsByHead.forEach { (head, label) -> put(head, label) }
         }
         into.put("login_place", null as String?)
-        into.put("account", null as String?)
         into.put("held", null as Boolean?)
         into.put("held_until_epoch_seconds", null as Long?)
         into.putJsonObject("failover_positions") {

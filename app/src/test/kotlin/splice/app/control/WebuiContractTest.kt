@@ -80,7 +80,7 @@ class WebuiContractTest {
             auth = object : AuthProvider {
                 override suspend fun credentials() = null
                 override suspend fun describe() =
-                    AuthDescription(true, "chatgpt-oauth", mapOf("account_id_masked" to "acct…5678"))
+                    AuthDescription(true, "chatgpt-oauth", mapOf("account_ref" to "1a2b3c4d"))
             },
             sources = HeadSources(
                 usage = object : HeadUsageSource {
@@ -228,7 +228,7 @@ class WebuiContractTest {
         assertFields(
             payload["codex"]!!.jsonObject,
             // V4-220 item 6b: `verdict` ({state, at_epoch_ms?}) is on every head's auth object.
-            listOf("kind", "present", "login", "account_id_masked", "verdict"),
+            listOf("kind", "present", "login", "account_ref", "verdict"),
             "ProviderAuth",
         )
     }

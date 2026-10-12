@@ -10,19 +10,35 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.AccountHead
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.pool.AccountsRoute
+import splice.accounts.pool.HeadAccountAuthSource
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
+import splice.accounts.signin.HeadRestart
 import splice.accounts.signin.LoginFailure
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
+import splice.core.auth.AccountRef
+import splice.core.auth.AuthDescription
+import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
 import splice.core.util.WallClock
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
@@ -171,6 +187,49 @@ class ClaudeAccountSignInTest {
 
         assertEquals(LoginState.FAILED, refused.state)
         assertTrue(refused.failureReason.orEmpty().contains("your own Claude Code sign-in"))
+    }
+
+    // Labels only (Eli's ruling, Oct 12; S11): the Accounts row an added login gets, read through its own describe and
+    // the roster route. [plan] stands in for the plan its first reading reports.
+    private fun roster(label: String, plan: String): JsonObject = runBlocking {
+        val folder = state.resolve("claude-accounts").resolve(HEAD).resolve(label)
+        val described = ClaudeFolderAuth(
+            folder,
+            refresh = { null },
+            profiles = ClaudeCredentialProfiles(state, {}),
+        ).describe()
+        val head = AccountHead(
+            key = HEAD,
+            auth = object : AuthProvider {
+                override suspend fun credentials(): Credentials = Credentials.ClientForwarded
+                override suspend fun describe() = AuthDescription(true, "client")
+            },
+            pool = HeadAccountPoolSource {
+                HeadAccountPoolView(null, listOf(HeadAccountView(label, false, false, true, plan)), null)
+            },
+            accountAuth = HeadAccountAuthSource { mapOf(label to described) },
+            restart = HeadRestart { },
+        )
+        val body = AccountsRoute(mapOf(HEAD to head)).accountsJson()
+        Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray.single().jsonObject
+    }
+
+    @Test
+    fun `a login added with a label is shown by that label`() {
+        assertEquals(LoginState.SIGNED_IN, add(HEAD, label = "work", account = "uuid-work").state)
+        val row = roster("work", "max")
+        assertEquals("work", row.getValue("display_name").jsonPrimitive.content)
+        assertEquals("false", row.getValue("label_default").jsonPrimitive.content)
+        assertEquals(AccountRef.of("uuid-work"), row.getValue("ref").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a login added with no label is shown as its plan and a short hash of its account id, never the id`() {
+        val minted = add(HEAD, label = null, account = "uuid-home")
+        val row = roster(minted.label!!, "max")
+        assertEquals("Max · ${AccountRef.of("uuid-home")}", row.getValue("display_name").jsonPrimitive.content)
+        assertEquals("true", row.getValue("label_default").jsonPrimitive.content, "a default is offered its one naming")
+        assertFalse(row.toString().contains("uuid-home") || row.toString().contains("@"), row.toString())
     }
 }
 

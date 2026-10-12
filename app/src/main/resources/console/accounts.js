@@ -168,12 +168,12 @@ async function load({ asks = true } = {}) {
         if (!(row.heads || []).some((x) => heads.has(x))) continue;
         // Claude Code's own login place that never held a sign-in is no account (Marlin, Oct 10): no credential, no
         // account, no reading. One that was signed in and expired keeps all three, and shows.
-        if (row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds) continue;
+        if (row.login_place && !row.credential_present && !row.identity_verified && !row.observed_at_epoch_seconds) continue;
         const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
           windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
         const models = (row.seven_day_models || []).map((m) => ({ name: m.model,
           ...windowOf(m.used_percent, m.resets_at, LEN.Week * 60, "long", modelCurrent(row.seven_day_current, m)) }));
-        p.accounts.push({ id: acctId(row), row, name: row.display_name, email: row.account?.email || undefined, plan: plainPlan(row.plan), windows,
+        p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows,
           // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
@@ -215,7 +215,7 @@ async function load({ asks = true } = {}) {
 
 let data = [];
 let offline = false;
-const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null });
+const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null });
 const ui = { probing: false, grow: null, ...FRESH_UI() };
 const board = document.getElementById("board");
 // ---------- time: what a person reads ----------
@@ -283,12 +283,21 @@ const FAILS = {
 // (ClaudeAccountFolders.kt:34, :195). Elsewhere: lowercase letters, digits, ., - and _, up to 48
 // (AccountLabelPolicy, AccountSelection.kt:17), with primary, auto and a -quota ending reserved.
 function nameError(p, a, v) {
+  if (a.row?.ref) return refNameError(p, a, v);
   const reserved = p.id !== "claude" && (v === "primary" || v === "auto" || v.endsWith("-quota"));
   const shape = p.id === "claude" ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/ : /^[a-z0-9][a-z0-9._-]{0,47}$/;
   if (reserved || !shape.test(v)) return "Invalid name";
   if (p.accounts.some((x) => x !== a && x.name === v)) return "Name taken";
   return null;
 }
+// A login with a ref is named in splice's own names (AccountNameStore.kt): any words up to 48, never an email.
+function refNameError(p, a, v) {
+  if (v.length > 48) return "Too long";
+  if (v.includes("@")) return "Can't hold an email";
+  if (p.accounts.some((x) => x !== a && x.name === v)) return "Name taken";
+  return null;
+}
+const namePath = (ref) => `/api/accounts/names/${encodeURIComponent(ref)}`;
 
 // ---------- drawing ----------
 const GLYPH = {
@@ -524,6 +533,7 @@ async function finishSignin(target) {
   delete ui.signin[target];
   if (target === "prov") ui.addProv = null;
   await refresh(s.spot ? s.spot.split("/")[1] : "new");
+  if (s.how.name) await nameAdded(s.how);
 }
 function cancelSignin(target) {
   if (ui.signin[target]) stopTimers(ui.signin[target]);
@@ -598,7 +608,7 @@ function nameHtml(p, a, spot) {
   if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
   const err = ui.renameErr;
   // one visible way to finish, as the key field's Save: both walkers had to guess Enter (p153, p154)
-  return `<input class="field rename" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? a.name)}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
+  return `<input class="field rename" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? a.name)}" placeholder="${esc(a.name)}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
     + `<button class="act primary small" data-act="finish-rename">Save</button>`; // a refusal reads under it (cardHtml)
 }
 // c is the command whose order the rail shows on a plan provider, and null for a key or this computer. Each account shows
@@ -607,8 +617,11 @@ function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
   const cls = ["card", serves.length ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
   const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}">${GLYPH.grip}</button>` : "";
-  const sub = a.plan && ui.rename !== spot ? `<span class="plan">${esc(a.plan)}</span>` : "";
-  const email = a.email && ui.rename !== spot ? `<div class="email">${esc(a.email)}</div>` : "";
+  // a default name already starts with the plan ("Max · 1a2b3c4d"), so the plan word beside it would say it twice
+  const sub = a.plan && ui.rename !== spot && !a.row?.label_default ? `<span class="plan">${esc(a.plan)}</span>` : "";
+  // labels only (Oct 12): a login splice named itself offers its one naming here, beside the name, and never blocks
+  const nameIt = a.row?.label_default && a.row?.can_rename && ui.rename !== spot
+    ? `<button class="act quiet small name-it" data-act="rename" data-s="${spot}">Name it</button>` : "";
   const more = menuItems(p, a).length
     ? `<button class="icon more" data-act="menu" data-p="${p.id}" data-a="${a.id}" data-s="${spot}" aria-label="More" aria-haspopup="menu" aria-expanded="${ui.menu === spot}">${GLYPH.more}</button>` : "";
   const mine = (t) => ui.signin[t] && (ui.signin[t].spot == null || ui.signin[t].spot === spot);
@@ -633,14 +646,21 @@ function cardHtml(p, c, a, i, serves) {
   else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
-    + `${nameHtml(p, a, spot)}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`
-    + `${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${email}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}</article>`;
+    + `${nameHtml(p, a, spot)}${nameIt}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`
+    + `${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}</article>`;
 }
 
 // ---------- the tiles that end a rail, and the one that ends the page ----------
 function addTileHtml(p, c) {
   const t = `add:${c.cmd}`, s = ui.signin[t];
   if (s) return `<div class="add signing${s.state === "fail" ? " failed" : ""}" data-key="${t}"><span class="socket"></span>${signingHtml(t)}</div>`;
+  if (ui.naming?.cmd === c.cmd) { // a new login is named before it signs in; the name prefilled so Enter takes it as is
+    const d = `data-p="${p.id}" data-c="${c.cmd}"`, err = ui.naming.err;
+    return `<div class="add signing naming${err ? " failed" : ""}" data-key="${t}"><span class="socket"></span>`
+      + `<input class="field add-name" value="${esc(ui.naming.draft)}" aria-label="Name" spellcheck="false" maxlength="48"${err ? ' aria-invalid="true"' : ""}>`
+      + `<button class="act primary" data-act="add-go" ${d}>Sign in</button><button class="act quiet" data-act="cancel-add">Cancel</button>`
+      + `${err ? `<span class="state limit" role="status">${esc(err)}</span>` : ""}</div>`;
+  }
   return `<button class="add" data-key="${t}" data-act="add" data-p="${p.id}" data-c="${c.cmd}"><span class="socket"></span><span class="plus">+</span>Add account</button>`;
 }
 function switchHtml(p, c) {
@@ -803,6 +823,24 @@ function addAccount(pid, cmd) {
   const { c } = findCmd(cmd);
   startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head });
 }
+// The next free "<Provider> N": what the name field opens with, so Enter alone adds the login under it.
+function firstFree(p) {
+  for (let n = p.accounts.length + 1; ; n++) if (!p.accounts.some((x) => x.name === `${p.name} ${n}`)) return `${p.name} ${n}`;
+}
+// The typed name is kept against the ref the new login proves once it lands (AccountNameRoute.kt): the sign-in itself
+// still mints its own folder label, which stays the pool selector.
+function startAdd(p, cmd, field) {
+  const v = field.value.trim() || firstFree(p), err = refNameError(p, {}, v);
+  if (err) { ui.naming = { cmd, draft: v, err }; render(); return; }
+  const { c } = findCmd(cmd), before = new Set(p.accounts.map((x) => x.row?.ref).filter(Boolean));
+  ui.naming = null;
+  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head, name: v, before });
+}
+async function nameAdded(how) {
+  const added = data.flatMap((p) => p.accounts).find((x) => x.row?.ref && !how.before.has(x.row.ref) && x.row.heads.includes(how.poll));
+  if (!added) return; // the sign-in landed on a login already here: its name stays as it was
+  if ((await API.put(namePath(added.row.ref), { name: how.name })).ok) await refresh(added.id);
+}
 // ---------- adding a provider: one add on splice's own route (AddRoutes.kt), saved once it can sign in ----------
 // The provider picks the profile splice adds it from (GET /api/add/profiles). Saving writes its command and restarts
 // splice (AddRoutes.kt:115), so the tile waits until splice answers again with the provider on the board.
@@ -890,6 +928,7 @@ board.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   if (e.target.matches(".code-in")) submitCode(e.target);
   else if (e.target.matches(".rename")) saveRename(e.target, true);
+  else if (e.target.matches(".add-name")) e.target.parentElement.querySelector('[data-act="add-go"]')?.click();
   else if (e.target.matches("#key-in")) e.target.parentElement.querySelector('[data-act="save-replace"], [data-act="save-key"]')?.click();
 });
 board.addEventListener("paste", (e) => {
@@ -920,9 +959,9 @@ board.addEventListener("focusout", (e) => {
   const f = board.querySelector(".field.rename");
   if (!drawing && f && inRename(e.target) && !inRename(e.relatedTarget)) saveRename(f, false);
 });
-const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, editor: null });
+const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, editor: null, naming: null });
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor)) return;
+  if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor || ui.naming)) return;
   closeAll(); render();
 });
 // Enter on a name splice won't take keeps the field open with the reason; leaving the field keeps the old name.
@@ -934,7 +973,8 @@ async function saveRename(field, enter) {
   if (err && enter) { ui.renameErr = err; ui.renameDraft = v; render(); return; }
   if (v && !err && v !== a.name) {
     // a name splice would take but the save fails: the field stays with the reason, even when he leaves it
-    const res = await API.patch(editPath(a), { label: v });
+    // a login with a ref keeps its name in splice's names, so its sign-in files are never touched (labels only, Oct 12)
+    const res = a.row?.ref ? await API.put(namePath(a.row.ref), { name: v }) : await API.patch(editPath(a), { label: v });
     if (!res.ok) { ui.renameErr = "Not renamed"; ui.renameDraft = v; render(); return; }
     Object.assign(ui, { rename: null, renameErr: null, renameDraft: null });
     await refresh(); return;
@@ -970,7 +1010,9 @@ document.addEventListener("click", async (e) => {
     case "use": k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) }); await refresh(); break;
     case "unpin": k.pin = null; render({ flip: true }); await API.del(headPath(k, "switch")); await refresh(); break;
     case "lane": ui.lane[p.id] = k.cmd; closeAll(); render({ flip: true }); break; // the rail shows that command's order
-    case "add": addAccount(p.id, k.cmd); break;
+    case "add": closeAll(); ui.naming = { cmd: k.cmd, draft: firstFree(p) }; render(); board.querySelector(".add-name")?.select(); break;
+    case "add-go": { const f = board.querySelector(".add-name"); if (f) startAdd(p, k.cmd, f); break; }
+    case "cancel-add": ui.naming = null; render(); break;
     case "signin": startSignin(`out:${a.id}`, howFor(p, a, null)); break;
     case "open-signin": openSignin(t.dataset.t); break;
     case "copy-code":
@@ -979,7 +1021,7 @@ document.addEventListener("click", async (e) => {
     case "retry-signin": { const s = ui.signin[t.dataset.t]; if (s.how.again) s.how.again(); else waitSignin(t.dataset.t); break; }
     case "cancel-signin": cancelSignin(t.dataset.t); break;
     case "menu": ui.menu = ui.menu === t.dataset.s ? null : t.dataset.s; ui.armed = null; ui.removeErr = null; render(); board.querySelector(".menu button")?.focus(); break;
-    case "rename": ui.menu = null; ui.rename = t.dataset.s; render(); break;
+    case "rename": ui.menu = null; ui.rename = t.dataset.s; ui.renameDraft = t.classList.contains("name-it") ? "" : null; render(); break;
     case "finish-rename": { const f = board.querySelector(".field.rename"); if (f) saveRename(f, true); break; } // Enter's path
     case "resign": ui.menu = null; startSignin(`re:${a.id}`, howFor(p, a, null), t.dataset.s); break;
     case "replace": ui.menu = null; ui.replace = t.dataset.s; render(); break;

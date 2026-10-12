@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.CredentialVerdictJson
+import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AuthDescription
 import splice.core.head.ProviderAnswer
 
@@ -79,7 +80,7 @@ public class AccountPoolJson {
     }
 
     private fun safeAuthField(key: String): Boolean = when (key) {
-        "account_id_masked", "login", "refresh_latched" -> true
+        ACCOUNT_REF_FIELD, "login", "refresh_latched" -> true
         else -> false
     }
 }

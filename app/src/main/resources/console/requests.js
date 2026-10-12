@@ -82,6 +82,7 @@ const keyNameOf = (account) => { const s = String(account ?? ""), at = s.lastInd
 // A key reads as its provider, the heading Accounts draws over it and the name Continue on uses; its variable joins
 // only when two keys of that provider feed the same command, so the line says which one it sent (fin).
 const acctHtml = (r) => {
+  if (r.acctLabel) return esc(r.acctLabel); // a login reads the label the daemon names it by, never an email or id (Oct 12)
   const key = state.keySeen[r.account], name = key?.name ?? keyNameOf(r.account), provider = PROVIDER_NAME[r.provider];
   const isKey = Boolean(key) || /^[A-Z0-9_]+$/.test(name);
   if (!isKey || !provider) return key ? `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${key.replaced ? `<span class="detail">Replaced</span>` : ""}` : esc(name || r.account);
@@ -95,7 +96,7 @@ const acctHtml = (r) => {
 // next to rows from before it tracked keys) are told apart by their order, "OpenRouter 1" and "OpenRouter 2",
 // and never by the key itself.
 const acctNames = () => {
-  const html = state.facets.accounts.map(([k, { head, account }]) => [k, acctHtml({ account, head: head.key, provider: state.providerOf[head.key] }), head.key]);
+  const html = state.facets.accounts.map(([k, { head, account, label }]) => [k, acctHtml({ account, acctLabel: label, head: head.key, provider: state.providerOf[head.key] }), head.key]);
   const same = (h, head) => html.filter(([, x, hk]) => x === h && hk === head);
   const seen = {}, out = new Map();
   for (const [k, h, head] of html) {
@@ -159,7 +160,8 @@ let state = {
   wider: null,
 };
 let ui = { project: PICK.get(), pmenu: false, open: null, q: "", win: "24h", cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null,
-  outcome: "all", why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true };
+  outcome: "all", why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true,
+  order: "new" }; // Newest or Highest price (fin): what the read asks for; the list shows what the daemon says it applied
 const root = document.getElementById("requests");
 const wide = sideBySide;
 // How far back every read asks: the window, or the stretch a door from another page named, which may reach further
@@ -271,6 +273,7 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
   if (filtered) {
     if (ui.outcome === "fail") p.set("outcome", "failed");
     if (ui.outcome === "stopped") p.set("outcome", "stopped");
+    if (ui.order === "price") p.set("order", "price"); // the daemon keeps each command's highest priced, not its newest
     if (ui.model === "none") p.set("unattributed", "model");
     else if (ui.model) p.set("model", ui.model);
     if (ui.account === "none") p.set("unattributed", "account");
@@ -318,7 +321,7 @@ async function readRows(held = MAX_HELD) {
   const heads = askedHeads();
   const reads = await Promise.all(heads.flatMap((h) => [API.getReady(turnsPath(h, true, ui.win, held)), API.getReady(turnsPath(h, false))]));
   const rows = [], errors = [], pending = [], facets = { models: new Map(), accounts: new Map(), sessions: new Map() };
-  let matched = 0, capped = false;
+  let matched = 0, capped = false, priced = ui.order === "price";
   heads.forEach((head, i) => {
     const [filtered, window] = [reads[i * 2], reads[i * 2 + 1]];
     const answer = (filtered.body?.heads || []).find((x) => x.key === head.key);
@@ -326,17 +329,20 @@ async function readRows(held = MAX_HELD) {
     if (answer.read_pending) { pending.push(head.command); return; }
     if (answer.error) return unreadable(errors, head, LIST_NOT_READ, answer.error);
     if (answer.read_error) unreadable(errors, head, LIST_PARTLY_READ, answer.read_error);
+    // the order a command's answer says it applied: a daemon that does not echo one kept the newest (splice-builder)
+    if (answer.order !== "price") priced = false;
     matched += answer.count ?? 0;
     if (answer.truncated) capped = true;
     for (const row of answer.rows || []) rows.push(mapRow(head, row));
     const menus = (window.body?.heads || []).find((x) => x.key === head.key)?.usage;
     for (const m of menus?.models || []) if (m.key) facets.models.set(m.key, modelName(state.modelLabel, m.key));
-    for (const a of menus?.accounts || []) if (a.key) facets.accounts.set(`${head.key}|${a.key}`, { head, account: a.key });
+    for (const a of menus?.accounts || []) if (a.key) facets.accounts.set(`${head.key}|${a.key}`, { head, account: a.key, label: a.label ?? null });
     for (const s of menus?.sessions || []) if (s.key) facets.sessions.set(s.key, { head, last: s.last_model_ts_epoch_ms });
   });
   state.rows = linkCuts(rows);
   state.matched = matched;
   state.capped = capped;
+  state.order = priced ? "price" : "new";
   state.held = held;
   state.headErrors = errors;
   state.pending = pending;
@@ -371,7 +377,7 @@ function mapRow(head, row) {
     provider: state.providerOf[head.key] ?? null,
     ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null,
     model: modelName(state.modelLabel, row.model), modelId: row.model ?? null,
-    account: row.account ?? null, compact: row.compact === true,
+    account: row.account ?? null, acctLabel: row.account_label ?? null, compact: row.compact === true,
     attempts: row.attempts ?? 0, retries: row.retries ?? 0,
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
     // how long the gate held it behind a full limit, null when it went straight in (a 1 ms pass is not waiting)
@@ -567,6 +573,14 @@ function menuHtml(key) {
   }
   return "";
 }
+// The order is not a filter, so it sits apart at the row's end in the switch Outcome uses (hitstop 1912470, fin's words).
+// It shows the order the daemon applied: a daemon that kept the newest shows Newest, never Highest price over them.
+const orderHtml = () => `<div class="switch order" role="group" aria-label="Order">${[["new", "Newest"], ["price", "Highest price"]]
+  .map(([v, w]) => `<button data-act="order" data-v="${v}" aria-pressed="${(state.order ?? ui.order) === v}">${w}</button>`).join("")}</div>`;
+// In Highest price a plan row keeps "On your plan" and hangs its worth under it, the open Request's two-line form, so
+// its word never changes with the sort and the figure shows why it ranks (fin, hitstop 20bfada). Newest keeps one line.
+const worthHtml = (r) => (state.order === "price" && r.cost == null && r.planValue != null
+  ? `<span class="worth">${money(r.planValue)} at API prices</span>` : "");
 function filtersHtml() {
   const out = ui.outcome;
   const sw = `<div class="switch" role="group" aria-label="Outcome">${[["all", "All"], ["fail", "Failed"], ["stopped", "Stopped"]].map(([v, w]) => `<button data-act="outcome" data-v="${v}" aria-pressed="${out === v}">${w}</button>`).join("")}</div>`;
@@ -583,7 +597,7 @@ function filtersHtml() {
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
-    + `${sw}${over}${tog("compact", "Compactions", ui.compact)}</div>`;
+    + `${sw}${over}${tog("compact", "Compactions", ui.compact)}${orderHtml()}</div>`;
 }
 
 // ---------- the list: the newest first, on the rail, an hour mark where the hour turns ----------
@@ -610,8 +624,8 @@ function rowHtml(r) {
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
-    + `<div class="top"><time>${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(sessTitle(r.sid))}</button>${word}`
-    + `<span class="dur">${secs(r.total)}</span><span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
+    + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(sessTitle(r.sid))}</button>${word}`
+    + `<span class="dur">${secs(r.total)}</span><span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}${worthHtml(r)}</span></div>`
     + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${earlier}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
@@ -622,7 +636,8 @@ const markIn = (t) => RV.markIn(t);
 function heldFoot() {
   if (!state.capped) return "";
   const n = state.matched;
-  return `<p class="foot held">The newest ${n0(state.held ?? MAX_HELD)} of each command. ${n0(n)} request${n === 1 ? "" : "s"} in ${WINDOWS[ui.win][0].toLowerCase()}.</p>`;
+  const which = state.order === "price" ? "highest priced" : "newest"; // the read kept the dearest, not the latest (fin)
+  return `<p class="foot held">The ${n0(state.held ?? MAX_HELD)} ${which} of each command. ${n0(n)} request${n === 1 ? "" : "s"} in ${WINDOWS[ui.win][0].toLowerCase()}.</p>`;
 }
 // A SEARCH THAT READ EVERYTHING KEPT HAS NO FOOTER: its results are whole (fin, Oct 10). One that stopped early says the
 // oldest record it actually read, which can never be later than a hit above it. fin's "Search further" waits on the
@@ -636,8 +651,14 @@ function searchFoot() {
   if (!s?.stopped || s.backTo == null) return "";
   return `<p class="foot searched">Searched back to ${dayOf(new Date(s.backTo))}${clock(new Date(s.backTo))}</p>`;
 }
+// The list's order: newest first, or in Highest price the most at API prices first, a key's cost or a plan request's worth
+// on the same card (fin; Marlin took price over tokens, which rank cached context), and a request with no price last,
+// newest first among them. The daemon chose each command's rows by the same figure (PerfRoutes order=price).
+const priceOf = (r) => r.cost ?? r.planValue ?? null;
+const ordered = (rows) => rows.slice().sort(state.order === "price"
+  ? (a, b) => (priceOf(b) ?? -1) - (priceOf(a) ?? -1) || +b.ts - +a.ts : (a, b) => +b.ts - +a.ts);
 function listHtml() {
-  const rows = filtered().slice().sort((a, b) => +b.ts - +a.ts);
+  const rows = ordered(filtered());
   // a command splice is still reading is not trouble: a quiet line, gone once its rows join (asked again shortly)
   const wait = (state.pending || []).map((cmd) => `<p class="list-wait">${ICON.wait}${esc(cmd)} \u00b7 Reading</p>`).join("");
   const said = (list) => list.map((e) => `<p class="list-wait unread">${esc(e.cmd)} \u00b7 ${e.word}</p>`).join("");
@@ -656,7 +677,8 @@ function listHtml() {
   let hour = null;
   for (const r of shown) {
     const hk = `${r.ts.toDateString()} ${r.ts.getHours()}`;
-    if (hk !== hour) { hour = hk; const h = r.ts.getHours(); items.push(`<div class="hour"><span>${dayOf(r.ts)}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span></div>`); }
+    // in Highest price the rows are not in time order, so no hour mark: each row says its own day (hitstop 1912470)
+    if (hk !== hour && state.order !== "price") { hour = hk; const h = r.ts.getHours(); items.push(`<div class="hour"><span>${dayOf(r.ts)}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span></div>`); }
     items.push(rowHtml(r));
   }
   const more = rows.length > shown.length ? `<div class="more"><span class="count">${n0(shown.length)} of ${n0(rows.length)}</span><button class="act quiet" data-act="more">Show ${n0(Math.min(200, rows.length - shown.length))} more</button></div>`
@@ -913,6 +935,7 @@ document.addEventListener("click", (e) => {
     case "set": ui[m] = v || null; if (m === "win") ui.win = v; ui.menu = null; ui.n = 200; again(); break;
     case "unset": ui[m] = null; if (m === "from") ui.to = null; ui.n = 200; again(); break;
     case "outcome": ui.outcome = v; ui.n = 200; again(); break;
+    case "order": ui.order = v; ui.n = 200; again(); break;
     case "startsave": startSaving(el.dataset.h); break;
     case "why": ui.why = ui.why === v ? null : v; ui.n = 200; again(); break;
     case "widen": ui.win = v; ui.n = 200; again(); break;
@@ -933,7 +956,7 @@ document.addEventListener("click", (e) => {
 // page opened it, and keeps his pick otherwise
 function again() { ui.auto = ui.auto || !filtered().some((r) => r.id === ui.open); reload(); }
 const autoOpen = () => {
-  if (wide() && ui.auto) ui.open = filtered().slice().sort((a, b) => +b.ts - +a.ts)[0]?.id ?? null;
+  if (wide() && ui.auto) ui.open = ordered(filtered())[0]?.id ?? null;
   else if (!wide() && ui.auto) ui.open = null;
 };
 // a window widened past side-by-side opens the top request, and that request's records are read like any other open
@@ -953,6 +976,7 @@ ui.repo = ADDR.get("repo") ?? ui.repo; // ?project= is the pick (kit PICK), read
 if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +ADDR.get("to") : null; } // no end: through now
 if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");
+if (ADDR.get("order") === "price") ui.order = "price"; // Usage's Breakdown counts open the highest price first
 if (ADDR.get("q")) { ui.q = ADDR.get("q"); document.getElementById("q").value = ui.q; }
 // a door that names one request shows that request, never the top row. Doors encode the id ("claude-splice%3A…"), so
 // it is decoded before it is matched: matched raw, Settings' Open it landed on the unfiltered top (Marlin's rewalk 4)
@@ -962,7 +986,7 @@ ui.auto = !asked;
 const showAsked = (asked) => {
   const r = state.rows.find((x) => x.id === asked || x.turn === asked);
   if (!r) return;
-  const at = filtered().slice().sort((a, b) => +b.ts - +a.ts).findIndex((x) => x.id === r.id);
+  const at = ordered(filtered()).findIndex((x) => x.id === r.id);
   if (at >= ui.n) { ui.n = Math.ceil((at + 1) / 200) * 200; }
   open(r.id);
   requestAnimationFrame(() => document.querySelector(`[data-open="${CSS.escape(r.id)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" }));

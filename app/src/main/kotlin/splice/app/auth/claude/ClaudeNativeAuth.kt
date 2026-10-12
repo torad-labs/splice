@@ -8,6 +8,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialFileIdentity
@@ -82,8 +84,7 @@ internal class ClaudeNativeAuth(
             "native_place" to place.wire,
         )
         credentialKey?.let(profiles::read)?.let { account ->
-            fields["account_uuid"] = account.uuid
-            account.email?.let { fields["account_email"] = it }
+            fields[ACCOUNT_REF_FIELD] = AccountRef.of(account.uuid)
         }
         if (!present) {
             fields[REFUSAL_FIELD] = if (observed?.expiresAt?.let { it <= clock() } == true) {

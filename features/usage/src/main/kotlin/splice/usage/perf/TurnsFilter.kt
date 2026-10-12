@@ -59,7 +59,17 @@ internal data class TurnsAttribution(
     /** Set to leave out every request that ran in a project: what is left carries no project (`?project=none`). */
     val outsideProjects: ProjectTags? = null,
     val unattributed: Unattributed? = null,
-)
+    /** How this head's recorded account values read: [account] is asked by ref (labels only). */
+    val reading: AccountReading = AccountReading(HeadAccountNames { null }),
+) {
+    /** Whether [row] is the model, account and session asked, each one asked only when set. */
+    fun asks(row: PerfRow): Boolean = listOf(
+        model == null || row.facts.model == model,
+        account == null || reading.matches(row.facts.account, account),
+        session == null || row.facts.session == session,
+        sessions == null || row.facts.session in sessions,
+    ).all { it }
+}
 
 /** What one request asked of the window's rows. A null field asks nothing; [local] false leaves out the steps splice
  *  answered itself, which are not model requests; [compact] true asks for the compactions and false for every request
@@ -77,16 +87,18 @@ internal data class TurnsFilter(
         from == null || row.ts >= from,
         until == null || row.ts < until,
         outcomeMatches(row.outcome),
-        attribution.model == null || row.facts.model == attribution.model,
-        attribution.account == null || row.facts.account == attribution.account,
-        attribution.session == null || row.facts.session == attribution.session,
-        attribution.sessions == null || row.facts.session in attribution.sessions,
+        attribution.asks(row),
         inNoProject(row),
         attributionMatches(row),
         local || row.fields[PerfKeys.LOCAL_STEP] != 1L,
         compact == null || (row.facts.compact == true) == compact,
         waits.matches(row),
     ).all { it }
+
+    /** This filter reading [names]'s refs, for the head whose rows it is run over. */
+    fun reading(
+        names: HeadAccountNames,
+    ): TurnsFilter = copy(attribution = attribution.copy(reading = AccountReading(names)))
 
     /** This filter narrowed to the project [id], or as it was when none is asked; an id nothing holds matches no row.
      *  [NO_PROJECT] narrows to the requests no project holds, the ones a row prints as `project: null`. */

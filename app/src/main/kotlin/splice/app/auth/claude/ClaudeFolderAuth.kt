@@ -19,6 +19,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
@@ -89,15 +91,14 @@ internal class ClaudeFolderAuth(
     override suspend fun describe(): AuthDescription {
         val held = read()
         val fields = mutableMapOf("auth_path" to folder.resolve(CREDENTIALS_JSON).toString())
-        fields["display_name"] = ClaudeLoginFactsReader().displayName(folder.resolve(".splice-account.json")) ?: name()
+        // Only a name a person gave: the folder's own name is the pool label, which the accounts row names from.
+        val given = ClaudeLoginFactsReader().displayName(folder.resolve(".splice-account.json"))
+        given?.let { fields["display_name"] = it }
         held?.let { credential ->
             val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer ${credential.accessToken}"))
             val account = key?.let { profiles?.read(it) }
             if (account == null && key != null) identities?.request(key, credential.accessToken)
-            account?.let {
-                fields["account_uuid"] = it.uuid
-                it.email?.let { email -> fields["account_email"] = email }
-            }
+            account?.let { fields[ACCOUNT_REF_FIELD] = AccountRef.of(it.uuid) }
         }
         return AuthDescription(present = held != null, kind = CLAUDE_ACCOUNT_AUTH_KIND, fields = fields)
     }

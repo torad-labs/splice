@@ -14,6 +14,8 @@ import splice.accounts.edit.AccountEditRoutes
 import splice.accounts.keys.KeyRoutes
 import splice.accounts.keys.KeyStoreSource
 import splice.accounts.order.AccountOrderRoute
+import splice.accounts.pool.AccountNameRoute
+import splice.accounts.pool.AccountNameStore
 import splice.accounts.pool.AccountsRoute
 import splice.accounts.pool.FirstAccounts
 import splice.accounts.pool.SwitchRoute
@@ -36,6 +38,8 @@ internal class AccountsMount(
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
     log: LogSink,
+    /** The names a person gave logins (labels only): splice's own state, never a credential file. */
+    names: AccountNameStore? = null,
 ) {
     private val accountHeads = AccountHeadAdapter.adapt(heads)
     private val accountResolver = AccountHeadAdapter.resolver(resolver)
@@ -49,8 +53,9 @@ internal class AccountsMount(
         ConsoleAccountsSource { ports.accounts },
         ClaudeLoginPlacesSource { ports.claudeLogins },
     )
-    private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts())
-    private val claudeRoutes = ClaudeLoginRoutes(ClaudeLoginPlacesSource { ports.claudeLogins })
+    private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts(), names)
+    private val nameRoute = names?.let(::AccountNameRoute)
+    private val claudeRoutes = ClaudeLoginRoutes(ClaudeLoginPlacesSource { ports.claudeLogins }, names)
     private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
@@ -103,6 +108,7 @@ internal class AccountsMount(
         route.patch("/api/auth/{head}/accounts/{label}") {
             guard.guarded(call) { accountEditRoutes.relabelAccount(call) }
         }
+        nameRoute?.let { names -> route.put("/api/accounts/names/{ref}") { guard.guarded(call) { names.set(call) } } }
         route.post("/api/auth/{head}/{action}") { guard.guarded(call) { authStatusRoutes.authAction(call) } }
         route.get("/api/keys") { guard.guarded(call) { keyRoutes.list(call) } }
         route.put("/api/keys/{name}") { guard.guarded(call) { keyRoutes.set(call) } }

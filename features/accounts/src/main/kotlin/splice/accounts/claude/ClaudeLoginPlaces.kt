@@ -3,6 +3,7 @@ package splice.accounts.claude
 
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.LoginStatus
+import splice.core.auth.AccountRef
 import splice.core.usage.QuotaSnapshot
 
 /** Each command reads its own native login even when both send requests through the same head. */
@@ -11,8 +12,15 @@ public enum class ClaudeLoginPlaceId(public val wire: String, public val command
     SPLICE("claude-splice", "claude-splice"),
 }
 
-/** Claude Code's account record supplies identity; neither a head key nor a token is an account identity. */
-public data class ClaudeAccountIdentity(val uuid: String, val email: String?)
+/** Claude Code's account record supplies identity; neither a head key nor a token is an account identity. The uuid and
+ *  email stay in process: what leaves it is [ref] (labels only, Eli's ruling, 2026-10-12). */
+public data class ClaudeAccountIdentity(val uuid: String, val email: String?) {
+    public val ref: String get() = AccountRef.of(uuid)
+
+    /** Whether a request row recorded this account: by its ref (rows since labels only), or by the uuid or email
+     *  older rows were written with. */
+    public fun recorded(value: String): Boolean = value == ref || value == uuid || value == email
+}
 
 /** A proved credential's own refusal. Missing evidence remains unknown rather than an invented clean standing. */
 public data class ClaudeLoginStanding(val held: Boolean?, val untilEpochSeconds: Long?)

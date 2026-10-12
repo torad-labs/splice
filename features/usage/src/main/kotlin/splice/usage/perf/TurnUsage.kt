@@ -16,10 +16,18 @@ import java.time.Instant
 import java.time.ZoneId
 
 /** Full filtered-window facts, computed from the route's existing read, before its display-row limit. */
-internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountPlans, zone: ZoneId) {
+/** [reading] groups a login by its ref and names it by its label: no account group is keyed by an email or an id. */
+internal class TurnUsage(
+    rows: List<PerfRow>,
+    price: TurnPrice?,
+    plans: AccountPlans,
+    zone: ZoneId,
+    reading: AccountReading = AccountReading(HeadAccountNames { null }),
+) {
     private val totals = Counters()
     private val models = linkedMapOf<String?, Counters>()
     private val accounts = linkedMapOf<String?, Counters>()
+    private val accountLabels = mutableMapOf<String, String>()
     private val days = linkedMapOf<String?, Counters>()
     private val sessions = linkedMapOf<String?, Counters>()
     private val lastModels = mutableMapOf<String, LastModel>()
@@ -33,7 +41,9 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             val day = Instant.ofEpochMilli(row.ts).atZone(zone).toLocalDate().toString()
             totals.add(row, Priced(cost, value), gap)
             models.getOrPut(row.facts.model, ::Counters).add(row, Priced(cost, value), gap)
-            accounts.getOrPut(row.facts.account, ::Counters).add(row, Priced(cost, value), gap)
+            val account = reading.key(row.facts.account)
+            reading.label(row.facts.account)?.let { label -> account?.let { accountLabels[it] = label } }
+            accounts.getOrPut(account, ::Counters).add(row, Priced(cost, value), gap)
             days.getOrPut(day, ::Counters).add(row, Priced(cost, value), gap)
             sessions.getOrPut(row.transcript.sessionId, ::Counters).add(row, Priced(cost, value), gap)
             recordModel(row)
@@ -43,7 +53,7 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
     fun json(): JsonObject = buildJsonObject {
         put("totals", totals.json())
         put("models", grouped(models))
-        put("accounts", grouped(accounts))
+        put("accounts", grouped(accounts, accountLabels))
         put("days", grouped(days))
         put("sessions", sessionGroups())
     }
@@ -71,10 +81,14 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
         }
     }
 
-    private fun grouped(groups: Map<String?, Counters>): JsonArray = buildJsonArray {
+    private fun grouped(
+        groups: Map<String?, Counters>,
+        labels: Map<String, String> = emptyMap(),
+    ): JsonArray = buildJsonArray {
         groups.forEach { (key, counters) ->
             addJsonObject {
                 put("key", key)
+                key?.let(labels::get)?.let { put("label", it) }
                 counters.json().forEach { (name, value) -> put(name, value) }
             }
         }

@@ -197,7 +197,6 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .card .top:has(.name .var) { flex-wrap: wrap; row-gap: .7rem; }  /* a key's name stays whole; its commands wrap under it */
 .card .name:has(.var) { flex: none; }
 .card .plan { font: 400 1.05rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
-.card .email { font: 400 .95rem/1.2 var(--font-data); color: var(--text-mute); margin: .15rem 0 .1rem 1.8rem; overflow-wrap: anywhere; }  /* under the name, past the grip */
 .card .slot { margin-left: auto; display: flex; align-items: center; gap: .6rem; flex: none; }  /* its buttons keep their words on one line; a rename field gives first */
 
 /* the command that this account serves: it rides the account, and moves when the account is held */
@@ -411,6 +410,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .menu .menu-state { padding: .8rem .9rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }  /* the refusal takes the place of the act */
 .field.rename { flex: 0 1 17rem; min-width: 7rem; font: 500 1.35rem/1.15 var(--font-name); padding: .3rem .5rem; }
 .field.rename + .act { flex: none; }  /* Save keeps its width beside the name */
+.field.add-name { font: 500 1.15rem/1.15 var(--font-name); }  /* a new login is named in the type its card will show */
 .card > .rename-err { display: flex; margin: .5rem 0 0 1.8rem; }  /* under the field, so Save, Unpin and the chip keep the row */
 .keysrc { margin-top: .9rem; display: flex; align-items: center; gap: .9rem; }
 .keysrc .var { font: 500 1rem/1 var(--font-data); color: var(--text-body); letter-spacing: .01em; }

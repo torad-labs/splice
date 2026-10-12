@@ -1,13 +1,12 @@
-// NEW: account edit capabilities and credential-proved display identity share one roster presentation boundary.
+// NEW: account edit capabilities and the label a row is shown by share one roster presentation boundary.
 package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.accounts.claude.ClaudeAccountIdentity
 
 // why: the label the edit routes name a command's first OAuth account by (OAuthAccountFiles reserves it).
-private const val PRIMARY_ID = "primary"
+internal const val PRIMARY_ID = "primary"
 
 /** A first OAuth account the console may edit: its [name], when a person gave it one, and whether it is [removable]. */
 internal data class FirstAccountEdit(val name: String?, val removable: Boolean)
@@ -24,9 +23,10 @@ internal class AccountRowManagement {
         else -> RowEdit(canRename = false, canRemove = false, id = label)
     }
 
-    fun write(into: JsonObjectBuilder, displayName: String, identity: ClaudeAccountIdentity?, edit: RowEdit) {
-        into.put("display_name", displayName)
-        into.put("identity_verified", identity != null)
+    /** [verified]: the credential proved which account it is, its ref read from the vendor and not a stored label. */
+    fun write(into: JsonObjectBuilder, name: AccountName, verified: Boolean, edit: RowEdit) {
+        name.write(into)
+        into.put("identity_verified", verified)
         into.put("can_remove", edit.canRemove)
         into.put("can_rename", edit.canRename)
         if (edit.id != null) {
@@ -36,12 +36,6 @@ internal class AccountRowManagement {
             }
         } else {
             into.put("edit_target", null as String?)
-        }
-        identity?.let { account ->
-            into.putJsonObject("account") {
-                put("uuid", account.uuid)
-                put("email", account.email)
-            }
         }
     }
 }

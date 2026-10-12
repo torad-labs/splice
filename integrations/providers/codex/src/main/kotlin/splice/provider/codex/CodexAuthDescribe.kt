@@ -5,6 +5,8 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -19,7 +21,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val KIND = "chatgpt-oauth"
-private const val MASK_KEEP = 4
 private const val FIELD_TOKENS = "tokens"
 private const val FIELD_ACCESS_TOKEN = "access_token"
 private const val FIELD_REFRESH_TOKEN = "refresh_token"
@@ -50,19 +51,13 @@ internal class CodexAuthDescribe(
             val raw = authJson.parseObject()
             val tokens = raw[FIELD_TOKENS] as? JsonObject
             val hasAccess = JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)?.isNotEmpty() == true
-            val acct = JsonScalars.str(tokens, FIELD_ACCOUNT_ID).orEmpty()
-            out["account_id_masked"] =
-                if (acct.isNotEmpty()) "${acct.take(MASK_KEEP)}…${acct.takeLast(MASK_KEEP)}" else ""
+            // Labels only (Eli's ruling, 2026-10-12): the account id leaves this module as its ref and nothing
+            // else, and the sign-in's email and user id not at all. The ref is the hash the stored default label
+            // `plus-<ref>` ends in.
+            JsonScalars.str(tokens, FIELD_ACCOUNT_ID)?.takeIf(String::isNotBlank)?.let {
+                out[ACCOUNT_REF_FIELD] = AccountRef.of(it)
+            }
             JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
-            // The sign-in's own claims tell two ChatGPT accounts apart on Accounts, MASKED: the spec says the email and
-            // the account id are never displayed, so only a short head and tail of each leaves this function.
-            val claims = CodexOAuth().decodeJwtClaims(JsonScalars.str(tokens, FIELD_ID_TOKEN))
-            JsonScalars.str(claims, "sub")?.takeIf(String::isNotBlank)?.let {
-                out["account_uuid"] = "${it.take(MASK_KEEP)}…${it.takeLast(MASK_KEEP)}"
-            }
-            JsonScalars.str(claims, "email")?.takeIf(String::isNotBlank)?.let {
-                out["account_email"] = it.substringBefore('@').take(1) + "…@" + it.substringAfter('@', "")
-            }
             hasAccess
         }
         // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.

@@ -38,7 +38,7 @@ class AccountSurfacesTest {
                         present = true,
                         kind = "chatgpt-oauth",
                         fields = mapOf(
-                            "account_id_masked" to "acct…5678",
+                            "account_ref" to "1a2b3c4d",
                             "token" to "raw-secret-token",
                             "email" to "private@example.com",
                             "auth_path" to "/private/auth.json",
@@ -52,7 +52,7 @@ class AccountSurfacesTest {
         val pool = Json.parseToJsonElement(body).jsonObject["account_pool"]!!.jsonObject
         val backup = pool["accounts"]!!.jsonArray.last().jsonObject
         assertEquals("backup", pool["selected_label"]?.jsonPrimitive?.content)
-        assertEquals("acct…5678", backup["auth"]?.jsonObject?.get("account_id_masked")?.jsonPrimitive?.content)
+        assertEquals("1a2b3c4d", backup["auth"]?.jsonObject?.get("account_ref")?.jsonPrimitive?.content)
         assertEquals("5-hour quota exhausted", pool["last_switch"]?.jsonObject?.get("reason")?.jsonPrimitive?.content)
         assertFalse(body.contains("raw-secret-token"))
         assertFalse(body.contains("private@example.com"))

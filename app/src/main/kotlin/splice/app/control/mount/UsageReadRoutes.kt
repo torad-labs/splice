@@ -15,6 +15,7 @@ import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
 import splice.usage.economics.EconomicsPayloads
 import splice.usage.perf.PerfRoutes
+import splice.usage.perf.RecordedAccounts
 import splice.usage.perf.RequestProjects
 
 /** Keeps cold-read preparation and the management opt-in beside the readers they govern. */
@@ -31,6 +32,11 @@ internal class UsageReadRoutes(
     /** Which project each request row belongs to, set once the sessions wiring exists. */
     fun tagProjects(tags: RequestProjects) {
         perf.projects = tags
+    }
+
+    /** How each request row's recorded account reads (labels only), set once the accounts roster exists. */
+    fun nameAccounts(names: RecordedAccounts) {
+        perf.accounts = names
     }
 
     fun register(route: Route) {

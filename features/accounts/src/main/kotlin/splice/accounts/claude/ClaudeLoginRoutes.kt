@@ -7,6 +7,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import splice.accounts.AccountHead
 import splice.accounts.AccountReplies
+import splice.accounts.pool.AccountNameStore
+import splice.accounts.pool.AccountNaming
 import splice.accounts.signin.LoginStatusJson
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
@@ -14,7 +16,11 @@ import java.util.concurrent.TimeUnit
 
 private data class NativeLoginRequest(val label: String?)
 
-public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
+/** [names] is the names a person chose (labels only), so a refreshed row reads the name the roster shows. */
+public class ClaudeLoginRoutes(
+    private val source: ClaudeLoginPlacesSource,
+    private val names: AccountNameStore? = null,
+) {
     private val body = JsonBody()
 
     public suspend fun login(call: ApplicationCall) {
@@ -54,7 +60,7 @@ public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
             return
         }
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
-        val row = ClaudeLoginRows.list(
+        val row = ClaudeLoginRows(AccountNaming(names?.names().orEmpty())).list(
             listOf(view),
             mapOf(view.head to provider),
             mapOf(view.head to owner.carrying(view.head)),

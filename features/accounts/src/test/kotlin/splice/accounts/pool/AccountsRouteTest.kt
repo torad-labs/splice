@@ -170,7 +170,10 @@ class AccountsRouteTest {
         assertEquals("true", own["can_remove"]!!.jsonPrimitive.content)
         assertEquals("primary", own["edit_target"]!!.jsonObject["id"]!!.jsonPrimitive.content)
         val shared = rows.getValue("shared").jsonObject
-        assertEquals("Primary", shared["display_name"]!!.jsonPrimitive.content)
+        // Labels only (Oct 12): an unnamed login reads splice's default, never "Primary", and is offered its one naming.
+        assertEquals("Account", shared["display_name"]!!.jsonPrimitive.content)
+        assertEquals("true", shared["label_default"]!!.jsonPrimitive.content)
+        assertEquals("false", own["label_default"]!!.jsonPrimitive.content)
         assertEquals("true", shared["can_rename"]!!.jsonPrimitive.content)
         assertEquals("false", shared["can_remove"]!!.jsonPrimitive.content)
     }

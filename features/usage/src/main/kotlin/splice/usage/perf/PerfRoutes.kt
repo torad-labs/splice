@@ -66,12 +66,22 @@ private const val MAX_TURNS = 2_000
  *  EVERY matching row, not the clamped newest. */
 private data class AskedFigures(val usage: Boolean = true, val peak: Boolean = false)
 
+/** `?order=`: the n rows a clamp keeps. `price` ranks the WHOLE matching window by what each request costs at the
+ *  head's published API rates (a key's cost_usd, a plan's plan_value_usd), unpriced requests last, ties newest first. */
+private enum class TurnsOrder(val wire: String) {
+    NEWEST("newest"),
+    PRICE("price"),
+}
+
+/** The rows the clamp keeps: [n] of them, and which [n] of the matching window, the newest or the highest priced. */
+private data class AskedRows(val n: Int, val order: TurnsOrder = TurnsOrder.NEWEST)
+
 /** The window one request asks for, after validation. A named pair and not a `Pair<Long, Int>`: the
  *  two are read straight into a cutoff and a clamp, and a positional swap of same-shaped values is the
  *  defect the row's own named-argument rule exists for. */
 private data class AskedWindow(
     val since: Long,
-    val n: Int,
+    val rows: AskedRows,
     val filter: TurnsFilter,
     val zone: ZoneId,
     val figures: AskedFigures = AskedFigures(),
@@ -95,6 +105,10 @@ public class PerfRoutes(
     /** Installed by the application: which project each request's session belongs to, taken once per request. */
     public var projects: RequestProjects = RequestProjects { NoProjectTags }
 
+    /** Installed by the application: how each head's recorded account values read (labels only, Oct 12). The default
+     *  leaves every value as recorded. */
+    public var accounts: RecordedAccounts = RecordedAccounts { HeadAccountNames { null } }
+
     public suspend fun turns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
         val matches = if (name.isBlank()) emptyList() else heads.byName(name).ifEmpty { heads.retired(name) }
@@ -112,11 +126,13 @@ public class PerfRoutes(
             refuse(call, UNWIRED_TURNS, HttpStatusCode.ServiceUnavailable)
             return
         }
+        // read before the body is built: naming a login asks the roster, which suspends
+        val names = wired.associate { it.key to accounts.forHead(it.key) }
 
         call.respondText(
             buildJsonObject {
                 put("since", asked.since)
-                put("n", asked.n)
+                put("n", asked.rows.n)
                 putJsonArray("heads") {
                     matches.forEach { head ->
                         val source = head.sinks.perfRows
@@ -140,7 +156,7 @@ public class PerfRoutes(
                                 putJsonArray("rows") { }
                             }
                         } else {
-                            add(turnsFor(head, source, asked))
+                            add(turnsFor(head, source, asked, names.getValue(head.key)))
                         }
                     }
                 }
@@ -189,13 +205,16 @@ public class PerfRoutes(
         val nText = params["n"]
         val read = readFilter(params)
         val filter = (read as? TurnsFilterRead.Read)?.filter?.inProject(params["project"], tags)
+        val orderText = params["order"]
+        val order =
+            if (orderText == null) TurnsOrder.NEWEST else TurnsOrder.entries.firstOrNull { it.wire == orderText }
         val window = rowsAsked(nText)?.let { n ->
-            filter?.let {
+            filter?.takeIf { order != null }?.let {
                 val figures = AskedFigures(params["usage"] != "0", params["peak"] == "1")
-                AskedWindow(since, n, it, zone, figures, tags = tags)
+                AskedWindow(since, AskedRows(n, order ?: TurnsOrder.NEWEST), it, zone, figures, tags = tags)
             }
         }
-        return AskRead(window, refusal(nText, read).takeIf { window == null })
+        return AskRead(window, refusal(nText, read, orderText, order).takeIf { window == null })
     }
 
     /** The rows `?n=` asks for, or null when it is not a whole number. Clamped rather than refused, and the
@@ -206,16 +225,23 @@ public class PerfRoutes(
         if (nText == null) DEFAULT_TURNS else nText.toIntOrNull()?.coerceIn(1, MAX_TURNS)
 
     /** Why a request whose `n` or filters could not be read is refused, naming the parameter. */
-    private fun refusal(nText: String?, read: TurnsFilterRead): String =
+    private fun refusal(nText: String?, read: TurnsFilterRead, orderText: String?, order: TurnsOrder?): String =
         if (rowsAsked(nText) == null) {
             "n must be a whole number of rows, got '$nText'"
+        } else if (order == null) {
+            "order must be newest or price, got '$orderText'"
         } else {
             (read as? TurnsFilterRead.Refused)?.message.orEmpty()
         }
 
-    private fun turnsFor(head: UsageHead, source: PerfRowsSource, asked: AskedWindow): JsonObject {
+    private fun turnsFor(
+        head: UsageHead,
+        source: PerfRowsSource,
+        asked: AskedWindow,
+        names: HeadAccountNames,
+    ): JsonObject {
         if (source is ProjectedPerfRowsSource) {
-            return source.projected(asked.since) { projection -> turnsJson(head, projection, asked) }
+            return source.projected(asked.since) { projection -> turnsJson(head, projection, asked, names) }
         }
         val read = source.window(asked.since)
         return turnsJson(
@@ -225,21 +251,32 @@ public class PerfRoutes(
                 override fun complete(rows: List<PerfRow>): List<PerfRow> = rows
             },
             asked,
+            names,
         )
     }
 
-    private fun turnsJson(head: UsageHead, projection: PerfRowsProjection, asked: AskedWindow): JsonObject {
+    private fun turnsJson(
+        head: UsageHead,
+        projection: PerfRowsProjection,
+        asked: AskedWindow,
+        names: HeadAccountNames,
+    ): JsonObject {
         val read = projection.window
+        // an account filter asks by ref, and a row reads its ref and label, whatever value the row was written with
+        val filter = asked.filter.reading(names)
+        val reading = AccountReading(names)
         // The filters narrow the WINDOW, then the clamp takes the newest of what matched: a filter run
         // after the clamp finds nothing older than the slice (V4-444).
-        val matching = read.rows.filter(asked.filter::matches)
-        val rows = projection.complete(matching.sortedBy { it.ts }.takeLast(asked.n))
+        val matching = read.rows.filter(filter::matches)
         val price = head.statusline.catalog?.let(::TurnPrice)
+        val plans = AccountPlans(head, heads.billing(head.key))
         // One classification for the window's counters and for each row's own figure (TurnPriceGap).
-        val gaps = TurnPriceGap(price, AccountPlans(head, heads.billing(head.key)))
+        val gaps = TurnPriceGap(price, plans)
+        val rows = projection.complete(kept(matching, asked.rows, gaps))
         return buildJsonObject {
             put("key", head.key)
             put("label", head.label)
+            put("order", asked.rows.order.wire)
             put("count", matching.size)
             put("returned", rows.size)
             put("truncated", matching.size > rows.size)
@@ -250,22 +287,32 @@ public class PerfRoutes(
             if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only
             // `count` and `rows` (Settings asks about a hundred such counts) must not pay for figures it drops.
-            if (asked.figures.usage) {
-                put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
-            }
+            if (asked.figures.usage) put("usage", TurnUsage(matching, price, plans, asked.zone, reading).json())
             // Over every row of the window the filters matched, never the newest n: a busy command's day is more than n rows.
             if (asked.figures.peak) put("at_once", PerfPeak(matching).json())
-            putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps, asked.tags)) } }
-            longestSilence(asked.filter, matching)?.let { (row, silence) ->
+            putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps, asked.tags, reading)) } }
+            longestSilence(filter, matching)?.let { (row, silence) ->
                 put("longest_silence_ms", silence)
-                put("longest", rowJson(projection.complete(listOf(row)).single(), gaps, asked.tags))
+                put("longest", rowJson(projection.complete(listOf(row)).single(), gaps, asked.tags, reading))
             }
             // Each further question the request carried reads the window already in hand: the cost of a read is the
             // file's, not the question's, so ten questions are one read (Settings asks about a hundred counts).
             if (asked.asks.isNotEmpty()) {
-                putJsonArray("asks") { asked.asks.forEach { add(turnsJson(head, projection, it)) } }
+                putJsonArray("asks") { asked.asks.forEach { add(turnsJson(head, projection, it, names)) } }
             }
         }
+    }
+
+    /** The [rows] of [matching] the clamp keeps, oldest first for the newest and dearest first for the price. */
+    private fun kept(matching: List<PerfRow>, rows: AskedRows, gaps: TurnPriceGap): List<PerfRow> = when (rows.order) {
+        TurnsOrder.NEWEST -> matching.sortedBy { it.ts }.takeLast(rows.n)
+        // Dearest first over the whole window; a request with no figure sorts after every priced one.
+        TurnsOrder.PRICE -> matching.sortedWith(dearestFirst(gaps)).take(rows.n)
+    }
+
+    private fun dearestFirst(gaps: TurnPriceGap): Comparator<PerfRow> {
+        val figure = { row: PerfRow -> gaps.value(row) ?: Double.NEGATIVE_INFINITY }
+        return compareByDescending(figure).thenByDescending { it.ts }
     }
 
     /** For `test=waited`: the matching request that sat through the longest silence, over every matching row. */
@@ -282,7 +329,12 @@ public class PerfRoutes(
      *  facts written OVER it, so a key the writer put in both is reported by the typed fact and never
      *  by the bag. `ts` is the only such key today and is skipped from the bag to avoid writing it
      *  twice; the ordering is what makes that a safety net rather than a coincidence. */
-    private fun rowJson(row: PerfRow, gaps: TurnPriceGap, tags: ProjectTags): JsonObject = buildJsonObject {
+    private fun rowJson(
+        row: PerfRow,
+        gaps: TurnPriceGap,
+        tags: ProjectTags,
+        reading: AccountReading,
+    ): JsonObject = buildJsonObject {
         row.fields.forEach { (key, value) -> if (key != TS) put(key, value) }
         put(TS, row.ts)
         put("outcome", row.outcome)
@@ -298,7 +350,8 @@ public class PerfRoutes(
         put("project", row.facts.session?.let(tags::of) ?: JsonNull)
         // What a session with no name is called, from the same snapshot; null where it has a name or none is readable.
         put("title", row.facts.session?.let(tags::titleOf))
-        put("account", row.facts.account)
+        put("account", reading.key(row.facts.account))
+        put("account_label", reading.label(row.facts.account))
         put("cache_cold", row.facts.cacheCold)
         put("compact", row.facts.compact)
         // V4-444: whether prompts and answers were saved for this turn, and what the upstream itself said when the

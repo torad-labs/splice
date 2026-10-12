@@ -116,9 +116,8 @@ internal class ControlPlane(
 
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
-        claudeLoginOwner?.accountForCredential(key)?.let { account ->
-            account.email?.takeIf(String::isNotBlank) ?: account.uuid
-        }
+        // The row records the account's ref, never its email or id (labels only, 2026-10-12).
+        claudeLoginOwner?.accountForCredential(key)?.ref
     }
 
     /** Each head's sent credential digest, read by the same late-wired owner: which login carries that head, and

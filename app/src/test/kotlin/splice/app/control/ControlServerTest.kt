@@ -69,7 +69,7 @@ private class StubHead(
 
 private class FakeAuth : AuthProvider {
     override suspend fun credentials() = null
-    override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", mapOf("account_id_masked" to "acct…5678"))
+    override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", mapOf("account_ref" to "1a2b3c4d"))
 }
 
 /** An api-key head with NO key set — launch must still work but must carry the warning. */
@@ -413,10 +413,10 @@ class ControlServerTest {
     }
 
     @Test
-    fun `auth is masked, compact summarized, logs tailed`() = runTest {
+    fun `auth names an account by its ref, compact summarized, logs tailed`() = runTest {
         // Auth is keyed by head; compact is aggregate stats + tail; logs {key,path,lines[]}.
         val auth = json.parseToJsonElement(authed("/api/auth")).jsonObject["codex"]!!.jsonObject
-        assertEquals("acct…5678", auth["account_id_masked"]?.jsonPrimitive?.content)
+        assertEquals("1a2b3c4d", auth["account_ref"]?.jsonPrimitive?.content)
         assertEquals("automated", auth["login"]?.jsonPrimitive?.content) // oauth -> automated
         val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["stats"]!!.jsonObject
         assertTrue(compact["tail"]!!.jsonArray.isNotEmpty())

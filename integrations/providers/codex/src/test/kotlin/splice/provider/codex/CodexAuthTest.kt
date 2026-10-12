@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AccountRef
 import splice.core.auth.Credentials
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
@@ -430,7 +432,7 @@ class CodexAuthTest {
     }
 
     @Test
-    fun `describe masks the account id and never exposes tokens`(@TempDir tmp: Path) = runTest {
+    fun `describe names the account by its ref and never exposes the id or tokens`(@TempDir tmp: Path) = runTest {
         val (auth, path) = provider(tmp, { 1L }) { RefreshAttempt.Denied("test-denied") }
         assertFalse(auth.describe().present)
         Files.createDirectories(path.parent)
@@ -438,7 +440,8 @@ class CodexAuthTest {
         val d = auth.describe()
         assertTrue(d.present)
         assertEquals("chatgpt-oauth", d.kind)
-        assertEquals("acct…5678", d.fields["account_id_masked"])
+        assertEquals(AccountRef.of("acct12345678"), d.fields[ACCOUNT_REF_FIELD])
+        assertFalse(d.fields.values.any { it.contains("acct1234") })
         assertEquals("then", d.fields["last_refresh"])
         assertFalse(d.fields.values.any { it.contains("secret") })
     }

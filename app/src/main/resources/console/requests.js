@@ -113,15 +113,14 @@ const WINDOWS = { "1h": ["1 hour", 3600e3], "5h": ["5 hours", 5 * 3600e3], "24h"
 const money = (usd) => (usd < 0.01 ? dollars(usd) : `≈$${usd.toFixed(usd < 1 ? 3 : 2)}`);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds the window's days in the viewer's zone
 /** What a project's figure counts, on its tile or in the picker and its menu: the requests in the window under the
- *  filters he set, as the daemon counts them for that project (one n=1 read per project and command). No project is not a project the daemon filters by,
- *  so its figure is every request less the projects', which holds while every project with requests in the window is
- *  among those counted: the live sessions' projects and every project a read row names. */
+ *  filters he set, as the daemon counts them for that project (one n=1 read per project and command), No project included:
+ *  the daemon lists the requests no project holds itself (project=none), so no figure here is a subtraction. */
 async function readTileCounts() {
   const groups = pickGroups();
   if (groups.length < 2) return;
   const heads = askedHeads();
   const named = new Set([...groups.map((g) => g.key), ...state.rows.map((r) => rowProjKey({ project: rowProject(r) }))]);
-  const keys = [null, ...[...named].filter((k) => k !== NO_PROJECT_KEY)];
+  const keys = [null, ...new Set([...named, NO_PROJECT_KEY])];
   const reads = await Promise.all(keys.flatMap((k) => heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, k)))));
   const counts = new Map();
   keys.forEach((k, i) => {
@@ -132,8 +131,6 @@ async function readTileCounts() {
     });
     counts.set(k ?? "", n);
   });
-  const all = counts.get(""), parts = keys.slice(1).map((k) => counts.get(k));
-  counts.set(NO_PROJECT_KEY, all == null || parts.some((n) => n == null) ? null : Math.max(0, all - parts.reduce((a, n) => a + n, 0)));
   state.tileCounts = counts;
 }
 /** The first read: enough rows per command to draw the newest screens at once (ui.n starts at 200). */
@@ -274,9 +271,8 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
     if (ui.account === "none") p.set("unattributed", "account");
     else if (ui.account) p.set("account", ui.account.split("|").slice(1).join("|"));
     if (ui.sid) p.set("session", String(ui.sid).slice(0, 8));
-    // the daemon narrows to the project's sessions itself (TurnsFilter.inProject), so the newest 2,000 are its own;
-    // No project is not a project it knows, so that pick is narrowed here
-    if (project && project !== NO_PROJECT_KEY) p.set("project", project);
+    // the daemon narrows to the project's sessions itself (TurnsFilter.inProject), No project included (project=none), so the newest 2,000 are its own
+    if (project) p.set("project", project === NO_PROJECT_KEY ? "none" : project); // none: the daemon lists the requests no project holds
     if (ui.compact) p.set("compact", "1");
     if (ui.to) p.set("until", String(ui.to));
     for (const [key, value] of Object.entries(WHY_ASKS[ui.why] || {})) {

@@ -67,6 +67,14 @@ class PerfProjectTagTest {
     }
 
     @Test
+    fun `project none lists the requests no project holds, the ones a row prints as null`() = testApplication {
+        application { routing { get("/api/perf/turns") { routes.turns(call) } } }
+        val none = client.rows("project=none")
+        assertEquals(listOf(3_000L, 4_000L), none.map { it.getValue("ts").jsonPrimitive.content.toLong() })
+        assertEquals(listOf(JsonNull, JsonNull), none.map { it.getValue("project") })
+    }
+
+    @Test
     fun `rows carry the session rows project object, null where none holds the session, and the filter takes its id`() =
         testApplication {
             application { routing { get("/api/perf/turns") { routes.turns(call) } } }

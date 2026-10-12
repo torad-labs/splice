@@ -12,6 +12,9 @@ import splice.core.perf.PerfKeys
 private const val FAILED = "failed"
 private const val STOPPED = "stopped"
 
+/** The `project` value that asks for the requests that ran in no project. */
+private const val NO_PROJECT = "none"
+
 /** A field a link may ask to be missing, so the requests nothing attributed can be listed without inventing a name. */
 internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("account") }
 
@@ -52,6 +55,8 @@ internal data class TurnsAttribution(
     val session: String? = null,
     /** Every session tag of the project a request asked for: a row outside them is left out. */
     val sessions: Set<String>? = null,
+    /** Set to leave out every request that ran in a project: what is left carries no project (`?project=none`). */
+    val outsideProjects: ProjectTags? = null,
     val unattributed: Unattributed? = null,
 )
 
@@ -75,15 +80,23 @@ internal data class TurnsFilter(
         attribution.account == null || row.facts.account == attribution.account,
         attribution.session == null || row.facts.session == attribution.session,
         attribution.sessions == null || row.facts.session in attribution.sessions,
+        inNoProject(row),
         attributionMatches(row),
         local || row.fields[PerfKeys.LOCAL_STEP] != 1L,
         compact == null || (row.facts.compact == true) == compact,
         waits.matches(row),
     ).all { it }
 
-    /** This filter narrowed to the project [id], or as it was when none is asked; an id nothing holds matches no row. */
-    fun inProject(id: String?, tags: ProjectTags): TurnsFilter =
-        if (id == null) this else copy(attribution = attribution.copy(sessions = tags.tagsOf(id)))
+    /** This filter narrowed to the project [id], or as it was when none is asked; an id nothing holds matches no row.
+     *  [NO_PROJECT] narrows to the requests no project holds, the ones a row prints as `project: null`. */
+    fun inProject(id: String?, tags: ProjectTags): TurnsFilter = when (id) {
+        null -> this
+        NO_PROJECT -> copy(attribution = attribution.copy(outsideProjects = tags))
+        else -> copy(attribution = attribution.copy(sessions = tags.tagsOf(id)))
+    }
+
+    private fun inNoProject(row: PerfRow): Boolean =
+        attribution.outsideProjects?.let { tags -> row.facts.session?.let(tags::of) == null } ?: true
 
     private fun outcomeMatches(tag: String): Boolean = when (outcome) {
         null -> true

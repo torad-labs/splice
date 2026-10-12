@@ -152,7 +152,13 @@ public class ProjectsRoutes(
             val repoTeams = allTeams.filter { teamProject[it]?.id == root }
             return buildJsonObject {
                 put("id", root)
-                refs[root]?.let { put("name", it.name); put("label", it.label); put("source", it.source.wire) }
+                refs[root]?.let {
+                    put("name", it.name)
+                    put("label", it.label)
+                    put("source", it.source.wire)
+                    // the saved folder as spelled in folders[].path; null for a repo project
+                    put("folder", it.folder)
+                }
                 put("root", root)
                 RepoOrigin.of(root)?.let { put("remote", it) }
                 economics.row(sessions, repoTeams).forEach { (key, value) -> put(key, value) }

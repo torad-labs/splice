@@ -128,7 +128,9 @@ class ProjectsRoutesTest {
                     """"unreported_usage_turns_today":0,""" +
                     """"day_start":$DAY_START,"last_activity":${AT + 2}}""",
             ),
-            JsonObject(repo - "cost_today_usd" - "compaction" - "statusline_roots" - "name" - "label" - "source"),
+            JsonObject(
+                repo - "cost_today_usd" - "compaction" - "statusline_roots" - "name" - "label" - "source" - "folder",
+            ),
             "yesterday's row and the outsider's are not this repo's today; the archived team is not counted",
         )
         // 2M input at 1.0 and 10 output at 2.0, per million.
@@ -413,11 +415,9 @@ class ProjectsRoutesTest {
             setOf(expectedId, tmp.toRealPath().resolve("elsewhere").toString()),
             listed.map { it.getValue("id").jsonPrimitive.content }.toSet(),
         )
-        assertEquals(
-            "folder",
-            listed.single { it.getValue("id").jsonPrimitive.content == expectedId }
-                .getValue("source").jsonPrimitive.content,
-        )
+        val own = listed.single { it.getValue("id").jsonPrimitive.content == expectedId }
+        assertEquals("folder", own.getValue("source").jsonPrimitive.content)
+        assertEquals(tmp.toRealPath().toString(), own.getValue("folder").jsonPrimitive.content)
     }
 
     @Test

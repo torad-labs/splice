@@ -50,7 +50,7 @@ public class AccountsRoute(
     ): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
-        val naming = AccountNaming(names?.names().orEmpty())
+        val naming = AccountNaming(names)
         val poolRows = joined.values.map { row -> buildJsonObject { write(this, row, nowSeconds, providers, naming) } }
         val nativeRows = ClaudeLoginRows(naming).list(native, providers, carrying, heads, nowSeconds)
         // every row is named before any is settled: whether a ref shows depends on the whole roster

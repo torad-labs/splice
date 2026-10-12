@@ -1,6 +1,6 @@
 // NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). Through /api/accounts as the console reads it: every
-// login is shown by a label a person chose or by splice's `<Plan> · <ref>` default, a default is offered for naming,
-// and no account id appears anywhere in the roster.
+// login is shown by a label a person chose or by its plan word and the number it keeps, "Plus" then "Plus 2", a default
+// is offered for naming, and no account id or ref appears in any name.
 package splice.accounts.pool
 
 import io.ktor.client.request.get
@@ -35,8 +35,8 @@ class AccountLabelsTest {
 
     private fun account(label: String, plan: String) = HeadAccountView(label, false, false, true, plan)
 
-    private fun head(accounts: Map<String, Pair<String, String>>): AccountHead = AccountHead(
-        key = "codex",
+    private fun head(accounts: Map<String, Pair<String, String>>, key: String = "codex"): AccountHead = AccountHead(
+        key = key,
         auth = object : AuthProvider {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", emptyMap())
@@ -57,7 +57,7 @@ class AccountLabelsTest {
     )
 
     @Test
-    fun `an unnamed login reads its plan, its ref only where another shares it, and is offered naming`() = runBlocking {
+    fun `an unnamed login reads its plan word, numbered where another shares it, offered naming`() = runBlocking {
         val pool = mapOf(
             "plus-$stored" to ("plus" to "acct-stored"),
             "codex-2" to ("pro" to "acct-ordinal"),
@@ -70,9 +70,9 @@ class AccountLabelsTest {
             .mapValues { (_, row) -> row.jsonObject }
         fun read(label: String, field: String) = rows.getValue(label).getValue(field).jsonPrimitive.content
 
-        // two unnamed Plus logins are told apart by their refs; a named one never counts toward the sharing
-        assertEquals("Plus · $stored", read("plus-$stored", "display_name"))
-        assertEquals("Plus · ${AccountRef.of("acct-third")}", read("codex-3", "display_name"))
+        // two unnamed Plus logins are told apart by number, in roster order; a named one never takes a number
+        assertEquals("Plus", read("plus-$stored", "display_name"))
+        assertEquals("Plus 2", read("codex-3", "display_name"))
         assertEquals("true", read("plus-$stored", "label_default"))
         assertEquals(stored, read("plus-$stored", "ref"), "a stored default ends in the ref the account proves")
         assertEquals("Pro", read("codex-2", "display_name"), "a lone plan needs no ref")
@@ -80,6 +80,53 @@ class AccountLabelsTest {
         assertEquals("work", read("work", "display_name"))
         assertEquals("false", read("work", "label_default"))
         assertFalse("acct-" in body, "no account id is anywhere in the roster")
+    }
+
+    @Test
+    fun `unnamed logins of different providers never share a word, so each reads it alone`() = runBlocking {
+        val heads = mapOf(
+            "kimi" to head(mapOf("kimi-1" to ("" to "acct-kimi")), "kimi"),
+            "muse" to head(mapOf("muse-1" to ("" to "acct-muse")), "muse"),
+        )
+        val body = AccountsRoute(heads).accountsJson(mapOf("kimi" to "kimi", "muse" to "muse"), emptyList(), emptyMap())
+        val shown = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
+            .map { it.jsonObject.getValue("display_name").jsonPrimitive.content }
+        assertEquals(listOf("Account", "Account"), shown, "each is the only unnamed login on its provider")
+    }
+
+    @Test
+    fun `a number is kept for good, a signed-out login keeps its own, and a new login never takes it`(
+        @TempDir dir: Path,
+    ) = runBlocking {
+        val names = AccountNameStore(dir.resolve(ACCOUNT_NAMES_FILE))
+        suspend fun shown(pool: Map<String, Pair<String, String>>) =
+            Json.parseToJsonElement(AccountsRoute(mapOf("codex" to head(pool)), names = names).accountsJson())
+                .jsonObject.getValue("accounts").jsonArray
+                .associate {
+                    it.jsonObject.getValue(
+                        "label",
+                    ).jsonPrimitive.content to it.jsonObject.getValue("display_name").jsonPrimitive.content
+                }
+
+        val first = "codex-2" to ("plus" to "acct-first")
+        val second = "codex-3" to ("plus" to "acct-second")
+        assertEquals(mapOf("codex-2" to "Plus", "codex-3" to "Plus 2"), shown(mapOf(first, second)))
+        // the first signs out: the second keeps "Plus 2" rather than moving up, and Requests reads the first as "Plus"
+        assertEquals(mapOf("codex-3" to "Plus 2"), shown(mapOf(second)))
+        val gone = AccountRef.of("acct-first")
+        assertEquals("Plus", names.numbered(mapOf(gone to AccountKind(null, SIGNED_OUT_WORD))).getValue(gone))
+        // a login seen for the first time takes the next number, never a freed one
+        assertEquals(
+            mapOf("codex-3" to "Plus 2", "codex-4" to "Plus 3"),
+            shown(mapOf(second, "codex-4" to ("plus" to "acct-new"))),
+        )
+        // one never seen signed in is numbered among the signed-out, and gives that up once it is back
+        val stranger = AccountRef.of("acct-stranger")
+        assertEquals(
+            "Signed-out account",
+            names.numbered(mapOf(stranger to AccountKind(null, SIGNED_OUT_WORD))).getValue(stranger),
+        )
+        assertEquals("Plus 4", shown(mapOf("codex-5" to ("plus" to "acct-stranger"))).getValue("codex-5"))
     }
 
     @Test

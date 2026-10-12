@@ -60,13 +60,15 @@ public class ClaudeLoginRoutes(
             return
         }
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
-        val row = ClaudeLoginRows(AccountNaming(names?.names().orEmpty())).list(
+        val naming = AccountNaming(names)
+        val rows = ClaudeLoginRows(naming).list(
             listOf(view),
             mapOf(view.head to provider),
             mapOf(view.head to owner.carrying(view.head)),
             heads,
             nowSeconds,
-        ).single()
+        )
+        val row = naming.settle(rows).single()
         AccountReplies.respond(call, row.toString())
     }
 

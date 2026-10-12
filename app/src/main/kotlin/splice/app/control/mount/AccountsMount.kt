@@ -70,7 +70,7 @@ internal class AccountsMount(
     suspend fun authJson(): String = authStatusRoutes.authJson()
 
     /** How Requests and Usage name a recorded login: by the label this roster shows, never by an email a row kept. */
-    fun recordedNames(): RosterAccountNames = RosterAccountNames(AccountRoster { accountsJson() }, logins)
+    fun recordedNames(): RosterAccountNames = RosterAccountNames(AccountRoster { accountsJson() }, logins, names)
 
     /** The route and in-process doctor read one authoritative roster at call time. */
     suspend fun accountsJson(): String {

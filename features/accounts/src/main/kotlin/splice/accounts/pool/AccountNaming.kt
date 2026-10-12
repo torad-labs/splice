@@ -9,9 +9,6 @@ import kotlinx.serialization.json.put
 import splice.core.auth.AccountRef
 import splice.core.util.JsonScalars
 
-// why: what a default reads when neither the provider's plan nor anything else names the account's kind.
-private const val FALLBACK_WORD = "Account"
-
 /** What a row is called, its [ref] when its credential proved one, and whether the name is splice's default rather
  *  than one a person gave (a default is what the console offers to name once). */
 internal data class AccountName(val shown: String, val ref: String?, val isDefault: Boolean) {
@@ -31,18 +28,21 @@ internal data class AccountNameFacts(
     val plan: String?,
 )
 
-/** [chosen] is the names a person gave, by ref (AccountNameStore): read first, for every kind of login. One instance
- *  names one roster: it notes each default it hands out, so [settle] can drop the ref a plan word does not need. */
-internal class AccountNaming(private val chosen: Map<String, String> = emptyMap()) {
-    // the plan word each unnamed login with a ref was given, by ref, over the whole roster named so far
-    private val words = HashMap<String, String>()
+/** [store] holds the names a person gave and the number each unnamed login keeps, by ref (AccountNameStore); without
+ *  one, nothing is named beyond what each login carries and numbers last for this roster alone. One instance names one
+ *  roster: it notes each default it hands out, so [settle] can give it its number. */
+internal class AccountNaming(private val store: AccountNameStore? = null) {
+    private val chosen = store?.names().orEmpty()
+
+    // the plan word each unnamed login with a ref was given, by ref, in the order the roster named them
+    private val words = LinkedHashMap<String, String>()
     private val hashTail = Regex("-([0-9a-f]{${AccountRef.CHARS}})$")
 
     // why: the ordinal splice mints when no name was given (`claude-2`, `codex-3`, `grok-2`), whatever the vendor.
     private val ordinal = Regex("^[a-z][a-z0-9]*-\\d+$")
 
     /** A name chosen on the console wins, then a name a person gave elsewhere, then a stored label a person chose;
-     *  anything else reads `<Plan> · <ref>`. A stored label splice made up itself (its ordinal `claude-2`, ChatGPT's
+     *  anything else reads its plan word, numbered once the roster settles. A stored label splice made up itself (its ordinal `claude-2`, ChatGPT's
      *  `plus-<ref>`, the first account's `primary`) is a default too, so it is offered for naming and never shown as if
      *  someone chose it. */
     fun name(facts: AccountNameFacts): AccountName {
@@ -57,18 +57,26 @@ internal class AccountNaming(private val chosen: Map<String, String> = emptyMap(
     private fun fallback(plan: String?, ref: String?): AccountName {
         val word = plan?.takeIf(String::isNotBlank)?.replaceFirstChar(Char::uppercaseChar) ?: FALLBACK_WORD
         ref?.let { words[it] = word }
-        return AccountName(ref?.let { "$word · $it" } ?: word, ref, isDefault = true)
+        return AccountName(word, ref, isDefault = true)
     }
 
-    /** The interim words (Marlin, Oct 12): an unnamed login shows its ref only where another unnamed login shares
-     *  its plan word anywhere on [rows]; a lone one reads its word alone, "Max" or "Account". */
+    /** The stored number (Marlin via fin, Oct 12): an unnamed login reads its plan word and the number it keeps within
+     *  its provider, "Max" then "Max 2", so no page needs its ref. Numbers are counted per provider, since every page
+     *  puts the provider beside the name, and a login [rows] shows for the first time takes the next one. */
     fun settle(rows: List<JsonObject>): List<JsonObject> {
-        val shared = words.values.groupingBy { it }.eachCount()
+        val kinds = LinkedHashMap<String, AccountKind>()
+        rows.forEach { row -> kind(row)?.let { kinds.putIfAbsent(it.first, it.second) } }
+        val shown = store?.numbered(kinds) ?: AccountNumbers(emptyMap()).assign(kinds).mapValues { it.value.shown() }
         return rows.map { row ->
-            val word = JsonScalars.str(row, "ref")?.let(words::get)
-            val lone = word != null && JsonScalars.str(row, "label_default") == "true" && shared[word] == 1
-            if (lone) JsonObject(row + ("display_name" to JsonPrimitive(word))) else row
+            val name = kind(row)?.let { shown[it.first] }
+            if (name != null) JsonObject(row + ("display_name" to JsonPrimitive(name))) else row
         }
+    }
+
+    /** An unnamed login's ref and the provider and plan word it is counted among, or null for any other row. */
+    private fun kind(row: JsonObject): Pair<String, AccountKind>? {
+        val ref = JsonScalars.str(row, "ref")?.takeIf { JsonScalars.str(row, "label_default") == "true" }
+        return ref?.let(words::get)?.let { ref to AccountKind(JsonScalars.str(row, "provider"), it) }
     }
 
     private fun madeUp(label: String): Boolean =

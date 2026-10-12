@@ -1,5 +1,5 @@
 // NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). The names a person gives logins, kept in splice's own
-// state as ref -> name, so every kind of login can be named and renamed (his native Claude login included) without
+// state as ref -> name (with the number each unnamed login keeps), so every kind of login can be named and renamed (his native Claude login included) without
 // splice ever writing a credential file it does not own.
 package splice.accounts.pool
 
@@ -18,7 +18,11 @@ public const val ACCOUNT_NAMES_FILE: String = "account-names.json"
 private const val MAX_NAME_CHARS = 48
 
 @Serializable
-private data class NamesDocument(val names: Map<String, String> = emptyMap())
+private data class NamesDocument(
+    val names: Map<String, String> = emptyMap(),
+    /** The number each unnamed login was given within its kind, by ref (AccountNumbers): kept, never renumbered. */
+    val numbers: Map<String, AccountNumber> = emptyMap(),
+)
 
 /** Why a name was not kept, in the words the console shows under the field. */
 internal class AccountNameRefused(message: String) : IllegalArgumentException(message)
@@ -47,9 +51,20 @@ public class AccountNameStore(private val file: Path) {
         }
         refused?.let { throw AccountNameRefused(it) }
         val document = read()
-        val next = if (trimmed.isEmpty()) document.names - ref else document.names + (ref to trimmed)
-        SecureFile.writeAtomic0600(file, json.encodeToString(NamesDocument(next)))
+        write(document.copy(names = if (trimmed.isEmpty()) document.names - ref else document.names + (ref to trimmed)))
     }
+
+    /** What each login of [kinds] reads when no one named it, "Max" or "Max 2", by ref. A login seen for the first
+     *  time takes the next number of its kind and keeps it; the file is written only when one was handed out. */
+    @Synchronized
+    public fun numbered(kinds: Map<String, AccountKind>): Map<String, String> {
+        val document = read()
+        val numbers = AccountNumbers(document.numbers).assign(kinds)
+        if (numbers != document.numbers) write(document.copy(numbers = numbers))
+        return kinds.keys.associateWith { numbers.getValue(it).shown() }
+    }
+
+    private fun write(document: NamesDocument) = SecureFile.writeAtomic0600(file, json.encodeToString(document))
 
     private fun read(): NamesDocument = try {
         json.decodeFromString(Files.readString(file))

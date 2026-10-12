@@ -19,12 +19,12 @@ const login = (ref: string, name: string, isDefault: boolean, label: string) => 
   five_hour_used_percent: 20, five_hour_reset_epoch_seconds: Math.floor(now / 1000) + 3600, five_hour_window_seconds: 18_000,
   observed_at_epoch_seconds: Math.floor(now / 1000), pinned_heads: [], failover_positions: { claude: null },
 });
-const ROSTER: ReturnType<typeof login>[] = [login(REF, `Max · ${REF}`, true, "claude-2"), login(NAMED, "Work", false, "work")];
+const ROSTER: ReturnType<typeof login>[] = [login(REF, "Max", true, "claude-2"), login(NAMED, "Work", false, "work")];
 const turn = (id: string, agoS: number, ref: string, label: string) => ({
   turn: id, turn_id: id, ts: now - agoS * 1000, outcome: "ok", model: "m", session: "0c3b07d2", total: 2_000, attempts: 1, retries: 0,
   account: ref, account_label: label,
 });
-const ROWS = [turn("t-1", 30, REF, `Max · ${REF}`), turn("t-2", 60, NAMED, "Work")];
+const ROWS = [turn("t-1", 30, REF, "Max"), turn("t-2", 60, NAMED, "Work")];
 const answers: Record<string, unknown> = {
   "/api/status": { registry: [{ key: "claude", label: "claude-splice", family: "anthropic", authKind: "client" }] },
   "/api/accounts": { accounts: ROSTER, head_pools: {} },
@@ -46,12 +46,12 @@ const server = Bun.serve({
       return Response.json({ ok: true });
     }
     if (req.method === "POST" && path === "/api/auth/claude/login") { // the sign-in lands at once: a new login on the roster
-      if (!ROSTER.some((r) => r.ref === ADDED)) ROSTER.push(login(ADDED, `Max · ${ADDED}`, true, "claude-3"));
+      if (!ROSTER.some((r) => r.ref === ADDED)) ROSTER.push(login(ADDED, "Max 2", true, "claude-3"));
       return Response.json({ id: "L1", state: "signed_in" });
     }
     if (path === "/api/perf/turns") {
       return Response.json({ heads: [{ key: "claude", label: "claude-splice", count: ROWS.length, returned: ROWS.length, truncated: false, rows: ROWS,
-        usage: { models: [], accounts: [{ key: REF, label: `Max · ${REF}`, requests: 1 }, { key: NAMED, label: "Work", requests: 1 }], sessions: [] } }] });
+        usage: { models: [], accounts: [{ key: REF, label: "Max", requests: 1 }, { key: NAMED, label: "Work", requests: 1 }], sessions: [] } }] });
     }
     if (path in answers) return Response.json(answers[path]);
     if (path.startsWith("/api/")) return Response.json({});
@@ -94,13 +94,13 @@ async function sweep(path: string, ready: string) {
 
 test("Accounts names each login by its label, with no email or id anywhere on the page", async () => {
   const all = await sweep("accounts.html", ".card .name");
-  expect(all).toContain(`Max · ${REF}`);
+  expect(all).toContain("Max");
   expect(all).toContain("Work");
 }, 30_000);
 
 test("Requests names a login by its label, with no email or id anywhere on the page", async () => {
   const all = await sweep("requests.html", 'article[data-open="claude:t-1"]');
-  expect(all).toContain(`Max · ${REF}`);
+  expect(all).toContain("Max");
 }, 30_000);
 
 test("Sessions puts no email or id anywhere on the page", async () => {
@@ -111,17 +111,18 @@ test("a login splice named itself offers Name it beside its name, and a named on
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
-    const unnamed = page.locator(".card", { hasText: `Max · ${REF}` });
+    const unnamed = page.locator(".card").filter({ has: page.locator(".name", { hasText: /^Max$/ }) });
     await unnamed.waitFor({ timeout: 15_000 });
     expect(await page.locator(".card", { hasText: "Work" }).locator(".name-it").count()).toBe(0);
     // the plan tag shows beside a chosen name, and never repeats the plan word a default already starts with (fin)
     expect(await page.locator(".card", { hasText: "Work" }).locator(".plan").count()).toBe(1);
     expect(await unnamed.locator(".plan").count()).toBe(0);
+    expect(await page.locator("body").innerText()).not.toContain(REF); // a ref is never a name (the stored number)
     await unnamed.locator(".name-it").click();
     const field = page.locator(".field.rename");
     await field.waitFor({ timeout: 5_000 });
     expect(await field.inputValue()).toBe("");
-    expect(await field.getAttribute("placeholder")).toBe(`Max · ${REF}`);
+    expect(await field.getAttribute("placeholder")).toBe("Max");
   } finally {
     await page.close();
   }
@@ -132,7 +133,7 @@ test("Name it keeps the name against the login's ref, never its sign-in files", 
   puts.length = 0;
   try {
     await page.goto(`http://127.0.0.1:${server.port}/accounts.html`);
-    const unnamed = page.locator(".card", { hasText: `Max · ${REF}` });
+    const unnamed = page.locator(".card").filter({ has: page.locator(".name", { hasText: /^Max$/ }) });
     await unnamed.waitFor({ timeout: 15_000 });
     await unnamed.locator(".name-it").click();
     await page.locator(".field.rename").fill("Side gig");

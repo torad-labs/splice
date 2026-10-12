@@ -7,14 +7,15 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.accounts.claude.ClaudeLoginPlacesSource
+import splice.accounts.pool.AccountKind
+import splice.accounts.pool.AccountNameStore
+import splice.accounts.pool.SIGNED_OUT_WORD
 import splice.core.auth.AccountRef
 import splice.core.util.JsonScalars
 import splice.usage.perf.HeadAccountNames
 import splice.usage.perf.NamedAccount
 import splice.usage.perf.RecordedAccounts
 
-// why: what a recorded login no roster row holds any more is called; it keeps its ref so its rows stay one group.
-private const val SIGNED_OUT = "Signed-out account"
 private const val SINGLE_LOGIN = "primary"
 private const val NATIVE_PREFIX = "native:"
 
@@ -27,6 +28,8 @@ internal class RosterAccountNames(
     /** The roster /api/accounts serves, read once per head per request. */
     private val roster: AccountRoster,
     private val logins: ClaudeLoginPlacesSource,
+    /** The numbers unnamed logins keep, so a signed-out one still reads its own; null reads every one as signed out. */
+    private val names: AccountNameStore? = null,
 ) : RecordedAccounts {
     private val json = Json { ignoreUnknownKeys = true }
     private val refShape = Regex("^[0-9a-f]{${AccountRef.CHARS}}$")
@@ -72,14 +75,16 @@ internal class RosterAccountNames(
     private fun named(row: JsonObject) =
         NamedAccount(JsonScalars.str(row, "ref").orEmpty(), JsonScalars.str(row, "display_name").orEmpty())
 
-    /** A login the roster no longer holds still never shows its email or id: it reads as its ref. A key, or a label
-     *  that names no person, stays as recorded. */
+    /** A login the roster no longer holds still never shows its email or id, nor its ref: it reads the number it was
+     *  given while signed in ("Max 2"), or one it takes now among signed-out logins ("Signed-out account 2"), and
+     *  keeps its ref so its rows stay one group. A key, or a label that names no person, stays as recorded. */
     private fun signedOut(recorded: String): NamedAccount? {
         val ref = when {
             refShape.matches(recorded) -> recorded
             '@' in recorded || uuidShape.matches(recorded) -> AccountRef.of(recorded)
             else -> return null
         }
-        return NamedAccount(ref, "$SIGNED_OUT · $ref")
+        val shown = names?.numbered(mapOf(ref to AccountKind(null, SIGNED_OUT_WORD)))?.get(ref)
+        return NamedAccount(ref, shown ?: SIGNED_OUT_WORD)
     }
 }

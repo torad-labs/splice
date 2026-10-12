@@ -216,6 +216,8 @@ button.count:hover { color: var(--text); }
 .srv .fig.uses .stale { margin-left: 0; }
 .srv .fig .used { display: inline-flex; align-items: center; }
 .srv .from { display: inline-flex; align-items: center; gap: .6rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.srv .from { max-width: 100%; min-width: 0; }
+.srv .from .ft { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }  /* a long path ends in an ellipsis inside its column */
 .srv .from svg { width: 1.1rem; height: 1.1rem; }
 .srv .from code, .srv .why code { font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .srv .nm { font: 500 1.2rem/1 var(--font-name); color: var(--text); }

@@ -696,7 +696,10 @@ function mcpServerRows(m) {
     const state = shared ? null : (why === "added_in" || (!own && added) ? "added_in" : why);
     const copy = added || own;
     if (state && !MCP_STATE[state] && !MCP_SILENT.has(state)) console.warn(`mcp: no word for "${state}" on ${name}: ${live?.reason ?? own?.reason ?? ""}`);
-    return { name, from: fromWord(own || added), shared, web, address: web ? addressOf(value) : "", state, value,
+    const at = own || added;
+    // a project's own entry names its project by the folder it sits in, so the row shows that name and not the config path
+    const project = at?.kind === "project" ? String(at.scope || "").split("/").filter(Boolean).pop() ?? "" : "";
+    return { name, from: fromWord(at), project, shared, web, address: web ? addressOf(value) : "", state, value,
       cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
       cmds: live?.commands || [], stale, last: live?.last_activity || 0 };
   }).sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name));
@@ -710,7 +713,8 @@ const testSaid = (name) => {
   return r ? `<span class="said limit">${esc(r.word)}</span>` : "";
 };
 function serverRow(s, dim) {
-  const from = `<span class="from">${SV.file}${esc(s.from)}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
+  const where = s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft" title="${esc(s.from)}">${esc(s.from)}</span>`;
+  const from = `<span class="from">${SV.file}${where}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
   const name = `<div class="sname"><span class="nm">${esc(s.name)}</span>${from}</div>`;
   if (!s.shared) {
     const m = MCP_STATE[s.state];

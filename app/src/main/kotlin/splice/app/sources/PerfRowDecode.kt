@@ -51,7 +51,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 }
                 require(parser.currentToken() == JsonToken.END_OBJECT) { "unterminated perf row" }
                 require(parser.nextToken() == null) { "trailing perf input" }
-                val fields = PerfNumericFields(numbers)
+                val fields = numbers.fields()
                 PerfDecodedRow(headers.row(fields), fields.retainedBytes, headers.drops)
             }
             completed = true

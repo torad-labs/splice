@@ -48,7 +48,7 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !skip.includes(k.key)).map((k) => k.key);
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, err: null };
+const ui = { said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, accts: undefined, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -76,6 +76,11 @@ function readKept() {
   get("/api/kept/edges", (r) => { ui.kept.edges = r.ok ? r.body : null; });
   get("/api/kept/labels", (r) => { ui.kept.labels = r.ok ? r.body : null; });
   get("/api/kept/stores", (r) => { ui.stores = r.ok ? r.body.stores : null; });
+  // the MCP host's own snapshot. The route is mounted only while splice hosts MCP (ControlServer.kt), so a 404 here is
+  // the honest answer "nothing is hosted", not a failure: it is drawn as that sentence and never as an unread figure.
+  get("/api/mcp", (r) => { ui.mcp = r.ok ? r.body : r.status === 404 ? false : null; });
+  // the plan windows Accounts draws, read here for the highest of each against the warn line these settings set
+  get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; });
   // a rollback already running (started elsewhere) is picked up once the version is known: it names the release it goes back to
   get("/api/upgrade", (r) => { ui.ver = r.ok ? r.body : null; }).then(async () => {
     const upgradeRun = await API.get("/api/upgrade/run");
@@ -120,7 +125,9 @@ const norm = (s) => String(s).toLowerCase();
 const words = () => ui.q.trim().split(/\s+/).filter(Boolean);
 const hits = (text) => { const w = words(); return w.length > 0 && w.every((x) => norm(text).includes(norm(x))); };
 const jobHay = (id) => `${TOPIC[id].name} ${TOPIC[id].also}`;
-const knobHay = (k) => [k.label, k.key, k.also || "", k.home ? "" : jobHay(topicOf(k.key))].join(" ");
+// the line saying what a setting changes is searched with its name: he looks for a setting by what it does more often
+// than by what it is called ("budget", "thinking"), and the words of that line are the ones he would type
+const knobHay = (k) => [k.label, k.key, k.note || "", k.also || "", k.home ? "" : jobHay(topicOf(k.key))].join(" ");
 function hl(s) {
   const w = words().map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   return w.length ? esc(s).replace(new RegExp(`(${w.join("|")})`, "gi"), "<mark>$1</mark>") : esc(s);
@@ -441,8 +448,10 @@ function figsHtml(figs) {
     n: tiles.length,
     // the count is on the row too: a group's tiles share its width evenly, so how wide one came out is the row's width
     // divided by this, which is what tells a lone tile on a full row from three tiles sharing one (settings.css)
-    html: `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>`
-      + (lines.length ? `<div class="zeros">${lines.join('<span class="dot">·</span>')}</div>` : ""),
+    tiles: `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>`,
+    // the zeros ride on the head beside the name of what they belong to: under the tiles, "0 Given up" hung on its own
+    // under the row with nothing to tie it to (splice-lead's walk of round two, Oct 11)
+    zeros: lines.length ? `<span class="zeros">${lines.join('<span class="dot">·</span>')}</span>` : "",
   };
 }
 const latestDoor = (shares) => {
@@ -455,8 +464,15 @@ const longestDoor = (shares) => {
 };
 // --f is how many figures the group holds, so two groups share the row in proportion to what is in them and every
 // figure comes out the same width: one group of one beside a group of three left most of the row empty at 1440 and 3828
-const groupHtml = (label, figs) => { const f = figsHtml(figs); return `<div class="fgroup" style="--f:${f.n || 1}"><span class="glabel">${label}</span>${f.html}</div>`; };
+// the head carries the group's name and whatever came back zero, over a line the width of the group, so a label over
+// two tiles is read as theirs and not as the first one's (splice-lead: "the third card has none", Oct 11)
+const groupHtml = (label, figs) => {
+  const f = figsHtml(figs);
+  return `<div class="fgroup" style="--f:${f.n || 1}"><div class="ghead"><span class="glabel">${label}</span>${f.zeros}</div>${f.tiles}</div>`;
+};
 const tallyHtml = (title, groups) => `<section class="tally"><h3>${title}</h3><div class="fgroups">${groups.join("")}</div></section>`;
+/** A section whose figures stand under its own heading, with anything that came back zero on the heading's line. */
+const headed = (title, f) => `<div class="thead"><h3>${title}</h3>${f.zeros}</div>${f.tiles}`;
 const silentHtml = () => tallyHtml("This week", [
   groupHtml("Ended early", [
     { why: "restarted", what: WHY.restarted.word, door: latestDoor },
@@ -489,47 +505,144 @@ function peaksHtml() {
   const errs = bad.map((p) => `<p class="pidle"><span class="state limit">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
   return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No command ran a request today</span></p>`}${quiet}${errs}</section>`;
 }
+// ---------- Plan limits ----------
+// Where the plans stand against the line these settings draw. The windows are /api/accounts' own, the ones Accounts
+// shows per account; this pane reads only the highest of each, because the question here is whether the warn line sits
+// in the right place, not which account is busy. The bar carries the line itself, so the setting is read as a mark on
+// the figure rather than as a number in a box.
+const pctWord = (p) => `${Math.round(p)}%`;
+const planBar = (p, warn) => `<div class="pct${p >= warn ? " over" : ""}" style="--w:${Math.min(100, Math.max(1.5, p))}%;--warn:${warn}%" role="img" aria-label="${pctWord(p)} used, warns at ${warn}%"><b></b><i></i></div>`;
+const acctChip = (x) => srvChip(x.display_name || x.provider || "account");
+const resetWord = (secs) => (secs ? `Resets ${backWord(new Date(secs * 1000))}` : "");
+function planNow() {
+  const a = ui.accts;
+  if (a === undefined) return `<div class="card peaks">${READING}</div>`;
+  if (!a) return `<p class="pidle"><span class="state limit">Not read</span><span>splice did not answer for its accounts</span></p>`;
+  const warn = Number(val("usageWarnPct")) || 80;
+  const read = a.filter((x) => x.five_hour_used_percent != null || x.seven_day_used_percent != null);
+  const top = (k) => read.filter((x) => x[k] != null).sort((p, q) => q[k] - p[k])[0];
+  const five = top("five_hour_used_percent"), week = top("seven_day_used_percent");
+  const over = read.filter((x) => Math.max(x.five_hour_used_percent ?? 0, x.seven_day_used_percent ?? 0) >= warn);
+  const tiles = [], zeros = [];
+  if (five) {
+    tiles.push(statTile(pctWord(five.five_hour_used_percent), "Highest in 5 hours",
+      planBar(five.five_hour_used_percent, warn) + chipRow([five.display_name || five.provider]) + note(resetWord(five.five_hour_reset_epoch_seconds))));
+  }
+  if (week) {
+    tiles.push(statTile(pctWord(week.seven_day_used_percent), "Highest this week",
+      planBar(week.seven_day_used_percent, warn) + chipRow([week.display_name || week.provider]) + note(resetWord(week.seven_day_reset_epoch_seconds))));
+  }
+  if (over.length) {
+    tiles.push(statTile(fmt(over.length), `Over the ${warn}% line`, chipRow(over.map((x) => x.display_name || x.provider)) + note("splice warns on the next request these accounts carry")));
+  } else if (read.length) { zeros.push(zeroFig(`over the ${warn}% line`)); }
+  const seen = Math.max(0, ...a.map((x) => x.observed_at_epoch_seconds || 0));
+  const quiet = read.length ? Math.max(0, a.filter((x) => x.credential_present).length - read.length) : 0;
+  const lines = [];
+  if (seen) lines.push(`<span class="fig">Read ${esc(backWord(new Date(seen * 1000)))}</span>`);
+  // the accounts no provider reports a window for are what the 5-hour fallback below is there to cover
+  if (quiet) lines.push(`<span class="fig"><b>${fmt(quiet)}</b> ${quiet === 1 ? "account reports" : "accounts report"} no plan limit</span>`);
+  if (!read.length) lines.push(`<span class="fig">No account reports a plan limit, so only the 5-hour fallback below can warn you</span>`);
+  return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
+    + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "")
+    + (lines.length ? `<div class="zeros under">${lines.join('<span class="dot">·</span>')}</div>` : "");
+}
+const planHtml = () => `<section class="tally">${planNow()}</section><section class="sub">${blocks(keysOf("plan"))}</section>`;
+
+// ---------- MCP servers ----------
+// GET /api/mcp is a SNAPSHOT, not a count over a window: the host keeps no tally of tool calls, of how long one took,
+// or of how many servers an idle sweep stopped (McpStatus.kt, HostedServers.kt), so this pane says what is true now
+// and never a week figure it would have to invent. Each server's own line is what the settings above it act on.
+const statTile = (big, what, under = "") => `<div class="fig3"><span class="big">${big}</span><span class="what">${esc(what)}</span>${under}</div>`;
+const srvChip = (name) => `<span class="mchip">${esc(name)}</span>`;
+const zeroFig = (what) => `<span class="fig"><b>0</b> ${esc(what)}</span>`;
+function mcpNow() {
+  const m = ui.mcp;
+  if (m === undefined) return `<div class="card peaks">${READING}</div>`;
+  if (m === false) return `<p class="pidle"><span>splice is not hosting MCP servers, so there is nothing running to show</span></p>`;
+  if (!m) return `<p class="pidle"><span class="state limit">Not read</span><span>splice did not answer for its MCP servers</span></p>`;
+  const live = Object.entries(m.servers || {}), up = live.filter(([, s]) => s.hosted);
+  // one server is written in several files (a head's copy of the canonical home, a repo's own entry), so the figure is
+  // how many SERVERS he set up, not how many entries splice read: 32 servers over 112 entries on this machine
+  const regs = m.sources?.servers || [], names = [...new Set(regs.map((r) => r.name))];
+  const hosts = [...new Set(regs.filter((r) => r.disposition === "migrated").map((r) => r.name))];
+  const set = names.length || live.length;
+  const held = up.reduce((n, [, s]) => n + (s.rss_bytes || 0), 0);
+  const sessions = up.reduce((n, [, s]) => n + (s.sessions || 0), 0);
+  const tiles = [], zeros = [];
+  if (up.length) {
+    tiles.push(statTile(fmt(up.length), up.length === 1 ? "Server running" : "Servers running", chipRow(up.map(([n]) => n))));
+  } else { zeros.push(zeroFig("running now")); }
+  if (set) tiles.push(statTile(fmt(set), set === 1 ? "Server set up" : "Servers set up", note(regs.length > set ? `Written ${fmt(regs.length)} times across your files` : "")));
+  if (hosts.length) {
+    tiles.push(statTile(fmt(hosts.length), "splice hosts", chipRow(hosts) + note("One process for every session, started when a session first asks")));
+  } else if (set) { zeros.push(zeroFig("hosted by splice")); }
+  if (held) tiles.push(statTile(mbWord(held), "Held in memory", note(sessions ? `${fmt(sessions)} ${sessions === 1 ? "conversation is" : "conversations are"} using them` : "")));
+  const own = set - hosts.length;
+  const lines = [];
+  if (own > 0) lines.push(`<span class="fig"><b>${fmt(own)}</b> ${own === 1 ? "server starts" : "servers start"} inside each session, as they did before splice</span>`);
+  // the one fact the settings above cannot fix: a server that failed, named with what it said
+  up.filter(([, s]) => s.last_error).forEach(([n, s]) => lines.push(`<span class="fig">${srvChip(n)} <span class="state limit">${esc(s.last_error)}</span></span>`));
+  return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
+    + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "")
+    + (lines.length ? `<div class="zeros under">${lines.join('<span class="dot">·</span>')}</div>` : "");
+}
+const chipRow = (names) => `<div class="cdoors">${names.map(srvChip).join("")}</div>`;
+const note = (s) => (s ? `<p class="knote">${esc(s)}</p>` : "");
+const mcpHtml = () => `<section class="tally">${mcpNow()}</section><section class="sub">${blocks(keysOf("mcp"))}</section>`;
+
 // the three settings that cap splice itself, in the order they bite: how many run, how many wait, how big one may be
 const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
 const busyHtml = () => {
   const limits = LIMITS.filter((key) => keysOf("busy").includes(key));
   // what splice does when a provider pushes back sits under that provider's figures; its own caps stand together
   return peaksHtml()
-    + `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }]).html}`
+    + `<section class="tally">${headed("Providers", figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }]))}`
     + blocks(keysOf("busy", LIMITS)) + `</section>`
     + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "");
 };
 
 // ---------- Version ----------
-// Running, Newest and Go back, from GET /api/upgrade. The route never fetches, so Newest is a version only when a check
-// has succeeded on this daemon; otherwise it is the releases page, one tap away. Go back is POST /api/upgrade {rollback}.
+// What this daemon runs, where the newest is, and the way back, from GET /api/upgrade. The route never fetches, so the
+// newest is a version only when a check has succeeded here; otherwise it is the releases page, one tap away. Go back is
+// POST /api/upgrade {rollback}.
 //
-// Three cards, each with its version in the pane's largest type, as the settings beside them are cards. Two label/value
-// rows in the left quarter of the pane was the shape Marcos threw out ("everything is small, no rich components"), and
-// Newest's row read as an empty value beside a button: the daemon carries a sentence saying why it has no version to
-// show, and the card prints it rather than leaving the slot blank.
+// ONE CARD PER VERSION THERE IS, AND NO CARD FOR A VERSION THERE IS NOT. Three cards of which two held no number read
+// as a broken row (splice-lead, Oct 11): on a daemon that has never checked, Newest is permanently "Not checked" and
+// Previous is "None". Running always has a number and takes the row; Previous joins it only when a release is on this
+// machine to go back to. What the daemon cannot know is said in the card's own plain line, never in its sentence,
+// which names fetching, verifying and polls ("no upgrade check has succeeded on this daemon; splice learns the latest
+// version by fetching and verifying a release, which no poll may do").
 const RELEASES = "https://github.com/torad-labs/splice/releases";
 const runWord = { running: "Going back to", succeeded: "Back on", failed: "Not back on", lost: "Not back on" };
 const vcard = (label, body, note = "") => kcard(`<div class="lbl">${esc(label)}</div><div class="ctl">${body}${note ? `<p class="vwhy">${esc(note)}</p>` : ""}</div>`, " vcard");
-const vnum = (s, cls = "") => `<b class="v${cls}">${esc(s)}</b>`;
+const vnum = (s) => `<b class="v">${esc(s)}</b>`;
 function versionHtml() {
   const v = ui.ver;
   if (v === undefined) return `<span class="state">Reading</span>`;
   if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
-  const checked = v.checked_at_epoch_millis ? `Checked ${atWord(v.checked_at_epoch_millis)}` : "";
+  const checked = v.checked_at_epoch_millis ? `, checked ${atWord(v.checked_at_epoch_millis)}` : "";
   const releases = `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}See releases</a>`;
-  const cards = [vcard("Running", vnum(v.installed), "What this daemon is running now"),
-    vcard("Newest",
-      v.latest ? `${vnum(v.latest, v.latest !== v.installed ? " new" : "")}${releases}`
-        : `<span class="state">Not checked</span>${releases}`,
-      v.latest ? checked : v.latest_unavailable_reason || ""),
-    (back
-      ? vcard("Previous", `${vnum(back)}${ui.armed === "rollback"
-        ? `<button class="act primary small" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet small" data-act="disarm">Stay on ${esc(v.installed)}</button>`
-        : `<button class="act quiet small" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}`,
-      "The release splice would go back to")
-      : vcard("Previous", `<span class="state">None</span>`, v.rollback_unavailable_reason || "No earlier release is on this machine to go back to"))];
+  // the newest release, said in the card's own words. A check that has never succeeded is "Not checked yet", whatever
+  // reason the daemon carries for it; a check that succeeded once and cannot now is the only case its reason is news.
+  const newest = v.latest
+    ? v.latest === v.installed
+      ? `This is the newest release${checked}.`
+      : `${v.latest} is out${checked}. See releases for what changed.`
+    : v.checked_at_epoch_millis && v.latest_unavailable_reason
+      ? v.latest_unavailable_reason
+      : "Not checked yet. See releases for the newest.";
+  const cards = [vcard("Running", `${vnum(v.installed)}${releases}`, newest)];
+  // Previous is a card only when there is a release to go back to, or when the read that would have found one failed:
+  // "None" under a name is not news, and three cards of which two held no number read as a broken row.
+  if (back) {
+    cards.push(vcard("Previous", `${vnum(back)}${ui.armed === "rollback"
+      ? `<button class="act primary small" data-act="rollback">Go back to ${esc(back)}</button><button class="act quiet small" data-act="disarm">Stay on ${esc(v.installed)}</button>`
+      : `<button class="act quiet small" data-act="arm" data-id="rollback"${going ? " disabled" : ""}>Go back to ${esc(back)}</button>`}`,
+    "The release splice would go back to"));
+  } else if (v.rollback_unavailable_reason) {
+    cards.push(vcard("Previous", `<span class="state">Not read</span>`, v.rollback_unavailable_reason));
+  }
   const ran = run ? `<section class="run"><header><h3>${runWord[run.state] ?? "Going back to"} ${esc(run.to ?? back ?? "")}</h3></header>${run.output?.length ? `<ol class="rlog">${run.output.map((l) => `<li>${esc(l)}</li>`).join("")}</ol>` : ""}</section>` : "";
   return cardRow(cards, " vcards") + ran;
 }
@@ -554,8 +667,8 @@ const PANES = {
   busy: busyHtml,
   silent: silentHtml,
   reasoning: () => `<section class="sub">${blocks(keysOf("reasoning"))}</section>`,
-  plan: () => `<section class="sub">${blocks(keysOf("plan"))}</section>`,
-  mcp: () => `<section class="sub">${blocks(keysOf("mcp"))}</section>`,
+  plan: planHtml,
+  mcp: mcpHtml,
   data: dataHtml,
   version: versionHtml,
 };

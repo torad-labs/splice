@@ -209,15 +209,20 @@ button.count:hover { color: var(--text); }
 #st .fig3 .by .blabel { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
 .srv .always { display: inline-flex; justify-content: center; min-width: 7.28rem; font: 500 1.02rem/1 var(--font-name); color: var(--text-body); }  /* a web server is shared by being one server: the word sits where the switch would */
 
-/* ---------- Version: three cards, the version read at the size of a figure rather than as a word in a label column */
-.vcard .v { font: 400 3.4rem/.95 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
-.vcard .v.new { color: var(--key-light); }
-[data-theme="day"] .vcard .v.new { color: #8a5a12; }
+/* ---------- Version: a card per version there is, its number read at the size every other pane reads a figure at
+   (.fig3 .big, 4.2rem), never as a word in a label column */
+.vcard .v { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
 .vcard .state { font: 400 2.8rem/1 var(--font-lead); color: var(--text-mute); }
 .vcard .vwhy { margin: 0; font: 500 1.15rem/1.4 var(--font-name); color: var(--text-body); }
 /* the version and the button that acts on it share a line; the sentence saying what the card means is the row under them */
 #st .vcard .ctl { gap: 1rem 1.4rem; }
 #st .vcard .ctl > .vwhy { flex: 1 0 100%; }
+/* on a card wide enough to read along, what acts on the version sits at the far edge, as a lone figure's doors do:
+   number at one end, action at the other, instead of both clumped in the first third of a 3828 row */
+@container kcard (min-width: 80rem) {
+  #st .vcard .ctl { width: 100%; align-items: center; }
+  #st .vcard .ctl > .act { margin-left: auto; }
+}
 .run { padding: 1.3rem 1.5rem 1.4rem; background: var(--obj-sunk); border-radius: var(--r-obj); }
 .run header { display: flex; align-items: center; gap: 1rem; margin-bottom: .6rem; }
 .run header .lamp, .step .lamp { position: static; flex: none; }
@@ -260,6 +265,12 @@ button.count:hover { color: var(--text); }
 /* a group's figures keep their own size beside the next group (Silent models); a section's own figures, with no group
    beside them, take the width between them so a wide pane is not two tiles and an empty row (Marcos, Oct 11) */
 #st .tally > .figs3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: 1.4rem; }
+/* four figures where only three columns fit read as a row and a stray: at 1440 MCP servers drew three tiles and left
+   the fourth alone with two columns of empty beside it. Two rows of two instead, the way a section's settings divide
+   evenly rather than filling one row and half of another. The min keeps the pair from overflowing a narrow pane. */
+@media (max-width: 1999px) {
+  #st .tally > .figs3.n4 { grid-template-columns: repeat(2, minmax(min(100%, 20rem), 1fr)); }
+}
 .fig3 { display: flex; flex-direction: column; gap: .7rem; min-width: 22rem; padding: 1.3rem 1.5rem 1.4rem; text-decoration: none; border: .12rem solid var(--track-line); border-radius: var(--r-obj); }
 .fig3 .big { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
 .fig3 .what { font: 500 1.25rem/1.2 var(--font-name); color: var(--text); }
@@ -268,7 +279,7 @@ button.count:hover { color: var(--text); }
 .fig3.none { border-style: dashed; }
 /* a zero, or a count splice could not read: one quiet line under the tiles, never a tile (fin) */
 .figs3:empty { display: none; }
-.zeros { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; margin-top: 1rem; }
+.zeros { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
 .zeros .dot { color: var(--text-mute); }
 .fig3.none .big, .fig3.none .what { color: var(--text-mute); }
 
@@ -290,6 +301,12 @@ button.count:hover { color: var(--text); }
   .figs3.n1 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
   .figs3.n1 > .fig3 > .cdoors { justify-content: flex-end; }
 }
+/* the group's head: its name, then whatever came back zero, over a line the width of the group. The line is what says
+   the name belongs to every tile under it: over two tiles, a bare label read as the first tile's (splice-lead, Oct 11).
+   The same head carries a section's own figures (headed(), Providers), where the h3 stands in for the label. */
+.ghead, .tally .thead { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem 1.2rem; padding-bottom: .55rem; border-bottom: .12rem solid var(--track); }
+.tally .thead { margin-bottom: 1.2rem; }
+.tally .thead h3 { margin-bottom: 0; }
 .glabel { font: 500 1rem/1 var(--font-name); color: var(--text-body); min-height: 1rem; }
 .fig3 .lead { display: flex; flex-direction: column; gap: .7rem; text-decoration: none; }
 .fig3 .lead:hover em, .fig3 .lead:hover .big { color: var(--key-light); }
@@ -494,7 +511,20 @@ button.count:hover { color: var(--text); }
   /* a figure wide enough to hold both reads as one line: the count and its door at the left, each command's share at the
      right edge, instead of a tall box with its words in the top corner */
   #st .tally > .figs3 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
-  #st .tally > .figs3 > .fig3 > .cdoors { justify-content: flex-end; }
+  /* THE NUMBER AND ITS NAME TAKE THE TWO TRACKS, AND EVERYTHING UNDER THEM TAKES THE WHOLE WIDTH, so the first track is
+     sized by the number alone. Left to auto-placement, a line under the number lands in that track and sizes it: "One
+     process for every session, started when a session first asks" grew it to 482px of a 595px tile and left the name
+     a track 0px wide, so "splice hosts" wrapped and drew outside the tile (MCP servers at 3828, splice-lead's walk). */
+  #st .tally > .figs3 > .fig3 > .big { grid-column: 1; grid-row: 1; }
+  #st .tally > .figs3 > .fig3 > .what { grid-column: 2; grid-row: 1; }
+  #st .tally > .figs3 > .fig3 > .cdoors { grid-column: 1 / -1; justify-content: flex-end; }
+  #st .tally > .figs3 > .fig3 > .knote { grid-column: 1 / -1; }
+  /* a bar is the width of the tile, never of the number above it: left in the first column it came out 85px wide with
+     the warn tick on top of the fill (Plan limits at 3828). The line under it and the account it belongs to share the
+     row below, the words at the left and the chip at the right edge where every other tile puts it. */
+  #st .tally > .figs3 > .fig3 > .pct { grid-column: 1 / -1; }
+  #st .tally > .figs3 > .fig3:has(.pct) > .knote { grid-column: 1; grid-row: 3; }
+  #st .tally > .figs3 > .fig3 > .pct ~ .cdoors { grid-column: 2; grid-row: 3; }
 }
 /* ---------- a setting as a card (blocks()), so no label column is shared across sections and none of them sits in the
    left quarter of an empty row. Several in a section share the row; one alone lays itself out along the row instead of
@@ -515,12 +545,20 @@ button.count:hover { color: var(--text); }
    would otherwise hold its control a line below its neighbours' (Plan limits at 1440, where two of four names wrap).
    A section where a setting carries per-command values is left alone: there the control is read with the values under
    it, not with the card's lower edge. Version's cards read their number straight under its name, so they keep start. */
-.kcards:not(.vcards) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
+/* and where any card in the section carries that line, every card in it holds its rows at the top instead: pinning the
+   ones without a note to the lower edge put three controls on one line and the fourth 40px above it (MCP servers) */
+.kcards:not(.vcards):not(:has(.knote)) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
+/* the line saying what a setting changes sits straight under its control, never pushed to the card's lower edge with
+   the control floating in the middle, so a card with a note holds its three rows at the top */
+#st .kin > .knote { margin: 0; font: 500 1.15rem/1.4 var(--font-name); color: var(--text-body); }
 /* a setting that carries per-command values takes the row, as a section holding one setting already does: beside two
    plain cards it ran four lines taller, and the two stretched to match stood empty under their dropdown (splice's
    limits at 1440 and 3828). On its own row it reads along the row instead, name then value then the commands. */
 .kcards > .kcard:has(.over) { flex-basis: 100%; }
-#st .kin > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); }
+/* two lines of room for every name, so the controls of a row start level: with the line under each control the cards
+   hold their rows at the top, and a name that wrapped (two of Plan limits' four at 1440) dropped its own control 20px
+   below its neighbours'. Reserving the second line costs a one-line card that much height and lines the row up. */
+#st .kin > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); min-height: 2.5em; }
 /* every control box is at least a control tall, so a row of settings shows a switch and a dropdown at the same height
    instead of the shorter one hanging 4px lower (Plan limits at 1440: three dropdowns and one Warns/Blocks switch) */
 #st .kin > .ctl { align-items: flex-start; min-height: var(--ctl-h); }
@@ -530,9 +568,21 @@ button.count:hover { color: var(--text); }
 @container kcard (min-width: 80rem) {
   #st .kin { grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); align-items: start; column-gap: 3.2rem; }
   #st .kin > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+  #st .kin > .knote { grid-column: 2; }  /* under the control, not under the name */
 }
 
 /* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
 #st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); align-items: stretch; gap: 1rem 1.6rem; }
 #st .kn .ctl.col > .line { grid-column: 1 / -1; }
 #st .kn .ctl.col > .over { padding: .2rem 0 .2rem 1.1rem; }
+/* a quiet line of facts UNDER the tiles, where the head is already carrying the zeros (MCP servers: how many servers
+   splice leaves to each session, and anything a hosted one last failed with) */
+.zeros.under { display: flex; margin-top: 1.2rem; }
+/* a figure the page read as a snapshot keeps the tile's own shape, with the explaining line under the number */
+#st .fig3 > .knote { margin: 0; font: 500 1.1rem/1.35 var(--font-name); color: var(--text-body); }
+/* a plan's use against the line the setting draws: the bar is the window, the tick is the warn percentage, so the
+   setting under it is read as a mark on the figure instead of a number in a box */
+#st .fig3 .pct { position: relative; height: .7rem; border-radius: .35rem; background: var(--track); }
+#st .fig3 .pct b { display: block; width: var(--w); height: 100%; border-radius: .35rem; background: var(--live); }
+#st .fig3 .pct.over b { background: var(--limit); }
+#st .fig3 .pct i { position: absolute; top: -.25rem; bottom: -.25rem; left: var(--warn); width: .18rem; border-radius: .09rem; background: var(--text-mute); }

@@ -42,17 +42,27 @@ const KNOBS = (() => {
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
     K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8], unit: "tries" }, 4, { cmd: true, home: "busy", also: "retry retries attempts" }),
     K("quotaPoll", "Read plan limits", { k: "pick", opts: [["auto", "On"], ["off", "Off"]] }, "auto", { also: "quota" }),
-    K("quotaPollIntervalMs", "Read plan limits every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN, { home: "plan" }),
-    K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { home: "plan", also: "warning" }),
-    K("usageWarnTokens5h", "5-hour limit if none is reported", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0, { home: "plan", also: "warning" }),
-    K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", opts: [["warn", "Warns"], ["block", "Blocks"]] }, "warn", { home: "plan", also: "spend money" }),
+    K("quotaPollIntervalMs", "Read plan limits every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
+      { home: "plan", note: "How often splice asks each provider where your plan stands." }),
+    K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80,
+      { home: "plan", also: "warning", note: "The line on the bars above: splice warns once a window passes it." }),
+    K("usageWarnTokens5h", "5-hour limit if none is reported", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0,
+      { home: "plan", also: "warning", note: "For a provider that never says what its plan allows, so there is still a line to warn at." }),
+    K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", opts: [["warn", "Warns"], ["block", "Blocks"]] }, "warn",
+      { home: "plan", also: "spend money", note: "What a daily budget does once it runs out: warn you, or turn the command away." }),
     K("effort", "Reasoning effort", { k: "pick", opts: [[null, "Model's own"], ["minimal", "Minimal"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"]] }, null),
-    K("summary", "Reasoning summaries", { k: "pick", opts: [["detailed", "Detailed"], ["concise", "Concise"], ["auto", "Auto"]] }, "detailed", { home: "reasoning", also: "thinking summary" }),
-    K("showReasoning", "Show reasoning in Claude Code", { k: "pick", opts: [["text", "As text"], ["thinking", "As thinking"], ["off", "Off"]] }, "text", { home: "reasoning", also: "display thinking" }),
-    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, false, { home: "reasoning", also: "thinking replay" }),
-    K("progressLine", "Progress line while it thinks", { k: "flag" }, true, { home: "reasoning", also: "waiting status" }),
-    K("foldReasoningModels", "Keep thinking on", { k: "models" }, "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5", { home: "reasoning", also: "continue fold" }),
-    K("foldMaxContinue", "Keep thinking at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3, { home: "reasoning", also: "continue" }),
+    K("summary", "Reasoning summaries", { k: "pick", opts: [["detailed", "Detailed"], ["concise", "Concise"], ["auto", "Auto"]] }, "detailed",
+      { home: "reasoning", also: "thinking summary", note: "How much of its thinking the model writes out beside the answer." }),
+    K("showReasoning", "Show reasoning in Claude Code", { k: "pick", opts: [["text", "As text"], ["thinking", "As thinking"], ["off", "Off"]] }, "text",
+      { home: "reasoning", also: "display thinking", note: "Where that thinking lands in your terminal." }),
+    K("replayReasoning", "Send earlier reasoning back", { k: "flag" }, false,
+      { home: "reasoning", also: "thinking replay", note: "Sends the model its own earlier thinking with the next request, which costs more tokens." }),
+    K("progressLine", "Progress line while it thinks", { k: "flag" }, true,
+      { home: "reasoning", also: "waiting status", note: "A line in the terminal while the model thinks, so a long wait does not read as a hang." }),
+    K("foldReasoningModels", "Keep thinking on", { k: "models" }, "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5",
+      { home: "reasoning", also: "continue fold", note: "Models whose cut-off thinking splice asks to finish, so an answer does not stop mid-thought." }),
+    K("foldMaxContinue", "Keep thinking at most", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3,
+      { home: "reasoning", also: "continue", note: "How many times splice asks one answer to carry on." }),
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
     K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { home: "busy", also: "too large image size 413" }),
     // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)
@@ -77,10 +87,14 @@ const KNOBS = (() => {
     K("keepTranscriptCopies", "Keep a copy before moving a conversation to another model", { k: "flag" }, true, { home: "data", also: "transcript copies originals continue on another model resume" }),
     K("keepCompactionSummaries", "Keep compaction summaries for a retry", { k: "flag" }, true, { home: "data", also: "compaction summary retry parked" }),
     K("keepCodeModeWork", "Keep code mode's journal on disk", { k: "flag" }, true, { home: "data", also: "code mode journal work scripts restart" }),
-    K("mcpMaxServers", "Most servers at once", { k: "count", opts: [8, 16, 32, 64], unit: "servers" }, 32, { home: "mcp" }),
-    K("mcpIdleTimeoutMs", "Stop an unused server after", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN, { home: "mcp" }),
-    K("mcpRequestTimeoutMs", "Longest tool call", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN, { home: "mcp" }),
-    K("mcpInitializeTimeoutMs", "Wait for a server to start", { k: "dur", opts: [30 * SEC, 60 * SEC, 2 * MIN], unit: "s" }, 60 * SEC, { home: "mcp" }),
+    K("mcpMaxServers", "Most servers at once", { k: "count", opts: [8, 16, 32, 64], unit: "servers" }, 32,
+      { home: "mcp", note: "splice turns down a server past this many, and names the ceiling when it does." }),
+    K("mcpIdleTimeoutMs", "Stop an unused server after", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN,
+      { home: "mcp", note: "A hosted server no conversation has used for this long is stopped." }),
+    K("mcpRequestTimeoutMs", "Longest tool call", { k: "dur", opts: [5 * MIN, 15 * MIN, 30 * MIN, HR], unit: "min" }, 30 * MIN,
+      { home: "mcp", note: "A ceiling, not a measurement: a tool call still running after this is cut off." }),
+    K("mcpInitializeTimeoutMs", "Wait for a server to start", { k: "dur", opts: [30 * SEC, 60 * SEC, 2 * MIN], unit: "s" }, 60 * SEC,
+      { home: "mcp", note: "A server that has not finished its handshake by then is given up on." }),
   ];
   const KNOB = Object.fromEntries(LIST.map((k) => [k.key, k]));
 
@@ -195,7 +209,10 @@ const KNOBS = (() => {
     const add = OWN_VALUES_WRITABLE && st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(c)}</button>`).join("")}</div>` : "") + "</span>" : "";
     const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
-    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>`;
+    // one line on what the setting changes, for a name that cannot say it on its own ("Keep thinking on", "A new
+    // budget, when it's spent"): a first-time reader could not tell those from the screen (splice-lead, Oct 11)
+    const note = k.note ? `<p class="knote">${hl(k.note)}</p>` : "";
+    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>${note}`;
   }
 
   // ---------- changing a setting: PATCH /api/config with the one key ----------

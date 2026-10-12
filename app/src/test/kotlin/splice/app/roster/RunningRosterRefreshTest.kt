@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelRates
+import splice.core.util.AsyncFileIo
 import splice.usage.economics.EconomicsRead
 import splice.usage.perf.HeadSessionPerfSource
 import java.nio.file.Path
@@ -82,6 +83,8 @@ class RunningRosterRefreshTest {
         val total = checkNotNull(perf.sessionTotal("synthetic-session")).models.getValue(JOINED)
         assertEquals(10.0, total.usd)
         assertEquals(0L, total.gaps.unpricedTurns)
+        // The rollup counts a turn once its request-log line is on disk, which happens on the file lane.
+        AsyncFileIo.drain()
         val read = checkNotNull(fixture.managed.sources.economics).read()
         val bucket = assertInstanceOf(EconomicsRead.Rows::class.java, read).rows.single()
         assertEquals(10.0, bucket.cost.costUsd)

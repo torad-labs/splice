@@ -87,12 +87,14 @@ private class SpentPlanAuth : RefreshableAuthProvider {
 
 /** A real head over a local upstream that answers every request 429 with [upstreamBody]. maxRetries = 1, so the
  *  turn that meets the 429 gives up at once (and arms the horizon) instead of waiting out V4-61's 15 s schedule. */
-private class LimitedHead(tmp: Path, upstreamBody: String) {
+private class LimitedHead(tmp: Path, upstreamBody: String, retryAfterSeconds: Int? = null) {
     private val upstream: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/") { ex ->
             ex.requestBody.readAllBytes()
             val bytes = upstreamBody.toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
+            // A hold past the 30 s admission wait is refused at admission; a shorter one is waited out.
+            retryAfterSeconds?.let { ex.responseHeaders.add("Retry-After", it.toString()) }
             ex.sendResponseHeaders(TOO_MANY_REQUESTS, bytes.size.toLong())
             ex.responseBody.use { it.write(bytes) }
         }
@@ -234,7 +236,7 @@ class PlanLimitTurnEndingTest {
     fun `a burst 429 that names no reset keeps upstream-failed and rate-limited with their sentences`(
         @TempDir tmp: Path,
     ) = runBlocking {
-        val head = LimitedHead(tmp, BURST_BODY)
+        val head = LimitedHead(tmp, BURST_BODY, retryAfterSeconds = 90)
         head.start()
         val endings = try {
             head.turn().bodyAsText()

@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
+import splice.head.admission.ClientRecheck
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.detached.DetachedCompaction
 import splice.head.turn.stream.PendingSse
@@ -67,6 +68,7 @@ internal class TurnStreamer(
     },
 ) {
     private val emitters = SseEmitterFactory()
+    private val recheck = ClientRecheck()
     private val wiring = TurnWiring()
     private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
     private val driveDispatcher = ProcessDispatchers().io()
@@ -186,7 +188,10 @@ internal class TurnStreamer(
             }
             is PendingSse.Decision.Refused -> {
                 running.await()
-                choice.reply.headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }
+                // The provider's own 429, told to come back within the recheck so a login added meanwhile serves it.
+                recheck.reply(choice.reply).headers.forEach { (name, values) ->
+                    values.forEach { call.response.header(name, it) }
+                }
                 call.respondText(
                     choice.reply.body,
                     ContentType.Application.Json,

@@ -34,6 +34,8 @@ internal class CredentialHoldAdmission(
     private val wallClock: WallClock,
     private val keyAccounts: KeyAccount,
 ) {
+    private val recheck = ClientRecheck(wallClock)
+
     sealed class Outcome {
         class Allowed(val account: AccountSelection?) : Outcome()
         data object Refused : Outcome()
@@ -159,9 +161,10 @@ internal class CredentialHoldAdmission(
         )
         admitted.close()
         if (native != null) {
-            responses.respondProviderRateLimited(call, native)
+            responses.respondProviderRateLimited(call, recheck.reply(native))
         } else {
-            val retryEpochSeconds = plan?.resetEpochSeconds ?: (now + armedMs) / MILLIS_PER_SECOND
+            // The message keeps the spent window's real reset; the client comes back within the recheck.
+            val retryEpochSeconds = recheck.deadline(plan?.resetEpochSeconds ?: ((now + armedMs) / MILLIS_PER_SECOND))
             deps.turnQuota
                 .forSession(prepared.built.meta.scope.sessionId, null)
                 ?.clientHeadersRejected(retryEpochSeconds)

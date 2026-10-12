@@ -168,7 +168,7 @@ class ForwardedRateLimitTest {
     }
 
     @Test
-    fun `provider and local refusals preserve native status body and every limit header`() = runBlocking {
+    fun `native refusals keep their limit headers and bring their deadlines within the recheck`() = runBlocking {
         for (stream in listOf(false, true)) {
             val rig = LimitRig(directory.resolve(stream.toString()))
             rig.head.start()
@@ -177,7 +177,7 @@ class ForwardedRateLimitTest {
                     val (status, body, headers) = rig.turn("synthetic-refused", stream)
                     assertEquals(HttpStatusCode.TooManyRequests, status)
                     assertEquals(LIMIT_BODY, body)
-                    rig.limitHeaders.forEach { (name, value) -> assertEquals(value, headers[name], name) }
+                    rig.assertRelayed(headers)
                     assertEquals(
                         listOf("opaque-first", "opaque-second"),
                         headers.getAll("anthropic-ratelimit-unified-extra"),
@@ -233,7 +233,7 @@ class ForwardedRateLimitTest {
                 val (status, body, headers) = restarted.turn("synthetic-refused")
                 assertEquals(HttpStatusCode.TooManyRequests, status)
                 assertEquals(LIMIT_BODY, body)
-                first.limitHeaders.forEach { (name, value) -> assertEquals(value, headers[name], name) }
+                first.assertRelayed(headers)
                 assertEquals(0, restarted.requests.size, "the persisted native refusal makes zero upstream attempts")
                 assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
                 assertEquals(listOf("synthetic-new-login"), restarted.requests)
@@ -301,6 +301,19 @@ private class LimitRig(
         "anthropic-ratelimit-unified-overage-disabled-reason" to "synthetic-budget",
         "retry-after" to "86400",
     )
+
+    /** The provider's limit headers as the client gets them: each as sent, except the two deadlines Claude Code's
+     *  retry sleeps on, which name the recheck instead of a reset a day away. The 7d-reset still names that reset. */
+    fun assertRelayed(headers: Headers) {
+        val deadlines = setOf("anthropic-ratelimit-unified-reset", "retry-after")
+        limitHeaders.filterKeys { it !in deadlines }
+            .forEach { (name, value) -> assertEquals(value, headers[name], name) }
+        assertEquals(CLIENT_RECHECK_SECONDS.toString(), headers["retry-after"])
+        val clientReset = checkNotNull(headers["anthropic-ratelimit-unified-reset"]).toLong()
+        val now = System.currentTimeMillis() / 1_000
+        assertTrue(clientReset in (now + 1)..(now + CLIENT_RECHECK_SECONDS), "back within the recheck: $clientReset")
+    }
+
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/v1/messages") { request ->
             request.requestBody.use { it.readBytes() }

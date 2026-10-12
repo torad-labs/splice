@@ -1,4 +1,4 @@
-// NEW: all-account exhaustion keeps the provider reset in telemetry and bounds only the client retry deadline.
+// NEW: all-account exhaustion keeps the provider reset in telemetry and tells the client to recheck soon.
 package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
@@ -12,15 +12,16 @@ import splice.head.turn.TurnDriver
 import splice.head.wire.TurnTrace
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.Selection
-import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 
-/** A quota refusal is not a native provider reply. Preserve its existing bounded deadline and rejected quota headers. */
+/** A quota refusal, not a native provider reply: its client deadline is the recheck, its quota headers rejected. */
 internal class ExhaustedAccountAdmission(
     private val deps: HeadDeps,
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
-    private val wallClock: WallClock,
+    wallClock: WallClock,
 ) {
+    private val recheck = ClientRecheck(wallClock)
+
     suspend fun refuse(
         call: ApplicationCall,
         prepared: Preparation.Ready,
@@ -41,11 +42,11 @@ internal class ExhaustedAccountAdmission(
                 trace,
             ),
         )
-        val now = wallClock()
-        val retryEpochSeconds = exhausted.earliestResetEpochSeconds?.let {
-            val hold = AccountResetText.normalizedInstant(it).toEpochMilli() - now
-            (now + hold.coerceIn(0L, MAX_RATE_LIMIT_COOLDOWN_MS)) / MILLIS_PER_SECOND
-        }
+        // The message names the real reset; the client is told to come back within the recheck, to a pool that may
+        // have gained a login by then.
+        val retryEpochSeconds = recheck.deadline(
+            exhausted.earliestResetEpochSeconds?.let { AccountResetText.normalizedInstant(it).epochSecond },
+        )
         deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
             ?.forEach { (name, value) -> call.response.header(name, value) }
         admitted.close()

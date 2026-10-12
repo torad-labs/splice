@@ -958,6 +958,8 @@ origin.
 - **A hold says what happened.** "The provider limited this account, so this gateway is holding new requests for Ns"
   replaces a sentence that claimed retries which a relayed 429 never made, and a relayed vendor 429 hold waits like any
   other short hold.
+- **Compare models sends every model the same system line,** "You are a helpful assistant.", so no answer comes from an
+  instruction another model did not get, and each request shows it as its system.
 
 ### Fixed
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a

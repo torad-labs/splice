@@ -374,6 +374,7 @@ const PAGES = [
   ["sessions.html", "Sessions"],
   ["teams.html", "Teams"],
   ["requests.html", "Requests"],
+  ["usage.html", "Usage"],
   ["models.html", "Models"],
   ["compare.html", "Compare models"],
   ["settings.html", "Settings"],

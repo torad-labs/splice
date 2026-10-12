@@ -1,5 +1,5 @@
 // NEW: Oct 11, 2026 — where a retained perf line lies, so a compact row can be read back whole.
-package splice.app.sources
+package splice.app.sources.dense
 
 import java.nio.file.Path
 

@@ -1,7 +1,10 @@
 // NEW: Oct 11, 2026 — the lines one cached generation retains, in file order, behind one seam: whole objects for the
 // newest requests, a dense encoding for a compact window.
-package splice.app.sources
+package splice.app.sources.dense
 
+import splice.app.sources.PERF_CHAR_BYTES
+import splice.app.sources.PERF_STRING_OVERHEAD_BYTES
+import splice.app.sources.PerfCachedLine
 import java.util.LinkedList
 
 /** One retained line: where it starts and ends, its facts, and its raw text while it is still an unterminated last line. */

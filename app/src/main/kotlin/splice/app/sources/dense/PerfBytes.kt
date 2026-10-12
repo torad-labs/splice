@@ -1,9 +1,13 @@
 // NEW: Oct 11, 2026 — a growable byte writer and a cursor over bytes, both with variable-length integers.
-package splice.app.sources
+package splice.app.sources.dense
 
-// A seven-bit group per byte, the eighth bit announcing another one.
+// why: a varint carries seven payload bits per byte.
 private const val GROUP_BITS = 7
+
+// why: seven set bits keep one byte's payload.
 private const val GROUP_MASK = 0x7FL
+
+// why: the eighth bit announces a following byte.
 private const val MORE = 0x80
 
 /** Appends bytes, growing as it goes; [clear] reuses the buffer. */

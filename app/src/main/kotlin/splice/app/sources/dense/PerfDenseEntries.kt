@@ -1,9 +1,9 @@
 // NEW: Oct 11, 2026 — the retained lines of one generation as records in a few large byte chunks.
-package splice.app.sources
+package splice.app.sources.dense
 
 // why: a chunk of sixteen kibibytes holds about two hundred and fifty records of the busiest command, so a chunk
 // freed on eviction gives back its bytes in small steps, and a generation's unused tail is never much.
-private const val CHUNK_BYTES = 16 * 1_024
+private const val DENSE_CHUNK_BYTES = 16 * 1_024
 
 // Covers the chunk object, its array header and its place in the queue.
 private const val CHUNK_OVERHEAD_BYTES = 96L
@@ -92,7 +92,7 @@ internal class PerfDenseEntries(
     }
 
     private fun newChunk(needed: Int, base: PerfDenseState): PerfDenseChunk {
-        val chunk = PerfDenseChunk(maxOf(CHUNK_BYTES, needed), base.copy())
+        val chunk = PerfDenseChunk(maxOf(DENSE_CHUNK_BYTES, needed), base.copy())
         chunks.addLast(chunk)
         bytes += chunk.charge
         return chunk

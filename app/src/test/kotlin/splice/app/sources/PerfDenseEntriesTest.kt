@@ -5,6 +5,11 @@ package splice.app.sources
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.sources.dense.PerfCachedEntry
+import splice.app.sources.dense.PerfDenseCodec
+import splice.app.sources.dense.PerfDenseEntries
+import splice.app.sources.dense.PerfGenerationRef
+import splice.app.sources.dense.PerfLinkedEntries
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfTranscriptLink
 import splice.usage.perf.PerfTurnFacts

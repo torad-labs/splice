@@ -3,6 +3,12 @@ package splice.app.sources
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.longOrNull
+import splice.app.sources.dense.PerfCachedEntry
+import splice.app.sources.dense.PerfDenseCodec
+import splice.app.sources.dense.PerfDenseEntries
+import splice.app.sources.dense.PerfEntryFactory
+import splice.app.sources.dense.PerfGenerationRef
+import splice.app.sources.dense.PerfLinkedEntries
 import splice.core.util.JsonlAppendProof
 import splice.core.util.JsonlAppendReceipt
 import splice.core.util.JsonlFileVersion

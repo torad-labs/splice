@@ -1,12 +1,16 @@
 // NEW: Oct 11, 2026 — repeated descriptions (models, accounts, sessions) stored once and named by a small number.
-package splice.app.sources
+package splice.app.sources.dense
 
-// A stored absent value.
+import splice.app.sources.PERF_CHAR_BYTES
+import splice.app.sources.PERF_STRING_OVERHEAD_BYTES
+
+// why: id 0 is a stored absent value, so a record without the string costs only the id.
 internal const val STRING_NONE = 0
 
-// The text follows in place: the table was full, or the text is too long to be worth keeping.
+// why: id 1 says the text follows in place: the table was full or the text too long to keep.
 internal const val STRING_INLINE = 1
 
+// why: ids 0 and 1 are taken by STRING_NONE and STRING_INLINE, so table entries are numbered from 2.
 private const val FIRST_ID = 2
 
 // Covers the map entry, the list slot and both references of one table entry.

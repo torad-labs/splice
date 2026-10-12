@@ -26,11 +26,9 @@ package splice.app.sources
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
+import splice.app.sources.dense.PerfLineSpot
 import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
-import splice.core.perf.PerfKeys
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -87,25 +85,6 @@ public class PerfRowsFileSource internal constructor(
     internal val cachedLines: Int get() = cache.retainedRows
 
     private val archiveName = PerfArchiveName(file.fileName.toString())
-
-    /** The writer's own row shape: ts first, unquoted. Only a rejection hint, never row authority. */
-    private val ownRow = Regex("""^\{"ts":(\d+)[,}]""")
-
-    /** The writer's row start with a model that is not empty: ts, model and outcome come first in every released shape,
-     *  and a legacy probe row has the empty model its body gives (v0.3.0 to v0.3.2, PerfStats.record, AnthropicRequest.model). */
-    private val namedModel = Regex("""^\{"ts":\d+,"model":"[^"]""")
-
-    /** A skipped line that carries the cumulative drops counter (any JSON spacing): a candidate. */
-    private val dropsField = Regex(""""${PerfKeys.ASYNC_IO_DROPS}"\s*:\s*-?\d""")
-
-    // Only empty-model candidates pay for parsing before the cutoff; JSON remains the authority.
-    private val emptyModel = Regex(""""model"\s*:\s*""""")
-
-    private fun modelOf(line: String): PerfModelHint = when {
-        emptyModel.containsMatchIn(line) -> PerfModelHint.EMPTY
-        namedModel.containsMatchIn(line) -> PerfModelHint.NAMED
-        else -> PerfModelHint.UNSEEN
-    }
 
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)
 
@@ -238,11 +217,6 @@ public class PerfRowsFileSource internal constructor(
             .sortedBy { it.second }
     }
 
-    private fun drops(obj: JsonObject): Long? = (obj[PerfKeys.ASYNC_IO_DROPS] as? JsonPrimitive)?.longOrNull
-
-    private fun timestamp(obj: JsonObject): Long? =
-        (obj["ts"] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
-
     /** The state one window read accumulates across generations, oldest generation first. */
     private inner class Scan(
         private val sinceMs: Long,
@@ -277,7 +251,7 @@ public class PerfRowsFileSource internal constructor(
         private val rowShape = PerfRowShape()
 
         override fun beforeCutoff(line: String): Long? =
-            if (afterInWindowRow || emptyModel.containsMatchIn(line)) null else provablyBefore(line)
+            if (afterInWindowRow || PerfLineHints.hasEmptyModel(line)) null else provablyBefore(line)
 
         override fun canSkip(minimum: Long, maximum: Long): Boolean =
             !afterInWindowRow && (oldest?.let { minimum >= it && maximum < sinceMs } ?: false)
@@ -295,8 +269,8 @@ public class PerfRowsFileSource internal constructor(
          *  every other line is parsed and its top-level unquoted ts decides where it goes. */
         override fun raw(line: String) {
             val hint = provablyBefore(line).takeUnless { afterInWindowRow }
-            if (hint != null && !emptyModel.containsMatchIn(line)) {
-                if (dropsField.containsMatchIn(line)) held.baseline(Baseline(raw = line), rows.isNotEmpty())
+            if (hint != null && !PerfLineHints.hasEmptyModel(line)) {
+                if (PerfLineHints.carriesDrops(line)) held.baseline(Baseline(raw = line), rows.isNotEmpty())
                 held.skipped(Skipped(hint, line), rows.isNotEmpty(), newest)
                 return
             }
@@ -309,9 +283,9 @@ public class PerfRowsFileSource internal constructor(
                 PerfCachedLine(
                     row = decoded.row,
                     numericBytes = decoded.numericBytes,
-                    leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                    model = modelOf(line),
-                    drops = PerfDropsHint(candidate = dropsField.containsMatchIn(line), count = decoded.drops),
+                    leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
+                    model = PerfLineHints.modelOf(line),
+                    drops = PerfLineHints.dropsOf(line, decoded.drops),
                     probe = false,
                 )
             },
@@ -320,13 +294,13 @@ public class PerfRowsFileSource internal constructor(
 
         fun decodeTree(line: String): PerfCachedLine {
             val obj = parse(line)
-            val ts = obj?.let(::timestamp)
+            val ts = obj?.let(PerfLineHints::tsIn)
             val facts = PerfCachedLine(
                 row = null,
                 numericBytes = 0L,
-                leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                model = modelOf(line),
-                drops = PerfDropsHint(candidate = dropsField.containsMatchIn(line), count = obj?.let(::drops)),
+                leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
+                model = PerfLineHints.modelOf(line),
+                drops = PerfLineHints.dropsOf(line, obj?.let(PerfLineHints::dropsIn)),
                 probe = false,
             )
             if (obj == null || ts == null) return facts
@@ -383,7 +357,7 @@ public class PerfRowsFileSource internal constructor(
          *  retention evidence already parsed — it moves neither the oldest timestamp nor the window —
          *  or null when the line must be parsed. */
         private fun provablyBefore(line: String): Long? {
-            val header = ownRow.find(line) ?: return null
+            val header = PerfLineHints.ownRow.find(line) ?: return null
             val canonical = line.endsWith("}") && !line.contains("\\u")
             if (!canonical || line.indexOf("\"ts\"", header.range.last + 1) >= 0) return null
             return oldest?.let { known ->
@@ -396,7 +370,7 @@ public class PerfRowsFileSource internal constructor(
         private fun newestHeld(): Long? {
             if (rows.isNotEmpty()) return newest
             val unparsed = held.latest.asReversed().firstNotNullOfOrNull {
-                it.ts ?: it.raw?.let(::parse)?.let(::timestamp)
+                it.ts ?: it.raw?.let(::parse)?.let(PerfLineHints::tsIn)
             }
             return listOfNotNull(newest, unparsed).maxOrNull()
         }
@@ -411,7 +385,7 @@ public class PerfRowsFileSource internal constructor(
             rows = rows,
             oldestHeldTs = oldest,
             dropsBefore = held.before.asReversed().firstNotNullOfOrNull {
-                it.drops ?: it.raw?.let(::parse)?.let(::drops)
+                it.drops ?: it.raw?.let(::parse)?.let(PerfLineHints::dropsIn)
             },
             readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,

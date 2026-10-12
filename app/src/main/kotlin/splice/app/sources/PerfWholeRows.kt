@@ -1,6 +1,7 @@
 // NEW: Oct 11, 2026 — the whole rows behind a window's compact ones, read back from the lines they were kept from.
 package splice.app.sources
 
+import splice.app.sources.dense.PerfLineSpot
 import splice.usage.perf.PerfRow
 import java.io.IOException
 import java.nio.channels.FileChannel

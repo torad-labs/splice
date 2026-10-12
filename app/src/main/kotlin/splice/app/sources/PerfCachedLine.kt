@@ -1,6 +1,8 @@
 // NEW: compact cached perf-row facts and the seams between decoding, retention and selection.
 package splice.app.sources
 
+import splice.app.sources.dense.PerfGenerationRef
+import splice.app.sources.dense.PerfLineSpot
 import splice.usage.perf.PerfRow
 import java.io.IOException
 

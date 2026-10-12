@@ -106,13 +106,18 @@ test("at 3828 the requests-on-your-plan line under a Day reading stays clear of 
     const meter = page.locator(`[data-meter="plan-day"]`);
     await expect(meter).toBeVisible({ timeout: 15_000 });
     await expect(meter).not.toContainText("Reading", { timeout: 15_000 });
-    const gap = await meter.evaluate((el) => {
+    // clear means the two boxes share no area: since 18cb0a9eb the button sits on the row under the line, so a
+    // left-of check alone failed whenever a longer reset label ("Resets Mon 7:00 PM", after 7 PM CT) moved it left
+    const overlap = await page.evaluate(() => {
+      const el = document.querySelector('[data-meter="plan-day"]')!;
       const sub = el.querySelector(".unpriced.own .part")?.getBoundingClientRect();
       const button = [...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Set budget")?.getBoundingClientRect();
-      return sub && button ? button.left - sub.right : null;
+      if (!sub || !button) return null;
+      return Math.max(0, Math.min(sub.right, button.right) - Math.max(sub.left, button.left))
+        * Math.max(0, Math.min(sub.bottom, button.bottom) - Math.max(sub.top, button.top));
     });
-    expect(gap).not.toBeNull();
-    expect(gap!).toBeGreaterThanOrEqual(0);
+    expect(overlap).not.toBeNull();
+    expect(overlap!).toBe(0);
   } finally {
     await page.close();
   }

@@ -299,13 +299,13 @@ button.count:hover { color: var(--text); }
 .peaks > header .state { font-size: 1.25rem; }
 .peaks .pall { margin-left: auto; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); }
 .peaks .pall b { font: 600 1.1rem/1 var(--font-data); color: var(--text); }
-.peak { display: grid; grid-template-columns: 16rem minmax(10rem, 1fr) 21rem 26rem; align-items: center; gap: 1.4rem; min-height: 2.9rem; border-top: .12rem solid var(--track); }
+.peak { display: grid; grid-template-columns: 16rem minmax(10rem, 1fr) 21rem 29rem; align-items: center; gap: 1.4rem; min-height: 2.9rem; border-top: .12rem solid var(--track); }
 .peak .pbar { height: .9rem; border-radius: .45rem; background: var(--track); overflow: hidden; }
 .peak .pbar b { display: block; height: 100%; background: color-mix(in oklab, var(--c) 70%, transparent); }
 .peak.full .pbar b { background: var(--c); }
 .peak .pnum { font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .peak .pnum b { font: 600 1.15rem/1 var(--font-data); color: var(--text); }
-.peak .door { justify-self: start; padding: .4rem .9rem; }
+.peak .door { justify-self: start; padding: .4rem .9rem; white-space: nowrap; }  /* its words stay on one line: the door column (29rem) holds "Waited in line 123,456 Open on Requests"; at 26rem "2,098" broke it live at 3828, e2dfed21a */
 .wcard .refs { display: inline-flex; flex-wrap: wrap; gap: .5rem; }
 .wcard .ref { font: 500 1.05rem/1 var(--font-data); color: var(--text); text-decoration: none; padding: .45rem .7rem; border: .12rem solid var(--track-line); border-radius: .35rem; }
 .wcard .ref:hover { color: var(--key-light); border-color: var(--key-light); }

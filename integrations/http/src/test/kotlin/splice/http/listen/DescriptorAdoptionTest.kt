@@ -3,6 +3,7 @@
 // connection being refused. The manager here is this test: it opens the listener and keeps it, exactly as PID 1 does.
 package splice.http.listen
 
+import io.ktor.server.application.call
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
@@ -22,6 +23,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertInstanceOf
 import org.junit.jupiter.api.assertThrows
+import splice.core.memory.HeapBudget
+import splice.http.ingress.HeapIngress
+import splice.http.ingress.IngressErrorBody
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -71,13 +75,18 @@ class DescriptorAdoptionTest {
     /** A handler held in flight: [entered] opens when it is reached, [release] lets it finish. */
     private data class Hold(val release: CountDownLatch, val entered: CountDownLatch)
 
+    /** What a test adds to the served engine: a handler held in flight, and the ingress a head puts in front. */
+    private data class Extras(val hold: Hold? = null, val ingress: HeapIngress? = null)
+
     private fun serve(
         port: Int,
         adopted: AdoptedListeners,
         body: String,
         bootstrap: AdoptedBootstrap = adopted.bootstrapFor(CONTROL),
-        hold: Hold? = null,
+        extras: Extras = Extras(),
     ): EmbeddedServer<*, *> {
+        val hold = extras.hold
+        val ingress = extras.ingress
         val server = embeddedServer(
             Netty,
             configure = {
@@ -86,8 +95,10 @@ class DescriptorAdoptionTest {
                     this.port = port
                 }
                 configureBootstrap = { bootstrap.applyTo(this) }
+                ingress?.let { guard -> channelPipelineConfig = { pipeline -> guard.install(pipeline) } }
             },
         ) {
+            ingress?.install(this)
             routing {
                 get("/hi") { call.respondText(body) }
                 get("/slow") {
@@ -174,7 +185,7 @@ class DescriptorAdoptionTest {
             val bootstrap = adopted.bootstrapFor(CONTROL)
             val release = CountDownLatch(1)
             val entered = CountDownLatch(1)
-            val draining = serve(manager.port, adopted, "draining", bootstrap, Hold(release, entered))
+            val draining = serve(manager.port, adopted, "draining", bootstrap, Extras(Hold(release, entered)))
 
             // A turn in flight when the drain starts: connected and asking before accepting stops.
             val inFlight = Socket()
@@ -209,6 +220,85 @@ class DescriptorAdoptionTest {
                 val answer = it.getInputStream().readBytes().decodeToString()
                 assertTrue(answer.startsWith("HTTP/1.1 200"), "the queued request was answered, not reset: $answer")
                 assertTrue(answer.endsWith("next"), "and answered by the engine that came up after the drain: $answer")
+            }
+            next.stop(GRACE_MS, TIMEOUT_MS)
+        } finally {
+            manager.close()
+        }
+    }
+
+    /** A daemon the way a head is built: the heap-charged ingress in front of the engine, so its connections are the
+     *  ones the drain closes. */
+    private fun guarded() = HeapIngress(
+        HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 64L * 1024 * 1024),
+        { 1024 * 1024 },
+        IngressErrorBody { type, message -> "{\"type\":\"$type\",\"message\":\"$message\"}" },
+    )
+
+    /** A connection that sent one request without asking to close, was answered, and is now open and idle. */
+    private fun keptOpenAfterOneRequest(port: Int): Socket {
+        val kept = Socket()
+        kept.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), TIMEOUT_MS.toInt())
+        kept.soTimeout = TIMEOUT_MS.toInt()
+        kept.getOutputStream().write("GET /hi HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".toByteArray())
+        kept.getOutputStream().flush()
+        val first = ByteArray(1024).let { buffer -> String(buffer, 0, kept.getInputStream().read(buffer)) }
+        assertTrue(
+            first.startsWith("HTTP/1.1 200") && first.endsWith("draining"),
+            "the first request is served: $first",
+        )
+        return kept
+    }
+
+    @Test
+    fun `an idle kept-open connection is closed at drain start, so its next request waits for the next daemon`() {
+        val manager = Manager()
+        try {
+            val adopted = ready(manager.fd, manager.port)
+            val bootstrap = adopted.bootstrapFor(CONTROL)
+            val ingress = guarded()
+            val release = CountDownLatch(1)
+            val entered = CountDownLatch(1)
+            val draining = serve(manager.port, adopted, "draining", bootstrap, Extras(Hold(release, entered), ingress))
+
+            // A keep-alive client that already asked once: its connection stays open, idle, the way Claude Code's does.
+            val kept = keptOpenAfterOneRequest(manager.port)
+
+            // A turn in flight on another connection, which the drain must not touch.
+            val inFlight = Socket()
+            inFlight.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), manager.port), TIMEOUT_MS.toInt())
+            inFlight.getOutputStream().write(request("/slow"))
+            inFlight.getOutputStream().flush()
+            assertTrue(entered.await(TIMEOUT_MS, TimeUnit.MILLISECONDS), "the in-flight turn reached the handler")
+
+            // The start of the drain, as the head does it: stop accepting, then close what is idle.
+            bootstrap.pauseAccepting()
+            ingress.closeIdleConnections()
+
+            assertEquals(
+                -1,
+                kept.getInputStream().read(),
+                "the idle kept-open connection is closed, never left to be refused",
+            )
+            release.countDown()
+            inFlight.use {
+                assertTrue(get(it, send = false).endsWith("slow-done"), "the turn in flight finishes whole")
+            }
+
+            // The client's next request opens a new connection, waits in the kernel, and the next daemon answers it.
+            val retried = Socket()
+            retried.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), manager.port), TIMEOUT_MS.toInt())
+            retried.getOutputStream().write(request("/hi"))
+            retried.getOutputStream().flush()
+            draining.stop(GRACE_MS, TIMEOUT_MS)
+            val next = serve(manager.port, adopted, "next")
+            retried.use {
+                it.soTimeout = TIMEOUT_MS.toInt()
+                val answer = it.getInputStream().readBytes().decodeToString()
+                assertTrue(
+                    answer.startsWith("HTTP/1.1 200") && answer.endsWith("next"),
+                    "answered by the next daemon, not refused: $answer",
+                )
             }
             next.stop(GRACE_MS, TIMEOUT_MS)
         } finally {

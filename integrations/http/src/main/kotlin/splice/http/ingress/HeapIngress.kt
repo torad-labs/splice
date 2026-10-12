@@ -77,6 +77,13 @@ public class HeapIngress(
         val _ = connections.add(pipeline.channel())
     }
 
+    /** The start of a drain: a connection with no request on it is closed now, so the client's next request opens a new
+     *  one and waits in the kernel for the next daemon, instead of reaching this one on the connection it kept open and
+     *  being refused. A connection that still owes a response is left alone and finishes it. */
+    public fun closeIdleConnections() {
+        connections.filter { it.attr(connectionKey).get()?.idle == true }.forEach { it.close() }
+    }
+
     /** Bind the original request identity before routing wraps it. No injected header crosses the wire. */
     public fun install(application: Application) {
         stopping.set(false)

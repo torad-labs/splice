@@ -15,6 +15,9 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
     private var disconnected = false
 
     val admitted: Boolean get() = connectionLease != null
+
+    /** Whether no request is on this connection: none read and waiting, none answered late. */
+    val idle: Boolean get() = synchronized(lock) { pending.isEmpty() && responses.isEmpty() }
     val stageClose: Boolean get() = synchronized(lock) { halted.get() && responses.isEmpty() }
 
     fun register(request: HttpRequest, entry: IngressRequest) {

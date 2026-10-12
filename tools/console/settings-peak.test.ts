@@ -78,7 +78,8 @@ test("a command that held nothing today is named on one line, with no card and n
   const page = await open(1440, 900);
   try {
     const today = page.locator(".tally").filter({ hasText: "Today" }).first();
-    await expect(today.locator(".pidle")).toContainText("1 command held nothing today");
+    // the words are fin's, under Marlin's order: the line says what there was, and the chips say which commands
+    await expect(today.locator(".pidle")).toContainText("No requests today");
     await expect(today.locator(".pidle")).toContainText("gamma");
     expect(await today.locator(".pcard").count()).toBe(2); // alpha and beta, never gamma
     await expect(today.locator(".pcard").filter({ hasText: "gamma" })).toHaveCount(0);

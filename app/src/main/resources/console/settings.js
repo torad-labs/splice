@@ -127,7 +127,7 @@ const hits = (text) => { const w = words(); return w.length > 0 && w.every((x) =
 const jobHay = (id) => `${TOPIC[id].name} ${TOPIC[id].also}`;
 // the line saying what a setting changes is searched with its name: he looks for a setting by what it does more often
 // than by what it is called ("budget", "thinking"), and the words of that line are the ones he would type
-const knobHay = (k) => [k.label, k.key, k.note || "", k.also || "", k.home ? "" : jobHay(topicOf(k.key))].join(" ");
+const knobHay = (k) => [k.label, k.key, k.also || "", k.home ? "" : jobHay(topicOf(k.key))].join(" ");
 function hl(s) {
   const w = words().map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   return w.length ? esc(s).replace(new RegExp(`(${w.join("|")})`, "gi"), "<mark>$1</mark>") : esc(s);
@@ -149,9 +149,51 @@ const kcard = (inner, cls = "") => `<article class="kcard${cls}"><div class="kin
  *  with half a row empty. Four or fewer stand on one row; above that, the fewest rows of at most four, shared evenly. */
 const perRow = (n) => (n <= 4 ? Math.max(1, n) : Math.ceil(n / Math.ceil(n / 4)));
 const cardRow = (cards, cls = "") => `<div class="kcards${cls}" style="--n:${perRow(cards.length)}">${cards.join("")}</div>`;
-const blocks = (keys) => {
+// ---------- what a setting shows under its control ----------
+// AN ELEMENT, NEVER A SENTENCE, AND ONLY WHERE THE FACT IS ON THE WIRE (Marlin's ruling, Oct 12). Each of these is a
+// fact this page already reads: the last plan read, the mark the account bars draw, the providers reporting no window,
+// how many servers run now, where the reasoning text lands. Two the build list asked for are NOT here because the
+// daemon does not carry them: the waiting line's own text lives in TurnProgressLine.kt and reaches no route, and
+// nothing counts fold continuations, so those rows ship with their rename alone.
+const seenAt = () => Math.max(0, ...(ui.accts || []).map((x) => x.observed_at_epoch_seconds || 0));
+/** The providers whose accounts report no plan window at all: what the 5-hour stand-in covers. */
+const quietProviders = () => [...new Set((ui.accts || [])
+  .filter((x) => x.credential_present && x.five_hour_used_percent == null && x.seven_day_used_percent == null)
+  .map((x) => x.display_name || x.provider).filter(Boolean))];
+/** Where the reasoning text lands for the picked option, as three lines of a terminal. */
+function reasoningSketch() {
+  const where = val("showReasoning");
+  const think = `<span class="sk think">${where === "thinking" ? "⏺ Thinking… working out the order" : "⏺ Thinking…"}</span>`;
+  // rep, never said: the kit's own .said is the word a saved setting shows, and it carries nowrap, so the line ran
+  // 77px past the card at 1440
+  const body = where === "text" ? `<span class="sk rep">Working out the order, then the reply.</span>` : "";
+  const reply = `<span class="sk">Here is the change.</span>`;
+  return `<div class="sketch" aria-hidden="true">${where === "off" ? "" : think}${body}${reply}</div>`;
+}
+function elOf(key) {
+  if (key === "quotaPollIntervalMs") {
+    const seen = seenAt();
+    return seen ? `<p class="kel">Read ${esc(backWord(new Date(seen * 1000)))}</p>` : "";
+  }
+  if (key === "usageWarnPct") {
+    const warn = Number(val("usageWarnPct")) || 80;
+    return `<div class="kel"><div class="pct mark" style="--w:0%;--warn:${warn}%" role="img" aria-label="warns at ${warn}%"><b></b><i></i></div></div>`;
+  }
+  if (key === "usageWarnTokens5h") {
+    const quiet = quietProviders();
+    return quiet.length ? `<div class="kel">${chipRow(quiet)}</div>` : "";
+  }
+  if (key === "mcpMaxServers") {
+    const up = Object.values(ui.mcp?.servers || {}).filter((s) => s.hosted).length;
+    return ui.mcp ? `<p class="kel"><b>${fmt(up)}</b> running</p>` : "";
+  }
+  if (key === "showReasoning") return reasoningSketch();
+  return "";
+}
+const blocks = (keys, extra = []) => {
   const live = keys.filter((key) => !needsRestart(key) && shownKnob(key));
-  return live.length ? cardRow(live.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })))) : "";
+  const cards = live.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true, el: elOf(key) })));
+  return cards.length + extra.length ? cardRow([...cards, ...extra]) : "";
 };
 
 // the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
@@ -495,15 +537,16 @@ function peaksHtml() {
   const card = (p) => {
     const key = p.head.key, lim = limitOf(key), pc = lim ? Math.min(100, (100 * p.peak) / lim) : 4;
     return `<article class="pcard${lim && p.peak >= lim ? " full" : ""}"><header>${cmdChip(key)}<span class="pat">${clockOf(p.at)}</span></header>`
-      + `<div class="pbig"><b>${fmt(p.peak)}</b><span class="pof">of ${lim || "no limit"} at once</span></div>`
+      + `<div class="pbig"><b>${fmt(p.peak)}</b><span class="pof">${lim ? `of ${fmt(lim)} at once` : "Unlimited"}</span></div>`
       + `<span class="pbar"><b style="width:${pc}%"></b></span>`
-      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${fmt(p.queued)}</b><em>Open on Requests</em></a>` : `<span class="pnone">None waited in line</span>`)
+      // a command that queued nothing reads as the zero of the figure above it, in the same words and with no door
+      + (p.queued ? `<a class="door" href="${reqUrl({ from: String(startOfToday()), why: "queued", cmd: p.head.command })}">${SV.open}<span>Waited in line</span><b>${fmt(p.queued)}</b><em>Open on Requests</em></a>` : `<span class="pnone"><b>0</b> Waited in line</span>`)
       + `</article>`;
   };
   const quiet = idle.length
-    ? `<p class="pidle"><span>${fmt(idle.length)} command${idle.length === 1 ? "" : "s"} held nothing today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
+    ? `<p class="pidle"><span>No requests today</span>${idle.map((p) => cmdChip(p.head.key)).join("")}</p>` : "";
   const errs = bad.map((p) => `<p class="pidle"><span class="state limit">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
-  return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No command ran a request today</span></p>`}${quiet}${errs}</section>`;
+  return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No requests today</span></p>`}${quiet}${errs}</section>`;
 }
 // ---------- Plan limits ----------
 // Where the plans stand against the line these settings draw. The windows are /api/accounts' own, the ones Accounts
@@ -512,7 +555,6 @@ function peaksHtml() {
 // the figure rather than as a number in a box.
 const pctWord = (p) => `${Math.round(p)}%`;
 const planBar = (p, warn) => `<div class="pct${p >= warn ? " over" : ""}" style="--w:${Math.min(100, Math.max(1.5, p))}%;--warn:${warn}%" role="img" aria-label="${pctWord(p)} used, warns at ${warn}%"><b></b><i></i></div>`;
-const acctChip = (x) => srvChip(x.display_name || x.provider || "account");
 const resetWord = (secs) => (secs ? `Resets ${backWord(new Date(secs * 1000))}` : "");
 function planNow() {
   const a = ui.accts;
@@ -533,18 +575,17 @@ function planNow() {
       planBar(week.seven_day_used_percent, warn) + chipRow([week.display_name || week.provider]) + note(resetWord(week.seven_day_reset_epoch_seconds))));
   }
   if (over.length) {
-    tiles.push(statTile(fmt(over.length), `Over the ${warn}% line`, chipRow(over.map((x) => x.display_name || x.provider)) + note("splice warns on the next request these accounts carry")));
-  } else if (read.length) { zeros.push(zeroFig(`over the ${warn}% line`)); }
-  const seen = Math.max(0, ...a.map((x) => x.observed_at_epoch_seconds || 0));
-  const quiet = read.length ? Math.max(0, a.filter((x) => x.credential_present).length - read.length) : 0;
-  const lines = [];
-  if (seen) lines.push(`<span class="fig">Read ${esc(backWord(new Date(seen * 1000)))}</span>`);
-  // the accounts no provider reports a window for are what the 5-hour fallback below is there to cover
-  if (quiet) lines.push(`<span class="fig"><b>${fmt(quiet)}</b> ${quiet === 1 ? "account reports" : "accounts report"} no plan limit</span>`);
-  if (!read.length) lines.push(`<span class="fig">No account reports a plan limit, so only the 5-hour fallback below can warn you</span>`);
+    // the accounts themselves, no sentence: the setting under this tile is named "Warn when a plan reaches", so what
+    // splice does about them is already on the pane (fin, Marlin's order, Oct 12)
+    tiles.push(statTile(fmt(over.length), `Over ${warn}%`, chipRow(over.map((x) => x.display_name || x.provider))));
+  } else if (read.length) { zeros.push(zeroFig(`over ${warn}%`)); }
+  // NO FOOT LINE UNDER THE BARS (fin, Oct 12): when the plans were last read is the element under "Check plan usage
+  // every", and the accounts reporting no window are the chips under the 5-hour row, each beside the setting it
+  // answers. Repeating either here put the same fact on the pane twice, in two typefaces, four inches apart.
+  // Where no account reports a window at all there are no bars to draw, so the state stands in their place.
+  if (!tiles.length && !zeros.length) zeros.push(`<span class="fig"><span class="state">No limits reported</span></span>`);
   return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
-    + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "")
-    + (lines.length ? `<div class="zeros under">${lines.join('<span class="dot">·</span>')}</div>` : "");
+    + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "");
 }
 const planHtml = () => `<section class="tally">${planNow()}</section><section class="sub">${blocks(keysOf("plan"))}</section>`;
 
@@ -569,17 +610,27 @@ function mcpNow() {
   const held = up.reduce((n, [, s]) => n + (s.rss_bytes || 0), 0);
   const sessions = up.reduce((n, [, s]) => n + (s.sessions || 0), 0);
   const tiles = [], zeros = [];
+  // A LABEL AND ITS ZERO ARE THE SAME WORDS (fin, Oct 12): the zero line stands in for the tile that did not draw, so
+  // "0 Running" is read as the empty form of "Running". "Server running" against "0 running now" read as two figures.
   if (up.length) {
-    tiles.push(statTile(fmt(up.length), up.length === 1 ? "Server running" : "Servers running", chipRow(up.map(([n]) => n))));
-  } else { zeros.push(zeroFig("running now")); }
-  if (set) tiles.push(statTile(fmt(set), set === 1 ? "Server set up" : "Servers set up", note(regs.length > set ? `Written ${fmt(regs.length)} times across your files` : "")));
+    tiles.push(statTile(fmt(up.length), "Running", chipRow(up.map(([n]) => n))));
+  } else { zeros.push(zeroFig("Running")); }
+  if (set) tiles.push(statTile(fmt(set), "Set up", note(regs.length > set ? `${fmt(regs.length)} entries in your files` : "")));
   if (hosts.length) {
-    tiles.push(statTile(fmt(hosts.length), "splice hosts", chipRow(hosts) + note("One process for every session, started when a session first asks")));
-  } else if (set) { zeros.push(zeroFig("hosted by splice")); }
-  if (held) tiles.push(statTile(mbWord(held), "Held in memory", note(sessions ? `${fmt(sessions)} ${sessions === 1 ? "conversation is" : "conversations are"} using them` : "")));
+    // SHARING MADE VISIBLE, NOT EXPLAINED (fin, Marlin approved, Oct 12): the line under this figure said in words
+    // what "1 process · 6 sessions" says as a fact, and the host reports both. The chip is the tile's last row here
+    // as it is in "Running", so the two read alike.
+    const using = live.filter(([n]) => hosts.includes(n)).reduce((n, [, s]) => n + (s.sessions || 0), 0);
+    const share = `${fmt(hosts.length)} ${hosts.length === 1 ? "process" : "processes"} · ${fmt(using)} ${using === 1 ? "session" : "sessions"}`;
+    tiles.push(statTile(fmt(hosts.length), "Hosted by splice", `<p class="kel">${esc(share)}</p>` + chipRow(hosts)));
+  } else if (set) { zeros.push(zeroFig("Hosted by splice")); }
+  // the servers splice does not host are a figure of its own beside the ones it does, not a line defending the
+  // difference: "as they did before splice" argued a case the two numbers already make (fin, Oct 12)
   const own = set - hosts.length;
+  if (own > 0) tiles.push(statTile(fmt(own), "Run by each session"));
+  // resident memory of the live hosted processes, read from /proc (McpStatus.kt:100), with the sessions on them under it
+  if (held) tiles.push(statTile(mbWord(held), "Memory in use", note(sessions ? `${fmt(sessions)} ${sessions === 1 ? "session" : "sessions"}` : "")));
   const lines = [];
-  if (own > 0) lines.push(`<span class="fig"><b>${fmt(own)}</b> ${own === 1 ? "server starts" : "servers start"} inside each session, as they did before splice</span>`);
   // the one fact the settings above cannot fix: a server that failed, named with what it said
   up.filter(([, s]) => s.last_error).forEach(([n, s]) => lines.push(`<span class="fig">${srvChip(n)} <span class="state limit">${esc(s.last_error)}</span></span>`));
   return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
@@ -621,18 +672,16 @@ function versionHtml() {
   if (v === undefined) return `<span class="state">Reading</span>`;
   if (!v) return `<span class="state">Not read</span>`; // the word the Version job's own rail line uses; why is warned where it was read (fin)
   const back = v.rollback_target, run = ui.run, going = run && run.state === "running";
-  const checked = v.checked_at_epoch_millis ? `, checked ${atWord(v.checked_at_epoch_millis)}` : "";
-  const releases = `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}See releases</a>`;
-  // the newest release, said in the card's own words. A check that has never succeeded is "Not checked yet", whatever
-  // reason the daemon carries for it; a check that succeeded once and cannot now is the only case its reason is news.
+  const checked = v.checked_at_epoch_millis ? `<p class="kel">Checked ${esc(atWord(v.checked_at_epoch_millis))}</p>` : "";
+  const releases = `<a class="act quiet small" href="${RELEASES}" target="_blank" rel="noopener">${SV.open}Releases</a>`;
+  // A STATE AND A DOOR, NOT A SENTENCE (fin, Marlin approved, Oct 12). Never checked is the state "Not checked"; a
+  // check that succeeded shows the newest version, or "Newest" when he is already on it; a check that failed after one
+  // succeeded is "Not read", the word every other unread figure uses, and when the check happened is an element.
+  // Marlin wants a "Check" act in this door's place, which needs a fetch-only route the daemon does not have.
   const newest = v.latest
-    ? v.latest === v.installed
-      ? `This is the newest release${checked}.`
-      : `${v.latest} is out${checked}. See releases for what changed.`
-    : v.checked_at_epoch_millis && v.latest_unavailable_reason
-      ? v.latest_unavailable_reason
-      : "Not checked yet. See releases for the newest.";
-  const cards = [vcard("Running", `${vnum(v.installed)}${releases}`, newest)];
+    ? v.latest === v.installed ? `<span class="state">Newest</span>` : vnum(v.latest)
+    : v.checked_at_epoch_millis ? `<span class="state limit">Not read</span>` : `<span class="state">Not checked</span>`;
+  const cards = [vcard("Running", `${vnum(v.installed)}${newest}${releases}${checked}`)];
   // Previous is a card only when there is a release to go back to, or when the read that would have found one failed:
   // "None" under a name is not news, and three cards of which two held no number read as a broken row.
   if (back) {
@@ -663,10 +712,24 @@ function pollRun(to) {
   }, 2000);
 }
 
+// ---------- Reasoning: the fold pair as one sentence ----------
+// "When thinking stops short, continue [models] up to [3 times]" is ONE row, because the two knobs are one decision:
+// the models splice asks to keep thinking, and how many times it asks (fin's build list, Marlin approved, Oct 12).
+// An element would be how many answers were continued today, and nothing on the wire counts folds, so there is none.
+const FOLD = ["foldReasoningModels", "foldMaxContinue"];
+function foldCard() {
+  const models = KNOB.foldReasoningModels, times = KNOB.foldMaxContinue;
+  if (FOLD.some((key) => needsRestart(key) || !shownKnob(key)) || !keysOf("reasoning").includes(models.key)) return "";
+  const lit2 = lit([knobHay(models), knobHay(times)].join(" "));
+  return kcard(`<div class="lbl${lit2}" data-row="${models.key}">${hl(models.label)}</div>`
+    + `<div class="ctl col"><div class="line">${ctlHtml(models, val(models.key))}${saidHtml(models.key)}</div>`
+    + `<div class="line"><span class="upto">${hl(times.label)}</span>${ctlHtml(times, val(times.key))}${saidHtml(times.key)}</div></div>`);
+}
+
 const PANES = {
   busy: busyHtml,
   silent: silentHtml,
-  reasoning: () => `<section class="sub">${blocks(keysOf("reasoning"))}</section>`,
+  reasoning: () => `<section class="sub">${blocks(keysOf("reasoning", FOLD), [foldCard()])}</section>`,
   plan: planHtml,
   mcp: mcpHtml,
   data: dataHtml,

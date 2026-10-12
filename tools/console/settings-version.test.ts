@@ -64,16 +64,18 @@ async function version(body: Record<string, unknown>): Promise<Page> {
   return page;
 }
 
-test("a daemon that has never checked shows its own version and says so in plain words, with no empty second card", async () => {
+// The card is a state and a door, never a sentence (Marlin's ruling on the Settings words, Oct 12): "Not checked"
+// beside the running version, with the releases page one tap away.
+test("a daemon that has never checked shows its own version, the state and a door, with no empty second card", async () => {
   const page = await version(NEVER_CHECKED);
   try {
     const pane = page.locator(".pane");
     await expect(page.locator(".vcard")).toHaveCount(1);
     await expect(page.locator(".vcard .v")).toHaveText("0.4.0");
-    await expect(pane).toContainText("Not checked yet");
-    await expect(pane.getByRole("link", { name: /See releases/ })).toBeVisible();
-    // none of the three words the empty cards used to carry, and none of the daemon's own sentence
-    for (const gone of ["Newest", "None", "fetching and verifying", "no upgrade check"]) {
+    await expect(page.locator(".vcard .state")).toHaveText("Not checked");
+    await expect(pane.getByRole("link", { name: /Releases/ })).toBeVisible();
+    // no empty second card, no sentence, and none of the daemon's own words about fetching and verifying
+    for (const gone of ["Newest", "None", "fetching and verifying", "no upgrade check", "See releases for"]) {
       await expect(pane).not.toContainText(gone);
     }
   } finally {

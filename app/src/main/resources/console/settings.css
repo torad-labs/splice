@@ -222,6 +222,9 @@ button.count:hover { color: var(--text); }
 @container kcard (min-width: 80rem) {
   #st .vcard .ctl { width: 100%; align-items: center; }
   #st .vcard .ctl > .act { margin-left: auto; }
+  /* "Running" is a word, not a setting's name, so it takes the room it needs instead of a settings label's column:
+     at 3828 the 22rem column held 400px of air between the word and the number it names (r6) */
+  #st .vcard .kin { grid-template-columns: auto minmax(0, 1fr); column-gap: 2rem; }
 }
 .run { padding: 1.3rem 1.5rem 1.4rem; background: var(--obj-sunk); border-radius: var(--r-obj); }
 .run header { display: flex; align-items: center; gap: 1rem; margin-bottom: .6rem; }
@@ -270,6 +273,15 @@ button.count:hover { color: var(--text); }
    evenly rather than filling one row and half of another. The min keeps the pair from overflowing a narrow pane. */
 @media (max-width: 1999px) {
   #st .tally > .figs3.n4 { grid-template-columns: repeat(2, minmax(min(100%, 20rem), 1fr)); }
+  /* five figures the same way: three over two, each row filling the width, rather than three and a pair holding two
+     thirds of a row with a column of empty beside them (MCP servers at 1440, where the fifth is "Memory in use") */
+  #st .tally > .figs3.n5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #st .tally > .figs3.n5 > * { grid-column: span 2; }
+  #st .tally > .figs3.n5 > :nth-child(n+4) { grid-column: span 3; }
+  /* and a section holding a terminal sketch stands two cards to a row: a quarter of 1440 is 219px of content, where a
+     three-option switch wraps onto three lines and a line of terminal text onto two, and the three cards beside it
+     stretch to that height holding nothing. Half the row fits both on one line each. */
+  #st .kcards:has(.sketch) > .kcard { flex-basis: calc((100% - 2 * var(--gap-card)) / 2); }
 }
 .fig3 { display: flex; flex-direction: column; gap: .7rem; min-width: 22rem; padding: 1.3rem 1.5rem 1.4rem; text-decoration: none; border: .12rem solid var(--track-line); border-radius: var(--r-obj); }
 .fig3 .big { font: 400 4.2rem/.9 var(--font-lead); color: var(--text); font-variant-numeric: tabular-nums; }
@@ -518,7 +530,7 @@ button.count:hover { color: var(--text); }
   #st .tally > .figs3 > .fig3 > .big { grid-column: 1; grid-row: 1; }
   #st .tally > .figs3 > .fig3 > .what { grid-column: 2; grid-row: 1; }
   #st .tally > .figs3 > .fig3 > .cdoors { grid-column: 1 / -1; justify-content: flex-end; }
-  #st .tally > .figs3 > .fig3 > .knote { grid-column: 1 / -1; }
+  #st .tally > .figs3 > .fig3 > .knote, #st .tally > .figs3 > .fig3 > .kel { grid-column: 1 / -1; }
   /* a bar is the width of the tile, never of the number above it: left in the first column it came out 85px wide with
      the warn tick on top of the fill (Plan limits at 3828). The line under it and the account it belongs to share the
      row below, the words at the left and the chip at the right edge where every other tile puts it. */
@@ -540,17 +552,38 @@ button.count:hover { color: var(--text); }
 .kcard { display: grid; flex: 1 1 calc((100% - var(--n, 1) * var(--gap-card)) / var(--n, 1)); min-width: 21rem; container: kcard / inline-size; padding: 1.5rem 1.7rem 1.6rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
 /* the card's own grid is one element in, so it can ask the card how wide it turned out: a container cannot query itself,
    and an unnamed query here reached .page instead, which is always wide enough — every card drew two columns */
-.kin { display: grid; align-content: start; gap: 1.1rem; height: 100%; }
+/* the column can never grow past the card: a grid track takes the widest min-content in it, and the three-option
+   switch under "Where reasoning shows" is wider than a quarter of 1440 — the track grew with it and every row in the
+   card, the reasoning sketch included, drew over the card's right edge and into its neighbour (r6 at 1440) */
+.kin { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 1.1rem; height: 100%; }
+/* and the switch itself wraps rather than overflow: three long options stack two and one inside the pill */
+#st .kin .switch { flex-wrap: wrap; }
 /* the controls of a section sit on one line: cards in a row are one height, so a card whose name wrapped to two lines
    would otherwise hold its control a line below its neighbours' (Plan limits at 1440, where two of four names wrap).
    A section where a setting carries per-command values is left alone: there the control is read with the values under
    it, not with the card's lower edge. Version's cards read their number straight under its name, so they keep start. */
-/* and where any card in the section carries that line, every card in it holds its rows at the top instead: pinning the
-   ones without a note to the lower edge put three controls on one line and the fourth 40px above it (MCP servers) */
-.kcards:not(.vcards):not(:has(.knote)) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
-/* the line saying what a setting changes sits straight under its control, never pushed to the card's lower edge with
-   the control floating in the middle, so a card with a note holds its three rows at the top */
-#st .kin > .knote { margin: 0; font: 500 1.15rem/1.4 var(--font-name); color: var(--text-body); }
+/* and where any card in the section carries an element, every card in it holds its rows at the top instead: pinning the
+   ones without one to the lower edge put three controls on one line and the fourth 40px above it (MCP servers) */
+.kcards:not(.vcards):not(:has(.kel)):not(:has(.sketch)) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
+/* WHAT A SETTING SHOWS UNDER ITS CONTROL IS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the last plan read, the
+   mark the account bars draw, the providers reporting no window, how many servers run. It sits straight under the
+   control, never pushed to the card's lower edge with the control floating in the middle. */
+#st .kin > .kel { margin: 0; font: 500 1.15rem/1.4 var(--font-data); color: var(--text-body); }
+#st .kin > .kel b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
+#st .kin > .kel .cdoors { gap: .5rem; }
+/* the warn mark on an empty track: the same bar the account figures draw, with no fill, so the per-cent he picks is
+   read where he will meet it */
+#st .kin > .kel > .pct.mark { position: relative; height: .55rem; border-radius: .28rem; background: var(--track); }
+#st .kin > .kel > .pct.mark > b { display: none; }
+#st .kin > .kel > .pct.mark > i { position: absolute; top: -.25rem; bottom: -.25rem; left: var(--warn); width: .18rem; border-radius: .09rem; background: var(--text-mute); }
+/* where the reasoning text lands for the picked option, as three lines of his terminal */
+#st .kin > .sketch { display: grid; grid-template-columns: minmax(0, 1fr); gap: .25rem; padding: .7rem .9rem; border-radius: var(--r-obj); background: var(--obj-sunk); }
+#st .kin > .sketch .sk { font: 400 1rem/1.35 var(--font-data); color: var(--text-body); }
+#st .kin > .sketch .sk.think { color: var(--text-mute); }
+#st .kin > .sketch .sk.rep { color: var(--key-light); }
+[data-theme="day"] #st .kin > .sketch .sk.rep { color: #8a5a12; }
+/* the second line of the fold row: "up to" beside its count */
+#st .kin .upto { font: 500 1.15rem/1 var(--font-name); color: var(--text-body); }
 /* a setting that carries per-command values takes the row, as a section holding one setting already does: beside two
    plain cards it ran four lines taller, and the two stretched to match stood empty under their dropdown (splice's
    limits at 1440 and 3828). On its own row it reads along the row instead, name then value then the commands. */
@@ -568,7 +601,7 @@ button.count:hover { color: var(--text); }
 @container kcard (min-width: 80rem) {
   #st .kin { grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); align-items: start; column-gap: 3.2rem; }
   #st .kin > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
-  #st .kin > .knote { grid-column: 2; }  /* under the control, not under the name */
+  #st .kin > .kel, #st .kin > .sketch { grid-column: 2; }  /* under the control, not under the name */
 }
 
 /* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
@@ -580,6 +613,7 @@ button.count:hover { color: var(--text); }
 .zeros.under { display: flex; margin-top: 1.2rem; }
 /* a figure the page read as a snapshot keeps the tile's own shape, with the explaining line under the number */
 #st .fig3 > .knote { margin: 0; font: 500 1.1rem/1.35 var(--font-name); color: var(--text-body); }
+#st .fig3 > .kel { margin: 0; font: 500 1.1rem/1.35 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
 /* a plan's use against the line the setting draws: the bar is the window, the tick is the warn percentage, so the
    setting under it is read as a mark on the figure instead of a number in a box */
 #st .fig3 .pct { position: relative; height: .7rem; border-radius: .35rem; background: var(--track); }

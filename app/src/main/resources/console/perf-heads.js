@@ -59,12 +59,14 @@ const PERF_HEADS = (() => {
     const shares = Object.entries(h.failure_shares || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
     return shares.map(([tag, s]) => `<a class="k" href="${door(h.key, { tag })}"><b>${pct(s)}</b> ${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</a>`).join("");
   }
-  /** What else the command's requests were: compactions among them, and side queries splice answered without a model. */
+  /** What else the command's requests were: compactions among them, which open on Requests with its Compactions toggle
+   *  on, and the status-line labels splice wrote itself from the last tool call, with no model (fin), which Requests
+   *  never lists. */
   function sorts(h) {
-    const k = h.kinds || {}, out = [];
-    if (k.compaction > 0) out.push(`${n0(k.compaction)} ${k.compaction === 1 ? "compaction" : "compactions"}`);
-    if (k.activity_query > 0) out.push(`${n0(k.activity_query)} ${k.activity_query === 1 ? "side query" : "side queries"} splice answered`);
-    return out.map((w) => `<span class="m">${w}</span>`).join("");
+    const k = h.kinds || {};
+    const compactions = k.compaction > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(k.compaction)} ${k.compaction === 1 ? "compaction" : "compactions"}</a>` : "";
+    const labels = k.activity_query > 0 ? `<span class="m">${n0(k.activity_query)} ${k.activity_query === 1 ? "status label" : "status labels"} splice wrote</span>` : "";
+    return compactions + labels;
   }
   /** What the record behind a row could not cover, in the fewest words; the cause goes to the console. */
   function gaps(h) {

@@ -1054,6 +1054,7 @@ if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +A
 if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");
 if (/^(error|failure):[a-z0-9_-]+$/.test(ADDR.get("tag") ?? "")) ui.tag = ADDR.get("tag"); // one kind of failure, by its outcome tag
+if (ADDR.get("compact") === "1") ui.compact = true; // Usage's compactions count opens with the Compactions toggle on
 if (ADDR.get("order") === "price") ui.order = "price"; // Usage's Breakdown counts open the highest price first
 if (ADDR.get("q")) { ui.q = ADDR.get("q"); document.getElementById("q").value = ui.q; }
 // a door that names one request shows that request, never the top row. Doors encode the id ("claude-splice%3A…"), so

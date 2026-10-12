@@ -104,4 +104,4 @@ test("a cut request names the one that took its tokens, that one names it back, 
   } finally {
     await page.close();
   }
-});
+}, 60_000);  // drives the page through several rows; bun's 5 s default turned it red on a loaded machine (Oct 11)

@@ -112,10 +112,12 @@ test("a budget set before on a command all on a plan keeps its button, so he can
   }
 });
 
+// these two drive a page per command per width, so they carry their own timeout: bun's 5 s default turned them red on a
+// machine under load (load average 134 on 16 cores, Oct 11) while the same tests passed in 19 s on a quiet one
 for (const width of [3828, 1440]) {
   test(`at ${width} every split Day line stays inside its card`, async () => {
     for (const command of heads.map((h) => h.key)) bunExpect((await dayOf(command, width)).past).toBe(0);
-  });
+  }, 60_000);
 }
 
 // A split Day line that wraps opens its next line with the phrase, never with the dot that joined it to the one before:
@@ -143,4 +145,4 @@ test("a wrapped split Day line never opens a line with a dot", async () => {
     }
   }
   bunExpect(wrapped).toBeGreaterThan(0); // at least one line did wrap, so the rule was put to the test
-});
+}, 60_000);

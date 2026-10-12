@@ -109,40 +109,63 @@ for (const width of [3828, 1440]) {
   }, 30_000);
 }
 
-test("at 3828 the commands that override a setting lie across the row, not stacked in a column at its left", async () => {
+/** Where the four commands that override a setting sit, measured against the block that holds them. */
+async function overrideShape(page: Awaited<ReturnType<typeof open>>) {
+  return page.evaluate(() => {
+    const ctl = [...document.querySelectorAll(".kn .ctl.col")].find((c) => c.querySelectorAll(".over").length >= 4)!;
+    const cells = [...ctl.querySelectorAll(".over")].map((e) => e.getBoundingClientRect());
+    const box = ctl.closest(".kcard")!.getBoundingClientRect();
+    return {
+      cols: new Set(cells.map((b) => Math.round(b.left))).size,
+      rows: new Set(cells.map((b) => Math.round(b.top))).size,
+      inside: cells.every((b) => b.right <= box.right + 1),
+      fills: (Math.max(...cells.map((b) => b.right)) - box.left) / box.width,
+    };
+  });
+}
+
+test("at 3828 the commands that override a setting lie across its block, not stacked in one column", async () => {
   const page = await open(3828, 2130);
   try {
     await expect(page.locator(".kn .over").first()).toBeVisible({ timeout: 15_000 });
-    const m = await page.evaluate(() => {
-      const ctl = [...document.querySelectorAll(".kn .ctl.col")].find((c) => c.querySelectorAll(".over").length >= 4)!;
-      const cells = [...ctl.querySelectorAll(".over")].map((e) => e.getBoundingClientRect());
-      const form = ctl.closest(".form")!.getBoundingClientRect();
-      return {
-        rows: new Set(cells.map((b) => Math.round(b.top))).size,
-        reach: (Math.max(...cells.map((b) => b.right)) - form.left) / form.width,
-        inside: cells.every((b) => b.right <= form.right + 1),
-      };
-    });
-    expect(m.rows).toBe(1); // all four on one line
-    expect(m.reach).toBeGreaterThan(0.6); // and that line uses the width it was given
+    const m = await overrideShape(page);
+    expect(m.cols).toBeGreaterThan(1); // side by side, never a column of four
+    expect(m.rows).toBeLessThan(4);
+    expect(m.fills).toBeGreaterThan(0.6); // and they use the block they were given
     expect(m.inside).toBe(true);
   } finally {
     await page.close();
   }
 }, 30_000);
 
-test("at 1440 the same commands wrap inside the form instead of running past its edge", async () => {
+test("at 1440 the same commands wrap inside their block instead of running past its edge", async () => {
   const page = await open(1440, 900);
   try {
     await expect(page.locator(".kn .over").first()).toBeVisible({ timeout: 15_000 });
-    const m = await page.evaluate(() => {
-      const ctl = [...document.querySelectorAll(".kn .ctl.col")].find((c) => c.querySelectorAll(".over").length >= 4)!;
-      const cells = [...ctl.querySelectorAll(".over")].map((e) => e.getBoundingClientRect());
-      const form = ctl.closest(".form")!.getBoundingClientRect();
-      return { rows: new Set(cells.map((b) => Math.round(b.top))).size, inside: cells.every((b) => b.right <= form.right + 1) };
-    });
+    const m = await overrideShape(page);
     expect(m.rows).toBeGreaterThan(1);
     expect(m.inside).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a setting alone in its section lays its name and value along the row, and several share the row as cards", async () => {
+  const page = await open(3828, 2130);
+  try {
+    await expect(page.locator(".kcard").first()).toBeVisible({ timeout: 15_000 });
+    const m = await page.evaluate(() => {
+      const groups = [...document.querySelectorAll(".kcards")].map((g) => {
+        const cards = [...g.querySelectorAll(".kcard")].map((c) => c.getBoundingClientRect());
+        return { n: cards.length, rows: new Set(cards.map((b) => Math.round(b.top))).size, width: g.getBoundingClientRect().width, span: Math.max(...cards.map((b) => b.right)) - Math.min(...cards.map((b) => b.left)) };
+      });
+      return groups;
+    });
+    expect(m.length).toBeGreaterThan(1);
+    for (const g of m) {
+      expect(g.span / g.width).toBeGreaterThan(0.98); // every section fills its row, alone or in company
+      if (g.n > 1) expect(g.rows).toBe(1);
+    }
   } finally {
     await page.close();
   }

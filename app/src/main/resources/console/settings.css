@@ -6,6 +6,17 @@
 .page { container-type: inline-size; }
 .head .search { width: 34rem; }
 
+/* The stores' colours. A tint ramp of the one key made six near-identical beiges in day, so the split bar could not
+   show where the space goes, which is its whole job (splice-lead's walk, Oct 11). These are six hues of their own and
+   never the provider colours (--claude, --gpt, --grok, --kimi, --muse, --router, --local, --deepseek): a provider keeps
+   its colour on every page, and a store is not a provider. Day's are darkened to hold against the cream. */
+:root, [data-theme="night"] {
+  --store-1: #e8b26a; --store-2: #7fb0d8; --store-3: #8cc08a; --store-4: #d394b8; --store-5: #9f9bdc; --store-6: #d8c38a;
+}
+[data-theme="day"] {
+  --store-1: #b4762a; --store-2: #3a6f9e; --store-3: #3f7c47; --store-4: #9b4a74; --store-5: #5a52a0; --store-6: #8a7230;
+}
+
 .spin { width: 1.5rem; height: 1.5rem; flex: none; animation: spin 1.1s linear infinite; }
 .spin circle { fill: none; stroke: var(--key-light); stroke-width: 5; stroke-dasharray: 60 200; stroke-linecap: round; }
 
@@ -85,29 +96,34 @@ mark { color: inherit; background: color-mix(in oklab, var(--key-light) 38%, tra
 .dtfig .none { font: 400 3rem/1 var(--font-lead); color: var(--text-mute); }
 .dtfig .dtw { font: 500 1.35rem/1 var(--font-name); color: var(--text-body); }
 .dtbar { display: flex; gap: .2rem; height: 2.6rem; border-radius: var(--r-in); overflow: hidden; background: var(--track); }
-.dtbar i { flex: 0 0 var(--w); min-width: .3rem; background: color-mix(in oklab, var(--key-light) var(--t), var(--wall-low)); }
-.dtkey { display: flex; flex-wrap: wrap; gap: .7rem 2.4rem; }
-.dkey { display: inline-flex; align-items: baseline; gap: .6rem; font: 500 1.1rem/1.2 var(--font-name); color: var(--text-body); }
-.dkey i { align-self: center; width: 1rem; height: 1rem; border-radius: .2rem; background: color-mix(in oklab, var(--key-light) var(--t), var(--wall-low)); }
-.dkey b { font: 500 1.15rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
+.dtbar i { flex: 0 0 var(--w); min-width: .35rem; background: var(--c); }
+.dtkey { display: flex; flex-wrap: wrap; gap: .8rem 2.6rem; }
+.dkey { display: inline-flex; align-items: baseline; gap: .65rem; font: 500 1.25rem/1.2 var(--font-name); color: var(--text-body); }
+.dkey i { align-self: center; width: 1.15rem; height: 1.15rem; border-radius: .25rem; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
+.dkey b { font: 500 1.3rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
 /* the grid follows the width: as many cards as fit at 22rem each, so 3828 fills and 1440 does not crowd */
 /* auto-fit, not auto-fill: three stores take the width between them rather than leaving a fourth track empty at the
-   right of the row (Marcos's verdict on this pane, Oct 11); a group with more stores than tracks still wraps at 26rem */
-.dcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); gap: var(--gap-card); }
+   right of the row (Marcos's verdict on this pane, Oct 11); a group with more stores than tracks still wraps. The
+   track is 30rem, not 26, so a card's name, its "Your prompts" tag and its door hold one line and every figure in the
+   row starts at the same height; and start, not stretch, so a card with nothing more to say stays short beside the one
+   card that carries a chart (splice-lead's walk, Oct 11). */
+.dcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr)); gap: var(--gap-card); align-items: start; }
 .dcard { display: flex; flex-direction: column; gap: 1.1rem; padding: 1.6rem 1.7rem 1.7rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
 .dcard.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
 .dtop { display: flex; align-items: baseline; flex-wrap: wrap; gap: .6rem; }
 .dtop .nm { font: 500 1.35rem/1.2 var(--font-name); color: var(--text); }
 .dfig { display: flex; flex-direction: column; gap: .5rem; }
 .dfig .big { font: 500 2.6rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
-.dfig .dmeta { font: 500 1.1rem/1.3 var(--font-name); color: var(--text-body); }
-.dfig .none { font: 500 1.25rem/1.2 var(--font-name); color: var(--text-mute); }
-.dfig .dsh { height: .6rem; margin-top: .4rem; border-radius: .3rem; background: var(--track); overflow: hidden; }
-.dfig .dsh i { display: block; width: var(--w); height: 100%; background: var(--key-light); }
-.dfig .dpc, .dfig .dgrow { font: 500 1.05rem/1.3 var(--font-name); color: var(--text-mute); }
+.dfig .dmeta { font: 500 1.25rem/1.35 var(--font-name); color: var(--text-body); }
+.dfig .none { font: 500 1.3rem/1.2 var(--font-name); color: var(--text-mute); }
+.dfig .dsh { height: .7rem; margin-top: .4rem; border-radius: .35rem; background: var(--track); overflow: hidden; }
+.dfig .dsh i { display: block; width: var(--w); height: 100%; background: var(--c, var(--key-light)); }
+/* the layer around the figures carries as much of the reading as the figures do, so it is sized to be read, not to
+   disappear beside them ("everything is small", Marcos; splice-lead's walk, Oct 11) */
+.dfig .dpc, .dfig .dgrow { font: 500 1.2rem/1.35 var(--font-name); color: var(--text-body); }
 .dctl { display: flex; flex-wrap: wrap; gap: 1rem 2.2rem; margin-top: auto; padding-top: 1.2rem; border-top: .12rem solid var(--track); }
 .dc { display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
-.dcl { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
+.dcl { font: 500 1.2rem/1 var(--font-name); color: var(--text-mute); }
 .dcv { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
 .dcards.slim .dcard { gap: .9rem; }
 .dcards.slim .dfig .none { font-size: 1.1rem; }
@@ -397,7 +413,8 @@ button.count:hover { color: var(--text); }
 @keyframes reading { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 @media (prefers-reduced-motion: reduce) { .hbar.reading .hdays::after { animation: none; width: 100%; opacity: .4; } }
 
-/* the setting that answers a figure sits apart from its card */
+/* the setting that answers a figure sits apart from it: .kcards carries that margin itself, and .fix is kept for the
+   command card on Models, which still draws a form under its figures */
 #st .tally > .fix { margin-top: 1.8rem; }
 
 /* one On/Off per command under "Prompts and answers": the chip, then its switch, then what the change did */
@@ -406,11 +423,13 @@ button.count:hover { color: var(--text); }
 .dmore .cs .said { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .dmore .cs .said.limit { color: var(--bad, #e0584a); }
 .dmore .cs.off .chip { color: var(--text-mute); box-shadow: none; border-color: var(--track-line); }
-.dcard .offcost { margin: 0; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
+.dcard .offcost { margin: 0; font: 500 1.15rem/1.35 var(--font-name); color: var(--text-mute); }  /* what Off costs, under the switch (fin) */
 .dcard .offcost.now { color: var(--text-body); }  /* the switch is Off: the cost is in force, brighter than the dimmed row name (hitstop 98d8d07) */
 /* a phrase keeps its dot with it (the join puts a no-break space before each "·", so a line never opens with one) and
    wraps inside the card when it is longer than the card: nowrap here ran the first phrase past the edge at 1440 */
 .dcard .offcost .whole { white-space: normal; }
+.dcard .dtop .link { font-size: 1.1rem; }
+.dcard .yours { font-size: 1rem; }
 .dcard.once .dcv { flex-wrap: nowrap; white-space: nowrap; }  /* "Applied" sits beside the value, not under it */
 /* usage history's own days, the one series the daemon measures; every other card's growth is words, never a shape */
 .dchart { display: flex; flex-direction: column; gap: .4rem; margin-top: .5rem; }
@@ -445,6 +464,18 @@ button.count:hover { color: var(--text); }
   #st .tally > .figs3 > .fig3 { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; column-gap: 3rem; }
   #st .tally > .figs3 > .fig3 > .cdoors { justify-content: flex-end; }
 }
+/* ---------- a setting as a card (blocks()), so no label column is shared across sections and none of them sits in the
+   left quarter of an empty row. Several in a section share the row; one alone lays itself out along the row instead of
+   standing in a 26rem column (splice-lead's walk, Oct 11). ---------- */
+.kcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); gap: var(--gap-card); margin-top: 1.8rem; align-items: start; }
+.kcard { display: grid; gap: 1.1rem; padding: 1.5rem 1.7rem 1.6rem; border-radius: var(--r-obj); background: var(--obj); border: var(--ink-w) solid var(--ink); }
+#st .kcard > .lbl { font: 500 1.35rem/1.25 var(--font-name); color: var(--text); }
+#st .kcard > .ctl { align-items: flex-start; }
+/* alone in its section: the name, then the value, then the commands that override it, across the row */
+.kcards:has(> .kcard:only-child) { grid-template-columns: minmax(0, 1fr); }
+#st .kcard:only-child { grid-template-columns: minmax(14rem, 22rem) minmax(0, 1fr); align-items: start; column-gap: 3.2rem; }
+#st .kcard:only-child > .ctl.col:has(.over) { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+
 /* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
 #st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); align-items: stretch; gap: 1rem 1.6rem; }
 #st .kn .ctl.col > .line { grid-column: 1 / -1; }

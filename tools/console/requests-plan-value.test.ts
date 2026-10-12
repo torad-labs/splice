@@ -74,4 +74,4 @@ test("a plan request reads On your plan with its API-price worth under it; a key
   } finally {
     await page.close();
   }
-});
+}, 60_000);  // drives the page through several rows; bun's 5 s default turned it red on a loaded machine (Oct 11)

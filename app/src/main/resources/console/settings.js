@@ -134,6 +134,13 @@ function found(id) {
 }
 const lit = (text) => (words().length && hits(text) ? " lit" : "");
 const form = (keys) => `<div class="form">${keys.filter((key) => !needsRestart(key) && shownKnob(key)).map((key) => rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })).join("")}</div>`;
+/** The same settings as cards: each one its name, its value and the commands that override it, in a grid that fills the
+ *  width as the cards above it do. A label column shared by every setting left the right third of the row empty and put
+ *  two sections' controls at different x (splice-lead's walk of the rebuilt pane, Oct 11), so a setting owns its block. */
+const blocks = (keys) => {
+  const live = keys.filter((key) => !needsRestart(key) && shownKnob(key));
+  return live.length ? `<div class="kcards">${live.map((key) => `<article class="kcard">${rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true })}</article>`).join("")}</div>` : "";
+};
 
 // the per-command settings splice reads at start and the page only shows (restart-only, set in [heads.KEY.overrides])
 const tapOf = (head) => Number(ks.cfg?.layers?.perHead?.[head]?.wireTap) || 0;
@@ -203,12 +210,17 @@ function growOf(r, x) {
   const days = Math.max(1, Math.round((Date.now() - x.since) / DAY));
   return `About ${mbWord(x.bytes / days)} a day on average`;
 }
+/** Everything that holds bytes, biggest first: the order the split bar, its legend and the cards all take their colour
+ *  from, so one store is one colour wherever it appears on the pane. */
+const bySize = () => DATA_ROWS.map((r) => ({ r, x: heldOf(r) })).filter((p) => p.x && p.x.bytes > 0).sort((a, b) => b.x.bytes - a.x.bytes);
+const hueAt = (i) => `--c:var(--store-${(i % 6) + 1})`;
+const hueOf = (r) => { const i = bySize().findIndex((p) => p.r.id === r.id); return i < 0 ? "" : hueAt(i); };
 /** A store's share of everything kept, as a bar and a figure. Under half a percent reads "under 1%", never "0%". */
-function shareOf(x) {
+function shareOf(x, r) {
   const all = allBytes();
   if (!all || !x.bytes) return "";
   const pc = (x.bytes / all) * 100, word = pc < 1 ? "under 1%" : `${Math.round(pc)}%`;
-  return `<div class="dsh" role="img" aria-label="${word} of ${mbWord(all)} kept"><i style="--w:${Math.max(0.6, pc).toFixed(1)}%"></i></div>`
+  return `<div class="dsh" role="img" aria-label="${word} of ${mbWord(all)} kept"><i style="${hueOf(r)};--w:${Math.max(0.6, pc).toFixed(1)}%"></i></div>`
     + `<span class="dpc">${word} of everything kept</span>`;
 }
 /** Usage history, day by day, as the daemon measured it (its own per-day bytes). No other store has a series, so no
@@ -222,7 +234,7 @@ function daysChart(h) {
 }
 const amountOf = (x, r) => (x.n || x.bytes
   ? `<b class="big">${mbWord(x.bytes)}</b><span class="dmeta">${fmt(x.n)} ${esc(r.unit)}${x.since ? ` · since ${atWord(x.since)}` : ""}</span>`
-    + shareOf(x) + (growOf(r, x) ? `<span class="dgrow">${growOf(r, x)}</span>` : "") + (r.id === "hist" ? daysChart(ui.hist) : "")
+    + shareOf(x, r) + (growOf(r, x) ? `<span class="dgrow">${growOf(r, x)}</span>` : "") + (r.id === "hist" ? daysChart(ui.hist) : "")
   : `<span class="none">Nothing saved</span>`);
 // A store splice could not read is a quiet "Not read" in the muted line, as every page says it; why goes to the console,
 // where the read that failed is named (fin, Oct 11)
@@ -314,12 +326,12 @@ function dataHtml() {
  *  store holds, so where the space went is read in one look rather than summed from a column of small numbers. */
 function totalHtml() {
   const reading = DATA_ROWS.some(stillReading), unread = DATA_ROWS.some((r) => !(r.noRoute || r.own) && heldOf(r) === null);
-  const held = DATA_ROWS.map((r) => ({ r, x: heldOf(r) })).filter((p) => p.x && p.x.bytes > 0).sort((a, b) => b.x.bytes - a.x.bytes);
+  const held = bySize();
   const all = allBytes();
   const fig = reading ? `<span class="none">Reading</span>` : unread ? `<span class="none">Not read</span>` : `<b>${mbWord(all)}</b>`;
-  // one tint family, never the provider colours: on every page a colour names a provider, and these name stores
-  const seg = (p, i) => `<i style="--t:${Math.max(16, 92 - i * 13)}%;--w:${((p.x.bytes / all) * 100).toFixed(2)}%" title="${esc(p.r.name)}"></i>`;
-  const key = (p, i) => `<span class="dkey"><i style="--t:${Math.max(16, 92 - i * 13)}%"></i>${esc(p.r.name)}<b>${mbWord(p.x.bytes)}</b></span>`;
+  // six hues of their own, never the provider colours: on every page a colour names a provider, and these name stores
+  const seg = (p, i) => `<i style="${hueAt(i)};--w:${((p.x.bytes / all) * 100).toFixed(2)}%" title="${esc(p.r.name)}"></i>`;
+  const key = (p, i) => `<span class="dkey"><i style="${hueAt(i)}"></i>${esc(p.r.name)}<b>${mbWord(p.x.bytes)}</b></span>`;
   return `<section class="dtotal"><div class="dtfig">${fig}<span class="dtw">kept on this computer</span></div>`
     + (all && !reading ? `<div class="dtbar" role="img" aria-label="${held.map((p) => `${p.r.name} ${mbWord(p.x.bytes)}`).join(", ")}">${held.map(seg).join("")}</div>`
       + `<div class="dtkey">${held.map(key).join("")}</div>` : "")
@@ -461,11 +473,16 @@ function peaksHtml() {
   const errs = bad.map((p) => `<p class="pidle"><span class="state limit">${esc(p.err)}</span>${cmdChip(p.head.key)}</p>`).join("");
   return `<section class="tally"><h3>Today</h3>${busy.length ? `<div class="pcards">${busy.map(card).join("")}</div>` : `<p class="pidle"><span>No command ran a request today</span></p>`}${quiet}${errs}</section>`;
 }
-const busyHtml = () => peaksHtml()
-  + `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }])}`
-  + (keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]).length ? `<div class="fix">${form(keysOf("busy", ["maxInflight", "maxQueued", "maxRequestBytes"]))}</div>` : "") + `</section>`
-  + `<section class="sub"><h3>splice's limit</h3>${form(["maxInflight", "maxQueued"])}</section>`
-  + (keysOf("busy").includes("maxRequestBytes") ? `<section class="sub"><h3>Too large</h3>${form(["maxRequestBytes"])}</section>` : "");
+// the three settings that cap splice itself, in the order they bite: how many run, how many wait, how big one may be
+const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
+const busyHtml = () => {
+  const limits = LIMITS.filter((key) => keysOf("busy").includes(key));
+  // what splice does when a provider pushes back sits under that provider's figures; its own caps stand together
+  return peaksHtml()
+    + `<section class="tally"><h3>Providers</h3>${figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }])}`
+    + blocks(keysOf("busy", LIMITS)) + `</section>`
+    + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "");
+};
 
 // ---------- Version ----------
 // Running, Newest and Go back, from GET /api/upgrade. The route never fetches, so Newest is a version only when a check
@@ -550,7 +567,8 @@ function render() {
   if (ui.err) { root.innerHTML = `<div class="list rail empty"><div class="nomatch"><span class="state limit">${esc(ui.err)}</span><button class="act quiet" data-act="again">Read again</button></div></div>`; return; }
   const shown = words().length ? jobs().filter((x) => found(x.id).length) : jobs();
   if (shown.length && !shown.some((x) => x.id === ui.open)) ui.open = shown[0].id;
-  const x = TOPIC[ui.open], s = summary(x.id);
+  // Your data's own first line is the same figure the rail card carries, so the pane header does not say it twice
+  const x = TOPIC[ui.open], s = x.id === "data" ? [] : summary(x.id);
   const list = shown.length ? `<div class="list rail">${shown.map(cardHtml).join("")}</div>`
     : `<div class="list rail empty"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`;
   const pane = shown.length ? `<div class="pane"><header><span class="lamp idle sock" aria-hidden="true">${SV[x.id]}</span><div class="who"><div class="top"><span class="name">${esc(x.name)}</span></div>`

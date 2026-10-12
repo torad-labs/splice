@@ -183,7 +183,7 @@ let state = {
   wider: null,
 };
 let ui = { project: PICK.get(), pmenu: false, open: null, q: "", win: "24h", cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null,
-  outcome: "all", why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true,
+  outcome: "all", tag: null, why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true,
   order: "new" }; // Newest or Highest price (fin): what the read asks for; the list shows what the daemon says it applied
 const root = document.getElementById("requests");
 const wide = sideBySide;
@@ -308,6 +308,8 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
     p.set("usage", "0");
     if (ui.outcome === "fail") p.set("outcome", "failed");
     if (ui.outcome === "stopped") p.set("outcome", "stopped");
+    // one kind of failure (?tag=, Usage's table): the exact tag is narrower than Failed and agrees with it
+    if (ui.tag && ui.outcome !== "stopped") p.set("outcome", ui.tag);
     if (ui.order === "price") p.set("order", "price"); // the daemon keeps each command's highest priced, not its newest
     if (ui.model === "none") p.set("unattributed", "model");
     else if (ui.model) p.set("model", ui.model);
@@ -522,7 +524,7 @@ async function readSearch() {
 const hitPasses = (r) => (ui.outcome === "all" || (ui.outcome === "fail" ? outcomeOf(r).cls === "fail" : outcomeOf(r).cls === "stopped"))
   && (!ui.model || (ui.model === "none" ? !r.model : r.model === ui.model)) && !ui.account
   && (!ui.sid || String(r.sid ?? "").startsWith(String(ui.sid).slice(0, 8))) && (!ui.compact || r.compact)
-  && (!ui.to || +r.ts <= ui.to) && !Object.keys(WHY_ASKS[ui.why] || {}).length;
+  && (!ui.to || +r.ts <= ui.to) && (!ui.tag || r.outcome === ui.tag) && !Object.keys(WHY_ASKS[ui.why] || {}).length;
 /** The list's rows: the window's requests, with a search's own hits folded in. A hit on a request already in the
  *  window marks that row; a hit on an older one is a row of its own, so a search reaches past what the rows hold. */
 function searched() {
@@ -550,7 +552,7 @@ function searched() {
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
 const narrow = (rows) => rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
-  && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
+  && (!ui.tag || r.outcome === ui.tag) && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
 
 // AN EMPTY WINDOW WHOSE OLDER ROWS MATCH says how many and widens in one tap, for every door and filter (Marlin, after
@@ -638,6 +640,7 @@ function filtersHtml() {
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.to && !ui.from ? `<span class="fwrap"><span class="fbtn on">Up to ${dayOf(new Date(ui.to))}${clock(new Date(ui.to))}</span><button class="fclear" data-act="unset" data-m="to" aria-label="Clear">${ICON.close}</button></span>` : "")
+    + (ui.tag ? `<span class="fwrap"><span class="fbtn on">${esc(OUTCOME_WORD[ui.tag] || tagWord(ui.tag) || "Failed")}</span><button class="fclear" data-act="unset" data-m="tag" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
     + `${sw}${over}${tog("compact", "Compactions", ui.compact)}${orderHtml()}</div>`;
 }
@@ -743,7 +746,7 @@ function listHtml() {
     : "";
   return `<div class="list">${trouble}${items.join("")}${more}${unsearched}${heldFoot()}${searchFoot()}</div>`;
 }
-const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui.repo || ui.from || ui.why || ui.compact || ui.outcome !== "all" || ui.q);
+const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui.repo || ui.from || ui.tag || ui.why || ui.compact || ui.outcome !== "all" || ui.q);
 
 // ---------- the open request: its own records, as its trace kept them ----------
 // kept or cut: the records are there. unsaved, deleted, expired or norecords: only the perf row is, and the detail says
@@ -1003,7 +1006,7 @@ document.addEventListener("click", (e) => {
     case "why": ui.why = ui.why === v ? null : v; ui.n = 200; again(); break;
     case "widen": ui.win = v; ui.n = 200; again(); break;
     case "toggle": ui[m] = !ui[m]; ui.n = 200; again(); break;
-    case "clearall": Object.assign(ui, { cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null, outcome: "all", why: null, compact: false });
+    case "clearall": Object.assign(ui, { cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null, outcome: "all", tag: null, why: null, compact: false });
       { const q = document.getElementById("q"); q.value = ""; ui.q = ""; } again(); break;
     // the search's own Clear empties the search and keeps every filter he set, Failed included (Marlin, desk c, Oct 12)
     case "clearq": { const q = document.getElementById("q"); q.value = ""; ui.q = ""; ui.n = 200; again(); break; }
@@ -1050,6 +1053,7 @@ ui.repo = ADDR.get("repo") ?? ui.repo; // ?project= is the pick (kit PICK), read
 if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +ADDR.get("to") : null; } // no end: through now
 if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");
+if (/^(error|failure):[a-z0-9_-]+$/.test(ADDR.get("tag") ?? "")) ui.tag = ADDR.get("tag"); // one kind of failure, by its outcome tag
 if (ADDR.get("order") === "price") ui.order = "price"; // Usage's Breakdown counts open the highest price first
 if (ADDR.get("q")) { ui.q = ADDR.get("q"); document.getElementById("q").value = ui.q; }
 // a door that names one request shows that request, never the top row. Doors encode the id ("claude-splice%3A…"), so

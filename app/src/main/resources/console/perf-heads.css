@@ -1,32 +1,43 @@
-/* Usage › How each command answered (perf-heads.js): one row per command, in the Breakdown's row language (.brow): a
-   grid of figures under one header row, rows split by the track line, numbers in the data face. Where the page is too
-   narrow for every column, the header row goes and each figure carries its own label instead, so nothing is cut. */
+/* Usage › How each command answered (perf-heads.js), beside the Breakdown where the Commands cards stood: one row per
+   command, in the Breakdown's row language (.brow), a grid of figures under one header row, rows split by the track
+   line, numbers in the data face. The table sizes to its own column (container perf), so where that column is too narrow
+   for every figure, the header row goes and each figure carries its own label instead, and nothing is cut. Class names
+   are prefixed (.prow, .pf, .pthead): Usage also loads sessions.css, whose .phead and .pc would land on plain ones. */
 
+.perf-heads { container: perf / inline-size; min-width: 0; display: flex; flex-direction: column; gap: 2rem; }  /* as .breakdown, so the two cards start level */
 .perf-heads > header .switch { margin-left: auto; }
 .perf-heads .ptable { padding: .4rem 1.5rem .6rem; }
 .prow {
-  display: grid; grid-template-columns: minmax(13rem, 1.5fr) repeat(10, minmax(0, 1fr)); align-items: baseline; gap: .4rem 1.4rem;
-  padding: 1rem 0; border-top: .12rem solid var(--track); font: 500 1.05rem/1.2 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body);
+  display: grid; grid-template-columns: minmax(10rem, 1.3fr) repeat(var(--n), minmax(0, 1fr)); align-items: baseline; gap: .4rem 1.2rem;
+  padding: 1rem 0; border-top: .12rem solid var(--track); font: 500 1.05rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text-body);
 }
 .prow:first-child, .prow.pthead + .prow { border-top: 0; }
 .prow.pthead { align-items: end; padding: .8rem 0 .9rem; border-bottom: .12rem solid var(--track); font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
 .prow .pf { min-width: 0; overflow-wrap: anywhere; }
-.prow .pf em { display: none; }
+.prow .pf > em { display: none; }
 .prow .cmd { align-self: center; }
-.prow .bad { color: var(--limit); font-weight: 600; }
+.prow .tkey { display: block; margin-top: .25rem; font: 500 .82rem/1.25 var(--font-name); color: var(--text-mute); }
+.prow .tkey i, .prow .two i { display: block; font-style: normal; color: var(--text-mute); opacity: .8; }
+.prow .two i { font-size: .92rem; margin-top: .2rem; }
+.prow a.open { display: inline-flex; align-items: center; gap: .35rem; color: inherit; text-decoration: none; border-radius: .3rem; }
+.prow a.open .go { width: .95rem; height: .95rem; color: var(--text-mute); }
+.prow a.open:hover { color: var(--text); text-decoration: underline; }
+.prow a.open.bad { color: var(--limit); font-weight: 600; }
 .prow .sh { margin-left: .5rem; color: var(--text-mute); font-size: .92rem; }
-.prow .p95 { margin-left: .5rem; color: var(--text-mute); font-size: .92rem; }
 .prow .nr { font: 500 .95rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
-.prow .below { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: .2rem 0 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
-.prow .below .k { color: var(--limit); }
+.prow .below { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1.2rem; margin: .3rem 0 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.prow .below .k { color: var(--limit); text-decoration: none; }
+.prow .below .k:hover { text-decoration: underline; }
 .prow .below b { font: 600 .95rem/1 var(--font-data); }
-.perf-heads .pkey { margin: .9rem 0 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
+.prow .below .flag { margin: 0; display: inline-flex; gap: .3rem .9rem; }
+.prow .below .flag a { font-size: 1rem; }
+.prow .below .flag .vs, .prow .below .flag .vs b { font-size: .95rem; }
 
-/* too narrow for eleven columns: each figure says its own label, the command's chip leads its row */
-@container (max-width: 120rem) {
+/* too narrow for every column: each figure says its own label, the command's chip leads its row */
+@container perf (max-width: 58rem) {
   .prow.pthead { display: none; }
-  .prow { display: flex; flex-wrap: wrap; align-items: baseline; gap: .7rem 2rem; padding: 1.2rem 0; }
+  .prow { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .8rem 1.8rem; padding: 1.2rem 0; }
   .prow .cmd { flex-basis: 100%; }
-  .prow .pf em { display: block; margin-bottom: .3rem; font: 500 .9rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+  .prow .pf > em { display: block; margin-bottom: .3rem; font: 500 .9rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
   .prow .below { flex-basis: 100%; }
 }

@@ -1,15 +1,19 @@
-// Usage › How each command answered: the per-command performance table (v0.4.0 spec §3). Every figure is read from
+// Usage › How each command answered: the per-command table (v0.4.0 spec §3, its Resolved block), in the place the
+// Commands cards held, so each command is said once (marlin, Oct 12). Every figure is read from
 // GET /api/perf/summary?window=1h|24h|7d, which the daemon folds over every request each command recorded, so the table
-// ignores the page's project pick and filters, and says so when one is set. Nothing is invented: a figure the summary
-// does not carry reads "Not reported" or "Not measured", never a zero.
+// ignores the page's project pick and filters and says "All requests" when one is set. Nothing is invented: a figure the
+// summary does not carry reads "Not reported" or "Not measured", never a zero, and a column no command has a figure for
+// is left out (marlin). Every count opens its requests on Requests, in the table's window and with no pick: the
+// command's requests, its failures, and each kind of failure by its outcome tag.
 //
-// Mounted by usage.js: render() draws PERF_HEADS.html() after the Breakdown and Commands row. This file reads the page's
-// own helpers at draw time (chip, cmdOf, secs, n0, failShare, OUTCOME_WORD, tagWord, isFailed, GHOST, esc).
+// Mounted by usage.js: render() draws PERF_HEADS.html() beside the Breakdown. This file reads the page's own helpers at
+// draw time (chip, colorOf, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, n0, secs, OPEN, OUTCOME_WORD,
+// tagWord, countWord, isFailed, GHOST, esc).
 "use strict";
 
 const PERF_HEADS = (() => {
   const WINDOWS = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
-  const st = { win: "24h", body: null, error: null, reading: false, gen: 0 };
+  const st = { win: "24h", body: null, error: null, reading: false, gen: 0, warned: new Set() };
 
   async function read() {
     const gen = ++st.gen;
@@ -18,66 +22,90 @@ const PERF_HEADS = (() => {
     if (gen !== st.gen) return; // a newer window was asked for while this one was read
     st.reading = false;
     st.body = r.ok ? r.body : null;
-    st.error = r.ok ? null : r.status === 502 || !r.status ? "the connection to splice dropped before it answered" : "splice gave no reason";
+    st.error = r.ok ? null : !r.status || r.status === 502 ? "Not answering" : NOT_READ;
+    if (!r.ok) console.warn(`perf summary: ${r.status}`);
     render();
   }
 
+  // Requests in the table's window, every project, for one command and what else names the door
+  const door = (key, extra = {}) => `requests.html?${new URLSearchParams({ win: st.win, project: "", cmd: cmdOf(key), ...extra })}`;
   const pct = (x) => (x == null ? null : x > 0 && x < 0.005 ? "under 1%" : `${Math.round(x * 100)}%`);
-  const cell = (label, value, cls = "") => `<span class="pf${cls ? ` ${cls}` : ""}"><em>${label}</em>${value}</span>`;
   const none = (word) => `<i class="nr">${word}</i>`;
-  const time = (stats) => (stats?.p50 == null ? none("Not measured") : `${secs(stats.p50)}<span class="p95">${secs(stats.p95)}</span>`);
-  const hours = (ms) => (ms >= 3600e3 ? `${Math.floor(ms / 3600e3)} h` : `${Math.max(1, Math.floor(ms / 60e3))} min`);
+  const KEY = `<small class="tkey">Typical <i>Slowest 5%</i></small>`;
+  const time = (s) => (s?.p50 == null ? none("Not measured") : `<span class="two">${secs(s.p50)}<i>${secs(s.p95)}</i></span>`);
+  const count = (n) => (n == null ? none("Not reported") : n0(n));
 
-  /** Failures by kind, the largest share first, in the words every page uses for an outcome. */
+  // The columns after Command. [has] says whether some command carries a figure for it; a column no command has one for
+  // is left out. Requests and Failed always stand: they are the table.
+  const COLUMNS = [
+    { label: "Requests", has: () => true, cell: (h) => `<a class="open" href="${door(h.key)}">${n0(h.count)}${OPEN}</a>` },
+    { label: "Failed", has: () => true, cell: (h) => {
+      const n = Object.entries(h.outcomes || {}).reduce((a, [tag, k]) => a + (isFailed(tag) ? k : 0), 0);
+      return n ? `<a class="open bad" href="${door(h.key, { outcome: "fail" })}">${n0(n)}${OPEN}</a><span class="sh">${pct(h.failure_share)}</span>` : "0";
+    } },
+    { label: "First byte", key: true, has: (h) => h.time_before_first_byte_ms?.p50 != null, cell: (h) => time(h.time_before_first_byte_ms) },
+    { label: "Streaming", key: true, has: (h) => h.time_streaming_ms?.p50 != null, cell: (h) => time(h.time_streaming_ms) },
+    { label: "Whole request", key: true, has: (h) => h.total_ms?.p50 != null, cell: (h) => time(h.total_ms) },
+    { label: "Retries", has: (h) => h.retries > 0, cell: (h) => count(h.retries) },
+    { label: "Sign-ins renewed", has: (h) => h.refreshes > 0, cell: (h) => count(h.refreshes) },
+    { label: "Cache hit", has: (h) => h.cache_hit_ratio != null, cell: (h) => pct(h.cache_hit_ratio) ?? none("Not reported") },
+    { label: "Cold cache", has: (h) => h.cache_cold > 0, cell: (h) => count(h.cache_cold) },
+    { label: "Most at once", has: (h) => h.peak_inflight > 0, cell: (h) => count(h.peak_inflight) },
+  ];
+  const head = (c) => `${c.label}${c.key ? KEY : ""}`;
+
+  /** Failures by kind, the largest share first, in the words every page uses for an outcome; each opens its requests. */
   function kinds(h) {
     const shares = Object.entries(h.failure_shares || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
-    return shares.map(([tag, s]) => `<span class="k"><b>${pct(s)}</b> ${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</span>`).join("");
+    return shares.map(([tag, s]) => `<a class="k" href="${door(h.key, { tag })}"><b>${pct(s)}</b> ${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</a>`).join("");
   }
-  /** What the record behind a row could not cover, in a sentence: a short file, an unread part, unreadable lines. */
+  /** What else the command's requests were: compactions among them, and side queries splice answered without a model. */
+  function sorts(h) {
+    const k = h.kinds || {}, out = [];
+    if (k.compaction > 0) out.push(`${n0(k.compaction)} ${k.compaction === 1 ? "compaction" : "compactions"}`);
+    if (k.activity_query > 0) out.push(`${n0(k.activity_query)} ${k.activity_query === 1 ? "side query" : "side queries"} splice answered`);
+    return out.map((w) => `<span class="m">${w}</span>`).join("");
+  }
+  /** What the record behind a row could not cover, in the fewest words; the cause goes to the console. */
   function gaps(h) {
     const out = [];
-    if (h.read_error || h.coverage_known === false) out.push("Part of this command's record could not be read");
-    else if (h.clamped) out.push(`The record holds only the last ${hours(h.covers_ms)}`);
-    if (h.skipped_lines) out.push(`${n0(h.skipped_lines)} unreadable ${h.skipped_lines === 1 ? "line" : "lines"} skipped`);
-    return out;
+    if (h.read_error || h.coverage_known === false || h.skipped_lines) {
+      out.push("Partly read");
+      const said = `${st.win} ${h.key}`;
+      if (!st.warned.has(said)) st.warned.add(said) && console.warn(`perf ${h.key}: ${h.read_error ?? ""} coverage_known=${h.coverage_known} skipped_lines=${h.skipped_lines ?? 0}`);
+    }
+    if (h.clamped) out.push(`Last ${h.covers_ms >= 3600e3 ? `${Math.floor(h.covers_ms / 3600e3)} h` : `${Math.max(1, Math.floor(h.covers_ms / 60e3))} min`} only`);
+    if (h.io_drops_in_window > 0) out.push("Partly recorded");
+    return out.map((g) => `<span class="gap">${g}</span>`).join("");
   }
-  function row(h) {
-    const failedN = Object.entries(h.outcomes || {}).reduce((a, [tag, n]) => a + (isFailed(tag) ? n : 0), 0);
-    const failed = failedN ? `<b class="bad">${n0(failedN)}</b><span class="sh">${pct(h.failure_share)}</span>` : "0";
-    const drops = h.io_drops_in_window > 0 ? `at least ${n0(h.io_drops_in_window)}` : "None";
-    const below = [kinds(h), ...gaps(h).map((g) => `<span class="gap">${esc(g)}</span>`)].join("");
-    return `<div class="prow" role="row" style="--c:${colorOf(providerOfHead(h.key))}">`
-      + `<span class="pf cmd">${chip(h.key)}</span>`
-      + cell("Requests", n0(h.count))
-      + cell("Failed", failed)
-      + cell("First byte", time(h.time_before_first_byte_ms), "t")
-      + cell("Streaming", time(h.time_streaming_ms), "t")
-      + cell("Retries", n0(h.retries ?? 0))
-      + cell("Sign-ins renewed", n0(h.refreshes ?? 0))
-      + cell("Cache hit", pct(h.cache_hit_ratio) ?? none("Not reported"))
-      + cell("Cold starts", h.cache_cold == null ? none("Not reported") : n0(h.cache_cold))
-      + cell("Most at once", h.peak_inflight == null ? none("Not reported") : n0(h.peak_inflight))
-      + cell("Records dropped", drops)
-      + (below ? `<p class="below">${below}</p>` : "")
-      + `</div>`;
+  /** Slow or failing today, as the Commands cards said it; only with no pick, since the rows behind it follow the pick. */
+  function flag(h) {
+    if (ui.project != null || hasFilter()) return "";
+    const f = flagOf(h.key);
+    return f ? flagHtml(h.key, f) : "";
   }
-  const HEAD = ["Requests", "Failed", "First byte", "Streaming", "Retries", "Sign-ins renewed", "Cache hit", "Cold starts", "Most at once", "Records dropped"];
+  function row(h, cols) {
+    const below = flag(h) + kinds(h) + sorts(h) + gaps(h);
+    return `<div class="prow" role="row" style="--c:${colorOf(providerOfHead(h.key))}"><span class="pf cmd">${chip(h.key)}</span>`
+      + cols.map((c) => `<span class="pf"><em>${head(c)}</em>${c.cell(h)}</span>`).join("")
+      + (below ? `<p class="below">${below}</p>` : "") + `</div>`;
+  }
 
   function html() {
     if (!st.body && !st.error && !st.reading) read();
-    const sw = `<div class="switch" role="group" aria-label="Performance window">${Object.entries(WINDOWS).map(([k, v]) => `<button data-act="perfwin" data-v="${k}" aria-pressed="${st.win === k}">${v}</button>`).join("")}</div>`;
-    const scoped = ui.project != null || hasFilter() ? `<span class="hn">Every request, whatever is picked above</span>` : "";
+    const sw = `<div class="switch" role="group" aria-label="Window">${Object.entries(WINDOWS).map(([k, v]) => `<button data-act="perfwin" data-v="${k}" aria-pressed="${st.win === k}">${v}</button>`).join("")}</div>`;
+    const scoped = ui.project != null || hasFilter() ? `<span class="hn">All requests</span>` : "";
     const header = `<header><h2>How each command answered</h2>${scoped}${sw}</header>`;
-    if (st.error) return `<section class="perf-heads">${header}<p class="empty">${NOT_READ}: ${esc(st.error)}</p></section>`;
+    if (st.error) return `<section class="perf-heads">${header}<p class="empty">${st.error}</p></section>`;
     if (!st.body) return `<section class="perf-heads" aria-busy="true">${header}${GHOST.card([12, 30, 26, 22])}</section>`;
     const heads = st.body.heads || [];
     const used = heads.filter((h) => h.count > 0), idle = heads.filter((h) => !(h.count > 0));
+    const cols = COLUMNS.filter((c) => used.some(c.has));
     const table = used.length
-      ? `<div class="ptable card" role="table"><div class="prow pthead" role="row"><span class="pf cmd">Command</span>${HEAD.map((l) => `<span class="pf">${l}</span>`).join("")}</div>${used.map(row).join("")}</div>`
+      ? `<div class="ptable card" role="table" style="--n:${cols.length}"><div class="prow pthead" role="row"><span class="pf cmd">Command</span>${cols.map((c) => `<span class="pf">${head(c)}</span>`).join("")}</div>${used.map((h) => row(h, cols)).join("")}</div>`
       : `<p class="empty">No requests in the last ${WINDOWS[st.win]}</p>`;
     const quiet = used.length && idle.length ? `<p class="quiet-heads"><span>No requests in the last ${WINDOWS[st.win]}</span>${idle.map((h) => chip(h.key)).join("")}</p>` : "";
-    const key = used.length ? `<p class="pkey">First byte and Streaming read typical, then the slowest 5% in grey.</p>` : "";
-    return `<section class="perf-heads">${header}${table}${key}${quiet}</section>`;
+    return `<section class="perf-heads">${header}${table}${quiet}</section>`;
   }
 
   document.addEventListener("click", (e) => {

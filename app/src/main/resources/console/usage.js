@@ -9,8 +9,10 @@
 //   GET /api/perf/turns?head=…&n=1               the window's TOTALS per account, model, session and day, folded by the
 //                                                daemon over every request the filters match (TurnUsage.kt), so a week's
 //                                                figures are never a count of the newest 2,000 rows
-//   the same, n=2000 and usage=0                 the newest requests: the 5-hour columns, each command's speed and its
-//                                                failures. Where a command holds more than it returned, its card says so.
+//   the same, n=2000 and usage=0                 the newest requests: the 5-hour columns, a plan's spent windows, the
+//                                                projects of the sessions in them, and whether a command is slow or
+//                                                failing today (the flag under its row of the table)
+//   GET /api/perf/summary                        how each command answered, per command (perf-heads.js)
 //
 // PLANS AND KEYS NEVER MEET IN ONE MONEY FIGURE (fin, Oct 11). A plan's requests read "On your plan", with their value at
 // API prices as a value, never as money spent; only a key's requests are money. A count that is splice's own says so,
@@ -37,7 +39,7 @@ const OPEN = '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentCol
 const UP = G('<path d="M12 19V5M6 11l6-6 6 6"/>', 'aria-hidden="true"');
 const DOWN = '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>';
 
-const ui = { win: "7d", measure: "tokens", hover: null, by: "account", f: {}, more: false, open: new Set(), from: null, project: PICK.get(), pmenu: false };
+const ui = { win: "7d", measure: "tokens", hover: null, by: "account", f: {}, more: false, from: null, project: PICK.get(), pmenu: false };
 const root = document.getElementById("usage");
 
 // ---------- what splice has told this page ----------
@@ -105,9 +107,7 @@ function filterParams(p, f, label) {
 // each 15-minute column of the 5-hour window is one more question on the same read (`ask`), so the whole window is read once
 function turnsUrl(head, held, f, label) {
   const p = filterParams(new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: String(held), local: "0" }), f, label);
-  // the rows are the newest MAX_HELD of the window, so its failures are asked of the whole window on the same read: a card
-  // never prints a week's requests beside the failures of its newest rows (splice-providers, Oct 12: 1 failed of 46,494)
-  if (held > 1) { p.set("usage", "0"); p.append("ask", filterParams(new URLSearchParams({ n: String(held), local: "0", usage: "0", outcome: "failed" }), f, label).toString()); }
+  if (held > 1) p.set("usage", "0");
   else if (ui.win === "5h") for (const sl of slices()) p.append("ask", filterParams(new URLSearchParams({ n: "1", local: "0", from: String(sl.from + 1), until: String(sl.to) }), f, label).toString());
   return `/api/perf/turns?${p}`;
 }
@@ -163,7 +163,7 @@ async function readWindow() {
   D.scoped = split(scopes[0]);
   D.all = hasFilter() ? split(scopes[1]) : D.scoped;
   D.every = ui.project ? split(wide) : D.all;
-  D.rows = []; D.held = {}; D.failed = {}; D.errors = [...D.scoped.errors];
+  D.rows = []; D.held = {}; D.errors = [...D.scoped.errors];
   let pending = D.scoped.pending || D.all.pending || D.every.pending;
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
@@ -172,8 +172,6 @@ async function readWindow() {
     const had = D.held[a.h.key];
     D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
-    const fa = answer.asks?.[0], fh = D.failed[a.h.key];
-    if (fa) D.failed[a.h.key] = { count: (fh?.count ?? 0) + (fa.count ?? 0), rows: [...(fh?.rows ?? []), ...(fa.rows || []).map((row) => mapRow(a.h, row))] };
   });
   if (rowAsks.length > headsFor(ui.f).length) { // several labels: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
     D.rows.sort((x, y) => y.ts - x.ts);
@@ -425,40 +423,6 @@ function byHtml() {
   return `<section class="by card"><header>${sw}<div class="fchips">${filterChips()}</div>${back}${open}</header>${list.length ? head + shown.map(row).join("") + more : `<p class="empty">No requests</p>`}</section>`;
 }
 
-// ---------- each command: how fast it answers, what failed, and when ----------
-// Typical is the median, Slowest the longest; the band between runs to the 95th. Under them, every request a dot at its
-// time, as high as it took, and every failure a tick that opens it, so where the dots rise or the ticks begin is since when.
-// From the newest requests the command returned: a command that holds more says so on its card.
-const LOG = (ms) => Math.min(1, Math.max(0, (Math.log10(Math.max(ms, 100)) - 2) / (Math.log10(180000) - 2)));
-const LAT_HEAD = `<div class="lat-head"><span>Typical</span><span>95th</span><span>Slowest</span></div>`; // 95th: 19 in 20 requests were faster
-function strip(label, xs, scaleWords = false) {
-  if (!xs.length) return "";
-  const p50 = q(xs, .5), p95 = q(xs, .95), max = Math.max(...xs), at = (ms) => `${(LOG(ms) * 100).toFixed(2)}%`;
-  const ticks = [1000, 10000, 60000].map((ms) => `<span class="tk" style="left:${at(ms)}">${scaleWords ? `<span>${secs(ms).replace(" min 0 s", " min")}</span>` : ""}</span>`).join("");
-  return `<div class="lat"><span class="label">${label}</span><span class="vals"><span>${secs(p50)}</span><span>${secs(p95)}</span><span>${secs(max)}</span></span>`
-    + `<div class="scale">${ticks}<span class="span" style="left:${at(p50)};width:calc(${at(p95)} - ${at(p50)})"></span><span class="mk max" style="left:${at(max)}"></span></div></div>`;
-}
-// the stretch the rows in hand cover: the whole window, or, for a command that holds more than it returned, from its oldest
-// returned request, with its own hour or day words
-function axis(rs, cut) {
-  const sl = slices(), t1 = cut ? +NOW : sl.at(-1).to, t0 = cut && rs.length ? Math.min(...rs.map((r) => r.ts)) - 60e3 : sl[0].from;
-  if (!cut) return { t0, t1, words: sl.filter((b) => b.label).map((b) => [b.from, b.label]) };
-  const step = [HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY_MS].find((st) => (t1 - t0) / st <= 8) ?? DAY_MS, words = [];
-  for (let t = Math.ceil(t0 / step) * step; t < t1; t += step) {
-    const d = new Date(t);
-    words.push([t, step >= DAY_MS ? DAY[d.getDay()] : d.getHours() === 0 ? DAY[d.getDay()] : hourWord(d)]);
-  }
-  return { t0, t1, words };
-}
-function trail(rs, f = null, cut = false) {
-  const { t0, t1, words: marks } = axis(rs, cut), span = t1 - t0, x = (r) => `${(((+r.ts - t0) / span) * 100).toFixed(2)}%`;
-  const dots = rs.filter((r) => !failed(r)).map((r) => `<i style="left:${x(r)};bottom:${(LOG(r.total) * 100).toFixed(1)}%"></i>`).join("");
-  const ticks = rs.filter(failed).map((r) => `<a class="ft" href="requests.html?win=${ui.win}#${encodeURIComponent(r.id)}" style="left:${x(r)}" aria-label="${esc(OUTCOME_WORD[r.outcome] || "Failed")} at ${dayClock(new Date(r.ts))}"></a>`).join("");
-  const words = marks.map(([t, label]) => `<span style="left:${(((t - t0) / span) * 100).toFixed(2)}%">${label}</span>`).join("");
-  const base = q(rs.filter((r) => !failed(r)).map((r) => r.total), .5);
-  const since = f ? `<span class="since" style="left:${x({ ts: f.from })};${f.to ? `width:calc(${x({ ts: f.to })} - ${x({ ts: f.from })})` : "right:0"}"></span>` : "";
-  return `<div class="trail"><div class="field">${since}${base ? `<span class="base" style="bottom:${(LOG(base) * 100).toFixed(1)}%"></span>` : ""}${dots}${ticks}</div><div class="xw">${words}</div></div>`;
-}
 // Slow or failing today, and since when, against the command's own week: slow is a trailing run of today's requests, most
 // over 1.6 times the typical whole request before today; failing is a burst of today's failures within 5 minutes of each
 // other, at least three, a spent plan window aside (Plans shows that). Since is the run's first request.
@@ -490,40 +454,8 @@ function flagHtml(head, f) {
   const href = reqUrl({ win: "24h", cmd: cmdOf(head), from: f.from, ...(f.to ? { to: f.to } : {}), outcome: f.kind === "failing" ? "fail" : "all" });
   const word = f.kind === "slow" ? `Slow since ${clock(new Date(f.from))}` : `Today ${clock(new Date(f.from))} to ${clock(new Date(f.to))}`;
   const vs = f.kind === "slow" ? `<span class="vs"><b>${secs(f.now)}</b> since then<span class="dot"></span><b>${secs(f.typ)}</b> before today</span>` : `<span class="vs"><b>${f.n}</b> failed</span>`;
-  return `<p class="flag"><a href="${href}">${word}${OPEN}</a>${vs}</p>`;
+  return `<span class="flag"><a href="${href}">${word}${OPEN}</a>${vs}</span>`;
 }
-/** What share of the requests in hand failed, in words a reader can place: under one in a hundred says so. */
-const failShare = (n, of) => (!of ? "" : n / of < 0.005 ? "under 1%" : `${Math.round((100 * n) / of)}%`);
-function headCard(head, f = null, foldable = !f) {
-  const rs = D.rows.filter((r) => r.head === head), held = D.held[head];
-  const fails = D.failed[head]?.rows ?? rs.filter(failed), failCount = D.failed[head]?.count ?? fails.length;
-  const counts = new Map(); for (const r of fails) counts.set(r.outcome, (counts.get(r.outcome) || 0) + 1);
-  const lastReset = (o) => fails.filter((r) => r.outcome === o && r.reset).reduce((a, r) => (!a || r.reset > a ? r.reset : a), null);
-  const word = (o) => (o === "error:plan-limit" ? `<span class="lk">${ICON.lock}${lastReset(o) ? `Resets ${dayClock(new Date(lastReset(o)))}` : ""}</span>` : esc(OUTCOME_WORD[o] ?? tagWord(o) ?? "Failed"));
-  const kinds = [...counts].sort((a, b) => b[1] - a[1]).map(([o, n]) => `<span class="f"><b>${n}</b> ${COUNT_WORD[o] ? esc(countWord(o)) : word(o)}</span>`).join("");
-  const models = [...new Set(rs.map((r) => r.model).filter(Boolean))].map((m) => modelName(S.labels, m));
-  const fold = !foldable ? "" : `<button class="icon fold" data-act="head" data-v="${esc(head)}" aria-label="Fold">${ICON.close}</button>`;
-  const total = held?.count ?? rs.length, cut = held?.truncated ? `<p class="models cut">Newest ${n0(held.returned)} of ${n0(held.count)}</p>` : "";
-  return `<article class="card head-card${f ? " lead" : ""}" style="--c:${colorOf(providerOfHead(head))}"><header>${chip(head)}<a class="count" href="${reqUrl({ cmd: cmdOf(head) })}">${n0(total)} requests${OPEN}</a>${fold}</header>`
-    + (f ? flagHtml(head, f) : "") + `<p class="models">${models.map(esc).join('<span class="dot"></span>')}</p>${cut}`
-    + LAT_HEAD + strip("First byte", rs.filter((r) => r.ttfb != null).map((r) => r.ttfb)) + strip("Whole request", rs.map((r) => r.total), true) + trail(rs, f, held?.truncated === true)
-    + `<p class="fails${failCount ? " bad" : ""}">${failCount ? `<a class="all" href="${reqUrl({ cmd: cmdOf(head), outcome: "fail" })}"><b>${n0(failCount)}</b> failed${OPEN}</a><span class="share">${failShare(failCount, total)}</span>` : `<span><b>0</b> failed</span>`}${kinds}</p></article>`;
-}
-function headRow(head) {
-  const rs = D.rows.filter((r) => r.head === head), fails = D.failed[head]?.count ?? rs.filter(failed).length;
-  return `<button class="hrow" data-act="head" data-v="${esc(head)}" style="--c:${colorOf(providerOfHead(head))}" aria-expanded="false">${chip(head)}<span class="n">${n0(D.held[head]?.count ?? rs.length)} requests</span>`
-    + `<span class="t"><em>Typical</em>${secs(q(rs.map((r) => r.total), .5) ?? 0)}</span><span class="fl${fails ? " bad" : ""}"><b>${n0(fails)}</b> failed</span>${ICON.caret}</button>`;
-}
-function headsHtml() {
-  const order = headsOrder(), used = order.filter((h) => (D.held[h]?.count ?? 0) > 0), idle = order.filter((h) => !used.includes(h) && !D.errors.includes(cmdOf(h)));
-  const flags = new Map(used.map((h) => [h, flagOf(h)]).filter(([, f]) => f));
-  const lead = [...flags.keys()], rest = used.filter((h) => !flags.has(h));
-  const open = (h) => ui.open.has(h) || used.length === 1;
-  const quiet = idle.length && !hasFilter() && ui.project == null ? `<p class="quiet-heads"><span>No requests</span>${idle.map(chip).join("")}</p>` : "";
-  const list = rest.length ? `<div class="hlist card">${rest.map((h) => (open(h) ? headCard(h, null, used.length > 1) : headRow(h))).join("")}</div>` : "";
-  return `<section class="heads"><header><h2>Commands</h2></header>${lead.map((h) => headCard(h, flags.get(h))).join("")}${list}${quiet}</section>`;
-}
-
 // ---------- the page ----------
 /** What each project tile and the picker carry on this page: the window's tokens, written as Breakdown writes them. */
 function projectFigures() {
@@ -540,12 +472,12 @@ function render() {
   document.getElementById("hf").innerHTML = n ? filterChips() + (n > 1 ? `<button class="act quiet small" data-act="clear">Clear all</button>` : "") : "";
   document.getElementById("win").innerHTML = Object.entries(WINDOWS).map(([k, v]) => `<button data-act="win" data-v="${k}" aria-pressed="${ui.win === k}">${v.label}</button>`).join("");
   if (S.error) { root.innerHTML = `<p class="empty">${S.error}</p>`; return; }
-  // while the window is read, each section draws its own shape: a chart's columns, the breakdown's rows, the commands'
-  // cards, and a card in the money band until the plans and keys arrive (Marcos, Oct 12)
-  const waiting = reading(), hold = (title, body, cls = "") => `<section${cls ? ` class="${cls}"` : ""} aria-busy="true"><header><h2>${title}</h2></header>${body}</section>`;
+  // while the window is read, each section draws its own shape: a chart's columns, the breakdown's rows, the per-command
+  // table, and a card in the money band until the plans and keys arrive (Marcos, Oct 12)
+  const waiting = reading();
   const money = plansHtml() + keysHtml();
   const note = waiting ? "" : D.errors.length ? `<p class="empty">${NOT_READ}: ${D.errors.map(esc).join(", ")}</p>` : D.pending ? `<p class="empty">Reading</p>` : "";
-  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${waiting ? hold("Commands", GHOST.card([8, 22, 18]), "heads") : headsHtml()}</div>${PERF_HEADS.html()}`;
+  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${PERF_HEADS.html()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading
@@ -564,7 +496,6 @@ document.addEventListener("click", (e) => {
     case "measure": ui.measure = v; render(); break;
     case "by": ui.by = v; ui.more = false; render(); break;
     case "more": ui.more = !ui.more; render(); break;
-    case "head": ui.open.has(v) ? ui.open.delete(v) : ui.open.add(v); render(); break;
     case "pick": {
       const card = el.closest(".pcard, .kcard");
       if (card) ui.from = { where: card.matches(".pcard") ? "Plans" : "Keys", cls: card.matches(".pcard") ? "pcard" : "kcard", v, y: document.scrollingElement.scrollTop };

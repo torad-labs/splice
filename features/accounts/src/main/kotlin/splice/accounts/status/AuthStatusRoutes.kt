@@ -16,10 +16,23 @@ import splice.accounts.CredentialVerdictJson
 import splice.accounts.pool.AccountPoolJson
 import splice.core.auth.RefreshableAuthProvider
 
+private const val UNREADABLE = "can't read the login file"
+
 public class AuthStatusRoutes(
     private val heads: Map<String, AccountHead>,
     private val resolver: AccountHeadResolver,
 ) {
+    /** The only provider fields the answer carries. A provider's description also holds the credential file's path,
+     *  the key file's path and a read failure whose text can quote one: those stay on the machine's disk and out of
+     *  the answer, and a field a provider adds later stays out until it is named here. The key appears only masked.
+     *  A read failure keeps its place with fixed words in place of the provider's text, so a login that cannot be
+     *  read still says so without quoting where. */
+    private val shown = setOf(
+        "account_ref", "display_name", "refusal", "login", "native_place", "head", "source", "subscription",
+        "action_url", "account_token", "last_refresh", "refresh_latched",
+        "env_var", "key_source", "api_key_masked", "key_fingerprint",
+    )
+
     // PORT-OF server/src/control/api.mjs auth payload @ pre-public-port-baseline: keyed by head (Node hardcodes
     // `codex`; multi-head keys each), value = {kind, login, present, verdict, ...describe fields}. The webui
     // AuthPayload reads every configured head. login = automated for oauth, manual for api-key.
@@ -36,7 +49,8 @@ public class AuthStatusRoutes(
                     put("login", if (description.kind.contains("oauth")) "automated" else "manual")
                     put("present", description.present)
                     CredentialVerdictJson().write(this, description.verdict)
-                    description.fields.forEach { (key, value) -> put(key, value) }
+                    description.fields.filterKeys { it in shown }.forEach { (key, value) -> put(key, value) }
+                    if ("read_error" in description.fields) put("read_error", UNREADABLE)
                     head.activePool?.view(null)?.let { pool ->
                         AccountPoolJson().write(this, pool, accountAuth)
                     }

@@ -199,10 +199,10 @@ async function removeCommand(key) {
   Object.assign(ui, { open: null, draft: null, said: null });
   render();
 }
-// beside a window field: the most the provider publishes for the model, or that it publishes none
-function limitHtml(model, sel) {
+// beside a window field: the most the provider reports for the model, or that it reports none; a window over it turns the note
+function limitHtml(model, sel, over) {
   if (!sel.model || !model) return "";
-  return model.max ? `<span class="said maxnote">Max ${big(model.max)}</span>` : `<span class="said maxnote">No published max</span>`;
+  return model.max ? `<span class="said${over ? " limit" : ""}">Max ${big(model.max)}</span>` : `<span class="said">No max reported</span>`;
 }
 function paneHtml() {
   if (ui.add) return addPaneHtml();
@@ -222,7 +222,7 @@ function paneHtml() {
     const sends = picked ? null : c.models.find((x) => x.label === c.model);
     const win = sel.model ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
     return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${sel.model ? "" : " empty"}" title="${sel.model ? "" : "No slot is set: it sends its default"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${esc(picked?.label ?? sends?.label ?? "None")}${ICON.caret}</button>`
-      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${ts.ok ? "" : `<span class="said limit">${ts.over ? "Over the max" : "Not a window"}</span>`}${limitHtml(picked ?? sends, sel)}</div>`;
+      + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${ts.ok || ts.over ? "" : `<span class="said limit">Not a window</span>`}${limitHtml(picked ?? sends, sel, ts.over)}</div>`;
   }).join("");
   const per = Object.entries(d.per).map(([root, l]) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
     + `<button class="icon" data-act="unper" data-p="${esc(root)}" aria-label="Remove">${GL.close}</button></div>${l.file ? pfile(l.file) : `<textarea class="field ptext" data-ptext="${esc(root)}" rows="2">${esc(l.text)}</textarea>`}</div>`).join("");
@@ -558,6 +558,7 @@ async function verifyAndSave() {
   a.checks = v.body?.checks ?? [];
   // A press never ends in nothing: a check that stops the add shows beside its own name, and an answer with no checks says so.
   const hard = a.checks.some((c) => !c.ok && !SOFT.has(c.name));
+  if (!v.ok && !a.checks.length) console.warn(`add verify: ${v.body?.error ?? v.status}`);
   if (hard || (!v.ok && !a.checks.length)) { a.busy = false; a.said = hard ? null : "Not added"; render(); return; }
   render();
   const s = await API.post(`/api/add/${encodeURIComponent(a.id)}/save`, {});

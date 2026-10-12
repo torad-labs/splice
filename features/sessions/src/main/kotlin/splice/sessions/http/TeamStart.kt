@@ -164,12 +164,12 @@ public class TeamStart(
         )
     }
 
-    /** A slot whose start stopped on a question: its session has not registered and the pane splice opened for it is
-     *  still remembered. Asked again, the start waits on that pane; a pane his answer closed gives the slot back. Null
+    /** A slot whose start stopped on a question: its session never registered (a member that came up and later ended
+     *  starts afresh) and the pane splice opened for it is still remembered. Asked again, the start waits on that pane; a pane his answer closed gives the slot back. Null
      *  for every other slot, which then starts or is refused as before. */
     private suspend fun pending(store: TeamStore, member: Located.Member): JsonReply? {
         val driving = drive.driver() ?: return null
-        val (session, pane) = member.slot.session?.takeIf { !live(it) }
+        val (session, pane) = member.slot.session?.takeIf { s -> registry?.read().orEmpty().none { it.sessionId == s } }
             ?.let { s -> driving.panes.paneFor(s)?.let { s to it } } ?: return null
         return if (driving.terminal.isOpen(pane)) {
             awaitUp(store, driving, member, session, pane)

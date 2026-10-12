@@ -34,6 +34,9 @@ class LimitResumeTest {
         override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
     }
 
+    /** What two logins joining the claude head sent, and what was logged, for the sessions and endings given. */
+    private data class Joined(val sent: List<Pair<String?, String>>, val logged: List<String>)
+
     private fun session(id: String, head: String, state: String = "idle") = SessionRecord(
         sessionId = id,
         name = null,
@@ -47,32 +50,14 @@ class LimitResumeTest {
     private fun account(label: String, dir: Path) =
         WiredAccount(label, label == "one", Auth(), WiredAccountQuota(dir.resolve("$label.json")))
 
-    @Test
-    fun `a new account releases the three the limit stopped, once, and leaves one in its retry`(@TempDir dir: Path) {
-        val limited = listOf("a", "b", "c").map { session(it, "claude") }
-        val others = listOf(
-            session("stopped", "claude"),
-            session("elsewhere", "claudex"),
-            session("outage", "claude"),
-            session("clean", "claude"),
-            session("waiting", "claude", state = "busy"),
-        )
-        val endings = mapOf(
-            "a" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
-            "b" to ending(OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, "claude"),
-            "c" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
-            "stopped" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
-            "elsewhere" to ending(OutcomeTag.PLAN_LIMIT, "claudex"),
-            "outage" to ending(OutcomeTag.UPSTREAM_FAILED, "claude"),
-            "waiting" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
-        )
+    private fun join(dir: Path, listed: List<SessionRecord>, endings: Map<String, SessionEnding>): Joined {
         val sent = mutableListOf<Pair<String?, String>>()
         val logged = mutableListOf<String>()
         val resume = LimitResume(
             object : SessionSource {
-                override fun read() = limited + others
+                override fun read() = listed
 
-                override fun list() = SessionListing(limited + others)
+                override fun list() = SessionListing(listed)
             },
             SessionEndingOf { endings[it] },
             SessionNoteSender { target, text ->
@@ -81,25 +66,62 @@ class LimitResumeTest {
             },
             LifecycleScope(Dispatchers.Unconfined),
             { logged += it },
+            LimitTurnEnded { it.sessionId != "escaped" }, // Escape in its terminal: its prompt is last, not the limit
             clock = { NOW },
         )
         resume.acted("stopped")
         val pool = ClaudePoolChanges().also { it.onJoined = LoginJoined(resume::joined) }
         pool.view("claude", listOf(account("one", dir)))
-
         pool.accounts("claude", listOf(account("one", dir), account("two", dir)))
         pool.accounts("claude", listOf(account("one", dir), account("two", dir), account("three", dir)))
+        return Joined(sent, logged)
+    }
+
+    @Test
+    fun `adding an account releases the three sessions the limit stopped, once, and no other`(@TempDir dir: Path) {
+        val limited = listOf("a", "b", "c").map { session(it, "claude") }
+        val others = listOf(
+            session("stopped", "claude"),
+            session("elsewhere", "claudex"),
+            session("outage", "claude"),
+            session("clean", "claude"),
+        )
+        val endings = mapOf(
+            "a" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
+            "b" to ending(OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, "claude"),
+            "c" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
+            "stopped" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
+            "elsewhere" to ending(OutcomeTag.PLAN_LIMIT, "claudex"),
+            "outage" to ending(OutcomeTag.UPSTREAM_FAILED, "claude"),
+        )
+        val joined = join(dir, limited + others, endings)
 
         val note = "A new account is available. Continue where you left off."
-        assertEquals(listOf("a" to note, "b" to note, "c" to note), sent)
+        assertEquals(listOf("a" to note, "b" to note, "c" to note), joined.sent)
         assertEquals(
             listOf(
                 "[limit-resume] released a on claude",
                 "[limit-resume] released b on claude",
                 "[limit-resume] could not reach c after a new login: no messaging socket",
-                "[limit-resume] left waiting to its own retry on claude",
             ),
-            logged,
+            joined.logged,
+        )
+    }
+
+    @Test
+    fun `a session in its own retry, or escaped by its person, is left alone and logged once`(@TempDir dir: Path) {
+        val listed = listOf(session("waiting", "claude", state = "busy"), session("escaped", "claude"))
+        val endings = listed.associate { it.sessionId!! to ending(OutcomeTag.PLAN_LIMIT, "claude") }
+
+        val joined = join(dir, listed, endings)
+
+        assertEquals(emptyList<Pair<String?, String>>(), joined.sent)
+        assertEquals(
+            listOf(
+                "[limit-resume] left waiting to its own retry on claude",
+                "[limit-resume] left escaped to the person who took it up on claude",
+            ),
+            joined.logged,
         )
     }
 

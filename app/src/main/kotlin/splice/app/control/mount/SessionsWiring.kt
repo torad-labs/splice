@@ -5,6 +5,7 @@ package splice.app.control.mount
 
 import splice.app.control.ConsolePorts
 import splice.app.control.LimitResume
+import splice.app.control.LimitTurnEnded
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
 import splice.app.control.SessionPerfFacts
@@ -48,9 +49,15 @@ import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
+import splice.sessions.transcript.TranscriptLookup
+import splice.sessions.transcript.TranscriptRole
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
+
+// why: Claude Code writes a turn's limit as its own API error record, which the reader pages as a system message
+// opening with these words; the perf row already says the ending was the limit.
+private const val LIMIT_ERROR = "API error"
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
  *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
@@ -126,7 +133,17 @@ internal class SessionsWiring(
     /** What a login added after a plan limit does for the sessions it stopped. Null with no session registry. */
     val limitResume = sessions?.let {
         val io = ProcessDispatchers().io()
-        LimitResume(it, perfFacts.endingOf(), PeerNoteSocket(io), LifecycleScope(io), log)
+        val transcripts = TranscriptReader()
+        val roots = TranscriptRoots(sessionHeads)
+        // reading off, splice opens no conversation: the perf row's ending and the console's own marks decide alone
+        val ended = LimitTurnEnded { record ->
+            if (!config.getConfig().transcriptView) return@LimitTurnEnded true
+            val id = record.sessionId
+            val page = id?.let { transcripts.pageBefore(it, roots.treesFor(record.head), null, 1) }
+            val last = (page as? TranscriptLookup.Found)?.page?.messages?.lastOrNull()
+            last?.role == TranscriptRole.SYSTEM && last.text.startsWith(LIMIT_ERROR, ignoreCase = true)
+        }
+        LimitResume(it, perfFacts.endingOf(), PeerNoteSocket(io), LifecycleScope(io), log, ended)
     }
 
     /** Where each session's moves are kept: the transcript route serves them and Continue on completes them. */

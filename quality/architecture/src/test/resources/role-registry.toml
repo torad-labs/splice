@@ -645,7 +645,7 @@ names = [
     "ProjectFolders",
     "TurnPathStalled",
 ]
-reason = """Three reads that answer with names, where the EMPTY list means opposite things. ProjectFolders (sessions/http) lists the saved Projects folders, and empty is the default that makes a project the git repo. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles."""
+reason = """Three reads that answer with names, where the EMPTY list means opposite things. ProjectFolders (sessions/http) lists the saved Projects folders, and empty is the default that makes a project the git repo. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles. WrapperBinSource (app/head HeadRemoval) is the claude wrapper directory the console was handed, null when none was, which Remove reads to unlink a command's link; a jar or a trace directory in its place would have Remove unlink files from the wrong folder."""
 
 # ── 2 names, () -> Path? ──────────────────────────────────────────────────────────────────────────
 [[groups]]
@@ -654,6 +654,7 @@ dated = "2026-09-26"
 names = [
     "RunningJar",
     "TraceDirPort",
+    "WrapperBinSource",
 ]
 reason = """Two paths whose null means different things and that no caller may substitute. RunningJar (core/config) is the jar this process runs from, null when it runs from classes: doctor's install probes, status's jar line and the cold start that relaunches the same build read it. TraceDirPort (features/turns TraceRoute.kt, V4-239) is the directory every head's TraceStore writes day files under, null when the control plane was never handed it, which GET /api/heads/{head}/trace answers with a named 503. Wired the wrong way round, the trace route would list the jar's directory as a trace dir and the cold start would relaunch a directory, so they stay two roles."""
 

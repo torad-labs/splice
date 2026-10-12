@@ -11,6 +11,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.accounts.order.ACCOUNT_ORDER_FILE
 import splice.accounts.order.AccountOrderStore
+import splice.app.control.ConsolePorts
+import splice.app.control.ControlRuntime
+import splice.app.control.ManagedHead
+import splice.core.config.ConfigService
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
 import splice.core.retired.RetiredHead
@@ -124,4 +128,19 @@ internal class HeadRemoval(
 
     private fun refusal(status: HttpStatusCode, message: String): JsonReply =
         JsonReply(status, buildJsonObject { put("error", message) }.toString())
+}
+
+/** Assembles the removal from what the control server already holds, so the server names none of its parts. */
+internal class HeadRemovalAssembly(
+    private val config: ConfigService,
+    private val ports: ConsolePorts,
+    private val runtime: ControlRuntime,
+    private val heads: Map<String, ManagedHead>,
+) {
+    fun build(): HeadRemoval = HeadRemoval(
+        TopologyWriterSource { ports.topology },
+        WrapperBinSource { ports.wrapperBin },
+        config.statePaths,
+        HeadRemovalFacts(config.statePaths, heads, RegisteredSessions { runtime.sessions }),
+    )
 }

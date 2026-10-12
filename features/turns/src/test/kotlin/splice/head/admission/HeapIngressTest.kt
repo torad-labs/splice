@@ -23,6 +23,7 @@ import splice.core.memory.HeapBudget
 import splice.core.memory.HeapWeights
 import splice.http.ingress.HeapIngress
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.net.Socket
 import java.net.URI
 import java.net.http.HttpClient
@@ -302,11 +303,65 @@ class HeapIngressTest {
                 val reply = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
                 assertTrue(reply.startsWith("HTTP/1.1 200"), reply)
                 assertTrue(reply.contains("rejected by the route"), reply)
+                // The connection closes after this reply, so the reply must say so, or the client reuses it.
+                assertTrue(reply.lowercase().contains("connection: close"), reply)
             }
         } finally {
             server.stop(0, 1000)
         }
         assertEquals(heap.limitBytes, heap.available.value)
+    }
+
+    @Test
+    fun `a kept-alive connection serves the next request after a route leaves a small body unread`() = runBlocking {
+        val heap = HeapBudget(1024 * 1024, 128 * 1024)
+        val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
+        val server = testServer(ingress) {
+            routing {
+                post("/ignores-body") { call.respondText("posted") }
+                get("/reread") { call.respondText("fresh") }
+            }
+        }
+        server.start(false)
+        try {
+            val port = server.engine.resolvedConnectors().single().port
+            // A console button: a POST whose small body its route never reads, then an immediate reread, every time
+            // on the one connection the client keeps alive (marlin's 502, Oct 12).
+            Socket("127.0.0.1", port).use { socket ->
+                socket.soTimeout = 5000
+                val output = socket.getOutputStream()
+                val input = socket.getInputStream()
+                repeat(20) {
+                    output.write(
+                        "POST /ignores-body HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n{\"a\":\"bc\"}"
+                            .toByteArray(),
+                    )
+                    val posted = readOneReply(input)
+                    assertTrue(posted.startsWith("HTTP/1.1 200") && posted.endsWith("posted"), posted)
+                    assertFalse(posted.lowercase().contains("connection: close"), posted)
+                    output.write("GET /reread HTTP/1.1\r\nHost: localhost\r\n\r\n".toByteArray())
+                    val reread = readOneReply(input)
+                    assertTrue(reread.startsWith("HTTP/1.1 200") && reread.endsWith("fresh"), reread)
+                }
+            }
+        } finally {
+            server.stop(0, 1000)
+        }
+        assertEquals(heap.limitBytes, heap.available.value)
+    }
+
+    /** One reply off a kept-alive connection: its headers, then exactly the Content-Length bytes they declare. */
+    private fun readOneReply(input: InputStream): String {
+        val head = StringBuilder()
+        while (!head.endsWith("\r\n\r\n")) {
+            val byte = input.read()
+            check(byte >= 0) { "the connection closed after: $head" }
+            head.append(byte.toChar())
+        }
+        val length = head.lines()
+            .firstOrNull { it.lowercase().startsWith("content-length:") }
+            ?.substringAfter(':')?.trim()?.toInt() ?: 0
+        return head.toString() + input.readNBytes(length).toString(Charsets.UTF_8)
     }
 
     @Test

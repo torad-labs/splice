@@ -36,6 +36,17 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
         responses.size == 1 && responses.first() === entry
     }
 
+    /**
+     * Whether the reply about to go out for the oldest owed request must say Connection: close. It must when that
+     * request's body has not all arrived: a body still on its way is never drained, so its connection closes after the
+     * reply, and a reply that said keep-alive would send the client's next request into a reset.
+     */
+    fun announceClose(): Boolean = synchronized(lock) {
+        val entry = responses.firstOrNull() ?: return@synchronized false
+        if (!entry.arrived) entry.closeAnnounced = true
+        entry.closeAnnounced
+    }
+
     fun responded(): Boolean = synchronized(lock) {
         val entry = responses.removeFirstOrNull() ?: return@synchronized false
         entry.responded()
@@ -77,7 +88,15 @@ internal class IngressRequest(
 ) {
     var bound = false
     var unread = false
-    val shouldClose: Boolean get() = unread && responseSent
+
+    /** The body's last bytes reached Ktor, so reading it to its end cannot wait on the client. */
+    @Volatile
+    var arrived = false
+
+    /** Its reply went out saying Connection: close, so the connection closes once that reply is written. */
+    @Volatile
+    var closeAnnounced = false
+    val shouldClose: Boolean get() = (unread || closeAnnounced) && responseSent
     private var appFinished = false
     private var responseSent = false
 

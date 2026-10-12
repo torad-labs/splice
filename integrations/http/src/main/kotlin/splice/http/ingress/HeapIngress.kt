@@ -10,9 +10,13 @@ import io.ktor.server.application.ApplicationStopPreparing
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
 import io.ktor.util.AttributeKey
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.discard
 import io.netty.channel.ChannelPipeline
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
@@ -20,6 +24,7 @@ import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
+import splice.core.util.Cancellables
 import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -113,15 +118,36 @@ public class HeapIngress(
                     refuse(call, HttpStatus.OVERLOADED)
                     finish()
                 } finally {
-                    // Settle unread input and suppress every future decoder read before returning its charge.
                     val input = call.request.receiveChannel()
                     val owner = checkNotNull(ownership)
-                    if (!input.isClosedForRead) owner.unread(entry)
-                    input.cancel(null)
-                    if (owner.finish(entry)) requests.channel(call)?.close()
+                    Cancellables.withCleanup({ settle(call, owner, entry, input) }) { drainArrived(entry, input) }
                 }
             }
         }
+    }
+
+    /**
+     * A body the route never read but whose last bytes are already in is read to its end here, so the connection
+     * stays reusable, as the reply's keep-alive promised. Cancelling it instead would fail Ktor's copier mid-write
+     * and end every later request on the connection: that is why an unread body used to close it, and a client
+     * reusing the socket after a kept-alive reply met a reset (marlin's console 502, Oct 12). The read is bounded by
+     * the body already admitted and charged, and runs even when the call was cancelled, so the charge settles.
+     */
+    private suspend fun drainArrived(entry: IngressRequest, input: ByteReadChannel) {
+        if (!entry.arrived || input.isClosedForRead) return
+        withContext(NonCancellable) {
+            Cancellables.discard(
+                Cancellables.runCatchingCleanup { input.discard() },
+                "a body that cannot be read to its end stays unread, and settle closes its connection",
+            )
+        }
+    }
+
+    /** Settle unread input and suppress every future decoder read before returning its charge. */
+    private fun settle(call: ApplicationCall, owner: IngressOwnership, entry: IngressRequest, input: ByteReadChannel) {
+        if (!input.isClosedForRead) owner.unread(entry)
+        input.cancel(null)
+        if (owner.finish(entry)) requests.channel(call)?.close()
     }
 
     private suspend fun refuse(call: ApplicationCall, status: Int, detail: String? = null) {

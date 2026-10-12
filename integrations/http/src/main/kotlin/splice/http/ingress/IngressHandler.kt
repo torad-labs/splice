@@ -9,11 +9,11 @@ import io.netty.channel.ChannelPromise
 import io.netty.channel.SimpleChannelInboundHandler
 import io.netty.handler.codec.http.DefaultFullHttpResponse
 import io.netty.handler.codec.http.DefaultHttpRequest
-import io.netty.handler.codec.http.FullHttpResponse
 import io.netty.handler.codec.http.HttpContent
 import io.netty.handler.codec.http.HttpHeaderNames
 import io.netty.handler.codec.http.HttpObject
 import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.codec.http.HttpResponseStatus
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.HttpVersion
@@ -47,6 +47,9 @@ internal class IngressHandler(
 ) : SimpleChannelInboundHandler<HttpObject>(false) {
     private var silence: ScheduledFuture<*>? = null
     private var growing: ChunkedBody? = null
+
+    /** The admitted request whose body is still arriving; its last chunk marks it arrived. */
+    private var reading: IngressRequest? = null
     private var admittedCap = 0L
 
     override fun channelRead0(ctx: ChannelHandlerContext, msg: HttpObject) {
@@ -59,8 +62,11 @@ internal class IngressHandler(
             return
         }
         growing = null
+        reading = null
         val entry = admit(msg)
         if (entry.refusal == null) {
+            reading = entry
+            if (msg is LastHttpContent) entry.arrived = true
             ownership.register(msg, entry)
             if (entry.lease != null && isUndeclared(msg)) growing = ChunkedBody(entry, admittedCap)
             ctx.fireChannelRead(msg)
@@ -78,7 +84,11 @@ internal class IngressHandler(
             refuseMidBody(ctx, msg, live, refusal)
             return
         }
-        if (msg is LastHttpContent) growing = null
+        if (msg is LastHttpContent) {
+            growing = null
+            reading?.arrived = true
+            reading = null
+        }
         ctx.fireChannelRead(msg)
         watchBody(ctx, msg)
     }
@@ -195,10 +205,16 @@ internal class IngressHandler(
 /** The response path: a final response that ends a connection's last request closes it once its write completes. */
 internal class IngressResponseWatch(private val ownership: IngressOwnership) : ChannelOutboundHandlerAdapter() {
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
-        val interim = msg is FullHttpResponse && msg.status().code() < HttpStatus.OK
+        val interim = msg is HttpResponse && msg.status().code() < HttpStatus.OK
+        // The final reply's headers say whether the connection lives on, so they must agree with the close below.
+        if (msg is HttpResponse && !interim) announce(msg)
         if (msg is LastHttpContent && !interim) {
             promise.addListener { if (ownership.responded()) ctx.close() }
         }
         ctx.write(msg, promise)
+    }
+
+    private fun announce(headers: HttpResponse) {
+        if (ownership.announceClose()) HttpUtil.setKeepAlive(headers, false)
     }
 }

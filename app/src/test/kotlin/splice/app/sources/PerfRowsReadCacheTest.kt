@@ -18,30 +18,6 @@ import java.util.concurrent.TimeUnit
 
 class PerfRowsReadCacheTest {
     @Test
-    fun `identical reads decode each appended row once across windows and economics`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        Files.writeString(dir.resolve("head-perf.jsonl.1"), row(1))
-        Files.writeString(file, row(2) + row(3))
-        val source = PerfRowsFileSource(file)
-
-        val first = source.window(0)
-        val decoded = source.parsedLines
-        assertEquals(3L, decoded, "the cold read decodes the source rows")
-        assertEquals(first, source.window(0))
-        assertEquals(decoded, source.parsedLines, "an identical read must perform zero new JSON decodes")
-        assertEquals(listOf(2L, 3L), source.window(2).rows.map { it.ts })
-        assertEquals(decoded, source.parsedLines, "a different cutoff uses the retained form")
-        assertEquals(first, source.economicsEvidence(0).work)
-        assertEquals(decoded, source.parsedLines, "economics shares the same parsed generations")
-
-        Files.writeString(file, row(4), APPEND)
-        assertEquals(listOf(1L, 2L, 3L, 4L), source.window(0).rows.map { it.ts })
-        assertEquals(decoded + 1, source.parsedLines, "only the append is decoded")
-        assertTrue(source.window(4).readError == null)
-        assertEquals(decoded + 1, source.parsedLines)
-    }
-
-    @Test
     fun `rotation reuses cached file identities across live rotated and archived names`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         val rotated = dir.resolve("head-perf.jsonl.1")

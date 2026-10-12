@@ -49,5 +49,10 @@ public object PerfProjectedKeys {
         PerfKeys.STREAM_END,
         PerfKeys.ASYNC_IO_DROPS,
         PerfKeys.ACTIVITY_QUERY,
+        // The hourly totals read the same compact window (PerfRowsFileSource.economicsEvidence), so the startup scan
+        // decodes each line once for both: the hour's request bytes and tool partition are the figures they add.
+        PerfKeys.REQ_BYTES,
+        PerfKeys.TOOLS_EAGER,
+        PerfKeys.TOOLS_DEFERRED,
     )
 }

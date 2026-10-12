@@ -60,7 +60,7 @@ public class PerfRowsFileSource internal constructor(
     private val file: Path,
     /** Where PerfStats archives retired generations; null reads the two live ones only. */
     private val archiveDir: Path? = null,
-    /** The whole rows the work and economics readers ask for, newest first under their own bound. */
+    /** The whole rows the work readers ask for, newest first under their own bound. */
     private val cache: PerfRowsCache = PerfRowsCache(PERF_FULL_TIER_BYTES),
     /** What the turns route filters and counts over a window: a compact row for every line, read back whole by spot. */
     private val compact: PerfRowsCache = PerfRowsCache(
@@ -143,11 +143,14 @@ public class PerfRowsFileSource internal constructor(
         return result
     }
 
-    /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. */
+    /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. Read from the
+     *  compact rows, which keep every figure an hour is rebuilt from (PerfProjectedKeys), so the window the warmup
+     *  reads next from the oldest of those hours is already decoded: the startup scan decoded every line twice, whole
+     *  for the totals and compact for the window (claude-splice's 445 MB file on desk d, Oct 12). */
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val stamp = files.stamp()
-        val scan = settledRead(sinceMs, PerfSelection.ECONOMICS)
+        val scan = settledRead(sinceMs, PerfSelection.ECONOMICS, compact)
         val evidence = EconomicsPerfEvidence(scan.window(), scan.probes, scan.probeTears)
         if (sharing > 0) shared = stamp?.let { SharedEvidence(sinceMs, it, evidence) }
         return evidence

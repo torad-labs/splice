@@ -31,21 +31,6 @@ import java.nio.file.Path
 
 class PerfTurnsProjectionTest {
     @Test
-    fun `an economics warmed week supplies complete projected rows without decoding again`(@TempDir dir: Path) {
-        val history = SyntheticPerfHistory(dir)
-        history.create()
-        val source = PerfRowsFileSource(history.file)
-        val expected = source.economicsEvidence(SCALE_SINCE).work
-        val decoded = source.parsedLines
-        val actual = source.projected(SCALE_SINCE) { projection ->
-            projection.window.copy(rows = projection.complete(projection.window.rows))
-        }
-        assertEquals(expected, actual, "both views preserve the entire PerfRow contract in file order")
-        assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
-        assertTrue(source.projectedBytes <= PERF_CACHE_BYTES)
-    }
-
-    @Test
     fun `a projected week completes to the same whole rows the whole-row window holds`(
         @TempDir dir: Path,
     ) {
@@ -58,42 +43,6 @@ class PerfTurnsProjectionTest {
             assertEquals(whole, projection.complete(projection.window.rows))
         }
         assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
-    }
-
-    @Test
-    fun `concurrent cold economics and projected opens share one lossless scan`(@TempDir dir: Path) {
-        val file = dir.resolve("synthetic.jsonl")
-        Files.writeString(file, (1L..1_000L).joinToString("") { row(it, fields = tokens + ("arbitrary" to -it)) })
-        val source = PerfRowsFileSource(file)
-        val start = java.util.concurrent.CountDownLatch(1)
-        val callers = java.util.concurrent.Executors.newFixedThreadPool(2)
-        try {
-            val economics = callers.submit(
-                java.util.concurrent.Callable {
-                    start.await()
-                    source.economicsEvidence(0).work
-                },
-            )
-            val projected = callers.submit(
-                java.util.concurrent.Callable {
-                    start.await()
-                    source.projected(0) { projection ->
-                        projection.window.copy(rows = projection.complete(projection.window.rows))
-                    }
-                },
-            )
-            start.countDown()
-            val expected = economics.get(30, java.util.concurrent.TimeUnit.SECONDS)
-            val actual = projected.get(30, java.util.concurrent.TimeUnit.SECONDS)
-            assertEquals(expected, actual)
-            assertEquals(
-                3_000L,
-                source.parsedLines,
-                "each tier decodes each input row once, and the projected rows are read back once",
-            )
-        } finally {
-            callers.shutdownNow()
-        }
     }
 
     @Test

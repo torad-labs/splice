@@ -206,10 +206,14 @@ async function readScreens(tm) {
   render();
 }
 
-/** The daemon's own sentence for a refused call, or a plain one when it sent none. */
+/** The daemon's own sentence for a refused call, or a plain one when it sent none. A bare 502 is a connection that
+ *  dropped before splice answered (Marlin p223: "(502)" alone said nothing), so it says that; any other bare status
+ *  says splice gave no reason, with the status kept for whoever reads the log. */
 function refusalOf(answer, fallback) {
   if (answer.status === 0) return "splice did not answer. It may not be running.";
-  return answer.body?.error || `${fallback} (${answer.status}).`;
+  if (answer.body?.error) return answer.body.error;
+  if (answer.status === 502) return `${fallback}: the connection to splice dropped before it answered.`;
+  return `${fallback}: splice gave no reason (${answer.status}).`;
 }
 
 // ---------- a member's state, in the words its own client registered ----------

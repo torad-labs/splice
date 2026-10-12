@@ -31,6 +31,7 @@ import splice.app.control.RosterAccountNames
 import splice.app.control.api.HeadResolver
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
+import splice.core.usage.QuotaReadFailureSource
 import splice.core.util.LogSink
 import splice.oauth.OAuthPrimaryAccount
 import java.nio.file.Path
@@ -58,9 +59,12 @@ internal class AccountsMount(
         ConsoleAccountsSource { ports.accounts },
         ClaudeLoginPlacesSource { ports.claudeLogins },
     )
-    private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts(), names)
+
+    // Read at CALL time, like [loginRoutes]' port: ControlPlane assigns [ConsolePorts.quotaReadFailures] later.
+    private val readFailures = QuotaReadFailureSource { head, label -> ports.quotaReadFailures?.failure(head, label) }
+    private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts(), names, readFailures)
     private val nameRoute = names?.let(::AccountNameRoute)
-    private val claudeRoutes = ClaudeLoginRoutes(logins, names)
+    private val claudeRoutes = ClaudeLoginRoutes(logins, names, readFailures)
     private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.

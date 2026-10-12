@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
+import splice.core.usage.QuotaReadReason
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.EnvReader
 import splice.core.util.LoopbackOverride
@@ -78,8 +79,8 @@ internal class BearerGetProbe(
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun probe(): QuotaSnapshot? {
-        val creds = auth.credentials() ?: return null
-        val authHeaders = QuotaCredentialHeaders.of(creds) ?: return null
+        val creds = auth.credentials() ?: throw QuotaUnreadable(QuotaReadReason.SIGNED_OUT)
+        val authHeaders = QuotaCredentialHeaders.of(creds) ?: throw QuotaUnreadable(QuotaReadReason.UNSUPPORTED)
         val resp = client.get(url) {
             authHeaders.forEach { (name, value) -> header(name, value) }
             extraHeaders.forEach { (name, value) -> header(name, value) }

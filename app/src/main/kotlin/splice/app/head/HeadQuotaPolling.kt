@@ -10,12 +10,14 @@ import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
+import splice.core.usage.QuotaReadFailures
 import splice.head.usage.QuotaTracker
 import splice.provider.muse.MuseAuthProvider
 import splice.usage.quota.ClientUserAgent
 import splice.usage.quota.QuotaIntervalMs
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbes
+import splice.usage.quota.QuotaReadWatch
 import splice.usage.quota.UsageFields
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -26,6 +28,8 @@ internal class HeadQuotaPolling(
     private val startQuotaPoller: StartQuotaPoller,
     private val clientUserAgent: ClientUserAgent,
     private val orders: AccountOrderStore,
+    /** Where each login's failed limits read is kept for /api/accounts (Accounts' "Not read" reason). */
+    private val failures: QuotaReadFailures = QuotaReadFailures(),
 ) {
     private val held = ConcurrentHashMap<String, QuotaPoller>()
     private val owners = ConcurrentHashMap<String, AuthProvider>()
@@ -40,7 +44,7 @@ internal class HeadQuotaPolling(
         holds: ProviderHoldFiles,
     ): List<QuotaPoller> {
         if (wired.accounts.isEmpty()) {
-            startAccount(wired.auth, stores.quota)?.let {
+            startAccount(wired.auth, stores.quota, label = null)?.let {
                 held["primary"] = it
                 owners["primary"] = wired.auth
                 live.add(it)
@@ -71,7 +75,7 @@ internal class HeadQuotaPolling(
         accounts.filter { it.nativePlace != null && owners[it.label] !== it.auth }.forEach { remove(it.label) }
         accounts.filter { !held.containsKey(it.label) }.forEach { account ->
             val nativeQuota = account.quota.read as? ClaudeNativeQuota
-            startAccount(account.auth, trackers.getValue(account.label), nativeQuota)?.let {
+            startAccount(account.auth, trackers.getValue(account.label), account.label, nativeQuota)?.let {
                 held[account.label] = it
                 owners[account.label] = account.auth
                 live.add(it)
@@ -82,6 +86,7 @@ internal class HeadQuotaPolling(
     private fun startAccount(
         auth: AuthProvider,
         tracker: QuotaTracker,
+        label: String?,
         native: ClaudeNativeQuota? = null,
     ): QuotaPoller? {
         if (ctx.cfg.quotaPollOff) return null
@@ -97,6 +102,6 @@ internal class HeadQuotaPolling(
                 usageFields,
                 clientUserAgent,
             ) ?: return null
-        return startQuotaPoller(ctx.key, probe, tracker, intervalMs)
+        return startQuotaPoller(ctx.key, QuotaReadWatch(probe, failures.outcome(ctx.key, label)), tracker, intervalMs)
     }
 }

@@ -20,6 +20,9 @@ import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.ProviderAnswer
+import splice.core.usage.QuotaReadFailure
+import splice.core.usage.QuotaReadFailures
+import splice.core.usage.QuotaReadReason
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 
@@ -243,6 +246,29 @@ class AccountsRouteTest {
         assertEquals(JsonNull, row["five_hour_used_percent"])
         assertEquals(JsonNull, row["seven_day_used_percent"])
         assertEquals(JsonNull, row["observed_at_epoch_seconds"])
+    }
+
+    // Oct 12, 2026: Accounts names why a login reads "Not read". The reason and its time ride each row, a single-login
+    // head's and a pooled login's alike, and a read that answers clears it.
+    @Test
+    fun `a login whose last limits read failed carries the reason and when, until a read answers`() = runBlocking {
+        val account = HeadAccountView("backup", false, true, true, "plus", HeadAccountQuota())
+        val pool = HeadAccountPoolView(selectedLabel = "backup", accounts = listOf(account), lastSwitch = null)
+        val heads = mapOf("codex" to oauthHeadNoPool("codex"), "kimi" to oauthHead("kimi", pool, "/kimi/backup.json"))
+        val failures = QuotaReadFailures()
+        failures.outcome("codex", null).read(QuotaReadFailure(QuotaReadReason.NOT_ANSWERING, 1_700L))
+        failures.outcome("kimi", "backup").read(QuotaReadFailure(QuotaReadReason.SIGNED_OUT, 1_800L))
+        val route = AccountsRoute(heads, readFailures = failures)
+
+        suspend fun failure(head: String) = json.parseToJsonElement(route.accountsJson()).jsonObject
+            .getValue("accounts").jsonArray.map { it.jsonObject }
+            .single { row -> row.getValue("heads").jsonArray.any { it.jsonPrimitive.content == head } }
+            .getValue("last_read_failure")
+
+        assertEquals("""{"reason":"not_answering","at_epoch_seconds":1700}""", failure("codex").toString())
+        assertEquals("""{"reason":"signed_out","at_epoch_seconds":1800}""", failure("kimi").toString())
+        failures.outcome("kimi", "backup").read(null)
+        assertEquals(JsonNull, failure("kimi"))
     }
 
     private fun oauthHead(key: String, pool: HeadAccountPoolView, authPath: String): AccountHead =

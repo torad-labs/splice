@@ -191,6 +191,7 @@ public class Daemon(
             // The probes present the Claude Code this daemon has actually seen, which is the identity Anthropic's
             // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
             clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
+            readFailures = controlPlane.quotaReadFailures,
         ),
         perfSources = controlPlane.perfRows,
     )

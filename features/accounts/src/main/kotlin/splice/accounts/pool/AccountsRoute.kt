@@ -7,6 +7,7 @@
 // (no pool at all) still appears, read from its /api/auth view, with `single_login: true`.
 package splice.accounts.pool
 
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -21,6 +22,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.topology.API_KEY_WIRE
 import splice.core.topology.AuthKindRegistry
+import splice.core.usage.QuotaReadFailureSource
 import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
 
@@ -31,6 +33,8 @@ public class AccountsRoute(
     private val firsts: FirstAccounts? = null,
     /** The names a person chose on the console, by ref; null names nothing beyond what each login carries. */
     private val names: AccountNameStore? = null,
+    /** Why each login's last limits read failed; null names no failure on any login. */
+    private val readFailures: QuotaReadFailureSource? = null,
 ) {
     private val extras = AccountRowExtras(heads)
     private val management = AccountRowManagement()
@@ -52,7 +56,7 @@ public class AccountsRoute(
         heads.values.forEach { head -> fold(head, joined) }
         val naming = AccountNaming(names)
         val poolRows = joined.values.map { row -> buildJsonObject { write(this, row, nowSeconds, providers, naming) } }
-        val nativeRows = ClaudeLoginRows(naming).list(native, providers, carrying, heads, nowSeconds)
+        val nativeRows = ClaudeLoginRows(naming, readFailures).list(native, providers, carrying, heads, nowSeconds)
         // every row is named before any is settled: whether a ref shows depends on the whole roster
         val rows = naming.settle(poolRows + nativeRows)
         return buildJsonObject {
@@ -207,6 +211,10 @@ public class AccountsRoute(
             .let { if (row.authExclusion.ref != null) it.copy(canRename = true) else it }
         management.write(into, name(row, first, naming), row.authExclusion.ref != null, edit)
         writeQuota(into, row, nowSeconds)
+        // A credential two heads share is read once per head: the newest failure is the one the page names.
+        val failure = row.labelsByHead.mapNotNull { (head, label) -> readFailures?.failure(head, label) }
+            .maxByOrNull { it.atEpochSeconds }
+        into.put("last_read_failure", failure?.json() ?: JsonNull)
         val answer = row.labelsByHead.mapNotNull { (head, label) -> heads[head]?.answers?.answer(label) }
             .maxByOrNull { it.observedAtEpochMs }
         AccountAnswerJson.write(into, answer)

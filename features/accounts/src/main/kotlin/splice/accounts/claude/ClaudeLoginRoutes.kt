@@ -10,6 +10,7 @@ import splice.accounts.AccountReplies
 import splice.accounts.pool.AccountNameStore
 import splice.accounts.pool.AccountNaming
 import splice.accounts.signin.LoginStatusJson
+import splice.core.usage.QuotaReadFailureSource
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
 import java.util.concurrent.TimeUnit
@@ -20,6 +21,8 @@ private data class NativeLoginRequest(val label: String?)
 public class ClaudeLoginRoutes(
     private val source: ClaudeLoginPlacesSource,
     private val names: AccountNameStore? = null,
+    /** Why each login's last limits read failed, read beside its windows. */
+    private val readFailures: QuotaReadFailureSource? = null,
 ) {
     private val body = JsonBody()
 
@@ -61,7 +64,7 @@ public class ClaudeLoginRoutes(
         }
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
         val naming = AccountNaming(names)
-        val rows = ClaudeLoginRows(naming).list(
+        val rows = ClaudeLoginRows(naming, readFailures).list(
             listOf(view),
             mapOf(view.head to provider),
             mapOf(view.head to owner.carrying(view.head)),

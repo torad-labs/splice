@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
+import splice.core.usage.QuotaReadReason
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
 
@@ -145,8 +147,10 @@ class QuotaProbesTest {
         val answer = probes.forHead("kimi-oauth", BASE_URL, FixedAuth(Credentials.Bearer("tok")), null)!!.probe()
         assertTrue(answer!!.answeredEmpty)
         assertEquals(now, answer.updatedAt)
+        // Oct 12, 2026: no credential still asks nothing, and now says the login is signed out.
         val signedOut = probes.forHead("kimi-oauth", BASE_URL, FixedAuth(null), null)!!
-        assertNull(signedOut.probe(), "no credential asks nothing")
+        val failed = Cancellables.runCatchingCancellable { signedOut.probe() }.exceptionOrNull()
+        assertEquals(QuotaReadReason.SIGNED_OUT, (failed as QuotaUnreadable).reason)
     }
 
     private class QuotaParseAdapter : QuotaParse {

@@ -43,6 +43,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthProvider
 import splice.core.usage.FIVE_HOURS_SECONDS
 import splice.core.usage.ModelQuota
+import splice.core.usage.QuotaReadReason
 import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -96,9 +97,10 @@ internal class ClaudeUsageProbe(
 
     override suspend fun probe(): QuotaSnapshot? {
         // A forwarded credential is the caller's own Claude Code sign-in: splice holds no token for it, so it asks
-        // Anthropic nothing on that account's behalf and the console keeps the last snapshot a turn reported.
-        val creds = auth.credentials() ?: return null
-        val authHeaders = QuotaCredentialHeaders.of(creds) ?: return null
+        // Anthropic nothing on that account's behalf and the console keeps the last snapshot a turn reported. Both
+        // are answers, not outages: the poller waits its interval, and Accounts says why the login is not read.
+        val creds = auth.credentials() ?: throw QuotaUnreadable(QuotaReadReason.SIGNED_OUT)
+        val authHeaders = QuotaCredentialHeaders.of(creds) ?: throw QuotaUnreadable(QuotaReadReason.UNSUPPORTED)
         val response = client.get(url) {
             authHeaders.forEach { (name, value) -> header(name, value) }
             header("anthropic-beta", CLAUDE_OAUTH_BETA)

@@ -11,6 +11,7 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.config.KeyStore
 import splice.core.config.StatePaths
 import splice.core.topology.TopologyWriter
+import splice.core.usage.QuotaReadFailureSource
 import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
@@ -145,6 +146,9 @@ public class ConsolePorts {
 
     /** Native command-local logins, assigned before management and launch requests are served. */
     public var claudeLogins: ClaudeLoginPlaces? = null
+
+    /** Each login's last failed limits read, assigned by ControlPlane; null reads as no failure on any login. */
+    public var quotaReadFailures: QuotaReadFailureSource? = null
 
     /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget store, assigned by ControlPlane after
      *  construction like [teams]. Null answers GET/PUT /api/budgets with a named 503 — an

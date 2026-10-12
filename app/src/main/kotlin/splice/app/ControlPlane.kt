@@ -64,6 +64,7 @@ import splice.core.config.Knob
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
+import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
 import splice.head.admission.AdmissionErrorBody
@@ -142,6 +143,9 @@ internal class ControlPlane(
     internal val signInPlanner = SignInPlanner()
     internal val buildInputs = HeadBuildInputs(config, signInPlanner, modelRosters)
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
+
+    /** The daemon's one record of failed limits reads: each login's poller writes it, /api/accounts reads it. */
+    internal val quotaReadFailures = QuotaReadFailures()
 
     /** The control server's owner from construction to the stop: see [ControlOwnership]. */
     internal val ownership = ControlOwnership(boundary, log, shutdownDaemon)
@@ -357,6 +361,7 @@ internal class ControlPlane(
         srv.ports.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLoginOwner
+        srv.ports.quotaReadFailures = quotaReadFailures
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
         srv.ports.budgetSpending = console.budgets
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)

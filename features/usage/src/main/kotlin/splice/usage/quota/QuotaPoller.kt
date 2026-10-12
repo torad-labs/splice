@@ -170,7 +170,9 @@ public class QuotaPoller(
             }
         // The floor starts when the read completes, so waiters share even a slow provider answer.
         lastProbeAtMs = clocks.mark()
-        val refused = result.exceptionOrNull() is QuotaEndpointRefused
+        // A login splice cannot read at all is an answer too: retrying it in seconds would not change it.
+        val failure = result.exceptionOrNull()
+        val refused = failure is QuotaEndpointRefused || failure is QuotaUnreadable
         lastAnswered = result.isSuccess || refused
         reuseMs = if (refused) maxOf(cadence.intervalMs(), floorMs()) else floorMs()
         completedAttempts++

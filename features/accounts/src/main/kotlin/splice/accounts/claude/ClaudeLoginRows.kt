@@ -1,6 +1,7 @@
 // NEW: native command rows carry their own identity and measured windows, without pool or money attribution.
 package splice.accounts.claude
 
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -18,9 +19,14 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFreshness
 import splice.core.usage.QuotaJson
+import splice.core.usage.QuotaReadFailureSource
 
-/** [naming] is how each row is called (labels only): the names a person chose, by ref, read first. */
-internal class ClaudeLoginRows(private val naming: AccountNaming = AccountNaming()) {
+/** [naming] is how each row is called (labels only): the names a person chose, by ref, read first. [readFailures] says
+ *  why a login's last limits read failed, beside "Not read". */
+internal class ClaudeLoginRows(
+    private val naming: AccountNaming = AccountNaming(),
+    private val readFailures: QuotaReadFailureSource? = null,
+) {
     suspend fun list(
         native: List<ClaudeLoginPlaceView>,
         providers: Map<String, String>,
@@ -79,6 +85,7 @@ internal class ClaudeLoginRows(private val naming: AccountNaming = AccountNaming
         }
         put("plan", view.quota?.plan)
         windows(this, view, nowSeconds)
+        put("last_read_failure", readFailures?.failure(view.head, place)?.json() ?: JsonNull)
         put("held", view.standing.held)
         put("held_until_epoch_seconds", view.standing.untilEpochSeconds)
         selection(this, view, head?.activePool?.view(null), head?.accountAuth?.descriptions()?.get(place))

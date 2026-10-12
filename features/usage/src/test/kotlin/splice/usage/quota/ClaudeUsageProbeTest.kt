@@ -22,6 +22,7 @@ import splice.core.auth.Credentials
 import splice.core.usage.FIVE_HOURS_SECONDS
 import splice.core.usage.ModelQuota
 import splice.core.usage.QuotaJson
+import splice.core.usage.QuotaReadReason
 import splice.core.usage.SEVEN_DAYS_SECONDS
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
@@ -197,14 +198,18 @@ class ClaudeUsageProbeTest {
         assertTrue(failed is UsageAnswerError, "an error-only 200 body is a failure, never windows: $failed")
     }
 
+    // Oct 12, 2026: the probe still asks nothing for a forwarded sign-in, and now says why, so Accounts can name the
+    // reason beside "Not read" instead of a silent null.
     @Test
-    fun `the caller's own forwarded sign-in is never probed`() = runTest {
+    fun `the caller's own forwarded sign-in is never probed, and says it has nothing to read with`() = runTest {
         val sent = mutableListOf<Map<String, String>>()
 
-        val snapshot = probe(sent, credentials = Credentials.ClientForwarded).probe()
+        val failed = Cancellables.runCatchingCancellable {
+            probe(sent, credentials = Credentials.ClientForwarded).probe()
+        }.exceptionOrNull()
 
-        assertNull(snapshot, "splice holds no credential for the caller, so it asks nothing on its behalf")
-        assertTrue(sent.isEmpty(), "and sends no request at all")
+        assertEquals(QuotaReadReason.UNSUPPORTED, (failed as QuotaUnreadable).reason)
+        assertTrue(sent.isEmpty(), "splice holds no credential for the caller, so it sends no request at all")
     }
 
     private fun probe(

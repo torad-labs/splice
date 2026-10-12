@@ -30,6 +30,7 @@ import splice.core.util.AsyncFileIo
 import splice.sessions.activity.MessageEdge
 import java.net.Socket
 import java.net.URLEncoder
+import java.nio.file.Files
 import java.nio.file.Path
 
 private const val TIMEOUT_MS = 10_000L
@@ -55,8 +56,7 @@ class TeamsRoutesWiringTest {
             port = 0,
             // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
-            // the repo sits under the test's temp folder, which a default install does not trust as a git root
-            config = ConfigService(paths).also { it.patch(mapOf("statuslineGitRoots" to tmp.toString())) },
+            config = ConfigService(paths),
             runtime = ControlRuntime(sessions = rig.registry),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
@@ -90,6 +90,8 @@ class TeamsRoutesWiringTest {
     @Test
     fun `every team and project route is routed, guarded, and answers its payload`() {
         val team = """{"name":"atlas","repo":"${rig.repo}","slots":[{"id":"b1","role":"builder","head":"codex"}]}"""
+        // a project is a git repo splice can see: the team's folder has to be one
+        Files.createDirectories(rig.repo.resolve(".git"))
         serve(wired = true) { call ->
             val created = call(HttpMethod.Put, "/api/teams", team, true)
             assertEquals(201, created.status.value, created.bodyAsText())

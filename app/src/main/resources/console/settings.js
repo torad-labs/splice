@@ -606,9 +606,10 @@ function planNow() {
   // every", and the accounts reporting no window are the chips under the 5-hour row, each beside the setting it
   // answers. Repeating either here put the same fact on the pane twice, in two typefaces, four inches apart.
   // Where no account reports a window at all there are no bars to draw, so the state stands in their place.
-  // "No limits reported" is the providers answering with none; a login splice has not read yet is not that (Oct 12)
+  // "No limits reported" is the providers answering with none; a login splice has never read is Not read, since this
+  // page asks for no reading of its own (marlin, Oct 12)
   const never = a.some((x) => !x.refusal && x.credential_present !== false && !x.observed_at_epoch_seconds && !x.no_usage_at_epoch_seconds);
-  if (!tiles.length && !zeros.length) zeros.push(`<span class="fig"><span class="state">${never ? "Not read yet" : "No limits reported"}</span></span>`);
+  if (!tiles.length && !zeros.length) zeros.push(`<span class="fig"><span class="state">${never ? "Not read" : "No limits reported"}</span></span>`);
   return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
     + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "");
 }

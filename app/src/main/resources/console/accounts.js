@@ -323,6 +323,8 @@ const GLYPH = {
 /** The Day row while splice is still reading the command's saved hours: the count is not known, so it says so. */
 const DAY_READING = "Reading";
 const DAY_NOT_READ = "Not read";
+// why a login's limits could not be read, from /api/accounts' last_read_failure.reason; a reason with no word shows none
+const READ_WHY = { not_answering: "Provider not answering", refused: "Provider refused", signed_out: "Signed out", unsupported: "No limits to read" };
 const money = dollars; // priced from the rate card, so an estimate; nothing charged reads "$0" (kit.js)
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
@@ -659,9 +661,11 @@ function cardHtml(p, c, a, i, serves) {
     body = `<div class="keysrc"><span class="state">No limits reported</span></div>${signRow}`;
   } else if (p.kind === "plan" && !a.windows.length) {
     // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12); a login
-    // splice has not asked about yet reads Not read yet until its first reading (splice-lead, Oct 12)
+    // splice has never read reads Not read yet only while the page's own read is in flight; once it is back with nothing,
+    // Not read, with the provider's reason when splice kept one (marlin, Marcos's Oct 4 ruling: the page reads on open)
     const never = !a.row?.observed_at_epoch_seconds && !a.row?.no_usage_at_epoch_seconds;
-    body = `<div class="windows"><span class="unproved">${never ? "Not read yet" : DAY_NOT_READ}</span></div>${signRow}`;
+    const why = a.row?.last_read_failure ? READ_WHY[a.row.last_read_failure.reason] ?? null : null;
+    body = `<div class="windows"><span class="unproved">${never && ui.probing ? "Not read yet" : DAY_NOT_READ}</span>${why ? `<span class="state">${esc(why)}</span>` : ""}</div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";

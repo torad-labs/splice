@@ -1,6 +1,6 @@
 // The Settings page draws every setting the daemon takes live, under one of its jobs: a knob that turns live without a
-// row fails here, the day it turns live, so the page never lags the daemon again. Restart-only knobs are not drawn
-// (Marlin, Oct 10: every knob the console draws applies live), so they owe the page nothing.
+// row fails here, the day it turns live, so the page never lags the daemon again. A restart-only knob with a job is
+// drawn too, labelled "Applies on restart" (v0.4.0 section 9, Resolved); this test asks it for nothing.
 package splice.app.console
 
 import org.junit.jupiter.api.Assertions.assertEquals

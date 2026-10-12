@@ -32,7 +32,7 @@ const KNOBS = (() => {
     // the no-progress limit, the one wall that ends a turn: every model, tool or reasoning event renews it, so it bounds a
     // silence, never a turn's length (Watchdog.kt:6-7, :148-155, :390-398). The three tiers under it ask whether the
     // provider is alive and never end a turn on their own (Knob.kt:237-300)
-    K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, also: "timeout limit cut off long turn wedged stuck", }),
+    K("upstreamTimeoutMs", "Give up after no progress for", { k: "dur", opts: [10 * MIN, 15 * MIN, 20 * MIN, 30 * MIN, HR, 2 * HR], unit: "min" }, 15 * MIN, { cmd: true, home: "silent", also: "timeout limit cut off long turn wedged stuck" }),
     K("firstByteTimeoutMs", "Check the connection after no first word for", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC,
       { cmd: true, home: "silent", also: "ask if a silent start is alive after first word first byte" }),
     K("streamIdleMs", "Ask if a silent answer is alive after", { k: "dur", opts: [30 * SEC, 60 * SEC, 90 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 90 * SEC, { cmd: true, home: "silent", also: "silence idle hang" }),
@@ -43,7 +43,7 @@ const KNOBS = (() => {
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
     K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8, 10], unit: "tries" }, 4, { cmd: true, home: "busy", also: "retry retries attempts" }),
-    K("quotaPoll", "Read plan limits", { k: "pick", opts: [["auto", "On"], ["off", "Off"]] }, "auto", { also: "quota" }),
+    K("quotaPoll", "Read plan limits", { k: "pick", opts: [["auto", "On"], ["off", "Off"]] }, "auto", { home: "plan", also: "quota" }),
     K("quotaPollIntervalMs", "Check plan usage every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
       { home: "plan", also: "read plan limits every quota poll" }),
     K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { home: "plan", also: "warning" }),
@@ -215,7 +215,10 @@ const KNOBS = (() => {
         : `<span class="said ok">Saved</span><button class="act quiet small" data-kact="restart">Restart splice</button>`;
     }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
-    return st.said[id] ? `<span class="said ok">${esc(st.said[id])}</span>` : "";
+    if (st.said[id]) return `<span class="said ok">${esc(st.said[id])}</span>`;
+    // a setting the running splice reads only when it starts says so at rest, in the spec's words (v0.4.0 section 9,
+    // Resolved: boot-only stays editable, labelled "applies on restart"); saving it then offers Restart splice above
+    return needsRestart(id.split("@")[0]) ? `<span class="said">Applies on restart</span>` : "";
   }
   // A command's own value: its control, what the change did, and the way back to the value every other command uses.
   // A command just picked from "One command" has nothing saved yet, so its control shows the shared value until a change.

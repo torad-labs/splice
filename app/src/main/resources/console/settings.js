@@ -39,11 +39,11 @@ const TOPICS = [
 ];
 const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
 const topicOf = (key) => KNOB[key].home || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
-/** The settings this page offers: those with a job here that the daemon names as taken without a restart (GET
- *  /api/config's restart_required_keys, Knob.kt), so a knob that turns live joins and one that turns boot-only leaves
- *  with the daemon's own answer, never a list kept here. */
+/** The settings this page offers: every one with a job here. One the running splice reads only at start (GET
+ *  /api/config's restart_required_keys, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
+ *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => Object.values(KNOB)
-  .filter((k) => !needsRestart(k.key) && shownKnob(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
+  .filter((k) => shownKnob(k.key) && (k.home ? TOPIC[k.home] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 // the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
 const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0);
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
@@ -198,7 +198,7 @@ function elOf(key) {
   return "";
 }
 const blocks = (keys, extra = []) => {
-  const live = keys.filter((key) => !needsRestart(key) && shownKnob(key));
+  const live = keys.filter((key) => shownKnob(key));
   const cards = live.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true, el: elOf(key) })));
   return cards.length + extra.length ? cardRow([...cards, ...extra]) : "";
 };

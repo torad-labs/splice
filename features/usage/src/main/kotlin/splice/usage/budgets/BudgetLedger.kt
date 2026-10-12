@@ -169,10 +169,18 @@ internal class BudgetLedger(
 
     /** Dollars are charged for every row. A request with no price is COUNTED only when the Requests page lists it, and
      *  that page leaves out the steps splice answered itself, so a local step with no price is no request to count. */
+    // why: a row that reported no usage is classified as the hourly economics classifies it, failed or without a price.
+    // Its lower bound on a priced model is $0.00, not null, and charging that booked every 429 as $0 of inexact spend:
+    // never counted failed, and the day never complete (splice-config on desk a, Oct 12).
     private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>, outcome: String) {
-        if (usd == null && fields[PerfKeys.LOCAL_STEP] == 1L) return
-        val failed = OutcomeTags.isFailedWithoutUsage(outcome, fields)
-        if (TurnBill.fullyReported(fields)) tally.add(usd, failed) else tally.addLowerBound(usd, failed)
+        val reported = TurnBill.fullyReported(fields)
+        when {
+            usd == null && fields[PerfKeys.LOCAL_STEP] == 1L -> Unit
+            reported && usd != null -> tally.add(usd)
+            OutcomeTags.isFailedWithoutUsage(outcome, fields) -> tally.add(null, failedNoUsage = true)
+            reported || TurnBill.isEmpty(fields) -> tally.add(null)
+            else -> tally.addLowerBound(usd)
+        }
     }
 
     /** Today's earlier spend is short by what could not be read, and the head's log says so. */

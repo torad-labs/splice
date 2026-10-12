@@ -250,7 +250,7 @@ class SessionsCommandTest {
 
     /** The verb as app wires it — stdout and stderr — so capture() reads what an operator sees. */
     @Test
-    fun `a session row names the account it is on and the pin it is under`(@TempDir dir: Path) {
+    fun `a session row names the account it is on, the pin it is under and the model it runs`(@TempDir dir: Path) {
         Files.writeString(
             dir.resolve("11.json"),
             """{"pid":11,"sessionId":"s-1","name":"alpha","status":"busy","updatedAt":$now,"cwd":"/w/a"}""",
@@ -268,13 +268,16 @@ class SessionsCommandTest {
         val command = SessionsCommand(
             TerminalOutput(::println),
             TerminalOutput(System.err::println),
-            SessionAccounts { mapOf(SessionAccountKeys.of("claudex", "s-1") to SessionAccountLine("primary", "work")) },
+            SessionAccounts {
+                mapOf(SessionAccountKeys.of("claudex", "s-1") to SessionAccountLine("primary", "work", "gpt-6.1-sol"))
+            },
         )
 
         val lines = capture { command.sessions({ null }, registry) { now } }.lines()
 
         val alpha = lines.first { it.contains("alpha") }
         assertTrue(alpha.contains("claudex on primary (pinned to work)"), alpha)
+        assertTrue(alpha.contains("gpt-6.1-sol"), alpha)
         val beta = lines.first { it.contains("beta") }
         assertFalse(beta.contains("pinned"), beta)
         assertFalse(beta.contains(" on "), beta)

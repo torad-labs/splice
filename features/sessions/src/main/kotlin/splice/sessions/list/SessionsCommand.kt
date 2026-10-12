@@ -80,11 +80,12 @@ public class SessionsCommand(
     private fun printRow(s: SessionRecord, home: String, now: Long, account: SessionAccountLine?) {
         val name = shownName(s) ?: s.process.pid?.let { "pid $it" } ?: "?"
         val head = headLabel(s.route) + accountText(account)
+        val model = account?.model?.let { "  ${clean(it)}" }.orEmpty()
         val cwd = shortCwd(clean(s.process.cwd.orEmpty()).replaceFirst(home, "~"))
         val age = s.process.updatedAt?.let { ago(now - it) } ?: "never"
         val availability = s.availability.name.lowercase()
         output.line(
-            "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET  ${clean(s.status.state ?: "-")}  " +
+            "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET$model  ${clean(s.status.state ?: "-")}  " +
                 "$availability  $DIM$age · $cwd$RESET",
         )
         sendLine(s)?.let { output.line(it) }

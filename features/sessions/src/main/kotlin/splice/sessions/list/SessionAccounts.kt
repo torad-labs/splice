@@ -3,8 +3,9 @@ package splice.sessions.list
 
 import splice.core.util.EnvReader
 
-/** One session's account as the daemon reports it: the login it is on and the account it is pinned to, if any. */
-public data class SessionAccountLine(val account: String?, val pin: String?)
+/** One session as the daemon reports it: the login it is on, the account it is pinned to, and the model it runs, each
+ *  when known. */
+public data class SessionAccountLine(val account: String?, val pin: String?, val model: String? = null)
 
 /** A session is named by its head AND its id: two heads can register the same id with different pins, and a join
  *  by id alone gave both rows whichever registration came last (review of adf35c39e, finding 2). */

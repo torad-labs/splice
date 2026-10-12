@@ -33,6 +33,17 @@ class DaemonSessionAccountsTest {
     }
 
     @Test
+    fun `a session reads the model it runs, else the model its requests were served by`() {
+        val named = """{"session_id":"s-1","head":"claudex","availability":"live","model":"gpt-6.1-sol"}"""
+        val served = """{"session_id":"s-2","head":"claudex","availability":"live","served_model":"gpt-6.1"}"""
+
+        val read = accounts.lines("""{"sessions":[$named,$served]}""")
+
+        assertEquals("gpt-6.1-sol", read[SessionAccountKeys.of("claudex", "s-1")]?.model)
+        assertEquals("gpt-6.1", read[SessionAccountKeys.of("claudex", "s-2")]?.model)
+    }
+
+    @Test
     fun `a gone registration never overwrites a live one whichever comes last`() {
         val live = row("claudex", "live", "primary", "work")
         val gone = row("claudex", "gone", null, null)

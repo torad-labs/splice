@@ -32,10 +32,11 @@ internal class DaemonSessionAccounts : SessionAccounts {
     internal fun lines(body: String): Map<SessionAccountKey, SessionAccountLine> =
         rows(body).mapNotNull { row ->
             val id = text(row, "session_id") ?: return@mapNotNull null
-            val line = SessionAccountLine(text(row, "account"), text(row, "account_pin"))
+            val model = text(row, "model") ?: text(row, "served_model")
+            val line = SessionAccountLine(text(row, "account"), text(row, "account_pin"), model)
             SessionAccountKeys.of(text(row, "head"), id) to (rank(row) to line)
         }.groupBy({ it.first }, { it.second }).mapValues { (_, candidates) ->
-            candidates.maxWith(compareBy({ it.first }, { it.second.account != null || it.second.pin != null })).second
+            candidates.maxWith(compareBy({ it.first }, { it.second != SessionAccountLine(null, null) })).second
         }
 
     private fun rows(body: String): List<JsonObject> {

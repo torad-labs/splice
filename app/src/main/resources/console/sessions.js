@@ -23,7 +23,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { ending: new Map(), armedEnd: new Map(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {},
+const ui = { ending: new Map(), armedEnd: new Map(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(),
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
@@ -42,6 +42,7 @@ async function read() {
   const [sessions, heads, models, retired] = await Promise.all([API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"),
     API.get("/api/heads/retired")]);
   state.reading = sessions.body?.reading !== false; // off: no question text, no choices, answered in the terminal
+  state.noteVersions = new Set(sessions.body?.note_versions || []); // the Claude Code versions a note is known to reach
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
   // kept apart from the live commands: nothing runs on a removed one, so Stop, a move and the live reads never ask it
@@ -97,6 +98,12 @@ async function readScreens() {
 }
 const ANSWER_HOLD_MS = 30_000;
 const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
+// A SESSION SPLICE DID NOT OPEN TAKES A NOTE (V4-444): a message from another session on its own socket, never his typing,
+// so it cannot approve or run anything. Only a running client of a version the note is known to reach is offered one.
+const notable = (s) => s.state !== "ended" && !drivable(s) && Boolean(s.row.address) && state.noteVersions?.has(s.row.version);
+/** What another session types to reach this one (the spec's copyable SendMessage, §4): its name, else its socket. */
+const sendTo = (s) => (s.row.availability !== "live" ? null : s.row.name?.trim() || s.row.address || null);
+const sendLine = (s) => `SendMessage(to="${sendTo(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}")`;
 
 // a session splice cannot place reads "unknown head" (SessionsRoutes UNKNOWN_HEAD) and the card says so, as the spec's
 // Sep 13 Resolved block has it (§4 reading, Oct 11); a head key no configured command has names nothing
@@ -183,7 +190,9 @@ function metaHtml(s, L, inPane) {
   const repo = whereHtml(s, inPane);
   const past = s.at.toDateString() !== NOW.toDateString();
   const when = `<span class="when">${past ? `${s.at.toLocaleDateString("en-US", { weekday: "short" })} ` : ""}${clock(s.at)}</span>`;
-  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}`;
+  // a registration that stopped refreshing while nothing runs through splice for it: alive, but not heard from (§4)
+  const quiet = s.row.availability === "stale" && !s.turn ? `<span>Not heard from since ${backWord(s.at)}</span>` : "";
+  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}`;
   // on a list card everything but the time sits in one row that drops whole parts from its end when it runs out of
   // room, the folder first, then the model, then the team; the open pane has the width and shows every part (hitstop b6bae4e)
   return inPane ? `<div class="meta">${parts}</div>` : `<div class="meta"><span class="parts">${parts}</span>${when}</div>`;
@@ -370,7 +379,7 @@ function listHtml() {
   if (!list.length && !ended.length) {
     // a picked project with nothing in it says so plainly, and its doors stay in the head (fin)
     return ui.q ? `<div class="list">${head}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`
-      : `<div class="list">${head}<div class="nomatch"><span class="state">No sessions</span></div></div>`;
+      : `<div class="list">${head}<div class="nomatch"><span class="state">No sessions</span><span class="why">Runs started with claude -p never appear here</span></div></div>`;
   }
   // PICKED, THE LIST IS THAT PROJECT'S CARDS, WITH NO HEADER: the picker already names it. Its ended cards fold under
   // its own line, as they do in its group
@@ -509,7 +518,7 @@ function paneHtml() {
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
-    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
+    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${sendToHtml(s)}${composerHtml(s)}</section>`;
 }
 
 // A door to a session splice no longer lists, by link or address: its pane says No transcript where the log would be,
@@ -526,8 +535,21 @@ const denyOf = (s) => state.screens[s.id]?.choices?.find((c) => /^no\b/i.test(c.
 // The Message field, only on a session splice can type into. While a permission waits, it is Deny: the refusing choice
 // is pressed, then his words, if any, go in as what to do instead. While a question waits, its options answer it and
 // no field is drawn, since his own words would land in the question's menu rather than as an answer.
+function sendToHtml(s) {
+  if (!sendTo(s)) return "";
+  return `<div class="sendto"><span class="lbl">From another session</span><p class="cmd">${esc(sendLine(s))}</p>`
+    + `<button class="act small" data-act="copy-send" data-s="${esc(s.id)}">Copy</button></div>`;
+}
+/** A note to a session splice did not open: it arrives as a message from another session, and the page says only that it
+ *  was handed over, since the client gives no receipt (SessionNoteRoute). */
+function noteHtml(s) {
+  const busy = ui.sending.has(s.id) ? " disabled" : "";
+  const sent = ui.noted.has(s.id) ? `<span class="noted">Note sent</span>` : "";
+  return `<form class="composer note" data-s="${esc(s.id)}" data-note="1">${sent}<input class="field" id="say" placeholder="Note to this session" aria-label="Note to this session" autocomplete="off" value="${esc(ui.drafts[s.id] || "")}"${busy}>`
+    + `<button class="send" type="submit" aria-label="Send note"${busy}>${ICON.send}</button></form>`;
+}
 function composerHtml(s) {
-  if (!drivable(s)) return "";
+  if (!drivable(s)) return notable(s) ? noteHtml(s) : "";
   const dialog = s.state === "needs" && s.ask.kind === "dialog";
   if (s.state === "needs" && (!dialog || !denyOf(s))) return "";
   const busy = ui.sending.has(s.id) ? " disabled" : "";
@@ -866,6 +888,16 @@ async function send(s, text, clear = false) {
   ui.focusSay = true;
   await reload();
 }
+/** His note, whole, to a session splice did not open. A note that did not go through stays in the field. */
+async function note(s, text) {
+  ui.sending.add(s.id); ui.failed.delete(s.id); ui.noted.delete(s.id); render({ stick: false });
+  const res = await API.post(`/api/sessions/${encodeURIComponent(s.id)}/message`, { text });
+  ui.sending.delete(s.id);
+  if (res.ok) { ui.drafts[s.id] = ""; ui.noted.set(s.id, Date.now()); setTimeout(() => { ui.noted.delete(s.id); render({ stick: false }); }, 4000); }
+  else ui.failed.set(s.id, refusalOf(res, "The note did not reach it"));
+  ui.focusSay = true;
+  await reload();
+}
 // Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && ui.armedEnd.size) { ui.armedEnd.clear(); render({ stick: false }); return; }
@@ -879,7 +911,7 @@ root.addEventListener("submit", (e) => {
   const s = find(e.target.dataset.s), text = e.target.querySelector("#say").value.trim();
   if (!s || ui.sending.has(s.id)) return;
   if (!text && !(s.state === "needs" && denyOf(s))) { e.target.querySelector("#say").focus(); return; }
-  send(s, text);
+  if (e.target.dataset.note) note(s, text); else send(s, text);
 });
 root.addEventListener("input", (e) => { if (e.target.id === "say") ui.drafts[e.target.closest("form").dataset.s] = e.target.value; });
 
@@ -930,6 +962,7 @@ document.addEventListener("click", (e) => {
     case "end-keep": if (s) { ui.armedEnd.delete(s.id); render({ stick: false }); } break;
     case "menu": if (s) openChoices(s); break;
     case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
+    case "copy-send": if (s && sendTo(s)) { navigator.clipboard?.writeText(sendLine(s)).catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "copy-resume": if (s) { navigator.clipboard?.writeText(ui.failed.get(s.id)?.resume ?? "").catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;
     case "keep": if (s) { delete ui.leftover[s.id]; ui.focusSay = true; render({ stick: false }); } break;

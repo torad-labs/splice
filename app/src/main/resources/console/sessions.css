@@ -354,3 +354,12 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .pane .armed.end .said svg { width: 1rem; height: 1rem; }
 .pane .armed.end .unsent { font: 400 1rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
 .pane .act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }
+/* the empty list says why a claude -p run is not here, quietly beside No sessions (spec §4) */
+.nomatch .why { font-size: 1rem; color: var(--text-mute); }
+/* what another session types to reach this one, with Copy: one quiet strip over the composer (spec §4) */
+.sendto { display: flex; align-items: center; gap: .9rem; padding: .8rem 2rem; border-top: var(--ink-w) solid var(--ink); background: var(--obj-high); }
+.sendto .lbl { flex: none; font-size: 1rem; color: var(--text-mute); }
+.sendto .cmd { flex: 0 1 auto; min-width: 0; margin: 0; font: 500 1rem/1.35 var(--font-data); color: var(--text); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .35rem .7rem; overflow-wrap: anywhere; }
+.sendto .cmd + .act { flex: none; }
+/* a note handed over: said beside the field until it clears, since the client gives no receipt */
+.composer .noted { flex: none; font-size: 1rem; color: var(--text-mute); }

@@ -40,7 +40,7 @@
   --wall: #1d2140; --wall-low: #141731;
   --obj: #1c1610; --obj-high: #241a12; --obj-sunk: #120d09;
   --ink: #07050a;                     /* outline on the night */
-  --rail: #3a2f27; --socket: #120d09;
+  --rail: #3a2f27; --socket: #120d09; --socket-ink: #9c8f70;  /* the socket is dark in both themes, so its number keeps night's muted ink */
   --text: #efe2c6; --text-body: #cbbd9d; --text-mute: #9c8f70;
   --track: rgba(239, 226, 198, .12); --track-line: rgba(239, 226, 198, .22);
   --limit: #f06a4c; --live: #5bb59c;
@@ -52,7 +52,7 @@
   --wall: #e9dcc0; --wall-low: #cdbd9d;
   --obj: #fbf3df; --obj-high: #efe6d2; --obj-sunk: #e0d4b8;
   --ink: #241d14;
-  --rail: #3a2f27; --socket: #120d09;
+  --rail: #3a2f27; --socket: #120d09; --socket-ink: #9c8f70;  /* the socket is dark in both themes, so its number keeps night's muted ink */
   --text: #241d14; --text-body: #4e4434; --text-mute: #6b604b;
   --track: rgba(36, 29, 20, .09); --track-line: rgba(36, 29, 20, .3);
   --limit: #bb301a; --live: #2c6555;
@@ -153,6 +153,10 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 /* ---------- the board: one rail per provider ---------- */
 .board { display: flex; align-items: flex-start; gap: var(--gap-col); }
 .board > .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4.4rem; }
+.board > .col.wide { flex: var(--span) var(--span) calc((var(--span) - 1) * var(--gap-col)); }  /* k columns and the k - 1 gaps between them, so its own columns line up with the board's */
+/* a provider over k columns: its days and its rail split on the board's own columns, the order running down each (accounts.js columns(), hitstop 0360fc4) */
+.provider.wide .meters { display: grid; grid-template-columns: repeat(var(--span), minmax(0, 1fr)); column-gap: var(--gap-col); }
+.rails { display: grid; grid-template-columns: repeat(var(--span), minmax(0, 1fr)); column-gap: var(--gap-col); align-items: start; }
 .provider { --c: var(--text-mute); min-width: 0; }
 .provider > header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.6rem; min-height: 3.4rem; }
 /* the headings: a section under the page title, and a section inside a pane, one size each on every page */
@@ -171,7 +175,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .rail.plain::before { content: none; }  /* a key or this computer: one head, no order to keep */
 .socket {
   position: absolute; left: -3.4rem; top: 1.25rem; width: 2.6rem; height: 2.6rem; border-radius: 50%;
-  display: grid; place-items: center; font: 600 1rem/1 var(--font-data); color: var(--text-mute);
+  display: grid; place-items: center; font: 600 1rem/1 var(--font-data); color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail);
 }
 .card.serving .socket { color: #241d14; background: var(--key-light); box-shadow: 0 0 0 var(--ink-w) var(--ink), 0 0 1.6rem .2rem rgba(255, 215, 154, .45); }
@@ -260,6 +264,9 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 /* a reset that has gone by: muted, and carrying the ring's 2rem plus the row's .55rem gap so its time still starts
    where the ringed rows' times do. Its bar and its figure are empty, drawn by the page, so this is all that is left */
 .when.rolled { color: var(--text-mute); padding-left: 2.55rem; }
+.windows .closed { grid-column: 2 / 4; display: flex; align-items: baseline; gap: .55rem; font: 500 1.05rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }  /* a closed window is one line, "Ended" and the time, over the bar's and the figure's columns, the time column left empty: an empty bar read as a missing figure (Marlin, fin, Oct 12) */
+.windows .closed b { font: 500 1.05rem/1 var(--font-name); color: var(--text); }
+.windows .unproved { grid-column: 1 / -1; font: 500 1.05rem/1 var(--font-name); color: var(--text); }  /* a card with no reading: one word where its figures would be, never an empty card (Marlin, Oct 12) */
 /* the aside about the hour holding midnight is a sentence, so it takes the whole tile rather than the money column */
 .unpriced.opening { grid-column: 1 / -1; margin: .45rem 0 0; white-space: normal; line-height: 1.3; }
 .glyph { width: 1.25rem; height: 1.25rem; color: var(--text-body); }
@@ -510,7 +517,7 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .plamps { display: flex; align-items: center; gap: .7rem; min-height: 2.6rem; }  /* a project with nothing live keeps the row, empty */
 .ptile .pc.big { gap: .35rem; font: 600 1.35rem/1 var(--font-data); }
 /* a card's lamp, standing in the line: the socket, its ink ring and its glyph in the state's colour (sessions.css .lamp) */
-.tlamp { flex: none; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; color: var(--text-mute);
+.tlamp { flex: none; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; color: var(--socket-ink);
   background: var(--socket); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .18rem var(--rail); }
 [data-theme="day"] .tlamp { --live: #5bb59c; --limit: #f06a4c; }  /* the socket is dark in both themes, so it keeps night's ink */
 .tlamp svg { width: 1.55rem; height: 1.55rem; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }

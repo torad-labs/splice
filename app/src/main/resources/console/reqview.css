@@ -121,7 +121,7 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .attempt { padding: 1.1rem 1.2rem 1.25rem; border: .12rem solid var(--ink); border-radius: var(--r-obj); background: var(--obj-high); }
 .attempt.fail { box-shadow: inset .3rem 0 0 var(--limit); }
 .attempt > h3 { display: flex; align-items: center; gap: 1rem; margin-bottom: .9rem; }
-.attempt .an { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .95rem/1 var(--font-data); color: var(--text); background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }
+.attempt .an { width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center; flex: none; font: 600 .95rem/1 var(--font-data); color: #efe2c6; background: var(--socket); box-shadow: 0 0 0 .12rem var(--ink), inset 0 0 0 .14rem var(--rail); }  /* the socket is dark in both themes: day's --text sank into it, so the number keeps night's ink */
 .attempt .url { font: 500 1rem/1.2 var(--font-data); color: var(--text); overflow-wrap: anywhere; min-width: 0; }
 .attempt .status { font-size: 1.05rem; margin-left: auto; }
 .attempt .ams { font: 500 1rem/1 var(--font-data); color: var(--text-body); }

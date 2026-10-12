@@ -59,8 +59,9 @@ internal class ClaudeLoginRows(private val naming: AccountNaming = AccountNaming
         val given = view.management?.takeIf { it.canRename }?.displayName
         val ref = view.identity.account?.ref
         val name = naming.name(AccountNameFacts(given, null, ref, view.quota?.plan))
-        // A place no credential has proved yet is still that command's login, so it keeps the command's word.
-        (if (given == null && ref == null) name.copy(shown = view.id.command) else name).write(this)
+        // A place no credential has proved yet reads "Account", never the command's word, which names no account
+        // (Marlin's Accounts walk, ruled via splice-lead, Oct 12); the page says it is Not read.
+        name.write(this)
         put("identity_verified", view.identity.account != null)
         put("profile_state", view.identity.profileState.wire)
         put("can_remove", view.management?.canRemove == true)

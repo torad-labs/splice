@@ -72,6 +72,21 @@ class ClaudeAccountRowsTest {
     }
 
     @Test
+    fun `a login place no credential has proved reads Account, never its command's word`() = runBlocking {
+        val unproved = ClaudeLoginPlaceView(
+            ClaudeLoginPlaceId.NATIVE,
+            "claude-splice",
+            ClaudeLoginCredential("/synthetic/native/.credentials.json", true),
+            ClaudeLoginIdentity(null),
+            null,
+            ClaudeLoginStanding(null, null),
+        )
+        val row = ClaudeLoginRows().json(unproved, "anthropic", null, 100)
+        assertEquals("Account", row.getValue("display_name").jsonPrimitive.content)
+        assertEquals("true", row.getValue("label_default").jsonPrimitive.content)
+    }
+
+    @Test
     fun `a client kind head exposes its real added pool login beside the native place`() = runBlocking {
         val native = ClaudeLoginPlaceView(
             ClaudeLoginPlaceId.NATIVE,

@@ -90,7 +90,7 @@ function askEconomics() {
 async function load({ asks = true } = {}) {
   tick();
   if (asks) askEconomics();
-  const [st, ac, ks, bg, md, hd] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads"].map((p) => API.get(p)));
+  const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
@@ -113,10 +113,12 @@ async function load({ asks = true } = {}) {
   // has its plan fields null, and its cost and count still mix the two, so it is summed apart (old) and never read as key.
   const sumOf = (rows) => rows.reduce((t, b) => {
     const old = b.plan_turns == null;
-    return { usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0), turns: t.turns + (b.turns || 0),
+    // failed_turns: failed requests that reported no usage, which are failed and never "no price" (Marlin's Accounts walk,
+    // ruled Oct 12); an hour written before the field has none, and its failures stay in unpriced_turns as they were counted
+    return { usd: t.usd + (b.cost_usd || 0), unpriced: t.unpriced + (b.unpriced_turns || 0), failed: t.failed + (b.failed_turns || 0), turns: t.turns + (b.turns || 0),
       plan: t.plan + (old ? 0 : b.plan_turns), planUsd: t.planUsd + (old ? 0 : b.plan_value_usd || 0),
       old: t.old + (old ? b.turns || 0 : 0), oldUsd: t.oldUsd + (old ? b.cost_usd || 0 : 0), oldUnpriced: t.oldUnpriced + (old ? b.unpriced_turns || 0 : 0) };
-  }, { usd: 0, unpriced: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 });
+  }, { usd: 0, unpriced: 0, failed: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 });
   const splitOf = new Map((ec.body?.heads || []).filter((h) => typeof h.all_accounts_on_plan === "boolean").map((h) => [h.key, h.all_accounts_on_plan]));
   const spendToday = new Map((ec.body?.heads || []).map((h) => {
     const rows = h.buckets || [];
@@ -142,7 +144,7 @@ async function load({ asks = true } = {}) {
     const fam = FAMILY[h.family] || { id: h.family || h.key, name: h.family || h.key };
     const kind = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
     if (!provs.has(fam.id)) provs.set(fam.id, { id: fam.id, name: fam.name, kind, cmds: [], accounts: [] });
-    const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 };
+    const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0, failed: 0, turns: 0, plan: 0, planUsd: 0, old: 0, oldUsd: 0, oldUnpriced: 0 };
     const allPlan = splitOf.get(h.key);
     // with the split: an all-plan command counts every request as on the plan, its old hours too, and names their value
     // at API prices; a mixed one shows the key's money, the plan's count, and an old hour's requests as not split (fin,
@@ -150,11 +152,12 @@ async function load({ asks = true } = {}) {
     const split = allPlan === undefined || kind === "local" ? null : allPlan
       ? { allPlan: true, plan: today.plan + today.old, planUsd: today.planUsd + today.oldUsd }
       : { allPlan: false, keyUsd: today.usd - today.oldUsd, keyUnpriced: today.unpriced - today.oldUnpriced, plan: today.plan, old: today.old,
-        keyPriced: Math.max(0, today.turns - today.old - today.plan - (today.unpriced - today.oldUnpriced)) };
+        keyPriced: Math.max(0, today.turns - today.old - today.plan - (today.unpriced - today.oldUnpriced) - today.failed) };
     const counted = !unread.has(h.key);
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
       unread: b ? null : unread.get(h.key) ?? null,
-      priced: Math.max(0, today.turns - today.unpriced),
+      failed: b ? b.failed_turns ?? today.failed : today.failed,
+      priced: Math.max(0, today.turns - today.unpriced - today.failed),
       opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
       local: kind === "local", // nothing bills it per token, so no figure and no line
       split,
@@ -189,9 +192,15 @@ async function load({ asks = true } = {}) {
         if (!uses.length) continue;
         const from = uses[0].source;
         const day = (s) => (s ? new Date(s * 1000) : null); // the day splice first saw the key (KeyLedger.kt)
-        p.accounts.push({ id: k.name, env: k.name, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: day(k.first_seen_epoch_seconds) });
+        // the key in use shows its masked tail, "…9c21", from /api/auth's api_key_masked on a command it serves, so a
+        // replaced key can be told from the one now in use (Marlin's Accounts walk, Oct 12); a short key is masked "set"
+        const masked = uses.map((u) => au.body?.[u.head]).find((x) => x?.env_var === k.name && x.api_key_masked)?.api_key_masked;
+        const tail = masked && masked.includes("…") ? `…${masked.split("…").pop()}` : null;
+        // the day only tells keys apart, so it shows only when the variable has held more than one (fin, Oct 12)
+        const twins = (k.replaced || []).length > 0;
+        p.accounts.push({ id: k.name, env: k.name, tail, twins, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: day(k.first_seen_epoch_seconds) });
         // a key it replaced is its own account, with its own day, marked Replaced
-        for (const r of k.replaced || []) p.accounts.push({ id: `${k.name}#${r.fingerprint}`, env: k.name, has: true, from: "replaced", seen: day(r.first_seen_epoch_seconds) });
+        for (const r of k.replaced || []) p.accounts.push({ id: `${k.name}#${r.fingerprint}`, env: k.name, twins, has: true, from: "replaced", seen: day(r.first_seen_epoch_seconds) });
       }
     } else {
       for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "", down: down.has(c.head) });
@@ -324,16 +333,15 @@ function ring(w) {
 }
 const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
 // A window still running says when it resets, with its ring. A window whose reported reset has already gone by says
-// "Reset" and that time, past tense, with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
+// "Ended" and that time (Marlin's Accounts walk, Oct 12: "Reset" over an empty bar misread), with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
 // cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10). A window that reported no
 // reset at all keeps the empty cell, because there the page genuinely knows nothing to say.
 const resets = (w) => (w.left != null ? `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`
-  : w.rolledMs != null ? `<span class="when rolled">Reset ${at(w.rolledMs)}</span>` : "<span></span>");
-// The bar and the figure say one thing together, so a window whose reset has passed shows NEITHER: an empty track, an
-// empty figure, and the reset it already had (Marlin, Oct 10, overruling the muted figure). Muting was not enough and
-// neither is an outline at the old width — an outline at 98% still draws 98%, the same false figure in another form
-// (hitstop, Oct 10). The row stands empty for the seconds it takes the re-read to land, and then it is the truth.
-const spent = (cls) => `${bar(0, `gone ${cls}`)}<span class="pct"></span>`;
+  : w.rolledMs != null ? `<span class="when rolled">Ended ${at(w.rolledMs)}</span>` : "<span></span>");
+// A window whose reset went by is closed, and Claude opens the next only on the next request, so it can stay closed for
+// hours: "Ended" and the time over the bar's and the figure's columns, the reset's column left empty, never an empty bar
+// read as a missing figure (Marlin's ruling, fin's words, hitstop's drawing a3c93b2, Oct 12).
+const closed = (w) => `<span class="closed"><b>Ended</b>${w.rolledMs != null ? at(w.rolledMs) : ""}</span><span></span>`;
 // The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
 // as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
 // browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.
@@ -350,18 +358,16 @@ function windowsHtml(a, next = null) {
     // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
     // whose own reset has passed drew that week's spent figure as today's
     rows += `<span class="label">${w.label}</span>`
-      + (ended(w) ? spent("")
+      + (ended(w) ? closed(w)
         : `${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${w.stale ? "stale" : ""}`)}`
-          + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>`)
-      + resets(w);
+          + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>` + resets(w));
     if (w.label === "Week" && a.models) {
       // A model's figure is a slice of the account week above it, read in the same observation, so once that week has
       // ended its slices have too — whether or not the model itself reported a reset (hitstop, Oct 10).
       for (const m of a.models) rows += `<span class="label sub">${m.name}</span>`
-        + (ended(m) || ended(w) ? spent("sub")
+        + (ended(m) || ended(w) ? closed(ended(m) ? m : w)
           : `${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}`
-            + `<span class="pct">${m.used}%<span class="used">used</span></span>`)
-        + resets(m);
+            + `<span class="pct">${m.used}%<span class="used">used</span></span>` + resets(m));
     }
   }
   if (a.staleAt != null) rows += `<span class="stale-at">${GLYPH.eye}Read ${at(a.staleAt)}</span>`;
@@ -386,15 +392,15 @@ function meterHtml(c, pick = null) {
   // a spend splice is still reading (spend_pending, used_usd null after a restart) is no figure yet: it once threw here
   // and left the whole board empty on the first open after a restart
   const spent = c.local || c.unread || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
-  const share = spent && c.unpriced ? `for ${reqs(c.priced)}` : "";
+  const share = spent && (c.unpriced || c.failed) && c.priced ? `for ${reqs(c.priced)}` : "";
   // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
-  const none = c.unread ? `<em>${c.unread}</em>` : !c.local && c.spent != null && !c.priced && !c.unpriced ? "<em>No requests</em>" : "";
+  const none = c.unread ? `<em>${c.unread}</em>` : !c.local && c.spent != null && !c.priced && !c.unpriced && !c.failed ? "<em>No requests</em>" : "";
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${c.unread ? "" : openingRow(c)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
-  const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${[share, noPrice(c)].filter(Boolean).join(", ")}` : ""}`;
+  const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${[share, ...asides(c)].filter(Boolean).join(", ")}` : ""}`;
   // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
   const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
@@ -423,16 +429,19 @@ function splitMeterHtml(c, tag, day) {
   const many = (n, words) => (lead || parts.length ? `${n0(n)} ${words}` : `${reqs(n)} ${words}`);
   if (s.plan) parts.push(many(s.plan, "on your plan"));
   if (s.keyUnpriced) parts.push(many(s.keyUnpriced, "with no price"));
+  if (c.failed) parts.push(`${n0(c.failed)} failed`); // the Outcome switch's word, never "requests failed" (fin, Oct 12)
   if (s.old) parts.push(many(s.old, "not split into plan and key"));
   const body = lead || (parts.length ? "" : `<em>No requests</em>`);
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${line(body)}`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}</div>`;
   }
+  // a day of failed requests spent nothing and says so, "$0 of $5", never only the cap (Oct 12)
+  const counted = spent != null && (spent || priced || c.failed);
   const pct = Math.min(100, Math.round(((spent || 0) / c.budget.cap) * 100));
-  const fill = spent ? `<div class="capbox">${bar(pct, spent >= c.budget.cap ? "full" : "")}</div>` : "<span></span>";
+  const fill = counted ? `<div class="capbox">${bar(pct, spent >= c.budget.cap ? "full" : "")}</div>` : "<span></span>";
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
-    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${spent ? `${money(spent)} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}`
+    + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}">${c.budget.block ? GLYPH.stop : GLYPH.bell}${counted ? `${money(spent)} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}`
     + `${parts.length ? `<span class="unpriced own">${parts.map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : ""}</button>${refills(day)}</div>`;
 }
 // turns on a model with no rate card, after the dollar figure (fin). A meter's money column is narrow at every width, so
@@ -443,7 +452,10 @@ const reqs = (n) => `${n.toLocaleString("en-US")} ${n === 1 ? "request" : "reque
 const noPrice = (c) => `${reqs(c.unpriced)} ${c.onPlan ? "on your plan" : "with no price"}`;
 // with a budget the priced share leads the line under the meter, since "≈$0.84 for 50 requests of $20" misreads (fin)
 // a day with an hour splice has not read has no count to share either: its readable hours would undercount it (fin, Oct 11)
-const unpriced = (c, lead = "") => (c.unpriced && !c.local && !c.unread ? `<span class="unpriced own">${[lead, noPrice(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
+// what the figure leaves out: requests with no price, and failed ones, which cost nothing and are counted as failed, the
+// word Requests' Outcome switch uses (Marlin's Accounts walk, fin's words, Oct 12)
+const asides = (c) => [c.unpriced ? noPrice(c) : "", c.failed ? `${c.failed.toLocaleString("en-US")} failed` : ""].filter(Boolean);
+const unpriced = (c, lead = "") => ((c.unpriced || c.failed) && !c.local && !c.unread ? `<span class="unpriced own">${[lead, ...asides(c)].filter(Boolean).map((p) => `<span class="part">${p}</span>`).join(" · ")}</span>` : "");
 // The hour holding the day's start, in a zone whose midnight is not on a UTC hour: its turns belong to two days and
 // the hourly totals cannot split them, so they are said once, apart from the day's figure.
 //
@@ -604,7 +616,7 @@ function menuHtml(p, a, spot) {
 function nameHtml(p, a, spot) {
   // a key is named by its variable and the day splice first saw it; a replaced key is a new account with a new day
   const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // kit.js's, which this page doesn't load
-  if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.has && a.seen ? ` · ${dayWord(a.seen)}` : ""}</span>`;
+  if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${dayWord(a.seen)}` : ""}</span>`;
   if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
   const err = ui.renameErr;
   // one visible way to finish, as the key field's Save: both walkers had to guess Enter (p153, p154)
@@ -644,6 +656,9 @@ function cardHtml(p, c, a, i, serves) {
   } else if (p.kind === "plan" && a.noUsage) {
     // fin's words (Marlin, Oct 10): no time on it, and never "no usage", which reads as "used nothing"
     body = `<div class="keysrc"><span class="state">No limits reported</span></div>${signRow}`;
+  } else if (p.kind === "plan" && !a.windows.length) {
+    // no reading at all is never "No limits reported", which is the provider answering with none (Oct 12)
+    body = `<div class="windows"><span class="unproved">${DAY_NOT_READ}</span></div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
@@ -670,17 +685,23 @@ function switchHtml(p, c) {
   const b = (v, label) => `<button data-act="mode" data-p="${p.id}" data-c="${c.cmd}" data-v="${v}" aria-pressed="${c.mode === v}">${label}</button>`;
   return `<div class="switch" role="group" aria-label="Account order${p.cmds.length > 1 ? `, ${esc(c.cmd)}` : ""}">${b("soonest", "Soonest reset")}${b("mine", "My order")}</div>`;
 }
-function railHtml(p, c) {
+function railHtml(p, c, span = 1) {
   const srv = new Map(p.cmds.map((x) => [x, serving(p, x)]));
-  return `<div class="rail" data-rail="${p.id}">${ordered(p, c).map((a, i) => cardHtml(p, c, a, i, p.cmds.filter((x) => srv.get(x) === a))).join("")}${addTileHtml(p, c)}</div>`;
+  const cards = ordered(p, c).map((a, i) => cardHtml(p, c, a, i, p.cmds.filter((x) => srv.get(x) === a))).concat(addTileHtml(p, c));
+  if (span < 2) return `<div class="rail" data-rail="${p.id}">${cards.join("")}</div>`;
+  // a provider wider than one column reads its order down each column and on at the top of the next, each column on its
+  // own length of rail, the numbers carrying on (1-3, 4-6, 7 and Add account): still read top to bottom (hitstop 0360fc4)
+  const per = Math.ceil(cards.length / span), cols = [];
+  for (let i = 0; i < cards.length; i += per) cols.push(cards.slice(i, i + per));
+  return `<div class="rails" data-rail="${p.id}" style="--span:${span}">${cols.map((x) => `<div class="rail">${x.join("")}</div>`).join("")}</div>`;
 }
 // Every provider reads the same: its name with the order switch, a day per command with the command as its tab, then
 // each account once on one rail, carrying the chip of every command it serves. Each command keeps its own order
 // (AccountOrderStore.kt:1, :24): where a plan provider serves two or more, the pressed tab picks whose order the rail and
 // the switch show.
 const laneOf = (p) => p.cmds.find((c) => c.cmd === ui.lane[p.id]) || p.cmds[0];
-function providerHtml(p) {
-  const head = (sw) => `<section class="provider" style="--c:${colorOf(p.id)}" data-key="prov:${p.id}"><header><h2><span class="blot"></span>${esc(p.name)}</h2>${sw}</header>`;
+function providerHtml(p, span = 1) {
+  const head = (sw) => `<section class="provider${span > 1 ? " wide" : ""}" style="--c:${colorOf(p.id)}${span > 1 ? `;--span:${span}` : ""}" data-key="prov:${p.id}"><header><h2><span class="blot"></span>${esc(p.name)}</h2>${sw}</header>`;
   if (p.kind !== "plan") {
     const srv = serving(p), meters = (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p.cmds).map((c) => meterHtml(c)).join("");
     // a model on this computer or a rented GPU bills nothing per token: no Day row, unless he already set a budget on it
@@ -688,7 +709,8 @@ function providerHtml(p) {
     return `${head("")}${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, p.kind === "local" ? p.cmds.filter((c) => c.head === a.id) : a === srv ? p.cmds : [])).join("")}</div></section>`;
   }
   const c = laneOf(p), many = p.cmds.length > 1;
-  return `${head(switchHtml(p, c))}${p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("")}${railHtml(p, c)}</section>`;
+  const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("");
+  return `${head(switchHtml(p, c))}${span > 1 ? `<div class="meters">${meters}</div>` : meters}${railHtml(p, c, span)}</section>`;
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));
@@ -714,15 +736,38 @@ let layout = null;
 const acctWeight = (a) => (a.out ? 3 : 2 + (a.windows || []).length + 0.6 * (a.models?.length || 0));
 const weight = (p) => 4 + (p.kind === "local" ? 0 : p.cmds.length) + (p.kind !== "plan" ? 3
   : 2 * p.cmds.length + 1 + laneAccts(p, laneOf(p)).reduce((t, a) => t + acctWeight(a), 0)); // a day per command, one rail
+// The board's tallest column is as short as it can be (Marlin's walk item 8, Oct 12: on desk c Claude's seven cards ran one
+// column 2,459 px long at 3828 with most of the page empty; hitstop's rule by width, 0360fc4). The heaviest plan provider
+// may take k columns, its cards split down them, when that makes the tallest column shorter; the rest pack into the other
+// columns, each into the shortest so far. Its columns keep two cards or more, one column is always left for the others and
+// Add provider, and a split that saves under 15% of the height isn't made, so a full board keeps one column each and 1440
+// (two columns) never splits.
+const fixedW = (p) => 4 + p.cmds.length + 2 * p.cmds.length + 1; // the heading and a day per command
+const railW = (p) => laneAccts(p, laneOf(p)).reduce((t, a) => t + acctWeight(a), 0) + 1.5; // its cards and Add account
+function pack(ps, n) {
+  const cols = Array.from({ length: n }, () => ({ w: 0, ids: [] }));
+  const shortest = () => cols.reduce((m, c) => (c.w < m.w ? c : m));
+  for (const p of ps) { const c = shortest(); c.ids.push(p.id); c.w += weight(p); }
+  const add = shortest(); add.w += 3; // Add provider ends the shortest column
+  return { cols: cols.map((c) => c.ids), add: cols.indexOf(add), tall: Math.max(...cols.map((c) => c.w)) };
+}
 function columns() {
   const gap = parseFloat(getComputedStyle(board).columnGap), rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
   const n = Math.max(1, Math.floor((board.clientWidth + gap) / (40 * rem + gap)));
-  const ids = data.map((p) => p.id).join();
+  // laid out again when the width, the providers or a plan provider's count of cards changes, never for an open editor
+  const ids = data.map((p) => p.id).join() + "|" + data.map((p) => (p.kind === "plan" ? laneAccts(p, laneOf(p)).length : 0)).join();
   if (!layout || layout.n !== n || layout.ids !== ids) {
-    const cols = Array.from({ length: n }, () => ({ w: 0, ids: [] }));
-    const shortest = () => cols.reduce((m, c) => (c.w < m.w ? c : m));
-    for (const p of data) { const c = shortest(); c.ids.push(p.id); c.w += weight(p); }
-    layout = { n, ids, cols: cols.map((c) => c.ids), addAt: cols.indexOf(shortest()) };
+    const plans = data.filter((p) => p.kind === "plan"), big = plans.reduce((m, p) => (!m || railW(p) > railW(m) ? p : m), null);
+    let best = { k: 1, ...pack(data, n) };
+    const base = best.tall;
+    if (big && n > 1) {
+      const rest = data.filter((p) => p !== big), cards = laneAccts(big, laneOf(big)).length + 1;
+      for (let k = 2; k <= Math.min(n - 1, Math.floor(cards / 2)); k++) {
+        const r = pack(rest, n - k), tall = Math.max(fixedW(big) + railW(big) / k, r.tall);
+        if (tall < best.tall && tall < 0.85 * base) best = { k, ...r, tall }; // 15% shorter or no split
+      }
+    }
+    layout = { n, ids, wide: best.k > 1 ? { id: big.id, k: best.k } : null, cols: best.cols, addAt: best.add };
   }
   return layout;
 }

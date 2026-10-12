@@ -20,12 +20,16 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigService
 import splice.core.config.restartRequiredKnobKeys
+import splice.core.topology.TopologyWriterSource
 import splice.http.JsonBody
 
 public class ConfigRoutes(
     private val config: ConfigService,
     private val jsonBody: JsonBody,
+    topology: TopologyWriterSource = TopologyWriterSource { null },
 ) {
+    private val headWrite = HeadOverrideWrite(config, topology)
+
     public fun configJson(headKey: String? = null): String {
         val layers = config.layers()
         // JW-06: ?head=<key> answers "why is THIS head's knob X" — effective folds the head's
@@ -55,8 +59,13 @@ public class ConfigRoutes(
         }.toString()
     }
 
-    public suspend fun patchConfig(call: ApplicationCall) {
+    /** [head] set: this command's own values (`?head=<key>`), written to splice.toml; absent: the global PATCH. */
+    public suspend fun patchConfig(call: ApplicationCall, head: String? = null) {
         val partial = jsonBody.parse(call)
+        if (head != null && partial != null) {
+            headWrite.write(head, partial).send(call)
+            return
+        }
         if (partial == null) {
             call.respondText(
                 buildJsonObject { put("error", "invalid body") }.toString(),

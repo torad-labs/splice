@@ -22,10 +22,10 @@ internal class ConfigurationMount(
     ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
-    private val configRoutes = ConfigRoutes(config, JsonBody())
-
     // Read at CALL time: ControlPlane assigns [ConsolePorts.topology] after the server is constructed.
-    private val topologyRoutes = TopologyRoutes(TopologyWriterSource { ports.topology }, topologyStale)
+    private val writer = TopologyWriterSource { ports.topology }
+    private val configRoutes = ConfigRoutes(config, JsonBody(), writer)
+    private val topologyRoutes = TopologyRoutes(writer, topologyStale)
 
     fun register(route: Route) {
         route.get("/api/config") {
@@ -34,7 +34,9 @@ internal class ConfigurationMount(
                 ControlReplies.respond(call, configRoutes.configJson(call.request.queryParameters["head"]))
             }
         }
-        route.patch("/api/config") { guard.guarded(call) { configRoutes.patchConfig(call) } }
+        route.patch("/api/config") {
+            guard.guarded(call) { configRoutes.patchConfig(call, call.request.queryParameters["head"]) }
+        }
         route.get("/api/topology") { guard.guarded(call) { topologyRoutes.read().send(call) } }
         route.post("/api/topology/preview") {
             guard.guarded(call) { topologyRoutes.preview(call.receiveText()).send(call) }

@@ -65,6 +65,9 @@ public class ConfigService(
     private val persistLock = Any()
     private val runtimeLayer = LinkedHashMap<String, Any?>()
 
+    /** [heads.<key>.overrides] as the daemon holds them now: the boot read, then each console write of splice.toml. */
+    public val headLayer: HeadOverrideLayer = HeadOverrideLayer(perHeadOverrides)
+
     init {
         // V4-109: say it ONCE, at construction, for every key the TOML layers asked for and did not
         // get. Logged here rather than at each read because the merge runs per request — a line per
@@ -100,7 +103,7 @@ public class ConfigService(
         // JW-06: [heads.<key>.overrides] folds into mergedRaw but was invisible here — the
         // dashboard's provenance feature was silently wrong for exactly the heads that were
         // tuned. Heads with no overrides are absent (the webui renders only what differs).
-        perHead = perHeadOverrides.filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v).accepted },
+        perHead = headLayer.all().filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v).accepted },
     )
 
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
@@ -143,7 +146,7 @@ public class ConfigService(
         coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
         // Sits directly above the global TOML layer: more specific TOML wins over less specific,
         // while state/env/PATCH keep their existing authority over BOTH (unchanged precedence).
-        headKey?.let { key -> perHeadOverrides[key]?.let { coerceAll(it).accepted } }
+        headKey?.let { key -> headLayer.all()[key]?.let { coerceAll(it).accepted } }
             ?.forEach { (k, v) -> merged[k] = v }
         fileLayer().filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
@@ -159,7 +162,7 @@ public class ConfigService(
         val rejects = LinkedHashMap<String, String>()
         coerceAll(headOverrides).rejected.forEach { (key, why) -> rejects[key] = why }
         headOverrides.keys.filter { it in headOnlyKnobKeys }.forEach { rejects[it] = HEAD_ONLY }
-        perHeadOverrides.forEach { (head, raw) ->
+        headLayer.all().forEach { (head, raw) ->
             coerceAll(raw).rejected.forEach { (key, why) -> rejects["heads.$head.$key"] = why }
         }
         return rejects

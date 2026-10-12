@@ -68,12 +68,15 @@ class DescriptorAdoptionTest {
         }
     }
 
+    /** A handler held in flight: [entered] opens when it is reached, [release] lets it finish. */
+    private data class Hold(val release: CountDownLatch, val entered: CountDownLatch)
+
     private fun serve(
         port: Int,
         adopted: AdoptedListeners,
         body: String,
         bootstrap: AdoptedBootstrap = adopted.bootstrapFor(CONTROL),
-        slow: CountDownLatch? = null,
+        hold: Hold? = null,
     ): EmbeddedServer<*, *> {
         val server = embeddedServer(
             Netty,
@@ -88,7 +91,8 @@ class DescriptorAdoptionTest {
             routing {
                 get("/hi") { call.respondText(body) }
                 get("/slow") {
-                    slow?.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    hold?.entered?.countDown()
+                    hold?.release?.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     call.respondText("slow-done")
                 }
             }
@@ -169,13 +173,15 @@ class DescriptorAdoptionTest {
             val adopted = ready(manager.fd, manager.port)
             val bootstrap = adopted.bootstrapFor(CONTROL)
             val release = CountDownLatch(1)
-            val draining = serve(manager.port, adopted, "draining", bootstrap, release)
+            val entered = CountDownLatch(1)
+            val draining = serve(manager.port, adopted, "draining", bootstrap, Hold(release, entered))
 
             // A turn in flight when the drain starts: connected and asking before accepting stops.
             val inFlight = Socket()
             inFlight.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), manager.port), TIMEOUT_MS.toInt())
             inFlight.getOutputStream().write(request("/slow"))
             inFlight.getOutputStream().flush()
+            assertTrue(entered.await(TIMEOUT_MS, TimeUnit.MILLISECONDS), "the in-flight turn reached the handler")
 
             bootstrap.pauseAccepting()
 

@@ -23,6 +23,9 @@ import java.net.SocketAddress
 /** Every address splice listens on is loopback; a hand-off naming anything wider is refused. */
 private const val LOOPBACK = "127.0.0.1"
 
+/** The longest a pause waits for the event loop to take the listener out of its epoll set. */
+private const val PAUSE_WAIT_MS = 2_000L
+
 /** What a socket manager handed over, once it has been checked, or why it was refused. */
 public sealed class Adoption {
     public data class Ready(val listeners: AdoptedListeners) : Adoption()
@@ -91,8 +94,10 @@ private class AdoptedServer(private val fd: Int) : AdoptedBootstrap {
             .handler(InheritedSocketHandler())
     }
 
+    /** Waits for the deregister to land: it runs on the channel's event loop, and a connection that arrives before it
+     *  completes would still be accepted by the engine that is meant to be draining. */
     override fun pauseAccepting() {
-        serving?.deregister()
+        serving?.deregister()?.awaitUninterruptibly(PAUSE_WAIT_MS)
     }
 }
 

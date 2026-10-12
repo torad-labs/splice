@@ -374,6 +374,7 @@ const PAGES = [
   ["sessions.html", "Sessions"],
   ["teams.html", "Teams"],
   ["requests.html", "Requests"],
+  ["compare.html", "Compare models"],
   ["settings.html", "Settings"],
 ];
 // THE THEME HOLDS ACROSS PAGES AND LOADS: the toggle saves it, and every page applies the saved one as kit.js loads.

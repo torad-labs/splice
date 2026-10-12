@@ -709,7 +709,9 @@ function mcpServerRows(m) {
     const project = at?.kind === "project" ? String(at.scope || "").split("/").filter(Boolean).pop() ?? "" : "";
     return { name, from: fromWord(at), project, shared, web, address: web ? addressOf(value) : "", state, value,
       cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
-      cmds: live?.commands || [], stale, last: live?.last_activity || 0 };
+      cmds: live?.commands || [], stale, last: live?.last_activity || 0,
+      // the one process splice runs for it now and what it holds, read from /proc by the daemon (McpStatus.kt hosted)
+      hosted: !!live?.hosted, rss: live?.rss_bytes ?? null };
   }).sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name));
 }
 const msWord = (ms) => (ms >= 1000 ? `${+(ms / 1000).toFixed(1)} s` : `${ms} ms`);
@@ -720,6 +722,9 @@ const testSaid = (name) => {
   if (r?.ok) return `<span class="said ok">${r.started ? "Started · " : ""}${msWord(r.ms)}${r.tools == null ? "" : ` · ${fmt(r.tools)} ${r.tools === 1 ? "tool" : "tools"}`}</span>`;
   return r ? `<span class="said limit">${esc(r.word)}</span>` : "";
 };
+// a shared server's one process: the memory it holds now, Running where /proc gave none, Not running until a session
+// asks for it (spec 8i: instance, sessions and memory per server; its sessions are the Used by chips beside it)
+const memWord = (s) => (!s.hosted ? `<span class="state">Not running</span>` : s.rss ? esc(mbWord(s.rss)) : "Running");
 function serverRow(s, dim) {
   const where = s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft" title="${esc(s.from)}">${esc(s.from)}</span>`;
   const from = `<span class="from">${SV.file}${where}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
@@ -738,7 +743,7 @@ function serverRow(s, dim) {
   const used = s.cmds.length || soon ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}${soon}</span>` : "";
   const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
   return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
-    + `<span class="fig uses">${used}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}</span>`
+    + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}</span>`
     + `<span class="acts">${test}<span class="always">Shared</span></span></div>`;
 }
 const mcpServersHtml = () => {

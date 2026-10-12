@@ -191,9 +191,9 @@ button.count:hover { color: var(--text); }
 
 /* ---------- MCP servers ---------- */
 .srvs { display: flex; flex-direction: column; }
-.srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 20rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
+.srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 20rem 8rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
 .srv:first-child { border-top: 0; }
-.srv.out .why { grid-column: 3 / 5; }  /* the same columns as a shared row, so a word starts where "Used by" does */
+.srv.out .why { grid-column: 3 / 6; }  /* the same columns as a shared row, so a word starts where "Used by" does */
 .srv.lit { box-shadow: inset .3rem 0 0 var(--key-light); }
 .srv .lamp { position: static; }
 .sname { display: flex; flex-direction: column; gap: .45rem; min-width: 0; }

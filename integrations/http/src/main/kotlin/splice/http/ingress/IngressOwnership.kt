@@ -59,10 +59,10 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
         synchronized(lock) {
             disconnected = true
             halted.set(true)
-            responses.forEach {
-                it.responded()
-                if (!it.bound) it.finished()
-            }
+            responses.forEach { it.responded() }
+            // An unbound request has no call left to finish it, and a body refused mid-stream was already answered
+            // here, so it left the owed responses before any call bound it: finish every one still pending.
+            pending.values.forEach { it.finished() }
             pending.clear()
             responses.clear()
             connectionLease?.close()

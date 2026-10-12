@@ -122,7 +122,7 @@ async function readTileCounts() {
   const groups = pickGroups();
   if (groups.length < 2) return;
   const heads = askedHeads();
-  const named = new Set([...groups.map((g) => g.key), ...state.rows.map((r) => rowProjKey({ project: rowProject(r) }))]);
+  const named = new Set([...groups.map((g) => g.key), ...state.rows.map(rowKey)]);
   const keys = [null, ...new Set([...named, NO_PROJECT_KEY])];
   const reads = await Promise.all(keys.flatMap((k) => heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, k)))));
   const counts = new Map();
@@ -135,6 +135,16 @@ async function readTileCounts() {
     counts.set(k ?? "", n);
   });
   state.tileCounts = counts;
+}
+/** How many Compare models sends the window holds under the filters set, one n=1 read per command: the group is drawn only
+ *  where this is above zero, so a daemon with none shows no Compare tile. */
+async function readCompareCount() {
+  const heads = askedHeads();
+  const reads = await Promise.all(heads.map((h) => API.get(turnsPath(h, true, ui.win, 1, COMPARE_KEY))));
+  state.compareN = reads.reduce((n, r, j) => {
+    const a = (r.body?.heads || []).find((x) => x.key === heads[j].key);
+    return n + (r.ok && a && !a.error ? a.count ?? 0 : 0);
+  }, 0);
 }
 /** The first read: enough rows per command to draw the newest screens at once (ui.n starts at 200). */
 const FIRST_HELD = 200;
@@ -150,7 +160,7 @@ const SESSIONS_IN_MENU = 50; // as many as one look down the menu takes in; the 
 const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.kt)
 
 let state = {
-  loading: true, error: null, groups: [], titles: {}, tileCounts: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
+  loading: true, compareN: 0, error: null, groups: [], titles: {}, tileCounts: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {}, keysOfHead: {},
   rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
   // what Start saving answered, per command: { word, failed }, the word that stands beside "Not saved" once pressed
   saving: {},
@@ -179,6 +189,11 @@ const sessTitle = (sid) => {
 // A pick from a door names a project that may have no live session today; it is listed by the name its requests carry.
 function pickGroups() {
   const g = state.groups.slice();
+  // Compare models shows where it has requests, just before No project, and never as an empty group
+  if ((state.compareN > 0 || ui.project === COMPARE_KEY) && !g.some((x) => x.key === COMPARE_KEY)) {
+    const at = g.findIndex((x) => x.key === NO_PROJECT_KEY);
+    g.splice(at < 0 ? g.length : at, 0, { key: COMPARE_KEY, label: COMPARE_LABEL, counts: [["needs", 0], ["stalled", 0], ["working", 0]], total: 0 });
+  }
   if (ui.project && !g.some((x) => x.key === ui.project)) {
     const seen = state.rows.find((r) => rowProjKey(r) === ui.project);
     g.push({ key: ui.project, label: seen ? rowProjName(seen) : ui.project === NO_PROJECT_KEY ? "No project" : ui.project.split("/").pop(),
@@ -187,7 +202,9 @@ function pickGroups() {
   return g;
 }
 const rowProject = (r) => r.project ?? state.sessions[r.sid]?.project ?? state.sessions[String(r.sid ?? "").slice(0, 8)]?.project ?? null;
-const inPick = (r) => !ui.project || rowProjKey({ project: rowProject(r) }) === ui.project;
+// the group a row belongs to: Compare models sends first, then its project, else No project
+const rowKey = (r) => rowProjKey({ compare: r.compare, project: rowProject(r) });
+const inPick = (r) => !ui.project || rowKey(r) === ui.project;
 
 // ---------- reading splice ----------
 /** The commands, their providers, the models' labels, the sessions requests belong to, and a key's first day. */
@@ -405,6 +422,7 @@ function mapRow(head, row) {
     // the project is the session's repo, named as Sessions names it (its root's last folder); /api/sessions carries the
     // root and never a name (SessionsRoutes repoJson), and /api/projects ids are roots, so a link may name either
     project: row.project ?? null,
+    compare: row.compare === true,
     repo: repoName(state.sessions[sid]?.repo?.root), repoRoot: state.sessions[sid]?.repo?.root ?? null,
   };
 }
@@ -626,7 +644,7 @@ function rowHtml(r) {
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
-    + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(sessTitle(r.sid))}</button>${word}`
+    + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
     + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${earlier}</div>${match}</article>`;
 }
@@ -858,7 +876,7 @@ function paneHtml() {
     ? `<p class="upmsg"><span class="who">${esc(who)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
       + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>`
     : unanswered ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">No answer</span></p>` : ""; // fin's words, hitstop f4581a6
-  return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
+  return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st), said,
     tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r),
@@ -911,7 +929,7 @@ async function reload({ standing = false } = {}) {
   // the newest requests first, drawn as soon as they answer; the rest of the window follows behind them
   await Promise.all([readRows(FIRST_HELD), readSearch()]);
   if (gen !== readGen) return;
-  await Promise.all([readWider(), readTileCounts()]);
+  await Promise.all([readWider(), readCompareCount().then(readTileCounts)]);
   state.loading = false;
   autoOpen();
   render({ keep: false });

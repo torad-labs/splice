@@ -974,6 +974,11 @@ origin.
   other short hold.
 - **Compare models sends every model the same system line,** "You are a helpful assistant.", so no answer comes from an
   instruction another model did not get, and each request shows it as its system.
+- **Compare models sends are recorded like any request.** Each send leaves a row on Requests with the tokens its stream
+  reported, counts in its command's figures, its price and its budget, and a stream that reports no tokens reads
+  "Uncounted". A command over its budget refuses the send as it refuses a turn, with "Over budget" and a door to that
+  budget, and leaves an "Over budget" row. These rows belong to no project: they are listed under "Compare models",
+  never under "No project".
 - **Teams, Usage and Settings draw their own shape while loading,** like Requests, instead of a blank page.
 - **`/api/auth` returns only the fields the console and the command line read.** A login whose file cannot be read
   reads "can't read the login file".

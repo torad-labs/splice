@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -34,7 +36,15 @@ class PerfProjectTagTest {
         facts = PerfTurnFacts(model = "opus", session = session, account = "work"),
     )
 
-    private val rows = listOf(row(1_000, "aaaaaaaa"), row(2_000, "bbbbbbbb"), row(3_000, "cccccccc"), row(4_000, null))
+    // A Compare models send: no session, flagged. It is no project's work, so "no project" never lists it.
+    private val compareSend = PerfRow(
+        ts = 5_000,
+        outcome = "ok",
+        fields = mapOf(PerfKeys.COMPARE to 1L),
+        facts = PerfTurnFacts(model = "opus", account = "work"),
+    )
+    private val rows =
+        listOf(row(1_000, "aaaaaaaa"), row(2_000, "bbbbbbbb"), row(3_000, "cccccccc"), row(4_000, null), compareSend)
     private val mythos = buildJsonObject {
         put("id", "/p/mythos")
         put("name", "mythos")
@@ -75,11 +85,20 @@ class PerfProjectTagTest {
     }
 
     @Test
+    fun `project compare lists only the Compare models sends, which no project holds`() = testApplication {
+        application { routing { get("/api/perf/turns") { routes.turns(call) } } }
+        val sends = client.rows("project=compare")
+        assertEquals(listOf(5_000L), sends.map { it.getValue("ts").jsonPrimitive.content.toLong() })
+    }
+
+    @Test
     fun `rows carry the session rows project object, null where none holds the session, and the filter takes its id`() =
         testApplication {
             application { routing { get("/api/perf/turns") { routes.turns(call) } } }
             val all = client.rows("")
-            assertEquals(listOf(mythos, mythos, JsonNull, JsonNull), all.map { it.getValue("project") })
+            assertEquals(listOf(mythos, mythos, JsonNull, JsonNull, JsonNull), all.map { it.getValue("project") })
+            val flags = all.map { it.getValue("compare").jsonPrimitive.boolean }
+            assertEquals(listOf(false, false, false, false, true), flags)
             val only = client.rows("project=%2Fp%2Fmythos")
             assertEquals(listOf(1_000L, 2_000L), only.map { it.getValue("ts").jsonPrimitive.content.toLong() })
             assertEquals(emptyList<JsonObject>(), client.rows("project=%2Fp%2Fnothing"))
@@ -90,6 +109,6 @@ class PerfProjectTagTest {
         testApplication {
             application { routing { get("/api/perf/turns") { routes.turns(call) } } }
             val titles = client.rows("").map { it.getValue("title") }
-            assertEquals(listOf(JsonPrimitive("fix the billing rounding"), JsonNull, JsonNull, JsonNull), titles)
+            assertEquals(listOf(JsonPrimitive("fix the billing rounding")) + List(4) { JsonNull }, titles)
         }
 }

@@ -15,6 +15,9 @@ private const val STOPPED = "stopped"
 /** The `project` value that asks for the requests that ran in no project. */
 private const val NO_PROJECT = "none"
 
+/** The `project` value that asks for the Compare models sends, which belong to no project and have their own group. */
+private const val COMPARE_SENDS = "compare"
+
 /** A field a link may ask to be missing, so the requests nothing attributed can be listed without inventing a name. */
 internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("account") }
 
@@ -56,8 +59,8 @@ internal data class TurnsAttribution(
     val session: String? = null,
     /** Every session tag of the project a request asked for: a row outside them is left out. */
     val sessions: Set<String>? = null,
-    /** Set to leave out every request that ran in a project: what is left carries no project (`?project=none`). */
-    val outsideProjects: ProjectTags? = null,
+    /** Set when a request asks for a group no session tag names: the requests no project holds, or the Compare sends. */
+    val group: ProjectGroup? = null,
     val unattributed: Unattributed? = null,
     /** How this head's recorded account values read: [account] is asked by ref (labels only). */
     val reading: AccountReading = AccountReading(HeadAccountNames { null }),
@@ -68,6 +71,7 @@ internal data class TurnsAttribution(
         account == null || reading.matches(row.facts.account, account),
         session == null || row.facts.session == session,
         sessions == null || row.facts.session in sessions,
+        group != ProjectGroup.CompareSends || row.fields[PerfKeys.COMPARE] == 1L,
     ).all { it }
 }
 
@@ -104,12 +108,15 @@ internal data class TurnsFilter(
      *  [NO_PROJECT] narrows to the requests no project holds, the ones a row prints as `project: null`. */
     fun inProject(id: String?, tags: ProjectTags): TurnsFilter = when (id) {
         null -> this
-        NO_PROJECT -> copy(attribution = attribution.copy(outsideProjects = tags))
+        NO_PROJECT -> copy(attribution = attribution.copy(group = ProjectGroup.NoProject(tags)))
+        COMPARE_SENDS -> copy(attribution = attribution.copy(group = ProjectGroup.CompareSends))
         else -> copy(attribution = attribution.copy(sessions = tags.tagsOf(id)))
     }
 
-    private fun inNoProject(row: PerfRow): Boolean =
-        attribution.outsideProjects?.let { tags -> row.facts.session?.let(tags::of) == null } ?: true
+    // A Compare send has no session and is no project's work: it is never "no project" (its own group names it).
+    private fun inNoProject(row: PerfRow): Boolean = (attribution.group as? ProjectGroup.NoProject)?.tags?.let { tags ->
+        row.fields[PerfKeys.COMPARE] != 1L && row.facts.session?.let(tags::of) == null
+    } ?: true
 
     private fun outcomeMatches(tag: String): Boolean = when (outcome) {
         null -> true
@@ -214,4 +221,13 @@ internal class TurnsFilterReader {
 
     /** A parameter given empty asks nothing, the same as one left out. */
     private fun given(value: String?): String? = value?.takeIf { it.isNotEmpty() }
+}
+
+/** A project group a request can ask for that no session tag names (`?project=none`, `?project=compare`). */
+internal sealed class ProjectGroup {
+    /** Leaves out every request that ran in a project: what is left carries no project. */
+    data class NoProject(val tags: ProjectTags) : ProjectGroup()
+
+    /** Keeps only the Compare models sends, which belong to no project and have their own group. */
+    data object CompareSends : ProjectGroup()
 }

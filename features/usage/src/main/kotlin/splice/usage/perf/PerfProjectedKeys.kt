@@ -23,6 +23,7 @@ public object PerfProjectedKeys {
         PerfKeys.REANCHORS,
         PerfKeys.REANCHORS_FROM_SCRATCH,
         PerfKeys.LOCAL_STEP,
+        PerfKeys.COMPARE,
         PerfKeys.ATTEMPTS,
         PerfKeys.TRANSPORT_ATTEMPT_STARTS,
         PerfKeys.EVENTS_IN,

@@ -1,11 +1,16 @@
 // NEW: V4-133, FEATURES.md §5/§6 — POST /api/playground: "one prompt through one head, raw request
 // and response back, never recorded".
 //
+// Deviation (Oct 12, 2026, marlin): the send IS recorded now, because it is real spend. The head's budget weighs it
+// first and a block answers 429 {error, outcome: "error:budget-blocked", blocked: "budget", detail, head}; an answered
+// send leaves a Requests row flagged Compare, its economics entry and its budget spend, written by the head from
+// :app (UpstreamPlaygroundProbe). What stays true below: the send does not go through the head's turn pipeline.
+//
 //   POST /api/playground   body {head: string, prompt: string, model?: string} -> {request: {...}, response: {...}}
 //                           or {error: string} naming why (unknown head, no head-owned credential,
 //                           the upstream call itself failing)
 //
-// NEVER RECORDED MEANS THE DAEMON, NOT ONLY THE CONSOLE. The normal turn pipeline
+// THE SEND DOES NOT GO THROUGH THE TURN PIPELINE. The normal turn pipeline
 // (:daemon-head TurnDriver/TurnTelemetry) writes a perf row, a trace record when capture is on, and
 // folds tokens into economics on EVERY turn it serves — there is no flag on that path to skip
 // those writes, and adding one would touch the hot turn-completion code every real request runs
@@ -30,6 +35,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.perf.OutcomeTag
 import splice.http.JsonReply
 
 /** How PlaygroundRoute reaches the daemon's ONE upstream probe — read at call time, the same
@@ -51,6 +57,10 @@ public data class PlaygroundResult(val request: JsonElement, val response: JsonE
 /** One playground run failed before or during the upstream call (no credential, a refused dialect,
  *  a network failure). */
 public data class PlaygroundFailure(val message: String) : PlaygroundOutcome()
+
+/** The head's budget refused this send, as it refuses a turn: [message] is its sentence, [detail] its facts.
+ *  Nothing was sent; the refusal has left its row on Requests. */
+public data class PlaygroundBlocked(val head: String, val message: String, val detail: String) : PlaygroundOutcome()
 
 /** The daemon's one upstream probe, implemented in :app where the heads' providers and credentials
  *  already live. [PlaygroundHead] is enough for it to resolve the rest itself: the head's key names
@@ -96,8 +106,18 @@ public class PlaygroundRoute(
         return when (val outcome = probe.run(head, parsed.prompt, parsed.model?.takeIf { it.isNotBlank() })) {
             is PlaygroundResult -> JsonReply(HttpStatusCode.OK, resultJson(outcome))
             is PlaygroundFailure -> refuse(HttpStatusCode.BadGateway, outcome.message)
+            is PlaygroundBlocked -> JsonReply(HttpStatusCode.TooManyRequests, blockedJson(outcome))
         }
     }
+
+    // The outcome tag is the one a turn's refusal carries, so the console names it with the word it already has for it.
+    private fun blockedJson(blocked: PlaygroundBlocked): String = buildJsonObject {
+        put("error", blocked.message)
+        put("outcome", OutcomeTag.BUDGET_BLOCKED.wire)
+        put("blocked", "budget")
+        put("detail", blocked.detail)
+        put("head", blocked.head)
+    }.toString()
 
     private fun resultJson(result: PlaygroundResult): String = buildJsonObject {
         put("request", result.request)

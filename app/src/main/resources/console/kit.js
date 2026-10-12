@@ -514,8 +514,12 @@ function tilesHtml(items, pick, show = showCount) {
 // first, then its latest activity, then its name, No project last. ONE ORDER (Marlin): a project that ranked one way
 // here and another on Sessions would read as two facts.
 const NO_PROJECT_KEY = "-";
-const rowProjKey = (r) => r?.project?.id ?? NO_PROJECT_KEY;
-const rowProjName = (r) => r?.project?.label || r?.project?.name || "No project";
+// Compare models sends belong to no project and are not "No project" either: they are a group of their own, keyed so no
+// project id (an absolute folder or git root) can equal it, and shown only where a page has rows of it.
+const COMPARE_KEY = "compare";
+const COMPARE_LABEL = "Compare models";
+const rowProjKey = (r) => (r?.compare ? COMPARE_KEY : r?.project?.id ?? NO_PROJECT_KEY);
+const rowProjName = (r) => (r?.compare ? COMPARE_LABEL : r?.project?.label || r?.project?.name || "No project");
 /** [{key, label, counts, total}] for every project with a live session, in Sessions' group order. [turns] is the live
  *  turns by session id, [heads] the commands with their reanchorMs, as each page reads them for its own cards. */
 function projectGroups(rows, turns = {}, heads = []) {

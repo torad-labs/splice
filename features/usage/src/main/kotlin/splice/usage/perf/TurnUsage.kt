@@ -45,7 +45,8 @@ internal class TurnUsage(
             reading.label(row.facts.account)?.let { label -> account?.let { accountLabels[it] = label } }
             accounts.getOrPut(account, ::Counters).add(row, Priced(cost, value), gap)
             days.getOrPut(day, ::Counters).add(row, Priced(cost, value), gap)
-            sessions.getOrPut(row.transcript.sessionId, ::Counters).add(row, Priced(cost, value), gap)
+            val sessionKey = if (row.fields[PerfKeys.COMPARE] == 1L) COMPARE_BUCKET else row.transcript.sessionId
+            sessions.getOrPut(sessionKey, ::Counters).add(row, Priced(cost, value), gap)
             recordModel(row)
         }
     }
@@ -194,3 +195,7 @@ internal class AccountPlans(head: UsageHead, billing: UsageBilling? = null) {
 
     fun coversEveryAccount(): Boolean = lookup.coversEveryAccount()
 }
+
+// why: Compare models sends carry no session; Usage's by-project view reads its per-session buckets, so the sends fold
+// into one bucket of their own that the console names as a group, instead of the null key it leaves out.
+private const val COMPARE_BUCKET = "compare"

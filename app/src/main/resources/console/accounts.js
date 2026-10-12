@@ -783,7 +783,8 @@ function render({ flip = false } = {}) {
   drawing = true;
   // Add provider sits under the shortest column while a provider is left to add; with all of them here it has none to offer
   const addable = ui.addProv || CATALOG.some((c) => !data.some((p) => p.id === c.id));
-  board.innerHTML = L.cols.map((ids, i) => `<div class="col">${ids.map((id) => providerHtml(findProv(id))).join("")}`
+  board.innerHTML = (L.wide ? `<div class="col wide" style="--span:${L.wide.k}">${providerHtml(findProv(L.wide.id), L.wide.k)}</div>` : "")
+    + L.cols.map((ids, i) => `<div class="col">${ids.map((id) => providerHtml(findProv(id))).join("")}`
     + `${addable && i === L.addAt ? addProviderHtml() : ""}</div>`).join("");
   drawing = false;
   for (const b of board.querySelectorAll(".bar > b")) {
@@ -1127,6 +1128,14 @@ const doorOf = (head) => {
   return a ? `${p.id}/${a.id}` : null;
 };
 probe().then(() => {
+  // a door from Compare models: ?budget=<command's head> opens that command's budget, the editor "Set budget" opens
+  const over = data.flatMap((p) => p.cmds).find((c) => c.head === ADDR.get("budget"));
+  if (over) {
+    ui.editor = { c: over.cmd, cap: over.budget ? over.budget.cap : 10, block: over.budget ? over.budget.block : false };
+    render();
+    document.getElementById("cap-in")?.focus();
+    return;
+  }
   const card = ADDR.get("card") || (ADDR.get("head") && doorOf(ADDR.get("head")));
   if (!card) return;
   const el = board.querySelector(`[data-key^="card:${CSS.escape(card)}"]`);

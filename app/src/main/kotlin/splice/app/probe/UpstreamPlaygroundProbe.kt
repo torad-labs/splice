@@ -12,9 +12,11 @@
 // shape that had drifted from the turn path: ChatGPT refused every send with 400 "Input must be a list".
 // One builder means the Playground succeeds and fails exactly where a turn would.
 //
-// ONE SHOT, NO PIPELINE — see PlaygroundRoute.kt's header for the full reason (never recorded means the
-// whole turn pipeline, not only the console). This bypasses :daemon-head's TurnDriver: no retry loop, no
-// account rotation, no perf, trace or economics write. The builder writes nothing for a turn with no tools
+// ONE SHOT, NO PIPELINE: this bypasses :daemon-head's TurnDriver, so there is no retry loop and no account rotation.
+// Deviation from V4-133 (Oct 12, 2026, marlin): the send IS recorded, because it is real spend. The head's own budget
+// weighs it first (a block refuses it and leaves an Over budget row), the head's own stream translator reads its tokens
+// (PlaygroundUsage), and the head writes its Requests row, economics entry and budget spend (CompareSends), the row
+// flagged Compare and with no session. No trace is kept. The builder writes nothing for a turn with no tools
 // (code mode engages only on one that has them). The credential is the one a real turn would use: on a command with
 // two or more logins, the login its pool would choose next, with that login's own headers on top of the provider's,
 // and named in the echoed request; otherwise the head's own (PlaygroundHead.auth, which is ManagedHead.auth, the same
@@ -42,15 +44,20 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.parse.AnthropicParse
+import splice.core.perf.OutcomeTag
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.core.wire.HttpStatus
+import splice.diagnostics.playground.PlaygroundBlocked
 import splice.diagnostics.playground.PlaygroundFailure
 import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundOutcome
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.diagnostics.playground.PlaygroundResult
+import splice.head.usage.CompareAnswer
+import splice.head.usage.CompareSends
 import splice.head.usage.ProviderReply
 import splice.head.usage.ProviderReplyObserver
 import splice.head.usage.ProviderReplySender
@@ -82,6 +89,7 @@ internal class UpstreamPlaygroundProbe(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) : PlaygroundProbe {
     private val json = Json { ignoreUnknownKeys = true }
+    private val usage = PlaygroundUsage()
 
     // Each step below is its own function (ReturnCount: max 3 per function) rather than one long
     // chain of guards — the same split CaptureRoutes.write/PlaygroundRoute.run use for the same wall.
@@ -104,7 +112,7 @@ internal class UpstreamPlaygroundProbe(
             }
             else -> build(
                 provider,
-                Sender(creds, login, auth, target.observer),
+                Sender(creds, login, auth, target.observer, target.sends, head.key),
                 model ?: provider.pinnedModel,
                 prompt,
             )
@@ -117,6 +125,8 @@ internal class UpstreamPlaygroundProbe(
         val login: PlaygroundLogin?,
         val auth: AuthProvider,
         val observer: ProviderReplyObserver?,
+        val sends: CompareSends?,
+        val head: String,
     )
 
     private suspend fun build(
@@ -132,6 +142,11 @@ internal class UpstreamPlaygroundProbe(
     }
 
     private suspend fun send(provider: Provider, sender: Sender, turn: BuiltTurn): PlaygroundOutcome {
+        val model = turn.meta.route.upstreamModel
+        sender.sends?.admit(model, sender.login?.label)?.let {
+            return PlaygroundBlocked(sender.head, it.message, it.detail)
+        }
+        val startedAt = clock()
         val url = provider.upstreamUrl
         val creds = sender.creds
         // The login's headers ride ON TOP of the provider's, as on a real turn (SseRoundPost).
@@ -153,29 +168,35 @@ internal class UpstreamPlaygroundProbe(
             }
             sender.observer?.posted(replySender)
             statement.execute { sent ->
-                response(sender, turn, replySender, url, sent)
+                response(provider, sender, turn, replySender, Sent(url, sent, startedAt))
             }
-        }.getOrElse { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }
+        }.getOrElse {
+            record(sender, model, startedAt, ReadSend(null, OutcomeTag.UPSTREAM_FAILED.wire))
+            PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}")
+        }
     }
 
     /** Header acceptance is published before reading the body, even if that stream later fails. */
     private suspend fun response(
+        provider: Provider,
         sender: Sender,
         turn: BuiltTurn,
         replySender: ProviderReplySender,
-        url: String,
-        sent: HttpResponse,
+        posted: Sent,
     ): PlaygroundResult {
+        val (url, sent) = posted
         val creds = sender.creds
         val at = clock()
         val responseHeaders = QuotaHeaderRead { sent.headers[it] }
         val headers = replySender.requestHeaders
         sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders), replySender)
         (sender.auth as? RefreshableAuthProvider)?.upstreamAnswered(sent.status.value, sent.status.isSuccess())
-        val bodyText = sent.bodyAsText().take(MAX_RESPONSE_CHARS)
+        val whole = sent.bodyAsText()
+        val bodyText = whole.take(MAX_RESPONSE_CHARS)
         if (!sent.status.isSuccess()) {
             sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders, bodyText), replySender)
         }
+        record(sender, turn.meta.route.upstreamModel, posted.startedAt, readOf(provider, turn, sent, whole))
         val requestJson = buildJsonObject {
             sender.login?.let { put("account", it.label) }
             put("url", url)
@@ -189,6 +210,21 @@ internal class UpstreamPlaygroundProbe(
         }
         return PlaygroundResult(requestJson, responseJson)
     }
+
+    /** What the send was: a failed answer is a failed send; a good one is read by the head's own translator. */
+    private suspend fun readOf(provider: Provider, turn: BuiltTurn, sent: HttpResponse, whole: String): ReadSend =
+        when {
+            sent.status.isSuccess() -> usage.read(provider, turn, whole)
+            sent.status.value == HttpStatus.TOO_MANY_REQUESTS -> ReadSend(null, OutcomeTag.RATE_LIMITED.wire)
+            else -> ReadSend(null, OutcomeTag.UPSTREAM_FAILED.wire)
+        }
+
+    private fun record(sender: Sender, model: String, startedAt: Long, read: ReadSend) {
+        sender.sends?.answered(CompareAnswer(model, sender.login?.label, read.outcome, clock() - startedAt, read.usage))
+    }
+
+    /** The request as it went out and the answer's headers, kept with the moment it left. */
+    private data class Sent(val url: String, val response: HttpResponse, val startedAt: Long)
 
     /** Every header that may carry a credential, by the trace's own rule, and the credential's own header by
      *  name whatever it is called, read as redacted. */

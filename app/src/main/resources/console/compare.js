@@ -1,6 +1,6 @@
 // Compare models: one prompt to any model he has, Claude-plan models included, and each answer to read beside the others.
 // Each pane is one POST /api/playground {head, prompt, model}: the command's own provider builds the one-message turn a real
-// turn would send, as the login a real turn would use next, and nothing is recorded. The answer comes back whole, as the
+// turn would send, as the login a real turn would use next, and it is recorded like a request (a Requests row marked Compare, its price, the command's budget); an over-budget command refuses it, as it refuses a turn. The answer comes back whole, as the
 // provider's own stream in {raw: text}, and this page reads its frames. A pane's Request opens the send in Requests' own open
 // request (reqview.js). The picker lists only the commands that can send now (a login added to splice, a key, a local
 // runtime), never the client's own sign-in, which splice has no credential for.
@@ -137,6 +137,12 @@ async function ask(p) {
   const ms = Math.round(performance.now() - began);
   p.ms = ms;
   const reply = res.body;
+  if (res.status === 429 && reply?.blocked === "budget") { // the command's budget refused it as it refuses a turn, leaving an Over budget row
+    console.warn(`compare: ${reply.error ?? "the budget refused the send"}`);
+    Object.assign(p, { st: "failed", fail: { word: OUTCOME_WORD[reply.outcome], retry: false, door: reply.head } });
+    p.trace = null;
+    return;
+  }
   if (!res.ok || !reply?.response) { // splice's own refusal, or a call that never reached the provider
     const said = reply?.error ?? (console.warn(`compare: ${res.status || "no answer"}`), res.status === 0 ? "Not answering" : "Not read");
     Object.assign(p, { st: "failed", fail: { word: failWord(0, null, said), retry: res.status !== 400, said } });
@@ -276,6 +282,7 @@ function fixHtml(p, i) { // the failure's word, then the one thing that fixes it
   const said = p.fail.said || p.fail.code ? `<p class="upmsg"><span class="who">${esc(who)}</span>${p.fail.code != null ? `<span class="code">${p.fail.code}</span>` : ""}${p.fail.said ? `<q>${esc(p.fail.said)}</q>` : ""}</p>` : "";
   if (p.fail.spent) return `<span class="state limit lock">${ICON.lock}<span>${esc(p.fail.spent.word)} · Resets ${backWord(p.fail.spent.until)}</span></span>${said}`;
   const word = `<span class="state limit">${esc(p.fail.word)}</span>${p.tries > 1 ? `<span class="pg-try">Try <b>${p.tries}</b></span>` : ""}`;
+  if (p.fail.door) return `${word}<a class="act" href="accounts.html?budget=${encodeURIComponent(p.fail.door)}">Set budget</a>`;
   if (p.fail.word === OUTCOME_WORD["error:auth-missing"] || p.fail.word === OUTCOME_WORD["failure:authentication_error"]) {
     return `${word}<a class="act" href="accounts.html">Accounts</a>${said}`;
   }

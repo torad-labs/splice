@@ -330,6 +330,7 @@ function reqUrl(extra = {}, f = ui.f) {
   return `requests.html?${p}`;
 }
 const projectOfSid = (sid, byRow) => {
+  if (sid === COMPARE_KEY) return { key: COMPARE_KEY, label: COMPARE_LABEL }; // the daemon's bucket of Compare models sends
   const tag = String(sid).slice(0, 8), p = S.sessions[sid]?.project ?? S.sessions[tag]?.project ?? byRow.get(tag) ?? null;
   return { key: rowProjKey({ project: p }), label: rowProjName({ project: p }) };
 };

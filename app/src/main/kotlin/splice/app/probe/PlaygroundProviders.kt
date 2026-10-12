@@ -11,6 +11,7 @@ package splice.app.probe
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthProvider
+import splice.head.usage.CompareSends
 import splice.head.usage.ProviderReplyObserver
 import splice.upstream.CredentialHeaders
 import splice.upstream.Provider
@@ -32,6 +33,8 @@ internal data class PlaygroundTarget(
     val auth: AuthProvider?,
     val login: PlaygroundLogin?,
     val observer: ProviderReplyObserver?,
+    /** The head's budget and records, so a send is weighed and written like a request; null on a bare provider. */
+    val sends: CompareSends? = null,
 )
 
 internal class PlaygroundProviders {
@@ -43,6 +46,7 @@ internal class PlaygroundProviders {
         val auth: AuthProvider? = null,
         val observer: ProviderReplyObserver? = null,
         val pooled: Pooled? = null,
+        val sends: CompareSends? = null,
     )
 
     fun register(key: String, provider: Provider) {
@@ -50,8 +54,14 @@ internal class PlaygroundProviders {
     }
 
     /** One publication owns the provider, actual auth, pool and reply receiver of an assembled head. */
-    fun bind(key: String, wired: Wired, pool: AccountPool?, observer: ProviderReplyObserver) {
-        byKey[key] = Binding(wired.provider, wired.auth, observer, pooled(pool, wired.accounts))
+    fun bind(
+        key: String,
+        wired: Wired,
+        pool: AccountPool?,
+        observer: ProviderReplyObserver,
+        sends: CompareSends? = null,
+    ) {
+        byKey[key] = Binding(wired.provider, wired.auth, observer, pooled(pool, wired.accounts), sends)
     }
 
     /** Standalone provider fixtures may attach their pool after registration. Production uses [bind]. */
@@ -64,7 +74,7 @@ internal class PlaygroundProviders {
 
     fun target(key: String): PlaygroundTarget? {
         val binding = byKey[key] ?: return null
-        return PlaygroundTarget(binding.provider, binding.auth, login(binding.pooled), binding.observer)
+        return PlaygroundTarget(binding.provider, binding.auth, login(binding.pooled), binding.observer, binding.sends)
     }
 
     private fun pooled(pool: AccountPool?, accounts: List<WiredAccount>): Pooled? = pool?.let {

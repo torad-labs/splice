@@ -22,11 +22,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -39,8 +41,11 @@ import splice.core.model.ModelEntry
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.head.usage.CompareAnswer
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -121,6 +126,69 @@ class HeadBudgetTest(@param:TempDir private val root: Path) {
             rig.close()
         }
     }
+
+    @Test
+    fun `a Compare send is weighed by the same budget, and its refusal leaves an Over budget row flagged Compare`() =
+        runBlocking {
+            val block = BudgetBlock(message = "head spent its budget", detail = "spent_usd=2.00 limit_usd=2.00")
+            val rig = BudgetRig(root, RecordingBudget(block))
+            try {
+                rig.start()
+                assertEquals(block, rig.head.compareSends.admit("compare-model", null))
+                val row = rig.perfRows(1).single()
+                assertEquals(OutcomeTag.BUDGET_BLOCKED.wire, row.getValue("outcome").jsonPrimitive.content)
+                assertEquals(1L, row.getValue(PerfKeys.COMPARE).jsonPrimitive.long)
+                assertNull(row["session"]?.takeUnless { it is JsonNull })
+                // written as a refused turn is: no token fields, no attempts, so the bill is empty and reads unanswered
+                assertNull(row[PerfKeys.IN_TOKENS])
+                assertNull(row[PerfKeys.OUT_TOKENS])
+                assertEquals(0L, row.getValue(PerfKeys.ATTEMPTS).jsonPrimitive.long)
+                assertEquals(1L, row.getValue(PerfKeys.NO_REQUEST).jsonPrimitive.long)
+                assertEquals(0, rig.budget.spends.size, "a refused send spent nothing")
+            } finally {
+                rig.close()
+            }
+        }
+
+    @Test
+    fun `an answered Compare send writes its row with the tokens it reported and spends them`() = runBlocking {
+        val rig = BudgetRig(root, RecordingBudget(null))
+        try {
+            rig.start()
+            val usage = Usage(
+                inputTokens = 100,
+                outputTokens = 7,
+                reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
+            )
+            assertNull(rig.head.compareSends.admit("compare-model", null))
+            rig.head.compareSends.answered(CompareAnswer("compare-model", null, OutcomeTag.OK.wire, 120L, usage))
+            val row = rig.perfRows(1).single()
+            assertEquals(1L, row.getValue(PerfKeys.COMPARE).jsonPrimitive.long)
+            assertEquals(100L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(7L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+            val (atMs, model, counters) = rig.budget.spends.single()
+            assertEquals(row.getValue("ts").jsonPrimitive.long, atMs)
+            assertEquals("compare-model", model)
+            assertEquals(100L, counters[PerfKeys.IN_TOKENS])
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a Compare send whose stream reported no usage leaves a row with no token counts, not zeros`() = runBlocking {
+        val rig = BudgetRig(root, RecordingBudget(null))
+        try {
+            rig.start()
+            rig.head.compareSends.answered(CompareAnswer("compare-model", null, OutcomeTag.OK.wire, 80L, null))
+            val row = rig.perfRows(1).single()
+            assertNull(row[PerfKeys.IN_TOKENS])
+            assertNull(row[PerfKeys.OUT_TOKENS])
+            assertEquals(1L, row.getValue(PerfKeys.COMPARE).jsonPrimitive.long)
+        } finally {
+            rig.close()
+        }
+    }
 }
 
 /** One codex head on a mock upstream, weighed against [budget]. */
@@ -129,7 +197,7 @@ private class BudgetRig(root: Path, val budget: RecordingBudget) {
     private val mock = MockChatGptUpstream()
     private val perfFile = tmp.resolve("perf.jsonl")
     private val auth = BudgetRigAuth()
-    private val head = HeadServer(
+    val head = HeadServer(
         provider = provider(),
         listenPort = 0,
         deps = headDeps(tmp = tmp).copy(quotaBundle = quotaFor(null, null, budget = budget)),

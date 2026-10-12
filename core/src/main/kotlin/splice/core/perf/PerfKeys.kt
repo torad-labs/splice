@@ -91,6 +91,10 @@ public object PerfKeys {
     /** Claude Code's activity side query, answered by the head itself with no model: a local step of its own kind. */
     public const val ACTIVITY_QUERY: String = "activity_query"
 
+    /** A row written by a Compare models send (POST /api/playground): it has no session and is no project's work, so a
+     *  project view must never fold it into "no project". It counts everywhere else a request counts. */
+    public const val COMPARE: String = "compare"
+
     /** Elapsed milliseconds inside canonical history passes, summed on the owning turn. */
     public const val CODE_MODE_CANONICAL_MS: String = "code_mode_canonical_ms"
 

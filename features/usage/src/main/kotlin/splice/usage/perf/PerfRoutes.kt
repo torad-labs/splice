@@ -36,6 +36,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHead
@@ -350,6 +351,8 @@ public class PerfRoutes(
         put("session", row.facts.session)
         // The project object the session rows carry; null where the session is unknown or outside every project.
         put("project", row.facts.session?.let(tags::of) ?: JsonNull)
+        // A Compare models send: no session, no project, and never "no project"; the console groups it by this field.
+        put("compare", row.fields[PerfKeys.COMPARE] == 1L)
         // What a session with no name is called, from the same snapshot; null where it has a name or none is readable.
         put("title", row.facts.session?.let(tags::titleOf))
         put("account", reading.key(row.facts.account))

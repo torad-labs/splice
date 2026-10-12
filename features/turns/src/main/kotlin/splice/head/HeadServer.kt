@@ -176,6 +176,9 @@ public class HeadServer(
     public val providerReplies: splice.head.usage.ProviderReplyObserver =
         splice.head.usage.HeadProviderReplies(deps, provider.auth)
 
+    /** A Compare models send borrows this head's budget and stores, so it is weighed and recorded like a request. */
+    public val compareSends: splice.head.usage.CompareSends = splice.head.usage.HeadCompareSends(deps)
+
     /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
     override fun providerResetForMs(): Long =
         deps.quotaBundle.activePool?.providerResetForMs ?: deps.traffic.upstream.providerResetForMs

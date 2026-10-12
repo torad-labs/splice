@@ -119,7 +119,7 @@ internal class HeadServing(
         forwardClientAuth: Boolean,
         recordings: FileCompactionRecordings,
     ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings)
-        .also { playgroundProviders.bind(ctx.key, wired, stores.accounts.pool, it.providerReplies) }
+        .also { playgroundProviders.bind(ctx.key, wired, stores.accounts.pool, it.providerReplies, it.compareSends) }
 }
 
 internal class ManagedHeadFactory(

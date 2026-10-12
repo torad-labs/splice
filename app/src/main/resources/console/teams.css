@@ -38,6 +38,8 @@
 .team-head h2 { font: 400 3rem/1 var(--font-lead); letter-spacing: -.01em; margin: 0; }
 .team-head .goal { margin: .75rem 0 0; font: 400 1.3rem/1.45 var(--font-name); color: var(--text-body); max-width: 72rem; }
 .team-head .where { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1.8rem; margin-top: 1.05rem; }
+/* the requests line keeps its own row under the folder whatever the header's width, so End all never moves it (marlin p227) */
+.team-head .where > .figs { flex-basis: 100%; }
 .repo { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .repo svg { width: 1.15rem; height: 1.15rem; }
 .figs { display: inline-flex; flex-wrap: wrap; gap: .4rem 1.1rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }

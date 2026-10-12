@@ -315,9 +315,11 @@ const inPick = (tm, pick = picked()) => pick == null || teamKey(tm) === pick || 
 // ---------- the tabs: one per team, its members' colours on it ----------
 function tabHtml(tm) {
   const needs = tm.slots.some((s) => sessOf(s)?.waiting_for);
-  const blots = tm.slots.map((s) => `<i style="--c:${headColor(s.head)}"${sessOf(s) ? "" : ' class="open"'}></i>`).join("");
-  const members = tm.slots.length, live = tm.slots.filter((x) => sessOf(x)).length;
-  const dots = `${members} ${members === 1 ? "member" : "members"}, ${live} with a session; a hollow dot has none`;
+  // a member is filled only while its session runs: one that ended draws hollow, as one never started does (marlin p227)
+  const running = (x) => { const s = sessOf(x); return Boolean(s) && s.availability !== "gone"; };
+  const blots = tm.slots.map((s) => `<i style="--c:${headColor(s.head)}"${running(s) ? "" : ' class="open"'}></i>`).join("");
+  const members = tm.slots.length, live = tm.slots.filter(running).length;
+  const dots = `${members} ${members === 1 ? "member" : "members"}, ${live} running; a hollow dot is not running`;
   return `<button class="tab${needs ? " needs" : ""}" data-act="team" data-t="${esc(tm.id)}" title="${esc(dots)}" aria-current="${ui.team === tm.id}">` +
     `<span class="tname">${esc(tm.name)}</span><span class="blots" aria-hidden="true">${blots}</span></button>`;
 }

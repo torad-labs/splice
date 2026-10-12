@@ -1,7 +1,8 @@
 // NEW: Oct 12, 2026 (Marcos via splice-lead): a login added after a plan limit wakes the sessions the limit stopped.
 // Only a session whose newest request ended At limit on the command the login joined, whose limit has not expired, and
 // that nobody stopped, answered or wrote to since, is sent the note, once per ending. Each release and each session
-// that could not be reached is logged with why. Only a new login does this: a window that resets is not a login.
+// that could not be reached is logged with why. Only a new login does this: a window that resets is not a login. A
+// session still in Claude Code's own retry is left to it, since that retry rechecks the pool within 30 s.
 package splice.app.control
 
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,10 @@ import splice.sessions.registry.SessionSource
 import java.util.concurrent.ConcurrentHashMap
 
 private const val NEW_ACCOUNT_NOTE = "A new account is available. Continue where you left off."
+
+// why: a turn still in Claude Code's own wait reads busy: its retry rechecks the pool within 30 s (ClientRecheck), so a
+// note to it would only land after that turn, as a second ask.
+private val IN_ITS_RETRY = setOf("working", "busy")
 
 // why: only these two endings are a limit that a fresh login lifts; a missing login or a provider outage is not.
 private val LIMIT_ENDINGS = setOf(OutcomeTag.PLAN_LIMIT.wire, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire)
@@ -56,6 +61,10 @@ internal class LimitResume(
         val id = requireNotNull(record.sessionId)
         val ending = stoppedAt(head, record, id) ?: return
         if (released.put(id, ending) == ending) return
+        if (record.status.state in IN_ITS_RETRY) {
+            log("[limit-resume] left ${LogSafe.str(id)} to its own retry on ${LogSafe.str(head)}")
+            return
+        }
         val outcome = Cancellables.runCatchingCancellable { sender.send(record, NEW_ACCOUNT_NOTE) }
             .getOrElse { NoteOutcome.Failed(SafeFailureText.render(it)) }
         when (outcome) {

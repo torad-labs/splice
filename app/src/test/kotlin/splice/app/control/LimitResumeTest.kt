@@ -34,10 +34,10 @@ class LimitResumeTest {
         override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
     }
 
-    private fun session(id: String, head: String) = SessionRecord(
+    private fun session(id: String, head: String, state: String = "idle") = SessionRecord(
         sessionId = id,
         name = null,
-        status = SessionStatus("idle"),
+        status = SessionStatus(state),
         route = SessionRoute.Head(head),
         availability = SessionAvailability.LIVE,
         process = SessionProcess(pid = 1, cwd = null, startedAt = null, updatedAt = 1, messagingSocketPath = "/s/$id"),
@@ -48,13 +48,14 @@ class LimitResumeTest {
         WiredAccount(label, label == "one", Auth(), WiredAccountQuota(dir.resolve("$label.json")))
 
     @Test
-    fun `adding an account releases the three sessions the limit stopped, once, and no other`(@TempDir dir: Path) {
+    fun `a new account releases the three the limit stopped, once, and leaves one in its retry`(@TempDir dir: Path) {
         val limited = listOf("a", "b", "c").map { session(it, "claude") }
         val others = listOf(
             session("stopped", "claude"),
             session("elsewhere", "claudex"),
             session("outage", "claude"),
             session("clean", "claude"),
+            session("waiting", "claude", state = "busy"),
         )
         val endings = mapOf(
             "a" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
@@ -63,6 +64,7 @@ class LimitResumeTest {
             "stopped" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
             "elsewhere" to ending(OutcomeTag.PLAN_LIMIT, "claudex"),
             "outage" to ending(OutcomeTag.UPSTREAM_FAILED, "claude"),
+            "waiting" to ending(OutcomeTag.PLAN_LIMIT, "claude"),
         )
         val sent = mutableListOf<Pair<String?, String>>()
         val logged = mutableListOf<String>()
@@ -95,6 +97,7 @@ class LimitResumeTest {
                 "[limit-resume] released a on claude",
                 "[limit-resume] released b on claude",
                 "[limit-resume] could not reach c after a new login: no messaging socket",
+                "[limit-resume] left waiting to its own retry on claude",
             ),
             logged,
         )

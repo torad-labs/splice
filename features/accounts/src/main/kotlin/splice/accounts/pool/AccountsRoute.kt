@@ -26,6 +26,10 @@ import splice.core.usage.QuotaReadFailureSource
 import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
 
+// why: the label a head's OAuth pool polls its primary login under (OAuthAccountFiles.discover), which Accounts reads
+// a failed limits read by when the row shows that login with no label.
+private const val POLLED_PRIMARY = "primary"
+
 /** [firsts] answers for a command's first OAuth account, so its row can be renamed and removed. Null leaves it
  *  fixed. */
 public class AccountsRoute(
@@ -211,9 +215,13 @@ public class AccountsRoute(
             .let { if (row.authExclusion.ref != null) it.copy(canRename = true) else it }
         management.write(into, name(row, first, naming), row.authExclusion.ref != null, edit)
         writeQuota(into, row, nowSeconds)
-        // A credential two heads share is read once per head: the newest failure is the one the page names.
-        val failure = row.labelsByHead.mapNotNull { (head, label) -> readFailures?.failure(head, label) }
-            .maxByOrNull { it.atEpochSeconds }
+        // A credential two heads share is read once per head: the newest failure is the one the page names. A head's
+        // primary login is polled under "primary" when its OAuth pool lists it, though the page shows it as the head's
+        // one login with no label, so that row asks both (marlin, Oct 12: claudex read Not read with no reason).
+        val failure = row.labelsByHead.flatMap { (head, label) ->
+            val asked = if (label == null && row.primary) listOf(null, POLLED_PRIMARY) else listOf(label)
+            asked.mapNotNull { readFailures?.failure(head, it) }
+        }.maxByOrNull { it.atEpochSeconds }
         into.put("last_read_failure", failure?.json() ?: JsonNull)
         val answer = row.labelsByHead.mapNotNull { (head, label) -> heads[head]?.answers?.answer(label) }
             .maxByOrNull { it.observedAtEpochMs }

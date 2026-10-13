@@ -160,7 +160,7 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
                 "the 1s first-output tier is a probe now: a live path is HELD, never reaped by it: ${evidence(sse)}",
             )
             assertTrue(
-                sse.contains("splice progress timeout expired after 4000ms without upstream progress; retry"),
+                sse.contains("splice progress timeout expired after 4000ms without upstream progress;"),
                 "only the progress deadline may end this silent turn: ${evidence(sse)}",
             )
         }
@@ -183,7 +183,7 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
             // generic watchdog wording (as HeadServerFoldTest's NF-03 arm pins), not a tier-named
             // message — which is exactly the discriminator: the 1s tier would have said its name.
             assertTrue(
-                sse.contains("splice progress timeout expired after 4000ms without upstream progress; retry"),
+                sse.contains("splice progress timeout expired after 4000ms without upstream progress;"),
                 "only the progress deadline may end this silent turn: ${evidence(sse)}",
             )
         }

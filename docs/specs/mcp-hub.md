@@ -132,4 +132,9 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
   about 17 s: "Max reconnection attempts (5) reached". The tool stayed gone until /mcp. That desk had
   no socket activation, so each reconnect was refused. The President ruled on Oct 12 that sessions
   connect to a hub front that outlives the daemon (see above).
-- **(d) A holder across a daemon restart:** to run before step 2.
+- **(d) A holder across a daemon restart, passed (splice-config, Oct 12).** A Kotlin/Native holder
+  (576 KB, 4.7 MB RSS) ran a stateful stand-in in app-mcp.slice. A call sent 0.5 s into a desk
+  daemon restart answered 8.5 s later with the count intact, on the same server pid. The 8.5 s was
+  the JVM daemon's boot, which is why the front matters. Carried forward: the new daemon sent
+  initialize again, so the front keeps each server's initialize result and an adopted holder is never
+  handshaken twice.

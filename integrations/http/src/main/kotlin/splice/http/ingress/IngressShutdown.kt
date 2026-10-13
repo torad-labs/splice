@@ -18,9 +18,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 // why: RFC 9112 section 9.6 describes staged close; bound the final acknowledgement/drain interval to one second.
 internal const val SHUTDOWN_GRACE_MS = 1000L
 
+// why: a client still sending its body after the reply keeps the drain open, each read restarting the grace, for this
+// long at most from the staged close, so a trickling client cannot hold the connection.
+internal const val SHUTDOWN_CEILING_MS = 10_000L
+
 /**
  * After the final response flush, half-close output through the charged connection. Its input halves sit on
  * either side of it: [IngressInputShutdown] before it, [IngressDrain] after it.
+ *
+ * The grace is counted from the client's last bytes, not from the half-close. A fixed second closed on a client still
+ * streaming the body it had sent before its 529 came back, and a close with unread input is a reset, which takes the
+ * reply the client had not read yet with it (RequestHeapBudgetTest, ad71cc142: one of 139 answers lost after a pause).
  */
 internal class IngressShutdown(
     private val ownership: IngressOwnership,
@@ -28,6 +36,7 @@ internal class IngressShutdown(
     private val graceMs: Long = SHUTDOWN_GRACE_MS,
 ) : ChannelDuplexHandler() {
     private var deadline: ScheduledFuture<*>? = null
+    private var closeByNanos = 0L
 
     override fun close(ctx: ChannelHandlerContext, promise: ChannelPromise) {
         val socket = ctx.channel() as? DuplexChannel
@@ -42,7 +51,17 @@ internal class IngressShutdown(
         socket.shutdownOutput().addListener { result ->
             if (result.isSuccess) ctx.read() else ctx.close()
         }
+        closeByNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SHUTDOWN_CEILING_MS)
         deadline = ctx.executor().schedule({ ctx.close() }, graceMs, TimeUnit.MILLISECONDS)
+    }
+
+    /** Input while draining is a client still sending: its grace starts again, up to the ceiling. */
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        if (ownership.draining.get() && deadline?.cancel(false) == true) {
+            val left = TimeUnit.NANOSECONDS.toMillis(closeByNanos - System.nanoTime()).coerceAtLeast(0L)
+            deadline = ctx.executor().schedule({ ctx.close() }, minOf(graceMs, left), TimeUnit.MILLISECONDS)
+        }
+        ctx.fireChannelRead(msg)
     }
 
     override fun channelReadComplete(ctx: ChannelHandlerContext) {

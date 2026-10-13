@@ -58,9 +58,9 @@ public data class PlaygroundResult(val request: JsonElement, val response: JsonE
  *  a network failure). */
 public data class PlaygroundFailure(val message: String) : PlaygroundOutcome()
 
-/** The head's budget refused this send, as it refuses a turn: [message] is its sentence, [detail] its facts.
- *  Nothing was sent; the refusal has left its row on Requests. */
-public data class PlaygroundBlocked(val head: String, val message: String, val detail: String) : PlaygroundOutcome()
+/** The head's budget refused this send, as it refuses a turn: [message] is its sentence. Nothing was sent; the
+ *  refusal has left its row on Requests. */
+public data class PlaygroundBlocked(val head: String, val message: String) : PlaygroundOutcome()
 
 /** The daemon's one upstream probe, implemented in :app where the heads' providers and credentials
  *  already live. [PlaygroundHead] is enough for it to resolve the rest itself: the head's key names
@@ -115,7 +115,6 @@ public class PlaygroundRoute(
         put("error", blocked.message)
         put("outcome", OutcomeTag.BUDGET_BLOCKED.wire)
         put("blocked", "budget")
-        put("detail", blocked.detail)
         put("head", blocked.head)
     }.toString()
 

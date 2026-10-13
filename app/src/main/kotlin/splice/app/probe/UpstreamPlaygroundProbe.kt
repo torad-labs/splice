@@ -142,7 +142,7 @@ internal class UpstreamPlaygroundProbe(
     private suspend fun send(provider: Provider, sender: Sender, turn: BuiltTurn): PlaygroundOutcome {
         val model = turn.meta.route.upstreamModel
         sender.sends?.admit(model, sender.login?.label)?.let {
-            return PlaygroundBlocked(sender.head, it.message, it.detail)
+            return PlaygroundBlocked(sender.head, it.message)
         }
         val startedAt = clock()
         val url = provider.upstreamUrl
@@ -199,7 +199,6 @@ internal class UpstreamPlaygroundProbe(
         val requestJson = buildJsonObject {
             sender.login?.let { put("account", it.label) }
             put("url", url)
-            put("method", "POST")
             putJsonObject("headers") { redacted(headers, creds).forEach { (k, v) -> put(k, v) } }
             put("body", turn.requestBody)
         }

@@ -110,7 +110,7 @@ class PlaygroundCompareRecordTest {
         HttpClient(MockEngine { error("a refused send never reaches the upstream") }).use { client ->
             val probe = UpstreamPlaygroundProbe(registry, client)
             val outcome = probe.run(playgroundHead("claudex"), "synthetic prompt", null)
-            assertEquals(PlaygroundBlocked("claudex", block.message, block.detail), outcome)
+            assertEquals(PlaygroundBlocked("claudex", block.message), outcome)
         }
         fixture.first.head.stop()
     }

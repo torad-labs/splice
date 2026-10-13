@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -77,6 +78,10 @@ class ConfigLiveKnobsTest {
         header("Authorization", "Bearer $key")
     }.bodyAsText()
 
+    /** The knobs the answer says apply only on restart, from each knob's own disposition. */
+    private fun restartOnly(view: JsonObject): Set<String> = view.getValue("knobs").jsonObject
+        .filterValues { it.jsonObject.getValue("disposition").jsonPrimitive.content == "restart" }.keys
+
     @Test
     fun `a limit raised over the control route admits the turn already waiting, with no restart`() = runBlocking<Unit> {
         patch("""{"maxInflight":1}""")
@@ -106,7 +111,7 @@ class ConfigLiveKnobsTest {
         val view = json.parseToJsonElement(read()).jsonObject
         val effective = view.getValue("effective").jsonObject
         val runtime = view.getValue("layers").jsonObject.getValue("runtime").jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
 
         assertEquals("9", effective.getValue("maxInflight").jsonPrimitive.content)
         assertEquals("9", runtime.getValue("maxInflight").jsonPrimitive.content, "its source is the runtime layer")
@@ -123,7 +128,7 @@ class ConfigLiveKnobsTest {
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
         assertEquals("90", view.getValue("effective").jsonObject.getValue("usageWarnPct").jsonPrimitive.content)
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         assertFalse("usageWarnPct" in restartOnly || "usageWarnTokens5h" in restartOnly)
         assertEquals(90, config.getConfig("h").usageWarnPct, "a head reads it live, the way its usage view does")
     }
@@ -134,7 +139,7 @@ class ConfigLiveKnobsTest {
 
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         assertFalse("requestReadTimeoutMs" in restartOnly, "a live knob is not listed as restart-only")
         // The head's own answer, which is what its body reader asks at every read (RequestReadBudgetMs).
         assertEquals(45_000L, config.getConfig("h").requestReadTimeoutMs)
@@ -146,7 +151,7 @@ class ConfigLiveKnobsTest {
 
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         assertFalse("maxRequestBytes" in restartOnly, "a live knob is not listed as restart-only")
         // What both enforcement layers ask for per request: the head's materialization gate and, in front of it,
         // the listener's ingress guard (RequestByteCap).
@@ -159,7 +164,7 @@ class ConfigLiveKnobsTest {
 
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         assertFalse("materializationHeapBytes" in restartOnly, "a live knob is not listed as restart-only")
         // What the daemon's one materialization gate asks at every admission (MaterializationBudgetBytes), which it
         // caps into the ceiling the ingress guard in front of each head asks for.
@@ -172,7 +177,7 @@ class ConfigLiveKnobsTest {
 
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         assertFalse("quotaPollIntervalMs" in restartOnly, "a live knob is not listed as restart-only")
         // What this head's poller asks between two looks at its account's usage endpoint (QuotaIntervalMs), so an
         // operator who slows a provider down is obeyed by the next wait.
@@ -185,7 +190,7 @@ class ConfigLiveKnobsTest {
 
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         assertFalse("mcpRequestTimeoutMs" in restartOnly, "a live knob is not listed as restart-only")
         // Daemon-global, so the hosted MCP server asks the same unkeyed config at every forwarded request
         // (McpRequestBudget).
@@ -201,7 +206,7 @@ class ConfigLiveKnobsTest {
 
             assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
             val view = json.parseToJsonElement(read()).jsonObject
-            val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+            val restartOnly = restartOnly(view)
             val keys = listOf(Knob.MCP_IDLE_TIMEOUT_MS, Knob.MCP_MAX_SERVERS, Knob.MCP_INITIALIZE_TIMEOUT_MS)
             keys.forEach { assertFalse(it.key in restartOnly, "${it.key} is live, so it is not restart-only") }
             // All four MCP host values are readers over this one unkeyed config: the idle sweep, spawn admission
@@ -223,7 +228,7 @@ class ConfigLiveKnobsTest {
 
         assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
         val view = json.parseToJsonElement(read()).jsonObject
-        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        val restartOnly = restartOnly(view)
         listOf(Knob.FOLD_REASONING_MODELS, Knob.FOLD_MAX_CONTINUE, Knob.FOLD_MARKER_TEXT, Knob.FOLD_MAX_TIER)
             .forEach { assertFalse(it.key in restartOnly, "${it.key} is live, so it is not restart-only") }
         // What the codex head's per-turn LiveFoldConfig reads off its own config at every turn.

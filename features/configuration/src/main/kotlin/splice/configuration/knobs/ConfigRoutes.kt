@@ -19,7 +19,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigService
-import splice.core.config.restartRequiredKnobKeys
 import splice.core.topology.TopologyWriterSource
 import splice.http.JsonBody
 
@@ -53,7 +52,6 @@ public class ConfigRoutes(
                 put("runtime", mapToJson(layers.runtime))
             }
             put("knobs", KnobViews().of(mapToJson(effective), layers, headKey))
-            putJsonArray("restart_required_keys") { restartRequiredKnobKeys.forEach { add(it) } }
         }.toString()
     }
 

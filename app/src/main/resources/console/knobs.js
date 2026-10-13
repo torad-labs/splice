@@ -3,9 +3,10 @@
 // gains one global. A page wires it once (KNOBS.wire), loads it (KNOBS.load), asks it first on every click
 // (KNOBS.click), and redraws when it answers true. Load after kit.js (esc, ICON, G, colorOf) and api.js (API).
 //
-// WHERE EACH VALUE COMES FROM. GET /api/config answers the effective value and every layer behind it, and the kit
-// reads them in the daemon's own order (runtime > env > file > splice.toml > default, ConfigService). A command's own
-// value is that command's [heads.KEY.overrides] layer, which the payload carries per head.
+// WHERE EACH VALUE COMES FROM. GET /api/config's knobs block answers each setting's effective value, the scope that set
+// it (runtime > env > file > splice.toml > default, ConfigService's order, worked out by the daemon alone: KnobViews)
+// and whether a change applies live or on restart. A command's own value is that command's [heads.KEY.overrides] layer,
+// which the payload carries per head.
 //
 // WHAT A CHANGE DOES, HONESTLY. PATCH /api/config answers which keys it applied, which it refused and with what
 // reason, and which of the applied ones the running daemon does not read until it restarts. The kit carries all three
@@ -144,17 +145,15 @@ const KNOBS = (() => {
     return Object.keys(per).filter((c) => per[c] !== null && typeof per[c] === "object" && key in per[c]).sort();
   }
   const ownValue = (key, cmd) => layer("perHead")[cmd]?.[key];
-  /** The restart-required keys the daemon itself names, so this file never carries a second copy of that list. */
-  const needsRestart = (key) => (st.cfg?.restart_required_keys ?? []).includes(key);
+  /** Whether the running daemon reads [key] only at start: the knob's own disposition, as the daemon names it. */
+  const needsRestart = (key) => st.cfg?.knobs?.[key]?.disposition === "restart";
 
-  // where the effective value comes from, in ConfigService's own order
+  // the effective value and the scope that set it, as the daemon's knobs block says (spec 9)
+  const SOURCE = { runtime: "here", env: "env", file: "file", toml: "toml" };
   function valueOf(k) {
-    for (const [name, src] of [["runtime", "here"], ["env", "env"], ["file", "file"], ["toml", "toml"]]) {
-      const l = layer(name);
-      if (k.key in l && l[k.key] !== null) return { v: l[k.key], src, name: k.key };
-    }
-    const effective = st.cfg?.effective ?? {};
-    return { v: k.key in effective ? effective[k.key] : k.def, src: "default" };
+    const knob = st.cfg?.knobs?.[k.key];
+    const src = SOURCE[knob?.scope];
+    return src ? { v: knob.value, src, name: k.key } : { v: knob?.value ?? k.def, src: "default" };
   }
   const val = (key) => valueOf(KNOB[key]).v;
   // A models setting is a comma list of the ids a command serves; the page names each by the label GET /api/models gives it.
@@ -286,7 +285,7 @@ const KNOBS = (() => {
       return { bad: true, reason: refused };
     }
     // the daemon said what it applied: the row reads that now, not the value the page last fetched
-    st.cfg = { ...st.cfg, layers: { ...st.cfg?.layers, runtime: { ...st.cfg?.layers?.runtime, [key]: body.applied[key] } } };
+    st.cfg = { ...st.cfg, knobs: { ...st.cfg?.knobs, [key]: { ...st.cfg?.knobs?.[key], value: body.applied[key], scope: "runtime" } } };
     delete st.bad[id];
     const restart = (body.restart_required ?? []).includes(key) || needsRestart(key);
     if (!restart) st.said[id] = "Applied";

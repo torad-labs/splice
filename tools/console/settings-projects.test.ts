@@ -30,7 +30,7 @@ const server = Bun.serve({
         folders = body.projectsFolders ?? folders;
         return Response.json({ applied: { projectsFolders: folders }, rejected: {}, restart_required: [] });
       }
-      return Response.json({ layers: { runtime: { projectsFolders: folders } }, restart_required_keys: [] });
+      return Response.json({ layers: {}, knobs: { projectsFolders: { value: folders, scope: "runtime" } } });
     }
     if (path === "/api/projects") return Response.json(projects);
     if (path in answers) return Response.json(answers[path]);

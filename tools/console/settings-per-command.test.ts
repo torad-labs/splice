@@ -37,7 +37,7 @@ const server = Bun.serve({
         restart_required: restart ? [key] : [], live: restart ? [] : [key], persisted: "splice.toml",
       });
     }
-    if (path === "/api/config") return Response.json({ layers: { perHead }, effective: { maxInflight: 12, upstreamRetries: 4 }, restart_required_keys: [] });
+    if (path === "/api/config") return Response.json({ layers: { perHead }, knobs: { maxInflight: { value: 12, scope: "default" }, upstreamRetries: { value: 4, scope: "default" } } });
     if (path === "/api/daemon/restart") {
       if (req.method === "POST") { restarts++; return Response.json({ status: "draining" }, { status: 202 }); }
       return Response.json({ status: "idle" });

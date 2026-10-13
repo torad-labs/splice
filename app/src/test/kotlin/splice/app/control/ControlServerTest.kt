@@ -377,7 +377,8 @@ class ControlServerTest {
             layers.containsKey("defaults") && layers.containsKey("toml") && layers.containsKey("file") &&
                 layers.containsKey("env") && layers.containsKey("runtime"),
         )
-        assertTrue(obj["restart_required_keys"]!!.jsonArray.any { it.jsonPrimitive.content == "port" })
+        val port = obj["knobs"]!!.jsonObject["port"]!!.jsonObject
+        assertEquals("restart", port["disposition"]!!.jsonPrimitive.content)
     }
 
     @Test

@@ -40,7 +40,7 @@ const TOPICS = [
 const TOPIC = Object.fromEntries(TOPICS.map((x) => [x.id, x]));
 const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x.keys && x.keys.includes(key)).id;
 /** The settings this page offers: every one with a job here. One the running splice reads only at start (GET
- *  /api/config's restart_required_keys, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
+ *  each knob's disposition in /api/config, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
  *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => Object.values(KNOB)
   .filter((k) => shownKnob(k.key) && (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));

@@ -147,6 +147,9 @@ public class ActivityRoutes(
         return JsonReply(HttpStatusCode.OK, body.toString())
     }
 
+    /** The store's explicit state accompanies empty reads; null means unwired, not off. */
+    internal fun state(): KeptState? = source()?.edgeState()
+
     /** One read of the edge store, resolved against [records]: only the edges [interest] names, read from the day files
      *  and not held, so the window can be longer than the row cache could keep. Null when the stores are unwired. */
     internal fun index(records: List<SessionRecord>, interest: EdgeInterest): EdgeIndex? =

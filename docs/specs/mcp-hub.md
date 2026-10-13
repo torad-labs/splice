@@ -150,9 +150,19 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
   ruled out strict mode.
 - **(e) A same-named entry replaces each scope:** to run before step 6. That's user scope (passed
   with beed0812e), plus local or project scope and an approved repo server.
-- **(f) A plugin with its MCP off for one launch:** to run before step 6. The plugin stays enabled
-  with its skills and commands, its own server doesn't start, and the hub's same-named entry takes
-  the calls.
+- **(f) A plugin with its MCP off for one launch, passed (splice-providers, Oct 12).** The hidden
+  flag `--plugin-dir-no-mcp <installPath>` does it, with the path taken from the config home's
+  `plugins/installed_plugins.json`. A stand-in plugin was installed and enabled from a local
+  marketplace, with one stdio server, one skill and one command. The plugin loads from that path,
+  and the debug log says `Plugin "standin" from --plugin-dir overrides installed version`. Its
+  `.mcp.json` is not read, so its own server never starts. Its skill and command keep their names,
+  `/standin:hello` and `/standin:greet`. A `--mcp-config` entry named `plugin_standin_tools` takes
+  the call as `mcp__plugin_standin_tools__ping`, the plugin's own tool name. This held in print mode
+  and in an interactive session. /mcp lists the entry once, under "Built-in MCPs", as in (b).
+  - Without the flag, the plugin's server and the entry both start, as in (a). In this run the
+    entry took the call, so which copy answers is not fixed.
+  - With the flag and no entry, the session has no plugin tool at all. So the launch passes the
+    flag for a plugin only when the hub holds every server that plugin declares.
 - **The front and holders across updates, passed (splice-config, Oct 12).** A 2.4 MB Kotlin/Native
   front on a systemd-held socket in app-mcp.slice served a real Claude Code 2.1.296 session, with a
   stateful counter under a holder. The session kept its tool, with no /mcp, through three updates:

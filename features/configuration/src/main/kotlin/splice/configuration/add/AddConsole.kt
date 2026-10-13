@@ -137,9 +137,6 @@ public class AddConsole(
 
     internal fun discard(id: String): Boolean = synchronized(lock) { sessions.remove(id) != null }
 
-    /** The credential check, read now: a sign-in or a key set since the last read shows at once. */
-    internal fun credential(s: AddSession): AddCheck = checks.credential(s.candidate, env)
-
     internal fun signInStatus(s: AddSession): LoginStatus? = s.signInId?.let(signIn::poll)
 
     /** A second request while a flow runs answers that flow rather than starting another. */

@@ -150,12 +150,12 @@ public class AddRoutes(
         }
     }
 
-    /** DELETE /api/add/{id}: 200 `{discarded: id}`; a sign-in already running is not stopped. */
+    /** DELETE /api/add/{id}: 200 with an empty object; a sign-in already running is not stopped. */
     public suspend fun discard(call: ApplicationCall) {
         val adds = console() ?: return refuse(call, UNWIRED, HttpStatusCode.ServiceUnavailable)
         val id = call.parameters[ID_PARAM].orEmpty()
         if (!adds.discard(id)) return refuse(call, NO_SUCH_ADD, HttpStatusCode.NotFound)
-        JsonReply(HttpStatusCode.OK, buildJsonObject { put("discarded", id) }.toString()).send(call)
+        JsonReply(HttpStatusCode.OK, "{}").send(call)
     }
 
     /** The wired console and the add the path names, or null once the refusal is written. */

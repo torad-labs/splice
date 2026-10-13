@@ -30,9 +30,9 @@ class DoctorTraceCheckTest {
     }
 
     @Test
-    fun `the default retention is named when an opted out head did not set one`() {
+    fun `an opted out head that did not set a retention names the history window`() {
         val row = traceRows(head("one", trace = "\"off\"")).single()
-        assertTrue(row.detail.contains("kept 7 day(s)"), row.detail)
+        assertTrue(row.detail.contains("kept 35 day(s)"), row.detail)
     }
 
     @Test

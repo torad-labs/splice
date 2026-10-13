@@ -3,34 +3,48 @@
 // every head that is writing by default. A stopped daemon only supplies the next-start declaration.
 package splice.diagnostics.doctor
 
+import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.core.topology.TopologyKnobLayer
+import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
 
 private val TRUE_SPELLINGS = setOf("1", "true", "yes", "on")
 private val FALSE_SPELLINGS = setOf("0", "false", "no", "off")
 
-internal class DoctorTraceChecks(private val statePaths: StatePaths) {
+/** [env] is the environment the daemon reads, so the retention named is the one the daemon resolves: a head's own
+ *  traceRetentionDays when someone set it, else the history window (SpliceConfig.traceKeptDays). */
+internal class DoctorTraceChecks(
+    private val statePaths: StatePaths,
+    private val env: EnvReader = EnvReader(System::getenv),
+) {
 
     /** [running] is absent when the daemon was stopped or its effective config could not be read.
      *  Its missing head is equally unknown, never silently interpreted as trace off. */
     internal fun traceChecks(
         topology: Topology,
         running: Map<String, DaemonProbe.HeadTrace>? = null,
-    ): List<DoctorCheck> = topology.heads.mapNotNull { (key, head) ->
-        val raw = head.overrides[Knob.TRACE.key]
-        val declared = when (raw?.trim()?.lowercase()) {
-            null -> Knob.TRACE.flag()
-            in FALSE_SPELLINGS -> false
-            in TRUE_SPELLINGS -> true
-            else -> return@mapNotNull invalidRow(key)
+    ): List<DoctorCheck> {
+        val config = ConfigService(
+            statePaths,
+            headOverrides = TopologyKnobLayer(topology).configOverrides(),
+            perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+            envReader = env,
+        )
+        return topology.heads.mapNotNull { (key, head) ->
+            val raw = head.overrides[Knob.TRACE.key]
+            val declared = when (raw?.trim()?.lowercase()) {
+                null -> Knob.TRACE.flag()
+                in FALSE_SPELLINGS -> false
+                in TRUE_SPELLINGS -> true
+                else -> return@mapNotNull invalidRow(key)
+            }
+            val booted = running?.get(key)
+            if (declared && booted?.enabled != false) return@mapNotNull null
+            traceRow(key, declared, booted, config.getConfig(key).traceKeptDays)
         }
-        val booted = running?.get(key)
-        if (declared && booted?.enabled != false) return@mapNotNull null
-        val declaredDays = head.overrides[Knob.TRACE_RETENTION_DAYS.key]?.trim()?.toLongOrNull()
-            ?: Knob.TRACE_RETENTION_DAYS.count()
-        traceRow(key, declared, booted, declaredDays)
     }
 
     private fun invalidRow(key: String): DoctorCheck = DoctorCheck(
@@ -40,11 +54,14 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
         "set trace = true or remove the override; trace defaults on at the next start",
     )
 
+    /** Forever is no number of days: the history window kept with no limit reads as such. */
+    private fun kept(days: Int): String = if (days == Int.MAX_VALUE) "kept with no time limit" else "kept $days day(s)"
+
     private fun traceRow(
         key: String,
         declared: Boolean,
         booted: DaemonProbe.HeadTrace?,
-        declaredDays: Long,
+        keptDays: Int,
     ): DoctorCheck {
         val pending = booted != null && booted.enabled != declared
         val lead = when {
@@ -60,7 +77,7 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
         val detail = "$lead.$setting $tense every request it receives, every upstream attempt with the exact body " +
             "it sent (credentials redacted) and the raw response, and every frame it streamed back, " +
             "as one file per UTC day; the declared directory for the next start is " +
-            "${statePaths.traceDir} (owner-only); declared files are kept $declaredDays day(s) " +
+            "${statePaths.traceDir} (owner-only); declared files are ${kept(keptDays)} " +
             "on the next start; read with `splice trace $key`"
         val fix = if (declared) {
             "restart to begin tracing $key; `splice trace $key --purge` deletes what was written"

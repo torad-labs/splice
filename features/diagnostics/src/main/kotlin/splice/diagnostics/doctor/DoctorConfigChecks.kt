@@ -49,7 +49,7 @@ internal class DoctorConfigChecks(
 
     /** V4-173: the row that keeps an opted-in wire tap visible on every run. */
     private val wireTaps = DoctorWireTapChecks()
-    private val traces = DoctorTraceChecks(TopologyStatePaths(env).current())
+    private val traces = DoctorTraceChecks(TopologyStatePaths(env).current(), env)
     private val museCompatibility = DoctorMuseCompatibilityChecks()
 
     /** A topology that is not there yet or holds no head: INFO, with the one splice verb that fills it. */

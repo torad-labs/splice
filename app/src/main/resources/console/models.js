@@ -676,7 +676,7 @@ function projectsHtml() {
   const stack = layers.length
     ? `<ol class="stack">${layers.map((l, i) => `<li class="${i < lastReplace ? "dim" : ""}"><div class="lwho">${l.who}<span class="mode">${tierName(l.mode)}</span></div>${l.file ? pfile(l.file) : `<p>${esc(l.text)}</p>`}</li>`).join("")}</ol>`
     : `<p class="none">Claude Code's own</p>`;
-  const rows = got.compaction ?? [];
+  const rows = p.compaction ?? []; // the project row carries it; the files route never did (marlin, Oct 12)
   const lit = rows.findIndex((r) => r.source);
   const ladder = rows.length
     ? `<ol class="ladder">${rows.map((r, i) => `<li class="${i === lit ? "lit" : ""}"><span class="rung"></span><span class="rname">${esc(r.scope)}</span>${i === lit ? `<span class="rfile">${esc(r.source)}</span>${r.chars === 0 ? `<span class="rempty">Empty</span>` : ""}` : ""}</li>`).join("")}</ol>`

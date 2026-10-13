@@ -605,6 +605,7 @@ control_port = 3096
 show_reasoning = "text"
 summary = "detailed"
 replay_reasoning = false
+mcp_share = true
 
 [defaults]
 # How far back splice keeps this install's history: the hourly spend totals and the request

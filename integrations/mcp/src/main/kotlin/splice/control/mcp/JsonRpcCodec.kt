@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.GATEWAY_VERSION
 import splice.core.util.JsonScalars
 
 private const val ID = "id"
@@ -102,7 +103,7 @@ internal class JsonRpcCodec(private val json: Json = Json { ignoreUnknownKeys = 
                 "clientInfo",
                 buildJsonObject {
                     put("name", "splice-mcp-host")
-                    put("version", "0.4.0")
+                    put("version", GATEWAY_VERSION)
                 },
             )
         },

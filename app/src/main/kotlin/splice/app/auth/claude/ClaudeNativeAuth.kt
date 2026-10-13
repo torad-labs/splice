@@ -110,7 +110,7 @@ internal class ClaudeNativeAuth(
     }
 
     private fun renews(observed: NativeAccessToken?): Boolean =
-        observed?.expiresAt?.let { it <= clock() } == true && !observed?.refreshToken.isNullOrBlank()
+        observed?.expiresAt?.let { it <= clock() } == true && !observed.refreshToken.isNullOrBlank()
 
     private fun usable(token: NativeAccessToken): Boolean =
         !token.accessToken.isNullOrBlank() && token.expiresAt?.let { it > clock() } == true

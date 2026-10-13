@@ -656,10 +656,30 @@ unescape() {
   UNESCAPED=${un_value%x}
 }
 
+# An ANTHROPIC_AUTH_TOKEN this shell inherited that is one of this daemon's own keys (the management key, or the turn
+# key every non-native head plants in its sessions) is splice's, never the caller's: a launch from inside such a session,
+# as a headless read a seat starts, would carry it to a head that forwards the caller's credential, which refuses it 401
+# and Claude Code retries until its caller gives up (Temple read, Oct 13 2:22 PM CT: 22 refusals in 9.5 min, 204 that
+# day). It is dropped before the recipe applies, so a head that plants its own token still sets it below, and a token the
+# person set themselves rides on untouched. Values are compared in this shell only, never printed or sent.
+drop_own_token() {
+  [ -n "${ANTHROPIC_AUTH_TOKEN-}" ] || return 0
+  dot_turn=""
+  [ -r "$STATE_DIR/turn-auth-header" ] && dot_turn=$(sed -n 's/^Authorization: Bearer //p' "$STATE_DIR/turn-auth-header" 2>/dev/null)
+  dot_mgmt=$(read_key)
+  if { [ -n "$dot_turn" ] && [ "$ANTHROPIC_AUTH_TOKEN" = "$dot_turn" ]; } ||
+    { [ -n "$dot_mgmt" ] && [ "$ANTHROPIC_AUTH_TOKEN" = "$dot_mgmt" ]; }; then
+    unset ANTHROPIC_AUTH_TOKEN
+  fi
+  dot_turn=""
+  dot_mgmt=""
+}
+
 # Reads LAUNCH_RECIPE into the environment (exports and unsets, by name) and the positional parameters (the argv), and
 # runs it: a function's positional parameters are its own, so the argv has to be exec'd from in here.
 # A name that is not a bare identifier is not an environment variable: it is rejected here, never handed on.
 apply_recipe() {
+  drop_own_token
   ar_argc=0
   ar_warning=""
   ar_end=0

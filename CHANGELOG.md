@@ -801,9 +801,10 @@ origin.
 - **A session splice did not launch joins the head its requests reach.** With no launch record, a session is placed on
   the head whose port its requests arrive on, and keeps that head across a restart. `unknown head` stays for a session
   splice still cannot place.
-- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-20`). It sends each argument exactly as typed, whatever
+- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-21`). It sends each argument exactly as typed, whatever
   it holds, and when `curl` is missing it says so: "splice needs curl to start Claude Code, and curl is not installed"
-  with the install command for this machine.
+  with the install command for this machine. A cold start creates `daemon-boot.log` owner-only (0600), or tightens one
+  already there, before the daemon writes to it.
 - **Translated heads no longer show Claude Code's auto-mode notice.** A session on any head but `claude-splice` used to
   open with "this session isn't eligible… ask your gateway to implement", and an interactive auto-mode session held
   its first checked action until it was answered. The launch now tells Claude Code the server-side checks are not

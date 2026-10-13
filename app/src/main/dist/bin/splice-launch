@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-20"
+SPLICE_SHIM_VERSION="shim-21"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.4.0"
 
@@ -522,8 +522,17 @@ cold_start() {
   if [ -f "$BOOT_LOG" ] && [ "$(wc -c <"$BOOT_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
     mv "$BOOT_LOG" "$BOOT_LOG.1" 2>/dev/null || true
   fi
-  # A read-only home must degrade the redirect, never break launching (JW-01 risk note).
-  if : >>"$BOOT_LOG" 2>/dev/null; then cs_log=$BOOT_LOG; cs_flag=$BOOT_LOG_FLAG; else cs_log=/dev/null; cs_flag=""; fi
+  # A read-only home must degrade the redirect, never break launching (JW-01 risk note). shim-21: the boot log is
+  # owner-only before the daemon appends to it, as the daemon's own restart holds it (682bdbd0d): a new one is created
+  # 0600 and one already there is tightened, since a boot can write each launch's --settings into it. A log that cannot
+  # be made owner-only is not written at all.
+  if (umask 077 && : >>"$BOOT_LOG") 2>/dev/null && chmod 600 "$BOOT_LOG" 2>/dev/null; then
+    cs_log=$BOOT_LOG
+    cs_flag=$BOOT_LOG_FLAG
+  else
+    cs_log=/dev/null
+    cs_flag=""
+  fi
   if ! command -v java >/dev/null 2>&1; then
     # A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used to): the handshake
     # below shows the tail, and this line is what it has to show.

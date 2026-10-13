@@ -29,7 +29,6 @@ internal class TeamEdge(
     val direction: String,
     val fromSlot: TeamSlot?,
     val toSlot: TeamSlot?,
-    val fromHead: String?,
 ) {
     fun json(): JsonObject = buildJsonObject {
         put("from", edge.from)
@@ -45,7 +44,6 @@ internal class TeamEdge(
         put("at", edge.at)
         put("from", edge.from)
         put("from_slot", fromSlot?.id)
-        put("from_head", fromHead)
         put("to", edge.to)
         put("to_slot", toSlot?.id)
         put("packet", JsonNull)
@@ -98,7 +96,7 @@ internal class Members(
             slotOfAddress[edge.to] ?: slotOfSession[edge.to] ?: slotSpelledBy(edge, from)
         }
         if (to == null && reachedNoSession(edge)) return null
-        return direction(from, to)?.let { TeamEdge(edge, it, from, to, headOf(edge.from)) }
+        return direction(from, to)?.let { TeamEdge(edge, it, from, to) }
     }
 
     /** Only pre-resolution rows may recover one named team member; explicit null never does. */

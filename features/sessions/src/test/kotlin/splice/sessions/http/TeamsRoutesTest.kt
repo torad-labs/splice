@@ -222,7 +222,7 @@ class TeamsRoutesTest {
         rig.stores.edges.record(MessageEdge(BUILDER, "lead", AT - DAY, "toolu_y", LEAD))
         AsyncFileIo.drain()
         val chat = rig.json(routes().reads.chat(id, null).body)
-        val base = """"from":"$LEAD","from_slot":"lead","from_head":"claude",""" +
+        val base = """"from":"$LEAD","from_slot":"lead",""" +
             """"to":"uds:/run/2.sock","to_slot":"b1","packet":null"""
         val source = "/t/$LEAD.jsonl"
         assertEquals(

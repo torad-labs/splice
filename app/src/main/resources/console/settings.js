@@ -933,7 +933,8 @@ function savingsHtml() {
   const copies = share.reduce((n, s) => n + s.copies, 0);
   const tiles = share.length ? [
     statTile(mbWord(now), "In use now", note(copiesWord(copies))),
-    statTile(mbWord(one), "Shared", note(`${fmt(share.length)} ${share.length === 1 ? "copy" : "copies"}`)),
+    // it counts servers, each at one copy once shared: the words say both, never a copy count it did not take
+    statTile(mbWord(one), "Shared", note(`${fmt(share.length)} ${share.length === 1 ? "server" : "servers"}, one copy each`)),
     statTile(mbWord(Math.max(0, now - one)), "Sharing saves"),
   ] : [];
   const head = `<div class="thead"><h3>What sharing saves</h3>${tiles.length ? "" : `<span class="zeros">${zeroFig("copies running")}</span>`}</div>`;

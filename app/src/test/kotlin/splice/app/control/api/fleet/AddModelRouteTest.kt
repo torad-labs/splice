@@ -149,7 +149,9 @@ class AddModelRouteTest {
             assertEquals(HEAD, head["head"]!!.jsonPrimitive.content)
             val offered = ids(head)
             assertTrue(offered.isNotEmpty(), "the configured head's roster already reaches every catalogue row")
-            assertEquals(catalogue() - roster().toSet(), offered)
+            // GET /api/add/profiles no longer serves a profile's model rows (fb413a474), so what is offered is checked
+            // against the roster it must not repeat
+            assertTrue(offered.none { it in roster() }, "a model already on the roster was offered again: $offered")
 
             val pick = offered.first()
             val added = post("/api/add-model", """{"head":"$HEAD","models":["$pick"]}""")
@@ -212,13 +214,6 @@ class AddModelRouteTest {
         assertEquals(HttpStatusCode.ServiceUnavailable, unwired.status)
         assertEquals("Adding models is not wired on this daemon.", error(unwired))
         assertEquals(0, drainsAfter(SETTLE_MS))
-    }
-
-    /** The OpenRouter catalogue as the add's own profile list serves it: the route is not asked. */
-    private suspend fun catalogue(): List<String> {
-        val profiles = body(get("/api/add/profiles"))["profiles"]!!.jsonArray.map { it.jsonObject }
-        val openrouter = profiles.single { it["name"]!!.jsonPrimitive.content == HEAD }
-        return ids(openrouter)
     }
 
     /** The head's roster as the loader parses the file back. */

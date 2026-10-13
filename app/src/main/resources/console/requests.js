@@ -198,8 +198,34 @@ const providerOfCmd = (cmd) => state.providerOf[(state.heads.find((h) => h.comma
 const sessTitle = (sid) => {
   if (!sid) return "";
   const tag = String(sid).slice(0, 8), s = state.sessions[sid] ?? state.sessions[tag];
-  return s?.name || s?.title || state.titles[tag] || `Session ${tag}`;
+  return s?.name || s?.title || state.titles[tag] || pastName(sid) || `Session ${tag}`;
 };
+// An ended agent is named by history, as Sessions and Teams name it: asked once per session, the row redrawn when it
+// answers, and "Session 0296ce46" only while it is asked or when history has no name (Marlin, desk c, Oct 12: a
+// Saturday row read "Session 0296ce46" where history names it qgre-builder)
+const pastNames = new Map(); // session id -> its name from history, null when history has none, undefined while asked
+function pastName(sid) {
+  const id = String(sid);
+  if (pastNames.has(id)) return pastNames.get(id);
+  pastNames.set(id, undefined);
+  asking.push(id);
+  askNext();
+  return undefined;
+}
+// at most four asks in flight, so opening the Session menu over a week of agents never sends a burst
+const asking = [];
+let inFlight = 0;
+function askNext() {
+  while (inFlight < 4 && asking.length) {
+    const id = asking.shift();
+    inFlight++;
+    API.get(`/api/sessions/history?limit=1&query=${encodeURIComponent(id)}`).then((res) => {
+      const row = (res.body?.sessions || []).find((x) => String(x.session_id).startsWith(id));
+      pastNames.set(id, row?.name || row?.title || null);
+      if (pastNames.get(id)) render();
+    }).finally(() => { inFlight--; askNext(); });
+  }
+}
 // ---------- the pick: the projects Sessions groups by, one pick across the pages (kit PICK) ----------
 // A pick from a door names a project that may have no live session today; it is listed by the name its requests carry.
 function pickGroups() {
@@ -600,7 +626,7 @@ function menuHtml(key) {
     const days = [0, 1, 2, 3, 4, 5, 6].map((i) => {
       const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - i), end = dayEnd(d);
       const on = i === 0 ? !ui.to : ui.to === end;
-      return `<button role="menuitemradio" aria-checked="${on}" data-act="upto" data-v="${i === 0 ? "" : end}">${i === 0 ? "Today" : d.toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}</button>`;
+      return `<button role="menuitemradio" aria-checked="${on}" data-act="upto" data-v="${i === 0 ? "" : end}">${i === 0 ? "Today" : dayWordShort(d)}</button>`;
     }).join("");
     return `<div class="menu fmenu" role="menu">${Object.entries(WINDOWS).map(([k, [w]]) => item(k, w, ui.win === k)).join("")}${goto}<div class="days">${days}</div></div>`;
   }
@@ -730,7 +756,7 @@ function listHtml() {
   const trouble = wait + said(state.headErrors.concat(names));
   // a command whose search failed sits under the rows the others found (fin)
   const unsearched = said(state.search?.errors || []);
-  if (state.loading) return ghostListHtml();
+  if (state.loading || state.reading) return ghostListHtml();
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearq">Clear</button></div>${unsearched}${searchFoot()}</div>`;
   if (!rows.length) {
@@ -750,7 +776,7 @@ function listHtml() {
       const prev = new Date(r.ts.getFullYear(), r.ts.getMonth(), r.ts.getDate() - 1), back = dayEnd(prev);
       // a new day's heading takes him to the day before in one press (Marlin, p225: scrolling from Saturday never reached Friday)
       const earlier = dk !== day && back > +NOW - WINDOWS["7d"][1]
-        ? `<button class="act quiet small" data-act="upto" data-v="${back}">Show ${prev.toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}</button>` : "";
+        ? `<button class="act quiet small" data-act="upto" data-v="${back}">Show ${dayWordShort(prev)}</button>` : "";
       day = dk; items.push(`<div class="hour"><span>${named}${h % 12 || 12} ${h < 12 ? "AM" : "PM"}</span>${earlier}</div>`);
     }
     items.push(rowHtml(r));
@@ -981,15 +1007,19 @@ function open(id) {
 }
 
 /** Every read this page makes, then one draw. The window and the filters the daemon owns are read again each time. */
-async function reload({ standing = false } = {}) {
+async function reload({ standing = false, reading = false } = {}) {
   tick(); // the kit's clock, read again so a reset reads against the time the page is drawn at
   state.loading = standing;
   if (standing) render();
+  // a pick he made reads the list again: the list reads as reading the moment he picks, with its menu closed, and no
+  // No match is said for a read still in flight (Marlin, desk c, Oct 12: "10 Sat" sat 2 s on today's list, menu open)
+  if (reading) { state.reading = true; render(); }
   if (standing) await readStanding();
   const gen = ++readGen;
   // the newest requests first, drawn as soon as they answer; the rest of the window follows behind them
   await Promise.all([readRows(FIRST_HELD), readSearch()]);
   if (gen !== readGen) return;
+  if (state.reading) { state.reading = false; render(); }
   await Promise.all([readWider(), readCompareCount().then(readTileCounts)]);
   state.loading = false;
   autoOpen();
@@ -1010,7 +1040,7 @@ let typing = null;
 document.getElementById("q").addEventListener("input", (e) => {
   ui.q = e.target.value.trim(); ui.n = 200;
   clearTimeout(typing);
-  typing = setTimeout(() => { ui.auto = true; reload(); }, 250);
+  typing = setTimeout(() => { ui.auto = true; reload({ reading: true }); }, 250);
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && ui.menu) { ui.menu = null; render(); }
@@ -1068,9 +1098,11 @@ function upTo(at) {
 }
 // the last millisecond of [d]'s day, by the calendar, so a day with a clock change still ends at its own midnight
 const dayEnd = (d) => +new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1) - 1;
+// a day in fin's form, weekday then date, "Fri 9": built by hand, since the browser's own short form put the date first ("9 Fri")
+const dayWordShort = (d) => `${d.toLocaleDateString("en-US", { weekday: "short" })} ${d.getDate()}`;
 // a filter the daemon owns is a new read; one that hides the open request moves the page to the top match when the
 // page opened it, and keeps his pick otherwise
-function again() { ui.auto = ui.auto || !filtered().some((r) => r.id === ui.open); reload(); }
+function again() { ui.auto = ui.auto || !filtered().some((r) => r.id === ui.open); reload({ reading: true }); }
 const autoOpen = () => {
   if (wide() && ui.auto) ui.open = ordered(filtered())[0]?.id ?? null;
   else if (!wide() && ui.auto) ui.open = null;

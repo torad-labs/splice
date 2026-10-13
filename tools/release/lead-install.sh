@@ -21,7 +21,12 @@ cd $R
 git worktree add --detach $T $sha
 cd $T
 test -x tools/gate/bin/gradlew || { echo "no gradlew in tree"; exit 2; }
-bun tools/gate slot install-$sha -- :app:shadowJar
+# The MCP hub's two native binaries ship beside the jar on a sha that carries their module
+# (docs/specs/mcp-hub.md, Linux x86_64 only). They build in the same slot.
+hub=$T/integrations/mcp-hub
+tasks=(:app:shadowJar)
+[ -d $hub ] && tasks+=(:integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64)
+bun tools/gate slot install-$sha -- "${tasks[@]}"
 echo "slot exit 0 at $(ct)"
 J=$T/app/build/libs/app-all.jar; L=$T/app/src/main/dist/bin/splice-launch
 a=$(sha256sum $J | cut -d' ' -f1); echo "artifact $a"
@@ -38,6 +43,15 @@ cp -p $D/splice-launch $D/splice-launch.bak-$stamp-pre-$sha
 echo "backup splice.jar.bak-$stamp-pre-$sha"
 cp $J $D/splice.jar.new-$sha && mv $D/splice.jar.new-$sha $D/splice.jar
 cp $L $D/splice-launch.new-$sha && chmod 0755 $D/splice-launch.new-$sha && mv $D/splice-launch.new-$sha $D/splice-launch
+# A running holder or front keeps its own inode through the mv; the new binary serves what starts next.
+if [ -d $hub ]; then
+  for b in holder front; do
+    src=$hub/build/bin/linuxX64/${b}ReleaseExecutable/splice-mcp-$b.kexe; dst=$D/splice-mcp-$b
+    [ -f $dst ] && cp -p $dst $dst.bak-$stamp-pre-$sha
+    cp $src $dst.new-$sha && chmod 0755 $dst.new-$sha && mv $dst.new-$sha $dst
+    echo "installed splice-mcp-$b $(sha256sum $dst | cut -d' ' -f1)"
+  done
+fi
 splice restart --now
 date +%s > $M
 sleep 8

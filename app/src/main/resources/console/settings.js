@@ -42,7 +42,7 @@ const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x
 /** The settings this page offers: every one with a job here. One the running splice reads only at start (GET
  *  each knob's disposition in /api/config, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
  *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
-const liveKnobs = () => Object.values(KNOB)
+const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
   .filter((k) => shownKnob(k.key) && (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 // the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
 const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0);
@@ -51,7 +51,8 @@ const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" ||
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
 const keysOf = (id, skip = []) => liveKnobs().filter((k) => topicOf(k.key) === id && !k.adv && !skip.includes(k.key)).map((k) => k.key);
 // A job's Advanced disclosure (v0.4.0 section 9, Resolved: advanced settings sit behind a per-section "Advanced"): the
-// settings a person rarely needs, closed until pressed, and open while a search finds one of them.
+// settings a person rarely needs, every knob without a row of its own among them (knobs.js ADV_HOME), closed on every
+// load until pressed, and open while a search finds one of them. Every section ends in one.
 const advKeys = (id) => liveKnobs().filter((k) => k.adv === id).map((k) => k.key);
 function advancedHtml(id) {
   const keys = advKeys(id);
@@ -61,7 +62,7 @@ function advancedHtml(id) {
 }
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, oq: "", othersOpen: false, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
+const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -989,8 +990,7 @@ const busyHtml = () => {
   return peaksHtml()
     + `<section class="tally">${headed("Providers", figsHtml([{ why: "overloaded", what: "Overloaded today" }, { why: "queued", what: "Waited in line" }, { why: "cutoff", what: "Cut off today" }]))}`
     + blocks(keysOf("busy", LIMITS)) + `</section>`
-    + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "")
-    + advancedHtml("busy");
+    + (limits.length ? `<section class="sub"><h3>splice's limits</h3>${blocks(limits)}</section>` : "");
 };
 
 // ---------- Version ----------
@@ -1321,11 +1321,11 @@ function render() {
     : `<div class="list rail empty"><div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clear">Clear</button></div></div>`;
   const pane = shown.length ? `<div class="pane"><header><span class="lamp idle sock" aria-hidden="true">${SV[x.id]}</span><div class="who"><div class="top"><span class="name">${esc(x.name)}</span></div>`
     + `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div></div>`
-    + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn">${PANES[x.id]()}</div></div>` : "";
+    + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn">${PANES[x.id]()}${advancedHtml(x.id)}</div></div>` : "";
   const was = root.querySelector(".pane .body")?.scrollTop ?? 0;
   // a setting's typed field keeps its caret through a redraw (knobs.js keeps the text)
-  const f = document.activeElement, fid = f?.id?.startsWith("kf-") || f?.id === "oq" ? f.id : null, pos = f?.selectionStart;
-  root.innerHTML = `<div class="jobs${ui.shown ? " open" : ""}">${list}${pane}</div>${othersHtml()}`;
+  const f = document.activeElement, fid = f?.id?.startsWith("kf-") ? f.id : null, pos = f?.selectionStart;
+  root.innerHTML = `<div class="jobs${ui.shown ? " open" : ""}">${list}${pane}</div>`;
   if (was) { const b = root.querySelector(".pane .body"); if (b) b.scrollTop = was; }
   if (fid) { const g = document.getElementById(fid); if (g) { g.focus(); if (pos != null) g.setSelectionRange(pos, pos); } }
   KNOBS.focusCustom(root);
@@ -1333,23 +1333,6 @@ function render() {
   moreBelow();
 }
 
-// EVERY OTHER SETTING (Marlin, hitstop, Oct 13, gap 457): every knob the rows above leave out, in one section at the
-// page's foot, closed on every load, with one search over the setting's key. A read-only one shows its value only.
-function othersHtml() {
-  const all = KNOBS.others();
-  if (!all.length) return "";
-  const q = ui.oq.trim().toLowerCase(), hit = all.filter((k) => !q || k.key.toLowerCase().includes(q));
-  // a read-only one says why it cannot be changed here, in the daemon's words (KnobViews read_only_reason)
-  const row = (k) => (ks.cfg?.knobs?.[k.key]?.editable === false
-    ? kcard(`<div class="lbl">${esc(k.key)}</div><div class="ctl"><span class="fixed">${esc(word(k, val(k.key)))}</span>`
-      + `${ks.cfg.knobs[k.key].read_only_reason ? `<span class="from">${esc(ks.cfg.knobs[k.key].read_only_reason)}</span>` : ""}</div>`)
-    : kcard(rowHtml(k)));
-  const body = hit.length ? cardRow(hit.map(row)) : `<div class="nomatch"><span class="state">No match</span></div>`;
-  return `<details class="others kn"${ui.othersOpen ? " open" : ""}><summary>Every other setting<span class="mmeta">${fmt(all.length)}</span></summary>`
-    + `<div class="search"><input class="field" id="oq" placeholder="Search" value="${esc(ui.oq)}" autocomplete="off" aria-label="Search every other setting"></div>${body}</details>`;
-}
-root.addEventListener("toggle", (e) => { if (e.target.classList?.contains("others")) ui.othersOpen = e.target.open; }, true);
-root.addEventListener("input", (e) => { if (e.target.id === "oq") { ui.oq = e.target.value; render(); } });
 // An open card taller than its pane says so on its lower edge: "more" is on the pane while content waits below the fold,
 // and goes when the scroll reaches the end. Every card gets it, none draws it unless it overflows.
 function moreBelow() {

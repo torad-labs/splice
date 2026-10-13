@@ -22,6 +22,7 @@ const KNOBS = (() => {
   const dur = (ms) => (ms % HR === 0 ? `${ms / HR} h` : ms % MIN === 0 ? `${ms / MIN} min` : ms % SEC === 0 ? `${ms / SEC} s` : `${ms} ms`);
   const tok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : `${n}`);
   const PLUS = G('<path d="M12 5v14M5 12h14"/>');
+  const LOCK = G('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>');
 
   // c: the control. dur: preset durations with a Custom value in `unit`. count: preset counts, 0 the `none` word.
   // pick: named choices (a switch up to three, else a menu). flag: On and Off. models: a list of models, picked.
@@ -152,9 +153,10 @@ const KNOBS = (() => {
 
   // the effective value and the scope that set it, as the daemon's knobs block says (spec 9)
   const SOURCE = { runtime: "here", env: "env", file: "file", toml: "toml" };
-  // where a value at rest comes from, in the person's words (spec 9: every knob shows its source inline); the shell's
-  // own row names its variables instead (rowHtml)
-  const SOURCE_WORD = { here: "Set here", file: "Saved here", toml: "From splice.toml", default: "Default" };
+  // where a value at rest comes from, in fin's words (spec 9: every knob shows its source inline; Marlin, Oct 13 12:01 PM):
+  // a value applied here and not written to the state file is Not saved, one written there is Saved. The shell's own
+  // row says Set in your shell and names its variables (rowHtml)
+  const SOURCE_WORD = { here: "Not saved", file: "Saved", toml: "From splice.toml", default: "Default" };
   const defOf = (k) => layer("defaults")[k.key] ?? k.def;
   function valueOf(k) {
     const knob = st.cfg?.knobs?.[k.key];
@@ -241,7 +243,7 @@ const KNOBS = (() => {
     const u = st.undo[id];
     return u ? `<s class="was">${esc(u.word)}</s><button class="act quiet small" data-kact="undo" data-id="${esc(id)}">Undo</button>` : "";
   };
-  function saidHtml(id) {
+  function saidHtml(id, { rest = true } = {}) {
     if (st.bad[id]) return `<span class="said limit">${esc(st.bad[id])}</span>`;
     // saved to splice.toml, read by the running splice only once it restarts: the act that brings it in sits beside it
     if (st.restart[id]) {
@@ -255,13 +257,26 @@ const KNOBS = (() => {
     // at rest a setting says where its value comes from and whether a change is read at once or when splice starts, in
     // the spec's words (v0.4.0 section 9, Resolved: boot-only stays editable, labelled "applies on restart"); saving a
     // boot-only one then offers Restart splice above
-    return restHtml(id);
+    return rest ? restHtml(id) : "";
   }
+  // two quiet tags at the row's far end, after the value and what a change did (hitstop, Oct 13): the source, then Live
+  // or Applies on restart, the rarer one bordered so it stands out
   function restHtml(id) {
     const [key, cmd] = id.split("@"), k = KNOB[key];
     const from = !k ? null : cmd ? (ownValue(key, cmd) !== undefined ? "This command's own" : null) : SOURCE_WORD[valueOf(k).src];
-    const when = needsRestart(key) ? "Applies on restart" : "Live";
-    return `<span class="said">${[from, when].filter(Boolean).map(esc).join(" · ")}</span>`;
+    const later = needsRestart(key);
+    return `<span class="tags">${from ? `<span class="tag">${esc(from)}</span>` : ""}`
+      + `<span class="tag when${later ? " later" : ""}">${later ? "Applies on restart" : "Live"}</span></span>`;
+  }
+  // a setting no change here reaches: its value, and why in a word. Forced in code reads as a lock; a per-command one names
+  // where it is set. The daemon's sentence goes to the console log (fin, Marlin, Oct 13)
+  const warned = new Set();
+  function fixedHtml(k, label, hl, lit) {
+    const knob = st.cfg.knobs[k.key];
+    if (knob.read_only_reason && !warned.has(k.key)) { warned.add(k.key); console.warn(`${k.key}: ${knob.read_only_reason}`); }
+    const why = knob.read_only === "pinned" ? `<span class="tag lock" role="img" aria-label="Locked" title="Locked">${LOCK}</span>`
+      : `<span class="tag">Per command · splice.toml</span>`;
+    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, valueOf(k).v))}</span><span class="tags">${why}</span></div>`;
   }
   // A command's own value: its control, what the change did, and the way back to the value every other command uses.
   // A command just picked from "One command" has nothing saved yet, so its control shows the shared value until a change.
@@ -298,8 +313,10 @@ const KNOBS = (() => {
   function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false, el = "" } = {}) {
     const s = valueOf(k);
     if (s.src === "env") { // set in the person's shell: read here, changed there
-      return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">Set in your shell, ${(st.cfg?.knobs?.[k.key]?.env_names ?? [k.key]).map((n) => `<code>${esc(n)}</code>`).join(" or ")}</span></div>`;
+      return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">${(st.cfg?.knobs?.[k.key]?.env_names ?? [k.key]).map((n) => `<code>${esc(n)}</code>`).join(" or ")}</span>`
+        + `<span class="tags"><span class="tag">Set in your shell</span><span class="tag when${needsRestart(k.key) ? " later" : ""}">${needsRestart(k.key) ? "Applies on restart" : "Live"}</span></span></div>`;
     }
+    if (st.cfg?.knobs?.[k.key]?.editable === false) return fixedHtml(k, label, hl, lit);
     const owners = [...ownersOf(k.key), ...(st.adding[k.key] ?? []).filter((c) => !ownersOf(k.key).includes(c))];
     const left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
     // A COMMAND'S OWN VALUE IS A CHIP (Marlin, hitstop, Oct 13, gap 457): its value in mono, and a door to that command's
@@ -315,7 +332,7 @@ const KNOBS = (() => {
     // THE SLOT UNDER A CONTROL HOLDS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the page passes what it already
     // knows — the last read, the mark on a bar, the providers reporting nothing, how many servers run — and passes
     // nothing where that fact is not on the wire. A row with no element is its name and its control.
-    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key)}${add}</div>${lines}</div>${el}`;
+    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line">${ctlHtml(k, s.v)}${only}${saidHtml(k.key, { rest: false })}${add}${restHtml(k.key)}</div>${lines}</div>${el}`;
   }
 
   // ---------- changing a setting: PATCH /api/config with the one key ----------
@@ -487,13 +504,22 @@ const KNOBS = (() => {
     });
     root.addEventListener("focusout", (e) => { if (e.target.dataset.kcustom && st.custom === e.target.dataset.kcustom) { st.custom = null; setTimeout(render); } });
   }
-  // EVERY OTHER SETTING (Marlin, hitstop, Oct 13, gap 457): each knob on the wire with no row of its own, named by its
-  // key, its control from the daemon's kind. Each is kept in KNOB from first sight, so a change saves like any other row's.
+  // THE REST OF THE SETTINGS (gap 457; Marlin, Oct 13 12:01 PM, from Marcos's block at v0.4.0.md:568): each knob on the
+  // wire with no row of its own goes behind its section's Advanced, named by its key, its control from the daemon's kind.
+  // ADV_HOME is the section each belongs to; one the daemon adds later lands in Version's until it is given a home. Each is
+  // kept in KNOB from first sight, so a change saves like any other row's and the page's search finds it.
+  const ADV_HOME = {
+    ingressReadIdleMs: "silent", authCacheMs: "busy",
+    mirrorReasoning: "reasoning", foldMarkerText: "reasoning", foldMaxTier: "reasoning",
+    usageWarnTokens5h: "plan", mcpSlice: "mcp", toolSurface: "mcp", statuslineGitRoots: "projects",
+    activityStoreHeads: "data", debug: "data", trace: "data", wireTap: "data", perfArchiveRetentionDays: "data",
+  };
   function others() {
     const wire = st.cfg?.knobs ?? {}, drawn = new Set(LIST.map((k) => k.key));
     return Object.keys(wire).filter((key) => !drawn.has(key)).sort().map((key) => {
       const kind = wire[key].kind;
-      KNOB[key] ??= K(key, key, kind === "bool" ? { k: "flag" } : kind === "number" ? { k: "count" } : { k: "text" }, layer("defaults")[key] ?? null);
+      KNOB[key] ??= K(key, key, kind === "bool" ? { k: "flag" } : kind === "number" ? { k: "count" } : { k: "text" }, layer("defaults")[key] ?? null,
+        { adv: ADV_HOME[key] ?? "version" });
       return KNOB[key];
     });
   }

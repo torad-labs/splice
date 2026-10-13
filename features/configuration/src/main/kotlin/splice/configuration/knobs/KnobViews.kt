@@ -36,6 +36,17 @@ internal class KnobViews {
         KnobWords.of(knob)?.let { words -> out.putJsonArray("words") { words.forEach { add(it) } } }
     }
 
+    /** Whether a change here reaches [knob], and if not, why: the sentence, and which of the two it is (pinned in code,
+     *  or set per command only), for a page that says it in a word and keeps the sentence for the log. */
+    private fun readOnly(out: JsonObjectBuilder, knob: Knob) {
+        val pinned = PINNED_REASONS[knob]
+        val reason = pinned ?: "Set per command in splice.toml, under [heads.<key>.overrides]".takeIf { knob.headOnly }
+        out.put("editable", reason == null)
+        if (reason == null) return
+        out.put("read_only_reason", reason)
+        out.put("read_only", if (pinned != null) "pinned" else "per_command")
+    }
+
     /** [effective] is the merged value for [headKey] (or the global view); [layers] says which layer set each key. */
     fun of(effective: JsonObject, layers: ConfigLayers, headKey: String?): JsonObject = buildJsonObject {
         val byScope = mapOf(
@@ -55,10 +66,7 @@ internal class KnobViews {
                 if (scope == "env") putJsonArray("env_names") { knob.envNames.forEach { add(it) } }
                 put("disposition", if (knob.restartRequired) "restart" else "live")
                 shape(this, knob)
-                val readOnlyReason = PINNED_REASONS[knob]
-                    ?: "Set per command in splice.toml, under [heads.<key>.overrides]".takeIf { knob.headOnly }
-                put("editable", readOnlyReason == null)
-                if (readOnlyReason != null) put("read_only_reason", readOnlyReason)
+                readOnly(this, knob)
             }
         }
     }

@@ -1,6 +1,7 @@
 // NEW: Oct 12, 2026 — the machine's process table as the MCP memory measurement reads it (docs/specs/mcp-hub.md,
 // step 5's measured savings). Read-only, and only these files under /proc/<pid>: stat (the parent), exe (which
-// program), cmdline (the command words, to tell which server a copy runs), smaps_rollup (PSS) and status (RSS).
+// program), cmdline (the command words, to tell which server a copy runs), cgroup (which slice and scope it runs in),
+// smaps_rollup (PSS) and status (RSS).
 // Never environ. The command words are compared and dropped: nothing here keeps, logs or serves them, because an
 // argument can carry a secret.
 package splice.app.sources.mcp
@@ -20,6 +21,16 @@ internal class ProcTable(private val root: Path = Path.of("/proc")) {
     val pids: Set<Long> get() = parents.keys
 
     fun childrenOf(pid: Long): List<Long> = children[pid].orEmpty()
+
+    fun parentOf(pid: Long): Long? = parents[pid]
+
+    /** Whether [pid] runs in the systemd slice named [slice]: its cgroup path (cgroup v2, `0::/...`) holds the slice
+     *  as one of its segments. A process that ended or can't be read is in none. */
+    fun inSlice(pid: Long, slice: String): Boolean = try {
+        Files.readAllLines(root.resolve("$pid/cgroup")).any { line -> slice in line.substringAfterLast(':').split('/') }
+    } catch (_: IOException) {
+        false
+    }
 
     /** [pid] and every process under it: a server with the wrapper layers (npm exec, sh -c) that started it. */
     fun subtree(pid: Long): List<Long> {

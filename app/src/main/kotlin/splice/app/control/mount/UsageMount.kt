@@ -15,7 +15,9 @@ import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
 import splice.app.sources.mcp.McpMemory
 import splice.app.sources.mcp.McpSignatures
+import splice.control.mcp.APP_MCP_SLICE
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.upstream.codemode.ProcessDispatchers
@@ -60,7 +62,11 @@ internal class UsageMount(
         fileIo,
         guard,
         log,
-        McpMemory(McpSignatures({ ports.mcpInventory?.census() }, { ports.mcpSharing })),
+        McpMemory(
+            McpSignatures({ ports.mcpInventory?.census() }, { ports.mcpSharing }),
+            // the same slice the host spawns holders in (ControlPlane.mcpHostConfig); a restart-only knob, read once
+            (config.getConfig().asMap()[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() } ?: APP_MCP_SLICE,
+        ),
     )
 
     // Settings > Your data's one window, with its own wiring: see HistoryWiring.

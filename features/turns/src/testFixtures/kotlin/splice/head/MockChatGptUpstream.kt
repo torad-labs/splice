@@ -136,6 +136,8 @@ class MockChatGptUpstream(
             refusal != null -> wire.respond(refusal.status, refusal.body)
             scenario == "tear" -> refusals.tear(ex)
             scenario == "quota429" -> refusals.quotaRejection(ex)
+            // Only the pooled primary login is limited; any other login is served the basic answer.
+            scenario == "quota429primary" && auth == "Bearer primary-token" -> refusals.quotaRejection(ex)
             else -> stream(wire, scenario, body)
         }
     }

@@ -10,16 +10,14 @@
 //                           or {error: string} naming why (unknown head, no head-owned credential,
 //                           the upstream call itself failing)
 //
-// THE SEND DOES NOT GO THROUGH THE TURN PIPELINE. The normal turn pipeline
-// (:daemon-head TurnDriver/TurnTelemetry) writes a perf row, a trace record when capture is on, and
-// folds tokens into economics on EVERY turn it serves — there is no flag on that path to skip
-// those writes, and adding one would touch the hot turn-completion code every real request runs
-// through, outside this row's fence. So this route does not send the prompt through a head's own
-// server at all: [PlaygroundSource] (implemented in :app, where the real upstream client and
-// credentials already live — :daemon-control cannot see :daemon-head/provider-* types, module law) performs
-// one independent upstream call and nothing here or in it writes to any splice-owned store. The
-// request/response pair lives in the HTTP response body and nowhere else, matching the doctor
-// page's own PlaygroundState comment ("no store, no storage, no history").
+// THE SEND DOES NOT GO THROUGH THE TURN PIPELINE. The turn pipeline (:daemon-head TurnDriver/TurnTelemetry)
+// carries a session, a trace and a retry loop a one-shot send has none of. So [PlaygroundSource] (implemented in
+// :app, where the real upstream client and credentials already live — :daemon-control cannot see
+// :daemon-head/provider-* types, module law) performs one independent upstream call, and the head's CompareSends
+// writes what the send leaves in splice's stores: a budget refusal, its Over budget row alone; a send past the
+// budget, however it ends (answered, failed, or cut off by the caller leaving), its Requests row, its economics
+// entry and its budget spend. No trace is kept, and the request/response pair itself lives in the HTTP response
+// body and nowhere else.
 //
 // ONE PROMPT, THROUGH THE TURN'S OWN BUILDER, NOT A SECOND TRANSLATION PIPELINE. The playground sends what
 // "one prompt through one head" says: the one-message turn Claude Code would send with the prompt, on the

@@ -731,7 +731,7 @@ function timelineHtml(tm) {
   }).join("");
   const cut = events.length > shown.length ? `<p class="cut"><span>The latest ${shown.length} of ${events.length}</span></p>` : "";
   const empty = waiting || (!events.length ? `<p class="empty">Nothing on ${ui.day === 0 ? "this day yet" : "this day"}</p>` : "");
-  return `<div class="mcol tlcol"><p class="note">Time runs down the page. Each column is a member, headed by its requests and cost since joining.</p>${cut}` +
+  return `<div class="mcol tlcol">${cut}` +
     `<div class="tl" style="--n:${cols.length}">${heads}${rows}</div>${empty}</div>`;
 }
 

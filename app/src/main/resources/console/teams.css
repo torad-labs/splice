@@ -97,7 +97,7 @@
 .handoffs h3 { display: flex; align-items: center; gap: 1rem; margin: 0 0 .9rem; }
 .handoffs h3 .dname { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 .handoffs .empty { margin: 0; font: 500 1.05rem/1.3 var(--font-name); color: var(--text-mute); }
-.handoffs .note, .tlcol > .note { margin: .8rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-mute); }
+.handoffs .note { margin: .8rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-mute); }
 .pairs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
 .pairs li { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .pairs .n { margin-left: auto; font: 600 .95rem/1 var(--font-data); color: var(--text); }
@@ -109,7 +109,6 @@
 .hours span:first-child { transform: none; }
 .hours span:last-child { transform: translateX(-100%); }
 /* Timeline: a time gutter, then one column per member; a message is a line from its sender's column to its receiver's */
-.tlcol > .note { margin: 0; }
 .tl { display: grid; grid-template-columns: 4.4rem repeat(var(--n), minmax(0, 1fr)); gap: .4rem .6rem; align-items: center; }
 .tl > time { grid-column: 1; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
 .tlhead { grid-row: 1; position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: .35rem; min-width: 0; padding: .5rem .2rem .7rem; background: var(--wall); border-bottom: .22rem solid var(--c); }

@@ -37,12 +37,15 @@ private val BUDGET_ACTIONS = setOf("warn", "block")
 // why: the text knobs whose readers take only some words; ConfigCoercion.coerce refuses the rest by name.
 private val CHECKED_TEXT_KNOBS = setOf(Knob.PROJECTS_FOLDERS, Knob.BUDGET_DEFAULT_ACTION)
 
-/** Which words a checked text knob's reader can use. */
+/** Which words a checked text knob's reader can use: PROJECTS_FOLDERS takes absolute folders, and the other checked
+ *  knob, BUDGET_DEFAULT_ACTION, takes a budget action. */
 private object TextKnobWords {
-    fun accepts(knob: Knob, text: String): Boolean = when (knob) {
-        Knob.PROJECTS_FOLDERS -> text.split(':').all(ProjectFolderCheck::absolute)
-        else -> text in BUDGET_ACTIONS
-    }
+    fun accepts(knob: Knob, text: String): Boolean =
+        if (knob == Knob.PROJECTS_FOLDERS) {
+            text.split(':').all(ProjectFolderCheck::absolute)
+        } else {
+            text in BUDGET_ACTIONS
+        }
 }
 
 // why: a poll faster than the five-minute cadence would hammer the provider's usage endpoint

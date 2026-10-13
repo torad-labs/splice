@@ -8,10 +8,10 @@
 // drop-in.
 // Oct 13 (splice-lead): `splice upgrade` reloads a running front onto the programs it swapped in under the same
 // rule; over units anyone else placed it prints the reload for their owner (reloadFront).
-// Oct 13 (hostshield-lead's ruling, its manifest's splice-mcp-front-continuity layer): hostshield owns only the units'
-// bytes and containment, and the front's programs and their upgrade are splice's. So reloadFront also reloads the
-// canonical unit hostshield wrote, through that unit's own ExecReload (USR2, the in-place re-exec), never a restart, and
-// it still only prints the command over a unit whose bytes are not the canonical ones.
+// Oct 13 (the host supervisor's ruling, its manifest's splice-mcp-front-continuity layer): the host supervisor owns
+// only the units' bytes and containment, and the front's programs and their upgrade are splice's. So reloadFront also
+// reloads the canonical unit the host supervisor wrote, through that unit's own ExecReload (USR2, the in-place
+// re-exec), never a restart, and it still only prints the command over a unit whose bytes are not the canonical ones.
 package splice.lifecycle.hub
 
 import splice.core.terminal.TerminalOutput

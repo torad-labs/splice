@@ -162,7 +162,7 @@ class DoctorReportTest {
         assertTrue(shown.contains("[codex] turn ERROR"), shown)
         val written = Json.parseToJsonElement(Files.readString(out)).jsonObject
         val logs = (written.getValue("logs") as JsonArray).map { it.jsonPrimitive.content }
-        assertEquals(6, logs.size, "every line of the tail")
+        assertEquals(8, logs.size, "every line of both tails")
         // The launch line's cwd is a free-form suffix: the real home's project never leaves.
         assertTrue(logs[5].contains("[codex] launch") && !logs[5].contains("real-private"), logs[5])
         assertEquals(

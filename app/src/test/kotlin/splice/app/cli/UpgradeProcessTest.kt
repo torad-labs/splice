@@ -159,13 +159,14 @@ class UpgradeProcessTest {
         assertEquals("old-jar", Files.readString(share(tmp, "releases/$GATEWAY_VERSION/splice.jar")))
     }
 
+    // Pre-merge review, Oct 13: the doctor's verdict counts. This test pinned the opposite until then.
     @Test
-    fun `a red doctor after the upgrade undoes nothing`(@TempDir tmp: Path) {
+    fun `a red doctor after the upgrade puts the previous release back and fails`(@TempDir tmp: Path) {
         val ran = upgrade(tmp, NEW_VERSION, 1, true, "--to", "v$NEW_VERSION", "--now")
 
-        assertEquals(0, ran.exit, ran.stdout)
-        assertEquals("new-jar", Files.readString(share(tmp, "splice.jar")))
-        assertEquals(NEW_VERSION, Files.readSymbolicLink(share(tmp, "releases/current")).toString())
+        assertEquals(1, ran.exit, ran.stdout)
+        assertTrue(Files.readString(share(tmp, "splice.jar")) != "new-jar", ran.stdout)
+        assertTrue(Files.readSymbolicLink(share(tmp, "releases/current")).toString() != NEW_VERSION, ran.stdout)
     }
 
     @Test

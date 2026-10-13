@@ -105,22 +105,18 @@ internal class HeadOverrideWrite(
             is TopologyWriteResult.Refused -> refused(head, ask.rejected, result)
             is TopologyWriteResult.Written -> {
                 config.headLayer.set(head, overrides)
-                JsonReply(HttpStatusCode.OK, writtenJson(head, ask))
+                JsonReply(HttpStatusCode.OK, writtenJson(ask))
             }
         }
     }
 
-    private fun writtenJson(head: String, ask: Ask): String {
-        val effective = config.getConfig(head).asMap()
+    private fun writtenJson(ask: Ask): String {
         val restart = ask.wanted.keys.filter { it in restartRequiredKnobKeys }
         return JsonWire.string(
             buildJsonObject {
-                put("head", head)
                 putJsonObject("applied") { ask.wanted.forEach { (key, value) -> put(key, value) } }
-                putJsonObject("effective") { ask.wanted.keys.forEach { key -> put(key, effective[key]?.toString()) } }
                 putJsonObject("rejected") { ask.rejected.forEach { (key, why) -> put(key, why) } }
                 putJsonArray("restart_required") { restart.forEach { add(it) } }
-                putJsonArray("live") { ask.wanted.keys.filter { it !in restart }.forEach { add(it) } }
                 put("persisted", "splice.toml")
             },
         )
@@ -134,7 +130,6 @@ internal class HeadOverrideWrite(
         val message = result.findings.joinToString("; ") { it.text() }.ifEmpty { "splice.toml write refused" }
         val body = buildJsonObject {
             put("error", message)
-            put("head", head)
             putJsonObject("rejected") { (rejected + byKey).forEach { (key, why) -> put(key, why) } }
             putJsonObject("applied") {}
             put("persisted", null as String?)

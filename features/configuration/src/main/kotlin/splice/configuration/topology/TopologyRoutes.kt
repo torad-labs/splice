@@ -58,7 +58,6 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
             return error(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
         }
         val body = buildJsonObject {
-            put("path", writer.path.toString())
             put(TOPOLOGY, TopologySecrets().masked(current))
             put("stale", stale())
         }
@@ -149,7 +148,6 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
     private fun outcome(attempt: Attempt): JsonObject = buildJsonObject {
         val result = attempt.result
         put("ok", result is TopologyWriteResult.Written)
-        (result as? TopologyWriteResult.Written)?.backup?.let { put("backup_path", it.toString()) }
         val findings = (result as? TopologyWriteResult.Refused)?.findings.orEmpty()
         put(
             "findings",

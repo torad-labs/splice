@@ -290,10 +290,8 @@ class ControlServerTest {
     }
 
     @Test
-    fun `status lists heads and registry`() = runTest {
+    fun `status lists the registry`() = runTest {
         val obj = json.parseToJsonElement(authed("/api/status")).jsonObject
-        assertEquals("control", obj["server"]?.jsonPrimitive?.content)
-        assertTrue(obj["heads"]!!.jsonArray.any { it.jsonPrimitive.content == "codex" })
         assertEquals("codex", obj["registry"]!!.jsonArray.first().jsonObject["key"]?.jsonPrimitive?.content)
     }
 
@@ -394,7 +392,6 @@ class ControlServerTest {
         val obj = json.parseToJsonElement(body).jsonObject
         assertEquals("high", obj["applied"]!!.jsonObject["effort"]?.jsonPrimitive?.content)
         assertTrue(obj["rejected"]!!.jsonObject.containsKey("bogus"))
-        assertEquals(0, obj["targets"]!!.jsonArray.size) // single JVM, no fanout
     }
 
     @Test
@@ -641,7 +638,6 @@ class ControlServerPerHeadConfigTest {
                 kimi["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
                 "?head folds the head's layer exactly as admission does",
             )
-            assertEquals("kimi", kimi["head"]!!.jsonPrimitive.content)
         } finally {
             server.stop()
         }

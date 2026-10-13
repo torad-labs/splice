@@ -235,7 +235,6 @@ class TopologyRoutesTest {
             val reply = call(HttpMethod.Get, null, true)
             assertEquals(200, reply.status.value)
             val body = json(reply.bodyAsText())
-            assertEquals(file.toString(), body.getValue("path").jsonPrimitive.content)
             assertTrue(body.getValue("stale").jsonPrimitive.boolean)
             val headers = body.getValue("topology").jsonObject.getValue("providers").jsonObject.getValue("ex")
                 .jsonObject.getValue("extra_headers").jsonObject
@@ -246,12 +245,11 @@ class TopologyRoutesTest {
     }
 
     @Test
-    fun `a write with the mask kept lands the stored secret and answers with its backup`() {
+    fun `a write with the mask kept lands the stored secret`() {
         serve(wired = true) { call ->
             val reply = put(call, edited(call) { it.replace("\"port\":8801", "\"port\":8802") })
             assertTrue(reply.getValue("ok").jsonPrimitive.boolean, reply.toString())
             assertTrue(reply.getValue("restart_required").jsonPrimitive.boolean)
-            assertEquals(FILE, Files.readString(Path.of(reply.getValue("backup_path").jsonPrimitive.content)))
             assertEquals(FILE.replace("8801", "8802"), Files.readString(file))
             assertEquals(401, call(HttpMethod.Put, "{}", false).status.value, "the write is guarded")
         }

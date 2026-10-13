@@ -159,7 +159,7 @@ class WebuiContractTest {
     fun `config payload matches ConfigPayload`() = runBlocking {
         // ConfigPayload (console-next/src/types/core.ts); the successor reads per-head layers too.
         val payload = api("/api/config")
-        assertFields(payload, listOf("effective", "layers", "restart_required_keys", "source"), "ConfigPayload")
+        assertFields(payload, listOf("effective", "layers", "restart_required_keys"), "ConfigPayload")
         assertFields(
             payload["layers"]!!.jsonObject,
             listOf("defaults", "toml", "perHead", "file", "env", "runtime"),

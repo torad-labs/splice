@@ -37,7 +37,6 @@ public class ConfigRoutes(
         val effective = config.getConfig(headKey).asMap()
         return buildJsonObject {
             put("effective", mapToJson(effective))
-            headKey?.let { put("head", it) }
             putJsonObject("layers") {
                 put("defaults", mapToJson(layers.defaults))
                 // The operator-facing layer: ~/.config/splice/splice.toml [daemon]/[defaults].
@@ -55,7 +54,6 @@ public class ConfigRoutes(
             }
             put("knobs", KnobViews().of(mapToJson(effective), layers, headKey))
             putJsonArray("restart_required_keys") { restartRequiredKnobKeys.forEach { add(it) } }
-            put("source", "control")
         }.toString()
     }
 
@@ -92,7 +90,6 @@ public class ConfigRoutes(
                     nonScalar.forEach { put(it, "invalid value (must be a scalar or null)") }
                 }
                 putJsonArray("restart_required") { result.restartRequired.forEach { add(it) } }
-                putJsonArray("targets") {} // no per-head fanout targets in single-daemon
                 // V4-299: persisted only when the write landed; otherwise null, and not_persisted says why.
                 val notPersisted = result.notPersisted
                 put("persisted", if (notPersisted == null) "state/config.json" else null)

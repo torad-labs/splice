@@ -488,7 +488,7 @@ function eventsOf(lines) {
 // The route sends the file it read (HeadOperations.kt:57), and a file it could not read comes back as one reason line,
 // "[logs unavailable: <file> unreadable (<why>)]" (LogFileSource.kt:48), which carries no command tag: it is kept and said.
 async function readLog(key) {
-  const res = await API.get(`/api/logs/${encodeURIComponent(key)}?tail=2000`);
+  const res = await API.get(`/api/logs/${encodeURIComponent(key)}?tail=10000`);
   const parsed = res.ok ? parseLog(res.body?.lines ?? []) : [];
   ui.logs[key] = parsed.filter((l) => l.tag === key);
   ui.logPath[key] = res.body?.path ?? null;

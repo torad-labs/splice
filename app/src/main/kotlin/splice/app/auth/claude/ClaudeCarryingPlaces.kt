@@ -42,7 +42,10 @@ internal class ClaudeCarryingPlaces(
         val match = known ?: resolve(head, key)
         carried[head] = match
         if (own != null) remember(own, match)
-        if (match.account == null && match != previous) reads.reportUnmatchedCarrying()
+        // Only a head with a Claude login can fail to match one: claudex's OpenAI token never could, and it was
+        // every one of these lines, once per daemon start (Oct 5 to 12).
+        val newlyUnmatched = match.account == null && match != previous
+        if (newlyUnmatched && locations.any { it.target.head.key == head }) reads.reportUnmatchedCarrying()
     }
 
     override fun carrying(head: String): ClaudeLoginPlaceId? = carried[head]?.place

@@ -10,6 +10,8 @@ import splice.accounts.signin.LoginStatusJson
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
 
+private const val CODE_SHAPE = "native login code body must be {\"code\": \"...\"}"
+
 private data class NativeLoginRequest(val label: String?)
 
 public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
@@ -46,20 +48,22 @@ public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
         return true
     }
 
+    /** A body that is not {"code": "..."} is the caller's mistake, a 400 as the login start answers; only a code the
+     *  sign-in will not take now is a conflict (Temple notice a93cf87364d8c013). */
     public suspend fun submit(call: ApplicationCall) {
         val owner = owner(call) ?: return
         val id = call.parameters["id"].orEmpty()
         val status = owner.poll(id)
-        if (status == null || status.head != call.parameters["head"]) {
-            AccountReplies.respondError(call, "unknown native login id", HttpStatusCode.NotFound)
-            return
-        }
         val code = JsonScalars.str(body.parse(call), "code")
-        if (code == null || !owner.submit(id, code)) {
-            AccountReplies.respondError(call, "native login is not accepting that code", HttpStatusCode.Conflict)
-            return
+        when {
+            status == null || status.head != call.parameters["head"] ->
+                AccountReplies.respondError(call, "unknown native login id", HttpStatusCode.NotFound)
+            code == null ->
+                AccountReplies.respondError(call, CODE_SHAPE, HttpStatusCode.BadRequest)
+            !owner.submit(id, code) ->
+                AccountReplies.respondError(call, "native login is not accepting that code", HttpStatusCode.Conflict)
+            else -> AccountReplies.respond(call, LoginStatusJson.json(owner.poll(id) ?: status))
         }
-        AccountReplies.respond(call, LoginStatusJson.json(owner.poll(id) ?: status))
     }
 
     private suspend fun owner(call: ApplicationCall): ClaudeLoginPlaces? {

@@ -50,7 +50,6 @@ import splice.sessions.registry.TrustedRoot
 import splice.sessions.teams.Team
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.ModelMove
-import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionActivity
@@ -298,16 +297,7 @@ public class SessionsRoutes(
         put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
         // a move that did not come back leaves no mark, but splice ended the client for it: when he pressed
         put("unmoved", buildJsonArray { transcripts.unmoved(page.sessionId).forEach { add(JsonPrimitive(it)) } })
-        // Declared additions (V4-130, routed to splice-design): the page's denominator. What it read
-        // past, by kind, with the two kinds the orchestrator asked for named on their own.
+        // the lines this page could not read: Sessions counts them into what it says it could not show
         put("unparseable_lines", page.skipped[SKIPPED_UNPARSEABLE] ?: 0)
-        put("sidechain_records", page.skipped[SKIPPED_SIDECHAIN] ?: 0)
-        put(
-            "skipped_records",
-            buildJsonObject {
-                page.skipped.filterKeys { it != SKIPPED_UNPARSEABLE && it != SKIPPED_SIDECHAIN }
-                    .forEach { (kind, n) -> put(kind, n) }
-            },
-        )
     }.toString()
 }

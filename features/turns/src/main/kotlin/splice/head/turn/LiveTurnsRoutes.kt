@@ -14,6 +14,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.head.GateSlot
 import splice.core.util.JsonWire
 import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
@@ -26,9 +27,21 @@ public fun interface LiveTurnsSource {
     public operator fun invoke(): LiveTurnsByHead?
 }
 
-public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val registry: LiveTurnsSource) {
+/** A head's gate slots as its health snapshot reads them now: why each admitted turn is where it is. */
+public fun interface LiveGateSource {
+    public operator fun invoke(head: String): List<GateSlot>
+}
 
-    public fun live(head: String): JsonReply = resolved(head) { _, turns ->
+public class LiveTurnsRoutes(
+    private val heads: TurnsHeadLookup,
+    private val registry: LiveTurnsSource,
+    private val gates: LiveGateSource = LiveGateSource { emptyList() },
+) {
+
+    /** Each live turn, with the gate's phase, age since admission and compaction flag when its slot names it, so the
+     *  console can say why a turn is held (connecting, streaming, a compaction). */
+    public fun live(head: String): JsonReply = resolved(head) { key, turns ->
+        val slots = gates(key).filter { it.turnId != null }.associateBy { it.turnId }
         val body = buildJsonObject {
             putJsonArray("turns") {
                 turns.list().forEach { turn ->
@@ -43,6 +56,11 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
                             put("retries", turn.silence.retries)
                             put("will_resume", turn.silence.willResume)
                             put("stopped", turn.stopped)
+                            slots[turn.id]?.let { slot ->
+                                put("phase", slot.phase.name.lowercase())
+                                put("age_ms", slot.ageMs)
+                                put("compact", slot.compact)
+                            }
                         },
                     )
                 }

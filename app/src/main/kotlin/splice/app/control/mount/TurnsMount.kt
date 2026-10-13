@@ -16,6 +16,7 @@ import splice.core.config.ConfigService
 import splice.core.topology.TopologyWriterSource
 import splice.head.compact.CompactPayloads
 import splice.head.compaction.CompactionInstructionsRoute
+import splice.head.turn.LiveGateSource
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
 import splice.head.wire.CaptureRoutes
@@ -33,7 +34,11 @@ internal class TurnsMount(
     private val compactPayloads = CompactPayloads(TurnsHeadAdapter.heads(heads))
     private val compactionRoute = CompactionInstructionsRoute(turnsLookup)
     private val captureRoutes = CaptureRoutes(turnsLookup, config, TopologyWriterSource { ports.topology })
-    private val liveTurnsRoutes = LiveTurnsRoutes(turnsLookup, LiveTurnsSource { ports.liveTurns })
+    private val liveTurnsRoutes = LiveTurnsRoutes(
+        turnsLookup,
+        LiveTurnsSource { ports.liveTurns },
+        LiveGateSource { key -> heads[key]?.head?.healthSnapshot()?.gate?.live.orEmpty() },
+    )
 
     fun register(route: Route) {
         route.get("/api/compact") {

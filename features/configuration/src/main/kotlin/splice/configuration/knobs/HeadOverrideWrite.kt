@@ -78,18 +78,18 @@ internal class HeadOverrideWrite(
             return refuse(HttpStatusCode.InternalServerError, "splice.toml does not parse: $why")
         }
         val held = current.heads[head] ?: return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
-        return land(writer, current, head, held, ask(partial))
+        return land(writer, current, head, held, ask(partial, head, LegacyKnobScope(current)))
     }
 
-    private fun ask(partial: JsonObject): Ask {
+    private fun ask(partial: JsonObject, head: String, legacy: LegacyKnobScope): Ask {
         val rejected = LinkedHashMap<String, String>()
         val wanted = LinkedHashMap<String, String?>()
         for ((key, value) in partial) {
             val knob = knobsByKey[key]
+            val refusal = knob?.let { PER_COMMAND_REFUSALS[it] ?: legacy.refusal(head, it) }
             when {
                 knob == null -> rejected[key] = "unknown key"
-                knob in PER_COMMAND_REFUSALS && value !is JsonNull ->
-                    rejected[key] = PER_COMMAND_REFUSALS.getValue(knob)
+                refusal != null && value !is JsonNull -> rejected[key] = refusal
                 value !is JsonPrimitive -> rejected[key] = NOT_SCALAR
                 else -> wanted[key] = value.takeUnless { it is JsonNull }?.content
             }

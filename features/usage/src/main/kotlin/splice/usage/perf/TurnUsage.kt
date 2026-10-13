@@ -7,6 +7,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.usage.AccountPlanLookup
 import splice.usage.UsageBilling
@@ -63,6 +65,12 @@ internal class TurnUsage(
             ),
             priced = priced,
             gap = gap,
+            ending = when {
+                row.outcome == OutcomeTag.RATE_LIMITED.wire ||
+                    row.outcome == OutcomeTag.RATE_LIMIT_RELAYED.wire -> Ending.LIMITED
+                OutcomeTags.isFailed(row.outcome) -> Ending.FAILED
+                else -> Ending.OTHER
+            },
         )
     }
 
@@ -120,7 +128,11 @@ internal class TurnUsage(
         val tokens: Tokens,
         val priced: Priced,
         val gap: PriceGap?,
+        val ending: Ending = Ending.OTHER,
     )
+
+    /** How a request ended, as the Usage chart splits a slice: refused for rate, failed some other way, or neither. */
+    private enum class Ending { LIMITED, FAILED, OTHER }
 
     /** The row's reported token totals; null where the row never carried one. */
     private data class Tokens(val incoming: Long?, val cache: Long?, val outgoing: Long?, val cacheWrite: Long?)
@@ -138,6 +150,8 @@ internal class TurnUsage(
         private val gaps = PriceGap.entries.associateWith { 0L }.toMutableMap()
         private var missingInput = 0L
         private var missingOutput = 0L
+        private var failedRequests = 0L
+        private var limitedRequests = 0L
 
         /** V4-444: a code-mode step is a reply splice wrote itself, with nothing sent to a provider, so it is
          *  LEFT OUT of the requests. Counting it as a request made every window with steps report requests that
@@ -151,6 +165,8 @@ internal class TurnUsage(
             row.priced.usd?.let { cost = (cost ?: 0.0) + it }
             row.priced.planValue?.let { planValue = (planValue ?: 0.0) + it }
             if (row.gap != null) gaps[row.gap] = gaps.getValue(row.gap) + 1
+            if (row.ending == Ending.LIMITED) limitedRequests++
+            if (row.ending != Ending.OTHER) failedRequests++
         }
 
         private fun addTokens(tokens: Tokens) {
@@ -177,6 +193,9 @@ internal class TurnUsage(
             put("unpriced_local_requests", gaps.getValue(PriceGap.LOCAL))
             put("unpriced_undeclared_requests", gaps.getValue(PriceGap.UNDECLARED))
             put("unanswered_requests", gaps.getValue(PriceGap.UNANSWERED))
+            // the slice's failed requests and the rate-limited ones among them, the Usage chart's outcome mix
+            put("failed_requests", failedRequests)
+            put("rate_limited_requests", limitedRequests)
             put("missing_input_requests", missingInput)
             put("missing_output_requests", missingOutput)
         }

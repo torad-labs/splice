@@ -115,7 +115,7 @@ function turnsUrl(head, held, f, label) {
 const labelsOf = (f) => (f.account ? f.account.split("|").slice(1).join("|").split(SEP) : [null]);
 const headsFor = (f) => S.heads.filter((h) => !f.account || f.account.split("|")[0] === h.key);
 
-const ZERO = () => ({ requests: 0, in: 0, cached: 0, out: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0 });
+const ZERO = () => ({ requests: 0, in: 0, cached: 0, out: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0, failed: 0, limited: 0 });
 function fold(into, g) {
   into.requests += g.requests ?? 0; into.in += g.input_tokens ?? 0; into.cached += g.cached_tokens ?? 0; into.out += g.output_tokens ?? 0;
   if (g.cost_usd != null) into.cost = (into.cost ?? 0) + g.cost_usd;
@@ -123,6 +123,7 @@ function fold(into, g) {
   if (g.plan_value_usd != null) into.planValue = (into.planValue ?? 0) + g.plan_value_usd;
   into.uncounted += g.unpriced_uncounted_requests ?? 0; into.undeclared += g.unpriced_undeclared_requests ?? 0;
   into.local += g.unpriced_local_requests ?? 0; into.unanswered += g.unanswered_requests ?? 0;
+  into.failed += g.failed_requests ?? 0; into.limited += g.rate_limited_requests ?? 0; // TurnUsage's outcome mix (gap 408)
   return into;
 }
 /** The window's totals across every command that answered: per account, model, session and day, as the daemon folded them. */
@@ -265,6 +266,7 @@ const usageOfPlan = (row) => !D.all ? [] : [...D.all.accounts.values()].filter((
 const sumOf = (entries) => entries.reduce((t, e) => fold2(t, e), ZERO());
 function fold2(t, e) {
   t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local; t.unanswered += e.unanswered;
+  t.failed += e.failed ?? 0; t.limited += e.limited ?? 0;
   if (e.cost != null) t.cost = (t.cost ?? 0) + e.cost;
   if (e.planValue != null) t.planValue = (t.planValue ?? 0) + e.planValue;
   return t;
@@ -375,6 +377,7 @@ function chartHtml() {
       const s = ui.win === "5h" ? w.slices.get(head)?.[i] : w.days.get(head)?.get(x.day);
       const v = s ? measureOf(s) : 0;
       if (v > 0) x.vals.push([head, v, s.requests]);
+      x.failed = (x.failed ?? 0) + (s?.failed ?? 0); x.limited = (x.limited ?? 0) + (s?.limited ?? 0);
     }
     x.total = x.vals.reduce((a, [, v]) => a + v, 0); x.n = x.vals.reduce((a, [, , n]) => a + n, 0);
   });
@@ -383,18 +386,20 @@ function chartHtml() {
   const max = Math.max(...sl.map((x) => x.total), 1e-9), top = niceTop(max);
   const bars = sl.map((x, i) => `<div class="col${ui.hover === i ? " on" : ""}" data-i="${i}"><div class="stack" style="height:${((x.total / top) * 100).toFixed(2)}%">`
     + x.vals.map(([head, v]) => `<a class="${alt.has(head) ? "alt" : ""}" href="${reqUrl({ cmd: cmdOf(head), from: x.from, to: x.to })}" style="--c:${colorOf(providerOfHead(head))};flex:${((v / x.total) * 1000).toFixed(2)} 1 0" aria-label="${esc(cmdOf(head))}"></a>`).join("")
-    + `</div><span class="x">${x.label}</span></div>`).join("");
+    + `</div>${x.failed ? `<a class="fails" href="${reqUrl({ from: x.from, to: x.to, outcome: "fail" })}" aria-label="${failWords(x)}" title="${failWords(x)}"></a>` : ""}<span class="x">${x.label}</span></div>`).join("");
   const grid = [1, .5].map((f) => `<div class="gl" style="bottom:${f * 100}%"><span>${measureText(top * f)}</span></div>`).join("");
   const legend = `<div class="legend">${shown.map((h) => `<span class="key">${swatch(h)}${esc(cmdOf(h))}</span>`).join("")}</div>`;
   const sw = `<div class="switch" role="group" aria-label="Measure">${[["tokens", "Tokens"], ["cost", "Cost"]].map(([v, t]) => `<button data-act="measure" data-v="${v}" aria-pressed="${ui.measure === v}">${t}</button>`).join("")}</div>`;
   const tip = ui.hover != null ? tipHtml(sl[ui.hover], sl.length) : "";
   return `<section class="chart card"><header>${sw}</header><div class="plot">${grid}<div class="cols" style="--n:${sl.length}">${bars}</div>${tip}</div>${legend}</section>`;
 }
+// a slice's failed requests, and the rate-limited ones among them, in words: a mark under its bar and a line in its tip
+const failWords = (x) => `${x.failed.toLocaleString("en-US")} failed${x.limited ? `, ${x.limited.toLocaleString("en-US")} of them rate-limited` : ""}`;
 function tipHtml(x, n) {
   const span = ui.win === "5h" ? `${clock(new Date(x.from))} to ${clock(new Date(x.to))}` : x.label === "Today" ? "Today" : `${x.label} ${new Date(x.from).getDate()}`;
   const left = ((ui.hover + .5) / n) * 100;
   return `<div class="tip${left > 60 ? " lefty" : ""}" style="left:${left.toFixed(2)}%"><p class="tw">${span}</p>${x.vals.slice().reverse().map(([head, v]) => `<p>${swatch(head)}<span>${esc(cmdOf(head))}</span><b>${measureText(v)}</b></p>`).join("") || `<p class="none">No requests</p>`}`
-    + `${x.vals.length > 1 ? `<p class="sum"><span>All</span><b>${measureText(x.total)}</b></p>` : ""}</div>`;
+    + `${x.vals.length > 1 ? `<p class="sum"><span>All</span><b>${measureText(x.total)}</b></p>` : ""}${x.failed ? `<p class="sum fail"><span>${failWords(x)}</span></p>` : ""}</div>`;
 }
 
 // ---------- by any one thing: each value's tokens, requests and cost ----------

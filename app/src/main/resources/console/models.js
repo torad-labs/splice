@@ -514,12 +514,14 @@ async function readLog(key) {
   render();
 }
 /** The windows the provider declares beside its models (gap 473), read from GET /api/topology: an extra window names
- *  one model, with its served ceiling when it has one, and a rule names every model whose id starts with its prefix. */
+ *  one model, with its served ceiling when it has one, and a rule names every model whose id starts with its prefix.
+ *  Each line says it in words, by the model's name where splice has one: a bare "k3 1M" read as nothing (walk, Oct 13). */
 function windowsRow(c) {
-  const extra = c.extraWindows.map((w) => `<span class="fig"><bdo dir="ltr">${esc(w.id)}</bdo> ${big(w.context_window)}${w.max_context_window ? `, served up to ${big(w.max_context_window)}` : ""}</span>`);
-  const rules = c.windowRules.map((w) => `<span class="fig" title="Every model whose id starts with ${esc(w.prefix)}"><bdo dir="ltr">${esc(w.prefix)}…</bdo> ${big(w.context_window)}</span>`);
+  const name = (id) => c.models.find((m) => m.id === id)?.label ?? id;
+  const extra = c.extraWindows.map((w) => `<span class="fig">${esc(name(w.id))}: ${big(w.context_window)} context window${w.max_context_window ? `, served up to ${big(w.max_context_window)}` : ""}</span>`);
+  const rules = c.windowRules.map((w) => `<span class="fig">Every model whose id starts with <bdo dir="ltr">${esc(w.prefix)}</bdo>: ${big(w.context_window)} context window</span>`);
   if (!extra.length && !rules.length) return "";
-  return `<span class="lbl">Windows</span><div class="ctl col">${[...extra, ...rules].join("")}</div>`;
+  return `<span class="lbl">Context windows</span><div class="ctl col">${[...extra, ...rules].join("")}</div>`;
 }
 /** The window Claude Code itself counts against in each session on this command, as its status line reported it
  *  (GET /api/sessions' client_context_window, 48fa2f61b). A session that has not posted one is left out, never guessed. */
@@ -1316,6 +1318,7 @@ function render() {
   root.dataset.shown = `${ui.view}:${ui.open}`;
   const now = root.querySelector(".pane .body");
   if (now) now.scrollTop = top;
+  moreBelow();
   const rl2 = root.querySelector(".hlog .rawlog ol");
   if (rl2) rl2.scrollTop = !rawAt || rawAt.end ? rl2.scrollHeight : rawAt.top;
   if (fid) {
@@ -1323,6 +1326,14 @@ function render() {
     if (g) { g.focus(); if (pos != null && g.setSelectionRange) g.setSelectionRange(pos, pos); }
   }
 }
+// An open pane taller than the window says so on its lower edge, as Settings' does: "More below" while content waits
+// under the fold, gone once the scroll reaches the end (splice-usage's walk at 3394, Oct 13: Running was cut in half)
+function moreBelow() {
+  const body = root.querySelector(".pane .body");
+  if (body) body.parentElement.classList.toggle("more", body.scrollHeight - body.scrollTop - body.clientHeight > 6);
+}
+document.addEventListener("scroll", (e) => { if (e.target.classList?.contains("body")) moreBelow(); }, true);
+window.addEventListener("resize", moreBelow);
 function openCmd(key) {
   Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null });
   readLog(key);

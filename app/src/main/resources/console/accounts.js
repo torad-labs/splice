@@ -138,6 +138,11 @@ async function load({ asks = true } = {}) {
   const unread = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => h.read_pending || h.unavailable || dayUnread(h))
     .map((h) => [h.key, !h.read_pending && (h.unavailable || dayUnread(h)) ? DAY_NOT_READ : DAY_READING])
     : (st.body?.registry || []).map((h) => [h.key, DAY_NOT_READ]));
+  // why a day reads Not read, on screen beside it (splice-usage's walk, Oct 13: ChatGPT's Day said Not read and nothing
+  // more): the daemon's own sentence for a history it could not read, else the hour it could not read, else no answer
+  const unreadWhy = new Map(ec.ok ? (ec.body?.heads || []).filter((h) => !h.read_pending && (h.unavailable || dayUnread(h)))
+    .map((h) => [h.key, h.unavailable || "An hour of today's history could not be read"])
+    : (st.body?.registry || []).map((h) => [h.key, "splice did not answer with today's spend"]));
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   // a local runtime splice could not reach on its port (/api/heads runtimeNotAnswering): its card says so, as a signed-out one does
@@ -164,6 +169,7 @@ async function load({ asks = true } = {}) {
     const counted = !unread.has(h.key);
     p.cmds.push({ cmd: h.label || h.key, head: h.key, authKind: h.authKind, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
       unread: b ? null : unread.get(h.key) ?? null,
+      unreadWhy: b ? null : unreadWhy.get(h.key) ?? null,
       failed: b ? b.failed_turns ?? today.failed : today.failed,
       priced: Math.max(0, today.turns - today.unpriced - today.failed),
       opening: b ? null : today.opening, // only the bucket-built figure has a half-hour it cannot place; the budget's own is exact
@@ -227,8 +233,9 @@ async function load({ asks = true } = {}) {
   }
   // each plan command's own order and pin (AccountOrderStore.kt:1, :24): no order is the soonest-reset rule
   await Promise.all([...provs.values()].filter((p) => p.kind === "plan").flatMap((p) => p.cmds.map(async (c) => {
-    const o = await API.get(`/api/auth/${encodeURIComponent(c.head)}/order`);
     const mine = p.accounts.filter((a) => (a.row.heads || []).includes(c.head));
+    // a command with one login has no pool to order, and its order route refuses with a 409 on every load (walk, Oct 13)
+    const o = mine.length > 1 ? await API.get(`/api/auth/${encodeURIComponent(c.head)}/order`) : { body: null };
     const byLabel = (label) => mine.find((a) => labelOn(a, c.head) === label)?.id;
     const ids = [...new Set((o.body?.effective_order || []).map(byLabel).filter(Boolean))];
     c.order = [...ids, ...mine.map((a) => a.id).filter((id) => !ids.includes(id))];
@@ -415,7 +422,7 @@ function meterHtml(c, pick = null) {
   const spent = c.local || c.unread || c.spent == null || (c.unpriced && !c.priced) ? "" : money(c.spent);
   const share = spent && (c.unpriced || c.failed) && c.priced ? `for ${reqs(c.priced)}` : "";
   // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
-  const none = c.unread ? `<em>${c.unread}</em>` : !c.local && c.spent != null && !c.priced && !c.unpriced && !c.failed ? "<em>No requests</em>" : "";
+  const none = c.unread ? `<em>${c.unread}</em>${c.unreadWhy ? ` <span class="state">${esc(c.unreadWhy)}</span>` : ""}` : !c.local && c.spent != null && !c.priced && !c.unpriced && !c.failed ? "<em>No requests</em>" : "";
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${c.unread ? "" : openingRow(c)}</div>`;

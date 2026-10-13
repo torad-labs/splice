@@ -610,7 +610,9 @@ button.count:hover { color: var(--text); }
    it, not with the card's lower edge. Version's cards read their number straight under its name, so they keep start. */
 /* and where any card in the section carries an element, every card in it holds its rows at the top instead: pinning the
    ones without one to the lower edge put three controls on one line and the fourth 40px above it (MCP servers) */
-.kcards:not(.vcards):not(:has(.kel)):not(:has(.sketch)) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
+/* a card whose command chips sit under its control counts as one with an element: pinning its neighbours' controls to
+   the lower edge put them 95px under its own (splice's limits at 3394, splice-usage's walk, Oct 13) */
+.kcards:not(.vcards):not(:has(.kel)):not(:has(.sketch)):not(:has(.owners)) > .kcard:not(:has(.over)) .kin { align-content: space-between; }
 /* WHAT A SETTING SHOWS UNDER ITS CONTROL IS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the last plan read, the
    mark the account bars draw, the providers reporting no window, how many servers run. It sits straight under the
    control, never pushed to the card's lower edge with the control floating in the middle. */

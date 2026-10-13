@@ -700,11 +700,11 @@ Those eight have no design backing *and* no daemon source; they are a designer's
 A field with no source is a column the console renders blank forever and someone later files as a
 bug.
 
-`packet` and `detail` are **kept, not dropped** — `packet` appears in all three comps and `detail`
-in `team-board-b`. They need definitions, not deletion: `packet` is the dispatch unit a message
-was sent under (from the V4-130 wire observation if it carries one), `detail` is the activity
-sample's second line. If V4-130's observation cannot produce `packet`, say so and the column
-takes the honest empty — it does not get invented.
+`detail` is **kept, not dropped**: it is in `team-board-b`, and it is the activity sample's second line.
+`packet` was **dropped** (marlin, 2026-10-13): the message is the unit; the chat shows it. One SendMessage is one
+message, and the chat already draws each with its sender, recipient and time. The only per-call key the observation
+keeps is the tool_use id, a `toolu_` string that tells a person nothing, and an honest-empty column would be clutter,
+so the card carries no packet column at all.
 
 `checks` was the one real conflict: it is in all three comps and the daemon had no source. It
 **kept its column** and shipped the honest empty with `source` naming the row that would fill it,

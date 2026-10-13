@@ -261,14 +261,14 @@ const liveNow = (session) => Boolean(session) && session.availability === "live"
   (session.status === "working" || session.status === "busy");
 
 // ---------- the figures: turns, tokens and dollars, and the turns no rate card priced ----------
-/** Packet and Checks keep their columns on the card with the honest empty and the sentence naming their source
- *  (web-console.md:703-716): no message carries a dispatch unit yet, and a checks value is drawn only when the team's
- *  economics row carries one, else its checks_source or the absence itself. */
-function keptHtml(tm, slotId) {
+/** Checks keeps its column on the card with the honest empty and the sentence naming its source (web-console.md:709):
+ *  the value when the team's economics row carries one, else its checks_source or the absence itself. Packet has no
+ *  column: the message is the unit, and the chat shows it (marlin, Oct 13). Named apart from the panels' keptHtml. */
+function checksHtml(tm, slotId) {
   const row = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId);
   const checks = row?.checks ? esc(row.checks)
     : `No checks · ${esc(row?.checks_source || "nothing on the wire fills them yet")}`;
-  return `<div class="meta"><span>No packet · no message carries a dispatch unit yet</span><span>${checks}</span></div>`;
+  return `<div class="meta"><span>${checks}</span></div>`;
 }
 
 function useOf(tm, slotId) {
@@ -425,7 +425,7 @@ function memberHtml(tm, slot) {
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}${end}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` +
-    `${body}${liveNow(s) && !ro ? armedStopHtml(key, slot.id, now) : ""}${armedEndHtml(key, slot.id)}${keptHtml(tm, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
+    `${body}${liveNow(s) && !ro ? armedStopHtml(key, slot.id, now) : ""}${armedEndHtml(key, slot.id)}${checksHtml(tm, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
 }
 
 const secsSince = (t) => Math.floor((Date.now() - t) / 1000);

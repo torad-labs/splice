@@ -100,6 +100,7 @@ import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.milliseconds
 
 // why: the port the MCP hub front listens on, the address shape splice-config set (docs/specs/mcp-hub.md step 6).
@@ -250,7 +251,9 @@ internal class ControlPlane(
     private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
         val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
-        val window = OriginalsCutoff { config.getConfig().historyWindow.cutoffMs(System.currentTimeMillis()) }
+        val window = OriginalsCutoff {
+            System.currentTimeMillis() - config.getConfig().transcriptCopyDays.days.inWholeMilliseconds
+        }
         val originals = TranscriptOriginals(statePaths, keeping = copying, cutoff = window, log = log)
         val rewriter = TranscriptModelRewrite(originals = originals)
         val wrap = WrappedHead(home)

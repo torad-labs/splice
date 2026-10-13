@@ -39,8 +39,8 @@ public fun interface CopyingOriginals {
     public fun now(): Boolean
 }
 
-/** Where the person's history window begins now, which Settings shows as how long transcript copies are kept; null
- *  keeps every copy. Asked each time a copy is made, so the store never grows past the window it says it keeps. */
+/** Where the kept copies begin now, the Settings "Keep for" days of transcript copies; null keeps every copy. Asked each
+ *  time a copy is made, so the store never grows past the days it says it keeps. */
 public fun interface OriginalsCutoff {
     public fun now(): Long?
 }

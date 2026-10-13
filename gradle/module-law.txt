@@ -10,6 +10,9 @@
 # and implements the sessions-owned transcript port; no feature implementation points back here.
 :integrations-claude-code -> :core :features-sessions
 :integrations-mcp -> :core :integrations-claude-code :integrations-http
+# the MCP hub's native binaries (holder and front, Kotlin/Native): a separate process each, sharing no code with the
+# daemon. They speak the daemon's control routes over HTTP, so they depend on no project.
+:integrations-mcp-hub ->
 :integrations-http -> :core
 # the splice.toml file on disk: load, first-run starter, structural preflight and digest.
 :integrations-topology -> :core

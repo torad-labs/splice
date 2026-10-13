@@ -24,6 +24,7 @@ include(
     ":core",
     ":integrations-claude-code",
     ":integrations-mcp",
+    ":integrations-mcp-hub",
     ":integrations-http",
     ":integrations-topology",
     ":integrations-codemode",
@@ -60,6 +61,8 @@ project(":core").projectDir = file("core")
 // Reusable client and MCP adapters retain their own compile and visibility boundaries.
 project(":integrations-claude-code").projectDir = file("integrations/claude-code")
 project(":integrations-mcp").projectDir = file("integrations/mcp")
+// The MCP hub's native holder and front (Kotlin/Native, linuxX64): two binaries beside splice.jar, no JVM code.
+project(":integrations-mcp-hub").projectDir = file("integrations/mcp-hub")
 project(":integrations-http").projectDir = file("integrations/http")
 project(":integrations-topology").projectDir = file("integrations/topology")
 project(":integrations-codemode").projectDir = file("integrations/codemode")

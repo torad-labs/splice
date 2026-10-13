@@ -61,7 +61,7 @@ class PassthroughOutputShapeTest {
     ).driveTurn(events.asFlow(), sink) as TurnOutcome.Success
 
     @Test
-    fun `an empty end_turn carries structural evidence without accepting the empty message`() = runTest {
+    fun `an empty end_turn carries structural evidence and closes as a finished answer`() = runTest {
         val sink = ShapeSink()
         val success = drive(
             listOf(frame("""{"type":"message_start","message":{"usage":{"input_tokens":17}}}""")) + END,
@@ -71,7 +71,7 @@ class PassthroughOutputShapeTest {
             "input_tokens=17 cache_read_input_tokens=0 cache_creation_input_tokens=0 output_tokens=2"
         assertAll(
             { assertEquals(shape, success.shape.outputShape) },
-            { assertFalse(success.shape.messageClosed, "closure must not silently change empty-turn acceptance") },
+            { assertTrue(success.shape.messageClosed, "a message the model ended itself is closed, empty or not") },
             { assertFalse(success.text.emittedText) },
             { assertFalse(success.text.emittedThinking) },
             { assertEquals(0, sink.opens) },

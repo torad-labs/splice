@@ -154,8 +154,20 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
   `--strict-mcp-config`, the MCP provider skips the claude.ai connector fetch, and a connector's
   proxy url and id come only from that fetch with the session's claude.ai login. The President
   ruled out strict mode.
-- **(e) A same-named entry replaces each scope:** to run before step 6. That's user scope (passed
-  with beed0812e), plus local or project scope and an approved repo server.
+- **(e) A same-named entry replaces each scope, passed (splice-config, Oct 13).** User scope passed
+  with beed0812e. This run covered local scope and an approved repo `.mcp.json` server. It used a
+  stand-in config home with no operator data, at `walks/` mode 0700, deleted after the run.
+  - The home's `.claude.json` held a local-scope pair, `localsrv` and `localkeep`, under the repo's
+    `projects` entry, and a user-scope `userkeep`. The repo's `.mcp.json` held `reposrv` and
+    `repokeep`, both approved in `enabledMcpjsonServers`. Each was a stdio stand-in that marks a
+    file when it is spawned.
+  - `--mcp-config` carried http entries named `localsrv` and `reposrv`, which mark each request.
+  - Print mode (`-p`) against a stand-in upstream: the stdio `localsrv` and `reposrv` never
+    spawned and their http entries were asked. The three `keep` servers spawned. A control run without
+    `--mcp-config` spawned all five stdio servers.
+  - Interactive: the same marks. /mcp listed five servers, each once. `repokeep` sat under Project
+    MCPs, `localkeep` under Local MCPs and `userkeep` under User MCPs. `localsrv` and `reposrv`
+    sat under "Built-in MCPs", as the entries in (b) and (f) do.
 - **(f) A plugin with its MCP off for one launch, passed (splice-providers, Oct 12).** The hidden
   flag `--plugin-dir-no-mcp <installPath>` does it, with the path taken from the config home's
   `plugins/installed_plugins.json`. A stand-in plugin was installed and enabled from a local

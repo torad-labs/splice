@@ -76,6 +76,12 @@ public data class TeamSlot(
     /** A session that starts on [head] in a folder inside its team's repo joins this slot while the slot is free,
      *  with no pick (TeamRuleBinding; web-console §4.13 "by rule", marlin's call of Oct 13). */
     @SerialName("bind_by_rule") val bindByRule: Boolean = false,
+    /** When each session in [sessionsHistory] joined this slot, by session id: a member's figures count from its own
+     *  join (the President's sign-off of §14, Oct 13). A session bound before joins were kept has none, and counts
+     *  from the team's creation, as every session did before. */
+    @SerialName("joined_epoch_millis") val joinedAt: Map<String, Long> = emptyMap(),
+    /** When the member was removed from its team, on a slot in [Team.left] only. */
+    @SerialName("left_epoch_millis") val leftAt: Long? = null,
 )
 
 @Serializable
@@ -89,6 +95,9 @@ public data class Team(
     @SerialName("created_epoch_millis") val createdAt: Long = 0L,
     @SerialName("updated_epoch_millis") val updatedAt: Long = 0L,
     val slots: List<TeamSlot> = emptyList(),
+    /** The members removed from the team, each with its session history and the time it left: nothing is deleted
+     *  (spec §14, the President's sign-off of Oct 13). Only [TeamStore.upsert] writes it; a body's own is ignored. */
+    @SerialName("left_slots") val left: List<TeamSlot> = emptyList(),
     /** The key the team was created under ([TeamStore.create]); null on a team made before keys. */
     @SerialName("idempotency_key") val idempotencyKey: String? = null,
     /** sha256 of the body the team was created from, so a replay under its key can be told from a
@@ -185,9 +194,8 @@ public class TeamStore(
             createFingerprint = previous?.createFingerprint ?: team.createFingerprint,
             createdAt = previous?.createdAt ?: now,
             updatedAt = now,
-            slots = team.slots.map { slot ->
-                rules.carried(slot, previous?.slots?.firstOrNull { it.id == slot.id }, now)
-            },
+            slots = team.slots.map { slot -> rules.carried(slot, rules.before(previous, slot.id), now) },
+            left = rules.left(previous, team.slots, now),
         )
         rules.refuseTaken(all, previous, saved)
         write(if (previous == null) all + saved else all.map { if (it.id == saved.id) saved else it })
@@ -201,7 +209,7 @@ public class TeamStore(
         if (unknown.isNotEmpty()) throw TeamRefusal("no such slot in ${team.id}: ${unknown.sorted().joinToString()}")
         team.copy(
             slots = team.slots.map { slot ->
-                if (slot.id in bindings) rules.remembered(slot.copy(session = bindings[slot.id])) else slot
+                if (slot.id in bindings) rules.remembered(slot.copy(session = bindings[slot.id]), clock()) else slot
             },
         )
     }

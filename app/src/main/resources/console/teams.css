@@ -53,6 +53,13 @@
    lamps in the gutters and clipped roles and activity (builder3's Teams build, Marlin Oct 10) */
 .members { grid-area: members; position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--gap-card); padding-left: 3.4rem; }
 .members::before { content: ""; position: absolute; left: .95rem; top: 1.4rem; bottom: 1.4rem; width: .7rem; background: var(--rail); border-radius: .35rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+/* the members that left, under the cards: muted, each with when it left and what it did while on the team (spec §14) */
+.members .gone { margin-top: .6rem; padding: 1.1rem 1.3rem; border: .12rem dashed var(--track-line); border-radius: var(--r-obj); }
+.members .gone h3 { margin: 0 0 .8rem; font: 500 1.1rem/1 var(--font-name); color: var(--text-mute); }
+.members .gone ul { display: flex; flex-direction: column; gap: .9rem; margin: 0; padding: 0; list-style: none; }
+.members .gone li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1.2rem; color: var(--text-mute); }
+.members .gone .ghead, .members .gone time { font: 500 .95rem/1 var(--font-data); }
+.members .gone .use { flex-basis: 100%; }
 .talk { grid-area: talk; height: 40rem; }
 .feed { grid-area: feed; max-height: 34rem; }
 .talk, .feed {

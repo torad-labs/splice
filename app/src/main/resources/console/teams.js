@@ -73,7 +73,8 @@ const root = document.getElementById("teams");
 const sheet = document.getElementById("sheet");
 
 const team = () => state.teams.find((t) => t.id === ui.team) || null;
-const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || null;
+// a member that left still names its own messages and its own figures: its history stays on the team (spec §14)
+const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || (tm.left_slots || []).find((s) => s.id === id) || null;
 const sessOf = (slot) => (slot.session ? state.sessions[slot.session] : null);
 // ONE ACTIVE TEAM PER SESSION is what PUT refuses (Marlin), but older data may hold a session on two. Never pick one
 // silently: a session that looks single-homed when it is not is the worse failure, so each team that holds it names
@@ -299,7 +300,7 @@ function figures(u, since, scope = "since joining") {
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
-  const us = tm.slots.map((s) => useOf(tm, s.id)).filter(Boolean);
+  const us = [...tm.slots, ...(tm.left_slots || [])].map((s) => useOf(tm, s.id)).filter(Boolean);
   if (!us.length) return null;
   const priced = us.filter((u) => u.usd != null);
   return {
@@ -758,7 +759,7 @@ function timelineHtml(tm) {
   const col = (id) => cols.findIndex((s) => s.id === id);
   const heads = cols.map((s, i) => { const u = useOf(tm, s.id);
     return `<div class="tlhead" style="grid-column:${i + 2};--c:${headColor(s.head)}"><span class="party"><i></i>${esc(s.role)}</span>` +
-      `${u ? `<span class="tlcost">${costLine(u)}</span>` : ""}</div>`; }).join("");
+      `${u ? `<span class="tlcost">${costLine(u)} since joining</span>` : ""}</div>`; }).join("");
   const waiting = panelWord(state.chat) && panelWord(state.activity);
   const events = [
     ...(state.chat && !gone(state.chat) ? state.chat.messages || [] : []).filter((m) => col(m.from_slot) >= 0 || col(m.to_slot) >= 0).map((m) => ({ at: m.at, m })),
@@ -793,7 +794,16 @@ function membersHtml(tm) {
   if (view === "command") return byCommandHtml(tm);
   if (view === "role") return byRoleHtml(tm);
   if (view === "timeline") return timelineHtml(tm);
-  return `<div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}</div>`;
+  return `<div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}${leftHtml(tm)}</div>`;
+}
+/** The members removed from the team, each with when it left and what it did while it was on it (spec §14). */
+function leftHtml(tm) {
+  const gone = tm.left_slots || [];
+  if (!gone.length) return "";
+  return `<section class="gone" aria-label="Left"><h3>Left</h3><ul>${gone.map((s) =>
+    `<li><span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span><span class="ghead">${esc(s.head)}</span>` +
+    `${s.left_epoch_millis ? `<time>Left ${monthDay(s.left_epoch_millis)}, ${hhmm(s.left_epoch_millis)}</time>` : ""}` +
+    `<div class="use">${figures(useOf(tm, s.id))}</div></li>`).join("")}</ul></section>`;
 }
 
 function boardHtml(tm) {

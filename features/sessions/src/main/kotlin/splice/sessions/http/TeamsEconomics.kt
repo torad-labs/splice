@@ -56,16 +56,21 @@ internal class TeamEconomics(
     private val heads: Map<String, SessionHead>,
     private val now: Long = System.currentTimeMillis(),
 ) {
-    private val slotOfTag = team.slots
-        .flatMap { slot -> held(slot).map { it.take(PERF_TAG_CHARS) to slot } }
-        .distinctBy { it.first }
-        .toMap()
-    private val bySlot = team.slots.associate { it.id to PerfTally() }
+    /** Every member, and every one that left: what a member cost stays on the team after it leaves (spec §14). */
+    private val members = team.slots + team.left
+    private val heldBy = members
+        .flatMap { slot -> held(slot).map { Held(it.take(PERF_TAG_CHARS), slot, joined(slot, it)) } }
+        .distinctBy { it.tag }
+        .associateBy { it.tag }
+    private val bySlot = members.associate { it.id to PerfTally() }
     private val planUse = LinkedHashMap<PlanUseKey, PlanUse>()
     private var oldest: Long? = null
 
+    /** A session a member held, by its perf tag, and when it joined that member: its turns count from then. */
+    private data class Held(val tag: String, val slot: TeamSlot, val joined: Long)
+
     fun json(): JsonObject {
-        val read = team.slots.map { it.head }.distinct().filter { it in heads }
+        val read = members.map { it.head }.distinct().filter { it in heads }
         read.forEach { tally(it, heads.getValue(it)) }
         return buildJsonObject {
             put("oldest_turn_epoch_millis", oldest)
@@ -76,6 +81,7 @@ internal class TeamEconomics(
                         add(
                             tally.json {
                                 it.put("slot", slot)
+                                it.put("left_epoch_millis", team.left.firstOrNull { gone -> gone.id == slot }?.leftAt)
                                 it.put("plan_windows", windowsOf(slot))
                             },
                         )
@@ -88,6 +94,11 @@ internal class TeamEconomics(
     /** Every session [slot] ever held, the current one included. */
     private fun held(slot: TeamSlot): List<String> = slot.sessionsHistory + listOfNotNull(slot.session)
 
+    /** When [session] joined [slot]: "since joining" is each member's own join, so a session bound later does not bring
+     *  its earlier requests (the President's sign-off of §14, Oct 13). One bound before joins were kept reads from the
+     *  team's creation, as before. */
+    private fun joined(slot: TeamSlot, session: String): Long = slot.joinedAt[session] ?: team.createdAt
+
     /** The team's lifetime starts at its creation: a turn before it is no team's turn, even one a
      *  later-bound session made. The cutoff is also what keeps this read bounded now that the perf
      *  history reaches back through the archive (PerfRowsFileSource skips generations older than it);
@@ -99,11 +110,12 @@ internal class TeamEconomics(
         oldest = listOfNotNull(oldest, window.oldestHeldTs ?: window.rows.minOfOrNull { it.ts }).minOrNull()
         window.rows.asSequence()
             .filter { it.fields[PerfKeys.LOCAL_STEP] != 1L } // No upstream turn to attribute to this team.
-            .forEach { row -> row.session?.let(slotOfTag::get)?.let { slot -> count(key, head, slot, row) } }
+            .forEach { row -> row.session?.let(heldBy::get)?.let { held -> count(key, head, held, row) } }
     }
 
-    private fun count(key: String, head: SessionHead, slot: TeamSlot, row: SessionPerfRow) {
-        if (row.ts >= team.createdAt) bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
+    private fun count(key: String, head: SessionHead, held: Held, row: SessionPerfRow) {
+        val slot = held.slot
+        if (row.ts >= held.joined) bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
         if (!head.plans(row.account)) return
         val moved = TurnBill.total(row.fields).let { it.input + it.cacheRead + it.cacheWrite + it.output }
         PlanWindow.entries.filter { row.ts >= now - it.millis }.forEach { window ->

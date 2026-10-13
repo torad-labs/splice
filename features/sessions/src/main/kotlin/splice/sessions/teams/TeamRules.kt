@@ -21,8 +21,8 @@ public fun interface RepoProbe {
 
 internal class TeamRules {
 
-    /** [slot] as re-saved over [before]: a binding the upsert left out is kept, the history is kept,
-     *  and the instructions stamp moves only when the instructions did. */
+    /** [slot] as re-saved over [before]: a binding the upsert left out is kept, the history and its join times are
+     *  kept, and the instructions stamp moves only when the instructions did. */
     fun carried(slot: TeamSlot, before: TeamSlot?, now: Long): TeamSlot {
         val instructionsMoved = before != null && before.instructions != slot.instructions
         return remembered(
@@ -30,15 +30,31 @@ internal class TeamRules {
                 session = slot.session ?: before?.session,
                 instructionsUpdatedAt = if (instructionsMoved) now else stampOf(before, slot),
                 sessionsHistory = before?.sessionsHistory ?: slot.sessionsHistory,
+                joinedAt = before?.joinedAt ?: slot.joinedAt,
+                leftAt = null,
             ),
+            now,
         )
     }
 
-    /** The slot with its current session appended to its history, once. */
-    fun remembered(slot: TeamSlot): TeamSlot {
+    /** The slot with its current session appended to its history once, with the time it joined. */
+    fun remembered(slot: TeamSlot, now: Long): TeamSlot {
         val session = slot.session
         if (session == null || session in slot.sessionsHistory) return slot
-        return slot.copy(sessionsHistory = slot.sessionsHistory + session)
+        return slot.copy(sessionsHistory = slot.sessionsHistory + session, joinedAt = slot.joinedAt + (session to now))
+    }
+
+    /** What slot [id] was before this save: a member, or one that left and is added back, with its history. */
+    fun before(previous: Team?, id: String): TeamSlot? =
+        previous?.slots?.firstOrNull { it.id == id } ?: previous?.left?.firstOrNull { it.id == id }
+
+    /** The members [previous] had that [kept] leaves out join those that left before, each unbound with the time it
+     *  left and its history whole; one added back by its id is a member again. Nothing is deleted (spec §14). */
+    fun left(previous: Team?, kept: List<TeamSlot>, now: Long): List<TeamSlot> {
+        val ids = kept.map { it.id }.toSet()
+        val gone = previous?.slots.orEmpty().filter { it.id !in ids }
+            .map { remembered(it, now).copy(session = null, leftAt = now) }
+        return previous?.left.orEmpty().filter { it.id !in ids } + gone
     }
 
     fun mintId(): String = "team-" + UUID.randomUUID().toString().replace("-", "").take(ID_HEX_CHARS)

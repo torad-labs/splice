@@ -6,6 +6,7 @@ package splice.app
 import splice.app.control.api.McpHubVerdict
 import splice.app.sources.mcp.McpAttached
 import splice.client.mcp.McpAccessKey
+import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
@@ -46,6 +47,9 @@ internal class ControlMcpWiring(
 
     /** Whether the MCP hub runs, decided once as [host] builds it; /health reports it for doctor. */
     var hub: McpHubVerdict? = null
+
+    /** The hub is live only on a verdict that says on: no verdict, as when MCP is not hosted, is off. */
+    val hubLive = McpHubLive { hub?.let { it.offReason == null } == true }
         private set
 
     /** The daemon's one MCP sharing planner. §8 8c: a server seen asking for roots stays per-session after a restart,

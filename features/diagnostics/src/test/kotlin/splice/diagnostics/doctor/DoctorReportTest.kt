@@ -164,7 +164,7 @@ class DoctorReportTest {
         val logs = (written.getValue("logs") as JsonArray).map { it.jsonPrimitive.content }
         assertEquals(8, logs.size, "every line of both tails")
         // The launch line's cwd is a free-form suffix: the real home's project never leaves.
-        assertTrue(logs[5].contains("[codex] launch") && !logs[5].contains("real-private"), logs[5])
+        assertTrue(logs.last().contains("[codex] launch") && !logs.last().contains("real-private"), logs.last())
         assertEquals(
             setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
             Files.getPosixFilePermissions(out),

@@ -10,7 +10,6 @@ import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeOutcomeAccumulator
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext

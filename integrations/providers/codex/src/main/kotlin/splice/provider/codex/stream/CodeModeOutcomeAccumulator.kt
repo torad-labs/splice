@@ -1,5 +1,5 @@
 // NEW: aggregates billed upstream outcomes across hidden code-mode continuation rounds.
-package splice.provider.codex
+package splice.provider.codex.stream
 
 import splice.core.turn.ResponseShape
 import splice.core.turn.RoundText

@@ -13,6 +13,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeOutcomeAccumulator
 import splice.provider.codex.stream.CodeModeRecordFactory
 import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeRuntimeRun

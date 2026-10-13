@@ -12,6 +12,7 @@ import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageOrigin
 import splice.core.turn.noRequestUsage
+import splice.provider.codex.stream.CodeModeOutcomeAccumulator
 
 class CodeModeUsageObservationTest {
     private fun success(usage: Usage) = TurnOutcome.Success(false, false, usage)

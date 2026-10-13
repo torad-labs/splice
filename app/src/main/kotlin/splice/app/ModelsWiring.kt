@@ -1,5 +1,4 @@
 // NEW: compose model listing with the application's configuration, credential readers, and terminal;
-// V4-239: and the same comparison for the console's GET /api/models/upstream.
 // §9i: and each local runtime's own answers for GET /api/models/local.
 package splice.app
 
@@ -15,7 +14,6 @@ import splice.models.list.LocalRuntimes
 import splice.models.list.ModelConfiguration
 import splice.models.list.ModelConfigurationSource
 import splice.models.list.ModelsCommand
-import splice.models.list.ModelsReporter
 import splice.topology.TopologyLoader
 import splice.upstream.local.LocalRuntimeKind
 import splice.upstream.local.LocalRuntimeProbe
@@ -35,18 +33,6 @@ internal object ModelsWiring {
         )
         return command.models(args, EnvReader(System::getenv))
     }
-
-    /** V4-239: the verb's comparison for GET /api/models/upstream, over the file the daemon booted from
-     *  ([path]) and the same stored credentials. The file is read on every Compare, so an edit shows
-     *  without a restart, and only read: a console read never writes a starter file the way the
-     *  verb's first run does. */
-    fun reporter(path: Path): ModelsReporter = ModelsReporter(
-        ModelConfigurationSource {
-            ModelConfiguration(path.toString(), TopologyLoader.parse(Files.readString(path)).providers)
-        },
-        StoredModelCredentials(),
-        AuthoritativeLocalList(),
-    )
 
     /** §9i: each local provider in the file the daemon booted from ([path]), re-read per call like [reporter]. */
     fun localRuntimes(path: Path): LocalRuntimes = ProbedLocalRuntimes(path)

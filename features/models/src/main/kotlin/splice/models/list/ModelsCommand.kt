@@ -21,7 +21,7 @@ private const val MODELS_USAGE = "usage: splice models [provider] [--all]"
 private val MODELS_FLAGS = listOf(emptyList(), listOf(ALL_FLAG))
 
 /** Compare configured model rows with their providers, reporting every declared row. The comparison
- *  is [ModelsReporter]'s, the same one GET /api/models/upstream serves; this renders it as text. */
+ *  is [ModelsReporter]'s; this renders it as text. */
 public class ModelsCommand(
     configuration: ModelConfigurationSource,
     credentials: ModelCredentialSource,

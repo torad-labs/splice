@@ -1,7 +1,6 @@
 // NEW: V4-239 — what `splice models [provider]` reports, as data: each provider asked, where, and its
-// published roster against splice.toml. The verb renders it as text (ModelsCommand) and the console
-// reads it as JSON (UpstreamModelsRoute), so the two are renderings of ONE comparison and cannot
-// disagree about a verdict.
+// published roster against splice.toml. The verb renders it as text (ModelsCommand). The console's JSON
+// reading of it, GET /api/models/upstream, was removed on Oct 12, 2026: no page read it.
 package splice.models.list
 
 import splice.core.topology.DialectWires

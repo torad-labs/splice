@@ -1,5 +1,4 @@
 // NEW: LAYOUT-01 — the models capability's route: /api/models over each head's roster (features/models).
-// V4-239: and /api/models/upstream, `splice models` for the console, asked on demand only.
 // §9i: and /api/models/local, what each local runtime says about its models.
 package splice.app.control.mount
 
@@ -8,11 +7,8 @@ import io.ktor.server.routing.get
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.RosterHeadAdapter
-import splice.core.util.EnvReader
 import splice.models.list.LocalRuntimesRoute
 import splice.models.list.LocalRuntimesSource
-import splice.models.list.ModelsReporterSource
-import splice.models.list.UpstreamModelsRoute
 import splice.models.roster.ModelsRoute
 import splice.upstream.codemode.ProcessDispatchers
 
@@ -23,18 +19,10 @@ internal class ModelsMount(
     private val guard: ControlGuard,
 ) {
     private val modelsRoute = ModelsRoute(RosterHeadAdapter.heads(heads))
-    private val upstreamRoute = UpstreamModelsRoute(
-        ModelsReporterSource { ports.upstreamModels },
-        EnvReader(System::getenv),
-        ProcessDispatchers().io(),
-    )
     private val localRoute = LocalRuntimesRoute(LocalRuntimesSource { ports.localRuntimes }, ProcessDispatchers().io())
 
     fun register(route: Route) {
         route.get("/api/models") { guard.guarded(call) { modelsRoute.models(call, ports.declaredHeads) } }
-        route.get("/api/models/upstream") {
-            guard.guarded(call) { upstreamRoute.upstream(call, call.request.queryParameters["provider"]) }
-        }
         route.get("/api/models/local") { guard.guarded(call) { localRoute.local(call) } }
     }
 }

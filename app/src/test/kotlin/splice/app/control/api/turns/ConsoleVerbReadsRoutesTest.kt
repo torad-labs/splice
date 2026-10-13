@@ -46,9 +46,6 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import splice.core.topology.AuthConfig
-import splice.core.topology.Dialect
-import splice.core.topology.ProviderConfig
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
@@ -59,10 +56,6 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.wire.WireTap
 import splice.head.wire.WireTaps
-import splice.models.list.ModelConfiguration
-import splice.models.list.ModelConfigurationSource
-import splice.models.list.ModelCredentialSource
-import splice.models.list.ModelsReporter
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
@@ -87,7 +80,6 @@ class ConsoleVerbReadsRoutesTest {
 
     /** Every read this row added, as the console calls it. */
     private val reads: List<String> get() = listOf(
-        "$url/api/models/upstream",
         "$url/api/heads/$HEAD_KEY/trace",
         "$url/api/heads/$HEAD_KEY/wire",
     )
@@ -130,12 +122,6 @@ class ConsoleVerbReadsRoutesTest {
     fun `with the key, each read serves what its verb prints`() = runBlocking {
         awaitPort()
         wireAll()
-
-        val models = req { get("$url/api/models/upstream") { auth() } }
-        assertEquals(HttpStatusCode.OK, models.status, models.bodyAsText())
-        val provider = Json.parseToJsonElement(models.bodyAsText()).jsonObject.getValue("providers").jsonArray.single()
-        assertEquals("mine", provider.jsonObject.getValue("key").jsonPrimitive.content)
-        assertEquals("unpublished", provider.jsonObject.getValue("roster").jsonPrimitive.content)
 
         val trace = req { get("$url/api/heads/$HEAD_KEY/trace") { auth() } }
         assertEquals(HttpStatusCode.OK, trace.status, trace.bodyAsText())
@@ -183,9 +169,6 @@ class ConsoleVerbReadsRoutesTest {
         awaitPort()
         wireAll()
 
-        val missing = req { get("$url/api/models/upstream?provider=nope") { auth() } }
-        assertEquals(HttpStatusCode.BadRequest, missing.status)
-        assertTrue(missing.bodyAsText().contains("no provider 'nope'") && missing.bodyAsText().contains("mine"))
         val unknown = req { get("$url/api/heads/nope/trace") { auth() } }
         assertEquals(HttpStatusCode.BadRequest, unknown.status)
         control.ports.wires = WireTaps()
@@ -197,7 +180,6 @@ class ConsoleVerbReadsRoutesTest {
     @Test
     fun `an unwired port answers a named 503, never an empty payload`() = runBlocking {
         awaitPort()
-        control.ports.upstreamModels = null
         control.ports.traceDir = null
         control.ports.wires = null
         reads.forEach { read ->
@@ -212,21 +194,6 @@ class ConsoleVerbReadsRoutesTest {
     /** The three ports, as ConsoleWiring.wireVerbReads assigns them: a provider that needs no network
      *  (the client's own login publishes no list), an empty trace dir, and a tap holding two bodies. */
     private fun wireAll() {
-        control.ports.upstreamModels = ModelsReporter(
-            ModelConfigurationSource {
-                ModelConfiguration(
-                    "/fixture/splice.toml",
-                    mapOf(
-                        "mine" to ProviderConfig(
-                            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
-                            baseUrl = "https://example.invalid",
-                            auth = AuthConfig(kind = "client"),
-                        ),
-                    ),
-                )
-            },
-            ModelCredentialSource { _, _, _ -> null },
-        )
         control.ports.traceDir = traceDir
         val tap = WireTap(keep = 4)
         listOf("""{"n":0}""", """{"n":1}""").forEach { tap.record(meta(), it, null) }

@@ -19,7 +19,6 @@ import splice.events.bus.EventBus
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.models.list.LocalRuntimes
-import splice.models.list.ModelsReporter
 import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
 import splice.sessions.http.SessionDriver
@@ -157,10 +156,6 @@ public class ConsolePorts {
     /** V4-220 item 3: `splice add` as the console runs it, behind /api/add. Assigned by ConsoleWiring;
      *  null answers every add route with a named 503, never an empty profile list. */
     public var add: AddConsole? = null
-
-    /** V4-239: `splice models`' comparison, behind GET /api/models/upstream, over the same splice.toml
-     *  and stored credentials the verb reads. Null answers a named 503, never a roster with no rows. */
-    public var upstreamModels: ModelsReporter? = null
 
     /** §9i: each local runtime's own answers, behind GET /api/models/local. Null answers a named 503. */
     public var localRuntimes: LocalRuntimes? = null

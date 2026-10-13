@@ -112,6 +112,8 @@ function commandsOf() {
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
       // the daemon's own watch of a local runtime's port, the truth Accounts reads as Not answering (HeadProbes)
       down: !!h.runtimeNotAnswering,
+      // the watch holds no reading yet (its first probe) or any more (it died and restarts): checking, never Ready
+      unread: !!h.runtimeUnread,
     };
   });
 }
@@ -127,6 +129,7 @@ function stateOf(c) {
   // a local head whose runtime does not answer is not Ready, whatever its checks say: nothing listens on its port
   // (the walk at 3828, Oct 13: four local heads read Ready with 8099-8102 closed)
   if (c.down) return { state: "runtime", word: "Not answering", fix: null };
+  if (c.unread) return { state: "checking", word: "Checking runtime", fix: null };
   if (!bad) return null;
   const auth = bad.id.startsWith("auth/"), keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
   const word = auth ? (keyed ? (refused ? "Credentials refused" : "No key") : "Signed out") : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
@@ -162,6 +165,7 @@ function look(c) {
   if (ui.fixing[c.key]) return { cls: "working", lamp: '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>', word: ui.fixing[c.key] };
   const s = stateOf(c);
   if (ui.keyin?.key === c.key) return { cls: "working", lamp: ICON.signout, word: "Add key" };
+  if (s?.state === "checking") return { cls: "working", lamp: '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>', word: s.word };
   if (s?.state === "stopped" || s?.state === "runtime") return { cls: "stalled", lamp: GL.notstarted, word: s.word };
   if (s?.state === "installation/wrapper") return { cls: "stalled", lamp: GL.relink, word: s.word };
   if (s) return { cls: "stalled", lamp: ICON.signout, word: s.word };
@@ -325,11 +329,14 @@ async function removeCommand(key) {
 // a local command's runtime, and what it says about one model: the window it serves now (its most, until it loads the
 // model) and whether it calls tools (spec 9i). Null for a command whose runtime lists nothing to read.
 const localOf = (c) => data.local.find((p) => p.provider === c.provKey);
+// whether the runtime answers is the daemon's watch, the one the card's lamp reads, so the two never disagree;
+// /api/models/local only names the runtime and lists its models
 function runtimeHtml(c) {
   const r = localOf(c);
-  if (!r) return "";
-  const said = !r.runtime ? `<span class="said limit">Not answering</span>` : !r.models ? `<span class="said limit">List not answering</span>` : "";
-  return `<span class="lbl">Runtime</span><div class="ctl"><span class="urlread">${esc([r.runtime, r.version].filter(Boolean).join(" ") || r.url)}</span>${said}</div>`;
+  if (!r && !c.down && !c.unread) return "";
+  const said = c.down ? `<span class="said limit">Not answering</span>` : c.unread ? `<span class="said">Checking</span>`
+    : r && !r.models ? `<span class="said limit">List not answering</span>` : "";
+  return `<span class="lbl">Runtime</span><div class="ctl"><span class="urlread">${esc([r?.runtime, r?.version].filter(Boolean).join(" ") || r?.url || c.url)}</span>${said}</div>`;
 }
 function runtimeNote(c, id, over) {
   const r = localOf(c);

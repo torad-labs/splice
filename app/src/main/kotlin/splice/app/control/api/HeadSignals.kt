@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
+import splice.app.control.RuntimeUnread
 import splice.core.usage.QuotaFull
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
@@ -18,6 +19,7 @@ internal class HeadSignals(
     private val runtimeNotAnswering: RuntimeNotAnswering,
     /** Who runs on which head now; null names no client pids. */
     private val sessions: SessionSource? = null,
+    private val runtimeUnread: RuntimeUnread = RuntimeUnread { emptySet() },
 ) {
     /** For each head, the pids of the Claude Code clients its live sessions run in, from the session registry. */
     fun clientPids(): Map<String, List<Long>> = sessions?.read().orEmpty()
@@ -27,6 +29,9 @@ internal class HeadSignals(
 
     /** V4-417: the local heads whose runtime is silent, from the daemon's held probe. */
     fun silentRuntimes(): Map<String, String> = runtimeNotAnswering()
+
+    /** The local heads with no runtime reading yet, or none any more: neither answering nor silent. */
+    fun unreadRuntimes(): Set<String> = runtimeUnread()
 
     /** V4-398: for each running head whose provider refuses turns until a known instant, that instant in epoch
      *  seconds. Read per request, so a head that recovers drops out on the next probe. */

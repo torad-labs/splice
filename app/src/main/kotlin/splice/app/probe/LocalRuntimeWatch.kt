@@ -8,9 +8,10 @@
 // as silent instead of stalling the loop. A reader gets the last answer, or nothing.
 //
 // NOTHING IS CLAIMED WHAT WAS NOT MEASURED. Until the first tick lands, and once the loop has died,
-// [notAnswering] is empty, which every reader treats as no claim: /health and the heads route keep the
-// shape they had before this existed. A dead loop that froze its last answer would keep calling a
-// recovered runtime silent (or a dead one fine) for as long as the daemon runs.
+// [notAnswering] is empty and [unread] names every local head, so the console reads them as checking,
+// never as ready (Models showed a down runtime Ready before the first tick). A dead loop that froze its
+// last answer would keep calling a recovered runtime silent (or a dead one fine), so a death drops the
+// answer and the loop is started again one interval later.
 package splice.app.probe
 
 import kotlinx.coroutines.CancellationException
@@ -47,12 +48,33 @@ internal class LocalRuntimeWatch(
 ) {
     private val silent = AtomicReference<Map<String, String>?>(null)
 
+    // The scope the loop runs in, kept so a loop that died is started again in it.
+    @Volatile
+    private var scope: CoroutineScope? = null
+
+    // True from a death until the next tick lands, so a loop that keeps dying says so once, not every interval.
+    @Volatile
+    private var dead = false
+
     /** Head key to the endpoint (`:8099`) of each local head whose runtime did not answer at the last
      *  probe. Empty before the first probe lands and after the watch died: no claim either way. */
     fun notAnswering(): Map<String, String> = silent.get().orEmpty()
 
+    /** The local heads with no reading: every one before the first probe lands and after the watch died, none
+     *  otherwise. A reader shows these as checking, never as answering or not. */
+    fun unread(): Set<String> {
+        if (silent.get() != null) return emptySet()
+        return topology.heads.filterValues { topology.providers[it.provider]?.isLocal == true }.keys
+    }
+
     fun start(scope: CoroutineScope): Job {
+        this.scope = scope
+        return launchLoop(scope, waitFirst = false)
+    }
+
+    private fun launchLoop(scope: CoroutineScope, waitFirst: Boolean): Job {
         val launched = scope.launch(dispatcher) {
+            if (waitFirst && !ticker.awaitTick(intervalMs)) return@launch
             while (isActive) {
                 // Probed at once, unlike TurnPathProbeLoop: a runtime is not a port this daemon is
                 // still binding, so t=0 is not a false alarm, and an operator who opens Fleet in the
@@ -65,17 +87,22 @@ internal class LocalRuntimeWatch(
     }
 
     /** A dead probe stops claiming: its last answer would go stale in either direction, so the held
-     *  answer is dropped and the loss said once. Cancellation is an orderly shutdown and says nothing.
+     *  answer is dropped, the loss said once, and the loop started again one interval later in the scope
+     *  [start] was given. Cancellation is an orderly shutdown and says nothing.
      *  Supervision, not a broad catch in the loop, owns the unknown-throwable class (the sanctioned
      *  seam, as in TurnPathProbeLoop.supervise). Internal so the test drives the shipped handler. */
     internal fun supervise(job: Job): Job {
         job.invokeOnCompletion { cause ->
             if (cause == null || cause is CancellationException) return@invokeOnCompletion
             silent.set(null)
-            log(
-                "[daemon] LOCAL RUNTIME WATCH DIED ($cause); /health and the heads route stop saying " +
-                    "whether a local runtime answers.\n",
-            )
+            if (!dead) {
+                log(
+                    "[daemon] LOCAL RUNTIME WATCH DIED ($cause); local runtimes read as checking until it " +
+                        "answers again, restarting every ${intervalMs / MS_PER_SECOND}s.\n",
+                )
+            }
+            dead = true
+            scope?.takeIf { it.isActive }?.let { launchLoop(it, waitFirst = true) }
         }
         return job
     }
@@ -94,6 +121,8 @@ internal class LocalRuntimeWatch(
     internal fun tick() {
         val now = reach.notAnswering(topology)
         val before = silent.getAndSet(now).orEmpty()
+        if (dead) log("[daemon] local runtime watch running again.\n")
+        dead = false
         refreshAnswering(now)
         now.filterKeys { it !in before }.forEach { (head, endpoint) ->
             log("[$head] runtime not answering on $endpoint; the console reads the head as down.\n")
@@ -107,3 +136,5 @@ internal class LocalRuntimeWatch(
 // How often each local runtime is asked. A runtime that comes back reads as such within a tick, and a
 // refused connection answers at once, so the cost is one short request per local runtime per tick.
 private const val WATCH_INTERVAL_MS = 5_000L
+
+private const val MS_PER_SECOND = 1_000L

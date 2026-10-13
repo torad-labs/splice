@@ -139,7 +139,10 @@ async function load({ asks = true } = {}) {
   // why a command's turns with no price have none, decided by the daemon once for this row and for Requests
   const priceWhy = new Map((ec.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   // a local runtime splice could not reach on its port (/api/heads runtimeNotAnswering): its card says so, as a signed-out one does
-  const down = new Set(((Array.isArray(hd.body) ? hd.body : hd.body?.heads) || []).filter((h) => h.runtimeNotAnswering).map((h) => h.key));
+  const headRows = (Array.isArray(hd.body) ? hd.body : hd.body?.heads) || [];
+  const down = new Set(headRows.filter((h) => h.runtimeNotAnswering).map((h) => h.key));
+  // a local runtime the watch has no reading for yet, or any more: Checking, never the answering dot
+  const unreadRt = new Set(headRows.filter((h) => h.runtimeUnread).map((h) => h.key));
   const pinnedModel = new Map((md.body?.heads || []).map((h) => [h.head, (h.models || []).find((m) => m.pinned)?.label || h.pinned_model]));
   const keyRows = ks.body?.keys || [];
   const provs = new Map();
@@ -217,7 +220,7 @@ async function load({ asks = true } = {}) {
           heads: uses.map((u) => u.head), replaced: (k.replaced || []).map((x) => day(x.first_seen_epoch_seconds)) });
       }
     } else {
-      for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "", down: down.has(c.head) });
+      for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "", down: down.has(c.head), unread: unreadRt.has(c.head) });
     }
   }
   // each plan command's own order and pin (AccountOrderStore.kt:1, :24): no order is the soonest-reset rule
@@ -610,6 +613,7 @@ function slotHtml(p, c, a, serves) {
   // "Not answering" is the word (fin, Oct 10): it is what the watch measures, no reply at the
   // address in time (LocalRuntimeReach.kt), and it is what splice status already prints.
   if (a.down) return `<span class="state">Not answering</span>`;
+  if (a.unread) return `<span class="state">Checking</span>`;
   if (serves.length && (!c || serves.includes(c))) return `${pin}${chips}`;
   if (a.out) return `<span class="state">Signed out</span>`;
   if (a.renews) return `<span class="state">Token expired</span>`;
@@ -703,7 +707,7 @@ function cardHtml(p, c, a, i, serves) {
     const why = a.row?.last_read_failure ? READ_WHY[a.row.last_read_failure.reason] ?? null : null;
     body = `<div class="windows"><span class="unproved">${never && ui.probing ? "Not read yet" : DAY_NOT_READ}</span>${why ? `<span class="state">${esc(why)}</span>` : ""}</div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
-  else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
+  else body = `<div class="local-model">${a.down || a.unread ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
   // how to renew it, under its readings: the route's own words name the command to run
   if (a.renews && a.row?.refusal) body += `<div class="keysrc"><span class="state">${esc(a.row.refusal)}</span></div>`;
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";

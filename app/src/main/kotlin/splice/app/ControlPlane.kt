@@ -21,6 +21,7 @@ import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
+import splice.app.control.RuntimeUnread
 import splice.app.control.TopologyDigest
 import splice.app.control.TurnPathStalled
 import splice.app.control.api.ControlAudit
@@ -96,6 +97,7 @@ import splice.sessions.registry.ProcessEnvironment
 import splice.sessions.registry.RememberedPanes
 import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
+import splice.sessions.registry.SessionSource
 import splice.tmux.TmuxTerminal
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
@@ -304,6 +306,15 @@ internal class ControlPlane(
      *  default binds the control port itself, which is every start without a socket manager. */
     internal var adopted: AdoptedServing = AdoptedServing()
 
+    /** The per-head readings the heads route and /health share, read from the daemon's probes per request. */
+    private fun headSignals(heads: Map<String, ManagedHead>, sessions: SessionSource, probes: HeadProbeReadings) =
+        HeadSignals(
+            heads,
+            RuntimeNotAnswering { probes.runtimeNotAnswering() },
+            sessions,
+            RuntimeUnread { probes.runtimeUnread() },
+        )
+
     /** Constructs and binds the control plane. Returns null (having already called
      *  [shutdownDaemon] and logged) when the bind fails — defense in depth for the
      *  restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike a per-head start, an uncaught
@@ -341,7 +352,7 @@ internal class ControlPlane(
             ),
             console.sessionHeads,
         )
-        val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() }, sessions)
+        val signals = headSignals(heads, sessions, probes)
         // The request cap is asked for at every request, not resolved here once: the console's own PATCH of
         // maxRequestBytes reaches the control listener's guard without a restart, the same way it reaches a head.
         val guard = ControlGuard(

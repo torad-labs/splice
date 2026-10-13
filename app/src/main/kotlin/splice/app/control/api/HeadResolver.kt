@@ -79,10 +79,13 @@ internal class HeadResolver(
      *  head whose runtime is silent (V4-417) the endpoint it was asked on as `runtimeNotAnswering`, from
      *  the daemon's held probe; and for a running head whose provider refuses turns until a known instant
      *  (V4-429) that instant in epoch seconds as `quotaResetAtEpochSeconds`, the figure /health carries.
-     *  The console reads the first as down and the second as out of quota. A provider reading that names a
+     *  The console reads the first as down and the second as out of quota. A local head the watch holds no
+     *  reading for (before its first probe, or after it died) carries `runtimeUnread`, read as checking, never
+     *  as ready. A provider reading that names a
      *  window fully used rides apart as `quotaFull` (V4-452): a reading, beside a head that stays ready. */
     fun headStatuses(nowEpochMillis: Long = System.currentTimeMillis()): List<JsonObject> {
         val silent = signals.silentRuntimes()
+        val unread = signals.unreadRuntimes()
         val quotaResets = signals.quotaResets(nowEpochMillis)
         val quotaFull = signals.quotaFull()
         val pids = signals.clientPids()
@@ -90,6 +93,7 @@ internal class HeadResolver(
             val key = managed.head.key
             val marks = listOfNotNull(
                 silent[key]?.let { "runtimeNotAnswering" to JsonPrimitive(it) },
+                if (key in unread) "runtimeUnread" to JsonPrimitive(true) else null,
                 quotaResets[key]?.let { "quotaResetAtEpochSeconds" to JsonPrimitive(it) },
                 quotaFull[key]?.let { "quotaFull" to signals.quotaFullJson(it) },
             )

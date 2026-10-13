@@ -28,6 +28,9 @@ internal interface HeadProbeReadings {
     fun stalledKeys(): List<String>
 
     fun runtimeNotAnswering(): Map<String, String>
+
+    /** The local heads the runtime watch holds no reading for: before its first probe, or after it died. */
+    fun runtimeUnread(): Set<String> = emptySet()
 }
 
 internal class HeadProbes : HeadProbeReadings {
@@ -125,4 +128,6 @@ internal class HeadProbes : HeadProbeReadings {
     override fun stalledKeys(): List<String> = turnPathStalled.filterValues { it }.keys.sorted()
 
     override fun runtimeNotAnswering(): Map<String, String> = runtimeWatch?.notAnswering().orEmpty()
+
+    override fun runtimeUnread(): Set<String> = runtimeWatch?.unread().orEmpty()
 }

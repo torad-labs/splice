@@ -66,6 +66,15 @@ public fun interface RuntimeNotAnswering {
 }
 
 /**
+ * The local heads [RuntimeNotAnswering] holds no reading for: every one before the watch's first probe
+ * lands and after it died. The console reads these as checking, so an empty silent map is never read
+ * as every runtime answering.
+ */
+public fun interface RuntimeUnread {
+    public operator fun invoke(): Set<String>
+}
+
+/**
  * The body of one authenticated `/mgmt` route, run only AFTER the bearer key matched.
  *
  * That ordering is the type's whole content: everything mutating on the control plane is wrapped in

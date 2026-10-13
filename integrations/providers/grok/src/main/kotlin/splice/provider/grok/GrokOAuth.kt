@@ -84,14 +84,6 @@ public class GrokOAuth {
             "code_challenge_method" to "S256",
         )
 
-    /** Form body for the refresh-token grant. */
-    internal fun grokRefreshForm(refreshToken: String, clientId: String): String =
-        FormEncoding.formEncode(
-            "grant_type" to WIRE_REFRESH_TOKEN,
-            "client_id" to clientId,
-            WIRE_REFRESH_TOKEN to refreshToken,
-        )
-
     /** Parse a token endpoint response into the ~/.grok/auth.json object GrokAuthProvider reads. */
     public fun grokAuthJsonFromTokenResponse(
         responseBody: String,

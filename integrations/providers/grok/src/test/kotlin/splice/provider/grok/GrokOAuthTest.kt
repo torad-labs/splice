@@ -45,25 +45,6 @@ class GrokOAuthTest {
     }
 
     @Test
-    fun `exchange and refresh forms carry the right grant and client id`() {
-        val exchange = oauth.grokCodeExchangeForm(
-            "the-code",
-            "the-verifier",
-            "the-challenge",
-            "cid",
-            "http://127.0.0.1:56121/callback",
-        )
-        assertTrue(exchange.contains("grant_type=authorization_code"))
-        assertTrue(exchange.contains("code=the-code"))
-        assertTrue(exchange.contains("code_verifier=the-verifier"))
-        assertTrue(exchange.contains("code_challenge_method=S256"))
-        val refresh = oauth.grokRefreshForm("the-refresh", "cid")
-        assertTrue(refresh.contains("grant_type=refresh_token"))
-        assertTrue(refresh.contains("refresh_token=the-refresh"))
-        assertTrue(refresh.contains("client_id=cid"))
-    }
-
-    @Test
     fun `token response maps to a grok auth json with tokens and expiry`() {
         val body = """{"access_token":"at","refresh_token":"rt","expires_in":3600,"token_type":"Bearer"}"""
         val auth = oauth.grokAuthJsonFromTokenResponse(

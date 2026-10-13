@@ -46,19 +46,34 @@ Measured on Oct 12 at 8 PM CT: 51 plain `claude` sessions ran 45 copies of ast-g
 
 ## Seamless setup, update and crash: one mechanism
 
-Every server runs under a small holder process of its own that only joins the server's stdin and
-stdout to a socket in splice's state folder. The holder never changes behavior, carries no splice
-logic, and outlives the daemon. The daemon routes sessions to holders, and that routing is the only
-part that changes.
+Proof (c) set the bound: Claude Code 2.1.296 never resumes an MCP session id. It re-initializes
+from scratch, and after about 15 to 17 s of outage it gives up, and the server's tools are gone until
+the person runs /mcp. A 3 s outage recovered without a trace. A live daemon restart takes about 10 s
+from the hosted server closing to the new daemon answering (the Oct 12 9:39 AM install). So the
+endpoint sessions connect to can't be the daemon.
 
-- **Update:** splice stops taking new MCP calls, lets calls in flight finish, swaps the daemon,
-  reconnects to every holder by its socket, and resumes. The control port stays bound through the
-  swap (socket activation), so a call made in that moment waits in the queue and is answered when
-  splice is back. Sessions keep their ids (V4-148). Servers, their open terminals and their state
-  keep running, because the holders and servers never stopped. To the user it is a pause of about
-  a second.
-- **Crash:** the same reconnect. A daemon that dies unplanned comes back on the same port and finds
-  the same holders, so only calls in flight at the crash fail, each in words.
+Two small processes sit under the daemon and outlive it:
+
+- **The hub front** holds the MCP port and every session's stream. It checks the session's bearer,
+  routes each call to the right holder, and is the only thing a session talks to. It carries no
+  splice logic beyond that routing table, which the daemon gives it, and it's a native binary, not
+  a JVM. An ordinary splice install never restarts it.
+- **Holders**, one per server, each join the server's stdin and stdout to a socket in splice's
+  state folder.
+
+The daemon plans the servers, starts holders and tells the front where they are. It's no longer in
+the path of a tool call.
+
+- **Update:** the daemon is swapped while the front and holders keep running. Sessions' connections,
+  their streams and every server's state are untouched. A call that needs a holder that doesn't
+  exist yet, such as a server's first start, waits at the front until the new daemon starts one.
+- **The front's own update** is rare, because its code is small and stable. The running front hands
+  its listening socket and its routing table to the new front, which takes over. The gap stays in
+  the ~1 s range that proof (c) showed recovers without a trace. If it can't stay under about 3 s,
+  that comes back to Marcos.
+- **Crash:** a daemon crash is an update nobody planned, and the front and holders carry on. A front
+  crash restarts it on the same socket, which systemd holds, so connects queue rather than fail.
+  Only calls in flight at the crash fail, each in words.
 - **A new holder version:** running holders keep their servers until those stop. New servers start
   under the new holder. Nothing is handed over, because a holder is only a pipe.
 - **Setup and the move to the hub:** sessions already running keep the copies Claude Code started
@@ -84,8 +99,11 @@ choice, sharing yes or no, lives in splice.toml as the answer `splice setup` sav
    completes, and the server's state is intact afterwards.
 1. **The plan:** servers per launch folder, with precedence, repo approval and plugin enablement,
    reported in the census. It's read-only and ships first.
-2. **Holders and reconnect:** servers run under holders, and the daemon reconnects at start. This is
+2. **The front and holders:** the front holds the port and the streams, holders hold the servers,
+   and the daemon only plans and starts. First, a desk proof: a session's tool answers through a
+   daemon swap with no /mcp reconnect, and the front's own socket handover gap is measured. This is
    what makes updates and crashes seamless, so it lands before anything moves onto the hub.
+   hostshield-lead owns the front's socket and service units.
 3. **Per-session copies:** in the session's folder and environment, stopped at session end, with the
    built-in list of stateful servers.
 4. **Started when used:** tools/list from the kept listing.
@@ -108,5 +126,10 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
   `claude -p` with no flags starts an unapproved repo server, trusted folder or not, while a rejected
   one stays off. So the plan leaves pending servers out itself, and print mode's list is not the
   baseline.
-- **(c) http across a daemon restart:** pending (splice-providers).
+- **(c) http across a daemon restart, failed (splice-providers, Oct 12).** Claude Code never sent
+  its old session id, so V4-148 adoption never ran. A 3 s outage recovered by a fresh initialize
+  (retries at 1, 2, 4 and 8 s) with nothing on screen. In a 40 s outage it gave up after 5 attempts,
+  about 17 s: "Max reconnection attempts (5) reached". The tool stayed gone until /mcp. That desk had
+  no socket activation, so each reconnect was refused. The President ruled on Oct 12 that sessions
+  connect to a hub front that outlives the daemon (see above).
 - **(d) A holder across a daemon restart:** to run before step 2.

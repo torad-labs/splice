@@ -177,7 +177,7 @@ internal class ResponsesTerminalDecision(
             // judged on the first-output cap (firstByteTimeoutMs), after it on streamIdle. An
             // operator reading "180s idle cap" on a 300s pre-output stall was reading a lie.
             is WatchdogFired.Idle -> if (fired.sawClientFrame) {
-                "no completion within the ${ctx.caps.streamIdleMs / MS_PER_S}s idle cap"
+                "no completion within the ${fired.limitMs / MS_PER_S}s idle cap"
             } else {
                 "no first output within the ${fired.limitMs / MS_PER_S}s first-output cap"
             }

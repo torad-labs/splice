@@ -265,8 +265,19 @@ private class TopologyChecks(
     private val quotedPattern = Regex("`[^`]*`")
 
     fun findings(): List<TopologyFinding> =
-        references() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() + compaction() +
-            channel()
+        references() + auth() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() +
+            compaction() + channel()
+
+    /** An auth kind its provider's dialect cannot carry, asked the way head assembly asks it ([AuthCompatibility]), so
+     *  the pairing refuses boot with every other finding instead of skipping that head behind a running daemon. */
+    private fun auth(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
+        topology.providers[head.provider]?.let { provider ->
+            AuthCompatibility.refusal(key, head.provider, provider)?.let { why ->
+                val fix = "change the provider's auth kind or dialect, or name another provider"
+                TopologyFinding("heads.$key.provider", "$why; $fix")
+            }
+        }
+    }
 
     /** `[daemon] update_channel` names one of the two channels releases are published on; anything else would leave the
      *  updater following nothing while the file looks configured. */

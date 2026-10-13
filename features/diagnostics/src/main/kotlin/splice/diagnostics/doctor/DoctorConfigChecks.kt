@@ -51,6 +51,7 @@ internal class DoctorConfigChecks(
     private val wireTaps = DoctorWireTapChecks()
     private val traces = DoctorTraceChecks(TopologyStatePaths(env).current(), env)
     private val museCompatibility = DoctorMuseCompatibilityChecks()
+    private val authPairings = DoctorAuthPairingChecks()
 
     /** A topology that is not there yet or holds no head: INFO, with the one splice verb that fills it. */
     private fun unfinishedSetup(detail: String, command: String): DoctorCheck =
@@ -101,7 +102,8 @@ internal class DoctorConfigChecks(
                 )
             }
             // v0.4.0 (FEATURES.md §10): local runtimes answer for themselves, in their own words.
-            listOf(summary) + brokenRefs + portDupes + museCompatibility.checks(topology, configPath) +
+            listOf(summary) + brokenRefs + authPairings.checks(topology, configPath) + portDupes +
+                museCompatibility.checks(topology, configPath) +
                 DoctorTierChecks.checks(unmappedTiers, configPath) + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +

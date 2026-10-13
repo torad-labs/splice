@@ -35,9 +35,10 @@ public fun interface LocalRowFindings {
  *
  *  Three layers, in the order a reader meets them: the structural guards ktoml lacks (all of them), then the
  *  decode (one finding: ktoml stops at its first type error, and a half-decoded topology has nothing later to
- *  check), then the checks the decode does not make but the daemon would trip on: an undeclared provider, a bad or
- *  shared port, an override the daemon would ignore. The roster check is left out: it needs the models a
- *  runtime discovers, which boot does not have yet, so it stays a per-head DEGRADED, never a refusal.
+ *  check), then the checks the decode does not make but the daemon would trip on: an undeclared provider, an auth
+ *  kind its provider's dialect cannot carry, a bad or shared port, an override the daemon would ignore. The roster
+ *  check is left out: it needs the models a runtime discovers, which boot does not have yet, so it stays a per-head
+ *  DEGRADED, never a refusal.
  *
  *  [stateBase] only satisfies the knob check's constructor; nothing here reads state. */
 public object ConfigFindings {

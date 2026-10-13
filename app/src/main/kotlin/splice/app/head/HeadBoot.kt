@@ -7,8 +7,8 @@ package splice.app.head
 import splice.app.DaemonBoundary
 import splice.app.HeadAssembly
 import splice.app.control.ManagedHead
-import splice.app.provider.AuthCompatibility
 import splice.core.config.StatePaths
+import splice.core.topology.AuthCompatibility
 import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages

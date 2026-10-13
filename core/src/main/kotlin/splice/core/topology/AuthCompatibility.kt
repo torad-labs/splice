@@ -1,19 +1,13 @@
 // NEW: which auth kinds a head's provider and dialect may carry, and the sentence that names a pairing that may not.
-package splice.app.provider
-
-import splice.core.topology.AuthKind
-import splice.core.topology.AuthKindRegistry
-import splice.core.topology.Dialect
-import splice.core.topology.DialectWires
-import splice.core.topology.ProviderConfig
+package splice.core.topology
 
 /** Registered auth kinds are promises with a finite compatibility matrix. Kimi OAuth also binds to the Kimi
  *  provider ID that owns its Moonshot wire identity. Unknown/custom kinds intentionally retain the api-key
  *  fallback in each arm. */
-internal object AuthCompatibility {
+public object AuthCompatibility {
     /** Why [headKey] cannot carry its provider's auth kind on that provider's dialect, or null when it can. The
      *  sentence names the head, kind, provider and dialect and quotes no file content, so a log may print it whole. */
-    fun refusal(headKey: String, provider: String, providerCfg: ProviderConfig): String? {
+    public fun refusal(headKey: String, provider: String, providerCfg: ProviderConfig): String? {
         val kind = AuthKindRegistry.from(providerCfg.auth.kind) ?: return null
         val dialect = providerCfg.dialect
         if (isCompatible(kind, dialect, provider)) return null

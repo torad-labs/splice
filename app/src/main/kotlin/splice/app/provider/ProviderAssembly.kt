@@ -8,6 +8,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
 import splice.core.config.StatePaths
+import splice.core.topology.AuthCompatibility
 import splice.core.topology.Dialect
 import splice.core.util.LogSink
 import splice.oauth.grok.GrokRefresh

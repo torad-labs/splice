@@ -71,9 +71,11 @@ public class ClaudeHeadRoutes(
         call.respondText(LaunchReplies.errorJson(reason), ContentType.Application.Json, HttpStatusCode.Conflict)
     }
 
-    /** What the Models strip shows: whether `claude` is wrapped, and where the shim sits. */
+    /** What the Models strip shows: whether `claude` is wrapped, what plain `claude` resolves to (null when nothing
+     *  on PATH answers to it), and where the shim sits. */
     private fun statusJson(status: ClaudeHeadStatus): String = buildJsonObject {
         put("mode", status.mode)
+        put("resolves_to", status.resolvesTo)
         put("shim_path", status.shimPath)
     }.toString()
 }

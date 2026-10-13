@@ -152,6 +152,11 @@ async function readLog(s, before = "end") {
       : { messages: null, error: res.status === 404 ? null : NOT_READ };
   } else if (res.body?.state === "off") {
     state.logs[s.id] = { messages: null, off: true }; // reading off: splice does not read his conversations
+  } else if (!Array.isArray(res.body?.messages)) {
+    // an answer with no messages in it reads Not read: taking it as a page threw before anything was kept, which left
+    // the pane on Reading for good (splice-usage, Oct 13: 180 s on one session)
+    console.warn("The conversation came back with no messages in it");
+    state.logs[s.id] = held && before !== "end" ? { ...held, error: NOT_READ } : { messages: null, error: NOT_READ };
   } else {
     const page = res.body;
     const messages = before === "end" || !held?.messages ? page.messages : [...page.messages, ...held.messages];

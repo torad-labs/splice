@@ -30,6 +30,15 @@ internal fun interface HeadPicker {
     ): MultiSelectOutcome<String>
 }
 
+/** The models to write for one head, from its profile's own (SetupHeadChoices). */
+internal fun interface ModelPicker {
+    operator fun invoke(
+        question: String,
+        options: List<SelectOption<String>>,
+        initiallySelected: Set<String>,
+    ): MultiSelectOutcome<String>
+}
+
 /** One splice add profile --yes call; production is AddCommand with a no-op restart. */
 internal fun interface ProfileAdd {
     suspend operator fun invoke(name: String): Boolean

@@ -26,8 +26,11 @@ import java.nio.file.Path
  *  developer's own ~/.claude (V4-177 review). */
 internal class SetupEffects(
     env: EnvReader,
+    /** The `splice add` arguments each head's answers add (SetupHeadChoices): its models and their windows. */
+    private val choices: MutableMap<String, List<String>> = mutableMapOf(),
     private val add: ProfileAdd = ProfileAdd { name ->
-        AddWiring.add(restart = DaemonRestart { true }).add(listOf(name, "--yes"), EnvReader(System::getenv))
+        AddWiring.add(restart = DaemonRestart { true })
+            .add(listOf(name, "--yes") + choices[name].orEmpty(), EnvReader(System::getenv))
     },
     val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
     private val wrap: ClaudeWrap = DaemonClaudeWrap(env),
@@ -36,6 +39,12 @@ internal class SetupEffects(
         SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
 
     fun lanes(prompts: SetupPrompts): SetupClaudeLane = SetupClaudeLane(prompts.pickLane, wrap)
+
+    /** What each head's add carries beyond `--yes`, from the person's answers. */
+    fun choose(answers: Map<String, HeadChoice>) {
+        choices.clear()
+        answers.forEach { (name, choice) -> choices[name] = choice.addArgs }
+    }
 }
 
 /** The `setup` verb. Production constructs with defaults so Command.Setup does not change. */
@@ -60,6 +69,7 @@ internal class SetupCommand(
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
     private val mcpShare = SetupMcpShare(frame, InstallWiring.units(env))
+    private val headChoices = SetupHeadChoices(prompts, profiles)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead, env)
@@ -84,13 +94,15 @@ internal class SetupCommand(
         val lanes = effects.lanes(prompts)
         val picker = effects.heads(profiles, prompts, env)
         val heads = picker.offer(facts, path)
+        val choices = headChoices.ask(heads)
         val lane = lanes.ask(heads)
         val local = localModel.offer(path)
         val share = mcpShare.ask(path)
-        val summary = menu.summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) + localModel.summary(local) +
-            mcpShare.summary(share)
+        val summary = menu.summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) +
+            choices.values.map { it.summary } + localModel.summary(local) + mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
+        effects.choose(choices)
         return WizardAnswer.Plan(path, lanes, lane, picker, heads, local, share)
     }
 
@@ -103,12 +115,14 @@ internal class SetupCommand(
         result.getOrNull()?.let { if (it is InstallResult.Refused) System.err.println("splice: ${it.sentence}") }
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
-        plan.lanes.apply(plan.lane, plan.picker.addAll(plan.heads))?.let { println(it) }
+        val landed = plan.picker.addAll(plan.heads)
+        plan.lanes.apply(plan.lane, landed)?.let { println(it) }
         localModel.install(plan.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.share)
         mcpShare.hub(plan.path, plan.share)
         val ok = signIn.signInPendingHeads(topology)
+        headChoices.checkLive(landed, topology, env)
         signIn.printNextSteps(topology)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
         // set." rather than "Toolkit ready!": splice is not called a toolkit anywhere else.

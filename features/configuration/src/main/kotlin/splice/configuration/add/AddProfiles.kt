@@ -68,7 +68,14 @@ public data class AddProfile internal constructor(
 ) {
     /** What added the row, named in its TOML comment and the verb's title. */
     internal val origin: String get() = labels.origin ?: "splice add $name"
+
+    /** The models this profile writes by default, as a picker offers them (setup, spec section 1). */
+    public val modelChoices: List<AddModelChoice>
+        get() = models.map { AddModelChoice(it.id, it.label, it.contextWindow) }
 }
+
+/** One of a profile's own models: its id, its name and the context window it is written with. */
+public data class AddModelChoice(val id: String, val label: String, val contextWindow: Long)
 
 /** The provider table a profile renders: the wire [dialect] it speaks, the [authKind] that signs it in, whether the
  *  operator must supply a key, and any [extra] provider lines. Only this module constructs one. */

@@ -37,15 +37,11 @@ internal class AddModelRows(private val output: TerminalOutput, private val prom
         }
     }
 
-    /** `--model id:window` rows, else the profile's own, else what the operator types in (TTY only). */
+    /** `--model id:window` rows, else the profile's own, else what the operator types in (TTY only). A `--model`
+     *  that names one of the profile's own models keeps that row, its name, tier and prices, with the window given:
+     *  setup picks a profile's models and windows this way. */
     fun resolve(args: AddArgs, profile: AddProfile): AddRows {
-        val given = args.models.map { spec ->
-            // A model id may itself carry colons (ollama: qwen3:4b), so the window is the LAST segment
-            // and only when it is a number; a non-positive number is refused below, never defaulted.
-            val window = spec.substringAfterLast(':', "").toLongOrNull()
-            val id = if (window == null) spec else spec.substringBeforeLast(':')
-            AddModel(id, id, window ?: DEFAULT_WINDOW)
-        }
+        val given = args.models.map { spec -> given(spec, profile) }
         if (given.isNotEmpty() || profile.models.isNotEmpty()) return AddRows.Resolved(given.ifEmpty { profile.models })
         val typed = mutableListOf<AddModel>()
         while (typed.size < MAX_PROMPTED_MODELS) {
@@ -55,6 +51,16 @@ internal class AddModelRows(private val output: TerminalOutput, private val prom
             typed += AddModel(id, id, window)
         }
         return AddRows.Resolved(typed)
+    }
+
+    /** One `--model` spec as a row: the profile's own when it names one, with the window given. */
+    private fun given(spec: String, profile: AddProfile): AddModel {
+        // A model id may itself carry colons (ollama: qwen3:4b), so the window is the LAST segment
+        // and only when it is a number; a non-positive number is refused below, never defaulted.
+        val window = spec.substringAfterLast(':', "").toLongOrNull()
+        val id = if (window == null) spec else spec.substringBeforeLast(':')
+        val own = profile.models.firstOrNull { it.id == id } ?: return AddModel(id, id, window ?: DEFAULT_WINDOW)
+        return if (window == null) own else own.copy(contextWindow = window)
     }
 
     /** A blank answer takes the default (the prompter returns it); "32k", a decimal or a number past

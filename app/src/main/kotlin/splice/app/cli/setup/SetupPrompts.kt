@@ -35,6 +35,11 @@ internal data class SetupPrompts(
         MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
             .ask("Heads to add", options, initial, minimum = 0)
     },
+    /** A ticked head's models to write (spec section 1), at least one. */
+    val pickModels: ModelPicker = ModelPicker { question, options, initial ->
+        MultiSelectPrompt(KeyReader(System.`in`), TerminalMode(), System.out)
+            .ask(question, options, initial, minimum = 1)
+    },
     /** V4-175: Separate or Wrap for the Claude head. SelectPrompt answers a consoleless ask with the
      *  option at the index it was given, which is what makes SEPARATE the non-TTY default. */
     val pickLane: LanePicker = LanePicker { options, initialIndex ->

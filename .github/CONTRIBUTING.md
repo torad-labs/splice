@@ -85,8 +85,8 @@ contributor license agreement is required.
 ## Versioning
 
 SemVer, currently pre-1.0 (`0.x`) — breaking changes may land on a minor bump until 1.0.0.
-The root `package.json` version field itself is owned by a separate dependency-hygiene pass,
-not this document.
+The root `package.json` version field is the build's version: Gradle reads it for every module, and the release
+gate refuses a tag that is not `v` plus it. It moves in the version bump with the other two sites (Releasing, step 1).
 
 ### What compatibility means here
 

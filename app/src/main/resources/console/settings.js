@@ -852,6 +852,13 @@ async function setShare(on) {
 // A server sharing would serve with one copy: one the hub shares now, or one it runs per session only because sharing
 // is off. Every other server keeps one copy per session either way and is named below with its reason.
 const shareable = (s) => s.class === "shared" || s.why === "per_session_choice";
+// one server reads one answer on this page: where the Servers list below keeps a server unshared for a reason the switch
+// does not change, a project's server the hub does not host yet among them, its row here sits with the ones kept one per
+// session, under that reason and out of the figures (marlin, desk m, Oct 12)
+const asListed = (s, rows) => {
+  const r = rows.get(s.label ?? s.name);
+  return r && !r.shared && MCP_STATE[r.state] && r.state !== "per_session_choice" ? { ...s, class: "per_session", why: r.state, value: r.value } : s;
+};
 const copiesWord = (n) => `${fmt(n)} ${n === 1 ? "copy" : "copies"}`;
 // a row names its server as the Servers list below does: Claude Code's own name for it and where it is declared, never
 // the plugin_<plugin>_<server> id the census matches copies by (marlin, desk m, Oct 12)
@@ -872,9 +879,9 @@ function savingsHtml() {
   const m = ui.mmem;
   if (m === undefined) return `<section class="tally"><div class="card peaks">${READING}</div></section>`;
   if (!m) return `<section class="tally"><p class="pidle"><span class="state limit">Not read</span><span>splice did not measure its MCP servers</span></p></section>`;
-  // each row carries its class from the host's own sharing plan, a plugin's or a project's server classed as a
-  // user-scope one, whether or not a session runs in its folder
-  const all = m.servers || [];
+  // each row carries its class from the host's own sharing plan, unless the Servers list keeps it unshared (asListed)
+  const byName = new Map((ui.mcp ? mcpServerRows(ui.mcp) : []).map((r) => [r.name, r]));
+  const all = (m.servers || []).map((s) => asListed(s, byName));
   // every server lands in one list, running or not: the figures count the ones with copies (marlin, desk m, Oct 12)
   const listed = all.filter(shareable), share = listed.filter((s) => s.copies);
   const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);

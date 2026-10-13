@@ -21,10 +21,7 @@ class AccountOrderStoreTest {
         val restored = AccountOrderStore(file)
         assertEquals(listOf("higher", "lower"), restored.order("one"))
         assertEquals(listOf("alternate", "primary"), restored.order("two"))
-        Files.list(root).use { paths ->
-            val backup = paths.filter { it.fileName.toString().startsWith("order.json.bak-") }.findFirst().orElseThrow()
-            assertEquals(first, Files.readString(backup))
-        }
+        assertEquals(first, Files.readString(root.resolve("order.json.bak")))
         store.set("one", emptyList())
         assertTrue(AccountOrderStore(file).order("one").isEmpty())
         assertEquals(listOf("alternate", "primary"), restored.order("two"))

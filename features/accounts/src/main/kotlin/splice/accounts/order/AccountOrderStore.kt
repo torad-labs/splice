@@ -14,7 +14,9 @@ public const val ACCOUNT_ORDER_FILE: String = "account-order.json"
 @Serializable
 private data class OrderDocument(val orders: Map<String, List<String>> = emptyMap())
 
-/** Atomic policy persistence. An unreadable document is a failure, never an empty replacement. */
+/** Atomic policy persistence. An unreadable document is a failure, never an empty replacement. Each replacement keeps
+ *  the file it replaced as `account-order.json.bak`, one copy, so a mistaken order has a way back; a dated copy per
+ *  change piled up with nothing removing them (Temple notice e5d7aaabc9fb0ebc). */
 public class AccountOrderStore(private val file: Path) {
     private val json = Json {
         prettyPrint = true
@@ -36,7 +38,7 @@ public class AccountOrderStore(private val file: Path) {
         }
         if (previous != null) {
             SecureFile.writeAtomic0600(
-                file.resolveSibling(file.fileName.toString() + ".bak-" + System.currentTimeMillis()),
+                file.resolveSibling(file.fileName.toString() + ".bak"),
                 previous,
             )
         }

@@ -9,6 +9,7 @@
 package splice.lifecycle.upgrade
 
 import splice.core.GATEWAY_VERSION
+import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.launch.install.InstallLayout
 import splice.lifecycle.hub.HubUnits
@@ -30,6 +31,9 @@ private const val PREVIOUS_LINK = "previous"
 /** install.sh writes the same name (MANAGED_MARKER there). */
 private const val MANAGED_MARKER = "managed-install"
 
+/** The file in splice's state folder that lists the releases this machine put back or rolled back from. */
+private const val REJECTED_FILE = "upgrade-rejected"
+
 // SemVer 2.0.0 (semver.org, the canonical grammar): no leading zeros in the numeric parts or numeric
 // prerelease identifiers, no empty identifiers, hyphens allowed inside identifiers, build metadata after +.
 private const val NUM = """(?:0|[1-9]\d*)"""
@@ -39,7 +43,7 @@ private const val SEMVER_SEGMENT =
 
 /** [units] are the MCP hub's systemd units on this machine, or null where the hub's front is not installed. */
 internal class UpgradeLayout(
-    env: EnvReader,
+    private val env: EnvReader,
     installLayout: InstallLayout = InstallLayout(),
     val units: HubUnits? = null,
 ) {
@@ -56,6 +60,12 @@ internal class UpgradeLayout(
     val managedMarker: Path = share.resolve(MANAGED_MARKER)
 
     fun isManaged(): Boolean = Files.isRegularFile(managedMarker)
+
+    /** The releases this machine put back or rolled back from, kept in splice's state folder so a restart, which every
+     *  put-back is, does not forget them. Resolved on first use: most layouts never read it. */
+    val rejected: RejectedReleases by lazy {
+        RejectedReleases(StatePaths(envReader = env).stateDir.resolve(REJECTED_FILE))
+    }
 
     /** Written after an activation, so an install `splice upgrade` has once replaced is managed from then on. */
     fun markManaged() {
@@ -153,5 +163,35 @@ internal class UpgradeLayout(
         } else {
             Upgraded.Ok(version)
         }
+    }
+}
+
+/** The releases this machine refused after trying them: one an upgrade put back because it did not come up serving and
+ *  ready or its doctor was red, and one `--rollback` left. The updater skips them (UpgradeAuto); a newer release is not
+ *  on the list, so it is tried, and `--to` never reads the list, so a person can always install one by hand. One
+ *  version per line; each write replaces the file whole, so a reader never sees half a list. */
+internal class RejectedReleases(private val file: Path) {
+    fun has(version: String): Boolean = version in read()
+
+    fun reject(version: String) {
+        if (!has(version)) write(read() + version)
+    }
+
+    /** A release installed and confirmed after all, by `--to`, is no longer refused. */
+    fun forgive(version: String) {
+        if (has(version)) write(read() - version)
+    }
+
+    private fun read(): Set<String> = if (Files.isRegularFile(file)) {
+        Files.readAllLines(file).map(String::trim).filter(String::isNotEmpty).toSet()
+    } else {
+        emptySet()
+    }
+
+    private fun write(versions: Set<String>) {
+        Files.createDirectories(file.parent)
+        val tmp = file.resolveSibling("${file.fileName}.${ProcessHandle.current().pid()}.tmp")
+        Files.writeString(tmp, versions.joinToString("") { "$it\n" })
+        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 }

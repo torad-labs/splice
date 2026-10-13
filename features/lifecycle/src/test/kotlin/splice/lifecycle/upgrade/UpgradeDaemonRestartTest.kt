@@ -40,7 +40,7 @@ class UpgradeDaemonRestartTest {
             unreadAtRestart = reads.size
             true
         },
-        healthVersion = { VERSION },
+        health = { DaemonHealth(VERSION, ready = true) },
         pacing = UpgradePacing(pollMs = 1, confirmPollMs = 1),
         userUnit = "splice.service",
     )

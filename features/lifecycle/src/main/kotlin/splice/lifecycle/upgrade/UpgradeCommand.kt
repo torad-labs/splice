@@ -4,6 +4,9 @@
 // jar, refresh or keep the wrapper (UpgradeWrapper), restart the unit, run doctor. --rollback
 // repoints at the previous release, kept until the next successful upgrade. Config and credentials
 // live elsewhere and are never touched; a refusal at any step leaves the previous release active.
+// Oct 13 (pre-merge review): an activated release that does not come up serving and ready, or whose doctor is red, is
+// put back the same way, and the release it put back, like the one --rollback leaves, is recorded as refused
+// (UpgradeLayout.rejected) so the updater does not install it again.
 package splice.lifecycle.upgrade
 
 import splice.core.terminal.BOLD
@@ -49,7 +52,9 @@ public class UpgradeVerb(
             JdkUpgradeProcess(),
             JdkUpgradeInflight(env, settings.controlPort(env)),
             restart,
-            healthVersion = { DaemonProbe.healthView(settings.controlPort(env))?.version },
+            health = {
+                DaemonProbe.healthView(settings.controlPort(env))?.let { DaemonHealth(it.version, it.ok == true) }
+            },
             userUnit = settings.supervisorUnit(env),
         )
         return UpgradeCommand(output, env, daemon, layout = UpgradeLayout(env, units = units)).upgrade(args)
@@ -151,8 +156,35 @@ internal class UpgradeCommand(
         return activation.activate(version, installed).then {
             layout.markManaged()
             layout.prunable().forEach(layout::discard)
-            Upgraded.Ok(finish(version, installed, a.now))
+            when (val verdict = finish(version, installed, a.now)) {
+                is Finished.Passed -> Upgraded.Ok(true).also { layout.rejected.forgive(version) }
+                is Finished.Failed -> putBack(version, installed, verdict)
+            }
         }
+    }
+
+    /** [version] was activated and failed its checks: [installed] is activated again and restarted at once, since the
+     *  wait for turns was already taken. A release that came up and failed is recorded as refused; one that never
+     *  reached the daemon serving (another one still answers, a daemon started by hand) is not its own fault. */
+    private fun putBack(version: String, installed: String, verdict: Finished.Failed): Upgraded<Boolean> {
+        output.line("  $RED✗$RESET ${"putting back".padEnd(UPGRADE_PAD)} $installed, since $version failed its checks")
+        return activation.activate(installed, version).then {
+            if (verdict.releaseAtFault) refuse(version)
+            restarted(installed, now = true)
+            Upgraded.Ok(false)
+        }
+    }
+
+    /** Records [version] as refused; a state folder that cannot be written is said, never a reason to stop. */
+    private fun refuse(version: String) {
+        val label = "refused".padEnd(UPGRADE_PAD)
+        Cancellables.runCatchingBestEffort { layout.rejected.reject(version) }.fold(
+            onSuccess = { output.line("  $label $version; auto-update will not install it again") },
+            onFailure = {
+                val why = SafeFailureText.render(it)
+                output.line("  $YELLOW!$RESET ${"unrecorded".padEnd(UPGRADE_PAD)} $version ($why)")
+            },
+        )
     }
 
     private fun rollback(a: UpgradeArgs): Upgraded<Boolean> {
@@ -176,7 +208,10 @@ internal class UpgradeCommand(
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
             return Upgraded.Ok(false)
         }
-        return activation.activate(previous, installed).then { Upgraded.Ok(finish(previous, installed, a.now)) }
+        return activation.activate(previous, installed).then {
+            refuse(installed)
+            Upgraded.Ok(finish(previous, installed, a.now) is Finished.Passed)
+        }
     }
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
@@ -198,23 +233,36 @@ internal class UpgradeCommand(
         return answer
     }
 
-    /** Restarts on [version] and says how it went; a daemon that does not come back names the way back to [from],
-     *  which activation kept as the previous release, since a new jar that cannot boot is what --rollback is for. */
-    private fun finish(version: String, from: String, now: Boolean): Boolean {
+    /** Restarts on [version], then runs the live jar's doctor: it passes only when /health serves [version] with its
+     *  heads ready AND the doctor is green. Both verdicts count; neither is only printed. */
+    private fun finish(version: String, from: String, now: Boolean): Finished {
+        val restart = restarted(version, now)
+        output.line("")
+        val green = daemon.doctor(java, layout.liveJar)
+        if (!green) output.line("  $RED✗$RESET ${"doctor".padEnd(UPGRADE_PAD)} red on $version (from $from)")
+        val passed = restart is DaemonRestarted.Serving && green
+        return if (passed) Finished.Passed else Finished.Failed(releaseAtFault = restart !is DaemonRestarted.StillOld)
+    }
+
+    /** Restarts the daemon on [version] and says what /health answered. */
+    private fun restarted(version: String, now: Boolean): DaemonRestarted {
         val restart = daemon.restart(layout.liveJar, version, now)
-        val restarted = restart is DaemonRestarted.Serving
-        val glyph = if (restarted) "$GREEN✓$RESET" else "$RED✗$RESET"
+        val glyph = if (restart is DaemonRestarted.Serving) "$GREEN✓$RESET" else "$RED✗$RESET"
         val outcome = when (restart) {
             DaemonRestarted.Serving -> "restarted, serving $version"
+            DaemonRestarted.NotReady -> "serves $version, but /health never said its heads were ready"
             is DaemonRestarted.StillOld ->
                 "still serves ${restart.version} (a daemon started by hand?); run: splice restart"
-            DaemonRestarted.NotAnswering ->
-                "did not answer after the restart; run: splice restart, " +
-                    "or splice upgrade --rollback to go back to $from"
+            DaemonRestarted.NotAnswering -> "did not answer after the restart; run: splice restart"
         }
         output.line("  $glyph ${"daemon".padEnd(UPGRADE_PAD)} $outcome")
-        output.line("")
-        daemon.doctor(java, layout.liveJar)
-        return restarted
+        return restart
+    }
+
+    /** What an activated release's checks said: passed, or failed, and whether the release itself is to blame. */
+    private sealed class Finished {
+        object Passed : Finished()
+
+        data class Failed(val releaseAtFault: Boolean) : Finished()
     }
 }

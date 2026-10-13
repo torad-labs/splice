@@ -5,6 +5,8 @@
 // proof — the restart verb polled for the OLD CLI's own version and called a good restart a failure,
 // and a unit whose file names the jar but whose daemon was started by hand restarted a JVM that lost
 // the daemon lock and exited 0 while the squatter kept serving the old jar (review 2026-09-14).
+// Oct 13 (pre-merge review): the version alone is not the proof either. A daemon on the new jar whose heads failed to
+// boot answers /health with that version, so the verdict waits for /health's readiness verdict as well.
 package splice.lifecycle.upgrade
 
 import splice.core.terminal.TerminalOutput
@@ -12,7 +14,11 @@ import java.nio.file.Path
 
 private const val MAX_WAIT_MS = 30L * 60 * 1000
 private const val NANOS_PER_MS = 1_000_000L
-private const val CONFIRM_POLLS = 60
+
+// why: a restarted daemon answers /health before its heads finish booting, and a head's boot discovers its models over
+// the network, so the wait for a ready daemon is a minute (240 looks of 250 ms), not the few seconds a version takes.
+private const val CONFIRM_POLLS = 240
+
 private const val CONFIRM_POLL_MS = 250L
 
 /** How long the upgrade waits and how often it looks: for in-flight turns to drain, and for the restarted daemon to
@@ -38,15 +44,21 @@ public fun interface VersionedRestart {
     public operator fun invoke(expectedVersion: String): Boolean
 }
 
-/** What /health reports as the daemon's version right now, or null when nothing answers. */
-internal fun interface DaemonVersionRead {
-    operator fun invoke(): String?
+/** What /health reports right now: the daemon's version and whether its heads are ready (/health's `ok`). */
+internal data class DaemonHealth(val version: String?, val ready: Boolean)
+
+/** Reads /health now, or null when nothing answers. */
+internal fun interface DaemonHealthRead {
+    operator fun invoke(): DaemonHealth?
 }
 
 /** The outcome of a restart, decided by what answers /health afterwards. */
 internal sealed class DaemonRestarted {
-    /** The daemon serves the activated version. */
+    /** The daemon serves the activated version, and /health says its heads are ready. */
     object Serving : DaemonRestarted()
+
+    /** The activated version answers, but /health never said its heads were ready. */
+    object NotReady : DaemonRestarted()
 
     /** A daemon answers, but with another version: the restart did not reach the one serving. */
     data class StillOld(val version: String) : DaemonRestarted()
@@ -60,7 +72,7 @@ internal class UpgradeDaemon(
     private val process: UpgradeProcess,
     private val inflight: UpgradeInflight,
     private val restartVerb: VersionedRestart,
-    private val healthVersion: DaemonVersionRead,
+    private val health: DaemonHealthRead,
     private val pacing: UpgradePacing = UpgradePacing(),
     /** V4-176: the unit that supervises this install, by name, from the knob layer. splice does not
      *  own it and cannot assume one is there — an absent or inactive unit is the "started by hand"
@@ -99,7 +111,7 @@ internal class UpgradeDaemon(
 
     /** The user unit when one supervises THIS install (UpgradeUnit), else the restart verb,
      *  whose stop is the only one that reaches a daemon started by hand. Whatever ran, the verdict is
-     *  /health's: it must report [version].
+     *  /health's: it must report [version] and say its heads are ready.
      *
      *  V4-220: the release activated AFTER [waitIdle], and a compaction that started meanwhile is the one
      *  turn a restart must not cut, so either path first takes the wait the console's restart and `splice
@@ -115,15 +127,21 @@ internal class UpgradeDaemon(
     }
 
     private fun confirm(version: String): DaemonRestarted {
-        var seen: String? = null
+        var seen: DaemonHealth? = null
         repeat(CONFIRM_POLLS) {
-            seen = healthVersion()
-            if (seen == version) return DaemonRestarted.Serving
+            seen = health()
+            if (seen?.version == version && seen?.ready == true) return DaemonRestarted.Serving
             pacing.confirmPause()
         }
-        return seen?.let { DaemonRestarted.StillOld(it) } ?: DaemonRestarted.NotAnswering
+        val last = seen?.version
+        return when {
+            last == version -> DaemonRestarted.NotReady
+            last != null -> DaemonRestarted.StillOld(last)
+            else -> DaemonRestarted.NotAnswering
+        }
     }
 
+    /** The release's own doctor, on the live jar: true only when it finds nothing red. */
     fun doctor(java: String, jar: Path): Boolean =
         process(listOf(java, "-jar", jar.toString(), "doctor"), true).code == 0
 }

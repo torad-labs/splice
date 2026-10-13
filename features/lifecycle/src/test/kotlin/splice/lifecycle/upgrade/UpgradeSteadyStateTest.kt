@@ -1,8 +1,9 @@
 // `splice upgrade` when the answer is "nothing to do" or "nothing to undo": the release already installed, the
-// previous release kept through the prune, and a doctor that goes red after a good upgrade.
+// previous release kept through the prune, and a doctor that goes red after the restart.
 package splice.lifecycle.upgrade
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -44,16 +45,21 @@ internal class UpgradeSteadyStateTest : UpgradeRig() {
         assertEquals("9.9.9", link(home, "previous"))
     }
 
+    /** Pre-merge review, Oct 13: the doctor's verdict counts. Until then this test pinned the opposite, a red doctor
+     *  that left the new release active and the upgrade reported as done. */
     @Test
-    fun `a doctor that is red after the upgrade does not undo it or turn it into a failure`(@TempDir home: Path) {
+    fun `a doctor that is red after the restart puts the previous release back and refuses the new one`(
+        @TempDir home: Path,
+    ) {
         flatInstall(home)
         postUpgradeDoctor = 1
+        val base = release(home)
 
-        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--to", "v9.9.9", "--now")) }
+        val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9", "--now")) }
 
-        assertTrue(ok, out)
-        assertEquals("new-jar", read(home, "splice.jar"), "the new release stays active")
-        assertEquals("9.9.9", link(home, "current"))
-        assertTrue(calls.any { it.first() == "java" && it.last() == "doctor" }, "doctor still ran")
+        assertFalse(ok, out)
+        assertEquals("old-jar", read(home, "splice.jar"), "the release it replaced is live again")
+        assertEquals(INSTALLED, link(home, "current"))
+        assertTrue(UpgradeLayout(env(home, base)).rejected.has("9.9.9"), "auto-update must not install it again: $out")
     }
 }

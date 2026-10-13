@@ -102,7 +102,7 @@ internal abstract class UpgradeRig {
                 verbRestarts++
                 true
             },
-            healthVersion = { servingVersion?.invoke(home) ?: link(home, "current") },
+            health = { DaemonHealth(servingVersion?.invoke(home) ?: link(home, "current"), ready = true) },
             pacing = UpgradePacing(pollMs = 1, maxWaitMs = maxWaitMs, confirmPollMs = 1),
             userUnit = "splice.service",
         )

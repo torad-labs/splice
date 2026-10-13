@@ -15,6 +15,11 @@
 //
 // ONE TRY PER VERSION PER DAEMON. A run that fails leaves this daemon serving, and the same version is not tried again
 // until the daemon restarts or a newer one is published, so a release that cannot install does not loop.
+//
+// A REFUSED RELEASE STAYS REFUSED ACROSS RESTARTS (pre-merge review, Oct 13). A release the upgrade put back, or one
+// `--rollback` left, is on UpgradeLayout.rejected in splice's state folder, and the put-back's own restart would
+// otherwise empty the in-memory set above and try it again within the hour. It is skipped until a newer release is
+// published, or a person installs it with `splice upgrade --to`, which never reads the list.
 package splice.lifecycle.upgrade
 
 import splice.core.GATEWAY_VERSION
@@ -73,7 +78,15 @@ public class UpgradeAuto(
     internal fun look() {
         val policy = settings.read()?.takeIf { it.enabled && managed() } ?: return
         val newest = newest(policy.beta)?.takeIf { ReleaseOrder(it) > ReleaseOrder(GATEWAY_VERSION) && tried.add(it) }
-        if (newest != null) upgrade(newest, if (policy.beta) "beta" else "stable")
+            ?: return
+        if (layout.rejected.has(newest)) {
+            log(
+                "[auto-update] skipping ${LogSafe.str(newest)}: this machine put it back or rolled back from it; " +
+                    "a newer release, or splice upgrade --to v${LogSafe.str(newest)}, installs past it\n",
+            )
+            return
+        }
+        upgrade(newest, if (policy.beta) "beta" else "stable")
     }
 
     /** Whether the marker is there; the first look that finds it absent says why nothing will happen. */

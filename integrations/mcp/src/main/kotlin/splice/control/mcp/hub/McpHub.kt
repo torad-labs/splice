@@ -2,7 +2,7 @@
 // session's connection and calls the daemon only to find a server's holder, to start one, and to keep what a fresh
 // holder listed. The three calls, with the shapes agreed with splice-config (body `{"server", "launch"}`, management
 // key as bearer):
-//   - resolve starts nothing: where the server's socket is, whether it is shared and running, and its kept listing,
+//   - resolve starts nothing: where the server's socket is, whether it is shared, and its kept listing,
 //     which the front answers a session's initialize and tools/list from;
 //   - start starts the holder unless it runs, and answers once its socket accepts connections;
 //   - listing keeps a fresh holder's initialize and tools/list results (HubListings).
@@ -195,7 +195,6 @@ public class McpHub(
         val body = buildJsonObject {
             put("socket", holders.socket(target.key).toString())
             put("shared", target.shared)
-            put("running", holders.running(target.key))
             put("listing", listings.kept(target.listing)?.toString())
         }
         return McpHubReply(HttpStatus.OK, JsonWire.string(body))

@@ -12,6 +12,7 @@ internal object DocumentationTopologySnippets {
     private val optional = Regex(
         "(?m)$COMMENTED_TABLE(?:$COMMENTED_TABLE|^#[ \\t]+[A-Za-z_][A-Za-z0-9_.-]*[ \\t]*=[^\\n]*\\n)*",
     )
+    private val headSubTable = Regex("(?m)^\\[heads\\.([A-Za-z0-9_-]+)\\.")
 
     fun checkDocument(text: String): Int {
         // Inline field names, API notation and placeholder values are not complete TOML documents.
@@ -47,9 +48,19 @@ internal object DocumentationTopologySnippets {
         // Standalone commented settings lack a table; prose is not a copyable optional block.
         val blocks = optional.findAll(text).toList()
         blocks.forEach { block ->
-            checkKnobs(block.value.lineSequence().joinToString("\n") { it.removePrefix("#").trimStart() })
+            val body = block.value.lineSequence().joinToString("\n") { it.removePrefix("#").trimStart() }
+            checkKnobs("${headOf(text, body)}\n$body")
         }
         return blocks.size
+    }
+
+    /** The example's own `[heads.NAME]` table when [body] is a commented sub-table of a head it does not declare,
+     *  such as a head's rates card: the card is copied under that head, so it is parsed with it. */
+    private fun headOf(text: String, body: String): String {
+        val head = headSubTable.find(body)?.groupValues?.get(1) ?: return ""
+        if ("[heads.$head]" in body) return ""
+        val table = Regex("(?ms)^\\[heads\\.${Regex.escape(head)}\\][^\\n]*\\n(.*?)(?=^\\[)").find(text)
+        return table?.let { "[heads.$head]\n${it.groupValues[1]}" } ?: ""
     }
 
     fun checkKnobs(document: String) {

@@ -130,11 +130,14 @@ internal object TracePackBytes {
         return UUID(header.long, header.long)
     }
 
-    /** Writer-generated references must still describe the current bytes after a truncate/regrow. */
-    fun matches(channel: FileChannel, format: TracePackFormat, offset: Long, length: Int, hash: String): Boolean {
-        val entry = format.entry(channel, offset)?.takeIf { it.raw == length && it.hash == hash } ?: return false
-        return format.decode(read(channel, offset, entry.stored), length)?.let(::hashOf) == hash
-    }
+    /** Writer-generated references must still describe the current bytes after a truncate/regrow: the entry at
+     *  [offset] is whole and its header names [length] raw bytes under [hash]. The header digest is the checksum the
+     *  writer stored beside the payload in the same append, so a reuse compares it instead of decoding the stored
+     *  bytes and hashing them again (trace cost, Oct 13): that decode and second SHA-256 ran on every chunk of every
+     *  repeated body, each turn. A reader still decodes and checks the digest (TraceChunkRead), so a payload that rotted
+     *  under its header reads as unavailable, never as another body. */
+    fun matches(channel: FileChannel, format: TracePackFormat, offset: Long, length: Int, hash: String): Boolean =
+        format.entry(channel, offset)?.let { it.raw == length && it.hash == hash } == true
 
     fun hashOf(bytes: ByteArray): String =
         HEX.formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))

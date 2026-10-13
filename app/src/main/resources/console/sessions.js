@@ -693,11 +693,11 @@ async function readUsage(s) {
   const heads = [...state.heads, ...state.retired]; // a removed command's requests today are still the session's
   const reads = await Promise.all(heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
     head: h.key, since: String(+from), time_zone: zone, n: "1", local: "0", session: s.id.slice(0, 8) })}`)));
-  let seen = false; const used = { requests: 0, tin: 0, tout: 0, cached: 0, noIn: 0, noOut: 0, cost: 0, priced: 0, plan: 0, noPrice: 0, from: +from };
+  let seen = false; const used = { requests: 0, tin: 0, tout: 0, cached: 0, written: 0, noIn: 0, noOut: 0, cost: 0, priced: 0, plan: 0, noPrice: 0, from: +from };
   reads.forEach((r, i) => {
     const t = (r.body?.heads || []).find((x) => x.key === heads[i].key)?.usage?.totals;
     if (!t) return;
-    seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0; used.cached += t.cached_tokens || 0;
+    seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0; used.cached += t.cached_tokens || 0; used.written += t.cache_write_tokens || 0;
     used.noIn += t.missing_input_requests || 0; used.noOut += t.missing_output_requests || 0;
     // a request that moved no tokens (refused, cut) is no money fact, and a local model's costs nothing: neither is counted
     const plan = t.unpriced_plan_requests || 0, local = t.unpriced_local_requests || 0;
@@ -719,7 +719,7 @@ function usageHtml(s) {
   const num = (v) => `<span class="num">${v}</span>`;
   const figs = [`${num(u.requests.toLocaleString("en-US"))} ${u.requests === 1 ? "request" : "requests"}`,
     u.noIn < u.requests ? `${num(kTok(u.tin))} tokens in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} ${u.noIn < u.requests ? "" : "tokens "}out` : "",
-    u.cached ? `${num(kTok(u.cached))} cached` : "",
+    u.cached ? `${num(kTok(u.cached))} cached` : "", u.written ? `${num(kTok(u.written))} written to cache` : "",
     ...moneyOf(u)].filter(Boolean);
   return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}<span class="go">Open on Requests</span></a>`; // the arrow's words (fin; hitstop 22df5bf)
 }

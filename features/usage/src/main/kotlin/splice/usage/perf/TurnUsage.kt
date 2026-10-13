@@ -55,7 +55,12 @@ internal class TurnUsage(
         val fields = row.fields
         return Counted(
             localStep = fields[PerfKeys.LOCAL_STEP] == 1L,
-            tokens = Tokens(fields[PerfKeys.IN_TOKENS], fields[PerfKeys.CACHED_TOKENS], fields[PerfKeys.OUT_TOKENS]),
+            tokens = Tokens(
+                fields[PerfKeys.IN_TOKENS],
+                fields[PerfKeys.CACHED_TOKENS],
+                fields[PerfKeys.OUT_TOKENS],
+                fields[PerfKeys.CACHE_WRITE_TOKENS],
+            ),
             priced = priced,
             gap = gap,
         )
@@ -118,12 +123,13 @@ internal class TurnUsage(
     )
 
     /** The row's reported token totals; null where the row never carried one. */
-    private data class Tokens(val incoming: Long?, val cache: Long?, val outgoing: Long?)
+    private data class Tokens(val incoming: Long?, val cache: Long?, val outgoing: Long?, val cacheWrite: Long?)
 
     private class Counters {
         private var requests = 0L
         private var input: Long? = null
         private var cached: Long? = null
+        private var cacheWritten: Long? = null
         private var output: Long? = null
         private var cost: Double? = null
 
@@ -152,12 +158,14 @@ internal class TurnUsage(
             if (incoming == null) missingInput++ else input = (input ?: 0) + incoming
             if (outgoing == null) missingOutput++ else output = (output ?: 0) + outgoing
             if (cache != null) cached = (cached ?: 0) + cache
+            tokens.cacheWrite?.let { cacheWritten = (cacheWritten ?: 0) + it }
         }
 
         fun json(): JsonObject = buildJsonObject {
             put("requests", requests)
             put("input_tokens", input)
             put("cached_tokens", cached)
+            put("cache_write_tokens", cacheWritten)
             put("output_tokens", output)
             put("cost_usd", cost)
             put("plan_requests", gaps.getValue(PriceGap.PLAN))

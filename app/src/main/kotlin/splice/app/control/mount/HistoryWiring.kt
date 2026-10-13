@@ -35,6 +35,8 @@ import splice.head.perf.HistoryDays
 import splice.head.perf.HistoryRoutes
 import splice.head.perf.HistoryStores
 import splice.head.perf.HistoryWindowStore
+import splice.head.perf.TurnKeptRoutes
+import splice.head.perf.TurnTallies
 import splice.head.usage.EconomicsStore
 import splice.http.JsonReply
 import splice.sessions.activity.SparedEdges
@@ -55,6 +57,9 @@ internal class HistoryWiring(
     // The scan cache lives here, across calls; the routes are built per call like every other
     // console port, so a port wired after mount is still read.
     private val inventory = HistoryDays()
+
+    // The turn rows each perf file held when last counted, kept across requests so a count reads only what is new.
+    private val turnTallies = TurnTallies()
 
     private val window = HistoryWindowStore { text ->
         val written = config.patch(mapOf(Knob.HISTORY_RETENTION_DAYS.key to text))
@@ -87,6 +92,11 @@ internal class HistoryWiring(
             { HeldStores(emptyList(), "message_edges: ${SafeFailureText.render(it)}") },
         )
     }
+
+    /** Each head's session totals, read from the live map so a head that joined after mount is counted. */
+    private fun liveTotals() = heads.mapNotNull { (key, managed) ->
+        (managed.sources.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
+    }.toMap()
 
     private fun kept(): KeptHistoryStores? = ports.turnStatistics?.let { KeptHistoryStores(it) }
 
@@ -140,6 +150,18 @@ internal class HistoryWiring(
             guard.guarded(call) {
                 val asked = call.receiveText()
                 withContext(fileIo) { routes().save(asked) }.send(call)
+            }
+        }
+        route.get("/api/kept/turns") {
+            guard.guarded(call) {
+                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, tallies = turnTallies).kept() }.send(call)
+            }
+        }
+        route.delete("/api/kept/turns") {
+            guard.guarded(call) {
+                withContext(fileIo) {
+                    TurnKeptRoutes(ports.turnStatistics, liveTotals(), tallies = turnTallies).delete()
+                }.send(call)
             }
         }
         route.get("/api/kept/stores") {

@@ -4,7 +4,6 @@ package splice.app.control.mount
 
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
-import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -14,15 +13,10 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
-import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
 import splice.core.perf.KeptHistory
-import splice.core.retired.RetiredHeads
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
-import splice.head.perf.TurnKeptRoutes
-import splice.head.perf.TurnTallies
-import splice.models.roster.DeclaredHeads
 import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.alerts.AlertRoutes
 import splice.usage.alerts.AlertSource
@@ -51,18 +45,8 @@ internal class UsageMount(
     /** The daemon log, where the startup scan says when each command's history is ready. */
     log: LogSink? = null,
 ) {
-    // The turn rows each perf file held when last counted, kept across requests so a count reads only what was appended.
-    private val turnTallies = TurnTallies()
-    private val liveTotals = heads.mapNotNull { (key, managed) ->
-        (managed.sources.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
-    }.toMap()
     private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins })
-    private val usageLookup = UsageHeadAdapter.lookup(
-        resolver,
-        DeclaredHeads { ports.declaredHeads?.invoke().orEmpty() },
-        RetiredHeads(config.statePaths.stateDir),
-        config.statePaths,
-    )
+    private val usageLookup = UsageHeadAdapter.consoleLookup(resolver, ports, config.statePaths)
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)
     private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
@@ -101,18 +85,6 @@ internal class UsageMount(
         }
         route.get("/api/perf/summary") {
             guard.guarded(call) { withContext(fileIo) { perfPayloads.summary(call) } }
-        }
-        route.get("/api/kept/turns") {
-            guard.guarded(call) {
-                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, tallies = turnTallies).kept() }.send(call)
-            }
-        }
-        route.delete("/api/kept/turns") {
-            guard.guarded(call) {
-                withContext(fileIo) {
-                    TurnKeptRoutes(ports.turnStatistics, liveTotals, tallies = turnTallies).delete()
-                }.send(call)
-            }
         }
         history.register(route)
         route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }

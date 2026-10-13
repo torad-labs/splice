@@ -39,6 +39,12 @@ internal object UsageHeadAdapter {
         override fun providerResetForMs(key: String): Long = heads[key]?.head?.providerResetForMs() ?: 0L
     }
 
+    /** The console's lookup: the declared heads read at call time from [ports], and the retired heads under [paths]. */
+    fun consoleLookup(resolver: HeadResolver, ports: ConsolePorts, paths: StatePaths): UsageHeadLookup {
+        val declared = DeclaredHeads { ports.declaredHeads?.invoke().orEmpty() }
+        return lookup(resolver, declared, RetiredHeads(paths.stateDir), paths)
+    }
+
     /** The shared by-name lookup (key first, then every wrapper-command match). */
     fun lookup(
         resolver: HeadResolver,

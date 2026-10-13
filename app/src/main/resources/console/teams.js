@@ -181,9 +181,9 @@ async function readTeam() {
   if (gen !== teamRead.gen) return;
   // why a command's turns with no price have none, decided by the daemon once (as Accounts reads it): "plan" or not
   state.priceWhy = Object.fromEntries((perHead.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
-  state.economics[tm.id] = economics.ok ? economics.body : { error: refusalOf(economics, "The figures could not be read") };
-  state.chat = chat.ok ? chat.body : { error: refusalOf(chat, "The messages could not be read") };
-  state.activity = activity.ok ? activity.body : { error: refusalOf(activity, "The activity could not be read") };
+  state.economics[tm.id] = economics.ok ? economics.body : { error: refusedAs(economics, "Not read", `economics ${tm.id}`) };
+  state.chat = chat.ok ? chat.body : { error: refusedAs(chat, "Not read", `chat ${tm.id}`) };
+  state.activity = activity.ok ? activity.body : { error: refusedAs(activity, "Not read", `activity ${tm.id}`) };
   state.today = day0 === 0 ? state.activity : await readToday(tm);
   if (gen !== teamRead.gen) return;
   render();
@@ -218,16 +218,6 @@ async function readScreens(tm) {
     if (r.ok && r.body?.choices?.length) state.pending[slot.id] = r.body;
   });
   render();
-}
-
-/** The daemon's own sentence for a refused call, or a plain one when it sent none. A bare 502 is a connection that
- *  dropped before splice answered (Marlin p223: "(502)" alone said nothing), so it says that; any other bare status
- *  says splice gave no reason, with the status kept for whoever reads the log. */
-function refusalOf(answer, fallback) {
-  if (answer.status === 0) return "splice did not answer. It may not be running.";
-  if (answer.body?.error) return answer.body.error;
-  if (answer.status === 502) return `${fallback}: the connection to splice dropped before it answered.`;
-  return `${fallback}: splice gave no reason (${answer.status}).`;
 }
 
 /** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
@@ -893,9 +883,9 @@ function slotRowHtml(c, s, i) {
 function composerHtml() {
   const c = ui.compose;
   const ok = ready(c) && !c.saving;
-  const word = c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "";
-  // only a refusal of the repo outlines Repo; any other refusal's word still sits on its row
-  const repoRefused = c.error && /^repo\b/i.test(c.error);
+  // Not saved sits on the save row; Repo's row has a word only for the three refusals TeamRules makes of the repo (fin)
+  const word = c.repoWord ? `<span class="state limit" role="status">${esc(c.repoWord)}</span>` : "";
+  const repoRefused = Boolean(c.repoWord);
   return `<section class="compose" data-key="compose" role="dialog" aria-modal="true" aria-labelledby="t-title">` +
     `<h2 id="t-title">${c.id ? esc(state.teams.find((t) => t.id === c.id)?.name) : "New team"}</h2>` +
     `<div class="frow"><label for="t-name">Name</label><input class="field" id="t-name" value="${esc(c.name)}" autocomplete="off" spellcheck="false"></div>` +
@@ -905,6 +895,7 @@ function composerHtml() {
     `<button class="add" data-act="add-slot"><span class="plus" aria-hidden="true">+</span>Add member</button></div>` +
     `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
     `<footer><p class="foothint">Save keeps the team. Start team also starts a session for every member that has none.</p>` +
+    (c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "") +
     `<button class="act quiet" data-act="cancel">Cancel</button>` +
     `<button class="act quiet" data-act="save"${ok ? "" : " disabled"}>Save</button>` +
     `<button class="act primary" data-act="start-team"${ok ? "" : " disabled"}>Start team</button></footer></section>`;
@@ -972,9 +963,10 @@ async function save(startAfter) {
   const answer = c.id ? await API.put(`/api/teams/${c.id}`, { ...body, id: c.id }) : await createTeam(body, c.once);
   c.saving = false;
   if (!answer.ok) {
-    c.error = refusalOf(answer, "The team was not saved");
+    c.error = refusedAs(answer, "Not saved", "save team");
+    c.repoWord = answer.status === 0 ? null : repoWordOf(answer.body?.error);
     render();
-    sheet.querySelector("#t-repo")?.focus(); // the refusal's word is on Repo's row, so Save leaves the person there
+    if (c.repoWord) sheet.querySelector("#t-repo")?.focus(); // a refusal of the repo leaves the person on Repo's row
     return;
   }
   const saved = answer.body;
@@ -1039,6 +1031,14 @@ async function startSlot(tm, slot, path = null) {
 
 /** The reason line a start that gave up keeps on its card, as a state (fin; Marlin p223): "Claude Code had not registered
  *  after 45s" reads "Waited 45 s". Any other reason has no line; its sentence is already in the console's log. */
+/** Repo's word for the three refusals TeamRules.kt makes of the repo, matched whole so no other refusal outlines Repo
+ *  (fin): needed when a member joins by rule, a path that does not exist, and one that is not a folder. */
+const repoWordOf = (said) => {
+  const why = String(said || "");
+  if (/^repo is needed when a member joins by rule\b/.test(why)) return "Needed";
+  if (/^repo '.*' does not exist$/s.test(why)) return "Not found";
+  return /^repo '.*' is not a directory$/s.test(why) ? "Not a folder" : null;
+};
 const reasonOf = (said) => {
   const waited = String(said || "").match(/had not registered after (\d+)\s*s/);
   return waited ? `Waited ${waited[1]} s` : null;
@@ -1161,10 +1161,12 @@ sheet.addEventListener("input", (e) => {
   else if (el.id === "t-goal") c.goal = el.value;
   else if (el.id === "t-repo") {
     c.repo = el.value;
-    if (c.error) { // typing in Repo answers the refusal: its word and outline go, the field keeps its focus
+    if (c.error || c.repoWord) { // typing in Repo answers the refusal: its words and outline go, the field keeps its focus
       c.error = null;
+      c.repoWord = null;
       el.removeAttribute("aria-invalid");
       sheet.querySelector(".withword .state")?.remove();
+      sheet.querySelector(".compose footer .state")?.remove();
     }
     return;
   }
@@ -1230,7 +1232,7 @@ document.addEventListener("click", async (e) => {
       if (answer.ok) { await read(); break; }
       // fin: "Not restored", then each held member as its chip, "on", and the active team that holds it, read from the
       // teams this page already has; the daemon's own sentence goes to the console log, never onto the screen
-      console.warn("restore refused:", refusalOf(answer, "Not restored"));
+      refusedAs(answer, "Not restored", `restore ${tm.id}`);
       ui.failed.set(`restore:${tm.id}`, tm.slots.filter((s) => s.session).flatMap((s) => alsoOn(tm, s.session).map((name) =>
         `<span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span> on ${esc(name)}`)));
       render();

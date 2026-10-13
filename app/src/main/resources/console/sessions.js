@@ -30,12 +30,6 @@ const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...se
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
-/** The daemon's own sentence for a refused call, or a plain one when it sent none. */
-function refusalOf(answer, fallback) {
-  if (answer.status === 0) return "splice did not answer. It may not be running.";
-  return answer.body?.error || `${fallback} (${answer.status}).`;
-}
-
 /** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
  *  all, and the daemon's sentence, or the status it answered, to the console's log under [what], never on the screen. */
 function refusedAs(answer, word, what) {
@@ -156,7 +150,7 @@ async function readLog(s, before = "end") {
   const held = state.logs[s.id];
   if (!res.ok) {
     // gone reads No transcript and a failed read Not read; the daemon's own words go to the console, never the page (fin)
-    if (res.status !== 404) console.warn(refusalOf(res, "The conversation could not be read"));
+    if (res.status !== 404) refusedAs(res, NOT_READ, `conversation ${s.id}`);
     state.logs[s.id] = held && before !== "end" ? { ...held, error: NOT_READ }
       : { messages: null, error: res.status === 404 ? null : NOT_READ };
   } else if (res.body?.state === "off") {
@@ -912,7 +906,7 @@ async function continueOn(s, head, model, label, clear = false) {
   if (res.ok) { ui.focusSay = true; if (res.body?.session_id && ui.open === s.id) ui.open = res.body.session_id; }
   // a move that did not come back went on where it was (MoveArrival): its card says so, with Try again
   else if (res.body?.moved === false) ui.failed.set(s.id, { ...res.body, unmoved: true, to: head, model, label: label || head, was: s.head, wasModel: s.model });
-  else ui.failed.set(s.id, refusalOf(res, "It could not be moved"));
+  else ui.failed.set(s.id, refusedAs(res, "Not moved", `move ${s.id}`));
   await reload();
 }
 /** Copy his words, then clear and move. The clear waits on the clipboard: a button that says Copy never clears words
@@ -975,7 +969,7 @@ const failedHtml = (s, f, pane) => (!f ? "" : f.unmoved ? unmovedHtml(s, f, pane
 async function answer(s, choice) {
   ui.answered.set(s.id, { at: Date.now(), choice, offer: state.screens[s.id] }); ui.failed.delete(s.id); render({ stick: false });
   const res = await API.post(sessionPath(s, "answer"), { choice });
-  if (!res.ok) { ui.answered.delete(s.id); ui.failed.set(s.id, refusalOf(res, "The answer did not reach it")); }
+  if (!res.ok) { ui.answered.delete(s.id); ui.failed.set(s.id, refusedAs(res, "Not sent", `answer ${s.id}`)); }
   await reload();
 }
 
@@ -995,7 +989,7 @@ async function send(s, text, clear = false) {
   }
   ui.sending.delete(s.id);
   if (res.ok) ui.drafts[s.id] = "";
-  else ui.failed.set(s.id, refusalOf(res, deny ? "The refusal did not reach it" : "The message did not reach it"));
+  else ui.failed.set(s.id, refusedAs(res, "Not sent", `${deny ? "refusal" : "message"} ${s.id}`));
   ui.focusSay = true;
   await reload();
 }
@@ -1005,7 +999,7 @@ async function note(s, text) {
   const res = await API.post(`/api/sessions/${encodeURIComponent(s.id)}/message`, { text });
   ui.sending.delete(s.id);
   if (res.ok) { ui.drafts[s.id] = ""; ui.noted.set(s.id, Date.now()); setTimeout(() => { ui.noted.delete(s.id); render({ stick: false }); }, 4000); }
-  else ui.failed.set(s.id, refusalOf(res, "The note did not reach it"));
+  else ui.failed.set(s.id, refusedAs(res, "Not sent", `note ${s.id}`));
   ui.focusSay = true;
   await reload();
 }

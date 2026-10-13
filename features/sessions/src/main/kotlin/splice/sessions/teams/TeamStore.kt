@@ -80,7 +80,6 @@ public data class Team(
     val id: String = "",
     val name: String,
     val goal: String = "",
-    val features: List<String> = emptyList(),
     /** The git root the team works in (the project id, FEATURES.md 4.14). */
     val repo: String = "",
     val archived: Boolean = false,

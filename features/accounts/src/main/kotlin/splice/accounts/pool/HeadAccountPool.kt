@@ -51,12 +51,15 @@ public data class HeadAccountPoolView(
     val blockedUntilEpochSecondsByLabel: Map<String, Long> = emptyMap(),
 ) {
     /** Null when the selection is unknown: a rejected selection never names the primary, on any
-     *  surface (status line, usage payload, CLI text, doctor report alike). */
+     *  surface (status line, usage payload, CLI text, doctor report alike). A head-wide view, which has no
+     *  session's choice, names the login the next turn goes to by the real selector order, and the primary
+     *  only when the pool names none: status and doctor named the primary while the next turn went to a backup. */
     public fun selectedAccount(): HeadAccountView? =
         if (selectionUnknown) {
             null
         } else {
             selectedLabel?.let { selected -> accounts.find { it.label == selected } }
+                ?: nextTargetLabel?.let { next -> accounts.find { it.label == next } }
                 ?: accounts.find(HeadAccountView::primary)
         }
 

@@ -65,6 +65,8 @@ internal class TurnUsage(
             ),
             priced = priced,
             gap = gap,
+            cold = row.facts.cacheCold,
+            onAccount = row.facts.account != null,
             ending = when {
                 row.outcome == OutcomeTag.RATE_LIMITED.wire ||
                     row.outcome == OutcomeTag.RATE_LIMIT_RELAYED.wire -> Ending.LIMITED
@@ -129,6 +131,8 @@ internal class TurnUsage(
         val priced: Priced,
         val gap: PriceGap?,
         val ending: Ending = Ending.OTHER,
+        val cold: Boolean? = null,
+        val onAccount: Boolean = false,
     )
 
     /** How a request ended, as the Usage chart splits a slice: refused for rate, failed some other way, or neither. */
@@ -153,6 +157,12 @@ internal class TurnUsage(
         private var failedRequests = 0L
         private var limitedRequests = 0L
 
+        // v0.4.0 section 11: the turns that ran cache-cold because the session moved to this account, and the input they
+        // sent; a row on an account that predates the mark is counted apart, so it never reads as warm
+        private var coldRequests = 0L
+        private var coldInput: Long? = null
+        private var coldUnmarked = 0L
+
         /** V4-444: a code-mode step is a reply splice wrote itself, with nothing sent to a provider, so it is
          *  LEFT OUT of the requests. Counting it as a request made every window with steps report requests that
          *  never reached a provider, each one also missing its input and output because a step has no token counts,
@@ -167,6 +177,17 @@ internal class TurnUsage(
             if (row.gap != null) gaps[row.gap] = gaps.getValue(row.gap) + 1
             if (row.ending == Ending.LIMITED) limitedRequests++
             if (row.ending != Ending.OTHER) failedRequests++
+            addCold(row)
+        }
+
+        private fun addCold(row: Counted) {
+            when {
+                row.cold == true -> {
+                    coldRequests++
+                    row.tokens.incoming?.let { coldInput = (coldInput ?: 0) + it }
+                }
+                row.cold == null && row.onAccount -> coldUnmarked++
+            }
         }
 
         private fun addTokens(tokens: Tokens) {
@@ -198,6 +219,9 @@ internal class TurnUsage(
             put("rate_limited_requests", limitedRequests)
             put("missing_input_requests", missingInput)
             put("missing_output_requests", missingOutput)
+            put("cold_requests", coldRequests)
+            put("cold_input_tokens", coldInput)
+            put("cold_unmarked_requests", coldUnmarked)
         }
     }
 }

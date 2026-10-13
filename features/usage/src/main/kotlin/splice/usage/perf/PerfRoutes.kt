@@ -328,6 +328,8 @@ public class PerfRoutes(
         put("account", reading.key(row.facts.account))
         put("account_label", reading.label(row.facts.account))
         put("compact", row.facts.compact)
+        // the first turn on an account the session was not on: its cache is cold (v0.4.0 section 11); null before the field
+        put("cache_cold", row.facts.cacheCold)
         // V4-444: whether prompts and answers were saved for this turn, and what the upstream itself said when the
         // upstream is what failed. Both pass through as the writer set them, null where the row carries neither.
         put("capture", row.facts.captured)

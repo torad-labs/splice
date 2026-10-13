@@ -274,6 +274,9 @@ const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<
 // error). A ping is heard: every byte the provider sends resets idle_ms (SseReader onBytes), so a model thinking
 // with pings never reads Stalled (Marlin; desk walk, Oct 10: idle stayed under 5 s across a 36 s pinging hold).
 const STALL_SHOWN_MS = 30000;
+// The fallback only: a head whose gate serves its own tiers (/api/heads gate.first_byte_timeout_ms before any output,
+// gate.stream_idle_ms after) reads Stalled once idle passes that tier, the point where splice itself treats the
+// silence as one (splice-lead, Oct 13, gap 396).
 // why: under five seconds of quiet is ordinary streaming; a countdown that flickered on every pause would be noise.
 const RESUME_SHOWN_MS = 5000;
 // why: the continuations a round may spend on re-anchors (DEFAULT_MAX_CONTINUATIONS, Turn.kt:266); past them nothing resumes.
@@ -288,9 +291,11 @@ const GAVE_UP_ENDINGS = new Set(["error:upstream-failed", "error:turn-cap"]);
  *  with none. With none, from how its newest request ended (the row's ended_by): turned away at a spent plan or pool
  *  (At limit, until the window named comes back) or for want of a credential (Signed out). A plan name has no source
  *  yet, so `plan` is null. Sessions and Teams both read it (Marlin, Oct 10). `at` is when it was read, so the
- *  counters move each second between reads. */
-function stallOf(turn, reanchorMs, endedBy) {
+ *  counters move each second between reads. [head] is the page's /api/heads entry ({ reanchorMs, idleMs, firstByteMs });
+ *  a bare number is read as reanchorMs alone, so a caller not yet passing the entry keeps the fixed stall threshold. */
+function stallOf(turn, head, endedBy) {
   const at = Date.now();
+  const { reanchorMs, idleMs, firstByteMs } = head !== null && typeof head === "object" ? head : { reanchorMs: head };
   if (!turn) {
     if (endedBy?.outcome === "error:auth-missing") return { kind: "signout", at };
     if (GAVE_UP_ENDINGS.has(endedBy?.outcome)) return { kind: "gaveup", word: OUTCOME_WORD[endedBy.outcome], n: endedBy.retries ?? 0, since: endedBy.run_since_ms ?? null, at };
@@ -306,7 +311,8 @@ function stallOf(turn, reanchorMs, endedBy) {
   // provider has begun answering.
   const wontResume = turn.seen_output === true && turn.will_resume === false;
   if (reanchorMs && !wontResume && (turn.resumes ?? 0) < MAX_CONTINUATIONS && idle >= RESUME_SHOWN_MS) return { kind: "silent", ms: idle, resumeMs: Math.max(0, reanchorMs - idle), at };
-  if (idle >= STALL_SHOWN_MS) return { kind: "silent", ms: idle, wontResume, at };
+  const stallMs = (turn.seen_output ? idleMs : firstByteMs) ?? STALL_SHOWN_MS;
+  if (idle >= stallMs) return { kind: "silent", ms: idle, wontResume, at };
   return null;
 }
 
@@ -337,14 +343,14 @@ const gaveUpNeeds = (s) => gaveUp(s)
 const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s) : s.state === "idle" && heldByEnding(s));
 /** A /api/sessions row as every page reads it: its state, and its stall from the live turn splice holds for it (the
  *  head's re-anchor tier from /api/heads). Sessions draws its cards from this; Teams and Requests rank projects by it. */
-function rowLook(row, turn, reanchorMs) {
+function rowLook(row, turn, head) {
   const ended = row.availability === "gone";
   // A stale row (alive, but its registry entry not refreshed in 30 minutes) is not read as working off its own status,
   // only off a live turn splice holds for it (spec §4: unavailable is never shown active; splice-providers' spec pass,
   // Oct 12). Sessions' card already says "Not heard from since", so it takes no word here.
   const working = !ended && (Boolean(turn) || (row.availability !== "stale" && (row.status === "working" || row.status === "busy")));
   const state = ended ? "ended" : row.waiting_for ? "needs" : working ? "working" : "idle";
-  return { state, stall: state === "working" || state === "idle" ? stallOf(turn, reanchorMs, row.ended_by) : null };
+  return { state, stall: state === "working" || state === "idle" ? stallOf(turn, head, row.ended_by) : null };
 }
 /** How urgent a session is, in the cards' rank: waiting on him, stalled, working, the rest. */
 const rankOf = (s) => (s.state === "needs" || gaveUpNeeds(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
@@ -574,7 +580,7 @@ function projectGroups(rows, turns = {}, heads = []) {
   const live = (r) => r.availability !== "gone";
   const ranks = new Map(rows.map((r) => {
     const turn = turns[r.session_id] ?? null;
-    return [r, rankOf(rowLook(r, turn, heads.find((h) => h.key === turn?.head)?.reanchorMs))];
+    return [r, rankOf(rowLook(r, turn, heads.find((h) => h.key === turn?.head)))];
   }));
   const m = new Map();
   for (const r of rows) {

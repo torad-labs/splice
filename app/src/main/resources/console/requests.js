@@ -256,7 +256,7 @@ async function readStanding() {
   ]);
   state.error = heads.ok ? null : LIST_NOT_READ;
   if (!heads.ok) console.warn(`commands: ${refusalOf(heads, "no answer")}`);
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null }));
   state.heads.push(...retiredHeads(retired, state.heads));
   // A provider splice reaches on this machine's own loopback is served from THIS COMPUTER, whatever it is called:
   // his own model servers and the tunnel to a rented GPU both answer at 127.0.0.1 (splice.toml base_url), and both

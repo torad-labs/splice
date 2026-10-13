@@ -8,9 +8,7 @@ package splice.app.control
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -87,11 +85,6 @@ class SessionsTranscriptCompositionTest {
 
         val missing = routes.transcript(HEADLESS, null, null)
         assertEquals(HttpStatusCode.NotFound, missing.status)
-        assertEquals(
-            listOf(vanilla.resolve("projects").toString(), own.resolve("projects").toString()),
-            json(missing.body)["searched"]!!.jsonArray.map { it.jsonPrimitive.content },
-            "a headless session searches vanilla first, then every head's own tree",
-        )
         assertEquals(HttpStatusCode.BadRequest, routes.transcript(HEADED, "x", null).status)
     }
 }

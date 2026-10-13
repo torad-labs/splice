@@ -352,7 +352,9 @@ function dataRow(r) {
   if (x === undefined) return drow({ name: r.name, yours: r.yours, door: r.door, amount: READING });
   if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
-  const keep = (r.id === "edges" || r.id === "trace" || r.id === "originals") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
+  // the copies keep their own days (the President, Oct 12), so their row sets them where the others show the history window
+  const keep = r.id === "originals" ? `${ctlHtml(KNOB.transcriptCopyDays, val("transcriptCopyDays"))}${saidHtml("transcriptCopyDays")}`
+    : (r.id === "edges" || r.id === "trace") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   const said = r.knob ? saidHtml(r.knob) : "";

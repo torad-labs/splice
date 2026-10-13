@@ -801,6 +801,8 @@ command = "claude-splice"
 # keepTranscriptCopies = "true"                            # HOT, global: copy a conversation's original before a move to another
 #                                                           #     model rewrites it; false stops new copies, and "Continue on"
 #                                                           #     becomes one-way. Delete now clears the held ones.
+# transcriptCopyDays = "30"                                 # days; (HOT, global) a transcript copy is kept this long, at least 1,
+#                                                           #     apart from the history window; each new copy removes older ones.
 # keepCompactionSummaries = "true"                          # HOT, global: park a finished compaction answer for Claude Code's
 #                                                           #     retry; false parks none, and a retried compaction runs again.
 # keepCodeModeWork = "true"                                 # HOT, global: write code mode's journal to disk; false keeps it in

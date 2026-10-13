@@ -97,6 +97,9 @@ public class SpliceConfig internal constructor(
     /** Whether a transcript's original is copied before a move to another model rewrites it. Read LIVE, per move. */
     public val keepTranscriptCopies: Boolean get() = bool(Knob.KEEP_TRANSCRIPT_COPIES)
 
+    /** How many days a transcript copy is kept, at least one; read each time a copy is made. */
+    public val transcriptCopyDays: Int get() = long(Knob.TRANSCRIPT_COPY_DAYS).toInt().coerceAtLeast(1)
+
     /** Whether a compaction's answer is parked for Claude Code's retry. Read LIVE, per save. */
     public val keepCompactionSummaries: Boolean get() = bool(Knob.KEEP_COMPACTION_SUMMARIES)
 

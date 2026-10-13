@@ -38,10 +38,10 @@ package splice.core.config
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
 // per-head overridable), projectsFolders (per sessions settings ask, keyed the same way) and
 // budgetDefaultAction (per budget ask, unkeyed). The three keep switches do have readers: keepTranscriptCopies
-// (CopyingOriginals, per move), keepCompactionSummaries (KeepingRecordings, per save) and keepCodeModeWork
-// (CodeModeJournaling, per save). That is thirty-eight, which is every knob
-// here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
-// agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
+// (CopyingOriginals, per move, with transcriptCopyDays read by that same copy), keepCompactionSummaries
+// (KeepingRecordings, per save) and keepCodeModeWork (CodeModeJournaling, per save). That is thirty-nine, which is
+// every knob here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this
+// line agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
 // line and loses its restartRequired flag, in that same commit. A [headOnly] knob can never join it: its one
 // layer is [heads.KEY.overrides], which ConfigService holds from boot, where the state config.json and env are
@@ -226,6 +226,11 @@ public enum class Knob(
     // by default, both read LIVE by their writers, so a PATCH stops the next copy with no restart. Off keeps what is
     // already held until Delete now.
     KEEP_TRANSCRIPT_COPIES("keepTranscriptCopies", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+
+    // How many days a transcript copy is kept, apart from the history window (the President's ruling, Oct 12):
+    // each new copy first removes the copies of sessions last used before now minus this. Read live by that copy,
+    // so a PATCH applies to the next one.
+    TRANSCRIPT_COPY_DAYS("transcriptCopyDays", KnobKind.NUMBER, listOf(), KnobDefault.Count(30L)),
     KEEP_COMPACTION_SUMMARIES("keepCompactionSummaries", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
     KEEP_CODE_MODE_WORK("keepCodeModeWork", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
     UPSTREAM_RETRIES(

@@ -20,7 +20,8 @@ internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }
  *  by name (HeadOverrideWrite). Each was traced to its reader on Oct 12 (§9 audit). Live: ingressReadIdleMs and
  *  materializationHeapBytes (the shared ingress and materialization gate), the four MCP host limits (one host for every
  *  head), transcriptView (console routes), budgetDefaultAction (budget PUT), historyRetentionDays (the one history
- *  window), activityRetentionDays, messageEdges and keepTranscriptCopies (daemon-wide stores and moves). Read at start:
+ *  window), activityRetentionDays, messageEdges, keepTranscriptCopies and transcriptCopyDays (daemon-wide stores and
+ *  moves). Read at start:
  *  debug, controlPort, supervisorUnit, mcpSlice and activityStoreHeads. A knob that gains a per-head reader leaves it.
  *
  *  The history window is the one exception to "no head reads it": historyRetentionDays, and perfArchiveRetentionDays,
@@ -42,6 +43,7 @@ public val daemonWideKnobs: Set<Knob> = setOf(
     Knob.ACTIVITY_RETENTION_DAYS,
     Knob.MESSAGE_EDGES,
     Knob.KEEP_TRANSCRIPT_COPIES,
+    Knob.TRANSCRIPT_COPY_DAYS,
     Knob.DEBUG,
     Knob.CONTROL_PORT,
     Knob.SUPERVISOR_UNIT,

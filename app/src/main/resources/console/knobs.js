@@ -95,6 +95,7 @@ const KNOBS = (() => {
     K("messageEdges", "Save who messaged whom", { k: "flag" }, true, { home: "data" }),
     K("transcriptView", "Read your Claude Code conversations", { k: "flag" }, true, { home: "data" }),
     K("keepTranscriptCopies", "Keep a copy before moving a conversation to another model", { k: "flag" }, true, { home: "data", also: "transcript copies originals continue on another model resume" }),
+    K("transcriptCopyDays", "Keep transcript copies for", { k: "count", opts: [7, 14, 30, 90, 365], unit: "days", min: 1 }, 30, { home: "data", also: "transcript copies originals retention days" }),
     K("keepCompactionSummaries", "Keep compaction summaries for a retry", { k: "flag" }, true, { home: "data", also: "compaction summary retry parked" }),
     K("keepCodeModeWork", "Keep code mode's journal on disk", { k: "flag" }, true, { home: "data", also: "code mode journal work scripts restart" }),
     K("mcpMaxServers", "Run at most", { k: "count", opts: [8, 16, 32, 64], unit: "servers" }, 32,

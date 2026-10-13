@@ -199,7 +199,13 @@ internal object Concentration {
     // By this law's formula, counted by hand: C 141.0 -> 105.0 (logic 122 -> 98, concerns 10 -> 7) against a
     // denominator near 41, ratio 3.44 -> about 2.6; the two new files are C near 47 and 41, and splice.app.head's
     // median moves 90.5 -> 89.0. The train's run of this law is the measurement. 15 -> 14.
-    const val RATCHET_MAX_HIGH = 14
+    // 2026-10-13, later still: ControlPlane.kt leaves by seven seams, behavior unchanged: the MCP host wiring, the
+    // launch service, the session source and driver, the health readings, the control server's parts, the console
+    // stores and the plugin-flag checks each move to a file of their own in splice.app, built at the same point in the
+    // same order. Measured with a port of this law's census over the tree on 6ec82bd9d: ControlPlane.kt 7.29 -> 2.88
+    // (C 463.0 -> 187.5, denominator 65.0), the seven new files 0.58 to 2.52, and InflightGate.kt stays at 2.95 after
+    // 6ec82bd9d. The band reads 13. The train's run of this law is the measurement. 14 -> 13.
+    const val RATCHET_MAX_HIGH = 13
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

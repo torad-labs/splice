@@ -3,111 +3,38 @@
 // materializer it takes, and the boundary-guarded srv.start() bind. Returns the started
 // ControlServer, or null when the bind failed (another process owns the control port) — the
 // caller's responsibility is to stop what it already started and exit cleanly in that case.
+// 2026-10-13: the MCP host wiring left for ControlMcpWiring.kt, the LaunchService for ControlLaunchWiring.kt, the
+// session source and driver for ControlSessions.kt, the readings and /health body for ControlHealth.kt, the guard and
+// restart successor for ControlServerParts.kt, the console stores for ControlStores.kt and the plugin-flag checks for
+// ControlPluginFlags.kt, each by its own seam with its state and its order unchanged (concentration, splice-lead).
 package splice.app
 
 import kotlinx.coroutines.cancel
 import splice.app.auth.SignInPlanner
 import splice.app.auth.claude.ClaudeAccountsArm
-import splice.app.auth.claude.ClaudeAccountsPort
 import splice.app.auth.claude.ClaudeAccountsSource
-import splice.app.auth.claude.ClaudeLoginOwner
-import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.auth.claude.LoginJoined
-import splice.app.cli.AdminSupport
 import splice.app.control.ControlOwnership
 import splice.app.control.ControlReadings
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
-import splice.app.control.RuntimeNotAnswering
-import splice.app.control.RuntimeUnread
-import splice.app.control.TopologyDigest
-import splice.app.control.TurnPathStalled
-import splice.app.control.api.ControlAudit
-import splice.app.control.api.ControlHealthReport
-import splice.app.control.api.HeadReadiness
-import splice.app.control.api.HeadSignals
-import splice.app.control.api.McpHubVerdict
-import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
-import splice.app.daemon.DaemonMaterializer
-import splice.app.daemon.TopologyStaleness
 import splice.app.head.HeadProbeReadings
-import splice.app.launch.HookProcessExec
-import splice.app.probe.PlaygroundProviders
-import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
-import splice.app.sources.PerfSourceFiles
-import splice.app.sources.mcp.McpAttached
-import splice.client.ClaudeConfigMaterializer
-import splice.client.mcp.ClaudeCodeVersionsDir
-import splice.client.mcp.HostedMcpOverlay
-import splice.client.mcp.McpAccessKey
-import splice.client.mcp.McpHubFront
-import splice.client.mcp.McpHubLaunch
-import splice.client.mcp.McpInventory
-import splice.client.mcp.McpLaunchPlanner
-import splice.client.mcp.McpRootsVerdicts
-import splice.client.mcp.McpSharing
-import splice.client.mcp.PluginFlagChecks
-import splice.client.mcp.PluginFlagGate
-import splice.client.mcp.PluginFlagHolds
-import splice.client.mcp.PluginFlagVerdicts
-import splice.client.resume.AuthHeaderFile
-import splice.client.resume.ResumeAcrossHeads
-import splice.client.resume.ResumeHookTarget
-import splice.client.resume.TranscriptModelRewrite
-import splice.client.resume.originals.CopyingOriginals
-import splice.client.resume.originals.OriginalsCutoff
-import splice.client.resume.originals.TranscriptOriginals
-import splice.client.wrap.WrappedHead
-import splice.configuration.topology.TopologyStale
-import splice.control.mcp.APP_MCP_SLICE
-import splice.control.mcp.McpHandshakeBudget
-import splice.control.mcp.McpHost
-import splice.control.mcp.McpHostConfig
-import splice.control.mcp.McpIdleBudget
-import splice.control.mcp.McpRequestBudget
-import splice.control.mcp.McpServerCeiling
-import splice.core.TESTED_CLAUDE_CODE
 import splice.core.compaction.CompactionInstructions
-import splice.core.config.Knob
-import splice.core.config.TurnKey
-import splice.core.config.UserHome
-import splice.core.perf.KeptHistory
 import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
-import splice.head.admission.AdmissionErrorBody
-import splice.http.ingress.HeapIngress
-import splice.launch.LaunchSpec
-import splice.launch.recipe.LaunchService
-import splice.lifecycle.restart.DetachedDaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
-import splice.lifecycle.restart.SuccessorInstall
 import splice.oauth.codex.CodexRefresh
-import splice.sessions.http.SessionDriver
-import splice.sessions.prompt.SlotInstructions
-import splice.sessions.registry.ArrivalJoinedSessions
-import splice.sessions.registry.ProcessEnvironment
-import splice.sessions.registry.RememberedPanes
-import splice.sessions.registry.RouteOfPid
-import splice.sessions.registry.SessionRegistry
-import splice.sessions.registry.SessionSource
-import splice.tmux.TmuxTerminal
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
-import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
-import kotlin.time.Duration.Companion.days
-import kotlin.time.Duration.Companion.milliseconds
-
-// why: the port the MCP hub front listens on, the address shape splice-config set (docs/specs/mcp-hub.md step 6).
-private const val MCP_HUB_FRONT_PORT = 3095
 
 internal class ControlPlane(
     /** The daemon's shared environment: its state, its settings, its management key and its log sink. */
@@ -131,37 +58,28 @@ internal class ControlPlane(
     // Views over [daemon], never copies: a stored copy would fix the value at construction.
     private val statePaths get() = daemon.statePaths
     private val config get() = daemon.config
-    private val mgmtKey get() = daemon.mgmtKey
     private val log get() = daemon.log
     private val boundary = DaemonBoundary()
-    private val environment = ProcessEnvironment()
-    private var claudeLoginOwner: ClaudeLoginOwner? = null
+    private val sessionWiring = ControlSessions(daemon)
+    private val parts = ControlServerParts(daemon, topology)
+    private val claudeLogin = ClaudeLoginSlot()
 
     /** Captures the owner only at send time, after launch composition has wired the live native places. */
     internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
         // The row records the account's ref, never its email or id (labels only, 2026-10-12).
-        claudeLoginOwner?.accountForCredential(key)?.ref
+        claudeLogin.owner?.accountForCredential(key)?.ref
     }
 
     /** Each head's sent credential digest, read by the same late-wired owner: which login carries that head, and
      *  which carries each session the request named. */
     internal val sentCredentials = HeadSentCredentials { head, session, key ->
-        claudeLoginOwner?.sent(head, session, key)
+        claudeLogin.owner?.sent(head, session, key)
     }
 
-    // V4-410 follow-on: the add and remove of a Claude head's subscriptions, read by the accounts port's
-    // `client` arm (ClaudeAccountsArm). Null until a Claude head's login machinery is built.
-    private var claudeAccounts: ClaudeAccountsPort? = null
-
-    // The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it.
-    private var mcpInventory: McpInventory? = null
-    private var mcpSharing: McpSharing? = null
-
-    // The sessions the hub binds to each server, kept for GET /api/mcp/memory beside the census.
-    private var mcpAttached: McpAttached? = null
-
-    /** Whether the MCP hub runs, decided once as [mcpHost] builds it; /health reports it for doctor. */
-    private var mcpHub: McpHubVerdict? = null
+    /** The MCP host wiring: its planner and host, and the census, sharing, attached sessions and hub verdict it
+     *  keeps. */
+    private val mcp = ControlMcpWiring(daemon, mcpHosting)
+    private val health = ControlHealth(topology, clientVersions, mcp)
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
@@ -174,10 +92,9 @@ internal class ControlPlane(
     internal val buildInputs = HeadBuildInputs(config, signInPlanner, modelRosters)
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
 
-    /** MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, and the background check
-     *  that records it. Daemon asks for a pass at start; a launch on a version with no verdict asks again. */
-    private val pluginFlags = PluginFlagVerdicts(statePaths.stateDir, ClaudeCodeVersionsDir(UserHome.dir()).path())
-    internal val pluginFlagChecks = PluginFlagChecks(pluginFlags, log, probeScope, ProcessDispatchers().io())
+    /** MCP hub step 6: the --plugin-dir-no-mcp verdicts and their check (ControlPluginFlags). */
+    private val pluginFlags = ControlPluginFlags(daemon, probeScope)
+    internal val pluginFlagChecks = pluginFlags.checks
 
     /** The daemon's one record of failed limits reads: each login's poller writes it, /api/accounts reads it. */
     internal val quotaReadFailures = QuotaReadFailures()
@@ -203,100 +120,35 @@ internal class ControlPlane(
             statePaths,
             log,
             identities = claudeIdentities,
-            nativePlaces = splice.accounts.claude.ClaudeLoginPlacesSource { claudeLoginOwner },
+            nativePlaces = splice.accounts.claude.ClaudeLoginPlacesSource { claudeLogin.owner },
         ),
     )
 
-    /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */
-    internal val teams = ConsoleWiring.teamStore(statePaths)
+    /** The console's stores and its one publisher (ControlStores): Daemon hands [console] to HeadServerFactory before
+     *  any head exists, and [start] hands the stores to the ControlServer. */
+    private val stores = ControlStores(daemon, probeScope)
+    internal val teams = stores.teams
+    internal val budgets = stores.budgets
+    internal val alerts = stores.alerts
+    internal val perfRows = stores.perfRows
+    internal val foregroundTools = stores.foregroundTools
+    internal val playgroundProviders = stores.playgroundProviders
+    internal val playground = stores.playground
+    internal val console = stores.console
 
-    /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget and alert-settings stores. */
-    internal val budgets = ConsoleWiring.budgetStore(statePaths)
-    internal val alerts = ConsoleWiring.alertStore(statePaths)
-
-    // The window a person set on Settings > Your data, read at every use so shortening it needs no
-    // restart: this one reader is what every head's perf, archive and economics store asks.
-    internal val perfRows = PerfSourceFiles(statePaths, KeptHistory { config.getConfig().historyWindow })
-    internal val foregroundTools = splice.sessions.registry.ForegroundTools()
-
-    /** V4-444: each assembled head's provider, registered by ManagedHeadFactory, so the Playground sends
-     *  through the head's own request builder rather than a hand-built copy of it. */
-    internal val playgroundProviders = PlaygroundProviders()
-
-    /** V4-133: POST /api/playground's ONE upstream probe, sending through [playgroundProviders]. Deviation, Oct 12, 2026
-     *  (marlin): the send is recorded like a request and weighed by its command's budget (see UpstreamPlaygroundProbe). */
-    internal val playground = UpstreamPlaygroundProbe(playgroundProviders)
-
-    /** V4-134: the daemon's ONE console publisher, which every head reports through. Held here, like [probeScope],
-     *  because Daemon hands [console] to HeadServerFactory before any head exists, and [start] hands its stores to
-     *  the ControlServer. */
-    internal val console = ConsoleEventPublisher(
-        ConsoleWiring.activityStores(statePaths, config),
-        slots = SlotInstructions(teams, ConsoleWiring.sessionAddress(statePaths)),
-        // V4-133 review: the budgets and alerts above, enforced on every head's turns (BudgetWiringPinTest).
-        budgets = ConsoleWiring.budgetEnforcement(perfRows, budgets, alerts, probeScope, log),
-        // V4-252: a SendMessage name is stored with the session holding it then (ConsoleActivityPublishTest).
-        names = ConsoleWiring.nameHolders(statePaths),
-    )
-
-    /** The daemon's one materializer: the real hook exec (V4-103), and the control port the resume hook
-     *  (V4-169) calls back on with the turn key's header file — handed over as its SOURCE, written
-     *  current by each install, so start() does no file I/O here. Its own member so the start()
-     *  budget holds and the call stays greppable. */
-    private fun materializer(home: Path, sharing: McpSharing, controlPort: Int): ClaudeConfigMaterializer =
-        DaemonMaterializer.build(
-            home,
-            sharing.rewrite(),
-            hookExec = HookProcessExec.exec,
-            resumeHook = ResumeHookTarget(controlPort, AuthHeaderFile(TurnKey(mgmtKey)::headerFile)),
-        )
-
-    /** The one LaunchService, over the daemon's home: its wrap (V4-129) writes and reads the SAME
-     *  home the materializer's DR-102 guard protects, so the vanilla dir wrap targets is the one
-     *  the guard refuses to every other head. */
-    private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
-        val materializer = materializer(home, sharing, controlPort)
-        val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
-        val window = OriginalsCutoff {
-            System.currentTimeMillis() - config.getConfig().transcriptCopyDays.days.inWholeMilliseconds
-        }
-        val originals = TranscriptOriginals(statePaths, keeping = copying, cutoff = window, log = log)
-        val rewriter = TranscriptModelRewrite(originals = originals)
-        val wrap = WrappedHead(home)
-        val arm = ClaudeLoginWiring(
-            statePaths,
+    /** The daemon's one LaunchService, built at [start]: it fills [claudeLogin] as it wires the Claude login arm. */
+    private val launch = ControlLaunchWiring(
+        daemon,
+        topology,
+        pluginFlags.holds,
+        ClaudeLoginInputs(
             probeScope,
-            wrap,
-            log,
             splice.usage.quota.ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
             claudeIdentities,
             providerAssembly.claudePoolChanges,
-        ).create(topology.path)
-        val owner = arm.owner
-        claudeLoginOwner = owner
-        claudeAccounts = arm.accounts
-        owner.places().map { it.head }.distinct().forEach(providerAssembly.claudePoolChanges::publish)
-        return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
-            it.loginGuard = owner
-            it.hubLaunch = McpHubLaunch(
-                McpLaunchPlanner(home),
-                sharing,
-                McpAccessKey(mgmtKey::get),
-                McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub")),
-                log,
-                // A version with no verdict yet launches without the flag and asks for its check, which runs apart.
-                PluginFlagGate(
-                    TESTED_CLAUDE_CODE,
-                    PluginFlagHolds { version ->
-                        pluginFlags.holds(version).also { held ->
-                            if (!held && version !in pluginFlags.all()) pluginFlagChecks.request()
-                        }
-                    },
-                ),
-                overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log),
-            )
-        }
-    }
+            claudeLogin,
+        ),
+    )
 
     internal fun cancelProbes() {
         probeScope.cancel()
@@ -305,15 +157,6 @@ internal class ControlPlane(
     /** The sockets a manager handed the daemon, assigned by Daemon before [start] (see [AdoptedServing]). The
      *  default binds the control port itself, which is every start without a socket manager. */
     internal var adopted: AdoptedServing = AdoptedServing()
-
-    /** The per-head readings the heads route and /health share, read from the daemon's probes per request. */
-    private fun headSignals(heads: Map<String, ManagedHead>, sessions: SessionSource, probes: HeadProbeReadings) =
-        HeadSignals(
-            heads,
-            RuntimeNotAnswering { probes.runtimeNotAnswering() },
-            sessions,
-            RuntimeUnread { probes.runtimeUnread() },
-        )
 
     /** Constructs and binds the control plane. Returns null (having already called
      *  [shutdownDaemon] and logged) when the bind fails — defense in depth for the
@@ -340,41 +183,21 @@ internal class ControlPlane(
         // is the one production read of the knob — the accessor had no consumer before V4-110.
         if (config.getConfig().debug) log("[daemon] debug logging enabled\n")
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
-        val sharing = mcpSharing(controlPort)
-        val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
+        val sharing = mcp.planner(controlPort)
+        val mcpHost = mcp.host(home, sharing, heads.values.mapNotNull { it.launchSpec })
         // One session source serves the sessions routes and the heads route's client pids.
-        val sessions = ArrivalJoinedSessions(
-            SessionRegistry(
-                home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
-                RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
-                heard = console.sessionsHeard,
-                foreground = foregroundTools,
-            ),
-            console.sessionHeads,
-        )
-        val signals = headSignals(heads, sessions, probes)
-        // The request cap is asked for at every request, not resolved here once: the console's own PATCH of
-        // maxRequestBytes reaches the control listener's guard without a restart, the same way it reaches a head.
-        val guard = ControlGuard(
-            mgmtKey,
-            ControlAudit(log),
-            log,
-            HeapIngress(
-                JvmHeap.budget,
-                { config.getConfig().maxRequestBytes },
-                AdmissionErrorBody,
-                readIdleMs = { config.getConfig().ingressReadIdleMs },
-            ),
-        )
+        val sessions = sessionWiring.source(home, heads, console, foregroundTools)
+        val signals = health.signals(heads, sessions, probes)
+        val guard = parts.guard()
         val srv = ControlServer(
             adopted.control(controlPort),
             heads,
             config,
             guard,
             log,
-            readings = ControlReadings(healthReport(heads, failedHeads, headCount, probes, signals), signals),
+            readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
-                launchService = launchService(home, sharing, controlPort),
+                launchService = launch.service(home, sharing, controlPort),
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,
@@ -382,7 +205,7 @@ internal class ControlPlane(
             ),
         )
         wireConsolePorts(srv)
-        wireRestartSuccessor(srv, controlPort)
+        parts.wireRestartSuccessor(srv, controlPort)
         return if (ownership.bind(srv, controlPort)) srv else null
     }
 
@@ -399,134 +222,32 @@ internal class ControlPlane(
      *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
 
-    /** The /health body: the head set's verdict, the per-head readings, and the booted config's identity. */
-    private fun healthReport(
-        heads: Map<String, ManagedHead>,
-        failedHeads: FailedHeads,
-        headCount: Int,
-        probes: HeadProbeReadings,
-        signals: HeadSignals,
-    ): ControlHealthReport {
-        // V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). A
-        // control plane built without one publishes the booted digest and compares bytes, as before.
-        val running = topology.running
-        return ControlHealthReport(
-            readiness = HeadReadiness(heads, failedHeads, headCount, TurnPathStalled { probes.stalledKeys() }),
-            signals = signals,
-            topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
-            topologyStale = running?.let { TopologyStale(it::stale) }
-                ?: TopologyStaleness.probe(topology.path, topology.digest),
-            clientVersions = clientVersions,
-            mcpHub = mcpHub,
-        )
-    }
-
     private fun wireConsolePorts(srv: ControlServer) {
         srv.ports.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
-        srv.ports.claudeLogins = claudeLoginOwner
+        srv.ports.claudeLogins = claudeLogin.owner
         srv.ports.quotaReadFailures = quotaReadFailures
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets
-        srv.ports.mcpInventory = mcpInventory
-        srv.ports.mcpSharing = mcpSharing
-        srv.ports.mcpAttached = mcpAttached
+        srv.ports.mcpInventory = mcp.inventory
+        srv.ports.mcpSharing = mcp.sharing
+        srv.ports.mcpAttached = mcp.attached
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.activity = console.stores
         srv.ports.teams = teams
-        // Oct 10, 2026: the one session driver, so a member's start and stop reach a real terminal instead of
-        // the named 503 an unwired port answers. The terminal is tmux TODAY and the port names no terminal, so
-        // the day seatd carries the six acts this line is the only one that changes. The pane record is on
-        // disk under the state dir, because a session outlives the daemon that started it: splice restarts on
-        // every install and the person's session carries on, so a record held only in memory would take the
-        // console's ability to drive exactly the sessions it had started.
-        srv.ports.sessionDriver = SessionDriver(TmuxTerminal(), RememberedPanes(statePaths.stateDir))
+        srv.ports.sessionDriver = sessionWiring.driver()
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
         // A Claude head's add and remove go through folders splice owns, which the generic accounts port refuses
         // by kind. Wrapped AFTER ConsoleWiring.wire assigns that port, and reading the arm per call, so a daemon
         // with no Claude head wraps a port that simply never answers "client".
         srv.ports.accounts = srv.ports.accounts?.let { generic ->
-            ClaudeAccountsArm(generic, ClaudeAccountsSource { claudeAccounts })
+            ClaudeAccountsArm(generic, ClaudeAccountsSource { claudeLogin.accounts })
         }
     }
 
     /** Pin the environment override to the live state directory, not its parent: the wrong parent
      *  mints a second management key and strands the daemon's prior history after restart. */
-    internal fun successorStateDir(): Path = statePaths.stateDir
-
-    /** The cold successor reuses this daemon's jar, home, config, state, and bound control port. */
-    private fun wireRestartSuccessor(srv: ControlServer, controlPort: Int) {
-        srv.wireRestartSuccessor(
-            DetachedDaemonSuccessor(
-                AdminSupport.selfJar(),
-                SuccessorInstall(UserHome.dir(), topology.path, successorStateDir(), controlPort),
-                statePaths.logsDir,
-                log,
-            ),
-        )
-    }
-
-    /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
-    private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
-        heads.entries.firstOrNull { it.value.launchSpec?.gateway?.port == port }?.key
-
-    /** The daemon's one MCP sharing planner. §8 8c: a server seen asking for roots stays per-session after a restart,
-     *  so no session loses it mid-work; the verdicts live in the state dir. */
-    private fun mcpSharing(controlPort: Int): McpSharing = McpSharing(
-        enabled = mcpHosting.enabled,
-        exclude = mcpHosting.exclude,
-        endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
-        bearer = McpAccessKey(mgmtKey::get),
-        rootsBound = McpRootsVerdicts(statePaths.stateDir.resolve("mcp-roots-bound"), log),
-        shareByDefault = mcpHosting.share,
-    )
-
-    /** V4-146: one McpGlobalRead instance for both the rewrite pipeline and the census — a second
-     *  one would double the "malformed"/"unreadable" diagnostics on the same file. Split out of
-     *  [start] to keep that budget; the census only WIDENS what `/api/mcp` can report, it never
-     *  changes what [sharing] rewrites (see McpHostingWiring.kt's header). */
-    private fun mcpHost(home: Path, sharing: McpSharing, launchSpecs: List<LaunchSpec>): McpHost {
-        val globalRead = McpGlobalRead(home, log)
-        val inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory
-        mcpInventory = inventory
-        mcpSharing = sharing
-        val config = mcpHostConfig()
-        // MCP hub steps 3 and 4: the daemon half the hub front calls; the host's sweep stops ended sessions' copies.
-        val wiring = McpHubWiring(globalRead, statePaths.stateDir)
-        val hub = wiring.hub(
-            sharing,
-            config.initializeTimeout,
-            ProcessDispatchers().io(),
-            log,
-            McpAccessKey(mgmtKey::get),
-        )
-        mcpHub = McpHubVerdict(wiring.offReason)
-        mcpAttached = McpAttached { hub.attached() }
-        return McpHost(sharing, globalRead, config = config, log = log, inventory = inventory, hub = hub)
-    }
-
-    /** V4-110: the shared MCP host's four lifecycle values, each a READER over the knob layer (daemon-global)
-     *  rather than a number, because each has an enforcement point the running host reaches again — the idle
-     *  sweep, spawn admission, a child's handshake, a forwarded request. So all four move on an operator's PATCH
-     *  and none of them is restartRequired. Absent knobs keep their declared defaults, and the McpHostConfig
-     *  defaults are the same numbers, kept in one place (the Knob enum) rather than restated here. The slice is
-     *  the one value still read once: it is a name, and it is read again per spawn from this one string. */
-    private fun mcpHostConfig(): McpHostConfig = McpHostConfig(
-        idleTimeout = McpIdleBudget { countNow(Knob.MCP_IDLE_TIMEOUT_MS).milliseconds },
-        maxServers = McpServerCeiling { countNow(Knob.MCP_MAX_SERVERS).toInt() },
-        requestTimeout = McpRequestBudget { countNow(Knob.MCP_REQUEST_TIMEOUT_MS).milliseconds },
-        initializeTimeout = McpHandshakeBudget { countNow(Knob.MCP_INITIALIZE_TIMEOUT_MS).milliseconds },
-        // V4-176: the slice is a NAME, not a duration, and a blank one would spawn every hosted
-        // child into a `--slice=` systemd rejects. An empty knob therefore falls back to the
-        // declared default rather than being passed through.
-        slice = (config.getConfig().asMap()[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() }
-            ?: APP_MCP_SLICE,
-    )
-
-    /** One knob's number off the config AS IT STANDS NOW, falling back to the knob's declared default when the
-     *  merge left the key absent. Every reader above goes through this, which is what makes them live: the host
-     *  holds the lambda, never the number, so there is no snapshot to go stale. */
-    private fun countNow(knob: Knob): Long = (config.getConfig().asMap()[knob.key] as? Long) ?: knob.count()
+    internal fun successorStateDir(): Path = parts.successorStateDir()
 }

@@ -713,9 +713,8 @@ origin.
   runs again only when nothing is left, so `splice restart` repairs the file and then restarts in one go. A value
   you type is not echoed to the screen, since it can be a token. A `splice.toml` that is a link is fixed at the file
   it points to, and stays a link. Off a terminal the command prints the list, exits non-zero and changes nothing.
-- **The console reaches past Accounts.** It also has a Needs you landing page, Fleet, Usage, Turns (with a page
-  per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
-  Playground that sends one prompt to several models side by side.
+- **The console reaches past Accounts.** It has eight pages: Accounts, Sessions, Teams, Requests, Usage, Models,
+  Compare models, which sends one prompt to several models side by side, and Settings.
 - **A running session takes a note from the console.** `POST /api/sessions/{id}/message` writes the note to the
   session's inbox socket. It is proven on each Claude Code version `/api/sessions` names, from 2.1.282 up to the
   tested 2.1.296, so a page can refuse before anyone types.

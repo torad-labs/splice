@@ -25,7 +25,7 @@
   `claude` or `local`, signs in where the service needs it, saves the head and installs its command. An optional turn checks
   that command; a failed check leaves the head saved.
 - **Resume on another model.** `-r` lists sessions from every command that shares projects.
-  A session another head wrote goes on as a copy under its own id, with earlier replies moved onto the resuming head's
+  A shared session another head wrote goes on as a copy under its own id when its rows would move (an isolating head copies it in under the same id), with earlier replies moved onto the resuming head's
   model; the original stays as its head wrote it.
 - **New commands:** `splice add-model`, `splice sessions`,
   `splice perf`, and `splice doctor --json` (a shareable, redacted report).
@@ -35,7 +35,7 @@
 - **The MCP hub on Linux.** Every session splice launches gets its MCP servers from one hub that outlives the daemon,
   shared between sessions by default, so an upgrade or a crash of splice drops no session's tools ([Added](#added)).
 - **Restarts wait for compactions.** Unless you choose `--now`, `splice restart`, `splice upgrade`
-  and `POST /api/daemon/restart` wait for compactions in flight, up to the daemon's own 900 s cap on a turn. A
+  and `POST /api/daemon/restart` wait for compactions in flight, up to 900 s, the default turn cap; a head whose cap is raised is still waited on for 900 s. A
   finished answer whose client disconnected is kept on disk for its identical retry.
 - **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
   against the release's checksums, and build provenance is verified whenever `gh` is signed in.
@@ -124,7 +124,7 @@ that boundary: transcripts sent to providers, argv other accounts can read, and 
 origin.
 
 ### Known limitations
-- **Only `splice setup` turns the MCP hub on.** `splice install --all` writes the hub's systemd units and enables nothing.
+- **`splice install --all` leaves the MCP hub off.** It writes the hub's systemd units and enables nothing; `splice setup` turns the hub on only over units it recorded writing.
   Until setup turns it on, or you run `systemctl --user enable --now splice-mcp-front.socket`, which `splice doctor`
   names, each session starts its own MCP servers, as in 0.3.x.
 - **Budget alerts reach the webhook, not the desktop.** A `warn` budget posts to the saved webhook

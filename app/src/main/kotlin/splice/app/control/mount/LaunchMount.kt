@@ -47,6 +47,7 @@ internal class LaunchMount(
         launchService?.transcriptRewriter
             ?: TranscriptModelRewrite(originals = TranscriptOriginals(sessions.statePaths)),
         sessions.activity,
+        sessions.starts,
     )
 
     fun register(route: Route) {

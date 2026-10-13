@@ -207,6 +207,10 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); display: inline-block; flex: none; }
 .leadtog { font: 600 .9rem/1 var(--font-data); padding: .55rem .7rem; border-radius: var(--r-in); cursor: pointer; background: transparent; color: var(--text-mute); border: .12rem dashed var(--track-line); }
 .leadtog[aria-pressed="true"] { background: var(--key-light); color: #241d14; border: .12rem solid var(--ink); }
+/* what a member that joins by rule takes, under its row in the composer and on its card */
+.rulehint { margin: .8rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-mute); }
+.rulerow { display: flex; align-items: center; gap: .9rem; margin-top: .8rem; }
+.rulerow .rulehint { margin: 0; }
 .slot-row .instr { width: 100%; margin-top: .9rem; font: 400 1.05rem/1.45 var(--font-name); resize: vertical; }
 /* a picker's menu opens under its own picker: the grid area of its column is its containing block */
 .pick-menu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 30rem; overflow: auto; grid-row: 1; }

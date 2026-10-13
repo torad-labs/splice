@@ -61,9 +61,9 @@ internal class TeamRules {
         }
     }
 
-    /** Refuses a team with no name, a slot with no id or head, a repeated slot id, or a repo that
-     *  is set but is not a real directory: the console cannot stat paths, so a refusal here is the
-     *  only one a team with a dead repo ever gets. A blank repo (none set) is not checked — this is
+    /** Refuses a team with no name, a slot with no id or head, a repeated slot id, a slot that binds by rule on a team
+     *  with no repo, or a repo that is set but is not a real directory: the console cannot stat paths, so a refusal
+     *  here is the only one a team with a dead repo ever gets. A blank repo (none set) is not checked — this is
      *  the write that SETS a repo, not every write a team's row ever takes. */
     fun validate(team: Team, repoProbe: RepoProbe) {
         val ids = team.slots.map { it.id }
@@ -72,6 +72,8 @@ internal class TeamRules {
             ids.any { it.isBlank() } -> "every slot needs an id"
             ids.toSet().size != ids.size -> "slot ids repeat in ${team.name}"
             team.slots.any { it.head.isBlank() } -> "every slot needs a head"
+            team.repo.isBlank() && team.slots.any { it.bindByRule } ->
+                "repo is needed when a member joins by rule: it takes the sessions started inside it"
             else -> repoReason(team, repoProbe)
         }
         if (reason != null) throw TeamRefusal(reason)

@@ -517,9 +517,15 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model, ended = false }) {
     lamp +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}</div>` +
     `<div class="meta">${word}<span class="mdl">${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
+    (slot.bind_by_rule ? `<p class="rulehint">${esc(ruleLine(tm.repo, slot.head))}</p>` : "") +
     `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
 
+// A member that joins by rule says what it takes, since the toggle's name alone cannot (web-console §4.13; marlin, Oct 13)
+const ruleLine = (repo, head) => {
+  const where = repo?.trim() ? repo.trim().split("/").filter(Boolean).pop() : "the team's repo";
+  return `A ${commandOf(head) || "session"} session started in ${where} joins this member when it has none running`;
+};
 // a head key no configured command has (one removed from config) names nothing; the sessions route's own "unknown head" still prints
 const commandOf = (head) => state.heads.find((h) => h.key === head)?.command || (head === "unknown head" ? head : "");
 const modelLabel = (head, id) => {
@@ -639,7 +645,7 @@ function boardHtml(tm) {
 }
 
 // ---------- the composer: name, goal, repo, and the members as rows ----------
-const blank = () => ({ role: "", head: null, model: null, account: null, lead: false, instructions: "", open: false });
+const blank = () => ({ role: "", head: null, model: null, account: null, lead: false, bind_by_rule: false, instructions: "", open: false });
 function composeFrom(tm) {
   return {
     id: tm ? tm.id : null, name: tm?.name || "", goal: tm?.goal || "", repo: tm?.repo || "", error: null,
@@ -677,6 +683,8 @@ function slotRowHtml(c, s, i) {
     `${head}${model}${account}<button class="leadtog" data-act="lead" data-i="${i}" aria-pressed="${s.lead}">Lead</button>` +
     `<button class="act quiet small" data-act="instr" data-i="${i}" aria-expanded="${s.open}">Instructions</button>` +
     `<button class="act quiet small" data-act="rm" data-i="${i}"${c.slots.length < 2 ? " disabled" : ""}>Remove</button>${pickHtml(c, i)}</div>` +
+    `<div class="rulerow"><button class="leadtog" data-act="rule" data-i="${i}" aria-pressed="${Boolean(s.bind_by_rule)}">Joins on its own</button>` +
+    `${s.bind_by_rule ? `<p class="rulehint">${esc(ruleLine(c.repo, s.head))}</p>` : ""}</div>` +
     (s.open ? `<textarea class="field instr" data-i="${i}" rows="4" aria-label="Instructions">${esc(s.instructions || "")}</textarea>` : "") +
     `</article>`;
 }
@@ -751,7 +759,7 @@ async function save(startAfter) {
     slots: c.slots.map((s, i) => ({
       id: ids[i], role: s.role.trim() || ids[i], head: s.head,
       model: s.model || undefined, account: s.account || undefined,
-      lead: s.lead, instructions: s.instructions?.trim() || undefined,
+      lead: s.lead, bind_by_rule: s.bind_by_rule || undefined, instructions: s.instructions?.trim() || undefined,
     })),
   };
   const answer = c.id ? await API.put(`/api/teams/${c.id}`, { ...body, id: c.id }) : await createTeam(body);
@@ -1043,6 +1051,7 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "lead": c.slots[i].lead = !c.slots[i].lead; render(); break;
+    case "rule": c.slots[i].bind_by_rule = !c.slots[i].bind_by_rule; render(); break;
     case "instr":
       c.slots[i].open = !c.slots[i].open;
       render();

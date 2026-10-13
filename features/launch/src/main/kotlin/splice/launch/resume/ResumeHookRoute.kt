@@ -66,6 +66,8 @@ public class ResumeHookRoute(
     private val log: LogSink,
     private val rewriter: TranscriptModelRewrite = TranscriptModelRewrite(),
     private val foreground: ForegroundToolActivity? = null,
+    /** Told of every startup with a folder: Teams binds a session to a slot by its rule there (SessionStarts). */
+    private val starts: SessionStarts? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -96,15 +98,18 @@ public class ResumeHookRoute(
                 "the hook source is neither a startup nor a resume"
             !SESSION_ID_SHAPE.matches(hook.sessionId) -> "the session id is not a session id"
             else -> {
-                started(hook.sessionId, owner)
+                started(key, hook, owner)
                 located(managed, spec, hook)
             }
         }
     }
 
-    private fun started(sessionId: String, owner: String?) {
+    private fun started(key: String, hook: ResumeCall, owner: String?) {
         owner?.takeIf { it.length == FOREGROUND_OWNER_LENGTH }?.let {
-            foreground?.record(ForegroundToolCall(sessionId, null, ForegroundToolPhase.SESSION_START, it))
+            foreground?.record(ForegroundToolCall(hook.sessionId, null, ForegroundToolPhase.SESSION_START, it))
+        }
+        if (hook.source == STARTUP_SOURCE && hook.cwd.isNotBlank()) {
+            starts?.started(key, hook.sessionId, hook.cwd)?.let { log("[teams] ${LogSafe.str(it)}\n") }
         }
     }
 

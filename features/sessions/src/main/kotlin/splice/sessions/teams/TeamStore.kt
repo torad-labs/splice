@@ -73,6 +73,9 @@ public data class TeamSlot(
      *  perf rows of all of them, so rebinding a slot never erases what it cost before (FEATURES 4.13,
      *  "never on the live registry"). */
     @SerialName("sessions_history") val sessionsHistory: List<String> = emptyList(),
+    /** A session that starts on [head] in a folder inside its team's repo joins this slot while the slot is free,
+     *  with no pick (TeamRuleBinding; web-console §4.13 "by rule", marlin's call of Oct 13). */
+    @SerialName("bind_by_rule") val bindByRule: Boolean = false,
 )
 
 @Serializable

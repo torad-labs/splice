@@ -133,6 +133,12 @@ if [ "$RUNTIME_GAPS" -gt 0 ]; then
 fi
 JAR_DST="${SHARE_DIR}/splice.jar"
 SHIM_SRC="${REPO_ROOT:+${REPO_ROOT}/app/src/main/dist/bin/splice-launch}"
+# The MCP hub's holder and front (docs/specs/mcp-hub.md) run under systemd --user, so they ship for Linux
+# x86_64 only. They are optional: with no pair beside the jar the daemon keeps its in-process MCP path.
+HUB_PLATFORM=0
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then HUB_PLATFORM=1; fi
+HUB_TMP_DIR=""
+HUB_INSTALLED=0
 
 mkdir -p "$SHARE_DIR" "$BIN_DIR"
 JAR_TMP="$(mktemp "${SHARE_DIR}/.splice.jar.XXXXXX")"
@@ -147,6 +153,7 @@ KEEP_BACKUPS=0
 cleanup() {
   rm -f "$JAR_TMP" "$SHIM_TMP"
   [ "$KEEP_BACKUPS" = 1 ] || rm -f "$JAR_BACKUP" "$SHIM_BACKUP"
+  [ -z "$HUB_TMP_DIR" ] || [ "$KEEP_BACKUPS" = 1 ] || rm -rf "$HUB_TMP_DIR"
   [ -z "$SUMS_TMP" ] || rm -f "$SUMS_TMP"
 }
 trap cleanup EXIT
@@ -262,7 +269,12 @@ if [ -n "${SPLICE_JAR:-}" ]; then
   fi
 elif [ -n "$REPO_ROOT" ]; then
   echo "splice: building the fat jar (./gradlew :app:shadowJar)…"
-  ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar )
+  if [ "$HUB_PLATFORM" = 1 ] && [ -d "${REPO_ROOT}/integrations/mcp-hub" ]; then
+    ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar \
+      :integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64 )
+  else
+    ( cd "${REPO_ROOT}" && ./gradlew -q :app:shadowJar )
+  fi
   BUILT="${REPO_ROOT}/app/build/libs/app-all.jar"
   [ -f "$BUILT" ] || { echo "splice: build produced no fat jar at $BUILT" >&2; exit 1; }
   cp "$BUILT" "$JAR_TMP"
@@ -309,6 +321,28 @@ if [ ! -f "$SHIM_SRC" ]; then
   verify_sum "$SHIM_TMP" "$SUMS_TMP" splice-launch
   verify_attestation "$SHIM_TMP" splice-launch "$RELEASE_BASE"
   SHIM_SRC="$SHIM_TMP"
+fi
+
+# 1b. The MCP hub's pair, from wherever the jar came from: the jar's siblings, the checkout's build, or the
+#     release, verified like the jar. Half a pair is no pair: the front and holder ship and run together.
+if [ "$HUB_PLATFORM" = 1 ]; then
+  HUB_TMP_DIR="$(mktemp -d "${SHARE_DIR}/.splice-mcp.XXXXXX")"
+  for asset in splice-mcp-holder splice-mcp-front; do
+    if [ -n "${SPLICE_JAR:-}" ]; then
+      hub_src="$(dirname "$SPLICE_JAR")/$asset"
+      [ ! -f "$hub_src" ] || cp "$hub_src" "$HUB_TMP_DIR/$asset"
+    elif [ -n "$REPO_ROOT" ]; then
+      hub_src="${REPO_ROOT}/integrations/mcp-hub/build/bin/linuxX64/${asset#splice-mcp-}ReleaseExecutable/${asset}.kexe"
+      [ ! -f "$hub_src" ] || cp "$hub_src" "$HUB_TMP_DIR/$asset"
+    elif [ -n "$SUMS_TMP" ] && grep -Eq "[[:space:]]${asset}\$" "$SUMS_TMP"; then
+      curl -fsSL "${RELEASE_BASE}/${asset}" -o "$HUB_TMP_DIR/$asset"
+      verify_sum "$HUB_TMP_DIR/$asset" "$SUMS_TMP" "$asset"
+      verify_attestation "$HUB_TMP_DIR/$asset" "$asset" "$RELEASE_BASE"
+    fi
+  done
+  if [ ! -f "$HUB_TMP_DIR/splice-mcp-holder" ] || [ ! -f "$HUB_TMP_DIR/splice-mcp-front" ]; then
+    rm -f "$HUB_TMP_DIR/splice-mcp-holder" "$HUB_TMP_DIR/splice-mcp-front"
+  fi
 fi
 
 JAR_VERSION_OUTPUT="$(java -jar "$JAR_TMP" version)"
@@ -369,6 +403,19 @@ restore_previous_artifacts() {
     rm -f "$SHIM_DST" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$SHIM_DST'
 "
   fi
+  # The hub pair goes back with the jar it was installed beside, from the copies step 2b kept.
+  if [ "$HUB_INSTALLED" = 1 ]; then
+    for asset in splice-mcp-holder splice-mcp-front; do
+      if [ -f "$HUB_TMP_DIR/$asset.previous" ]; then
+        mv -f "$HUB_TMP_DIR/$asset.previous" "$SHARE_DIR/$asset" ||
+          RESTORE_BY_HAND="${RESTORE_BY_HAND}  mv -f '$HUB_TMP_DIR/$asset.previous' '$SHARE_DIR/$asset'
+"
+      else
+        rm -f "$SHARE_DIR/$asset" || RESTORE_BY_HAND="${RESTORE_BY_HAND}  rm -f '$SHARE_DIR/$asset'
+"
+      fi
+    done
+  fi
   [ -z "$RESTORE_BY_HAND" ]
 }
 
@@ -387,6 +434,23 @@ roll_back() {
 
 if ! mv -f "$JAR_TMP" "$JAR_DST" || ! mv -f "$SHIM_TMP" "$SHIM_DST"; then
   roll_back "failed to commit candidate artifacts"
+fi
+
+# 2b. The hub pair, when there is one, moved in like the jar after the installed pair is copied aside. A pair
+#     that cannot go in leaves none, so the daemon takes its in-process MCP path rather than run an older pair
+#     beside this jar. A running front or holder keeps its own file through the move.
+if [ -n "$HUB_TMP_DIR" ] && [ -f "$HUB_TMP_DIR/splice-mcp-holder" ]; then
+  for asset in splice-mcp-holder splice-mcp-front; do
+    chmod 0755 "$HUB_TMP_DIR/$asset"
+    [ ! -f "$SHARE_DIR/$asset" ] || cp -p "$SHARE_DIR/$asset" "$HUB_TMP_DIR/$asset.previous"
+  done
+  HUB_INSTALLED=1
+  if ! mv -f "$HUB_TMP_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-holder" ||
+    ! mv -f "$HUB_TMP_DIR/splice-mcp-front" "$SHARE_DIR/splice-mcp-front"; then
+    rm -f "$SHARE_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-front"
+    HUB_INSTALLED=0
+    echo "splice: warning: the MCP hub's binaries could not be installed; splice runs MCP servers in-process" >&2
+  fi
 fi
 
 # run_jar <jar> <args…> — the jar's verbs that touch an install, in THIS script's home and dirs. The
@@ -450,6 +514,7 @@ fi
 if mkdir -p "$RELEASE_DIR" &&
   cp -p "$JAR_DST" "$RELEASE_DIR/splice.jar" &&
   cp -p "$SHIM_DST" "$RELEASE_DIR/splice-launch" &&
+  { [ "$HUB_INSTALLED" != 1 ] || { cp -p "$SHARE_DIR/splice-mcp-holder" "$SHARE_DIR/splice-mcp-front" "$RELEASE_DIR/"; }; } &&
   ln -sfn "$JAR_VERSION" "$CURRENT_LINK"; then
   echo "splice: release copy kept at $RELEASE_DIR (splice upgrade --rollback target)"
 else

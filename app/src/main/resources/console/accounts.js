@@ -954,7 +954,7 @@ function startAdd(p, cmd, field) {
   // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles' next free label); sent with no
   // label it signed the FIRST login in again, over its file, so a second Muse account replaced the spent one rather than
   // joining beside it (Oct 13, 5:38 AM). The first login of a command has no pool yet and still lands as its first.
-  const pooled = /oauth$/.test(c.authKind ?? "") && p.accounts.some((x) => x.row?.heads?.includes(c.head));
+  const pooled = /^(muse|kimi)-oauth$/.test(c.authKind ?? "") && p.accounts.some((x) => x.row?.heads?.includes(c.head));
   startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head, name: v || null, before });
 }
 async function nameAdded(how) {

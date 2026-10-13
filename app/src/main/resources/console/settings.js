@@ -44,8 +44,11 @@ const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x
  *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
   .filter((k) => shownKnob(k.key) && (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
-// the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin)
-const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0);
+// the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin);
+// so does "Run at most" while the hub serves, since the hub stops servers when idle and hostshield's slice caps their
+// memory instead of a count (v0.4.0 section 8, as built under the hub)
+const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0)
+  && (key !== "mcpMaxServers" || !ui.hubOn);
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
 const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
@@ -92,6 +95,9 @@ function readKept() {
   // the MCP host's own snapshot. The route is mounted only while splice hosts MCP (ControlServer.kt), so a 404 here is
   // the honest answer "nothing is hosted", not a failure: it is drawn as that sentence and never as an unread figure.
   get("/api/mcp", (r) => { ui.mcp = r.ok ? r.body : r.status === 404 ? false : null; });
+  // whether the MCP hub serves this machine (McpHubGate, decided at boot; /health's mcpHub): its holders have no count
+  // ceiling, so "Run at most" binds only the servers the daemon runs itself (v0.4.0 section 8, as built under the hub)
+  get("/health", (r) => { ui.hubOn = r.ok && r.body?.mcpHub === "on"; });
   // the sharing choice ([daemon] mcp_share) and what every copy on this machine holds against one copy each
   get("/api/topology", (r) => { ui.topo = r.ok ? r.body : null; });
   get("/api/mcp/memory", (r) => { ui.mmem = r.ok ? r.body : null; nameHolders(); });

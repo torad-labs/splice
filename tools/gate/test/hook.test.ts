@@ -8,7 +8,7 @@
 // THE INTERPRETER IS ADDRESSED ABSOLUTELY (process.execPath): one arm poisons PATH to prove the
 // fail-closed branch, so a bare `bun` would not be found and that arm would error out instead of
 // testing what it names.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,9 +30,10 @@ const L3_EXEMPT = "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt
 // The one declaration of the terminal: exempt by its shape (a const val), not by the file that holds it.
 const DECLARATION = 'internal const val MESSAGE_STOP: String = "message_stop"\n';
 const L3_RULE = "kt-l3-sole-wire-terminals";
-// Each of these tests spawns the gate several times in a row; at 6% free memory beside the other push legs four spawns
-// passed bun's 5 s default (Oct 12), while each takes 0.2 to 0.3 s alone. They check exit codes, not speed.
-const SPAWNS_MS = 30_000;
+// Every test here spawns the gate, and each spawn takes 0.2 to 0.3 s alone. Beside the other push legs on a loaded
+// machine they pass bun's 5 s default: four spawns at 6% free memory on Oct 12, and a single MultiEdit spawn at 5.6 s
+// on Oct 13 (push 51bc506bf). So the whole file gets 30 s. The tests check exit codes and decisions, not speed.
+setDefaultTimeout(30_000);
 
 let root = "";
 const hermetic = (): string => {
@@ -185,7 +186,7 @@ describe("gate rules --stdin: the contract", () => {
       expect(proc.exitCode, `argv ${argv.join(" ")}`).toBe(2);
       expect(proc.stdout.toString()).toBe("");
     }
-  }, SPAWNS_MS);
+  });
 
   test("malformed or non-object stdin is not this wall's business: exit 0, no decision", () => {
     for (const stdin of ["", "not json", "[1,2]", "null"]) {
@@ -193,5 +194,5 @@ describe("gate rules --stdin: the contract", () => {
       expect(proc.exitCode).toBe(0);
       expect(proc.stdout.toString()).toBe("");
     }
-  }, SPAWNS_MS);
+  });
 });

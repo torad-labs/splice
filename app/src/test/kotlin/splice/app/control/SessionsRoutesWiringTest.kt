@@ -117,7 +117,6 @@ class SessionsRoutesWiringTest {
 
             assertEquals(200, reply.status.value, reply.bodyAsText())
             val body = json(reply.bodyAsText())
-            assertTrue(body.getValue("note").jsonPrimitive.content.contains("headless `claude -p`"), body.toString())
             val rows = body.getValue("sessions").jsonArray.map { it.jsonObject }.associateBy {
                 it.getValue("session_id").jsonPrimitive.content
             }

@@ -99,9 +99,6 @@ private class TranscriptAsk(val trees: List<Path>, val cursor: String?, val size
     }
 }
 
-internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; gone = the process exited; " +
-    "stale = alive but no registry update inside the stale window"
-
 public class SessionsRoutes(
     private val registry: SessionSource,
     private val transcripts: SessionTranscripts,
@@ -136,7 +133,6 @@ public class SessionsRoutes(
         val rowFacts = facts.forRecords(listing.sessions)
         // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
         put("reading", viewEnabled())
-        put("note", HEADLESS_NOTE)
         val noteVersions = PeerNoteAbi.AUDITED_VERSIONS.sorted()
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.

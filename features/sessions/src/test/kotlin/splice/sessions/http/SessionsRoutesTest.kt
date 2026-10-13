@@ -35,7 +35,6 @@ class SessionsRoutesTest {
             clock = { now },
         )
         val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson()).jsonObject
-        assertTrue(body["note"]!!.jsonPrimitive.content.contains("claude -p"))
         val rows = body["sessions"]!!.jsonArray.map { it.jsonObject }
         val alpha = rows.first { it["name"]?.jsonPrimitive?.content == "alpha" }
         assertEquals("claudex", alpha["head"]?.jsonPrimitive?.content)

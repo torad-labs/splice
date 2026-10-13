@@ -50,6 +50,9 @@ public data class LocalModel(
     /** What the runtime itself says about tool calling: true or false when it reports a capability list, null when
      *  it reports none. Claude Code drives every turn through tools, so a model that says false cannot serve a row. */
     val tools: Boolean? = null,
+    /** What the runtime says about thinking, the same way: Ollama's `/api/show` answers it; LM Studio's v0 listing
+     *  and vLLM say nothing, so null. A provider that sets `reasoning_effort = true` asks every row to think. */
+    val reasoning: Boolean? = null,
 )
 
 /** One declared row against the runtime's answer. */
@@ -141,9 +144,16 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         rows: Map<String, Long?>,
         listed: List<LocalModel>,
         kind: LocalRuntimeKind = LocalRuntimeKind.OLLAMA,
-    ): List<LocalRowVerdict> = rows.map { (id, window) -> verdict(id, window, listed, kind) }
+        thinks: Boolean = false,
+    ): List<LocalRowVerdict> = rows.map { (id, window) -> verdict(id, window, listed, kind, thinks) }
 
-    private fun verdict(id: String, window: Long?, listed: List<LocalModel>, kind: LocalRuntimeKind): LocalRowVerdict {
+    private fun verdict(
+        id: String,
+        window: Long?,
+        listed: List<LocalModel>,
+        kind: LocalRuntimeKind,
+        thinks: Boolean,
+    ): LocalRowVerdict {
         val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
             ?: listed.singleOrNull()?.takeIf { kind == LocalRuntimeKind.OPENAI_COMPATIBLE && it.contextLength != null }
         if (model == null) {
@@ -158,7 +168,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                 LocalRowVerdict(id, false, "not listed by the runtime (listed: $ids)")
             }
         }
-        val refusal = shapes.noTools(model) ?: window?.let { refusal(it, model) }
+        val refusal = shapes.refusedCapability(model, thinks) ?: window?.let { refusal(it, model) }
         return if (refusal != null) {
             LocalRowVerdict(id, false, refusal)
         } else {
@@ -288,8 +298,23 @@ private class LocalRuntimeShapes {
             detail.ifEmpty { null },
             ceiling = max,
             tools = show?.let { reportsTool(it, "tools") },
+            reasoning = show?.let(::reportsThinking),
         )
     }
+
+    /** Ollama's documented `thinking.values` first, where `[false]` means none; else its capability list. */
+    fun reportsThinking(show: JsonObject): Boolean? {
+        val values = (show["thinking"] as? JsonObject)?.get("values") as? JsonArray
+        return values?.any { it != JsonPrimitive(false) } ?: reportsTool(show, "thinking")
+    }
+
+    /** What the model cannot do that a row needs: tools always, thinking where the provider asks for it. */
+    fun refusedCapability(model: LocalModel, thinks: Boolean): String? = noTools(model) ?: noThinking(model, thinks)
+
+    /** A provider that asks its rows to think (`reasoning_effort = true`) cannot serve one the runtime says can't. */
+    fun noThinking(model: LocalModel, thinks: Boolean): String? =
+        "reasoning_effort = true asks it to think, and the runtime reports no thinking support for it"
+            .takeIf { thinks && model.reasoning == false }
 
     /** Claude Code drives every turn through tools; only a runtime that SAYS the model has none refuses a row. */
     fun noTools(model: LocalModel): String? =

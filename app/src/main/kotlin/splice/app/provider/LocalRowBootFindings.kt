@@ -1,5 +1,6 @@
 // NEW: v0.4.0 section 10 under the fail-closed boot law. A local runtime that is up and refuses a row splice.toml
-// declares (it serves less than the row's window, lists no such model, or says the model cannot call tools) is a
+// declares (it serves less than the row's window, lists no such model, says the model cannot call tools, or says it
+// cannot think where the provider sets reasoning_effort = true) is a
 // boot finding, listed with every other one and offered to the fix session, where it used to fail only its own head
 // (ChatArm), which the daemon then served as DEGRADED. A runtime that is down is no finding: the head boots and its
 // turns fail until the runtime is up, as before. Same probe, transport and bearer as ChatArm (LocalProbeInputs).
@@ -34,17 +35,20 @@ internal class LocalRowBootFindings(
         val runtime = probe.detect() ?: return emptyList()
         val listed = probe.models(runtime, rows.keys) ?: return emptyList()
         val declared = rows.keys.associateWith { provider.declaredWindowFor(it, head.contextWindow) }
-        return probe.validate(declared, listed, runtime.kind).filterNot { it.ok }.map { verdict ->
+        val thinks = provider.quirks.reasoningEffort == true
+        return probe.validate(declared, listed, runtime.kind, thinks).filterNot { it.ok }.map { verdict ->
             val sentence = "the ${runtime.kind.label} runtime at this provider's base_url refuses it: ${verdict.reason}"
             TopologyFinding(pathOf(key, head, rows.getValue(verdict.id), verdict), "$sentence; $FIX")
         }
     }
 
     /** A window the runtime refuses is fixed where it was declared: the head's own context_window when it set one,
-     *  else the row's. Any other refusal names the row. */
+     *  else the row's. A model that cannot think is fixed at the provider's reasoning_effort. Any other refusal names
+     *  the row. */
     private fun pathOf(key: String, head: HeadConfig, rowId: String, verdict: LocalRowVerdict): String {
         val row = "providers.${head.provider}.models[$rowId]"
         return when {
+            verdict.reason.contains("reasoning_effort") -> "providers.${head.provider}.quirks.reasoning_effort"
             !verdict.reason.contains("context_window") -> row
             (head.contextWindow ?: 0) > 0 -> "heads.$key.context_window"
             else -> "$row.context_window"

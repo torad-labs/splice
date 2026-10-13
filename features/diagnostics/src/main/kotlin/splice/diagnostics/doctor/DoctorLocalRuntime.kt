@@ -108,7 +108,8 @@ internal class DoctorLocalRuntime(
         // The type is bound on the SEAM, not on the mapped result: `map` yields DoctorChecks, and
         // annotating that as List<LocalRowVerdict> was a compile error I hit and read. Binding the
         // boundary type where it actually crosses is the same evidence with the types honest.
-        val verdicts: List<LocalRowVerdict> = probe.validate(rows, current, kind)
+        val thinks = provider.quirks.reasoningEffort == true
+        val verdicts: List<LocalRowVerdict> = probe.validate(rows, current, kind, thinks)
         val checks = verdicts.map { v ->
             val fix = if (rows[v.id] == null) {
                 "check the runtime's model and context window; the configured model is not listed"
@@ -118,8 +119,22 @@ internal class DoctorLocalRuntime(
             }
             DoctorCheck("$name/${v.id}", if (v.ok) CheckStatus.OK else CheckStatus.FAIL, v.reason, fix.takeIf { !v.ok })
         }
-        return listOf(summary(name, provider, runtime, current)) + checks + probes
+        val unsaid = if (thinks) unsaidThinking(name, rows.keys, current) else emptyList()
+        return listOf(summary(name, provider, runtime, current)) + checks + unsaid + probes
     }
+
+    /** A provider set to make its rows think, on a runtime that does not say whether a listed row's model can (LM
+     *  Studio's listing, vLLM): no refusal, since nothing says no, but doctor says the setting goes unchecked. */
+    private fun unsaidThinking(name: String, ids: Set<String>, listed: List<LocalModel>): List<DoctorCheck> =
+        ids.filter { id ->
+            listed.firstOrNull { it.id == id || it.id == "$id:latest" }?.let { it.reasoning == null } == true
+        }.map { id ->
+            DoctorCheck(
+                "$name/$id/thinking",
+                CheckStatus.INFO,
+                "the runtime does not say whether $id can think, so reasoning_effort = true goes unchecked",
+            )
+        }
 
     private fun summary(
         name: String,

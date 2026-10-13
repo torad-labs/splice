@@ -124,7 +124,6 @@ internal class McpStatus(
         server?.pid?.let(::residentBytes)?.let { out.put("rss_bytes", it) }
         val live = sessions.forServer(name)
         out.put("sessions", live.size)
-        out.putJsonArray("session_ids") { live.forEach { add(JsonPrimitive(it.id)) } }
         val commands = live.mapNotNull { it.head }.distinct().sorted()
         out.putJsonArray("commands") { commands.forEach { add(JsonPrimitive(it)) } }
         out.put("streams", live.sumOf { it.openStreams.get() })

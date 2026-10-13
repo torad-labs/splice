@@ -6,7 +6,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -63,8 +62,6 @@ class McpHostTest : McpHostFixture() {
             assertEquals(pidA, pidB, "one process for two names with the same tuple")
             assertNotEquals(pidA, pidC, "a different env is a different process")
             assertEquals(status("fake")["pid"], status("alias")["pid"])
-            val ids = (status("fake")["session_ids"] as JsonArray).map { it.jsonPrimitive.content }
-            assertEquals(listOf(a), ids)
         }
 
     @Test

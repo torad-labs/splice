@@ -133,6 +133,12 @@ class HeadServerFailureBranchTest {
      *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
     private var built = 0
 
+    /** The perf JSONL of the head built last: the row each test reads for the turn's outcome. */
+    private fun perfFile(): Path = tmp.resolve("perf-$built.jsonl")
+
+    /** That head's row carrying [tag], once it has landed. */
+    private fun outcomeRow(tag: String): String? = awaitPerfRow(perfFile()) { it.contains("\"outcome\":\"$tag\"") }
+
     private fun buildHead(
         auth: RefreshableAuthProvider,
         wrap: (Provider) -> Provider = { it },
@@ -184,7 +190,6 @@ class HeadServerFailureBranchTest {
         head.start()
         val headPort = head.port
         awaitListening(headPort)
-        val before = logs.size
         try {
             val upstreamBefore = mock.upstreamBodies.size
             val sse = turn(headPort, "basic")
@@ -194,10 +199,9 @@ class HeadServerFailureBranchTest {
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // The credential is resolved BEFORE the request is built, so nothing reached upstream.
             assertEquals(upstreamBefore, mock.upstreamBodies.size)
-            val scoped = logs.drop(before)
             assertTrue(
-                scoped.any { it.contains("perf outcome=error:auth-missing") },
-                "expected the error:auth-missing perf row in: $scoped",
+                outcomeRow("error:auth-missing") != null,
+                "expected the error:auth-missing perf row in: ${perfRows(perfFile())}",
             )
         } finally {
             head.stop()
@@ -210,7 +214,6 @@ class HeadServerFailureBranchTest {
         head.start()
         val headPort = head.port
         awaitListening(headPort)
-        val before = logs.size
         try {
             val sse = turn(headPort, "basic")
             assertTrue(sse.contains("event: error"), "expected an error event in: $sse")
@@ -226,10 +229,9 @@ class HeadServerFailureBranchTest {
             assertFalse(sse.contains("\"type\":\"api_error\""), "the client-terminal type must not ride: $sse")
             assertTrue(sse.contains("splice: internal gateway error; retry"), sse)
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
-            val scoped = logs.drop(before)
             assertTrue(
-                scoped.any { it.contains("perf outcome=error:unexpected") },
-                "expected the error:unexpected perf row in: $scoped",
+                outcomeRow("error:unexpected") != null,
+                "expected the error:unexpected perf row in: ${perfRows(perfFile())}",
             )
         } finally {
             head.stop()
@@ -270,11 +272,11 @@ class HeadServerFailureBranchTest {
             assertFalse(sse.contains("event: message_stop"), "never a clean stop after failure: $sse")
             // Same accounting as every other surface: the real class is still what the journal
             // names, and the perf row still lands — permanence changed the WIRE TYPE only.
-            val scoped = logs.drop(before)
             assertTrue(
-                scoped.any { it.contains("perf outcome=error:unexpected") },
-                "expected the error:unexpected perf row in: $scoped",
+                outcomeRow("error:unexpected") != null,
+                "expected the error:unexpected perf row in: ${perfRows(perfFile())}",
             )
+            val scoped = logs.drop(before)
             assertTrue(
                 scoped.any { it.contains("URLParserException") },
                 "the journal must still name the throwing class in: $scoped",

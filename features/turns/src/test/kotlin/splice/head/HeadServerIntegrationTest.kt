@@ -15,10 +15,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -36,14 +33,12 @@ import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
 import splice.head.compact.ShadowClassifier
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
-import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
@@ -63,7 +58,7 @@ class HeadServerIntegrationTest {
         // runner a turn that lands late trips it, the client hangs up, TurnFinish's terminal write
         // hits a dead socket and the perf row lands as a conn-reset tag instead of "ok" (runs
         // 33608202738 on 2026-09-02 and 33928312116 on 2026-09-04, both at the "expected a perf
-        // line" assertion; green locally every time). The awaitLog ceiling below is the one
+        // line" assertion; green locally every time). The perf-row wait (awaitPerfRow) is the one
         // clock a test here should run on, so the engine's own is off.
         engine { requestTimeout = 0 }
         defaultRequest { bearerAuth("test-inference-token") }
@@ -133,29 +128,6 @@ class HeadServerIntegrationTest {
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
-
-    // TurnFinish sends the terminal frames FIRST (DR-129) and records perf LAST, so the client's
-    // body completes before this turn's perf line lands in `logs`. Waiting for a line past `from`
-    // reads THIS turn's telemetry instead of whichever earlier turn's line happened to be last —
-    // the read that failed under kover on a slow runner (coverage run 33551147526, 2026-09-01).
-    // The ceiling is a failure-path cost only — a healthy turn's perf line lands in milliseconds —
-    // and 5s was not enough for a starved runner: gate run 33608202738 (2026-09-02) saw the line
-    // arrive AFTER the wait while the whole module suite ran alongside. 30s buys nothing on the
-    // pass path and stops a slow box from reading as a missing line.
-    // A deadline poll, the rule's sanctioned shape: the perf line is written on a server thread
-    // after the response, with no signal to await. Run on IO so the wait is real time even from
-    // inside runTest, and the test scheduler's thread is never blocked by it.
-    private suspend fun awaitLog(from: Int, timeoutMs: Long = 30_000, match: (String) -> Boolean): String? =
-        withContext(Dispatchers.IO) {
-            val pollMs = 20L
-            val deadline = System.currentTimeMillis() + timeoutMs
-            var found = synchronized(logs) { logs.drop(from).lastOrNull(match) }
-            while (found == null && System.currentTimeMillis() < deadline) {
-                delay(pollMs)
-                found = synchronized(logs) { logs.drop(from).lastOrNull(match) }
-            }
-            found
-        }
 
     @Test
     fun `health carries version and port`() = runTest {
@@ -266,45 +238,32 @@ class HeadServerIntegrationTest {
     @Test
     fun `malformed SSE frame is skipped with FRAMES_SKIPPED telemetry and one snippet log`() = runTest {
         val before = logs.size
+        val jsonl = tmp.resolve("perf.jsonl")
+        val beforeRows = perfRows(jsonl).size
         val sse = messages("malformed_sse")
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
-        val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
+        val row = awaitPerfRow(jsonl, beforeRows) { it.contains("\"outcome\":\"ok\"") }
         val scoped = synchronized(logs) { logs.drop(before) }
         val malformedLines = scoped.filter { it.contains("malformed SSE frame skipped: {not-json}") }
         assertEquals(1, malformedLines.size, "expected exactly one malformed-frame log line, got: $scoped")
-        assertTrue(perfLine != null, "expected a perf line in the log, got: $scoped")
-        assertTrue(perfLine!!.contains("frames_skipped=1"), "expected frames_skipped=1 in: $perfLine")
+        assertTrue(row != null, "expected this turn's perf row, got: ${perfRows(jsonl)}")
+        assertTrue(row!!.contains("\"frames_skipped\":1"), "expected frames_skipped 1 in: $row")
     }
 
     @Test
-    fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
-        val before = logs.size
+    fun `turn records a perf JSONL row with pipeline marks`() = runTest {
         val jsonl = tmp.resolve("perf.jsonl")
-        assertTrue(AsyncFileIo.drain(), "pending telemetry must finish before taking the row baseline")
-        val beforeRows = if (Files.exists(jsonl)) {
-            Files.readString(jsonl).trim().lines().count { it.isNotBlank() }
-        } else {
-            0
-        }
+        val beforeRows = perfRows(jsonl).size
         messages("basic")
-        val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
-        assertTrue(perfLine != null, "expected a perf line in the log, got: $logs")
+        val row = awaitPerfRow(jsonl, beforeRows) { it.contains("\"outcome\":\"ok\"") }
+        assertTrue(row != null, "expected a new perf JSONL row after this turn: ${perfRows(jsonl)}")
         val expectedFields = listOf(
-            "recv=", "parse=", "build=", "gate=", "headers=", "first_byte=",
-            "first_frame=", "first_delta=", "stream_end=", "finish=", "total=",
+            "recv", "parse", "build", "gate", "headers", "first_byte",
+            "first_frame", "first_delta", "stream_end", "finish", "total",
         )
         for (field in expectedFields) {
-            assertTrue(perfLine!!.contains(field), "perf line missing $field: $perfLine")
+            assertTrue(row!!.contains("\"$field\":"), "perf row missing $field: $row")
         }
-        // The perf log follows enqueueing, not completion of the asynchronous JSONL append.
-        assertTrue(AsyncFileIo.drain(), "this turn's telemetry must reach disk before reading it")
-        val rows = Files.readString(jsonl).trim().lines().filter { it.isNotBlank() }
-        val mine = rows.drop(beforeRows)
-        assertTrue(mine.isNotEmpty(), "expected a new perf JSONL row after this turn")
-        assertTrue(
-            mine.any { it.contains("\"outcome\":\"ok\"") && it.contains("\"total\":") },
-            "bad rows from this turn: $mine",
-        )
     }
 
     @Test

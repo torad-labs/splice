@@ -55,6 +55,7 @@ class HeadServerHeartbeatTest {
     private val port: Int get() = head.port
     private val gate = InflightGate({ 0 })
     private val lines = CopyOnWriteArrayList<String>()
+    private lateinit var tmp: Path
     private val ticks = Channel<Unit>(Channel.UNLIMITED)
 
     @Volatile
@@ -63,6 +64,7 @@ class HeadServerHeartbeatTest {
 
     @BeforeAll
     fun setUp(@TempDir tmp: Path) = runBlocking {
+        this.tmp = tmp
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
@@ -123,11 +125,11 @@ class HeadServerHeartbeatTest {
         }
     }
 
-    /** One counter out of a perf line, which renders them as `name=value` separated by spaces. */
-    private fun counter(line: String, name: String): Long? =
-        Regex("(?:^| )${Regex.escape(name)}=(\\d+)").find(line)?.groupValues?.get(1)?.toLong()
+    /** One counter out of a perf row, a flat JSON object. */
+    private fun counter(row: String, name: String): Long? =
+        Regex("\"${Regex.escape(name)}\":(\\d+)").find(row)?.groupValues?.get(1)?.toLong()
 
-    // A deadline poll, the rule's sanctioned shape: the perf line lands server-side after the wire
+    // A deadline poll, the rule's sanctioned shape: the turn's end lands server-side after the wire
     // closes, with no signal to await.
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
         val pollMs = 20L
@@ -142,6 +144,7 @@ class HeadServerHeartbeatTest {
     @Test
     fun `a wire silent after its first delta carries ping events until the upstream resumes`() = runBlocking {
         mock.resetHold()
+        val rowsBefore = perfRows(tmp.resolve("perf.jsonl")).size
         val socket = Socket("127.0.0.1", port)
         val request = "POST /v1/messages HTTP/1.1\r\n" +
             "Host: 127.0.0.1:$port\r\n" +
@@ -179,7 +182,8 @@ class HeadServerHeartbeatTest {
         )
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 })
         socket.close()
-        assertTrue(lines.any { it.contains("perf outcome=ok") }, lines.joinToString())
+        val perf = awaitPerfRow(tmp.resolve("perf.jsonl"), rowsBefore) { it.contains("\"outcome\":\"ok\"") }
+        assertTrue(perf != null, "this turn's perf row: ${perfRows(tmp.resolve("perf.jsonl"))}")
 
         // The wait is VISIBLE: the same silence that carries the pings carries splice's own line,
         // and it names what is actually true here — the client has already seen a delta, so this
@@ -191,8 +195,7 @@ class HeadServerHeartbeatTest {
         // And it costs the model's accounting NOTHING. Every frame the pinger wrote is counted in
         // frames_out and in none of content_frames_out, which is what keeps the idle watchdog on the
         // right tier and leaves G5's pre-content reissue gated on the model alone.
-        val perf = lines.last { it.contains("perf outcome=ok") }
-        val framesOut = checkNotNull(counter(perf, "frames_out")) { "frames_out missing: $perf" }
+        val framesOut = checkNotNull(counter(perf!!, "frames_out")) { "frames_out missing: $perf" }
         val contentOut = checkNotNull(counter(perf, "content_frames_out")) { "content_frames_out missing: $perf" }
         assertTrue(
             framesOut >= contentOut + 6,

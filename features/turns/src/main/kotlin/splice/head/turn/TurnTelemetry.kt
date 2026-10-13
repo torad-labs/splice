@@ -176,7 +176,6 @@ internal class TurnTelemetry(
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
-        log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
     }
 
@@ -241,7 +240,7 @@ internal class TurnTelemetry(
         val rowTs = perfStats.record(rowMeta, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
         events.turnEnded(rowTs.toString(), tag, meta.scope.sessionId)
-        // The tag is printed VERBATIM, the same spelling the perf row on the next line carries
+        // The tag is printed VERBATIM, the same spelling the perf row carries
         // (kt-outcome-tag-single-source, V4-99). It used to be `substringAfter("error:")`, which
         // meant this line and the perf row spelled one field two ways — and that the rendering
         // depended on the FAMILY: an `error:` tag lost its prefix while a `failure:` tag kept it.
@@ -252,7 +251,6 @@ internal class TurnTelemetry(
             "[$headKey] turn ERROR $tag compact=${meta.compact} " +
                 "latency=${clock() - t0}ms $detail\n",
         )
-        log(snap.perfLine(headKey, tag, meta.compact, meta.route.upstreamModel, session))
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

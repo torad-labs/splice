@@ -343,32 +343,4 @@ class TurnPerfTest {
         val plain = TurnPerfTiming.timedOr(null as TurnPerf?, PerfKeys.AUTH_MS) { "plain" }
         assertEquals("plain", plain)
     }
-
-    @Test
-    fun `perfLine renders marks in pipeline order then counters`() {
-        val clock = FakeClock()
-        val perf = TurnPerf { clock.now }
-        clock.tick(3)
-        perf.mark(PerfKeys.RECV)
-        clock.tick(900)
-        perf.mark(PerfKeys.HEADERS)
-        clock.tick(1)
-        perf.mark(PerfKeys.TOTAL)
-        perf.add(PerfKeys.OUT_TOKENS, 850)
-        val line = perf.snapshot().perfLine("codex", "ok", compact = false, model = "gpt-5.6-sol")
-        assertEquals(
-            "[codex] perf outcome=ok compact=false model=gpt-5.6-sol recv=3 headers=903 total=904 | " +
-                "out_tokens=850\n",
-            line,
-        )
-        val tagged = perf.snapshot().perfLine(
-            "codex",
-            "client_abort",
-            compact = false,
-            model = "m",
-            session = "a6b15bd7",
-        )
-        val head = "[codex] perf outcome=client_abort compact=false model=m session=a6b15bd7 recv="
-        assertTrue(tagged.startsWith(head), tagged)
-    }
 }

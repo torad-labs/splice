@@ -1,8 +1,8 @@
 # WALL (V4-90, ARCH-AUDIT 2026-09-17 row B2; concept #924 "make drift not compile"): the PERF-ROW
-# OUTCOME VOCABULARY has ONE declaration. A perf row's `outcome=` tag is a wire contract with three
-# readers that never see the writer — `splice/app/PerfRowsFileSource.kt` (journal -> rows),
-# `splice/control/api/PerfSummary.kt` (rows -> the /api/perf summary and `splice perf`), and
-# `core/perf/PerfSnapshot.kt` (the `[head] perf outcome=...` log line). Every tag is currently a
+# OUTCOME VOCABULARY has ONE declaration. A perf row's `outcome=` tag is a wire contract with two
+# readers that never see the writer — `splice/app/PerfRowsFileSource.kt` (journal -> rows) and
+# `splice/control/api/PerfSummary.kt` (rows -> the /api/perf summary and `splice perf`). The third,
+# the `[head] perf outcome=...` daemon.log line, left on 2026-10-13: the perf JSONL is its record. Every tag is currently a
 # BARE STRING LITERAL typed at the ending that emits it, so the vocabulary exists only as the union
 # of 18 scattered literals and nothing can see when one drifts.
 #
@@ -77,7 +77,7 @@ id: kt-outcome-tag-single-source
 language: kotlin
 severity: error
 message: "Perf-row outcome tags have ONE declaration: name the tag from splice.core.perf.OutcomeTag (core/src/main/kotlin/splice/core/perf/OutcomeTag.kt), never a literal here."
-note: "The tag is a wire contract compared by string identity in PerfRowsFileSource, PerfSummary (`it != OK`) and PerfSnapshot — three readers that never see this writer. A drifted spelling still compiles and silently reclassifies the turn. Use OutcomeTag.OK / CLIENT_ABORT / EMPTY_MODEL / EMPTY_COMPACT / EMPTY_MESSAGE, or OutcomeTag.error(kind) / OutcomeTag.failure(wireName) for the prefix families. A JSON field name in FIRST argument position (`put(\"ok\", true)`) is exempt — that is a key, not a tag."
+note: "The tag is a wire contract compared by string identity in PerfRowsFileSource and PerfSummary (`it != OK`) — two readers that never see this writer. A drifted spelling still compiles and silently reclassifies the turn. Use OutcomeTag.OK / CLIENT_ABORT / EMPTY_MODEL / EMPTY_COMPACT / EMPTY_MESSAGE, or OutcomeTag.error(kind) / OutcomeTag.failure(wireName) for the prefix families. A JSON field name in FIRST argument position (`put(\"ok\", true)`) is exempt — that is a key, not a tag."
 files:
   - features/sessions/src/main/**/*.kt
   - features/usage/src/main/**/*.kt

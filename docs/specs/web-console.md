@@ -478,7 +478,7 @@ expect it; **only here** means no competing console can offer it.
 | Feature | Detail | Status | Origin |
 |---|---|---|---|
 | Virtualized viewer | Tail of the daemon log with follow mode, pause, search, filter by head tag and by subsystem tag such as `[code-mode]`, larger tails on demand. | have | table stakes |
-| Cross-links | A `perf outcome=` line opens the turn; a session tag opens the session. | route | only here |
+| Cross-links | A `turn` line opens the turn; a session tag opens the session. The `perf outcome=` line left daemon.log on Oct 13, 2026: the perf row is the turn's record. | route | only here |
 | Path and rotation | Shown, with the reason when a tail is empty. | have | daemon |
 | Request drawer | For heads with body capture on (§5): the full request and response of a turn beside its perf row, redacted, exportable. Off by default and says so. | new | table stakes, operator 2026-09-17 |
 

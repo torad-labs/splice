@@ -555,7 +555,9 @@ function everyHtml() {
 // opts out of every wider one), or given text, inline or from a file. The whole topology goes back through PUT
 // /api/topology with only [compaction] changed; a compaction-only edit serves the next compaction with no restart.
 const CX_MODES = { inherit: "Inherit", off: "Claude Code's", text: "Text", file: "File" };
-const CX_HINT = { inherit: "Takes the rule above", off: "Claude Code compacts with its own instructions" };
+// each choice says what it does here, the text and the file too (marlin, Oct 12: an empty box said nothing)
+const CX_HINT = { inherit: "Takes the rule above", off: "Claude Code compacts with its own instructions",
+  text: "Compacts with these instructions, in place of any rule above", file: "Compacts with this file's instructions, in place of any rule above" };
 const samePath = (written, root) => written === root || written === homeRel(root) || written === `${homeRel(root)}/`;
 function cxEntries(t, root, model) {
   const cx = t.compaction ?? {};
@@ -583,8 +585,8 @@ function compEditHtml(p, c) {
     const sw = `<div class="switch" role="group" aria-label="Compaction rule">${modes.map((v) => `<button data-act="cmode" data-s="${k}" data-v="${v}" aria-pressed="${st.mode === v}">${CX_MODES[v]}</button>`).join("")}</div>`;
     const body = st.mode === "text" ? `<textarea class="field ptext" id="cx-${k}" data-cx="${k}" rows="3" aria-label="Compaction instructions">${esc(st.text)}</textarea>`
       : st.mode === "file" ? `<input class="field" id="cxf-${k}" data-cxf="${k}" value="${esc(st.file)}" placeholder="~/notes/compact.md" spellcheck="false" autocomplete="off" aria-label="Instructions file">`
-      : `<span class="chint">${CX_HINT[st.mode]}</span>`;
-    return `<div class="crow"><div class="cwho">${who[k]}</div>${sw}${body}</div>`;
+      : "";
+    return `<div class="crow"><div class="cwho">${who[k]}</div>${sw}<span class="chint">${CX_HINT[st.mode]}</span>${body}</div>`;
   };
   const keys = cx.model ? ["g", "m", "p", "pm"] : ["g", "p"];
   const said = cx.said ? `<span class="said limit">${esc(cx.said)}</span>` : "";
@@ -681,7 +683,7 @@ function projectsHtml() {
   const comp = ui.comp && ui.comp.root === p.root && ui.comp.head === c.key ? compEditHtml(p, c) : `${ladder}<button class="act quiet small cedit-open" data-act="cedit">Edit</button>`;
   const bar = c.window ? `<div class="winbar" style="--c:${colorOf(c.family)}"><div class="bar"><span class="tick" style="left:85%"></span></div><span class="wlabel">${big(c.window)}</span></div>` : "";
   const right = `<div class="proj"><header><h2>${esc(p.name)}</h2><span class="ppath" title="${esc(p.root ?? "")}"><bdo dir="ltr">${esc(p.place ?? homeRel(p.root))}</bdo></span></header>${files}`
-    + `<section class="pblock">${chips}<div class="twin"><div><h3>System prompt</h3>${stack}</div><div><h3>Compaction</h3>${comp}${bar}</div></div></section></div>`;
+    + `<section class="pblock">${chips}<div class="twin"><div><h3>System prompt</h3>${stack}</div><div><h3>Compaction</h3>${comp}${ui.comp ? "" : bar}</div></div></section></div>`;
   return `<div class="projects"><nav class="proj-list">${list}</nav>${right}</div>`;
 }
 

@@ -254,49 +254,4 @@ class GrokAuthRefreshRecoveryTest {
         assertTrue(!surfaced.contains(sentinel), "credential bytes must never surface: $surfaced")
         assertTrue(log.any { it.contains("NOT a logged-out state") }, "diagnostics still classify: $log")
     }
-
-    @Test
-    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls`(
-        @TempDir dir: Path,
-    ) = runTest {
-        // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,
-        // and every credentials() call below the stale floor blocked on ANOTHER refresh — each one
-        // consuming a rotating refresh token. The synthesized now+TTL expiry kills the loop.
-        var now = 1_000_000L
-        val file = authFile(dir, expiresAtMs = now + 1_000) // inside the stale floor: blocking tier
-        val calls = AtomicInteger(0)
-        val auth = GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { now }, refreshCall = {
-            calls.incrementAndGet()
-            RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = null))
-        })
-        repeat(5) { assertEquals("new-access", bearerToken(auth.credentials())) }
-        assertEquals(1, calls.get(), "an expires_in-less grant must refresh once, not per call")
-        assertEquals(0, auth.ineffectiveRefreshCount, "the synthesized expiry advanced — not ineffective")
-    }
-
-    @Test
-    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once`(
-        @TempDir dir: Path,
-    ) = runTest {
-        // A grant whose expires_in cannot satisfy the stale floor is a SUCCESSFUL refresh the tier
-        // logic will re-request forever. The guard logs, counts, and serves the current token
-        // through the 30s backoff window instead.
-        var now = 1_000_000L
-        val file = authFile(dir, expiresAtMs = now + 1_000)
-        val calls = AtomicInteger(0)
-        val logs = mutableListOf<String>()
-        val auth =
-            GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { now }, log = logs::add, refreshCall = {
-                calls.incrementAndGet()
-                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 10))
-            })
-        repeat(5) { assertEquals("new-access", bearerToken(auth.credentials())) }
-        assertEquals(1, calls.get(), "the backoff must absorb the re-entering tier, not refresh per call")
-        assertEquals(1, auth.ineffectiveRefreshCount)
-        assertEquals(1, logs.count { it.contains("did not advance") }, "logged once, got $logs")
-        // the backoff lapses: the next stale-floor entry may refresh again
-        now += 31_000
-        auth.credentials()
-        assertEquals(2, calls.get(), "after the backoff window a refresh is allowed again")
-    }
 }

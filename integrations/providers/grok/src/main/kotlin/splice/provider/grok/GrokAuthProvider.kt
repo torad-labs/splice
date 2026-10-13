@@ -132,16 +132,11 @@ public class GrokAuthProvider(
     }
 
     // SH-02(b): set when a refresh persisted an expiry still inside the stale floor; the blocking
-    // tier serves the current token until the backoff lapses. (c): counted for the dashboard.
+    // tier serves the current token until the backoff lapses.
     @Volatile
     // MIN_VALUE/2, not MIN_VALUE: `clock() - MIN_VALUE` overflows negative and would read as
     // "backoff active" from boot with small/injected clocks.
     private var lastIneffectiveRefreshAtMs: Long = Long.MIN_VALUE / 2
-    private val ineffectiveRefreshes = java.util.concurrent.atomic.AtomicLong()
-
-    /** SH-02(c): how many refreshes succeeded without satisfying the tier logic — nonzero here is
-     *  the early warning that used to arrive as provider-side credential death. */
-    internal val ineffectiveRefreshCount: Long get() = ineffectiveRefreshes.get()
 
     // Three tiers by remaining time-to-expiry, as a single if/else-if/else expression (not `when`,
     // not extra member functions — GrokAuthProvider is already at its detekt function-count budget):
@@ -327,10 +322,9 @@ public class GrokAuthProvider(
         // SH-02(b): even with (a), a sub-floor grant (expires_in shorter than the stale floor)
         // leaves the next read inside the blocking tier — a SUCCESSFUL refresh that cannot satisfy
         // the tier logic. Back off instead of looping (CLIProxyAPI refreshIneffectiveBackoff),
-        // log once per trip, and count it for the dashboard.
+        // and log once per trip.
         if (expiresAtMs - clock() < STALE_FLOOR_MS) {
             lastIneffectiveRefreshAtMs = clock()
-            ineffectiveRefreshes.incrementAndGet()
             log(
                 "[$LOG_TAG] refresh succeeded but expiry did not advance past the stale floor; " +
                     "backing off ${REFRESH_INEFFECTIVE_BACKOFF_MS / MS_PER_S}s",

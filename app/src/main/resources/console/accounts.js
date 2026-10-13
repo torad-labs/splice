@@ -1141,7 +1141,12 @@ document.addEventListener("click", async (e) => {
       if (!res.ok) { keyState(document.getElementById("key-in"), "Not saved"); break; }
       ui.replace = null; await refresh(); break;
     }
-    case "edit-budget": ui.editor = { c: k.cmd, cap: k.budget ? k.budget.cap : 10, block: k.budget ? k.budget.block : false }; render(); document.getElementById("cap-in")?.focus(); break;
+    // a new budget starts from Settings' "A new budget, when it's spent" (budgetDefaultAction), so that row governs it;
+    // the person can still pick Warn or Block here, and a config that does not read starts at Warn, the knob's default
+    case "edit-budget": {
+      const block = k.budget ? k.budget.block : (await API.get("/api/config")).body?.knobs?.budgetDefaultAction?.value === "block";
+      ui.editor = { c: k.cmd, cap: k.budget ? k.budget.cap : 10, block }; render(); document.getElementById("cap-in")?.focus(); break;
+    }
     case "preset": ui.editor.cap = Number(t.dataset.v); render(); break;
     case "bmode": ui.editor.cap = Number(document.getElementById("cap-in").value) || ui.editor.cap; ui.editor.block = t.dataset.v === "block"; render(); break;
     // splice keeps the whole set of budgets (BudgetRoutes.kt:71): every other command's goes back unchanged.

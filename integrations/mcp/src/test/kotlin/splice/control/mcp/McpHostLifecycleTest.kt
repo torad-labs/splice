@@ -204,7 +204,7 @@ class McpHostLifecycleTest : McpHostFixture() {
     fun `shutdown signals stubborn children together within one grace period`() = runBlocking {
         boot()
         val pids = listOf("fake2", "fake3").map { name ->
-            text(call(init(name), 1, "echo", "x", name = name)).substringBefore(" ").toLong()
+            text(call(init(name), 1, "echo", "x", name = name)).substringBefore(" ").removePrefix("pid=").toLong()
         }
         val start = System.nanoTime()
         host.stop()

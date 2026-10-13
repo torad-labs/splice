@@ -1,7 +1,7 @@
 // NEW: V4-133 — JsonlSink.appendLine's RotationArchive hook. NO_ARCHIVE (every caller before this
 // row) must keep discarding exactly as before; a real hook must see the rolled generation's bytes
-// BEFORE JsonlSink overwrites it, and a hook that throws must degrade to the old discard rather
-// than corrupt or block the append it rides on.
+// BEFORE JsonlSink overwrites it, and a hook that throws keeps the rolled generation and appends
+// the row unrotated, never corrupting or blocking the append it rides on.
 //
 // maxBytes = 1 forces every append past the first to rotate (each line alone already exceeds it),
 // which makes the sequence easy to follow: appending A, B, C, D rotates the LIVE content into .1
@@ -51,16 +51,16 @@ class JsonlSinkArchiveTest {
     }
 
     @Test
-    fun `a throwing archive hook degrades to the old discard, never a lost or corrupted append`(@TempDir tmp: Path) {
+    fun `a throwing archive hook keeps the rolled generation, never a lost or corrupted append`(@TempDir tmp: Path) {
         val file = tmp.resolve("perf.jsonl")
         val throwing = RotationArchive { throw java.io.IOException("archive dir is unwritable") }
         JsonlSink.appendLine(file, "A", maxBytes = 1, archive = throwing)
         JsonlSink.appendLine(file, "B", maxBytes = 1, archive = throwing)
-        // .1 ("A") exists here, so the throwing hook fires — rotation and the append must survive it.
+        // .1 ("A") exists here, so the throwing hook fires: .1 stays put and C lands unrotated after B.
         JsonlSink.appendLine(file, "C", maxBytes = 1, archive = throwing)
 
-        assertTrue(Files.exists(file.resolveSibling("perf.jsonl.1")), "rotation must proceed despite the throw")
-        assertEquals(listOf("B"), Files.readAllLines(file.resolveSibling("perf.jsonl.1")))
-        assertEquals(listOf("C"), Files.readAllLines(file), "the append itself is never lost")
+        assertTrue(Files.exists(file.resolveSibling("perf.jsonl.1")), "a throwing hook keeps the rolled generation")
+        assertEquals(listOf("A"), Files.readAllLines(file.resolveSibling("perf.jsonl.1")))
+        assertEquals(listOf("B", "C"), Files.readAllLines(file), "the append itself is never lost, and lands unrotated")
     }
 }

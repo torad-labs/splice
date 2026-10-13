@@ -24,7 +24,7 @@ internal class DayFileInventory(prefix: String) {
         require(retentionDays > 0)
         val kept = days.mapNotNull { (date, file) ->
             val packFiles = packs.map { file.resolveSibling("${file.fileName}$it") }
-            val content = (DayGenerations.oldestFirst(file) + file + packFiles)
+            val content = (DayGenerations.oldestFirst(file) + listOf(file) + packFiles)
                 .mapNotNull { path -> regularSize(path)?.let { path to it } }
             if (content.isEmpty()) null else date to content
         }

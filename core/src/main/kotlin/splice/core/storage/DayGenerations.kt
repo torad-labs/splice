@@ -32,7 +32,8 @@ public object DayGenerations {
     public fun base(name: String): String = name.replace(GENERATION, "")
 
     /** [file]'s rolled generations oldest first, `.2` up, then `.1`; `.1` is named whether or not it is there. */
-    public fun oldestFirst(file: Path): List<Path> = older(file) + file.resolveSibling("${file.fileName}$NEWEST_ROLLED")
+    public fun oldestFirst(file: Path): List<Path> =
+        older(file) + listOf(file.resolveSibling("${file.fileName}$NEWEST_ROLLED"))
 
     /** The numbered generations past `.1` that are on disk, oldest first. They run unbroken from `.2`: [keep]
      *  takes the next number, and a day goes whole. */

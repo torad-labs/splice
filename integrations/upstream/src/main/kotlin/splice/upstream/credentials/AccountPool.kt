@@ -310,8 +310,8 @@ public class AccountPool(
         return (listOfNotNull(pin) + policy).distinctBy { it.label }
     }
 
-    /** The first free login in [candidates] order. When every selectable login of a pool is held and each hold is
-     *  armed, none: the turn is answered with the pool's own "earliest reset" refusal (splice-lead, Oct 12), and the
+    /** The first free login in [candidates] order, else a held one with plan room, nearest first. When every selectable
+     *  login of a pool is held on its plan and each hold is armed, none: the turn is answered with the pool's own "earliest reset" refusal (splice-lead, Oct 12), and the
      *  client's recheck (ClientRecheck) brings it back to admission. A held login whose horizon has lifted is the
      *  probe that notices a top-up (V4-47), nearest reset first. A head with one login answers with that login's own
      *  refusal while its horizon is armed, as it always did. */
@@ -335,7 +335,12 @@ public class AccountPool(
         val eligible = when {
             excluded.isNotEmpty() -> free
             current.accounts.count { it.credentialStatus(at).selectable } <= 1 -> free.ifEmpty { held }
-            else -> free.ifEmpty { held.filter { it.cooldown.remainingMs() <= 0L } }
+            // A login with plan room waits out its short hold at admission and serves; a login held on its plan is
+            // only a probe, so it is taken when no login has room (section 11: a session stays put until a limit).
+            else -> free.ifEmpty {
+                held.filter { AccountAvailability.planRoom(it, at) }
+                    .ifEmpty { held.filter { it.cooldown.remainingMs() <= 0L } }
+            }
         }
         return eligible.firstNotNullOfOrNull { account ->
             account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }

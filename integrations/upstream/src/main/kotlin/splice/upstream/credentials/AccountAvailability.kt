@@ -28,6 +28,13 @@ internal object AccountAvailability {
             held && account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
         }.sortedBy { maxOf(it.cooldown.providerUnavailableForMs(), it.cooldown.remainingMs()) }
 
+    /** Held only by the provider's short rate limit, its plan named spent by neither a hold nor a full reading: admission
+     *  waits that hold out on the same login (CredentialHoldAdmission), so it is no exhausted login. A pool flipped from
+     *  such a login to one held on its seven-day window until the next day, and failed turns as every login exhausted
+     *  while the first had plan room (claude-splice, Oct 13, 6:42 PM CT). */
+    fun planRoom(account: PoolAccount, at: Long): Boolean =
+        !account.quotaHeld && account.cooldown.planHold.live() == null && !fullReading(account, at)
+
     private fun selectable(account: PoolAccount, at: Long): Boolean =
         account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
 
@@ -106,7 +113,10 @@ internal object AccountAvailability {
         val snapshot = account.quotaSnapshot
         val blocked = listOfNotNull(snapshot?.fiveHour, snapshot?.sevenDay).filter { exhausted(it, at) }
         val quotaReset = blocked.takeIf { account.quotaHeld }?.mapNotNull(QuotaWindow::resetsAt)?.maxOrNull()
-        val remaining = account.cooldown.providerUnavailableForMs()
+        // A short provider hold blocks selection while it runs ([available]), so it is a reset too: without it a pool
+        // whose only free login waits seconds read the next plan reset, a day away, as its earliest.
+        val shortHold = account.cooldown.remainingMs().takeIf { account.cooldown.rateLimitReply != null } ?: 0L
+        val remaining = maxOf(account.cooldown.providerUnavailableForMs(), shortHold)
         // Vendors stamp a reset in epoch seconds while the pool's clock runs in milliseconds; a part second rounds up.
         val wholeSeconds = TimeUnit.MILLISECONDS.toSeconds(remaining)
         val extraSecond = if (TimeUnit.SECONDS.toMillis(wholeSeconds) == remaining) 0L else 1L

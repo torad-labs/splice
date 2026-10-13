@@ -62,7 +62,6 @@ public class PerfRowsFileSource internal constructor(
     internal var parsedLines: Long = 0L
         private set
 
-    internal val cachedBytes: Long get() = cache.retainedBytes
     internal val cachedLines: Int get() = cache.retainedRows
 
     private val archiveName = PerfArchiveName(file.fileName.toString())

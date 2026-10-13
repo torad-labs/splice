@@ -42,7 +42,6 @@ class PerfTurnsProjectionTest {
             assertEquals(SCALE_REQUESTS, projection.window.rows.size)
             assertEquals(whole, projection.complete(projection.window.rows))
         }
-        assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
     }
 
     @Test

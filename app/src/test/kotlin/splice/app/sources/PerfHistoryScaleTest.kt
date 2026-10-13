@@ -134,7 +134,7 @@ class PerfHistoryScaleTest {
         val diskBytes = Files.size(history.file) + Files.size(history.file.resolveSibling("${history.file.fileName}.1"))
         println(
             "perf_window_requests=${rows.size} perf_window_tokens=$tokens response_bytes=$bytes " +
-                "source_file_bytes=$diskBytes parsed_lines=${source.parsedLines} retained_bytes=${source.cachedBytes}",
+                "source_file_bytes=$diskBytes parsed_lines=${source.parsedLines}",
         )
         assertEquals(SCALE_REQUESTS, rows.size, "the display limit must never truncate the usage window")
         assertEquals(SCALE_TOKENS, tokens, "the large token total must not overflow or lose rows")

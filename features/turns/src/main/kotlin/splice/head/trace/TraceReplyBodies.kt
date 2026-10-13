@@ -49,6 +49,7 @@ internal class TraceReplyBodies(private val heap: HeapReservations = JvmHeap.bud
         put("model", end.model)
         put("compact", end.compact)
         put("attempts", end.attempts)
+        put("source_attempts", end.counters[PerfKeys.SOURCE_ATTEMPTS])
         put("total", end.marks[PerfKeys.TOTAL])
         put("first_byte", end.marks[PerfKeys.FIRST_BYTE])
         put("first_delta", end.marks[PerfKeys.FIRST_DELTA])

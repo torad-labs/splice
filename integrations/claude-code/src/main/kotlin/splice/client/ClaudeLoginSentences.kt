@@ -36,7 +36,7 @@ internal object Refusals {
     }
 
     fun notRecorded(head: ClaudeHead, label: String, why: String): String =
-        "could not record '$label''s account in ${head.key}'s ${Keys.CLAUDE_JSON} ($why), so the login it held was " +
+        "could not record '$label's account in ${head.key}'s ${Keys.CLAUDE_JSON} ($why), so the login it held was " +
             "put back and nothing was switched."
 
     fun stopped(head: ClaudeHead, label: String, why: String): String =
@@ -83,7 +83,7 @@ internal object Said {
 internal object Words {
     /** Why a stored copy is never put back, or nothing for a new label. */
     fun stale(label: String, account: Account?, legacy: Boolean): String = when {
-        account != null -> " ('$label''s stored copy may be older than its last refresh, so it is never put back)"
+        account != null -> " ('$label's stored copy may be older than its last refresh, so it is never put back)"
         legacy ->
             " ('$label' was stored before splice recorded whose account a copy is, so it may be stale and is " +
                 "never put back)"

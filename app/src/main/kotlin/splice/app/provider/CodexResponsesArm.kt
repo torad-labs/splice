@@ -42,13 +42,22 @@ import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
 
 internal class CodexResponsesArm(
     private val statePaths: StatePaths,
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
-    private val sessionAlive: CodeModeSessionAlive = CodeModeSessionLiveness(probeScope, log = log),
+    /** The heads that run code mode. The liveness poller is one per daemon, so each of its lines carries every
+     *  such head's tag, and each head's log view keeps it (gap 480). */
+    private val codeModeHeads: MutableSet<String> = ConcurrentHashMap.newKeySet(),
+    private val sessionAlive: CodeModeSessionAlive = CodeModeSessionLiveness(
+        probeScope,
+        log = LogSink { line ->
+            codeModeHeads.fold(log) { sink, head -> HeadScopedLogs.headScopedLog(head, sink) }(line)
+        },
+    ),
 ) {
     private val quirksOverlay = QuirksOverlay()
     private val accountFiles = OAuthAccountFiles()
@@ -87,7 +96,7 @@ internal class CodexResponsesArm(
                 foldConfig = LiveFoldConfig { quirksOverlay.foldConfigFrom(cfg.current()) },
                 accountIdHeader = providerCfg.quirks.accountIdHeader,
                 codeMode = CodexCodeModeWiring(
-                    bridge = codeModeBridge(ctx),
+                    bridge = codeModeBridge(ctx)?.also { codeModeHeads += ctx.key },
                     models = ctx.providerCfg.quirks.codeModeModels,
                     onlyModels = backendCodeModeOnly(ctx),
                 ),

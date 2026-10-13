@@ -431,6 +431,7 @@ function paneHtml() {
     + tierRows
     + nowRow(c)
     + windowsRow(c)
+    + clientRow(c)
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
@@ -503,6 +504,14 @@ function windowsRow(c) {
   const rules = c.windowRules.map((w) => `<span class="fig" title="Every model whose id starts with ${esc(w.prefix)}"><bdo dir="ltr">${esc(w.prefix)}…</bdo> ${big(w.context_window)}</span>`);
   if (!extra.length && !rules.length) return "";
   return `<span class="lbl">Windows</span><div class="ctl col">${[...extra, ...rules].join("")}</div>`;
+}
+/** The window Claude Code itself counts against in each session on this command, as its status line reported it
+ *  (GET /api/sessions' client_context_window, 48fa2f61b). A session that has not posted one is left out, never guessed. */
+function clientRow(c) {
+  const seen = data.sessions.filter((x) => x.head === c.key && x.client_context_window > 0);
+  if (!seen.length) return "";
+  const row = (x) => `<span class="fig"><a class="chip" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(x.name || x.title || x.session_id.slice(0, 8))}</a> ${big(x.client_context_window)}</span>`;
+  return `<span class="lbl">Claude Code's window</span><div class="ctl col">${seen.map(row).join("")}</div>`;
 }
 /** What the command's gate holds right now and what has failed on it, as GET /api/heads serves them. */
 function nowRow(c) {

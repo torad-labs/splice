@@ -1051,6 +1051,12 @@ origin.
   marker; prose that merely mentions compaction is an ordinary turn.
 - **A cross-head resume lands in the project the person is standing in.** It prefers the copy under the launch's own
   working directory before any other head's tree.
+- **A refusal or a content filter after the answer began ends in words.** Claude Code never retries once content has
+  reached it, so an error frame there read as a lost connection. Every dialect now appends the verdict to the answer, as
+  a stall after content already does.
+- **An unknown vendor error code is tried once more, a known one never.** A code on the deterministic list, such as
+  `invalid_parameter`, fails at once with its message. A code on no list is sent again once on the Responses dialect,
+  then the message.
 - **A standing prompt the head could not build refuses boot.** Both keys set, a prompt file that cannot be read, a
   relative project root or a strip pattern that does not compile is a config finding naming its table, listed with every
   other finding, so splice does not start rather than skipping the head. `splice doctor` names the unreadable path before

@@ -13,6 +13,7 @@ import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 import splice.upstream.failure.TearWords
 import splice.upstream.failure.TerminalStates
+import splice.upstream.failure.WordsAfterContent
 import splice.upstream.retry.WatchdogFired
 import java.io.IOException
 
@@ -77,13 +78,19 @@ internal class ResponsesTerminalDecision(
                 cause = it.cause,
                 phase = FailurePhase.MID_OUTPUT,
             )
-        } ?: refusalFailure(state) ?: contentFilterFailure(state),
+        } ?: censored(state),
         finished = state.finalResponse != null,
         watchdogFired = ctx.signals.watchdogFired(),
     ).terminalPrecedence(
         onFinished = { payload.successOutcome(state) },
         onWatchdog = { watchdogOutcome(it, state) },
         onUnfinished = { noCompletionOutcome(state, tear) },
+    )
+
+    /** The model's refusal, else the content filter; after content, either ends as words (WordsAfterContent). */
+    private fun censored(state: ResponsesTurnState): TurnOutcome.Failure? = WordsAfterContent.of(
+        refusalFailure(state) ?: contentFilterFailure(state),
+        state.emittedText || state.emittedThinking,
     )
 
     // W4-A (L3): the backend REFUSED. OpenAI's refusal channel arrives with status `completed`, so

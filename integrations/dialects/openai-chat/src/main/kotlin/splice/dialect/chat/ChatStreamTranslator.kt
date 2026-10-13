@@ -22,6 +22,7 @@ import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
 import splice.upstream.failure.TerminalStates
+import splice.upstream.failure.WordsAfterContent
 import splice.upstream.retry.FIRST_OUTPUT_TIER
 import splice.upstream.retry.MID_OUTPUT_TIER
 import splice.upstream.retry.MS_PER_S
@@ -101,7 +102,8 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — the poller can sit on the socket-EOF read AFTER finish_reason arrived).
     private fun terminalOutcome(): TurnOutcome = TerminalStates(
-        providerFailure = terminal.providerFailure()?.copy(salvagedUsage = usage.toUsage()),
+        providerFailure = WordsAfterContent.of(terminal.providerFailure(), clientSawContent())
+            ?.copy(salvagedUsage = usage.toUsage()),
         finished = terminal.finished,
         watchdogFired = ctx.watchdogFired(),
     ).terminalPrecedence(

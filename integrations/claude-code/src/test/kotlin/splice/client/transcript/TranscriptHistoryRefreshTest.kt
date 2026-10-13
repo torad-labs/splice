@@ -3,8 +3,6 @@
 package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.WallClock
@@ -89,19 +87,6 @@ class TranscriptHistoryRefreshTest {
         Files.delete(gone)
 
         assertEquals(mapOf(TWO to "Stays"), names(refresh()))
-    }
-
-    @Test
-    fun `a transcript emptied after a scan is no longer resumable`() {
-        val file = transcript(ONE, title("Full"), 1_000)
-        assertTrue(refresh().sessions.single().files.resumable)
-
-        Files.writeString(file, "")
-        Files.setLastModifiedTime(file, FileTime.fromMillis(2_000))
-
-        val entry = refresh().sessions.single()
-        assertTrue(entry.files.hasTranscript)
-        assertFalse(entry.files.resumable)
     }
 
     @Test

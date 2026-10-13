@@ -58,7 +58,7 @@ class SessionHistoryRouteTest {
             "/work/other",
             null,
             800,
-            SessionFiles(false, true, resumable = false),
+            SessionFiles(false, true),
         ),
     )
 
@@ -114,10 +114,6 @@ class SessionHistoryRouteTest {
             second.getValue("sessions").jsonArray.map { it.jsonObject.getValue("session_id").jsonPrimitive.content },
         )
         assertEquals("null", second.getValue("next").toString())
-        assertEquals(
-            "false",
-            second.getValue("sessions").jsonArray.last().jsonObject.getValue("resumable").jsonPrimitive.content,
-        )
     }
 
     @Test

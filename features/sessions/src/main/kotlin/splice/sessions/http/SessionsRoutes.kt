@@ -11,10 +11,6 @@
 //   route  `head` | `direct` | `unknown`: the registry's SessionRoute, decided where the process
 //          environment is read. `head` itself is unchanged and still folds the last two into
 //          "unknown head".
-//   resumable  V4-421: whether a transcript with conversation bytes sits in some head's tree, which is
-//          what GET /api/sessions/{id}/resume needs. A registry entry can exist with none (a
-//          messaging bridge registers and never writes one). Left off a row when nothing was measured:
-//          no id, no head tree, or the transcript view is off.
 //   last   V4-444: the last main-thread message's role, tool, one-line redacted text and epoch-ms ts;
 //          null without an available transcript message, session id, or enabled transcript view.
 //   turns  how many turns the session has run, from the daemon's per-session accumulator, with
@@ -140,18 +136,9 @@ public class SessionsRoutes(
             ?.let { transcripts.title(it, roots.treesFor(record.head), record.process.cwd) }
     }
 
-    /** V4-421: the head trees a resume searches, asked once per listing and held (ResumableSessions). */
-    private val resumableSessions = ResumableSessions(
-        transcripts,
-        roots.headTrees(),
-    )
-
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
         val rowFacts = facts.forRecords(listing.sessions)
-        // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
-        val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
-        val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
         // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
         put("reading", viewEnabled())
         put("note", HEADLESS_NOTE)
@@ -161,7 +148,7 @@ public class SessionsRoutes(
         listing.error?.let { put("error", it) }
         put(
             "sessions",
-            buildJsonArray { listing.sessions.forEach { add(row(it, resumable, rowFacts)) } },
+            buildJsonArray { listing.sessions.forEach { add(row(it, rowFacts)) } },
         )
     }.toString()
 
@@ -190,20 +177,19 @@ public class SessionsRoutes(
     }
 
     /** The exact same row projection for a durable-history entry after the live overlay. */
-    public fun historyRow(record: SessionRecord): JsonObject = row(record, Resumability(null))
+    public fun historyRow(record: SessionRecord): JsonObject = row(record)
 
     /** History pages snapshot only their selected records, never shared mutable per-listing state. */
     public val historyRows: SessionHistoryRowOf = object : SessionHistoryRowOf {
         override fun invoke(record: SessionRecord): JsonObject = historyRow(record)
         override fun forRecords(records: List<SessionRecord>): SessionHistoryRowOf {
             val snapped = facts.forRecords(records)
-            return SessionHistoryRowOf { row(it, Resumability(null), snapped) }
+            return SessionHistoryRowOf { row(it, snapped) }
         }
     }
 
     private fun row(
         s: SessionRecord,
-        resumable: Resumability,
         rowFacts: SessionRowFacts = facts,
     ): JsonObject = buildJsonObject {
         put("pid", s.process.pid)
@@ -229,7 +215,6 @@ public class SessionsRoutes(
         put("head", s.head ?: UNKNOWN_HEAD)
         put("route", routeName(s.route))
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
-        resumable.mark(this, s.sessionId)
         repoOf(s)?.let { put("repo", repoJson(it)) }
         projects.put(this, s)
         val bound = s.sessionId?.let { teamOf(it) }

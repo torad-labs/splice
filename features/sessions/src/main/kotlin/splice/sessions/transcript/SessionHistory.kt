@@ -20,8 +20,6 @@ public data class SessionHistoryEntry(
 public data class SessionFiles(
     val hasHistory: Boolean,
     val hasTranscript: Boolean,
-    /** An empty primary file remains in the census but cannot continue a conversation. */
-    val resumable: Boolean = hasTranscript,
 )
 
 /** The denominator comes from the on-disk sources, not from a registry of running processes.

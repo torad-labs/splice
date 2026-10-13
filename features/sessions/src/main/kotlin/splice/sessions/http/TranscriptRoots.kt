@@ -13,9 +13,6 @@ public class TranscriptRoots(
      *  never reads the operator's own ~/.claude. */
     private val vanilla: Path = UserHome.claudeDir(),
 ) {
-    /** Every head's own tree, once. */
-    public fun headTrees(): List<Path> = heads.values.mapNotNull { it.transcriptRoot }.distinct()
-
     /** The session's head tree, the vanilla tree, then every other head's. */
     public fun treesFor(head: String?): List<Path> {
         val own = head?.let { heads[it]?.transcriptRoot }

@@ -6,7 +6,7 @@ import splice.core.util.FileIdentity
 import java.nio.file.Path
 
 /** What the scan needs from one primary transcript, read from its head and tail. */
-internal data class TranscriptFacts(val eligible: Boolean, val name: String?, val cwd: String?)
+internal data class TranscriptFacts(val name: String?, val cwd: String?)
 
 /** A transcript's stamp: a file that is appended to, rewritten or replaced gets a new one. [key] is the file's
  *  device and inode where the platform has them. */

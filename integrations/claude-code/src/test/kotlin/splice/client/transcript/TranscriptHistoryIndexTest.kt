@@ -9,7 +9,6 @@ import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.FileTime
 
 private const val BOTH = "3f2a9c1e-0000-4000-8000-000000000001"
 private const val HISTORY_ONLY = "3f2a9c1e-0000-4000-8000-000000000002"
@@ -17,25 +16,6 @@ private const val TRANSCRIPT_ONLY = "3f2a9c1e-0000-4000-8000-000000000003"
 
 class TranscriptHistoryIndexTest {
     @TempDir lateinit var home: Path
-
-    @Test
-    fun `an older nonempty head copy keeps the session resumable beside a newer empty copy`() {
-        val earlier = home.resolve(".claude-earlier")
-        val later = home.resolve(".claude-later")
-        val full = earlier.resolve("projects/-work-atlas/$BOTH.jsonl")
-        Files.createDirectories(full.parent)
-        Files.writeString(full, """{"type":"user","cwd":"/work/atlas"}""" + "\n")
-        Files.setLastModifiedTime(full, FileTime.fromMillis(1_000))
-        val empty = later.resolve("projects/-work-atlas/$BOTH.jsonl")
-        Files.createDirectories(empty.parent)
-        Files.createFile(empty)
-        Files.setLastModifiedTime(empty, FileTime.fromMillis(2_000))
-        val scan = TranscriptHistoryIndex().scan(
-            listOf(SessionHistoryRoot("earlier", earlier), SessionHistoryRoot("later", later)),
-        )
-        assertEquals(1, scan.sessions.size)
-        assertTrue(scan.sessions.single().files.resumable, "the launch can still adopt the older nonempty copy")
-    }
 
     @Test
     fun `history prompts and custom titles redact credential shapes before truncation`() {
@@ -115,7 +95,6 @@ class TranscriptHistoryIndexTest {
         assertEquals(3, scan.sessions.size, "repeated history rows and symlinked trees never duplicate a session")
         val both = scan.sessions.single { it.sessionId == BOTH }
         assertTrue(both.files.hasHistory && both.files.hasTranscript)
-        assertTrue(both.files.resumable)
         assertEquals("Atlas parser", both.name, "the transcript's named title outranks its last prompt")
         assertEquals("/work/atlas", both.project)
         assertEquals(3000L, both.updatedAt, "the newest history entry wins even when its file is old")
@@ -139,6 +118,5 @@ class TranscriptHistoryIndexTest {
         val empty = scan.sessions.single { it.sessionId == TRANSCRIPT_ONLY }
         assertFalse(empty.files.hasHistory)
         assertTrue(empty.files.hasTranscript, "an empty primary file still belongs to the source denominator")
-        assertFalse(empty.files.resumable, "the launch cannot continue an empty conversation")
     }
 }

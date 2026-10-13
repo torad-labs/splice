@@ -90,7 +90,6 @@ private class HistoryScanBuilder(
 internal class HistoryFacts(private val id: String) {
     var hasHistory: Boolean = false
     var hasTranscript: Boolean = false
-    var transcriptContent: Boolean = false
     var historyName: String? = null
     var transcriptName: String? = null
     var project: String? = null
@@ -112,7 +111,6 @@ internal class HistoryFacts(private val id: String) {
         files = SessionFiles(
             hasHistory = hasHistory,
             hasTranscript = hasTranscript,
-            resumable = hasTranscript && transcriptContent,
         ),
     )
 }

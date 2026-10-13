@@ -98,7 +98,6 @@ public class SessionHistoryRoute(
     private fun itemJson(item: HistoryItem, rows: SessionHistoryRowOf): JsonObject {
         val fields = rows(item.record).toMutableMap()
         fields["source"] = JsonPrimitive(item.source)
-        fields["resumable"] = JsonPrimitive(item.resumable)
         return JsonObject(fields)
     }
 

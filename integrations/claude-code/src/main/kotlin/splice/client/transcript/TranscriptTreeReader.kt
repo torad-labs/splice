@@ -102,19 +102,18 @@ internal class TranscriptTreeReader(
     private fun heldTranscript(file: Path, attrs: EntryStat, head: String?) {
         val stamp = TranscriptStamp(attrs.size, attrs.modifiedMs, attrs.identity)
         val known = transcriptFacts.lookup(file, stamp)
-            ?: factsOf(file, attrs.size > 0).also { transcriptFacts.remember(file, stamp, it) }
+            ?: factsOf(file).also { transcriptFacts.remember(file, stamp, it) }
         record(file, attrs.modifiedMs, known, head)
     }
 
-    private fun factsOf(file: Path, eligible: Boolean): TranscriptFacts {
+    private fun factsOf(file: Path): TranscriptFacts {
         val metadata = TranscriptMetadata.read(file)
-        return TranscriptFacts(eligible, metadata?.first, metadata?.second)
+        return TranscriptFacts(metadata?.first, metadata?.second)
     }
 
     private fun record(file: Path, modified: Long, known: TranscriptFacts, head: String?) {
         val id = file.fileName.toString().removeSuffix(".jsonl")
         val facts = state.sessions.getOrPut(id) { HistoryFacts(id) }
-        facts.transcriptContent = facts.transcriptContent || known.eligible
         if (!facts.hasTranscript || modified >= (facts.transcriptAt ?: 0L)) {
             facts.transcriptAt = modified
             facts.transcriptName = known.name

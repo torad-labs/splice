@@ -16,7 +16,7 @@ internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: Ses
         val source = source() ?: return null
         val historical = historicalRecord(id)
         val record = live?.let { overlay(it, historical) } ?: historical ?: return null
-        return HistoryItem(id, record, source, entry?.files?.resumable ?: false)
+        return HistoryItem(id, record, source)
     }
 
     private fun source(): String? = when {
@@ -59,7 +59,7 @@ internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: Ses
 }
 
 /** Search and cursor keys are read from the same merged row the console ultimately shows. */
-internal data class HistoryItem(val id: String, val record: SessionRecord, val source: String, val resumable: Boolean) {
+internal data class HistoryItem(val id: String, val record: SessionRecord, val source: String) {
     val at: Long get() = record.process.updatedAt ?: 0L
 
     /** The page after an immutable sort key, even if its anchor record was deleted or updated. */

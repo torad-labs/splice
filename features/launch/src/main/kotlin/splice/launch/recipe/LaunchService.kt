@@ -16,6 +16,7 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
+import splice.client.mcp.HostedMcpOverlay
 import splice.client.resume.CallingRoster
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.MovingTrust
@@ -64,6 +65,11 @@ public class LaunchService(
 ) {
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
+
+    /** The servers splice hosts, handed to a wrapped launch with --mcp-config (V4-445): plain claude reads his own
+     *  ~/.claude.json, which splice never writes, so this is how it reaches the one hosted copy. Assigned by the daemon
+     *  before routes serve requests; null runs plain claude over his own servers. */
+    public var hostedMcp: HostedMcpOverlay? = null
 
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
@@ -153,6 +159,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             wrapped?.let {
                 addAll(listOf("--settings", it.settingsOverlay(roster, held.gateway.statuslineCommand)))
+                addAll(hostedMcp?.args(effective.signIn.headKey).orEmpty())
             }
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.

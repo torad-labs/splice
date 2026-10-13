@@ -170,8 +170,9 @@ public class McpInventory(
  *  lookup, not a paragraph per branch. */
 internal object McpDispositionReasons {
     const val MIGRATED: String =
-        "hosted once by the daemon; every session's Claude Code connects to the shared process " +
-            "instead of spawning its own"
+        "left in this file as declared, which splice never rewrites, and hosted once by the daemon: every head's " +
+            "copy and every plain claude splice launches (--mcp-config) connect to that one process instead of " +
+            "spawning their own; a claude started outside splice reads this entry and starts its own"
     const val PROJECT: String =
         "a project-scoped mcpServers override inside .claude.json; discovered but shared hosting does not rewrite it " +
             "yet (V4-146 is a census, not a migration of this kind)"

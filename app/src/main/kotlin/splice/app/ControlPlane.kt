@@ -41,6 +41,7 @@ import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
 import splice.app.sources.PerfSourceFiles
 import splice.client.ClaudeConfigMaterializer
+import splice.client.mcp.HostedMcpOverlay
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
@@ -239,6 +240,7 @@ internal class ControlPlane(
         owner.places().map { it.head }.distinct().forEach(providerAssembly.claudePoolChanges::publish)
         return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
             it.loginGuard = owner
+            it.hostedMcp = HostedMcpOverlay(home, sharing, statePaths.stateDir, log)
         }
     }
 

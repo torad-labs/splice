@@ -100,13 +100,13 @@ function qualifiedHub(repoRoot: string): string {
   return folder;
 }
 
-function provenanceSection(base: string, bumpSha: string, version: string): string {
+function provenanceSection(sha: string, version: string): string {
   return [
     "",
     `## This build: v${version}`,
     "",
-    `Built locally from ${base} without GitHub attestation, because Actions is locked. The release commit is ${bumpSha},`,
-    `which adds only the version bump to ${base}. The build ran \`bun tools/release beta ${version}\` in a throwaway`,
+    `Built locally from ${sha} without GitHub attestation, because Actions is locked. The tag v${version} points at`,
+    `that commit. The build ran \`bun tools/release beta ${version}\` in a throwaway`,
     "tree, which appended this section before building, so the jar embeds it. No Sigstore attestation exists for",
     "these assets: `gh attestation verify` fails on them, and install.sh, run with a signed-in gh, refuses them.",
     "Each asset is bound to the release only by sha256sums.txt.",
@@ -114,18 +114,18 @@ function provenanceSection(base: string, bumpSha: string, version: string): stri
   ].join("\n");
 }
 
-function notesFor(repoRoot: string, version: string, base: string, bumpSha: string): string {
+function notesFor(repoRoot: string, version: string, sha: string): string {
   const changelog = readFileSync(join(repoRoot, "CHANGELOG.md"), "utf8");
   const own = releaseNotes(changelog, version);
   const found = own instanceof Error ? releaseNotes(changelog, version.replace(/-.*/, "")) : own;
   // GitHub refuses a release body over 125,000 characters; v0.4.0's section alone is past it.
-  const link = `https://github.com/torad-labs/splice/blob/${bumpSha}/CHANGELOG.md`;
+  const link = `https://github.com/torad-labs/splice/blob/${sha}/CHANGELOG.md`;
   const section = found instanceof Error ? `What is in it: ${link}` : found.length > 100_000
     ? `${found.split("\n", 1)[0]}\n\nThe section is longer than a release page holds; read it in [CHANGELOG.md](${link}).`
     : found;
   return [
-    `**Built locally from ${base} without GitHub attestation, because Actions is locked.** The tag points at ${bumpSha},`,
-    `the version bump on top of ${base}. \`gh attestation verify\` fails on these assets, so install.sh refuses them`,
+    `**Built locally from ${sha} without GitHub attestation, because Actions is locked.** The tag points at that commit.`,
+    "`gh attestation verify` fails on these assets, so install.sh refuses them",
     "while gh is signed in. Install with gh signed out, or download splice.jar and splice-launch, check them against",
     "sha256sums.txt, and run `SPLICE_JAR=./splice.jar ./install.sh`.",
     "",
@@ -154,7 +154,6 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
 
     bump(repoRoot, version);
     const bumpSha = run(["git", "rev-parse", "HEAD"], repoRoot);
-    const base = run(["git", "rev-parse", "--short=9", `${bumpSha}^`], repoRoot);
     run(["git", "fetch", "origin", branch], repoRoot);
     if (Bun.spawnSync(["git", "merge-base", "--is-ancestor", bumpSha, "FETCH_HEAD"], { cwd: repoRoot }).exitCode !== 0) {
       console.log(`release beta: pushing ${bumpSha.slice(0, 9)} to origin/${branch} through the pre-push gate`);
@@ -164,7 +163,7 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
     const hub = qualifiedHub(repoRoot);
     if (existsSync(tree)) run(["git", "worktree", "remove", "--force", tree], repoRoot);
     run(["git", "worktree", "add", "--detach", tree, bumpSha], repoRoot);
-    writeFileSync(join(tree, "docs/PROVENANCE.md"), readFileSync(join(tree, "docs/PROVENANCE.md"), "utf8") + provenanceSection(base, bumpSha.slice(0, 9), version));
+    writeFileSync(join(tree, "docs/PROVENANCE.md"), readFileSync(join(tree, "docs/PROVENANCE.md"), "utf8") + provenanceSection(bumpSha.slice(0, 9), version));
     for (const b of HUB) {
       const dir = join(tree, HUB_STAGE, `${b}ReleaseExecutable`);
       mkdirSync(dir, { recursive: true });
@@ -183,7 +182,7 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
     }
 
     const notesFile = join(tree, "release-notes.md");
-    writeFileSync(notesFile, notesFor(repoRoot, version, base, bumpSha.slice(0, 9)));
+    writeFileSync(notesFile, notesFor(repoRoot, version, bumpSha.slice(0, 9)));
     run(["gh", "release", "create", tag, "--prerelease", "--target", bumpSha, "--title", `splice ${tag}`,
       "--notes-file", notesFile, ...ASSETS.map((asset) => join(tree, "dist", asset))], repoRoot, Bun.env, false);
     console.log(`release beta: jar ${sha256(join(tree, "dist/splice.jar"))}`);

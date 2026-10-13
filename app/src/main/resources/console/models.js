@@ -43,7 +43,7 @@ KNOBS.wire(root, () => render());
 const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
-  logs: {}, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
+  logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
 async function readAll() {
   const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head"];
@@ -392,14 +392,21 @@ function paneHtml() {
     + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
     + runtimeHtml(c)
     + tierRows
+    + nowRow(c)
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
     + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save</button>${saidHtml}${restart}</div></section>`;
-  const lines = logsOf(c.key);
-  const ev = eventsOf(lines ?? []);
-  const raw = (lines ?? []).filter((l) => l.raw).slice(-60);
-  const log = `<section class="hlog"><h3>Log</h3>${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">No events</p>`}`
+  const q = ui.logq.trim().toLowerCase(), hit = (l) => !q || l.raw.toLowerCase().includes(q);
+  const lines = (logsOf(c.key) ?? []).filter(hit);
+  const ev = eventsOf(lines);
+  const raw = lines.filter((l) => l.raw).slice(-60);
+  const path = ui.logPath[c.key], why = ui.logWhy[c.key];
+  const top = `<div class="loghead"><h3>Log</h3>${path ? `<span class="ppath" title="${esc(path)}"><bdo dir="ltr">${esc(homeRel(path))}</bdo></span>` : ""}`
+    + `<input class="field" id="logq" placeholder="Search the log" value="${esc(ui.logq)}" autocomplete="off" aria-label="Search the log">`
+    + `<button class="act quiet small" data-act="logpause" aria-pressed="${ui.logPaused}">${ui.logPaused ? "Resume" : "Pause"}</button></div>`
+    + (why ? `<p class="said limit">${esc(why)}</p>` : "");
+  const log = `<section class="hlog">${top}${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">${q ? "No lines match" : "No events"}</p>`}`
     + `<details class="rawlog"${ui.rawOpen ? " open" : ""}><summary>Raw log</summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
@@ -440,10 +447,28 @@ function eventsOf(lines) {
   }
   return [...folded.values()].sort((a, b) => b.at.localeCompare(a.at));
 }
+// The route sends the file it read (HeadOperations.kt:57), and a file it could not read comes back as one reason line,
+// "[logs unavailable: <file> unreadable (<why>)]" (LogFileSource.kt:48), which carries no command tag: it is kept and said.
 async function readLog(key) {
   const res = await API.get(`/api/logs/${encodeURIComponent(key)}?tail=2000`);
-  ui.logs[key] = res.ok ? parseLog(res.body?.lines ?? []).filter((l) => l.tag === key) : [];
+  const parsed = res.ok ? parseLog(res.body?.lines ?? []) : [];
+  ui.logs[key] = parsed.filter((l) => l.tag === key);
+  ui.logPath[key] = res.body?.path ?? null;
+  const why = parsed.find((l) => l.raw.startsWith("[logs unavailable:"))?.raw.slice(1, -1);
+  ui.logWhy[key] = why ? why[0].toUpperCase() + why.slice(1) : res.ok ? null : "Log not read";
   render();
+}
+/** What the command's gate holds right now and what has failed on it, as GET /api/heads serves them. */
+function nowRow(c) {
+  const h = data.heads.find((x) => x.key === c.key);
+  if (!h?.gate) return "";
+  const g = h.gate, e = h.health ?? {};
+  const num = (n) => Number(n).toLocaleString("en-US");
+  const max = g.max === "unlimited" ? "no limit" : `at most ${num(g.max)}`;
+  const errs = [[e.localOriginErrors, "in splice"], [e.providerErrors, "from the provider"]].filter(([n]) => n > 0)
+    .map(([n, w]) => `${num(n)} ${n === 1 ? "error" : "errors"} ${w}`);
+  return `<span class="lbl">Right now</span><div class="ctl"><span class="fig">${num(g.inflight ?? 0)} in flight, ${max}</span>`
+    + `<span class="fig">${num(g.queued ?? 0)} waiting</span>${errs.map((x) => `<span class="fig limit">${x}</span>`).join("") || '<span class="fig">No errors</span>'}</div>`;
 }
 
 // ---------- Save: one PUT of the topology, the way Settings writes it ----------
@@ -1026,6 +1051,7 @@ function onClick(e) {
     case "restart-now": ui.cut = null; restartSplice(); break;
     case "keep-running": ui.cut = null; render(); break;
     case "clearq": ui.q = ""; render(); break;
+    case "logpause": ui.logPaused = !ui.logPaused; if (!ui.logPaused && ui.open) readLog(ui.open); else render(); break;
     case "proj": ui.proj = d.p; ui.file = null; ui.comp = null; render(); break;
     case "projcmd": ui.projCmd = d.h; ui.comp = null; render(); break;
     case "cedit": { const p = data.projects.find((x) => x.id === ui.proj) ?? data.projects[0], c = cmdByKey(ui.projCmd) ?? commandsOf()[0]; if (p && c) openComp(p, c); render(); break; }
@@ -1040,6 +1066,7 @@ function onClick(e) {
 function onInput(e) {
   const t = e.target, a = ui.add;
   if (t.id === "q") { ui.q = t.value; render(); return; }
+  if (t.id === "logq") { ui.logq = t.value; render(); return; }
   if (a) {
     if (t.id === "a-name") a.name = t.value;
     else if (t.id === "a-url") a.url = t.value;
@@ -1078,6 +1105,9 @@ async function init() {
   else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
   render();
   if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
-  setInterval(async () => { if (!ui.draft && !ui.add && !ui.comp && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
+  // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
+  const locked = () => document.body.classList.contains("locked");
+  setInterval(() => { if (ui.open && !ui.add && !ui.logPaused && !document.hidden && !locked()) readLog(ui.open); }, 5000);
+  setInterval(async () => { if (!locked() && !ui.draft && !ui.add && !ui.comp && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
 }
 init();

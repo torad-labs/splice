@@ -65,6 +65,9 @@
 .add-pane .checks, .add-pane .foot, .add-pane .progress { padding-left: 12.6rem; }
 .add-pane .foot { justify-content: flex-start; margin-top: 0; }
 .hlog h3, .pblock h3 { margin-bottom: 1.2rem; }
+.loghead { display: flex; flex-wrap: wrap; align-items: baseline; gap: .8rem 1.2rem; margin-bottom: 1.2rem; }  /* Log, its file, search and pause on one line */
+.loghead h3 { margin-bottom: 0; }
+.loghead .field { margin-left: auto; width: 16rem; max-width: 100%; }
 .hlog ol { list-style: none; margin: 0; padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: .7rem; background: var(--obj-sunk); border-radius: var(--r-in); }
 .hlog li { display: grid; grid-template-columns: 6.4rem minmax(0, 1fr); gap: 1rem; font: 500 .98rem/1.4 var(--font-data); color: var(--text-body); }
 .hlog time { color: var(--text-mute); }

@@ -90,7 +90,8 @@ internal class DoctorLogEvents {
     private fun mcpEvent(stamp: String, safeTags: String, message: String, names: SafeNames): String? {
         val server = message.substringBefore(": ", "")
         val head = MCP_EVENT_HEADS.find(message.substringAfter(": ", "")) ?: return null
-        val parts = listOf(stamp, safeTags, names.token(server) + ":", head.value.trimEnd())
+        // An unsafe server name is omitted like any other unsafe value; it read "null:" before.
+        val parts = listOf(stamp, safeTags, (names.token(server) ?: "<omitted>") + ":", head.value.trimEnd())
         return parts.joinToString(" ").take(MAX_LINE_CHARS)
     }
 

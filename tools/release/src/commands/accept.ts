@@ -203,6 +203,12 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     SPLICE_FAKE_GH_LOG: network.ghLog,
     PATH: `${network.dir}:${sandbox.bin}:${Bun.env.PATH ?? ""}`,
   });
+  // The MCP hub's pair is fetched and attested only where install.sh installs it: Linux x86_64, from a bundle that carries it.
+  const hubAssets =
+    process.platform === "linux" && process.arch === "x64" && manifest.assets.includes("splice-mcp-holder")
+      ? ["splice-mcp-holder", "splice-mcp-front"]
+      : [];
+  const attested = ["splice.jar", "splice-launch", ...hubAssets];
   const attestations = (): number =>
     (existsSync(network.ghLog) ? readFileSync(network.ghLog, "utf8") : "")
       .split("\n")
@@ -220,10 +226,10 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     SPLICE_RELEASE_BASE_URL: "https://example.invalid/splice-release",
   });
   if (!remoteRun.ok) return fail(remoteRun.output);
-  if (attestations() !== 2) {
+  if (attestations() !== attested.length) {
     return fail(`release accept: remote install did not attest both release artifacts\n${readFileSync(network.ghLog, "utf8")}`);
   }
-  for (const asset of ["splice.jar", "splice-launch"]) {
+  for (const asset of attested) {
     if (!remoteRun.output.includes(`${asset} attestation: OK`)) {
       return fail(`release accept: remote install missing ${asset} attestation OK`);
     }
@@ -235,14 +241,14 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   const stableRun = runInstall(distDir, stable, fakeEnv(stable));
   if (!stableRun.ok) return fail(stableRun.output);
   const stableBase = `https://github.com/${RELEASE_REPO}/releases/latest/download`;
-  const expectedStable = [`${stableBase}/splice.jar`, `${stableBase}/sha256sums.txt`, `${stableBase}/splice-launch`];
+  const expectedStable = [`${stableBase}/splice.jar`, `${stableBase}/sha256sums.txt`, `${stableBase}/splice-launch`, ...hubAssets.map((asset) => `${stableBase}/${asset}`)];
   if (urls().join("\n") !== expectedStable.join("\n")) {
     return fail("release accept: default install did not use the exact stable latest URLs");
   }
-  if (attestations() !== 2) {
+  if (attestations() !== attested.length) {
     return fail(`release accept: stable install did not attest both release artifacts\n${readFileSync(network.ghLog, "utf8")}`);
   }
-  for (const asset of ["splice.jar", "splice-launch"]) {
+  for (const asset of attested) {
     if (!stableRun.output.includes(`${asset} attestation: OK`)) {
       return fail(`release accept: stable install missing ${asset} attestation OK`);
     }
@@ -256,14 +262,14 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
     const run = runInstall(distDir, versioned, { ...fakeEnv(versioned), SPLICE_VERSION: pinned });
     if (!run.ok) return fail(run.output);
     const base = `https://github.com/${RELEASE_REPO}/releases/download/${pinned}`;
-    const expectedVersioned = [`${base}/splice.jar`, `${base}/sha256sums.txt`, `${base}/splice-launch`];
+    const expectedVersioned = [`${base}/splice.jar`, `${base}/sha256sums.txt`, `${base}/splice-launch`, ...hubAssets.map((asset) => `${base}/${asset}`)];
     if (urls().join("\n") !== expectedVersioned.join("\n")) {
       return fail(`release accept: ${pinned} install did not use the exact version-pinned URLs`);
     }
-    if (attestations() !== 2) {
+    if (attestations() !== attested.length) {
       return fail(`release accept: ${pinned} install did not attest both release artifacts\n${readFileSync(network.ghLog, "utf8")}`);
     }
-    for (const asset of ["splice.jar", "splice-launch"]) {
+    for (const asset of attested) {
       if (!run.output.includes(`${asset} attestation: OK`)) {
         return fail(`release accept: ${pinned} install missing ${asset} attestation OK`);
       }

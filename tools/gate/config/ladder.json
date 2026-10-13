@@ -97,6 +97,13 @@
       "commit": [".github/secret-scan-allow.toml",".github/secret-scan-allow.txt"],
       "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
       "command": ["bun", "tools/gate", "allowlist", "--check"]
+    },
+    {
+      "task": "mcpHubBinaries",
+      "inputs": ["integrations/mcp-hub/**","gradle/libs.versions.toml","settings.gradle.kts","build-logic/**"],
+      "why": "The MCP hub's two native binaries, the holder and the front, link in release mode the way CI's artifact and the release ship them (docs/specs/mcp-hub.md). No JVM module depends on :integrations-mcp-hub, so no jar leg links them and its check compiles without linking; this leg is the one place before a push that does.",
+      "command": ["test", "-x", "integrations/mcp-hub/build/bin/linuxX64/holderReleaseExecutable/splice-mcp-holder.kexe", "-a", "-x", "integrations/mcp-hub/build/bin/linuxX64/frontReleaseExecutable/splice-mcp-front.kexe"],
+      "dependsOn": [":integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64", ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64"]
     }
   ]
 }

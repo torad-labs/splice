@@ -43,6 +43,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      # The MCP hub's Kotlin/Native toolchain (the compiler and its LLVM essentials, about 400 MB), which the first
+      # native link otherwise downloads on every run. Keyed on the catalog, where the Kotlin version lives.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -91,6 +97,8 @@ jobs:
           path: |
             app/build/libs/app-all.jar
             app/src/main/dist/bin/splice-launch
+            integrations/mcp-hub/build/bin/linuxX64/holderReleaseExecutable/splice-mcp-holder.kexe
+            integrations/mcp-hub/build/bin/linuxX64/frontReleaseExecutable/splice-mcp-front.kexe
           retention-days: 14
           if-no-files-found: error
 

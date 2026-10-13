@@ -512,7 +512,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
 // probed by path, so `:app:stageRelease` builds what it stages; the "expected fat jar missing"
 // refusal stays as the floor for a dist staged against a deleted artifact.
 val releaseAssets = listOf(
-    "splice.jar", "splice-launch", "install.sh",
+    "splice.jar", "splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front",
     "LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md",
     "bom.cdx.json", "dependency-licenses.json",
 )
@@ -537,6 +537,12 @@ val releaseTag =
         }
 val stagingLauncher = javaToolchains.launcherFor(java.toolchain)
 
+// The MCP hub's two native binaries (docs/specs/mcp-hub.md), linked by :integrations-mcp-hub for linuxX64 and published
+// beside the jar; install.sh installs them on Linux x86_64 only, because the hub needs systemd --user.
+val hubBinaries = repositoryRoot.dir("integrations/mcp-hub/build/bin/linuxX64")
+val hubHolder = hubBinaries.file("holderReleaseExecutable/splice-mcp-holder.kexe")
+val hubFront = hubBinaries.file("frontReleaseExecutable/splice-mcp-front.kexe")
+
 tasks.register("stageRelease") {
     val releaseTagPattern = releaseTagPattern
     val releaseJar = releaseJar
@@ -550,6 +556,8 @@ tasks.register("stageRelease") {
     val thirdPartyLicenses = thirdPartyLicenses
     val provenance = provenance
     val releaseAssets = releaseAssets
+    val hubHolder = hubHolder
+    val hubFront = hubFront
     group = "release"
     description =
         "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
@@ -558,6 +566,11 @@ tasks.register("stageRelease") {
     inputs.files(licenseFile, thirdPartyNotices, provenance, launchShim, installScript)
         .withPropertyName("publishedRepositoryFiles")
     inputs.files(packageJson, bunLock).withPropertyName("versionAndLockfile")
+    dependsOn(
+        ":integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64",
+        ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64",
+    )
+    inputs.files(hubHolder, hubFront).withPropertyName("mcpHubBinaries")
     inputs.property("releaseTag", releaseTag)
     outputs.dir(distDir)
     val version = releaseVersion
@@ -613,6 +626,8 @@ tasks.register("stageRelease") {
             "splice.jar" to jar,
             "splice-launch" to launchShim.asFile,
             "install.sh" to installScript.asFile,
+            "splice-mcp-holder" to hubHolder.asFile,
+            "splice-mcp-front" to hubFront.asFile,
             "LICENSE" to licenseFile.asFile,
             "THIRD_PARTY_NOTICES.md" to thirdPartyNotices.get().asFile,
             "THIRD_PARTY_LICENSES.txt" to thirdPartyLicenses.get().asFile,
@@ -620,9 +635,9 @@ tasks.register("stageRelease") {
             "bom.cdx.json" to bom.get().asFile,
             "dependency-licenses.json" to licenses.get().asFile,
         )
-        // `install -m 0755` for the two the operator executes, `install -m 0644` for the rest —
+        // `install -m 0755` for the four the operator executes, `install -m 0644` for the rest —
         // set outright rather than inherited from the source or from this process's umask.
-        val executable = setOf("splice-launch", "install.sh")
+        val executable = setOf("splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front")
         check(sources.keys.toList() == releaseAssets) {
             "release stage: the staged sources do not spell the asset list — ${sources.keys} vs $releaseAssets"
         }

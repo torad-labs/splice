@@ -1,13 +1,13 @@
-// NEW: Oct 10, 2026 — the stores a history cut reaches that are not turn records: transcript copies, reasoning
-// kept between turns and code mode work, cleared by the same save that cuts the records.
+// NEW: Oct 10, 2026 — the stores a history cut reaches that are not turn records: parked compaction summaries,
+// reasoning kept between turns, code mode work and the record of sessions seen, cleared by the same save that cuts
+// the records. Transcript copies are not among them: they keep their own days, transcriptCopyDays (the President,
+// Oct 12), and each new copy removes the ones past them.
 //
 // Every one is cut by its last activity, never by whether it could still be resumed (Marlin, Oct 10): nearly
 // everything is resumable while its file exists, so that exception would keep months of data after "Today only".
-// A transcript copy is aged by the live transcript it was copied from, and the other two by their files' last
-// write.
+// Each is aged by its files' last write.
 package splice.app.control.mount
 
-import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.REASONING_DIR
 import splice.core.config.StatePaths
@@ -19,18 +19,13 @@ import splice.sessions.registry.SEEN_SESSIONS_KEY
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val TRANSCRIPT_COPIES = "transcript_copies"
 private const val COMPACTION_SUMMARIES = "compaction_summaries"
 
 internal class KeptHistoryStores(private val paths: StatePaths) {
 
     /** Clears what the cut reaches, or names the first store that could not be cleared. */
     fun trimBefore(momentMs: Long): String? =
-        copiesCleared(momentMs) ?: summariesCleared(momentMs) ?: filedCleared(momentMs)
-
-    private fun copiesCleared(momentMs: Long): String? =
-        Cancellables.runCatchingCancellable { TranscriptOriginals(paths).deleteBefore(momentMs) }
-            .exceptionOrNull()?.let { "$TRANSCRIPT_COPIES: ${SafeFailureText.render(it)}" }
+        summariesCleared(momentMs) ?: filedCleared(momentMs)
 
     private fun summariesCleared(momentMs: Long): String? =
         Cancellables.runCatchingCancellable { summaries().forEach { it.deleteBefore(momentMs) } }

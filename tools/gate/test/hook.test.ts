@@ -30,6 +30,9 @@ const L3_EXEMPT = "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt
 // The one declaration of the terminal: exempt by its shape (a const val), not by the file that holds it.
 const DECLARATION = 'internal const val MESSAGE_STOP: String = "message_stop"\n';
 const L3_RULE = "kt-l3-sole-wire-terminals";
+// Each of these tests spawns the gate several times in a row; at 6% free memory beside the other push legs four spawns
+// passed bun's 5 s default (Oct 12), while each takes 0.2 to 0.3 s alone. They check exit codes, not speed.
+const SPAWNS_MS = 30_000;
 
 let root = "";
 const hermetic = (): string => {
@@ -182,7 +185,7 @@ describe("gate rules --stdin: the contract", () => {
       expect(proc.exitCode, `argv ${argv.join(" ")}`).toBe(2);
       expect(proc.stdout.toString()).toBe("");
     }
-  });
+  }, SPAWNS_MS);
 
   test("malformed or non-object stdin is not this wall's business: exit 0, no decision", () => {
     for (const stdin of ["", "not json", "[1,2]", "null"]) {
@@ -190,5 +193,5 @@ describe("gate rules --stdin: the contract", () => {
       expect(proc.exitCode).toBe(0);
       expect(proc.stdout.toString()).toBe("");
     }
-  });
+  }, SPAWNS_MS);
 });

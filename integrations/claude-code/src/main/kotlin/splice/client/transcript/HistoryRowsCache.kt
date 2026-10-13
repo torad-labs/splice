@@ -18,14 +18,8 @@ private const val HISTORY_LINE_END_BYTE = HISTORY_LINE_END.code.toByte()
 
 private val HISTORY_ID = Regex("[A-Za-z0-9_-]{1,128}")
 
-/** One history line, parsed once. [title] is the display text already cut and redacted. */
-internal sealed class HistoryRow {
-    data object Malformed : HistoryRow()
-
-    data object WithoutId : HistoryRow()
-
-    data class Prompt(val id: String, val timestamp: Long?, val title: String?, val project: String?) : HistoryRow()
-}
+/** One history line that names a session, parsed once. [title] is the display text already cut and redacted. */
+internal data class HistoryRow(val id: String, val timestamp: Long?, val title: String?, val project: String?)
 
 internal class HistoryRowsCache {
     internal data class Held(val key: FileIdentity?, var committed: Long, val rows: MutableList<HistoryRow>)
@@ -69,17 +63,18 @@ internal class HistoryRowsCache {
     }
 
     private fun parse(text: String): List<HistoryRow> =
-        if (text.isEmpty()) emptyList() else text.removeSuffix("\n").split(HISTORY_LINE_END).map(::row)
+        if (text.isEmpty()) emptyList() else text.removeSuffix("\n").split(HISTORY_LINE_END).mapNotNull(::row)
 
-    private fun row(line: String): HistoryRow {
+    /** A line that is not JSON, or names no session, is no row. */
+    private fun row(line: String): HistoryRow? {
         val record = try {
             json.parseToJsonElement(line) as? JsonObject
         } catch (_: SerializationException) {
             null
-        } ?: return HistoryRow.Malformed
+        } ?: return null
         val id = JsonScalars.str(record, "sessionId")
-        if (id == null || !HISTORY_ID.matches(id)) return HistoryRow.WithoutId
-        return HistoryRow.Prompt(
+        if (id == null || !HISTORY_ID.matches(id)) return null
+        return HistoryRow(
             id = id,
             timestamp = JsonScalars.long(record, "timestamp"),
             title = TranscriptMetadata.title(JsonScalars.str(record, "display")),

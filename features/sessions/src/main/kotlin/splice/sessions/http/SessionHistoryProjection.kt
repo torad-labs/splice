@@ -13,19 +13,14 @@ import java.util.Locale
 /** A logical session carries one durable disposition even when the live registry also knows it. */
 internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: SessionRecord?) {
     fun item(id: String): HistoryItem? {
-        val source = source() ?: return null
+        if (!known()) return null
         val historical = historicalRecord(id)
         val record = live?.let { overlay(it, historical) } ?: historical ?: return null
-        return HistoryItem(id, record, source)
+        return HistoryItem(id, record)
     }
 
-    private fun source(): String? = when {
-        entry?.files?.hasHistory == true && entry.files.hasTranscript -> "history+transcript"
-        entry?.files?.hasHistory == true -> "history-only"
-        entry?.files?.hasTranscript == true -> "transcript-only"
-        live != null -> "registry-only"
-        else -> null
-    }
+    /** A session some on-disk source or the live registry knows. */
+    private fun known(): Boolean = entry?.files?.let { it.hasHistory || it.hasTranscript } == true || live != null
 
     private fun historicalRecord(id: String): SessionRecord? = entry?.let { found ->
         SessionRecord(
@@ -59,7 +54,7 @@ internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: Ses
 }
 
 /** Search and cursor keys are read from the same merged row the console ultimately shows. */
-internal data class HistoryItem(val id: String, val record: SessionRecord, val source: String) {
+internal data class HistoryItem(val id: String, val record: SessionRecord) {
     val at: Long get() = record.process.updatedAt ?: 0L
 
     /** The page after an immutable sort key, even if its anchor record was deleted or updated. */

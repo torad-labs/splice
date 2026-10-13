@@ -53,13 +53,13 @@ private class HistoryScanBuilder(
         roots.forEach(::history)
         roots.forEach(tree::read)
         val entries = sessions.values.map(HistoryFacts::entry)
-        return SessionHistoryScan(entries, state.skipped.toMap(), state.errors.toList())
+        return SessionHistoryScan(entries, state.errors.toList())
     }
 
     private fun history(root: SessionHistoryRoot) {
         val file = root.dir.resolve("history.jsonl")
         try {
-            historyRows.rows(file).forEach { historyRow(it, root.head) }
+            historyRows.rows(file).forEach { prompt(it, root.head) }
         } catch (_: NoSuchFileException) {
             // This config tree has no history file; its primary transcripts still count.
         } catch (error: IOException) {
@@ -67,17 +67,8 @@ private class HistoryScanBuilder(
         }
     }
 
-    private fun historyRow(row: HistoryRow, head: String?) {
-        when (row) {
-            HistoryRow.Malformed -> state.skip("malformed history row")
-            HistoryRow.WithoutId -> state.skip("history row without session id")
-            is HistoryRow.Prompt -> prompt(row, head)
-        }
-    }
-
-    private fun prompt(row: HistoryRow.Prompt, head: String?) {
+    private fun prompt(row: HistoryRow, head: String?) {
         val facts = sessions.getOrPut(row.id) { HistoryFacts(row.id) }
-        if (facts.hasHistory) state.skip("coalesced history row")
         facts.hasHistory = true
         if (!facts.accepts(row.timestamp)) return
         facts.historyAt = row.timestamp

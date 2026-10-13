@@ -85,21 +85,13 @@ public class SessionHistoryRoute(
             .sortedWith(compareByDescending<HistoryItem> { it.at }.thenByDescending { it.id })
     }
 
-    private fun pageJson(scan: SessionHistoryScan, slice: HistorySlice, registryError: String?): JsonObject =
+    private fun pageJson(scan: SessionHistoryScan, slice: List<HistoryItem>, registryError: String?): JsonObject =
         buildJsonObject {
-            val rows = rowOf.forRecords(slice.sessions.map { it.record })
-            put("sessions", buildJsonArray { slice.sessions.forEach { add(itemJson(it, rows)) } })
-            put("next", slice.next)
-            put("skipped", buildJsonObject { scan.skipped.forEach { (reason, count) -> put(reason, count) } })
+            val rows = rowOf.forRecords(slice.map { it.record })
+            put("sessions", buildJsonArray { slice.forEach { add(rows(it.record)) } })
             val errors = scan.errors + listOfNotNull(registryError)
             put("errors", buildJsonArray { errors.forEach { add(JsonPrimitive(it)) } })
         }
-
-    private fun itemJson(item: HistoryItem, rows: SessionHistoryRowOf): JsonObject {
-        val fields = rows(item.record).toMutableMap()
-        fields["source"] = JsonPrimitive(item.source)
-        return JsonObject(fields)
-    }
 
     private fun refused(message: String): JsonReply = JsonReply(
         HttpStatusCode.BadRequest,
@@ -107,16 +99,12 @@ public class SessionHistoryRoute(
     )
 }
 
-private data class HistorySlice(val sessions: List<HistoryItem>, val next: String?)
-
 private data class HistoryRequest(val query: String, val after: Pair<Long, String>?, val limit: Int) {
-    fun slice(rows: List<HistoryItem>): HistorySlice {
+    fun slice(rows: List<HistoryItem>): List<HistoryItem> {
         val start = after?.let { cursor ->
             rows.indexOfFirst { it.follows(cursor) }.takeIf { it >= 0 } ?: rows.size
         } ?: 0
-        val page = rows.drop(start).take(limit)
-        val next = if (start + page.size < rows.size) page.lastOrNull()?.let { "${it.at}:${it.id}" } else null
-        return HistorySlice(page, next)
+        return rows.drop(start).take(limit)
     }
 }
 

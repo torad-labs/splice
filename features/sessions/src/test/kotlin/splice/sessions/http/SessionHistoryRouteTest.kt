@@ -65,7 +65,7 @@ class SessionHistoryRouteTest {
     private fun route(
         account: SessionAccountOf = SessionAccountOf { _, _ -> null },
         records: List<SessionRecord> = listOf(live(BOTH, 2_000), live(REGISTRY_ONLY, 1_500)),
-        scan: SessionHistoryScan = SessionHistoryScan(entries, skipped = mapOf("nested artifacts" to 1)),
+        scan: SessionHistoryScan = SessionHistoryScan(entries),
         listingError: String? = null,
         repoOf: SessionRepoNameOf = SessionRepoNameOf { null },
     ): SessionHistoryRoute {
@@ -95,6 +95,10 @@ class SessionHistoryRouteTest {
 
     private fun json(body: String): JsonObject = Json.parseToJsonElement(body).jsonObject
 
+    /** The cursor a caller builds from a page's last row: its updated_at and session id. */
+    private fun cursorAfter(row: JsonObject): String =
+        "${row.getValue("updated_at").jsonPrimitive.content}:${row.getValue("session_id").jsonPrimitive.content}"
+
     @Test
     fun `pages every source with stable cursor and overlays a live session once`() {
         val first = route().page(null, null, 2)
@@ -104,16 +108,12 @@ class SessionHistoryRouteTest {
         assertEquals(listOf(BOTH, REGISTRY_ONLY), rows.map { it.getValue("session_id").jsonPrimitive.content })
         assertEquals("Atlas parser", rows[0].getValue("name").jsonPrimitive.content)
         assertEquals("live", rows[0].getValue("availability").jsonPrimitive.content)
-        assertEquals("history+transcript", rows[0].getValue("source").jsonPrimitive.content)
-        assertEquals("registry-only", rows[1].getValue("source").jsonPrimitive.content)
-        assertEquals("1", page.getValue("skipped").jsonObject.getValue("nested artifacts").jsonPrimitive.content)
-        val next = page.getValue("next").jsonPrimitive.content
+        val next = cursorAfter(rows.last())
         val second = json(route().page(null, next, 2).body)
         assertEquals(
             listOf(HISTORY_ONLY, TRANSCRIPT_ONLY),
             second.getValue("sessions").jsonArray.map { it.jsonObject.getValue("session_id").jsonPrimitive.content },
         )
-        assertEquals("null", second.getValue("next").toString())
     }
 
     @Test
@@ -139,7 +139,7 @@ class SessionHistoryRouteTest {
         val registered = mutableListOf(live(BOTH, 2_000), live(REGISTRY_ONLY, 1_500))
         val route = route(records = registered)
         val first = json(route.page(null, null, 2).body)
-        val cursor = first.getValue("next").jsonPrimitive.content
+        val cursor = cursorAfter(first.getValue("sessions").jsonArray.last().jsonObject)
         registered.removeAll { it.sessionId == REGISTRY_ONLY }
         val second = route.page(null, cursor, 2)
         assertEquals(HttpStatusCode.OK, second.status)
@@ -159,10 +159,6 @@ class SessionHistoryRouteTest {
         assertEquals(
             TRANSCRIPT_ONLY,
             byRepo.getValue("sessions").jsonArray.single().jsonObject.getValue("session_id").jsonPrimitive.content,
-        )
-        assertEquals(
-            "history-only",
-            byName.getValue("sessions").jsonArray.single().jsonObject.getValue("source").jsonPrimitive.content,
         )
     }
 
@@ -211,7 +207,6 @@ class SessionHistoryRouteTest {
             it.jsonObject.getValue("session_id").jsonPrimitive.content
         }
         assertEquals(listOf(BOTH, REGISTRY_ONLY), ids)
-        val second = json(history.page(null, first.getValue("next").jsonPrimitive.content, 2).body)
         assertEquals(
             "login-$BOTH",
             first.getValue("sessions").jsonArray[0].jsonObject.getValue("account").jsonPrimitive.content,

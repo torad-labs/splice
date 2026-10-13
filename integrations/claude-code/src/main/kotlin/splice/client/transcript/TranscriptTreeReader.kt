@@ -14,15 +14,10 @@ private val SESSION_FILE = Regex(
     "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.jsonl",
 )
 
-/** What one scan has found so far: the sessions, why files were skipped, and what could not be read. */
+/** What one scan has found so far: the sessions, and what could not be read. */
 internal class HistoryScanState {
     val sessions = linkedMapOf<String, HistoryFacts>()
-    val skipped = mutableMapOf<String, Int>()
     val errors = mutableListOf<String>()
-
-    fun skip(reason: String) {
-        skipped[reason] = (skipped[reason] ?: 0) + 1
-    }
 }
 
 internal class TranscriptTreeReader(
@@ -50,15 +45,12 @@ internal class TranscriptTreeReader(
 
     private fun inspectFolder(folder: Path, projects: Path, head: String?) {
         try {
-            if (!insideProjects(folder, projects)) {
-                state.skip("project path outside tree")
-                return
-            }
+            if (!insideProjects(folder, projects)) return
             Files.newDirectoryStream(folder).use { entries ->
                 entries.forEach { inspectFile(it, projects, head) }
             }
         } catch (_: NotDirectoryException) {
-            state.skip("non-project artifact")
+            // A file at the top of projects is no project folder.
         } catch (error: IOException) {
             state.errors += "$folder: ${SafeFailureText.render(error)}"
         }
@@ -77,11 +69,7 @@ internal class TranscriptTreeReader(
             val attrs = EntryStat(file, followLinks = false)
             when {
                 attrs.isSymbolicLink -> inspectLink(file, projects, head)
-                attrs.isDirectory -> state.skip("nested artifacts")
-                !name.endsWith(".jsonl") -> state.skip("non-jsonl artifact")
-                !SESSION_FILE.matches(name) -> state.skip("non-session jsonl")
-                attrs.isRegularFile -> heldTranscript(file, attrs, head)
-                else -> state.skip("untrusted transcript path")
+                attrs.isRegularFile && SESSION_FILE.matches(name) -> heldTranscript(file, attrs, head)
             }
         } catch (error: IOException) {
             state.errors += "$file: ${SafeFailureText.render(error)}"
@@ -90,12 +78,7 @@ internal class TranscriptTreeReader(
 
     private fun inspectLink(file: Path, projects: Path, head: String?) {
         val name = file.fileName.toString()
-        when {
-            Files.isDirectory(file) -> state.skip("nested artifacts")
-            !name.endsWith(".jsonl") -> state.skip("non-jsonl artifact")
-            !SESSION_FILE.matches(name) -> state.skip("non-session jsonl")
-            else -> readTranscript(file, projects, head)
-        }
+        if (!Files.isDirectory(file) && SESSION_FILE.matches(name)) readTranscript(file, projects, head)
     }
 
     private fun heldTranscript(file: Path, attrs: EntryStat, head: String?) {
@@ -127,10 +110,7 @@ internal class TranscriptTreeReader(
 
     private fun readTranscript(file: Path, projects: Path, head: String?) {
         try {
-            if (!trustedPrimary(file, projects)) {
-                state.skip("untrusted transcript path")
-                return
-            }
+            if (!trustedPrimary(file, projects)) return
             record(
                 file,
                 Files.getLastModifiedTime(file).toMillis(),

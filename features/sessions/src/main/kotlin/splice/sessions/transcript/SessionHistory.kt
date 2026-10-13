@@ -23,10 +23,9 @@ public data class SessionFiles(
 )
 
 /** The denominator comes from the on-disk sources, not from a registry of running processes.
- *  [skipped] counts non-session artifacts by reason; [errors] names unreadable sources. */
+ *  [errors] names unreadable sources. */
 public data class SessionHistoryScan(
     val sessions: List<SessionHistoryEntry>,
-    val skipped: Map<String, Int> = emptyMap(),
     val errors: List<String> = emptyList(),
 )
 

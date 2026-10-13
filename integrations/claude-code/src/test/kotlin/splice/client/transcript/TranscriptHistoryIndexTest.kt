@@ -102,16 +102,7 @@ class TranscriptHistoryIndexTest {
         assertTrue(historyOnly.files.hasHistory)
         assertFalse(historyOnly.files.hasTranscript)
         assertEmptyTranscriptDisposition(scan)
-        assertSourceExclusions(scan)
         assertTrue(scan.errors.isEmpty(), scan.errors.toString())
-    }
-
-    private fun assertSourceExclusions(scan: SessionHistoryScan) {
-        assertTrue(scan.skipped.getOrDefault("malformed history row", 0) > 0)
-        assertEquals(1, scan.skipped["history row without session id"])
-        assertTrue(scan.skipped.getOrDefault("non-session jsonl", 0) > 0)
-        assertTrue(scan.skipped.getOrDefault("nested artifacts", 0) > 0)
-        assertEquals(1, scan.skipped["project path outside tree"])
     }
 
     private fun assertEmptyTranscriptDisposition(scan: SessionHistoryScan) {

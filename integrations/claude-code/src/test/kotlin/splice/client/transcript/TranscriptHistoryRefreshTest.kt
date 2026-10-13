@@ -93,16 +93,12 @@ class TranscriptHistoryRefreshTest {
     fun `history rows appended after a scan are added and the earlier ones are not counted twice`() {
         val history = claude.resolve("history.jsonl")
         Files.writeString(history, row(ONE, "first", 1) + row(ONE, "again", 2) + "{not json\n")
-        val first = refresh()
-        assertEquals(1, first.skipped["coalesced history row"])
-        assertEquals(1, first.skipped["malformed history row"])
+        val _ = refresh()
 
         Files.writeString(history, row(TWO, "new", 3), java.nio.file.StandardOpenOption.APPEND)
         val second = refresh()
 
         assertEquals(mapOf(ONE to "again", TWO to "new"), names(second))
-        assertEquals(first.skipped, second.skipped)
-        assertEquals(first.skipped, refresh().skipped, "a refresh with nothing new answers the same")
     }
 
     @Test
@@ -115,7 +111,6 @@ class TranscriptHistoryRefreshTest {
         val scan = refresh()
 
         assertEquals(mapOf(ONE to "one", TWO to "two", THREE to "three"), names(scan))
-        assertEquals(emptyMap<String, Int>(), scan.skipped)
     }
 
     @Test

@@ -44,7 +44,7 @@ async function read() {
   state.reading = sessions.body?.reading !== false; // off: no question text, no choices, answered in the terminal
   state.noteVersions = new Set(sessions.body?.note_versions || []); // the Claude Code versions a note is known to reach
   state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
   // kept apart from the live commands: nothing runs on a removed one, so Stop, a move and the live reads never ask it
   state.retired = retiredHeads(retired, state.heads);
   for (const row of models.body?.heads || []) {
@@ -129,7 +129,7 @@ function sessionOf(row) {
   const turn = state.live[row.session_id] ?? null;
   const asked = (row.last?.asks || [])[0];
   // the one reading Teams and Requests rank projects by (kit rowLook)
-  const { state: st, stall } = rowLook(row, turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs);
+  const { state: st, stall } = rowLook(row, turn, state.heads.find((h) => h.key === turn?.head));
   return {
     // a linked worktree is named by its own folder, never its whole path, which ran past the card's edge (splice-usage, Oct 13)
     id: row.session_id, row, name: row.name || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,

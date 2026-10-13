@@ -132,7 +132,7 @@ async function readAll() {
   if (teams.ok) { state.teams = teams.body?.teams || []; state.everRead = true; }
   state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
   state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null }));
   await readLive();
   state.models = {};
   state.providerOf = {};
@@ -238,7 +238,7 @@ function stallLook(slot, session) {
   const running = session.status === "working" || session.status === "busy";
   // with no request in flight, the row's ended_by says how the newest one ended: At limit, or Signed out
   const turn = running ? state.live[slot.session] : undefined;
-  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, running ? undefined : session.ended_by);
+  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head), running ? undefined : session.ended_by);
   if (!stall) return null;
   state.stalls[slot.id] = stall;
   return look({ id: slot.id, state: running ? "working" : "idle", stall });

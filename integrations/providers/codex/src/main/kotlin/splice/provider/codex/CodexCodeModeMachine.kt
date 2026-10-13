@@ -12,6 +12,7 @@ import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeOversizedCalls
 import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamingCell

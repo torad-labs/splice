@@ -1323,8 +1323,11 @@ function render() {
     + `<div class="meta">${s.map((w) => `<span>${esc(w)}</span>`).join("")}</div></div>`
     + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn">${PANES[x.id]()}</div></div>` : "";
   const was = root.querySelector(".pane .body")?.scrollTop ?? 0;
+  // a setting's typed field keeps its caret through a redraw (knobs.js keeps the text)
+  const f = document.activeElement, fid = f?.id?.startsWith("kf-") ? f.id : null, pos = f?.selectionStart;
   root.innerHTML = `<div class="jobs${ui.shown ? " open" : ""}">${list}${pane}</div>`;
   if (was) { const b = root.querySelector(".pane .body"); if (b) b.scrollTop = was; }
+  if (fid) { const g = document.getElementById(fid); if (g) { g.focus(); if (pos != null) g.setSelectionRange(pos, pos); } }
   KNOBS.focusCustom(root);
   root.querySelector(".pane .menu")?.scrollIntoView({ block: "nearest" });
   moreBelow();

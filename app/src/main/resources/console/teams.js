@@ -151,15 +151,21 @@ async function readAll() {
   await readTeam();
 }
 
-/** The selected team's own three reads, each of which can refuse on its own. */
+/** The selected team's own three reads, each of which can refuse on its own. Only the newest read draws: one asked for
+ *  another team or day that lands after it is dropped, and the day panels show their reading state until their own
+ *  day lands, never the day before under the new day's name (marlin, Oct 13: Yesterday read No messages over 295). */
+let teamRead = { gen: 0, key: null };
 async function readTeam() {
   const tm = team();
   if (!tm) return;
+  const key = `${tm.id}/${ui.day}`, gen = ++teamRead.gen, day0 = ui.day;
+  if (teamRead.key !== key) { state.chat = null; state.activity = null; teamRead.key = key; }
   // Cleared before the first draw, not after: slot ids repeat across teams ("lead", "builder"), so a screen
   // left over from the team before would draw its choices on this team's card for one frame.
   state.screens = {};
   state.pending = {};
-  const { from, to } = dayWindow(ui.day);
+  render();
+  const { from, to } = dayWindow(day0);
   const day = `from=${from}&to=${to}`;
   const [economics, chat, activity, perHead] = await Promise.all([
     API.get(`/api/teams/${tm.id}/economics`),
@@ -167,12 +173,14 @@ async function readTeam() {
     API.get(`/api/teams/${tm.id}/activity?${day}`),
     API.get("/api/economics"),
   ]);
+  if (gen !== teamRead.gen) return;
   // why a command's turns with no price have none, decided by the daemon once (as Accounts reads it): "plan" or not
   state.priceWhy = Object.fromEntries((perHead.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
   state.economics[tm.id] = economics.ok ? economics.body : { error: refusalOf(economics, "The figures could not be read") };
   state.chat = chat.ok ? chat.body : { error: refusalOf(chat, "The messages could not be read") };
   state.activity = activity.ok ? activity.body : { error: refusalOf(activity, "The activity could not be read") };
-  state.today = ui.day === 0 ? state.activity : await readToday(tm);
+  state.today = day0 === 0 ? state.activity : await readToday(tm);
+  if (gen !== teamRead.gen) return;
   render();
   await readScreens(tm);
 }

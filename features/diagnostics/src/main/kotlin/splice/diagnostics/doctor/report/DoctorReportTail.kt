@@ -1,7 +1,9 @@
 // NEW: v0.4.0 FEATURES.md §6 — the doctor report's log tail (only with --with-logs): the last 500 lines of
-// daemon.log from a bounded tail of both generations, each as written and then redacted (DoctorRedaction.text), as the
-// spec asks (the President ruled on Oct 13 that the spec stands over the earlier events-only reduction). An unreadable
-// generation is typed metadata beside the lines, never a 501st line. The perf tail lives in DoctorReportPerf.kt.
+// daemon.log from a bounded tail of both generations, each as written and then redacted, as the spec asks (the
+// President ruled on Oct 13 that the spec stands over the earlier events-only reduction): a person's or a model's own
+// words lose their payload (DoctorLogPayloads), then every credential shape and foreign path (DoctorRedaction.text).
+// An unreadable generation is typed metadata beside the lines, never a 501st line. The perf tail lives in
+// DoctorReportPerf.kt.
 package splice.diagnostics.doctor.report
 
 import kotlinx.serialization.json.JsonArray
@@ -22,11 +24,13 @@ internal class DoctorReportTail(
     private val redaction: DoctorRedaction,
     private val files: DoctorReportFiles,
 ) {
+    private val payloads = DoctorLogPayloads()
+
     fun logs(): LogTail {
         val read = files.tails(statePaths.logsDir.resolve("daemon.log"), LOG_TAIL_BYTES)
         return LogTail(
             lines = buildJsonArray {
-                read.lines.takeLast(LOG_TAIL_LINES).forEach { add(JsonPrimitive(redaction.text(it))) }
+                read.lines.takeLast(LOG_TAIL_LINES).forEach { add(JsonPrimitive(redaction.text(payloads.mask(it)))) }
             },
             error = read.error,
         )

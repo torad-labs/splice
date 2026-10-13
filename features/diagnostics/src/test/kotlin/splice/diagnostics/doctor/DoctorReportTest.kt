@@ -56,13 +56,11 @@ class DoctorReportTest {
         fixture.report(env, withLogs, run)
 
     @Test
-    fun `planted secrets never reach the report, and conversation text stays out unless logs are asked for`() {
+    fun `planted secrets and conversation text never reach the report, with or without logs`() {
         val env = plant()
         for (withLogs in listOf(false, true)) {
             val text = report(env, withLogs).toString()
-            // Oct 13: --with-logs carries the raw daemon.log lines, redacted, so prose the daemon logged rides with them.
-            val kept = secrets.filterNot { withLogs && it.startsWith("PLANTEXT") }
-            kept.forEach { assertFalse(text.contains(it), "$it leaked (withLogs=$withLogs): $text") }
+            secrets.forEach { assertFalse(text.contains(it), "$it leaked (withLogs=$withLogs): $text") }
             assertTrue(text.contains("chatgpt.example.invalid"), text)
         }
     }
@@ -84,7 +82,9 @@ class DoctorReportTest {
         assertEquals("false", rows[1].jsonObject.getValue("cache_cold").jsonPrimitive.content, "a JSON boolean only")
         assertEquals(setOf("model", "total"), rows[2].jsonObject.keys, "a prose outcome is not a token: dropped")
         val logs = out.getValue("logs").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(6, logs.size, "every line of the tail, prose included")
+        assertEquals(6, logs.size, "every line of the tail")
+        assertEquals("<redacted:text>", logs[2], "a line the daemon did not write is masked whole")
+        assertTrue(logs[3].endsWith("status=400 msg=<redacted:text>"), "the head stays, the words go: " + logs[3])
         assertTrue(logs[1].contains("Bearer <redacted>") && logs[1].contains("<redacted:email>"), logs[1])
         assertTrue(logs[4].endsWith("cwd <redacted:path>"), "a foreign path is masked whole: " + logs[4])
         assertTrue(out["logs_error"] == null)

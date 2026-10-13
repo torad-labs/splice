@@ -107,6 +107,9 @@ private class MigrationPlan {
         symLinks.forEach { (link, target) -> created.add(fs.createSymbolicLink(link, target)) }
     }
 
+    /** Whether [path] is already a symlink to [dest]: the entry the plan skips as done. */
+    fun sameLink(path: Path, dest: Path): Boolean = path.isSymbolicLink() && Files.readSymbolicLink(path) == dest
+
     fun parkedLine(globalProjects: Path): String =
         "[projects] ${parked.size} entries already existed in $globalProjects; kept the global copy, " +
             "parked this head's beside it: " +
@@ -134,18 +137,14 @@ internal class ProjectsLink(
 
     /** The OTHER policy: a head that isolates projects owns a real tree from its first launch, so its
      *  picker has something to list and ResumeAcrossHeads has somewhere to copy into. Creates an
-     *  absent directory and touches nothing else — a link an earlier launch made, or content of any
-     *  other shape, is left exactly as found and named, never deleted to make room. */
+     *  absent directory; a link an earlier launch made becomes a real tree ([ownFromLink]); content of
+     *  any other shape is left exactly as found, never deleted to make room. */
     fun ensureOwn(dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
-        if (Files.exists(dst, NOFOLLOW_LINKS)) {
-            if (dst.isSymbolicLink()) {
-                log(
-                    "[projects] $dst is a link although this head isolates projects; left as found. " +
-                        "Move it aside and relaunch for a private tree\n",
-                )
-            }
+        if (dst.isSymbolicLink()) {
+            ownFromLink(dst, log)
             return
         }
+        if (Files.exists(dst, NOFOLLOW_LINKS)) return
         val created = Cancellables.runCatchingCancellable { Files.createDirectories(dst) }
         created.exceptionOrNull()?.let { cause ->
             log(
@@ -153,6 +152,50 @@ internal class ProjectsLink(
                     "on first write\n",
             )
         }
+    }
+
+    /** A head that isolates projects but whose [dst] is still a link from when it shared them gets a real tree, as a
+     *  fresh head does, holding every file the link showed: each is HARDLINKED from the tree the link points at (the
+     *  merge's rules, run the other way), so a session appending through the link keeps the same bytes, nothing is
+     *  copied or moved, and the shared tree is untouched. The swap is the link's removal and one rename, the window
+     *  [link] accepts. A failure before the swap leaves the link serving; one at the rename puts the link back. Either
+     *  is logged, and the next launch tries again (splice-lead, Oct 13). */
+    private fun ownFromLink(dst: Path, log: LogSink) {
+        val staged = dst.resolveSibling(".${dst.fileName}.splice-own-${UUID.randomUUID()}")
+        var linkTo: Path? = null
+        val made = Cancellables.runCatchingCancellable {
+            linkTo = Files.readSymbolicLink(dst)
+            Files.createDirectory(staged)
+            // every file the link shows, hardlinked into the new tree by the merge's preflight run the other way
+            val plan = MigrationPlan()
+            val shown = PathProbe.resolved(dst)?.takeIf { Files.isDirectory(it, NOFOLLOW_LINKS) }
+            val refusal = shown?.let { preflight(it, staged, plan) }
+            if (refusal != null) throw FileSystemException("$shown", null, refusal)
+            plan.apply(fs, mutableListOf())
+            Files.delete(dst)
+        }
+        val swapped = if (made.isFailure) {
+            made
+        } else {
+            Cancellables.runCatchingCancellable { fs.move(staged, dst, ATOMIC_MOVE) }.map { }
+        }
+        val cause = swapped.exceptionOrNull()
+        if (cause == null) {
+            log("[projects] $dst was a link although this head isolates projects; it is now a private tree\n")
+            return
+        }
+        val back = linkTo?.takeIf { made.isSuccess }
+        Cancellables.discard(
+            Cancellables.runCatchingCleanup {
+                back?.let { fs.createSymbolicLink(dst, it) }
+                if (Files.isDirectory(staged, NOFOLLOW_LINKS)) deleteTree(staged)
+            },
+            "the staged tree holds names only, and the files live on in the tree the link points at",
+        )
+        log(
+            "[projects] $dst is a link although this head isolates projects, and it could not become a private " +
+                "tree (${SafeFailureText.render(cause)}); it still shares transcripts until a launch makes it one\n",
+        )
     }
 
     /** Point [dst] (a head's projects dir) at [globalProjects], CREATING the global tree when it does
@@ -301,18 +344,15 @@ internal class ProjectsLink(
         val parked = target.resolveSibling("${target.fileName}$parkSuffix")
         return when {
             !Files.exists(target, NOFOLLOW_LINKS) -> null.also { plan.symLinks.add(target to dest) }
-            sameLink(target, dest) -> null
+            plan.sameLink(target, dest) -> null
             !Files.exists(parked, NOFOLLOW_LINKS) -> null.also {
                 plan.symLinks.add(parked to dest)
                 plan.parked.add(parked)
             }
-            sameLink(parked, dest) -> null
+            plan.sameLink(parked, dest) -> null
             else -> "'${target.fileName}' and its parked copy '${parked.fileName}' both already exist globally"
         }
     }
-
-    private fun sameLink(path: Path, dest: Path): Boolean =
-        path.isSymbolicLink() && Files.readSymbolicLink(path) == dest
 
     /** A failure BEFORE the aside rename never moved anything: this run's global links and the empty
      *  dirs it created are removed and the head tree was never touched. A failure AT the promotion

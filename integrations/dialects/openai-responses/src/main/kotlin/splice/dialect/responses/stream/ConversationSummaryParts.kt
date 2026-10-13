@@ -44,16 +44,6 @@ internal class ConversationSummaryParts(
     fun ownerForConversation(sessionId: String?, conversationKey: String?): SummaryRoundOwner? =
         ResponsesConversationIdentity.chainKey(sessionId, conversationKey)?.let(::ConversationRoundOwner)
 
-    /** State-only compatibility view for tests; production acquires [ownerForConversation] at drive. */
-    fun forConversation(sessionId: String?, conversationKey: String?): SharedSummaryParts? {
-        val key = ResponsesConversationIdentity.chainKey(sessionId, conversationKey) ?: return null
-        return synchronized(lock) {
-            val entry = touchOrCreateLocked(key, clock())
-            trimLocked()
-            entry.scope.parts
-        }
-    }
-
     private inner class ConversationRoundOwner(private val key: String) : SummaryRoundOwner {
         override suspend fun <T> withRound(task: SummaryRoundTask<T>): T {
             val entry = acquire(key)

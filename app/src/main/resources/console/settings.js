@@ -736,7 +736,8 @@ const testSaid = (name) => {
   // counting up, because a server that has to start can take most of a minute and a still word reads as hung
   if (r === "running") { const secs = Math.floor((Date.now() - (ui.mtestAt[name] || Date.now())) / 1000); return `<span class="said">${ICON.wait}Testing${secs ? ` · ${fmt(secs)} s` : ""}</span>`; }
   if (r?.ok) return `<span class="said ok">${r.started ? "Started · " : ""}${msWord(r.ms)}${r.tools == null ? "" : ` · ${fmt(r.tools)} ${r.tools === 1 ? "tool" : "tools"}`}</span>`;
-  return r ? `<span class="said limit">${esc(r.word)}</span>` : "";
+  // the words the route sends for a failed test, after the short word: a failure with no reason left nothing to act on
+  return r ? `<span class="said limit">${esc(r.word)}${r.why ? ` · ${esc(r.why)}` : ""}</span>` : "";
 };
 // a shared server's one process: the memory it holds now, Running where /proc gave none, Not running until a session
 // asks for it (spec 8i: instance, sessions and memory per server; its sessions are the Used by chips beside it)
@@ -778,7 +779,7 @@ async function testServer(name) {
   const b = r.body || {};
   clearInterval(tick);
   ui.mtest[name] = r.ok && b.ok ? { ok: true, started: !!b.started, ms: b.round_trip_ms, tools: b.tools }
-    : { ok: false, word: { timeout: "Given up", spawn: "Not started", unshared: "Not shared" }[b.kind] ?? "Test failed" };
+    : { ok: false, word: { timeout: "Given up", spawn: "Not started", unshared: "Not shared" }[b.kind] ?? "Test failed", why: b.error };
   render();
 }
 

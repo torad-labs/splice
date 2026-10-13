@@ -212,6 +212,7 @@ button.count:hover { color: var(--text); }
 .srv.off .nm, .srvs.dim .nm { color: var(--text-mute); }
 .srvs.dim { opacity: .55; }
 .srv .acts { display: flex; justify-content: flex-end; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.srv .acts .said.limit { white-space: normal; min-width: 0; text-align: right; line-height: 1.35; }  /* a failed test carries the route's own words, which wrap in the cell rather than run past the edge */
 /* what ended these turns, and the one control that governs it, under the figure */
 #st .fig3 .by { margin-top: 1.1rem; padding-top: 1rem; border-top: .12rem solid var(--track); display: flex; flex-direction: column; gap: .7rem; align-items: flex-start; }
 #st .fig3 .by .blabel { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }

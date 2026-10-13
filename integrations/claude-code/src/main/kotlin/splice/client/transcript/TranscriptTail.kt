@@ -18,8 +18,11 @@ private const val TAIL_MODEL_BYTES = 256 shl 10
 // why: screenshots can occupy several MiB in one result line; the tail must include that whole record.
 private const val TAIL_MAX_BYTES = 16 shl 20
 
-// why: only recent sessions are retained, not every transcript the daemon has ever seen.
-private const val TAIL_HELD_FILES = 128
+// why: only recent sessions are retained, not every transcript the daemon has ever seen, but at least every row one
+// /api/sessions listing reads. Every 5 s poll reads each row's tail in the same order, and an LRU smaller than the list
+// evicts each entry just before it is asked for again: at 128 for 609 rows no tail was ever a hit, and every poll
+// re-read every transcript's last 64 KiB (splice-sessions, Oct 13). An entry is two messages capped at 64K chars.
+private const val TAIL_HELD_FILES = 1024
 
 /** What a tail read found: the newest activity message, and the model of the newest assistant message in the window. */
 internal data class TailReading(

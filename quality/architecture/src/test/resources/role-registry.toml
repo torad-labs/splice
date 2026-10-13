@@ -147,6 +147,7 @@ names = [
     "EdgesStored",
     "KeyPresenceProbe",
     "KeepingRecordings",
+    "McpHubLive",
     "McpShareChoice",
     "ProgressLineOn",
     "SessionTranscriptViewEnabled",
@@ -201,7 +202,11 @@ ProgressLineOn (2026-10-10) asks, at every heartbeat of a quiet turn, whether sp
 to the client; it says nothing about the client being gone or the transcript being viewable, and swapped with either it \
 would write the line to a hung-up socket or hide the wait from a user who left it on. McpShareChoice (integrations/claude-code McpSharing.kt, 2026-10-13) \
 is the MCP setup's share answer, read at every decision: true shares every server that can be shared, false starts \
-one copy per session."""
+one copy per session. McpHubLive (integrations/claude-code McpHubLaunch.kt, 2026-10-13) asks, as each Claude Code \
+launch is planned, whether this daemon's MCP hub is up with no off reason, so a front.json a stopped hub left behind is \
+not taken as a running front. It answers whether the hub serves, not what the operator chose: read as McpShareChoice it \
+would point a session at a dead hub whenever sharing is on, and McpShareChoice read here would plan per-session copies \
+while the hub serves."""
 
 # ── 11 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]

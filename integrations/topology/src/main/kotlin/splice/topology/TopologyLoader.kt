@@ -125,11 +125,9 @@ internal object TopologyTypeMismatch {
             val key = listOf(section, member).filter(String::isNotEmpty).joinToString(".")
             val expected = expected(key)
             val actual = actual(found.groupValues[2].single())
-            val numeric = expected == TopologyTypeFailure.Expected.NUMBER &&
-                actual == TopologyTypeFailure.Expected.INTEGER
             when {
                 expected == null || actual == null -> null
-                actual != expected && !numeric -> WrongTopologyType(key, lineNumber, expected)
+                !fits(actual, expected) -> WrongTopologyType(key, lineNumber, expected)
                 actual == TopologyTypeFailure.Expected.TABLE ->
                     inlineMismatch(key, lineNumber, line.substring(found.range.last))
                 else -> null
@@ -145,7 +143,7 @@ internal object TopologyTypeMismatch {
             val expected = expected(key)
             val actual = actual(entry.groupValues[2].single())
             if (actual != null && expected != null) {
-                if (actual != expected) return WrongTopologyType(key, line, expected)
+                if (!fits(actual, expected)) return WrongTopologyType(key, line, expected)
             }
         }
         return null
@@ -186,6 +184,12 @@ internal object TopologyTypeMismatch {
         }
         return descriptor
     }
+
+    /** A value's first character cannot tell 0.20 from 20, so a digit fits a number as well as an integer, in a
+     *  line's own value and inside an inline table alike. */
+    private fun fits(actual: TopologyTypeFailure.Expected, expected: TopologyTypeFailure.Expected): Boolean =
+        actual == expected ||
+            expected == TopologyTypeFailure.Expected.NUMBER && actual == TopologyTypeFailure.Expected.INTEGER
 
     private fun actual(first: Char): TopologyTypeFailure.Expected? = when (first) {
         '?' -> TopologyTypeFailure.Expected.QUOTED_STRING

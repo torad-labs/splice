@@ -10,6 +10,7 @@ package splice.lifecycle.upgrade
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
+import splice.core.terminal.YELLOW
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -190,9 +191,16 @@ internal class UpgradeRelease(
      *  refusal, with every finding on stdout; any other answer (an older jar's unknown verb, a crash, a timeout, a java
      *  that would not start) is no verdict, and no verdict keeps the running daemon exactly as a refusal does, because
      *  the daemon that is serving is worth more than an unchecked swap. A release that predates the config
-     *  findings has no such verb at all; it is skipped with a line saying so, as the doctor preflight is. */
+     *  findings has no such verb at all. A candidate that old never gets here (validate skips its preflight with a
+     *  line); a rollback to one does, and is told its config is unchecked, then goes on: rollback is the emergency
+     *  door. */
     fun configRefusal(jar: Path, version: String): Upgraded.Refused? {
-        if (predatesJsonDoctor(version)) return null
+        if (predatesJsonDoctor(version)) {
+            val label = "config".padEnd(UPGRADE_PAD)
+            output.line("  $YELLOW!$RESET $label $version has no check-config, so it can't check this splice.toml;")
+            output.line("  ${"".padEnd(UPGRADE_PAD)}   a 0.4 config may stop it from booting")
+            return null
+        }
         val check = process(listOf(java, "-jar", jar.toString(), "check-config"), false)
         return when (check.code) {
             0 -> null

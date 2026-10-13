@@ -930,7 +930,11 @@ describe("a text-scanning law's content inputs are every tracked file, declared 
     const root = wallsRepo();
     linkWrapper(root);
     writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
-    const classes = join(repoRoot, "build-logic", "build", "classes", "kotlin", "main");
+    // A snapshot, never the live folder: the pre-push's gradle leg recompiles build-logic in this same tree while this
+    // suite runs, and a class file rewritten between two probes changes the tasks' implementation, so the second
+    // probe reran both tasks where it had to be UP-TO-DATE (d0b487075's red gateTests).
+    const classes = dir("build-logic-classes-");
+    cpSync(join(repoRoot, "build-logic", "build", "classes", "kotlin", "main"), classes, { recursive: true });
     writeFile(
       root,
       "build.gradle.kts",

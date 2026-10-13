@@ -865,7 +865,7 @@ function slotRowHtml(c, s, i) {
 
 function composerHtml() {
   const c = ui.compose;
-  const ok = ready(c);
+  const ok = ready(c) && !c.saving;
   const word = c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "";
   // only a refusal of the repo outlines Repo; any other refusal's word still sits on its row
   const repoRefused = c.error && /^repo\b/i.test(c.error);
@@ -922,9 +922,15 @@ function slugs(slots) {
   });
 }
 
-/** Saves the composer. The store judges the repo and the composition; its refusal is what the person reads. */
+/** Saves the composer. The store judges the repo and the composition; its refusal is what the person reads. Save and
+ *  Start team hold while one save is in flight, and a new team's form keeps one Idempotency-Key from its first press,
+ *  so a press after a failed or unanswered create can never make a second team (marlin, from splice-turns' audit). */
 async function save(startAfter) {
   const c = ui.compose;
+  if (c.saving) return;
+  c.saving = true;
+  render();
+  if (!c.id) c.once ??= `console-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
   const ids = slugs(c.slots);
   const body = {
     name: c.name.trim(),
@@ -936,7 +942,8 @@ async function save(startAfter) {
       lead: s.lead, bind_by_rule: s.bind_by_rule || undefined, instructions: s.instructions?.trim() || undefined,
     })),
   };
-  const answer = c.id ? await API.put(`/api/teams/${c.id}`, { ...body, id: c.id }) : await createTeam(body);
+  const answer = c.id ? await API.put(`/api/teams/${c.id}`, { ...body, id: c.id }) : await createTeam(body, c.once);
+  c.saving = false;
   if (!answer.ok) {
     c.error = refusalOf(answer, "The team was not saved");
     render();
@@ -955,10 +962,9 @@ async function save(startAfter) {
 }
 
 /** A create needs an Idempotency-Key, so a retried create cannot make a second team, and api.js sends no custom
- *  header: this one call is made here, with the key minted once per create. */
-async function createTeam(body) {
+ *  header: this one call is made here, with the form's one key [once]. */
+async function createTeam(body, once) {
   const mgmt = localStorage.getItem("splice-console-key") || "";
-  const once = `console-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
   try {
     const res = await fetch("/api/teams", {
       method: "PUT",
@@ -1136,7 +1142,7 @@ sheet.addEventListener("input", (e) => {
   }
   else if (el.matches(".role-in")) c.slots[+el.dataset.i].role = el.value;
   else if (el.matches(".instr")) { c.slots[+el.dataset.i].instructions = el.value; return; }
-  const ok = Boolean(ready(c));
+  const ok = Boolean(ready(c)) && !c.saving;
   for (const b of sheet.querySelectorAll('[data-act="save"], [data-act="start-team"]')) b.disabled = !ok;
 });
 

@@ -80,7 +80,7 @@ splice restart --now
 date +%s > $M
 sleep 8
 pid=$(systemctl --user show -p MainPID --value splice.service)
-fd=$(ls -l /proc/$pid/fd | awk '/splice\.jar/ && !f {print $9; f=1}')
+fd=$(ls -l /proc/$pid/fd | awk '/splice\.jar$/ {print $9}' | sort -n | head -1)  # the classloader holds the lowest; a later fd on the jar can close mid-read
 o=$(sha256sum /proc/$pid/fd/$fd | cut -d' ' -f1)
 echo "open     $o (pid $pid fd $fd)"
 [ "$a" = "$o" ] && echo "VERIFIED $sha at $(ct)" || { echo "MISMATCH"; exit 1; }

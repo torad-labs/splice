@@ -123,6 +123,8 @@ public class AccountSelection internal constructor(
     public val account: PoolAccount,
     public val switch: AccountSwitch? = null,
     lease: AccountCredentialEligibility.Lease,
+    /** The head's own switch this choice made, once per change of the login it serves; [switch] is this session's. */
+    public val headSwitch: AccountSwitch? = null,
 ) {
     private val credentialLease = AtomicReference(lease)
 

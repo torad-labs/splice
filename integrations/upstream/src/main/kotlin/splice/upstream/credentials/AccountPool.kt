@@ -82,6 +82,9 @@ public class AccountPool(
     )
 
     private val headLastSwitch = AtomicReference<AccountSwitch?>(null)
+
+    // The login the head last served a new or moved session on: a change of it is the head's switch, once per change.
+    private val headServing = AtomicReference<String?>(null)
     private val statelessLock = Any()
     private var statelessPrevious: SessionAccount? = null
 
@@ -156,14 +159,22 @@ public class AccountPool(
         val chosen = choose(previous, at, excluded, current, caller)
             ?: return Selection.Exhausted(AccountAvailability.earliestReset(current.accounts, at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
-        // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
+        // a backup is cache-cold on that first turn, and the session's own last switch says so.
         val prior = previous ?: SessionAccount(current.primary.label, null)
+        val pinLabel = pins.forSession(caller.session)
         val moved = prior.takeIf { it.label != chosen.account.label }?.let {
-            val reason = switchReason(it.label, chosen.account, at, current, pins.forSession(caller.session))
+            val reason = switchReason(it.label, chosen.account, at, current, pinLabel)
             AccountSwitch(it.label, chosen.account.label, reason, at)
         }
-        moved?.let(headLastSwitch::set)
-        val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease))
+        // The head switched only when the login it serves new or moved sessions on changed: once per change, never
+        // once per session that starts on a backup while the primary is held (about 10,000 a day on claude-splice,
+        // Oct 12). A session staying on its login, and the first login served after a start, are no switch of the head.
+        val headFrom = if (previous == null || moved != null) headServing.getAndSet(chosen.account.label) else null
+        val headSwitch = headFrom?.takeIf { it != chosen.account.label }?.let {
+            AccountSwitch(it, chosen.account.label, switchReason(it, chosen.account, at, current, pinLabel), at)
+        }
+        headSwitch?.let(headLastSwitch::set)
+        val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease, headSwitch))
         val session = SessionAccount(
             chosen.account.label,
             moved ?: previous?.lastSwitch,
@@ -223,6 +234,7 @@ public class AccountPool(
         synchronized(sessions) { sessions.clear() }
         synchronized(statelessLock) { statelessPrevious = null }
         headLastSwitch.set(null)
+        headServing.set(null)
         pins.clear()
         membership.get().accounts.forEach {
             it.cooldown.clear()

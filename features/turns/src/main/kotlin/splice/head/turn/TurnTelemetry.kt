@@ -178,7 +178,7 @@ internal class TurnTelemetry(
                 recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel, outcomeTag)
             },
         )
-        account?.switch?.let { switched ->
+        account?.headSwitch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's

@@ -150,11 +150,8 @@ internal object SessionActivity {
         // of only notifications does
         if (text.isEmpty() && message.toolUse.name == null) return JsonNull
         return buildJsonObject {
-            put("role", message.role.name.lowercase())
             put("tool", message.toolUse.name)
             put("text", text)
-            put("ts", message.ts)
-            message.source.from?.let { put("from", it) }
             val asked = message.role == TranscriptRole.ASSISTANT
             val asks = if (asked) AskedQuestions.of(message.toolUse.name, message.text) else null
             if (asks != null) put("asks", asks)

@@ -31,14 +31,12 @@ import java.nio.file.Path
 
 class SessionsActivityTest {
     @Test
-    fun `a row carries the one line role tool text and epoch milliseconds`(@TempDir tmp: Path) {
+    fun `a row carries the one line tool and text`(@TempDir tmp: Path) {
         val source = LastSource(
             TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "   redacted\n\t" + "x ".repeat(120)),
         )
         val last = row(tmp, source).getValue("last").jsonObject
-        assertEquals("assistant", last.getValue("role").jsonPrimitive.content)
         assertEquals(JsonNull, last.getValue("tool"))
-        assertEquals("7", last.getValue("ts").jsonPrimitive.content)
         val text = last.getValue("text").jsonPrimitive.content
         assertTrue(text.startsWith("redacted x x "))
         assertTrue(text.endsWith(" x\u2026") && text.length <= 160)

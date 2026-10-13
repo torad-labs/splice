@@ -162,7 +162,7 @@ class TeamsRoutesWiringTest {
         serve(wired = true) { call ->
             val rows = rig.json(call(HttpMethod.Get, "/api/sessions", null, true).bodyAsText())
             val builder = rig.find(rows, "sessions", "session_id", BUILDER)
-            assertEquals(team.id, builder.getValue("team").jsonPrimitive.content)
+            assertEquals(team.name, builder.getValue("team_name").jsonPrimitive.content)
         }
         serve(wired = false) { call ->
             val reply = call(HttpMethod.Get, "/api/teams", null, true)

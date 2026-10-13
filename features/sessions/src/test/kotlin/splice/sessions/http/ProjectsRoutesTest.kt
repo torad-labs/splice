@@ -163,7 +163,6 @@ class ProjectsRoutesTest {
             teams = TeamSource { rig.store },
         )
         val row = rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER)
-        assertEquals("team-0", row.getValue("team").jsonPrimitive.content)
         // the card names the team he reads, never its id (Marlin, move check: a bound session showed no team at all)
         assertEquals("atlas team-0", row.getValue("team_name").jsonPrimitive.content)
     }
@@ -193,7 +192,7 @@ class ProjectsRoutesTest {
     }
 
     @Test
-    fun `a session row carries the id of the unarchived team it is bound in, else null`() {
+    fun `a session row carries the name of the unarchived team it is bound in, else null`() {
         val team = rig.team()
         val sessions = SessionsRoutes(
             rig.registry,
@@ -203,9 +202,9 @@ class ProjectsRoutesTest {
         )
         val teamOf = { id: String ->
             rig.json(sessions.sessionsJson()).getValue("sessions").jsonArray.map { it.jsonObject }
-                .single { it.getValue("session_id").jsonPrimitive.content == id }.getValue("team").toString()
+                .single { it.getValue("session_id").jsonPrimitive.content == id }.getValue("team_name").toString()
         }
-        assertEquals("\"${team.id}\"", teamOf(BUILDER))
+        assertEquals("\"${team.name}\"", teamOf(BUILDER))
         assertEquals("null", teamOf(OUTSIDER))
         rig.store.archive(team.id)
         assertEquals("null", teamOf(BUILDER), "an archived team binds nothing")

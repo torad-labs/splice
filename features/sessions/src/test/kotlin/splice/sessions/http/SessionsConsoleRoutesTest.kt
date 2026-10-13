@@ -97,7 +97,7 @@ class SessionsConsoleRoutesTest {
             "an untrusted cwd reports itself, with its reason",
         )
         assertFalse(rows.getValue(GAMMA).containsKey("repo"), "no cwd, no repo key")
-        rows.values.forEach { assertEquals("null", it["team"].toString(), "team is null until V4-131") }
+        rows.values.forEach { assertEquals("null", it["team_name"].toString(), "no team, no team name") }
     }
 
     private fun rowsOf(routes: SessionsRoutes): Map<String, JsonObject> =

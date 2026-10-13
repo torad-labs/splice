@@ -206,8 +206,7 @@ public class SessionsRoutes(
         repoOf(s)?.let { put("repo", repoJson(it)) }
         projects.put(this, s)
         val bound = s.sessionId?.let { teamOf(it) }
-        put("team", bound?.id)
-        // the card names the team a person reads, never its id: `team` stays the id other readers join on
+        // the card names the team a person reads, never its id; no reader joins a row to its team by id
         put("team_name", bound?.name)
         rowFacts.write(s, this)
     }

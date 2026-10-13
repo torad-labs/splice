@@ -96,7 +96,7 @@ class DaemonLogTest {
 
         val line = Files.readAllLines(logs.resolve("daemon.log")).single()
         assertTrue(
-            Regex("""^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}] \[claudex]""").containsMatchIn(line),
+            Regex("""^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}] \[claudex]""").containsMatchIn(line),
             "a log line must carry a full date and a fixed-width clock, got: $line",
         )
     }
@@ -106,8 +106,8 @@ class DaemonLogTest {
     // read. Pinned at a zero second because that is the only instant that used to differ.
     @Test
     fun `a zero second keeps its field, so every stamp is the same width`() {
-        assertEquals("2026-09-02 13:47:00", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 0)))
-        assertEquals("2026-09-02 13:47:12", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 12)))
+        assertEquals("2026-09-02 13:47:00.000", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 0)))
+        assertEquals("2026-09-02 13:47:12.000", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 12)))
     }
 
     // SH-14 (V4-123): the wall sh_14_daemon_log_rotate_selfheals.py guards that a FAILED rotate

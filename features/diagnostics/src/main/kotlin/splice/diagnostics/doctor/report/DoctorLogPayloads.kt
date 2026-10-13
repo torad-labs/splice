@@ -12,8 +12,10 @@
 //   exception text          AuthProbeLoop (tick threw, loop died), LocalRuntimeWatch and TurnPathProbeLoop (DIED),
 //                           HeadProbes (failed to start), HeadShutdown (stop failed uncaught), BudgetLedger (spend
 //                           short): a parse failure's message can quote the body it failed on (splice-lead, Oct 13)
-// A line without the daemon's `[date time] [tag]` opening is not the daemon's: a stack frame or a child's stderr, which
-// can quote anything, so it is masked whole.
+// A line without the daemon's `[date time.millis] [tag]` opening is not trusted, so it is masked whole: a stack frame or
+// a child's stderr can quote anything. That includes every line written before Oct 13, 2026, when the stamp had no
+// milliseconds and a record could span lines: a multiline payload's continuation could read as a daemon line there
+// (pre-merge review). The daemon now writes a record's own line breaks as \r and \n, so a millisecond line is one record.
 package splice.diagnostics.doctor.report
 
 private const val MASKED = "<redacted:text>"
@@ -41,7 +43,7 @@ private val PAYLOAD_STARTS: Regex = listOf(
 ).joinToString("|").toRegex()
 
 internal class DoctorLogPayloads {
-    private val daemonLine = Regex("^\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}] \\[")
+    private val daemonLine = Regex("^\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}] \\[")
 
     /** [line] with the payload after its head masked, whole when it is not a daemon line, and as it was otherwise. */
     fun mask(line: String): String = when {

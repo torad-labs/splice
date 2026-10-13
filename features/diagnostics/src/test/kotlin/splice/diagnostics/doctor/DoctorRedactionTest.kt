@@ -70,7 +70,7 @@ class DoctorRedactionTest {
         val key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
         assertEquals(32, key.length)
         assertFalse(redaction.text("connection failed $key").contains(key))
-        val log = "[2026-09-13 10:00:53] [$key] turn compact=false model=$key"
+        val log = "[2026-09-13 10:00:53.000] [$key] turn compact=false model=$key"
         assertFalse(redaction.text(log).contains(key), redaction.text(log))
     }
 

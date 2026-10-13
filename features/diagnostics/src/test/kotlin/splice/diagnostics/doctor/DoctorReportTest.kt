@@ -243,7 +243,7 @@ class DoctorReportTest {
     fun `the log tail spans both generations and reports an unreadable one`() {
         val env = plant()
         val logs = tmp.resolve("logs")
-        val older = (1..600).joinToString("\n") { "[2026-09-12 10:00:00] [daemon] perf outcome=ok n=$it x" }
+        val older = (1..600).joinToString("\n") { "[2026-09-12 10:00:00.000] [daemon] perf outcome=ok n=$it x" }
         Files.writeString(logs.resolve("daemon.log.1"), older + "\n")
         val lines = report(env, withLogs = true).getValue("logs").jsonArray.map { it.jsonPrimitive.content }
         assertEquals(500, lines.size, "the last 500 lines of both generations, .1 first")
@@ -346,9 +346,10 @@ class DoctorReportTest {
         )
         Files.writeString(
             tmp.resolve("logs").resolve("daemon.log"),
-            "[2026-09-13 10:00:52] [sk-live-abcdefghijklmnop] perf outcome=ok total=42\n" +
-                "[2026-09-13 10:00:53] [head-1][quota] failed PLANTEXT the user secret plan\n" +
-                "[2026-09-13 10:00:54] [daemon] turn ERROR PLANTEXT the user said name=Voldemort city=Paris total=7\n",
+            "[2026-09-13 10:00:52.000] [sk-live-abcdefghijklmnop] perf outcome=ok total=42\n" +
+                "[2026-09-13 10:00:53.000] [head-1][quota] failed PLANTEXT the user secret plan\n" +
+                "[2026-09-13 10:00:54.000] [daemon] turn ERROR PLANTEXT the user said " +
+                "name=Voldemort city=Paris total=7\n",
         )
         val out = report(env, withLogs = true, run = DoctorRun(two, emptyList()))
         val heads = out.getValue("topology").jsonObject.getValue("heads").jsonObject.keys

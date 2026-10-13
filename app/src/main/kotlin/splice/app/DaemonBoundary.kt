@@ -143,7 +143,14 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
         val log = DaemonLogFile(file, rolled, maxBytes)
-        fun stamped(msg: String): String = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
+
+        // ONE RECORD IS ONE LINE (pre-merge review, Oct 13). A message's own CR and LF are written as the two characters
+        // \r and \n, so no text a line carries (a malformed upstream payload, an exception's message) can start a line
+        // of its own that reads as the daemon's, and the doctor's shareable tail can trust a stamped line's shape.
+        fun stamped(msg: String): String {
+            val body = msg.trimEnd('\n').replace("\r", "\\r").replace("\n", "\\n")
+            return "[${logStamp.format(LocalDateTime.now())}] $body\n"
+        }
 
         val sink = LogSink { msg ->
             val line = stamped(msg)
@@ -302,8 +309,12 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
 // it. Width is FIXED for a second reason found in the same audit: LocalTime/LocalDateTime.toString()
 // drop the seconds field when it is zero, which stamped 4,339 live lines "[13:47]" and quietly broke
 // every column-oriented read of the file.
+//
+// Milliseconds since Oct 13, 2026 (pre-merge review): a line in this shape was written by a daemon that writes one record
+// per line, so the doctor's shareable tail keeps it, and every line written before, which a multiline payload could have
+// forged, is masked whole there. Still fixed width.
 internal val logStamp: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT)
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
 
 /** Whether a daemon.log line is also printed to stderr, asked as each line is logged: always on a terminal or
  *  under the unit, and only while booting when stderr is daemon-boot.log (V4-258, V4-353). */

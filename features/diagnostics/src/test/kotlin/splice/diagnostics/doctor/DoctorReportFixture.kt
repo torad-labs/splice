@@ -45,14 +45,14 @@ internal class DoctorReportFixture(private val tmp: Path) {
         val logs = Files.createDirectories(tmp.resolve("logs"))
         Files.writeString(
             logs.resolve("daemon.log"),
-            "[2026-09-13 10:00:52] [daemon] up: control :3999, heads [codex]\n" +
-                "[2026-09-13 10:00:53] [codex] turn ERROR auth-missing: refresh with Bearer BEARER-SECRET-VALUE-0001 " +
-                "for ops@example.com key sk-live-abcdefghijklmnop\n" +
+            "[2026-09-13 10:00:52.000] [daemon] up: control :3999, heads [codex]\n" +
+                "[2026-09-13 10:00:53.000] [codex] turn ERROR auth-missing: refresh with " +
+                "Bearer BEARER-SECRET-VALUE-0001 for ops@example.com key sk-live-abcdefghijklmnop\n" +
                 "PLANTEXT the user's secret plan\n" +
-                "[2026-09-13 10:00:53] [codex] turn ERROR upstream compact=false latency=12ms type=invalid_request " +
-                "status=400 msg=PLANTEXT the user's secret plan, echoed back by the upstream\n" +
-                "[2026-09-13 10:00:54] [codex] client gone (session 1) cwd /home/operator/projects/private-repo\n" +
-                "[2026-09-13 10:00:55] [codex] launch claudex -> cwd " +
+                "[2026-09-13 10:00:53.000] [codex] turn ERROR upstream compact=false latency=12ms " +
+                "type=invalid_request status=400 msg=PLANTEXT the user's secret plan, echoed back by the upstream\n" +
+                "[2026-09-13 10:00:54.000] [codex] client gone (session 1) cwd /home/operator/projects/private-repo\n" +
+                "[2026-09-13 10:00:55.000] [codex] launch claudex -> cwd " +
                 "${System.getProperty("user.home")}/projects/real-private\n",
         )
         return mapOf(

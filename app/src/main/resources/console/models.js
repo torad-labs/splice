@@ -465,10 +465,11 @@ function paneHtml() {
     + `<details class="rawlog"${ui.rawOpen ? " open" : ""}><summary>Raw log<span class="mmeta">${raw.length.toLocaleString("en-US")} ${raw.length === 1 ? "line" : "lines"}</span></summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${effHtml(c)}${log}</div></div>`;
 }
-// daemon.log lines: "[2026-10-12 04:12:52] [claudex] text"; the log is already this command's, so its tag drops
+// daemon.log lines: "[2026-10-13 15:52:04.118] [claudex] text" (no milliseconds before Oct 13); the log is already this
+// command's, so its tag drops
 function parseLog(lines) {
   return lines.map((raw) => {
-    const m = /^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)\]\s*(?:\[([^\]]+)\]\s*)?(.*)$/.exec(raw);
+    const m = /^\[(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)(?:\.\d{3})?\]\s*(?:\[([^\]]+)\]\s*)?(.*)$/.exec(raw);
     return m ? { at: m[2], tag: m[3] ?? "", text: m[4], raw } : { at: "", tag: "", text: raw, raw };
   });
 }

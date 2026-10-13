@@ -69,13 +69,7 @@ internal class MoveArrival(
         val missed = missed(driving, attempt.pane, move.session, move.head, move.pid)
         if (missed != null) return back(driving, attempt, move, missed)
         ledger?.arrived(move.session)
-        return JsonReply(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put("session_id", move.session)
-                put("head", move.head)
-            }.toString(),
-        )
+        return JsonReply(HttpStatusCode.OK, "{}")
     }
 
     /** Null once [session] runs on [head], or under a new client in [pane]: a launch that could not record its
@@ -118,7 +112,6 @@ internal class MoveArrival(
                 if (missed == MISSED_NO_ANSWER) put("waited_s", ARRIVAL_SECONDS)
                 put("moved", false)
                 put("back", backOn != null)
-                put("head", move.from)
                 put("resume", "cd " + shellWord(move.folder) + " && " + line(listOf(commandName(move)) + resume))
                 if (screen.isNotEmpty()) put("screen", screen)
             }.toString(),

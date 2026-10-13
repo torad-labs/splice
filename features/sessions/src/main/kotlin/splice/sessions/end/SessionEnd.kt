@@ -17,8 +17,6 @@ package splice.sessions.end
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.core.util.Cancellables
@@ -108,13 +106,7 @@ public class SessionEnd(
                 Refusals.reply(HttpStatusCode.GatewayTimeout, "its client did not exit within ${END_EXIT_SECONDS}s")
             else -> {
                 driving.panes.forget(record.sessionId.orEmpty())
-                JsonReply(
-                    HttpStatusCode.OK,
-                    buildJsonObject {
-                        put("session_id", record.sessionId.orEmpty())
-                        put("state", "ended")
-                    }.toString(),
-                )
+                JsonReply(HttpStatusCode.OK, "{}")
             }
         }
     }

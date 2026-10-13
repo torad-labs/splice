@@ -455,7 +455,7 @@ function mapRow(head, row) {
     ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null, hash: row.messages_hash ?? null,
     model: modelName(state.modelLabel, row.model), modelId: row.model ?? null,
     account: row.account ?? null, acctLabel: row.account_label ?? null, compact: row.compact === true,
-    attempts: row.attempts ?? 0, retries: row.retries ?? 0,
+    attempts: row.attempts ?? 0, retries: row.retries ?? 0, sourceAttempts: row.source_attempts ?? null,
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
     // how long the gate held it behind a full limit, null when it went straight in (a 1 ms pass is not waiting)
     queued: row.admit_held_ms ?? null,
@@ -966,6 +966,12 @@ function noteHtml(r, who) {
     const text = n > 1 ? `${word} ${n} times${r.stallMs ? ` · ${secs(r.stallMs)} of silence` : ""}`
       : `${word} after ${r.stallMs ? `a ${secs(r.stallMs)} silence` : "the stream broke"}`;
     out += `<p class="upmsg note mend"><span class="state">${text}</span></p>`;
+  }
+  // A code-mode step its script's source stream ended made no try of its own (Attempts 0): the tries were the source
+  // turn's, counted on that turn's row, so they are told here and never added to a retry count (PerfKeys.SOURCE_ATTEMPTS)
+  if (r.sourceAttempts != null) {
+    const n = r.sourceAttempts;
+    out += `<p class="upmsg note"><span class="state">The script's source stream reset after ${n} ${n === 1 ? "try" : "tries"}</span></p>`;
   }
   return out;
 }

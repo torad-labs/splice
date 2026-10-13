@@ -149,7 +149,7 @@ class ClaudeNativePoolWiringTest {
                     val message = error.getValue("message").jsonPrimitive.content
                     assertTrue(message.contains("synthetic weekly limit"))
                     assertTrue(message.contains("claude-splice cannot take over") && message.contains("expired"))
-                    assertTrue(message.contains("Sign in again: run claude-splice and use /login."))
+                    assertTrue(message.contains("Run claude-splice once and Claude Code renews it."))
                     assertEquals(HttpStatusCode.TooManyRequests, second.status)
                     assertTrue(second.bodyAsText().contains("claude-splice cannot take over"))
                     assertEquals(listOf("Bearer synthetic-native"), sent)

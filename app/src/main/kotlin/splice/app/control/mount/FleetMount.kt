@@ -7,7 +7,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -17,9 +16,7 @@ import splice.app.control.ManagedHead
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.fleet.HeadRoutes
-import splice.core.GATEWAY_VERSION
 import splice.core.util.JsonScalars
-import splice.core.wire.ControlFields.HEADS
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
 import splice.heads.HeadStatusListing
@@ -68,11 +65,8 @@ internal class FleetMount(
         }
     }
 
-    /** The /api/status body: the head keys, and the registry rows, each with its family from the declared roster. */
+    /** The /api/status body: the registry rows, each with its family from the declared roster. */
     private fun statusJson(families: Map<String, String?>): String = buildJsonObject {
-        put("server", "control")
-        put("version", GATEWAY_VERSION)
-        putJsonArray(HEADS) { heads.keys.forEach { add(it) } }
         putJsonArray("registry") {
             heads.values.forEach { m ->
                 addJsonObject {

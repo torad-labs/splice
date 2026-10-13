@@ -135,6 +135,25 @@ jobs:
           RESOLVED_VERSION: ${{ steps.version.outputs.version }}
         run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bun tools/release accept
 
+      - name: hub pair matches the qualified hashes
+        # The MCP hub's two binaries ship only as the bytes hostshield-ctl qualified: each must hash to its line in
+        # tools/release/mcp-hub.sha256, as lead-install.sh checks on this machine. Without that file the release
+        # stops here, before anything is uploaded, so the check is never skipped.
+        run: |
+          pins=tools/release/mcp-hub.sha256
+          if [ ! -f "$pins" ]; then
+            echo "::error::release refused: $pins is missing, so the MCP hub pair has no qualified hashes to match"
+            exit 1
+          fi
+          for b in splice-mcp-holder splice-mcp-front; do
+            got=$(sha256sum "dist/$b" | cut -d' ' -f1)
+            want=$(awk -v n="$b" '$2 == n {print $1}' "$pins")
+            if [ -z "$want" ] || [ "$got" != "$want" ]; then
+              echo "::error::release refused: dist/$b is $got, qualified in $pins is ${want:-none}"
+              exit 1
+            fi
+          done
+
       - name: transfer accepted bundle to publisher
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

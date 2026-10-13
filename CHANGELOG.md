@@ -692,7 +692,7 @@ origin.
   holds the fingerprints; if it cannot be written the list still answers and the daemon log says so once.
 - **`GET /api/config` answers every knob inline.** Each entry in `knobs` carries its `value`, the `scope`
   that set it (default, toml, head, file, env or runtime), its `disposition` (`live` or `restart`) and
-  `editable`; a knob that cannot be changed carries a `read_only_reason`. `mirror_reasoning` reads
+  `editable`; a knob that cannot be changed carries a `read_only_reason`. `mirrorReasoning` reads
   `restart`, is not editable and says it is pinned false by project rule.
 - **A second head can use the same provider.** `splice add <profile> --name <key>` adds another
   provider-and-head pair for a profile you already use. The key takes lowercase letters, digits and
@@ -843,11 +843,11 @@ origin.
 - **Settings Version can take you on.** One card per version there is, a Check that reads the newest published release once
   per tap, and Upgrade and Restart splice from the same card.
 - **Accounts are shown by a name, never an email or an account id.** Every login carries a short reference and shows the
-  name you gave it, or "<Plan> · <reference>" until you do. Any login can be named, your own Claude login included, from
-  Accounts: Name it on a default, Rename, and Add, which asks for a name prefilled "<Provider> N". The names live in
+  name you gave it, or its plan word, numbered within its provider ("Max", then "Max 2"), until you do. Any login can be named, your own Claude login included, from
+  Accounts: Name it on a default, Rename, and Add, which opens an empty Name field. The names live in
   splice's own state (`account-names.json`, `PUT /api/accounts/names/{ref}`), so no credential file is written. Requests
-  and Usage name each recorded account the same way, and an old row recorded with an email is shown by its reference and
-  never rewritten.
+  and Usage name each recorded account the same way, and an old row recorded with an email is shown by its number, such as "Max 2", its reference
+  only grouping its rows, and is never rewritten.
 - **Requests can be ordered by highest price.** Dearest first, requests with no price last, a plan request's value under
   "On your plan", and the footer names the highest-priced request kept. `GET /api/perf/turns?order=price` asks the
   daemon for it.

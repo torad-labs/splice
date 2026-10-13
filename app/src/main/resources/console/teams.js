@@ -55,7 +55,7 @@ const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.r
 
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
-  teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {},
+  teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {}, modelLabel: {},
   economics: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
@@ -135,6 +135,7 @@ async function readAll() {
   state.providerOf = {};
   for (const row of models.body?.heads || []) {
     state.providerOf[row.head] = row.provider;
+    learnModels(state.modelLabel, row); // every page names a model the same way: kit's labels, then its words
     state.models[row.head] = (row.models || []).filter((m) => m.resolved !== false).map((m) => ({ id: m.id, label: m.label || m.id }));
   }
   // /api/auth answers one entry per HEAD, keyed by its key; a head with two or more logins lists them under account_pool
@@ -532,7 +533,8 @@ const modelLabel = (head, id) => {
   const rows = state.models[head] || [];
   // a session reports its model as the command's prefix, two dashes, then the model's id: the label is under the id
   const bare = id?.includes("--") ? id.slice(id.indexOf("--") + 2) : id;
-  return (id ? rows.find((m) => m.id === id || m.id === bare)?.label || bare : rows[0]?.label) || "";
+  // an id this command does not declare reads as Sessions names it (kit modelName), never as the raw id (marlin, Oct 13)
+  return (id ? rows.find((m) => m.id === id || m.id === bare)?.label || modelName(state.modelLabel, bare) : rows[0]?.label) || "";
 };
 
 // ---------- what a member did: the tool's mark and its object, never splice's sentence ----------

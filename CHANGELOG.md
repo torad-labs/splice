@@ -719,8 +719,7 @@ origin.
   session's inbox socket. It is proven on each Claude Code version `/api/sessions` names, from 2.1.282 up to the
   tested 2.1.296, so a page can refuse before anyone types.
   `GET /api/sessions/{id}/transcript` reads a transcript from its end,
-  newest first, with a cursor, governed by the live `transcriptView` knob; `GET /api/sessions/{id}/resume`
-  returns a read-only recipe for resuming on another head.
+  newest first, with a cursor, governed by the live `transcriptView` knob.
 - **The operator can stop a live turn.** `POST /api/heads/{head}/turns/{id}/stop` ends it, and the client's
   re-send of that turn is refused.
 - **API keys are managed through the control API and the console.** `GET /api/keys` names the keys (never a

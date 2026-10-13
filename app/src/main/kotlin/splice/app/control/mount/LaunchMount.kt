@@ -18,11 +18,7 @@ import splice.launch.recipe.LaunchRoutes
 import splice.launch.recipe.LaunchService
 import splice.launch.resume.ForegroundHookRoute
 import splice.launch.resume.ResumeHookRoute
-import splice.launch.resume.ResumeRecipeRoute
-import splice.launch.resume.SessionLive
 import splice.launch.wrap.ClaudeHeadRoutes
-import splice.sessions.registry.SessionAvailability
-import splice.sessions.registry.SessionSource
 
 internal class LaunchMount(
     heads: Map<String, ManagedHead>,
@@ -53,23 +49,12 @@ internal class LaunchMount(
         sessions.activity,
     )
 
-    // V4-320: the recipe asks the launch's own resolution and copies nothing; whether the original still
-    // runs is the registry's word.
-    private val resumeRecipeRoute = ResumeRecipeRoute(launchHeads, RegistryLive(sessions.source))
-
     fun register(route: Route) {
         route.post("/launch/{head}") { guard.guarded(call) { launchRoutes.launch(call) } }
         route.post("/hooks/resume/{head}") { guard.guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
         route.post("/hooks/foreground/{head}") { guard.guarded(call, Door.SESSION) { foregroundRoute.receive(call) } }
-        route.get("/api/sessions/{id}/resume") { guard.guarded(call) { resumeRecipeRoute.recipe(call) } }
         route.get("/api/claude-head") { guard.guarded(call) { claudeHeadRoutes.status(call) } }
         route.post("/api/claude-head/wrap") { guard.guarded(call) { claudeHeadRoutes.wrap(call) } }
         route.post("/api/claude-head/unwrap") { guard.guarded(call) { claudeHeadRoutes.unwrap(call) } }
     }
-}
-
-/** A session is live when Claude Code's registry holds it live now (V4-320); null with no registry wired. */
-internal class RegistryLive(private val sessions: SessionSource?) : SessionLive {
-    override fun live(sessionId: String): Boolean? =
-        sessions?.read()?.any { it.sessionId == sessionId && it.availability == SessionAvailability.LIVE }
 }

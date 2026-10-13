@@ -81,7 +81,9 @@ internal class TeamEconomics(
                         add(
                             tally.json {
                                 it.put("slot", slot)
-                                it.put("left_epoch_millis", team.left.firstOrNull { gone -> gone.id == slot }?.leftAt)
+                                // only a member that left carries it, so a member's row reads as it always did
+                                team.left.firstOrNull { gone -> gone.id == slot }?.leftAt
+                                    ?.let { at -> it.put("left_epoch_millis", at) }
                                 it.put("plan_windows", windowsOf(slot))
                             },
                         )

@@ -171,7 +171,7 @@ class Holders(
         files.say("lost the holder at ${holder.socket}")
         holder.init = null
         holder.identity = null
-        changed()
+        routes.forget(holder.socket)
         relay.lost(holder)
         holder.settle("${holder.socket} closed")
     }

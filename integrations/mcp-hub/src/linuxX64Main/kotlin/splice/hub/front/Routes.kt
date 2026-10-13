@@ -30,6 +30,13 @@ class Routes(
 
     fun byKey(key: String): Route? = known[key]
 
+    /** Forgets where the holder at [socket] was, once it is gone: the next call asks the daemon again, so a launch
+     *  follows a changed plan (a new sharing choice, a new server version) instead of the socket it resolved first. */
+    fun forget(socket: String) {
+        known.values.filter { it.socket == socket }.forEach { it.socket = null }
+        changed()
+    }
+
     /** The daemon's answer for where [route]'s server runs; asked once, then kept. Waits while the daemon is down. */
     fun resolve(route: Route, then: (String?) -> Unit) {
         if (route.socket != null) return then(null)

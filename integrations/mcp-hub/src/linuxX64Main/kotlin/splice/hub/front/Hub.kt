@@ -137,10 +137,14 @@ class Hub(
         val cold = method == Rpc.TOOLS_LIST && holders.of(route)?.ready != true
         val kept = if (cold) files.listing(route.listing) else null
         if (kept != null) return conn.reply(OK, Rpc.result(id, kept))
-        holders.live(route) { failure ->
-            val holder = holders.of(route)
-            if (failure != null || holder == null) return@live conn.reply(OK, Rpc.error(id, failure ?: "no holder"))
-            relay.call(holder, conn, session, msg, id)
+        // resolved again only after its holder was lost (Routes.forget), so a launch follows a changed plan
+        routes.resolve(route) { unresolved ->
+            if (unresolved != null) return@resolve conn.reply(OK, Rpc.error(id, unresolved))
+            holders.live(route) { failure ->
+                val holder = holders.of(route)
+                if (failure != null || holder == null) return@live conn.reply(OK, Rpc.error(id, failure ?: "no holder"))
+                relay.call(holder, conn, session, msg, id)
+            }
         }
     }
 

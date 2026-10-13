@@ -25,7 +25,6 @@ import org.jetbrains.kotlin.fir.declarations.utils.isLocal
 import org.jetbrains.kotlin.fir.resolve.fullyExpandedType
 import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.resolve.toSymbol
-import org.jetbrains.kotlin.fir.symbols.impl.FirLocalPropertySymbol
 import org.jetbrains.kotlin.fir.types.ConeClassLikeType
 import org.jetbrains.kotlin.fir.types.ConeFlexibleType
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
@@ -107,9 +106,8 @@ internal class PublicSurfaceWalk(
      *  parameter's correspondingProperty, at the PROPERTY's visibility, which is what this reads. */
     private fun property(declaration: FirProperty) {
         val owner = ownerOf(declaration) ?: return
-        val generated = declaration.symbol is FirLocalPropertySymbol ||
-            declaration.source?.kind == KtFakeSourceElementKind.EnumGeneratedDeclaration
-        if (generated) return
+        // visit() never opens a body, so no local property reaches here: only an enum's generated entries are skipped
+        if (declaration.source?.kind == KtFakeSourceElementKind.EnumGeneratedDeclaration) return
         declareIfTopLevel(owner, declaration.symbol.callableId?.classId == null, declaration.effectiveVisibility)
         if (reachable(declaration.effectiveVisibility)) callable(declaration, owner, true)
     }

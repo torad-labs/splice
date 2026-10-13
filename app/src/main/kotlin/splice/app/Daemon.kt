@@ -31,7 +31,10 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
+import splice.client.mcp.ClaudeCodeVersionsDir
 import splice.client.mcp.McpShareChoice
+import splice.client.mcp.PluginFlagChecks
+import splice.client.mcp.PluginFlagVerdicts
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
 import splice.core.compaction.CompactionInstructions
@@ -39,6 +42,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.retired.RetiredHeads
 import splice.core.topology.HeadModel
 import splice.core.topology.ProviderFamilyRule
@@ -52,6 +56,7 @@ import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
 import splice.topology.TopologyLoader
+import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
 
@@ -263,6 +268,9 @@ public class Daemon(
             headCount = topology.heads.size,
             probes = headProbes,
         ) ?: return
+        // MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, checked in the background.
+        val pluginFlags = PluginFlagVerdicts(statePaths.stateDir, ClaudeCodeVersionsDir(UserHome.dir()).path())
+        PluginFlagChecks(pluginFlags, log, controlPlane.probeScope, ProcessDispatchers().io()).request()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }

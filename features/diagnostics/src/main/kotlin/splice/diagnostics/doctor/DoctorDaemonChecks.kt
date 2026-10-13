@@ -80,6 +80,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
                 heads.topologyFreshness(snapshot, configPath),
                 heads.mgmtKeyCheck(statePaths, snapshot.running),
             ) +
+            clientVersion.pluginFlag(statePaths) +
             stateInfo
     }
 

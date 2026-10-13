@@ -116,8 +116,6 @@ public class AccountsRoute(
                     available = null,
                     credentialPresent = description.present,
                     selected = null,
-                    pinned = null,
-                    nextTarget = null,
                 ),
             )
         }
@@ -135,7 +133,7 @@ public class AccountsRoute(
             val fields = described[account.label]?.fields.orEmpty()
             if (fields["native_place"] != null) return@forEach
             val row = merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey, account.label) {
-                pooledAccount(kind, account, view, fields)
+                pooledAccount(kind, account, fields)
             }
             if (account.label == view.pinnedLabel) row.pinnedHeads += headKey
         }
@@ -147,7 +145,6 @@ public class AccountsRoute(
     private fun pooledAccount(
         kind: String,
         account: HeadAccountView,
-        view: HeadAccountPoolView,
         fields: Map<String, String>,
     ): JoinedAccount = JoinedAccount(
         credential = JoinedCredential(path = fields["auth_path"], kind = kind, singleLogin = false),
@@ -180,8 +177,6 @@ public class AccountsRoute(
             available = account.available,
             credentialPresent = account.credential.present,
             selected = account.selected,
-            pinned = account.label == view.pinnedLabel,
-            nextTarget = account.label == view.nextTargetLabel,
         ),
     )
 
@@ -249,7 +244,6 @@ public class AccountsRoute(
 
     private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
         row.quota.writeInto(into, nowSeconds)
-        into.put("credential_path", row.credential.path)
         into.put("kind", row.credential.kind)
         into.put("label", row.label)
         into.put("primary", row.primary)
@@ -260,9 +254,7 @@ public class AccountsRoute(
         into.put("auth_exclusion_reason", row.authExclusion.reason)
         into.put("refusal", row.authExclusion.refusal)
         into.put("selected", row.flags.selected)
-        into.put("pinned", row.flags.pinned?.let { row.pinnedHeads.isNotEmpty() })
         into.putJsonArray("pinned_heads") { row.pinnedHeads.forEach { add(it) } }
-        into.put("next_target", row.flags.nextTarget)
         into.putJsonArray("heads") { row.heads.sorted().forEach { add(it) } }
     }
 }

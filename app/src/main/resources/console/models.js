@@ -40,14 +40,14 @@ const root = document.getElementById("models");
 KNOBS.wire(root, () => render());
 
 // ---------- what the daemon says ----------
-const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, accounts: [], profiles: [], loaded: false, err: null };
+const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
   logs: {}, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
 async function readAll() {
-  const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head", "/api/accounts"];
-  const [heads, topo, models, projects, sessions, claude, accounts] = await Promise.all(paths.map((p) => API.get(p)));
+  const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head"];
+  const [heads, topo, models, projects, sessions, claude] = await Promise.all(paths.map((p) => API.get(p)));
   if (!heads.ok || !topo.ok) {
     if (heads.status !== 0) console.warn(`models: /api/heads answered ${heads.status}`);
     data.err = heads.status === 0 ? "Not answering" : "Not read";
@@ -60,7 +60,6 @@ async function readAll() {
   data.projects = projects.body?.projects ?? [];
   data.sessions = sessions.body?.sessions ?? [];
   data.claude = claude.ok ? claude.body : null;
-  data.accounts = accounts.body?.accounts ?? [];
   data.loaded = true;
   const doctor = await API.get("/api/doctor");
   data.doctor = doctor.ok ? doctor.body : null;

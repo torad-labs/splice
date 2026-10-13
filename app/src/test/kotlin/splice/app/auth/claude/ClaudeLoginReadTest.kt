@@ -9,7 +9,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
-import splice.accounts.claude.ClaudeProfileState
 import splice.app.head.ProviderHoldFiles
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
@@ -66,22 +65,6 @@ class ClaudeLoginReadTest {
     private fun read(vararg locations: ClaudeLoginLocation): Map<ClaudeLoginPlaceId, ClaudeLoginPlaceView> {
         val reader = ClaudeLoginRead(paths(), {}, WallClock { 100_000 })
         return reader.places(locations.toList()).associateBy { it.id }
-    }
-
-    @Test
-    fun `native roster propagates the current credential's profile state without refusal text`() {
-        val native = place(ClaudeLoginPlaceId.NATIVE, "synthetic-pending", verified = false)
-        assertEquals(ClaudeProfileState.PENDING, read(native).getValue(ClaudeLoginPlaceId.NATIVE).identity.profileState)
-        val profiles = ClaudeCredentialProfiles(paths().stateDir, {})
-        profiles.failed(key("synthetic-pending"))
-        val refused = read(native).getValue(ClaudeLoginPlaceId.NATIVE)
-        assertEquals(ClaudeProfileState.REFUSED, refused.identity.profileState)
-        assertNull(refused.identity.account)
-        profiles.observed(key("synthetic-pending"), ClaudeAccountIdentity("synthetic-account", null))
-        assertEquals(
-            ClaudeProfileState.VERIFIED,
-            read(native).getValue(ClaudeLoginPlaceId.NATIVE).identity.profileState,
-        )
     }
 
     @Test

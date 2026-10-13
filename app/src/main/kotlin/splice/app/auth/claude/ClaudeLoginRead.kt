@@ -126,7 +126,7 @@ internal class ClaudeLoginRead(
             id = location.id,
             head = head,
             credential = ClaudeLoginCredential(location.credentials.toString(), native.present, native.refusal),
-            identity = ClaudeLoginIdentity(native.account, native.profileState),
+            identity = ClaudeLoginIdentity(native.account),
             quota = quota,
             standing = ClaudeLoginStanding(
                 held = until?.let { it > clock() / 1000L },

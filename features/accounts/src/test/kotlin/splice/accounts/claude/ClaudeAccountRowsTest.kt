@@ -47,31 +47,6 @@ class ClaudeAccountRowsTest {
     )
 
     @Test
-    fun `native rows distinguish a verified profile from an unresolved profile`() = runBlocking {
-        val pending = ClaudeLoginPlaceView(
-            ClaudeLoginPlaceId.NATIVE,
-            "synthetic-client",
-            ClaudeLoginCredential("/synthetic/login", true),
-            ClaudeLoginIdentity(null),
-            null,
-            ClaudeLoginStanding(null, null),
-        )
-        val verified = pending.copy(
-            identity = ClaudeLoginIdentity(
-                ClaudeAccountIdentity("synthetic-account", null),
-                ClaudeProfileState.VERIFIED,
-            ),
-        )
-        val refused = pending.copy(identity = ClaudeLoginIdentity(null, ClaudeProfileState.REFUSED))
-        for ((view, state) in listOf(pending to "pending", verified to "verified", refused to "refused")) {
-            val row = ClaudeLoginRows().json(view, "synthetic-provider", null, 100)
-            assertEquals(state, row.getValue("profile_state").jsonPrimitive.content)
-            assertFalse(row.toString().contains("credential_key"))
-            assertFalse(row.toString().contains("accessToken"))
-        }
-    }
-
-    @Test
     fun `a login place no credential has proved reads Account, never its command's word`() = runBlocking {
         val unproved = ClaudeLoginPlaceView(
             ClaudeLoginPlaceId.NATIVE,
@@ -168,11 +143,9 @@ class ClaudeAccountRowsTest {
         }
 
         val pinned = rowWith(key)
-        assertEquals("true", pinned.getValue("pinned").jsonPrimitive.content)
         val heads = pinned.getValue("pinned_heads").jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("claude-splice"), heads)
         val free = rowWith(null)
-        assertEquals("false", free.getValue("pinned").jsonPrimitive.content)
         assertTrue(free.getValue("pinned_heads").jsonArray.isEmpty(), "nothing pinned, no head named")
     }
 
@@ -205,14 +178,9 @@ class ClaudeAccountRowsTest {
             val native = rows[0].jsonObject
             val separate = rows[1].jsonObject
             assertEquals("native-provider", native.getValue("provider").jsonPrimitive.content)
-            assertEquals("claude", native.getValue("login_place").jsonObject.getValue("command").jsonPrimitive.content)
             assertEquals(42.0, native.getValue("five_hour_used_percent").jsonPrimitive.content.toDouble())
-            assertEquals("100", native.getValue("five_hour_limit_percent").jsonPrimitive.content)
-            assertEquals(JsonNull, native["seven_day_limit_percent"])
             assertEquals("true", native.getValue("five_hour_current").jsonPrimitive.content)
-            assertEquals(JsonNull, native.getValue("failover_positions").jsonObject["claude-splice"])
             assertEquals(JsonNull, separate["five_hour_used_percent"])
-            assertEquals(JsonNull, separate["held"])
             assertEquals("true", native.getValue("carrying_request").jsonPrimitive.content, "the matched place is")
             assertEquals("false", separate.getValue("carrying_request").jsonPrimitive.content, "the sibling is not")
             assertEquals(AccountRef.of("separate-account"), separate.getValue("ref").jsonPrimitive.content)

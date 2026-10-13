@@ -12,14 +12,12 @@ internal data class AuthExclusionView(
     val displayName: String? = null,
 )
 
-/** The five yes/no/unknown facts a console row renders as booleans — grouped for the same
+/** The three yes/no/unknown facts a console row renders as booleans — grouped for the same
  *  constructor-width reason as [QuotaWindowView]. */
 internal data class AccountFlags(
     val available: Boolean?,
     val credentialPresent: Boolean,
     val selected: Boolean?,
-    val pinned: Boolean?,
-    val nextTarget: Boolean?,
 )
 
 /** The credential a joined row stands for: where it lives, which auth kind owns it, and whether it is a head's
@@ -37,8 +35,7 @@ internal data class JoinedAccount(
     val flags: AccountFlags,
     val labelsByHead: MutableMap<String, String?> = sortedMapOf(),
 ) {
-    /** The heads on which THIS credential is the pin. [flags] describes the first head that reached the row, so a
-     *  credential two heads share and only one pins would otherwise read as pinned on both. */
+    /** The heads on which THIS credential is the pin: a credential two heads share can be pinned on one. */
     val pinnedHeads: MutableSet<String> = sortedSetOf()
     val heads: Set<String> get() = labelsByHead.keys
 }

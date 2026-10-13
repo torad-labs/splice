@@ -57,7 +57,6 @@ internal class ClaudeLoginRows(
         val answer = head?.answers?.answer(place)
         put("provider", provider)
         AccountAnswerJson.write(this, answer)
-        put("credential_path", view.credential.path)
         put("credential_present", view.credential.present)
         put("kind", "client")
         put("label", view.id.wire)
@@ -69,7 +68,6 @@ internal class ClaudeLoginRows(
         // (Marlin's Accounts walk, ruled via splice-lead, Oct 12); the page says it is Not read.
         name.write(this)
         put("identity_verified", view.identity.account != null)
-        put("profile_state", view.identity.profileState.wire)
         put("can_remove", view.management?.canRemove == true)
         // a proved login can always be named: its name lives in splice's own state, never in his credential files
         put("can_rename", view.management?.canRename == true || ref != null)
@@ -79,19 +77,13 @@ internal class ClaudeLoginRows(
         }
         put("primary", false)
         put("single_login", true)
-        putJsonObject("login_place") {
-            put("id", view.id.wire)
-            put("command", view.id.command)
-        }
+        putJsonObject("login_place") { put("id", view.id.wire) }
         put("plan", view.quota?.plan)
         windows(this, view, nowSeconds)
         put("last_read_failure", readFailures?.failure(view.head, place)?.json() ?: JsonNull)
-        put("held", view.standing.held)
-        put("held_until_epoch_seconds", view.standing.untilEpochSeconds)
         selection(this, view, head?.activePool?.view(null), head?.accountAuth?.descriptions()?.get(place))
         put("carrying_request", carrying?.let { it == view.id })
         putJsonArray("heads") { add(JsonPrimitive(view.head)) }
-        putJsonObject("failover_positions") { put(view.head, null as Int?) }
     }
 
     private fun selection(
@@ -106,11 +98,9 @@ internal class ClaudeLoginRows(
         put("selector_key", key)
         put("available", available)
         put("selected", selected?.selected)
-        put("pinned", pool?.let { it.pinnedLabel == key })
         // The console reads WHICH head pins a row, because a row shared by two heads can be pinned on one. A native login
         // belongs to one head, so the answer is that head when the pin names this login.
         putJsonArray("pinned_heads") { if (pool?.pinnedLabel == key) add(JsonPrimitive(view.head)) }
-        put("next_target", pool?.let { it.nextTargetLabel == key })
         put("auth_excluded_until_epoch_millis", selected?.credential?.excludedUntilEpochMillis)
         put("auth_exclusion_reason", selected?.credential?.exclusionReason)
         val reason = description?.fields?.get(REFUSAL_FIELD) ?: view.credential.refusal
@@ -136,12 +126,10 @@ internal class ClaudeLoginRows(
         put("five_hour_used_percent", five?.usedPercent)
         put("five_hour_reset_epoch_seconds", five?.resetsAt)
         put("five_hour_window_seconds", five?.windowSeconds)
-        put("five_hour_limit_percent", five?.let { 100 })
         put("five_hour_current", five != null && QuotaFreshness.current(observed, five.resetsAt, nowSeconds))
         put("seven_day_used_percent", seven?.usedPercent)
         put("seven_day_reset_epoch_seconds", seven?.resetsAt)
         put("seven_day_window_seconds", seven?.windowSeconds)
-        put("seven_day_limit_percent", seven?.let { 100 })
         put("seven_day_current", seven != null && QuotaFreshness.current(observed, seven.resetsAt, nowSeconds))
         QuotaJson().putModels(into, "seven_day_models", quota?.modelsRunningAt(nowSeconds).orEmpty())
         put("observed_at_epoch_seconds", observed)

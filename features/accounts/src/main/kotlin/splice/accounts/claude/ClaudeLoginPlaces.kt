@@ -36,13 +36,8 @@ public data class ClaudeLoginCredential(
     val refusal: String? = null,
 )
 
-/** Who a place proved it is: the verified account, and the profile read behind it. */
-public data class ClaudeLoginIdentity(
-    val account: ClaudeAccountIdentity?,
-    /** Verified identity, an outstanding/transient profile read, or this credential's durable refusal. */
-    val profileState: ClaudeProfileState =
-        if (account != null) ClaudeProfileState.VERIFIED else ClaudeProfileState.PENDING,
-)
+/** Who a place proved it is: the verified account, or null before a profile read proved one. */
+public data class ClaudeLoginIdentity(val account: ClaudeAccountIdentity?)
 
 /** Secret-free facts for one command. Window figures are provider observations, not per-account dollar spend. */
 public data class ClaudeLoginPlaceView(

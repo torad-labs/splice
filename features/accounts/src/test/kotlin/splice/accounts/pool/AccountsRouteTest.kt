@@ -54,7 +54,6 @@ class AccountsRouteTest {
         val accounts = body["accounts"]!!.jsonArray
         assertEquals(1, accounts.size, "one credential path must be one row, not one per head")
         val row = accounts.single().jsonObject
-        assertEquals(authPath, row["credential_path"]!!.jsonPrimitive.content)
         val riders = row["heads"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("head-a", "head-b"), riders)
         assertEquals(18_000L, row["five_hour_window_seconds"]!!.jsonPrimitive.content.toLong())
@@ -87,7 +86,6 @@ class AccountsRouteTest {
         val row = accounts.jsonArray.single().jsonObject
 
         assertEquals(listOf("head-b"), row["pinned_heads"]!!.jsonArray.map { it.jsonPrimitive.content })
-        assertEquals("true", row["pinned"]!!.jsonPrimitive.content, "pinned somewhere is still pinned")
     }
 
     @Test

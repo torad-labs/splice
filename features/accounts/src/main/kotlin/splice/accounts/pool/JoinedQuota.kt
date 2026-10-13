@@ -27,8 +27,6 @@ internal data class JoinedQuota(
 ) {
     /** The quota fields of a row's JSON. */
     fun writeInto(into: JsonObjectBuilder, nowSeconds: Long) {
-        into.put("five_hour_limit_percent", fiveHour.usedPercent?.let { 100 })
-        into.put("seven_day_limit_percent", sevenDay.usedPercent?.let { 100 })
         into.put("plan", plan)
         into.put("five_hour_used_percent", fiveHour.usedPercent)
         into.put("five_hour_reset_epoch_seconds", fiveHour.resetEpochSeconds)

@@ -168,10 +168,6 @@ internal class RecordLine {
 
     /** The bytes a line occupies, with the newline the reader stripped charged back to it. */
     fun onDisk(line: String): Long = line.toByteArray(Charsets.UTF_8).size + 1L
-
-    /** [ms] on the grain this tally counts at, which is the grain a cut may be offered on: a moment
-     *  between two minutes would promise part of a minute the count cannot answer for. */
-    fun flooredToMinute(ms: Long): Long = ms / RECORD_MINUTE_MS * RECORD_MINUTE_MS
 }
 
 /**

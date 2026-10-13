@@ -103,9 +103,6 @@ public class PerfStats(
     private val appendDrops = PerfAppendDrops(log)
     private val lane = PerfLineAppend(file, maxBytes, archive, appendDrops)
 
-    /** Count perf rows rejected by the bounded file-lane admission boundary. */
-    public val droppedRowCount: Long get() = appendDrops.count
-
     /** Rows dropped by [tailRows] since this instance was built, for a caller that renders cost and
      *  must say when that number is short. Monotonic: a healthy read does not reset it, because the
      *  rows it counted are still missing from every figure summed afterwards. */
@@ -321,7 +318,6 @@ public class PerfStats(
     private class PerfAppendDrops(private val log: LogSink) {
         private val lost = AtomicLong()
         private val warned = AtomicBoolean(false)
-        val count: Long get() = lost.get()
 
         fun accepted(yes: Boolean) {
             if (yes) {

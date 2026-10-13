@@ -214,7 +214,7 @@ requests carry tools, and the builder keeps them: a compaction's upstream bytes
 must match the preceding turn's prefix (cache law). Never add size/content
 heuristics (the v13/v24 misfire class). The shadow classifier logs
 `{has_marker, tool_count, sys_len}` on every request; the marker canary test
-pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
+pins the sentence. On drift: update `compactMarkers` + fixture together.
 
 ## Out of scope (locked)
 

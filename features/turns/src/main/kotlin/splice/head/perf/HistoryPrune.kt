@@ -48,14 +48,10 @@ private const val PRUNE_WAIT_MS = 120_000L
 // therefore atomic. The suffix cannot parse as a record name, so a concurrent read never counts it.
 private const val PRUNING_SUFFIX = ".tmp"
 
-/** What a prune took: the records deleted, and how the files holding them ended up. */
+/** What a prune took: the records deleted and their bytes. */
 internal data class HistoryPruned(
     val turns: Long,
     val bytes: Long,
-    /** Generations deleted whole, because nothing in them was newer than the moment. */
-    val filesDeleted: Int,
-    /** Generations rewritten, because they straddled the moment. */
-    val filesRewritten: Int,
 )
 
 /** Deletes the request records written before a moment, exactly and on the file lane. */
@@ -98,7 +94,7 @@ internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)
             if (taken.wholeFile) deleted += 1 else rewritten += 1
         }
         log("[history] pruned $turns turn(s), $bytes byte(s): $deleted file(s) deleted, $rewritten rewritten\n")
-        return HistoryPruned(turns, bytes, deleted, rewritten)
+        return HistoryPruned(turns, bytes)
     }
 
     /** What one file loses to a cut at [momentMs], taken from it before this returns. */

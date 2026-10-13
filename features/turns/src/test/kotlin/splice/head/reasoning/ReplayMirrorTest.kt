@@ -14,8 +14,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
-import splice.core.wire.TextBlock
-import splice.core.wire.ThinkingBlock
 
 // node -e "import('./server/src/reasoning/replay.mjs').then(m => console.log(m.encodeReasoningEnvelope(...)))"
 private const val NODE_WITH_SUMMARY =
@@ -85,19 +83,6 @@ class ReplayMirrorTest {
         assertTrue(mirror.mirrorInto(sink, "  long enough reasoning summary  ", ReasoningDisplay.TEXT, compact = false))
         assertEquals(listOf("\n[reasoning summary]\nlong enough reasoning summary\n"), texts)
         assertEquals("\n[reasoning summary]\nx\n", mirror.mirrorWireText(" x "))
-    }
-
-    @Test
-    fun `extractThinking joins thinking blocks with paragraph breaks`() {
-        val joined = Mirror().extractThinking(
-            listOf(
-                ThinkingBlock(" first "),
-                TextBlock("not thinking"),
-                ThinkingBlock(""),
-                ThinkingBlock("second"),
-            ),
-        )
-        assertEquals("first\n\nsecond", joined)
     }
 }
 

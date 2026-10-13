@@ -203,7 +203,6 @@ class PerfStatsTest {
             val snapshot = TurnPerf { 0L }.snapshot()
             val laneDropsBefore = AsyncFileIo.droppedCount()
             repeat(2) { stats.record(PerfRowMeta("m", "ok", compact = false), snapshot) }
-            assertEquals(2L, stats.droppedRowCount)
             assertEquals(laneDropsBefore + 2, AsyncFileIo.droppedCount())
             assertEquals(1, notices.count { "file lane rejected a turn row" in it })
             assertTrue(!AsyncFileIo.awaitFile(file), "the latest rejected row is not settled")

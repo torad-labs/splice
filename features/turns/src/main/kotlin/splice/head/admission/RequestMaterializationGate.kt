@@ -5,15 +5,12 @@ import kotlinx.coroutines.flow.first
 import splice.core.config.Knob
 import splice.core.config.MaterializationBudgetBytes
 import splice.core.config.MaterializedByteCap
-import splice.core.memory.HEAP_RESIDENT_BYTES
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapWeights
 import splice.head.turn.MaterializedRequest
 import splice.upstream.TurnEnd
 import splice.upstream.memory.JvmHeap
-
-internal const val MATERIALIZATION_RESIDENT_BYTES: Long = HEAP_RESIDENT_BYTES
 
 /** Decoding and retained request trees use the measured 13/2 expansion, without oversized clamping. */
 public class RequestMaterializationGate(

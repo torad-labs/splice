@@ -45,9 +45,6 @@ internal class CompactClassifier {
             ?.joinToString("\n")
             .orEmpty()
 
-    /** Marker in the system prompt OR the LAST user message — never the whole transcript. */
-    fun markerPresent(body: AnthropicRequest): Boolean = classifyCompact(body).hasMarker
-
     /**
      * Detect Claude Code's /compact summarization call (auto + manual). Positive marker only.
      * Returns the full probe so the shadow classifier can reuse sysLen/hasMarker without a second

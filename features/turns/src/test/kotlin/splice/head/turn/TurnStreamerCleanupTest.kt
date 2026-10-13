@@ -81,7 +81,6 @@ class TurnStreamerCleanupTest {
             assertSame(failure, withTimeout(5_000) { rig.failure.await() })
             assertTrue(rig.drive.emitter.endedCleanly, "the replay would otherwise have been kept")
             assertTrue(recording.isComplete, "a failed completion settles the recording as torn")
-            assertFalse(recording.isWhole)
             assertTrue(rig.handedOff.get())
             assertEquals(0, rig.gate.snapshot().inflight, "recording failure must not leak the handed-off slot")
             assertNull(rig.replay.lookup(rig.key), "finish must drop the failed recording with keep=false")
@@ -145,7 +144,6 @@ class TurnStreamerCleanupTest {
                 assertSame(first, actual)
                 assertEquals(listOf(later), actual.suppressed.toList())
                 assertTrue(recording.isComplete)
-                assertTrue(recording.isWhole, "the replay persistence boundary was reached")
                 assertEquals(0, rig.gate.snapshot().inflight)
             }
         }
@@ -169,7 +167,6 @@ class TurnStreamerCleanupTest {
                 assertEquals(0, rig.gate.snapshot().inflight, "launch must return handed-off ownership")
                 assertNull(rig.replay.lookup(rig.key))
                 assertTrue(recording.isComplete)
-                assertFalse(recording.isWhole)
             }
         }
 
@@ -260,7 +257,6 @@ class TurnStreamerCleanupTest {
                 assertEquals(1, rig.releases.get(), "the actual counted slot returns exactly once")
                 assertNull(rig.replay.lookup(rig.key))
                 assertTrue(recording.isComplete)
-                assertFalse(recording.isWhole)
             }
         }
 

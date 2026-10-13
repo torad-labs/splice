@@ -23,8 +23,7 @@ class CompactTest {
     fun `marker canary - the verbatim v2 1 207 sentence is pinned`() {
         // If this breaks, Claude Code drifted the summarizer prompt: update compactMarkers
         // AND the fixture together (the doctrine).
-        assertEquals("tasked with summarizing conversations", COMPACT_MARKER)
-        assertTrue(compactMarkers.contains(COMPACT_MARKER))
+        assertEquals("tasked with summarizing conversations", compactMarkers.first())
         assertEquals(5, compactMarkers.size)
     }
 
@@ -53,7 +52,7 @@ class CompactTest {
         assertTrue(
             classifier.classifyCompact(
                 body(
-                    """{"model":"m","system":"$COMPACT_MARKER",
+                    """{"model":"m","system":"${compactMarkers.first()}",
                         "tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[]}""",
                 ),
             ).compact,
@@ -74,13 +73,12 @@ class CompactTest {
     fun `only the LAST user message is scanned - quoted history never re-triggers`() {
         val quoted = body(
             """{"model":"m","messages":[
-                {"role":"user","content":"earlier: $COMPACT_MARKER"},
+                {"role":"user","content":"earlier: ${compactMarkers.first()}"},
                 {"role":"assistant","content":"noted"},
                 {"role":"user","content":"now do normal work"}
             ]}""",
         )
         assertFalse(classifier.classifyCompact(quoted).compact)
-        assertFalse(classifier.markerPresent(quoted))
     }
 
     // DR-141 (dialect sweep, 2026-08-31): the invariant three code sites state — system prompt OR
@@ -96,13 +94,12 @@ class CompactTest {
     fun `a tool-result-only last user message never re-triggers compaction`() {
         val toolTurn = body(
             """{"model":"m","messages":[
-                {"role":"user","content":"$COMPACT_MARKER"},
+                {"role":"user","content":"${compactMarkers.first()}"},
                 {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}]},
                 {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}
             ]}""",
         )
         assertFalse(classifier.classifyCompact(toolTurn).compact, "a tool-result turn must not compact")
-        assertFalse(classifier.markerPresent(toolTurn), "the marker lives in history, not the last user turn")
     }
 
     // Spec section 7: detection is the verbatim summarizer marker and nothing looser. Prose that merely

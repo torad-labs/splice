@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HEAP_RESIDENT_BYTES
 import splice.core.model.CatalogWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -12,7 +13,6 @@ import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
-import splice.head.admission.MATERIALIZATION_RESIDENT_BYTES
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -83,7 +83,7 @@ object HeadHeapProbe {
     fun main(args: Array<String>) {
         val ok = ProbeHeapUsage().use {
             val residentBytes = minOf(
-                MATERIALIZATION_RESIDENT_BYTES,
+                HEAP_RESIDENT_BYTES,
                 Runtime.getRuntime().maxMemory() / 2,
             ).toInt()
             val resident = ByteArray(residentBytes)

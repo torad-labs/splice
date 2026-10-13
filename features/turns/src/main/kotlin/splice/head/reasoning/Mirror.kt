@@ -8,8 +8,6 @@ package splice.head.reasoning
 
 import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.ReasoningDisplay
-import splice.core.wire.ContentBlock
-import splice.core.wire.ThinkingBlock
 import splice.upstream.sse.WireSink
 
 /** The reasoning mirror: the gate predicate, the wire format, and the single [mirrorInto].
@@ -49,11 +47,4 @@ internal class Mirror {
         sink.addTextBlock(mirrorWireText(thinkingText.orEmpty().trim()))
         return true
     }
-
-    /** Join the thinking blocks of an Anthropic content list (non-stream path). */
-    fun extractThinking(content: List<ContentBlock>): String =
-        content.filterIsInstance<ThinkingBlock>()
-            .map { it.thinking.trim() }
-            .filter { it.isNotEmpty() }
-            .joinToString("\n\n")
 }

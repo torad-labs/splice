@@ -94,12 +94,10 @@ class FrameRecordingTest {
         drained.await()
         failed.complete(whole = false)
         assertFalse(follower.await(), "an abandoned drive leaves no whole answer")
-        assertFalse(failed.isWhole)
 
         val whole = FrameRecording()
         whole.append("event: message_stop\n\n")
         whole.complete(whole = true)
         assertTrue(whole.follow { }, "a clean terminal is a whole answer")
-        assertTrue(whole.isWhole)
     }
 }

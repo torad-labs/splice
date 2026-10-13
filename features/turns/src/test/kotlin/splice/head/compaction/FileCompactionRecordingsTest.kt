@@ -64,7 +64,7 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
 
         val next = CompactionReplay(store())
         val restored = checkNotNull(next.lookup(key)) { "the next process finds the kept answer" }
-        assertTrue(restored.isComplete && restored.isWhole, "a kept answer is complete and whole")
+        assertTrue(restored.isComplete, "a kept answer is complete")
         val served = mutableListOf<String>()
         assertTrue(restored.follow { served += it })
         assertEquals(frames, served, "byte-identical frames, in order")

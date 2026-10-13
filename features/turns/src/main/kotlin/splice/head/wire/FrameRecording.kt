@@ -44,8 +44,6 @@ internal class FrameRecording(
 
     val isComplete: Boolean get() = progress.value.complete
 
-    /** The drive's verdict: true when its terminal ended cleanly (meaningless before complete). */
-    val isWhole: Boolean get() = progress.value.whole
     val size: Int get() = synchronized(lock) { frames.size }
 
     /** Every frame recorded so far, in order (V4-216: what a finished recording is stored as). */

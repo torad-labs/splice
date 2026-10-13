@@ -55,6 +55,11 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
         failurePermanent = !classified.transient && (status != null || kind.isNotBlank())
     }
 
+    /** Whether the failure this state reports is the backend's own error with a vendor code on no list, the one
+     *  splice re-sends once (ChatResendOnce); a local guard outranks it in [providerFailure], so it never does. */
+    internal fun resendsOnce(): Boolean =
+        runawayGuard == null && toolCalls.toolArgsInvalid == null && failure?.retryOnce == true
+
     internal fun onFinish(reason: String) {
         finished = true
         when (reason) {

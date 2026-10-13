@@ -13,6 +13,7 @@ import splice.core.turn.TurnMeta
 import splice.dialect.chat.ChatCompactionTail
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
+import splice.dialect.chat.ChatResendOnce
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatSystemPrompt
 import splice.dialect.chat.ChatTurnContext
@@ -22,6 +23,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
+import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnEnd
 import splice.upstream.TurnSignals
@@ -61,6 +63,9 @@ public class OpenAiChatProvider(
 
     override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
         turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
+
+    /** An unknown vendor error code before any content is sent once more (retry totality); nothing else re-anchors. */
+    override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy = ChatResendOnce
 
     override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         ChatStreamTranslator(

@@ -102,8 +102,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — the poller can sit on the socket-EOF read AFTER finish_reason arrived).
     private fun terminalOutcome(): TurnOutcome = TerminalStates(
-        providerFailure = WordsAfterContent.of(terminal.providerFailure(), clientSawContent())
-            ?.copy(salvagedUsage = usage.toUsage()),
+        providerFailure = providerFailure(),
         finished = terminal.finished,
         watchdogFired = ctx.watchdogFired(),
     ).terminalPrecedence(
@@ -153,6 +152,14 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 phase = FailurePhase.MID_OUTPUT,
             )
         }
+
+    /** The backend's failure as the turn ends it: words after content (WordsAfterContent), and an unknown vendor
+     *  code before any content carries its round, so ChatResendOnce sends the request once more. */
+    private fun providerFailure(): TurnOutcome.Failure? =
+        WordsAfterContent.of(terminal.providerFailure(), clientSawContent())?.copy(
+            salvagedUsage = usage.toUsage(),
+            partial = partialRound().takeIf { terminal.resendsOnce() && !clientSawContent() },
+        )
 
     /** V4-116: has the client already been shown content this round? The generic catch is
      *  mid-stream-only, so this is the gate that decides whether a failure is OURS to

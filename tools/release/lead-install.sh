@@ -52,6 +52,10 @@ if [ -n "$hub" ]; then
     cp $src $dst.new-$sha && chmod 0755 $dst.new-$sha && mv $dst.new-$sha $dst
     echo "installed splice-mcp-$b $(sha256sum $dst | cut -d' ' -f1)"
   done
+  # A running front takes the new binary by reload, never a restart (hostshield-lead's contract, Oct 12).
+  if systemctl --user is-active --quiet splice-mcp-front.service; then
+    systemctl --user reload splice-mcp-front.service && echo "reloaded splice-mcp-front.service"
+  fi
 fi
 splice restart --now
 date +%s > $M

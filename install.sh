@@ -469,6 +469,14 @@ if ! run_jar "$JAR_DST" init ||
   roll_back "command installation failed"
 fi
 
+# 3b. A running hub front takes the new binary by reload (USR2), never a restart, which would drop every session's
+#     MCP connection (hostshield-lead's contract, Oct 12). `splice init` above already wrote its settings file.
+if [ "$HUB_INSTALLED" = 1 ] && command -v systemctl >/dev/null 2>&1 &&
+  systemctl --user is-active --quiet splice-mcp-front.service 2>/dev/null; then
+  systemctl --user reload splice-mcp-front.service ||
+    echo "splice: warning: splice-mcp-front.service did not reload; it keeps its old binary until it next starts" >&2
+fi
+
 # 4. Fail loudly rather than report success when nothing actually landed. `install --all`
 #    always links the `splice` admin command itself, so its absence means the install failed
 #    (counting arbitrary symlinks would false-pass on unrelated tools already in BIN_DIR).

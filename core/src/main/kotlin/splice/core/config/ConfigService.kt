@@ -1,9 +1,8 @@
 // PORT-OF: server/src/config.mjs layers/getConfig @ pre-public-port-baseline — the MERGE ENGINE.
 // Invariants: layers merge FRESH on every read (v29 froze knobs at import; nothing was
-// hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- perHead
-// ([heads.<key>.overrides] TOML, more specific than the global one) <- state config.json
-// (mtime-cached) <- env (alias order) <- runtime PATCH; PATCH persists to the state file
-// best-effort (env still wins at next boot).
+// hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- state config.json (mtime-cached)
+// <- env (alias order) <- runtime PATCH <- perHead ([heads.<key>.overrides] TOML, a command's own value, which beats
+// every shared layer since Oct 12); PATCH persists to the state file best-effort (env still wins at next boot).
 // SEAM (recorded): env access is injected as a reader function so tests can fake the
 // environment (the JVM cannot setenv); production passes System::getenv.
 // HD-25 (2026-08-18) split three responsibilities out of this file, all into splice.core.config so
@@ -144,13 +143,15 @@ public class ConfigService(
         // A head-only knob (Knob.headOnly) is taken from [heads.KEY.overrides] alone: the global TOML
         // and the state file drop it here, it has no env alias, and PATCH refuses it.
         coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
-        // Sits directly above the global TOML layer: more specific TOML wins over less specific,
-        // while state/env/PATCH keep their existing authority over BOTH (unchanged precedence).
-        headKey?.let { key -> headLayer.all()[key]?.let { coerceAll(it).accepted } }
-            ?.forEach { (k, v) -> merged[k] = v }
         fileLayer().filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
         synchronized(runtimeLock) { runtimeLayer.forEach { (k, v) -> merged[k] = v } }
+        // A command's own value is the most specific one there is, so it is folded in LAST and beats every shared
+        // layer. It sat just above the global TOML before (Oct 12, §9 audit): a console change to the shared value lands
+        // in the state file and the runtime layer, both of which outranked it, so after one such change every command's
+        // own value for that knob was ignored while the console said Applied.
+        headKey?.let { key -> headLayer.all()[key]?.let { coerceAll(it).accepted } }
+            ?.forEach { (k, v) -> merged[k] = v }
         return merged
     }
 

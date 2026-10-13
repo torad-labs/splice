@@ -14,7 +14,8 @@ import splice.core.config.Knob
  *  folds in that order, each later one beating the earlier. */
 private const val VALUE = "value"
 
-private val SCOPES_BY_PRECEDENCE = listOf("default", "toml", "head", "file", "env", "runtime")
+// "head" is last: a command's own value beats every shared layer (ConfigService.mergedRaw, Oct 12).
+private val SCOPES_BY_PRECEDENCE = listOf("default", "toml", "file", "env", "runtime", "head")
 
 /** Knobs the schema carries but no layer can change: ConfigCoercion answers them with one value whatever is written. */
 private val PINNED_REASONS = mapOf(

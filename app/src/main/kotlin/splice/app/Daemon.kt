@@ -31,6 +31,7 @@ import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.probe.LocalWindowRefresh
+import splice.client.mcp.McpShareChoice
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
 import splice.core.compaction.CompactionInstructions
@@ -133,7 +134,7 @@ public class Daemon(
             running = topologyWindows,
         ),
         refreshCall,
-        mcpHosting = McpHostingSettings().with(topology.daemon),
+        mcpHosting = McpHostingSettings(share = McpShareChoice { topologyWindows.mcpShare }).with(topology.daemon),
         clientVersions = clientVersions,
         compactionInstructions = compactionInstructions,
     )

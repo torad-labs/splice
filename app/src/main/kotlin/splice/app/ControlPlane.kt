@@ -421,6 +421,7 @@ internal class ControlPlane(
         endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
         bearer = McpAccessKey(mgmtKey::get),
         rootsBound = McpRootsVerdicts(statePaths.stateDir.resolve("mcp-roots-bound"), log),
+        shareByDefault = mcpHosting.share,
     )
 
     /** V4-146: one McpGlobalRead instance for both the rewrite pipeline and the census — a second

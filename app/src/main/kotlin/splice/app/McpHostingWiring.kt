@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
 import splice.client.mcp.GlobalMcpServersReader
 import splice.client.mcp.McpGlobalPlan
 import splice.client.mcp.McpInventory
+import splice.client.mcp.McpShareChoice
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
 import splice.client.mcp.PluginInlineReader
@@ -34,10 +35,12 @@ import java.nio.file.Path
 internal data class McpHostingSettings(
     val enabled: Boolean = true,
     val exclude: Set<String> = emptySet(),
+    /** The sharing choice, `[daemon] mcp_share`, read live at every decision (MCP hub step 3). */
+    val share: McpShareChoice = McpShareChoice { true },
 ) {
     /** The topology's own words: absent `mcp_hosting` means on; the exclude list is optional. */
     internal fun with(daemon: DaemonConfig): McpHostingSettings =
-        McpHostingSettings(daemon.mcpHosting ?: true, daemon.mcpHostingExclude?.toSet() ?: emptySet())
+        copy(enabled = daemon.mcpHosting ?: true, exclude = daemon.mcpHostingExclude?.toSet() ?: emptySet())
 }
 
 /** `mcpServers` from `<home>/.claude.json`; absent, unreadable or malformed reads as no servers,

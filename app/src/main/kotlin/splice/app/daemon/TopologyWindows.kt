@@ -113,6 +113,10 @@ internal class TopologyWindows(
     @Volatile
     var compaction: CompactionInstructions? = null
 
+    /** `[daemon] mcp_share` as the file says it now (MCP hub step 3); null while the file never said it. */
+    @Volatile
+    private var share: Boolean? = boot.daemon.mcpShare
+
     private val heads = ConcurrentHashMap<String, Head>()
     private val lock = Any()
 
@@ -137,6 +141,13 @@ internal class TopologyWindows(
         refresh()
         return published.get().let { it.seen != it.running }
     }
+
+    /** Whether MCP servers are shared between sessions, as splice.toml says it now: absent reads as shared. */
+    val mcpShare: Boolean
+        get() {
+            refresh()
+            return share ?: true
+        }
 
     fun close() {
         scope.cancel()
@@ -191,6 +202,7 @@ internal class TopologyWindows(
             }
             return
         }
+        share = declared.daemon.mcpShare
         // A table that breaks a rule leaves the rules in force and says why.
         compaction?.let { rules ->
             Cancellables.discard(

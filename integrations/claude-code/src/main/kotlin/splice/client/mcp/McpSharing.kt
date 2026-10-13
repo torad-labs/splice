@@ -106,6 +106,12 @@ private val LOCATION_FLAG =
 private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
 private val VARIABLE = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)""")
 
+/** The setup answer, read at every decision so a change applies to the next connection: true shares every server
+ *  that can be shared, false starts one copy per session (MCP hub step 3). */
+public fun interface McpShareChoice {
+    public fun shared(): Boolean
+}
+
 /** The MCP-scoped bearer at plan time; generated client configs must not carry management authority. */
 public fun interface McpBearer {
     public operator fun invoke(): String
@@ -121,9 +127,8 @@ public class McpSharing(
     private val isDirectory: DirectoryProbe = DirectoryProbe { Files.isDirectory(Path.of(it)) },
     /** The launch tuples a hosted copy has seen asking its client for roots, kept across restarts by the daemon. */
     private val rootsBound: McpRootsVerdicts = McpRootsVerdicts(),
-    /** The setup answer (hub step 3): true shares every server that can be shared, false starts one copy per
-     *  session. `splice setup` saves it (hub step 5); until then every server that can be shared is. */
-    private val shareByDefault: Boolean = true,
+    /** The setup answer (hub step 3), `[daemon] mcp_share`, read at every plan. */
+    private val shareByDefault: McpShareChoice = McpShareChoice { true },
 ) {
     /** A hosted server asked its client for roots, so it depends on them: no later plan shares its launch tuple,
      *  and every session from the next on starts its own copy, as for a server that names a project directory. */
@@ -224,7 +229,8 @@ public class McpSharing(
             McpWhy("transport", entry.url ?: entry.type),
         )
         entry.command == null -> Rejected("no command", McpWhy("no_command"))
-        !shareByDefault -> Rejected("you chose one copy per session", McpWhy("per_session_choice"), perSession = true)
+        !shareByDefault.shared() ->
+            Rejected("you chose one copy per session", McpWhy("per_session_choice"), perSession = true)
         entry.obj?.containsKey("cwd") == true -> Rejected(
             "has a cwd (session-scoped)",
             McpWhy("cwd", str(entry.obj["cwd"])),

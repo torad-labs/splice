@@ -97,9 +97,11 @@ public data class Topology(
     )
 
     /** This topology without every key the running daemon re-reads live: the context windows, and since Oct 12 the
-     *  [compaction] table (§7, the console edits it). Two files equal here differ only in what a running daemon
+     *  [compaction] table (§7, the console edits it) and `[daemon] mcp_share` (MCP hub step 3: the sharing choice
+     *  applies to new connections, never after a restart). Two files equal here differ only in what a running daemon
      *  already applies, so the edit needs no restart and the daemon runs the newer one. */
-    public fun withoutLiveKeys(): Topology = withoutWindows().copy(compaction = CompactionConfig())
+    public fun withoutLiveKeys(): Topology =
+        withoutWindows().copy(compaction = CompactionConfig(), daemon = daemon.copy(mcpShare = null))
 }
 
 @Serializable
@@ -126,6 +128,9 @@ public data class DaemonConfig(
     // wiring site without a literal default here that the knob layer would then have to know.
     @SerialName("mcp_hosting") val mcpHosting: Boolean? = null,
     @SerialName("mcp_hosting_exclude") val mcpHostingExclude: List<String>? = null,
+    // MCP hub step 3: the setup answer, share MCP servers between sessions or start one copy per session. Absent reads
+    // as shared. Read live (TopologyWindows), so a change applies to the next connection.
+    @SerialName("mcp_share") val mcpShare: Boolean? = null,
 )
 
 @Serializable

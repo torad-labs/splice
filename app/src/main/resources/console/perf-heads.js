@@ -65,11 +65,14 @@ const PERF_HEADS = (() => {
     const shares = Object.entries(h.failure_shares || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
     return shares.map(([tag, s]) => `<a class="k" href="${door(h.key, { tag })}">${s >= 0.005 ? `<b>${pct(s)}</b> ` : ""}${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</a>`).join("");
   }
-  /** The compactions among the command's requests, which open on Requests with its Compactions toggle on. The status
-   *  labels splice writes itself are left out: nothing a person can act on (marlin). */
+  /** The compactions among the command's requests, which open on Requests with its Compactions toggle on, and its side
+   *  queries: Claude Code's activity asks the head answers itself with no model (PerfKeys.ACTIVITY_QUERY), so they cost
+   *  nothing. Plain text, since Requests never lists them, and only where there are any; the spec counts turn kind per
+   *  command (v0.4.0 §3, the President's Oct 13 ruling; marlin's form). */
   function sorts(h) {
-    const n = h.kinds?.compaction ?? 0;
-    return n > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(n)} ${n === 1 ? "compaction" : "compactions"}</a>` : "";
+    const n = h.kinds?.compaction ?? 0, q = h.kinds?.activity_query ?? 0;
+    const compactions = n > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(n)} ${n === 1 ? "compaction" : "compactions"}</a>` : "";
+    return compactions + (q > 0 ? `<span class="m">${n0(q)} ${q === 1 ? "side query" : "side queries"} · $0</span>` : "");
   }
   /** What the record behind a row could not cover, in the fewest words; the cause goes to the console. */
   function gaps(h) {

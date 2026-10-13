@@ -60,7 +60,7 @@ internal class UsageMount(
         fileIo,
         guard,
         log,
-        McpMemory(McpSignatures { ports.mcpInventory?.census() }),
+        McpMemory(McpSignatures({ ports.mcpInventory?.census() }, { ports.mcpSharing })),
     )
 
     // Settings > Your data's one window, with its own wiring: see HistoryWiring.

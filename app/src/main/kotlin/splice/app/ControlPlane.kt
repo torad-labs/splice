@@ -137,6 +137,7 @@ internal class ControlPlane(
 
     // The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it.
     private var mcpInventory: McpInventory? = null
+    private var mcpSharing: McpSharing? = null
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
@@ -372,6 +373,7 @@ internal class ControlPlane(
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets
         srv.ports.mcpInventory = mcpInventory
+        srv.ports.mcpSharing = mcpSharing
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.events = console.bus
         srv.ports.activity = console.stores
@@ -432,6 +434,7 @@ internal class ControlPlane(
         val globalRead = McpGlobalRead(home, log)
         val inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory
         mcpInventory = inventory
+        mcpSharing = sharing
         val config = mcpHostConfig()
         // MCP hub steps 3 and 4: the daemon half the hub front calls; the host's sweep stops ended sessions' copies.
         val hub = McpHubWiring(globalRead, statePaths.stateDir)

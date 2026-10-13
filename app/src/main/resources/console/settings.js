@@ -836,14 +836,9 @@ function savingsHtml() {
   const m = ui.mmem;
   if (m === undefined) return `<section class="tally"><div class="card peaks">${READING}</div></section>`;
   if (!m) return `<section class="tally"><p class="pidle"><span class="state limit">Not read</span><span>splice did not measure its MCP servers</span></p></section>`;
-  // the census classes only user-scope servers; /api/mcp's plans class every source by the same rules (03a46995a), so a
-  // plugin's or a project's server takes its class, why and value from the first plan that loads it
-  const planned = new Map();
-  for (const p of ui.mcp?.plans || []) for (const s of p.servers || []) if (s.class && !planned.has(s.name)) planned.set(s.name, s);
-  const all = (m.servers || []).map((s) => {
-    const p = s.class ? null : planned.get(s.name);
-    return p ? { ...s, class: p.class, why: p.why ?? null, value: p.value ?? null } : s;
-  });
+  // each row carries its class from the host's own sharing plan, a plugin's or a project's server classed as a
+  // user-scope one, whether or not a session runs in its folder
+  const all = m.servers || [];
   const share = all.filter((s) => shareable(s) && s.copies);
   const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
   const copies = share.reduce((n, s) => n + s.copies, 0);

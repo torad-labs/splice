@@ -2,6 +2,8 @@
 package splice.app.sources
 
 import splice.core.perf.PerfArchiveName
+import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -104,6 +106,26 @@ internal class PerfReadFiles(
 
     /** Whether the files are the ones [stamp] was taken of, none added or gone, only the live one grown by appends. */
     fun unchanged(stamp: PerfSourceStamp): Boolean = stamp.covers(list().orEmpty()) && stamp.holds()
+
+    /** The archived generations with their rotation seconds, oldest first. No archive directory is quiet (nothing has
+     *  rotated out yet, or the archive is off); any other failure to list it goes to [errors] as a read error, because
+     *  the history it holds may be the window's. */
+    fun archived(errors: MutableList<String>): List<Pair<Path, Long>> {
+        val dir = archiveDir ?: return emptyList()
+        val listed = Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.toList() } }
+        listed.exceptionOrNull()?.takeUnless { it is NoSuchFileException }
+            ?.let { errors += "${dir.fileName}: ${SafeFailureText.render(it)}" }
+        return listed.getOrDefault(emptyList())
+            .mapNotNull { path -> archiveName.rotatedAt(path.fileName.toString())?.let { path to it } }
+            .sortedBy { it.second }
+    }
+
+    /** Each live generation's file key, for telling a rotation during a read. An absent generation has no fileKey;
+     *  null is the normal reading and rotation is judged by comparing the SAME two reads before and after, so a null
+     *  on both passes correctly reports 'no rotation'. */
+    fun keys(): List<Any?> = generations.map { generation ->
+        try { Files.getAttribute(generation, "fileKey") } catch (_: IOException) { null }
+    }
 }
 
 /** A read the request log refused for a row it could not parse, and the earliest hour that read covered. A torn row is

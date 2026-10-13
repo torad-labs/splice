@@ -1,9 +1,11 @@
-// What one parsed perf JSON object says about its turn, read by name; split out of PerfRowsFileSource's scan.
+// What one perf line says about its turn, decoded or parsed whole; split out of PerfRowsFileSource's scan.
 package splice.app.sources
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfTurnIds
 import splice.core.util.JsonScalars
 import splice.usage.perf.PerfRow
@@ -71,4 +73,62 @@ internal class PerfRowShape {
      *  honest reading; a null and an empty string are different facts and stay different. */
     private fun text(obj: JsonObject, key: String): String? =
         JsonScalars.str(obj, key)?.takeUnless { REPLACEMENT_CHAR in it }
+}
+
+/** Where a decoder counts each JSON decode it performs, rejected rows and baseline candidates included. */
+internal fun interface ParseTally {
+    fun parsed()
+}
+
+/** One perf line read into the facts a scan keeps: the cache's streaming decoder first, and the whole parsed object
+ *  when that decoder refuses the line, so a row the fast path cannot read still keeps its time, model and probe facts.
+ *  Split out of PerfRowsFileSource's Scan. */
+internal class PerfLineDecoder(
+    private val rowsCache: PerfRowsCache,
+    private val json: Json,
+    private val tally: ParseTally,
+) {
+    private val shape = PerfRowShape()
+
+    fun decode(line: String): PerfCachedLine = rowsCache.decoder.decode(line).fold(
+        onSuccess = { decoded ->
+            tally.parsed()
+            PerfCachedLine(
+                row = decoded.row,
+                numericBytes = decoded.numericBytes,
+                leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
+                model = PerfLineHints.decodedModelOf(line),
+                drops = PerfLineHints.dropsOf(line, decoded.drops),
+                probe = false,
+            )
+        },
+        onFailure = { decodeTree(line) },
+    )
+
+    private fun decodeTree(line: String): PerfCachedLine {
+        val obj = parse(line)
+        val ts = obj?.let(PerfLineHints::tsIn)
+        val facts = PerfCachedLine(
+            row = null,
+            numericBytes = 0L,
+            leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
+            model = PerfLineHints.modelOf(line),
+            drops = PerfLineHints.dropsOf(line, obj?.let(PerfLineHints::dropsIn)),
+            probe = false,
+        )
+        if (obj == null || ts == null) return facts
+        val fields = rowsCache.fields(obj)
+        return facts.copy(
+            row = shape.row(ts, obj, fields),
+            numericBytes = fields.retainedBytes,
+            probe = LivenessProbe.legacyRow(obj),
+        )
+    }
+
+    /** The line as one JSON object, or null. One malformed row in a live-appended JSONL is normal; whole-file read
+     *  failures are routed into the scan's errors and so to the window's readError. */
+    fun parse(line: String): JsonObject? {
+        tally.parsed()
+        return JsonScalars.objectOrNull(json, line)
+    }
 }

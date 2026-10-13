@@ -16,3 +16,41 @@ internal data class EconomicsPerfEvidence(
     val probes: List<PerfRow>,
     val probeTears: List<Long?>,
 )
+
+/** One hourly-totals read's evidence, lent to the asks after it inside that read. One read asked the log three
+ *  times (backfill, probe check, reprice), each from its own oldest hour, and a week of whole rows outgrows the full
+ *  tier, so each ask decoded the week again: two decodes of every line in the startup scan (jfr on desk d, Oct 12).
+ *  The evidence is held only while a read is open ([open]), never between reads, and only while [files] are the ones
+ *  it was read of. */
+internal class EconomicsEvidenceShare(private val files: PerfReadFiles) {
+    private var reads = 0
+    private var held: Held? = null
+
+    /** Opens one read. Until it is closed, each ask that tolerates an earlier cutoff is answered by the read
+     *  before it. */
+    @Synchronized
+    fun open(): AutoCloseable {
+        reads++
+        return AutoCloseable { synchronized(this) { if (--reads == 0) held = null } }
+    }
+
+    /** Keeps [evidence], read from [sinceMs] when the files were as [stamp], while a read is open. */
+    @Synchronized
+    fun keep(sinceMs: Long, stamp: PerfSourceStamp?, evidence: EconomicsPerfEvidence) {
+        if (reads > 0) held = stamp?.let { Held(sinceMs, it, evidence) }
+    }
+
+    /** The evidence an earlier ask of the same unchanged files took, its probes and torn lines cut at [sinceMs] as a
+     *  read from [sinceMs] would cut them; null when no open read holds one that reaches back that far. */
+    @Synchronized
+    fun since(sinceMs: Long): EconomicsPerfEvidence? {
+        val earlier = held?.takeIf { reads > 0 && sinceMs >= it.sinceMs && files.unchanged(it.stamp) } ?: return null
+        val read = earlier.evidence
+        return read.copy(
+            probes = read.probes.filter { it.ts >= sinceMs },
+            probeTears = read.probeTears.filter { it == null || it >= sinceMs },
+        )
+    }
+
+    private data class Held(val sinceMs: Long, val stamp: PerfSourceStamp, val evidence: EconomicsPerfEvidence)
+}

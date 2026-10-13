@@ -25,13 +25,10 @@
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import splice.app.sources.dense.PerfLineSpot
-import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.usage.perf.PerfProjectedKeys
 import splice.usage.perf.PerfProjectionRead
@@ -40,8 +37,6 @@ import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.ProjectedPerfRowsSource
-import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
@@ -90,7 +85,7 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     internal fun sessionAccounts(sessions: Set<String>): PerfSessionAccountIndex.Snapshot {
         val scan = Scan(0L, PerfSelection.WORK, cache)
-        val archives = archived(scan).map { it.first }
+        val archives = files.archived(scan.errors).map { it.first }
         if (scan.errors.isNotEmpty() || !AsyncFileIo.awaitFile(file)) {
             return PerfSessionAccountIndex.Snapshot(emptyMap(), false, emptySet())
         }
@@ -141,54 +136,33 @@ public class PerfRowsFileSource internal constructor(
         val stamp = files.stamp()
         val scan = settledRead(sinceMs, PerfSelection.ECONOMICS, compact)
         val evidence = EconomicsPerfEvidence(scan.window(), scan.probes, scan.probeTears)
-        if (sharing > 0) shared = stamp?.let { SharedEvidence(sinceMs, it, evidence) }
+        share.keep(sinceMs, stamp, evidence)
         return evidence
     }
 
     /** The evidence from [sinceMs], whose rows may reach further back: for a reader that looks only at the hours
      *  from [sinceMs] on. Inside [sharingEvidence] it is the read an earlier ask of the same unchanged files already
-     *  took, its probes and torn lines cut at [sinceMs] as that reader's own read would cut them. */
+     *  took (see [EconomicsEvidenceShare]). */
     @Synchronized
-    internal fun economicsEvidenceSince(sinceMs: Long): EconomicsPerfEvidence {
-        val earlier = shared?.takeIf { sharing > 0 && sinceMs >= it.sinceMs && files.unchanged(it.stamp) }
-            ?: return economicsEvidence(sinceMs)
-        val read = earlier.evidence
-        return read.copy(
-            probes = read.probes.filter { it.ts >= sinceMs },
-            probeTears = read.probeTears.filter { it == null || it >= sinceMs },
-        )
-    }
+    internal fun economicsEvidenceSince(sinceMs: Long): EconomicsPerfEvidence =
+        share.since(sinceMs) ?: economicsEvidence(sinceMs)
 
-    // why: one hourly-totals read asked the log three times (backfill, probe check, reprice), each from its own
-    // oldest hour, and a week of whole rows outgrows the full tier, so each ask decoded the week again: two decodes of
-    // every line in the startup scan (jfr on desk d, Oct 12). Held only while that one read runs, never between reads.
-    // Until it is closed, each economics ask that tolerates an earlier cutoff is answered by the read before it.
-    @Synchronized
-    internal fun sharingEvidence(): AutoCloseable {
-        sharing++
-        return AutoCloseable { synchronized(this) { if (--sharing == 0) shared = null } }
-    }
+    /** Opens one hourly-totals read, whose economics asks share one decode of the log until it is closed. */
+    internal fun sharingEvidence(): AutoCloseable = share.open()
 
-    private var sharing = 0
-    private var shared: SharedEvidence? = null
-
-    private data class SharedEvidence(
-        val sinceMs: Long,
-        val stamp: PerfSourceStamp,
-        val evidence: EconomicsPerfEvidence,
-    )
+    private val share = EconomicsEvidenceShare(files)
 
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
         if (rowsCache.since?.let { sinceMs < it } == true) rowsCache.clear()
         rowsCache.since = minOf(rowsCache.since ?: sinceMs, sinceMs)
         val settled = AsyncFileIo.awaitFile(file)
-        var keys = fileKeys()
+        var keys = files.keys()
         var read = readAll(sinceMs, selection, rowsCache)
-        var again = fileKeys()
+        var again = files.keys()
         if (again != keys) {
             keys = again
             read = readAll(sinceMs, selection, rowsCache)
-            again = fileKeys()
+            again = files.keys()
         }
         val incomplete = if (settled) null else "${file.fileName}: pending perf write did not settle"
         val rotated = if (again == keys) null else "${file.fileName}: rotated during the read"
@@ -196,15 +170,9 @@ public class PerfRowsFileSource internal constructor(
         return read
     }
 
-    private fun fileKeys(): List<Any?> = generations.map { generation ->
-        // An absent generation has no fileKey; null is the normal reading and rotation is judged by comparing the SAME
-        // two reads before and after, so a null on both passes correctly reports 'no rotation'.
-        try { Files.getAttribute(generation, "fileKey") } catch (_: IOException) { null }
-    }
-
     private fun readAll(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache): Scan {
         val scan = Scan(sinceMs, selection, rowsCache)
-        val archives = archived(scan)
+        val archives = files.archived(scan.errors)
         archives.forEachIndexed { priority, (generation, rotatedAt) ->
             if (archiveName.endsBefore(rotatedAt, sinceMs)) {
                 scan.heldBack(rotatedAt)
@@ -230,19 +198,6 @@ public class PerfRowsFileSource internal constructor(
             .exceptionOrNull()
             ?.takeUnless { it is NoSuchFileException }
             ?.let { scan.errors += "${generation.fileName}: ${SafeFailureText.render(it)}" }
-    }
-
-    /** This file's archived generations with their rotation seconds, oldest first. No archive
-     *  directory is quiet (nothing has rotated out yet, or the archive is off); any other failure to
-     *  list it is a read error, because the history it holds may be the window's. */
-    private fun archived(scan: Scan): List<Pair<Path, Long>> {
-        val dir = archiveDir ?: return emptyList()
-        val listed = Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.toList() } }
-        listed.exceptionOrNull()?.takeUnless { it is NoSuchFileException }
-            ?.let { scan.errors += "${dir.fileName}: ${SafeFailureText.render(it)}" }
-        return listed.getOrDefault(emptyList())
-            .mapNotNull { path -> archiveName.rotatedAt(path.fileName.toString())?.let { path to it } }
-            .sortedBy { it.second }
     }
 
     /** The state one window read accumulates across generations, oldest generation first. */
@@ -276,7 +231,7 @@ public class PerfRowsFileSource internal constructor(
          *  newest row's evidence when the window itself holds none (a head idle past the window).
          *  Parsed only then, and only the parse is a row's time — a hint never is. */
         private val held = PerfCandidates()
-        private val rowShape = PerfRowShape()
+        private val lines = PerfLineDecoder(rowsCache, json, ParseTally { parsedLines++ })
 
         override fun beforeCutoff(line: String): Long? =
             if (afterInWindowRow || PerfLineHints.hasEmptyModel(line)) null else provablyBefore(line)
@@ -305,40 +260,7 @@ public class PerfRowsFileSource internal constructor(
             kept(decode(line))
         }
 
-        fun decode(line: String): PerfCachedLine = rowsCache.decoder.decode(line).fold(
-            onSuccess = { decoded ->
-                parsedLines++
-                PerfCachedLine(
-                    row = decoded.row,
-                    numericBytes = decoded.numericBytes,
-                    leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                    model = PerfLineHints.decodedModelOf(line),
-                    drops = PerfLineHints.dropsOf(line, decoded.drops),
-                    probe = false,
-                )
-            },
-            onFailure = { decodeTree(line) },
-        )
-
-        fun decodeTree(line: String): PerfCachedLine {
-            val obj = parse(line)
-            val ts = obj?.let(PerfLineHints::tsIn)
-            val facts = PerfCachedLine(
-                row = null,
-                numericBytes = 0L,
-                leadingTs = PerfLineHints.ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
-                model = PerfLineHints.modelOf(line),
-                drops = PerfLineHints.dropsOf(line, obj?.let(PerfLineHints::dropsIn)),
-                probe = false,
-            )
-            if (obj == null || ts == null) return facts
-            val fields = rowsCache.fields(obj)
-            return facts.copy(
-                row = rowShape.row(ts, obj, fields),
-                numericBytes = fields.retainedBytes,
-                probe = LivenessProbe.legacyRow(obj),
-            )
-        }
+        fun decode(line: String): PerfCachedLine = lines.decode(line)
 
         override fun kept(line: PerfCachedLine) {
             val row = line.row
@@ -398,7 +320,7 @@ public class PerfRowsFileSource internal constructor(
         private fun newestHeld(): Long? {
             if (rows.isNotEmpty()) return newest
             val unparsed = held.latest.asReversed().firstNotNullOfOrNull {
-                it.ts ?: it.raw?.let(::parse)?.let(PerfLineHints::tsIn)
+                it.ts ?: it.raw?.let(lines::parse)?.let(PerfLineHints::tsIn)
             }
             return listOfNotNull(newest, unparsed).maxOrNull()
         }
@@ -413,19 +335,12 @@ public class PerfRowsFileSource internal constructor(
             rows = rows,
             oldestHeldTs = oldest,
             dropsBefore = held.before.asReversed().firstNotNullOfOrNull {
-                it.drops ?: it.raw?.let(::parse)?.let(PerfLineHints::dropsIn)
+                it.drops ?: it.raw?.let(lines::parse)?.let(PerfLineHints::dropsIn)
             },
             readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,
             newestHeldTs = newestHeld(),
             windowSkipped = windowSkipped,
         )
-
-        private fun parse(line: String): JsonObject? {
-            parsedLines++
-            // One malformed row in a live-appended JSONL is normal; whole-file read failures are already routed into
-            // Scan.errors -> readError by readAll() above.
-            return JsonScalars.objectOrNull(json, line)
-        }
     }
 }

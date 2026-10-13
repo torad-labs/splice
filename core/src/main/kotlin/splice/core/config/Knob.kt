@@ -17,7 +17,7 @@ package splice.core.config
 // maxRequestBytes (RequestByteCap, per request, in the head path and the ingress guard both),
 // ingressReadIdleMs (IngressReadIdleMs, per chunk, the control listener's silent-body bound),
 // materializationHeapBytes (MaterializationBudgetBytes, per admission, which the gate caps into the
-// MaterializedByteCap that same guard asks), historyRetentionDays (RetentionDays, per read),
+// MaterializedByteCap that same guard asks), historyRetentionDays (KeptHistory, per read; RetentionDays is the trace days),
 // firstByteTimeoutMs, streamIdleMs and stallReanchorMs (LiveWatchdogBudget, per turn; the first also bounds each
 // request write through WriteBoundMs), retryBackoffBaseMs, retryBackoffCapMs and retryBackoffJitterPct (LiveRetryCurve, per retry
 // sleep and deadline check), upstreamRetries (LiveRetries, once as each request begins, so a request in flight keeps
@@ -37,7 +37,9 @@ package splice.core.config
 // WITHOUT a reader type, re-reading getConfig() at the use site itself, which is why a search for reader
 // lambdas misses them: statuslineGitRoots (per statusline ask and per sessions settings ask, keyed, since it is
 // per-head overridable), projectsFolders (per sessions settings ask, keyed the same way) and
-// budgetDefaultAction (per budget ask, unkeyed). That is thirty-four, which is every knob
+// budgetDefaultAction (per budget ask, unkeyed). The three keep switches do have readers: keepTranscriptCopies
+// (CopyingOriginals, per move), keepCompactionSummaries (KeepingRecordings, per save) and keepCodeModeWork
+// (CodeModeJournaling, per save). That is thirty-eight, which is every knob
 // here without a restartRequired flag — counted off the entries below on 2026-10-10, so the flags and this line
 // agree. Recount the same way, entry by entry, and find each one's reader in the module that ENFORCES it rather
 // than in :app, which wires most of them but not these last two. Make a knob live-read and it joins this
@@ -520,7 +522,7 @@ public enum class Knob(
     ),
 
     // V4-367: a daemon-wide switch for storing SendMessage metadata. Existing day files remain until
-    // retention or an explicit delete; false stops new appends after the next restart.
+    // retention or an explicit delete; false stops new appends at the next message (read live, EdgesStored).
     MESSAGE_EDGES(
         "messageEdges",
         KnobKind.BOOL,

@@ -55,7 +55,7 @@ const PERF_HEADS = (() => {
     // this disk, so their row is missing some figures. The word telemetry stays off the screen: it reads as
     // phoning home (marlin). Absent when no row carried
     // the counter, which reads "Not measured", never a zero.
-    { label: "Record gaps", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
+    { label: "Telemetry dropped", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
   ];
   const head = (c) => `${c.label}${c.key ? KEY : ""}`;
 

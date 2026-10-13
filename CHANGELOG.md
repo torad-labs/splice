@@ -25,7 +25,8 @@
   `claude` or `local`, signs in where the service needs it, saves the head and installs its command. An optional turn checks
   that command; a failed check leaves the head saved.
 - **Resume on another model.** `-r` lists sessions from every command that shares projects.
-  splice moves earlier replies from unsupported models onto the resuming head's model.
+  A session another head wrote goes on as a copy under its own id, with earlier replies moved onto the resuming head's
+  model; the original stays as its head wrote it.
 - **New commands:** `splice add-model`, `splice sessions`,
   `splice perf`, and `splice doctor --json` (a shareable, redacted report).
 - **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
@@ -43,7 +44,8 @@
   short JavaScript program, while Claude Code still checks permissions and runs each operation.
 - **Teams.** Sessions on different heads, say Claude and GPT-6 Astra, work one goal: each gets
   its role and team goal, with the lead's address once that slot is bound, and the teams API reports recorded message
-  requests, sampled activity and estimated cost per role slot.
+  requests, sampled activity, estimated cost and plan-window use per role slot. A session started in a team's repo on
+  a member's command can join that member by rule, and the board reads by command, by role or as a timeline.
 - **Every usage-cost dollar figure is an API-rate estimate.** The status line reads `API est. $0.85`, a
   budget's warning says "an estimated $2.50 in API cost", and a subscription head bills no token at
   all.
@@ -222,10 +224,6 @@ origin.
   rows exactly as before. The Codex backend is included, and Muse is asked with its minted inference key.
   `splice models` marks undeclared models `+` discovered or `–` kept out, with the reason:
   the first eight are shown, or all with `--all`.
-- **A team member's checks describe turn health.** `GET /api/teams/{id}/economics` carries
-  `pass` when the slot's latest tallied turn finished cleanly, `fail` when it was rate-limited,
-  cancelled or failed upstream, and `null` with a reason when it has no turns. It does not
-  measure the session's build or tests.
 - **Shared MCP hosting reports all five kinds of source.** `/api/mcp` reports top-level
   servers in `.claude.json`, project overrides inside it, `.mcp.json` in repos Claude Code has
   opened, and plugins' `.mcp.json` or inline `plugin.json` servers. `/api/mcp`'s new `sources` section reports a per-kind scan (roots looked at,
@@ -273,13 +271,18 @@ origin.
   turn through splice, every session bound to an active team gets its team, its role, the team goal, the slot's
   instructions and where to reach the lead. The text is appended after the head's own prompt, even
   on a `replace` head, and an edit applies on the next turn with no restart; that turn cannot hit
-  the prompt cache, and its perf row says so. The teams API reports each seat's role, plan, listed session,
-  instructions and reported work state, with lifetime turns and estimated cost. Message requests
+  the prompt cache, and its perf row says so. `GET /api/teams` reports each team as stored, with the project of the
+  team and of each slot. Message requests
   that passed through splice are read from the sender's own transcript, not treated as confirmed
-  delivery. Activity is sampled at most once every 30 seconds, not on every turn. The working total
-  counts distinct listed working sessions, not role slots.
-  The economics API reports lifetime turns, tokens and estimated dollars per role and slot
-  (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
+  delivery. Activity is sampled at most once every 30 seconds, not on every turn.
+  The economics API reports lifetime turns, tokens and estimated dollars per slot, and what each slot moved on a plan
+  account over the last 5 hours and 7 days, by command and account (`GET /api/teams/{id}/economics`); the Teams page
+  sets the plan's own used percent beside that, as Usage reads it, and never turns it into a share. A slot set to
+  join by rule (`bind_by_rule`) takes a session that starts on its head in a folder inside the team's repo, at the
+  session's start and before its first turn, while the slot has no running session; a running member is never
+  displaced, and a session already on an active team stays there. The board has four views as tabs: Board, By
+  command, By role and Timeline, each beside the chat and the activity, kept per team. Teams live in `teams.json`
+  under the state dir and
   are archived, never deleted. A plain `claude` session can hold a slot, but its own messages
   don't pass through splice, so `GET /api/teams/{id}/chat` shows only what it receives.
 - **Every head's logins can be signed in, switched, removed and renamed through the control API.** `POST /api/auth/{head}/login` starts a device or browser login off the request that
@@ -1277,7 +1280,8 @@ origin.
   is stopped and started as before.
 - **Resuming a session on another head can no longer cut its transcript short.** To resume a
   session on a head that serves another model, splice moves the transcript's assistant rows onto that
-  head's model, in your own Claude Code transcript. It rewrote the file in place, so a crash or a full
+  head's model. A session chosen in the `-r` picker is moved in your own Claude Code transcript (a named `-r` goes on
+  as a copy, below). It rewrote the file in place, so a crash or a full
   disk in the middle of the write left the transcript truncated. The new transcript is now written
   beside the old one and moved over it in one atomic step, so an interrupted write leaves the original
   as it was.
@@ -1399,9 +1403,14 @@ origin.
 - **A resumed session follows the resuming head's model.** A transcript carries the model
   id of the head that wrote it, and Claude Code refuses to restore a model the head does not serve
   ("Session model X could not be restored"). Splice now moves the transcript's assistant rows that
-  sit on a model the resuming head does not serve onto its model, where they lie; a row on a model
-  the head serves is left byte-identical. This happens at launch for `-r SESSION_ID` and `-c`, which resumes this
-  head's own newest session in that folder. The `-r` picker uses a SessionStart hook in each
+  sit on a model the resuming head does not serve onto its model; a row on a model the head serves is left
+  byte-identical. At launch, for `-r SESSION_ID` and for `-c` (which resumes this head's own newest session in that
+  folder), a session with rows to move goes on as a copy beside it under a new session id: its rows, its subagent
+  files included, are retagged to that id, only the copy's models move, the client is handed `-r <new id>`, and the
+  original stays as its head wrote it, so another head resuming it sees it unchanged. A session with nothing to move
+  resumes in place, untouched, and a copy that fails is removed and the launch refused with the cause. Continue on
+  follows the copy and opens it. A session chosen in the `-r` picker is moved where it lies, since the client has
+  picked it before splice hears of it. The `-r` picker uses a SessionStart hook in each
   head's `settings.json` to tell the daemon which session was chosen; wrapped `claude` does not carry that hook. The hook authenticates with the
   turn key from `<state>/turn-auth-header`, never from the session's environment, may only touch
   transcripts under that head's tree, and never blocks a session: every refusal answers 200 and
@@ -1632,6 +1641,14 @@ origin.
   is named from history or reads Outside, never an id.
 - **Teams' chips draw an ended member's dot hollow,** as they do an unstarted one, and End all no longer moves the
   requests line.
+- **Teams shows the day it says.** Only the newest read draws, and a stepped day shows its chat and activity reading
+  until its own day lands, never the day before under the new day's name.
+- **A team member's model reads as Sessions names it,** never as a raw id its command does not declare.
+- **Sessions titles an unnamed session in a linked worktree by the worktree's folder,** not its whole path, which ran
+  past the card's edge.
+- **A conversation that comes back without its messages reads Not read,** never Reading for good.
+- **A move that did not land says when its screen could not be read,** instead of answering as though the terminal
+  showed nothing.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

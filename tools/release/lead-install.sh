@@ -29,6 +29,18 @@ tasks=(:app:shadowJar)
 [ -n "$hub" ] && tasks+=(:integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64)
 bun tools/gate slot install-$sha -- "${tasks[@]}"
 echo "slot exit 0 at $(ct)"
+# The hub pair installs only as the bytes hostshield-ctl qualified (Oct 13): each built binary must hash to its line in
+# tools/release/mcp-hub.sha256, checked here before anything on this machine is replaced.
+if [ -n "$hub" ]; then
+  pins=$R/tools/release/mcp-hub.sha256
+  [ -f $pins ] || { echo "REFUSED $sha: no qualified hub hashes in $pins"; exit 11; }
+  for b in holder front; do
+    got=$(sha256sum $hub/build/bin/linuxX64/${b}ReleaseExecutable/splice-mcp-$b.kexe | cut -d" " -f1)
+    want=$(awk -v n=splice-mcp-$b '$2 == n {print $1}' $pins)
+    [ -n "$want" ] && [ "$got" = "$want" ] || { echo "REFUSED $sha: splice-mcp-$b is $got, qualified is ${want:-none}"; exit 11; }
+  done
+  echo "hub pair matches the qualified hashes"
+fi
 J=$T/app/build/libs/app-all.jar; L=$T/app/src/main/dist/bin/splice-launch
 a=$(sha256sum $J | cut -d' ' -f1); echo "artifact $a"
 rp=$(systemctl --user show -p MainPID --value splice.service); [ "$rp" = 0 ] && rp=

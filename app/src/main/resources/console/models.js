@@ -438,14 +438,14 @@ function paneHtml() {
   const q = ui.logq.trim().toLowerCase(), hit = (l) => !q || l.raw.toLowerCase().includes(q);
   const lines = (logsOf(c.key) ?? []).filter(hit);
   const ev = eventsOf(lines);
-  const raw = lines.filter((l) => l.raw).slice(-60);
+  const raw = lines.filter((l) => l.raw);
   const path = ui.logPath[c.key], why = ui.logWhy[c.key];
   const top = `<div class="loghead"><h3>Log</h3>${path ? `<span class="ppath" title="${esc(path)}"><bdo dir="ltr">${esc(homeRel(path))}</bdo></span>` : ""}`
     + `<input class="field" id="logq" placeholder="Search the log" value="${esc(ui.logq)}" autocomplete="off" aria-label="Search the log">`
     + `<button class="act quiet small" data-act="logpause" aria-pressed="${ui.logPaused}">${ui.logPaused ? "Resume" : "Pause"}</button></div>`
     + (why ? `<p class="said limit">${esc(why)}</p>` : "");
   const log = `<section class="hlog">${top}${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">${q ? "No lines match" : "No events"}</p>`}`
-    + `<details class="rawlog"${ui.rawOpen ? " open" : ""}><summary>Raw log</summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
+    + `<details class="rawlog"${ui.rawOpen ? " open" : ""}><summary>Raw log<span class="mmeta">${raw.length.toLocaleString("en-US")} ${raw.length === 1 ? "line" : "lines"}</span></summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
   return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
 }
 // daemon.log lines: "[2026-10-12 04:12:52] [claudex] text"; the log is already this command's, so its tag drops
@@ -1029,6 +1029,7 @@ function render() {
   KNOBS.save?.();
   const f = document.activeElement, fid = f?.id, pos = f?.selectionStart;
   const body = root.querySelector(".pane .body"), top = body && root.dataset.shown === `${ui.view}:${ui.open}` ? body.scrollTop : 0;
+  const rl = root.querySelector(".rawlog ol"), rawAt = rl && { top: rl.scrollTop, end: rl.scrollTop + rl.clientHeight >= rl.scrollHeight - 4 };
   document.getElementById("claude").innerHTML = data.loaded ? claudeHtml() : "";
   if (!data.loaded) {
     root.innerHTML = `<p class="none">${esc(data.err ?? "Reading")}</p>`;
@@ -1038,6 +1039,8 @@ function render() {
   root.dataset.shown = `${ui.view}:${ui.open}`;
   const now = root.querySelector(".pane .body");
   if (now) now.scrollTop = top;
+  const rl2 = root.querySelector(".rawlog ol");
+  if (rl2) rl2.scrollTop = !rawAt || rawAt.end ? rl2.scrollHeight : rawAt.top;
   if (fid) {
     const g = document.getElementById(fid);
     if (g) { g.focus(); if (pos != null && g.setSelectionRange) g.setSelectionRange(pos, pos); }
@@ -1140,6 +1143,7 @@ function onInput(e) {
 }
 root.addEventListener("click", onClick);
 root.addEventListener("input", onInput);
+root.addEventListener("toggle", (e) => { if (e.target.classList?.contains("rawlog")) ui.rawOpen = e.target.open; }, true);
 document.getElementById("claude").addEventListener("click", onClick);
 document.querySelector('.foot [data-act="theme"]')?.addEventListener("click", toggleTheme);
 

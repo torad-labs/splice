@@ -18,9 +18,9 @@
   serves and refuses a model Ollama, LM Studio or vLLM does not list. With `slot_affinity = true`,
   llama-server conversations keep their own slot. Local heads
   report token usage, so Claude Code auto-compacts, and their errors say what happened.
-- **Requests and replies stay on your disk for seven UTC days.** Sign-in headers are removed,
-  and only you can read them. Capture changes apply after restart; starting with capture off also deletes
-  that head's retained trace days and reports any deletion failures.
+- **Requests and replies stay on your disk for your history window.** Left unset, trace follows
+  `historyRetentionDays`; `traceRetentionDays` sets its own. Sign-in headers are removed, and only you can read
+  them. A capture change applies from the next request; turning capture off stops new writes and deletes nothing.
 - **One-command setup.** `splice add codex`, or `grok`, `kimi`, `muse`, `deepseek`, `openrouter`,
   `claude` or `local`, signs in where the service needs it, saves the head and installs its command. An optional turn checks
   that command; a failed check leaves the head saved.
@@ -337,8 +337,8 @@ origin.
   a session's real Claude-reported windows are on record beside splice's own derived quota.
 - **The control API sets capture, budgets and webhook alerts, and sends a playground prompt.**
   Body capture is on by default and can be turned off per head. `GET`/`PUT /api/heads/{head}/capture`
-  reports and changes capture per head, applying after a restart. Starting with capture off stops
-  new writes and also deletes that head's retained trace days; deletion failures are reported.
+  reports and changes capture per head, applying from the next request. Turning capture off stops
+  new writes; days already kept stay until retention removes them.
   `GET`/`PUT /api/budgets` holds per-head daily USD budgets with a `warn`/`block` action, defaulting
   the action from the new `budgetDefaultAction` knob when a row omits one. `GET`/`PUT /api/alerts`
   holds a desktop-notification flag and one webhook URL, and `POST /api/alerts/test` posts one test to the saved webhook URL, never an unsaved draft.
@@ -756,8 +756,8 @@ origin.
 - **A running session takes a note from the console.** `POST /api/sessions/{id}/message` writes the note to the
   session's inbox socket. It is proven on each Claude Code version `/api/sessions` names, from 2.1.282 up to the
   tested 2.1.296, so a page can refuse before anyone types.
-  `GET /api/sessions/{id}/transcript` reads a transcript from its end,
-  newest first, with a cursor, governed by the live `transcriptView` knob.
+  `GET /api/sessions/{id}/transcript` pages a transcript forward from its start with a cursor
+  (`before=end` reads the newest first), governed by the live `transcriptView` knob.
 - **The operator can stop a live turn.** `POST /api/heads/{head}/turns/{id}/stop` ends it, and the client's
   re-send of that turn is refused.
 - **API keys are managed through the control API and the console.** `GET /api/keys` names the keys (never a
@@ -1579,9 +1579,9 @@ origin.
   and says what went). The directory is owner-only, whole day files older than
   `traceRetentionDays` are deleted once you set it, shorter or longer than your history window (left unset,
   trace follows `historyRetentionDays`), and a body past `traceMaxBodyChars` is cut and flagged.
-  `PUT /api/heads/{head}/capture` also turns a head's trace off after restart. Turning it off
-  removes retained days at the next daemon start; kept data can also be deleted separately.
-  `splice doctor` names heads whose trace is off or whose changed setting needs a restart.
+  `PUT /api/heads/{head}/capture` also turns a head's trace off, from the next request. Turning it off
+  keeps the days already written; kept data can be deleted separately.
+  `splice doctor` names heads whose trace is off.
   To opt out, use the head's existing key in place of `example`, then restart:
 
   ```toml
@@ -1679,7 +1679,7 @@ origin.
 - **The first launch on a fresh install works.** `claudex` before any daemon had run was refused with "cannot establish
   this launcher's owning HOME". A launcher installed inside the HOME now owns it, and the launch starts splice.
 - **First-run words are plain.** A browser that did not open says so and points at the link, the daemon start reads
-  "starting splice…", and the PATH note appears only when the bin directory is not on PATH.
+  "splice: starting splice.service…", and the PATH note appears only when the bin directory is not on PATH.
 - **A key ledger splice cannot read is kept beside the new one,** never written over. The README names the unreadable
   copy.
 - **Teams says what its request counts cover:** since joining on a slot, since members joined on the team.

@@ -50,7 +50,7 @@ public fun interface LocalListAuthority {
 /** Asks each provider [ModelsReporter.report] names what it serves and compares it with splice.toml.
  *  Every call reaches the providers: a reader asks for it, nothing polls it. The credential is read
  *  inside the probe and presented to the provider only; no report carries it. */
-public class ModelsReporter(
+internal class ModelsReporter(
     private val configuration: ModelConfigurationSource,
     credentials: ModelCredentialSource,
     private val listAuthority: LocalListAuthority = LocalListAuthority { false },

@@ -86,7 +86,7 @@ const besideOf = (r) => {
   return mend + (r.retries ? `<span class="detail">${r.retries} ${r.retries === 1 ? "retry" : "retries"}</span>` : "");
 };
 // why a request has no dollar figure (TurnPriceGap.kt), in fin's words; one that was never answered says nothing
-const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
+const REASON = { plan: "On your plan", local: "This computer", vast: "vast.ai", uncounted: "Uncounted", undeclared: "No price" };
 // A key is an account: its variable and the day splice first saw THAT key, "OPENROUTER_API_KEY · Sep 14" (fin's
 // words). A row names the key it was sent with as `VARIABLE:fingerprint` (KeyAccount.kt), so a rotated key reads as
 // its own account and the one it replaced keeps its own history, marked Replaced — on Requests as on Accounts
@@ -119,7 +119,9 @@ const acctNames = () => {
   }
   return out;
 };
-const costText = (r) => (r.cost != null ? money(r.cost) : REASON[r.reason] ?? "");
+// a request that failed before any model answered was not charged (TurnPriceGap's unanswered): it cost $0, which is a
+// fact, never "No price", which is a model answering with no rate card (Marlin, p229 on desk a, Oct 12)
+const costText = (r) => (r.cost != null ? money(r.cost) : r.reason === "unanswered" ? money(0) : REASON[r.reason] ?? "");
 const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
 // ---------- the filters, as /api/perf/turns takes them (TurnsFilter.kt), plus the search over bodies ----------
@@ -917,7 +919,8 @@ function paneHtml() {
   if (!r) return "";
   const o = outcomeOf(r), lamp = r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : "<i></i>";
   const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : "") + besideOf(r);
-  const priced = r.reason !== "unanswered"; // a request nothing answered has no cost to show
+  // a request nothing answered was not charged: Cost $0 and its attempts, and no token figures, since no model ran (p229)
+  const unbilled = r.reason === "unanswered";
   const st = traceState(r);
   // What the provider answered, kept on the row whether or not the bodies were, so it shows in every trace state
   // (Marlin item 2; hitstop 442e831). The provider by Accounts' name, its status, its own words. A status of 200 is left
@@ -937,7 +940,7 @@ function paneHtml() {
   return RV.paneHtml(r, { said: said + noteHtml(r, who), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st),
-    tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r),
+    tr: () => traceOf(r), cells: unbilled ? ["cost", "attempts"] : ["in", "write", "out", "cost", "attempts"], cost: costText(r),
     costSub: r.cost == null && r.planValue != null ? `${money(r.planValue)} at API prices` : "" });
 }
 

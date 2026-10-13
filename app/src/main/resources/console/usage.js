@@ -199,11 +199,14 @@ function mapRow(head, r) {
 // ---------- how a figure reads ----------
 const tokWord = (n) => (n >= 999.5e6 ? `${+(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} bn` : kTok(n)); // a week of tokens is billions; kTok stops at M
 const tokensOf = (s) => s.in + s.out;
+// A group whose only unpriced requests failed before any model answered spent $0 on them: the daemon counts those apart
+// (unanswered_requests, TurnPriceGap), so a group of nothing else reads $0, never "No price" (Marlin, p229, Oct 12)
+const spentOf = (s) => s.cost ?? (s.unanswered && !s.plan && !s.uncounted && !s.undeclared && !s.local ? 0 : null);
 /** What a group cost, in fin's words: a key's requests are money; a plan's read "On your plan" with their API-price value
  *  as what they would cost at API prices; a request nobody could price says why. Plan and key never share one figure. */
 function costCell(s) {
-  const out = [];
-  if (s.cost != null) out.push(`<span class="money">${dollars(s.cost)}</span>`);
+  const out = [], cost = spentOf(s);
+  if (cost != null) out.push(`<span class="money">${dollars(cost)}</span>`);
   if (s.plan) out.push(`<span class="gap">On your plan</span>${s.planValue != null ? `<span class="val">${dollars(s.planValue)} at API prices</span>` : ""}`);
   if (!out.length) out.push(`<span class="gap">${s.uncounted ? "Uncounted" : s.undeclared ? "No price" : s.local ? "This computer" : ""}</span>`);
   return out.join("");
@@ -264,7 +267,7 @@ const reading = () => D.loading || !D.scoped;
 const usageOfPlan = (row) => !D.all ? [] : [...D.all.accounts.values()].filter((e) => (row.heads || []).includes(e.head) && planRowOf(e.head, e.label) === row);
 const sumOf = (entries) => entries.reduce((t, e) => fold2(t, e), ZERO());
 function fold2(t, e) {
-  t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local;
+  t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local; t.unanswered += e.unanswered;
   if (e.cost != null) t.cost = (t.cost ?? 0) + e.cost;
   if (e.planValue != null) t.planValue = (t.planValue ?? 0) + e.planValue;
   return t;
@@ -308,7 +311,7 @@ function keysHtml() {
       const door = s.requests && !reading() ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
       cards.push({ s, html: `<article class="card kcard" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
         + `<header><span class="nm"><span class="var">${esc(k.name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}${replaced ? `<span class="detail">Replaced</span>` : ""}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}</span><span class="cmds">${[...new Set(heads)].map(chip).join("")}</span></header>`
-        + (reading() ? `<div class="spent"><span class="label">Cost</span>${GHOST.bar(6, "big")}</div>` : s.requests ? `<div class="spent"><span class="label">Cost</span>${s.cost != null ? `<span class="money">${dollars(s.cost)}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer><span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
+        + (reading() ? `<div class="spent"><span class="label">Cost</span>${GHOST.bar(6, "big")}</div>` : s.requests ? `<div class="spent"><span class="label">Cost</span>${spentOf(s) != null ? `<span class="money">${dollars(spentOf(s))}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer><span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
           : `<div class="spent"><span class="none">No requests</span></div>`) + `</article>` });
     }
   }

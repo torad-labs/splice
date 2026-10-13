@@ -5,8 +5,6 @@
 package splice.head.turn
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.auth.CredentialKey
-import splice.core.auth.Credentials
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
@@ -14,12 +12,12 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
 import splice.core.wire.RateLimitReply
-import splice.head.HeadDeps
 import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
 import splice.head.round.RunnerSignals
 import splice.head.transport.TurnAccountHandoff
+import splice.head.transport.TurnAccountLabel
 import splice.head.turn.delivery.CollectPerf
 import splice.head.usage.QuotaTracker
 import splice.head.wire.ClientChannel
@@ -154,23 +152,8 @@ internal data class TurnDrive(
     var upstreamAccepted: splice.upstream.StreamStart? = null
     var accountHandoff: TurnAccountHandoff? = null
 
-    /** Null is a state: a head whose key is gone records no account rather than a label with nothing behind it. */
-    var fallbackAccountLabel: String? = "primary"
-    var credentialAccountNames: HeadDeps.CredentialAccountNames? = null
-    var observedAccountLabel: String? = null
-        private set
-
-    /** Refresh and failover replace this request's observation using the headers of each actual attempt, and each
-     *  attempt reports its credential's digest as the newest one sent by the head and by this request's session. */
-    fun observeAccount(credentials: Credentials, extra: Map<String, String>) {
-        val key = CredentialKey.fromHeaders(
-            CredentialKey.headers(credentials, extra),
-            (credentials as? Credentials.ApiKey)?.header,
-        )
-        val names = credentialAccountNames
-        if (key != null) names?.sent(key, meta.scope.sessionId)
-        observedAccountLabel = key?.let { names?.forCredential(it) }
-    }
+    /** The account this turn's row names: observed per attempt, else the chosen login, else the head's label. */
+    val accountLabel = TurnAccountLabel()
 
     /** The model the upstream is asked for: the meta's, read rather than copied. */
     val upstreamModel: String get() = meta.route.upstreamModel

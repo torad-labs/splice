@@ -59,7 +59,7 @@ internal class SseRoundPost(
             (creds as? Credentials.ApiKey)?.header,
         )
         answers.sent(key)
-        drive.observeAccount(creds, headers)
+        drive.accountLabel.observe(key, drive.meta.scope.sessionId)
         return headers
     }
 

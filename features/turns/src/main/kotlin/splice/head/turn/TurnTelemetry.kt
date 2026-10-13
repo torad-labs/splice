@@ -140,7 +140,7 @@ internal class TurnTelemetry(
         closeTrace(drive.trace, outcomeTag, snap)
         val session = drive.sessionTag()
         val account = drive.account
-        val accountLabel = drive.observedAccountLabel ?: account?.account?.label ?: drive.fallbackAccountLabel
+        val accountLabel = drive.accountLabel.of(account?.account?.label)
         val rowTs = perfStats.record(
             PerfRowMeta(
                 drive.upstreamModel,

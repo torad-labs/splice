@@ -70,8 +70,8 @@ internal class TurnDriveFactory(
             channel = channel,
             remainingTurnWait = remainingTurnWait,
         ).also { drive ->
-            drive.fallbackAccountLabel = accountLabel(inputs.accountQuota.keyNaming)
-            drive.credentialAccountNames = deps.quotaBundle.credentialAccountNames
+            drive.accountLabel.fallback = accountLabel(inputs.accountQuota.keyNaming)
+            drive.accountLabel.names = deps.quotaBundle.credentialAccountNames
             drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.sourceRoundStarted =
                 TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot, job) }

@@ -11,6 +11,7 @@ package splice.lifecycle.upgrade
 import splice.core.GATEWAY_VERSION
 import splice.core.util.EnvReader
 import splice.launch.install.InstallLayout
+import splice.lifecycle.hub.HubUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -33,7 +34,12 @@ private const val PRE_ID = """(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"""
 private const val SEMVER_SEGMENT =
     """$NUM\.$NUM\.$NUM(?:-$PRE_ID(?:\.$PRE_ID)*)?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?"""
 
-internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = InstallLayout()) {
+/** [units] are the MCP hub's systemd units on this machine, or null where the hub's front is not installed. */
+internal class UpgradeLayout(
+    env: EnvReader,
+    installLayout: InstallLayout = InstallLayout(),
+    val units: HubUnits? = null,
+) {
     private val semver = Regex(SEMVER_SEGMENT)
     val share: Path = installLayout.shareDir(env)
     val liveJar: Path = share.resolve(JAR_ASSET)

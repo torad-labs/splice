@@ -6,6 +6,8 @@
 // apart: each unit splice writes is recorded with its SHA-256 in [record], in splice's own state, and a unit counts as
 // splice's only while it is recorded, still hashes to the record, and is what systemd loads, from this folder with no
 // drop-in.
+// Oct 13 (splice-lead): `splice upgrade` reloads a running front onto the programs it swapped in under the same
+// rule; over units anyone else placed it prints the reload for their owner (reloadFront).
 package splice.lifecycle.hub
 
 import splice.core.terminal.TerminalOutput
@@ -58,6 +60,29 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
         }
     }
 
+    /** After `splice upgrade` swapped the hub's programs: a running front takes the new one by reload, never a
+     *  restart, when every hub unit is splice's own. Over units splice did not write, it touches nothing and prints
+     *  the command for their owner to apply. Where no front unit is loaded at all, it says nothing. */
+    public fun reloadFront() {
+        if (!UNITS.all(::ours)) {
+            if (systemctl(LOAD_STATE + SERVICE) != NOT_FOUND) {
+                output.line(
+                    "splice: the MCP hub's units here were not written by splice, so their owner reloads the front " +
+                        "onto the new program: $RELOAD_LINE",
+                )
+            }
+            return
+        }
+        if (systemctl(listOf("is-active", "--quiet", SERVICE)) == null) return
+        output.line(
+            if (systemctl(listOf("reload", SERVICE)) != null) {
+                "splice: reloaded $SERVICE onto the new program"
+            } else {
+                "splice: $SERVICE did not reload, so it keeps its old program until it next starts; run: $RELOAD_LINE"
+            },
+        )
+    }
+
     /** Splice wrote [name] here, it still holds those bytes, and systemd loads it from this file with no drop-in. */
     private fun ours(name: String): Boolean {
         val file = unitDir.resolve(name)
@@ -86,7 +111,7 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
     private fun absent(name: String): Boolean =
         !Files.exists(unitDir.resolve(name), LinkOption.NOFOLLOW_LINKS) &&
             !Files.exists(unitDir.resolve("$name.d"), LinkOption.NOFOLLOW_LINKS) &&
-            systemctl(listOf("show", "-p", "LoadState", "--value", name)) == NOT_FOUND
+            systemctl(LOAD_STATE + name) == NOT_FOUND
 
     private fun create(name: String): Boolean {
         val bytes = template(name) ?: return false
@@ -115,3 +140,6 @@ private const val TIMEOUT_MS = 15_000L
 private const val SOCKET = "splice-mcp-front.socket"
 private val ENABLE = listOf("enable", "--now", SOCKET)
 private const val ENABLE_LINE = "systemctl --user enable --now $SOCKET"
+private const val SERVICE = "splice-mcp-front.service"
+private val LOAD_STATE = listOf("show", "-p", "LoadState", "--value")
+private const val RELOAD_LINE = "systemctl --user reload $SERVICE"

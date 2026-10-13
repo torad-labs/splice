@@ -26,7 +26,7 @@ internal class UpgradeActivation(
     private val layout: UpgradeLayout,
     private val wrapper: UpgradeWrapper,
     private val point: LinkPointer = LinkPointer(layout::point),
-    private val hub: UpgradeHub = UpgradeHub(output, layout.share, JdkUpgradeProcess()),
+    private val hub: UpgradeHub = UpgradeHub(output, layout.share, layout.units),
 ) {
 
     /** One transaction: the wrapper first (its I/O can fail; nothing is exposed yet), then the

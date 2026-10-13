@@ -18,6 +18,7 @@ import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
+import splice.lifecycle.hub.HubUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -35,6 +36,8 @@ public class UpgradeVerb(
     private val errors: TerminalOutput,
     private val env: EnvReader,
     private val restart: VersionedRestart,
+    /** The MCP hub's systemd units, for the front's reload after the hub's programs are swapped in; null off Linux. */
+    private val units: HubUnits? = null,
 ) {
     public fun upgrade(args: List<String>): Boolean {
         val settings = DaemonSettings(errors)
@@ -46,7 +49,7 @@ public class UpgradeVerb(
             healthVersion = { DaemonProbe.healthView(settings.controlPort(env))?.version },
             userUnit = settings.supervisorUnit(env),
         )
-        return UpgradeCommand(output, env, daemon).upgrade(args)
+        return UpgradeCommand(output, env, daemon, layout = UpgradeLayout(env, units = units)).upgrade(args)
     }
 }
 

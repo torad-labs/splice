@@ -6,25 +6,26 @@
 // neither leaves the installed pair where it is. The hub's systemd units are never touched, whoever placed them
 // (hostshield or `splice install`): only the programs they run are replaced, by rename, so a running front or holder
 // keeps its own file. A running front then takes the new program by reload (USR2), never a restart, which would drop
-// every session's MCP connection (install.sh step 3b, hostshield-lead's contract).
+// every session's MCP connection (install.sh step 3b, hostshield-lead's contract), and only over units splice wrote
+// itself: over anyone else's, the reload is printed for their owner to apply (HubUnits.reloadFront, splice-lead).
 package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
-import splice.core.terminal.YELLOW
+import splice.lifecycle.hub.HubUnits
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
 internal const val HUB_HOLDER = "splice-mcp-holder"
 internal const val HUB_FRONT = "splice-mcp-front"
-private const val FRONT_UNIT = "splice-mcp-front.service"
 
 internal class UpgradeHub(
     private val output: TerminalOutput,
     private val share: Path,
-    private val process: UpgradeProcess,
+    /** The hub's systemd units on this machine, or null where the hub's front was not installed before. */
+    private val units: HubUnits?,
 ) {
     private val names = listOf(HUB_HOLDER, HUB_FRONT)
 
@@ -49,20 +50,10 @@ internal class UpgradeHub(
         if (hadLive) replace(fromDir.resolve(name), share.resolve(name)) else Files.deleteIfExists(share.resolve(name))
     }
 
-    /** Says the pair went in, and has a running front take it by reload; a front that is not running starts on the
-     *  new program next time. */
+    /** Says the pair went in, and has a running front take it by reload over splice's own units only. */
     fun swapped() {
         output.line("  $GREEN✓$RESET ${"mcp hub".padEnd(UPGRADE_PAD)} $HUB_HOLDER and $HUB_FRONT swapped in")
-        val active = process(listOf("systemctl", "--user", "is-active", "--quiet", FRONT_UNIT), false).code == 0
-        if (!active) return
-        if (process(listOf("systemctl", "--user", "reload", FRONT_UNIT), false).code == 0) {
-            output.line("  $GREEN✓$RESET ${"mcp front".padEnd(UPGRADE_PAD)} reloaded onto the new program")
-        } else {
-            output.line(
-                "  $YELLOW!$RESET ${"mcp front".padEnd(UPGRADE_PAD)} $FRONT_UNIT did not reload; " +
-                    "it keeps its old program until it next starts",
-            )
-        }
+        units?.reloadFront()
     }
 
     /** The live program's bytes, kept in the release being left unless it already holds the same bytes. */

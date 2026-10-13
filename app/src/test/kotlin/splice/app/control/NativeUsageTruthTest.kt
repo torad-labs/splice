@@ -97,7 +97,6 @@ class NativeUsageTruthTest {
             dropsBefore = 3,
             readError = "synthetic read error",
             skipped = 7,
-            newestHeldTs = 12,
         )
         var completed = 0
         val source = object : PerfRowsSource, ProjectedPerfRowsSource {
@@ -236,7 +235,6 @@ class NativeUsageTruthTest {
                     },
                     oldestHeldTs = now - 1000,
                     dropsBefore = 3,
-                    newestHeldTs = now,
                 )
             },
         ),
@@ -471,7 +469,7 @@ class NativeUsageTruthTest {
     fun `native attribution changes only the unproved name and preserves all window evidence`() {
         val row = PerfRow(ts = 100, outcome = "ok", fields = emptyMap(), facts = PerfTurnFacts(account = "claude-code"))
         val proved = row.copy(ts = 101, facts = row.facts.copy(account = "proved@example.invalid"))
-        val held = PerfRowsWindow(listOf(row, proved), 50, 7, "synthetic unread generation", 2, 101)
+        val held = PerfRowsWindow(listOf(row, proved), 50, 7, "synthetic unread generation", 2)
         val source = PerfRowsSource { since ->
             assertEquals(42L, since)
             held

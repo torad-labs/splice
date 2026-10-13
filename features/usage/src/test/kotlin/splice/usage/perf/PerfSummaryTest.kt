@@ -75,7 +75,7 @@ class PerfSummaryTest {
     private fun n(o: JsonObject, key: String) = o.getValue(key).jsonPrimitive.content
 
     @Test
-    fun `fleet timing pools actual requests in the same read and clock as command summaries`() {
+    fun `every command's summary is folded from one read at one cutoff and one clock`() {
         val reads = mutableListOf<Pair<String, Long>>()
         val busy = (1..100).map { row(it.toLong(), "ok", PerfKeys.FIRST_BYTE to 100L) }
         val local = (1..200).map { row(it.toLong(), "ok", PerfKeys.LOCAL_STEP to 1L, PerfKeys.FIRST_BYTE to 0L) }
@@ -105,11 +105,6 @@ class PerfSummaryTest {
             now
         }
         val result = Json.parseToJsonElement(payloads.summaryJson(PerfWindow.H1)).jsonObject
-        val pooled = result.getValue("time_before_first_byte_ms").jsonObject
-        assertEquals("102", n(pooled, "count"), "local steps, old rows and absent marks never become timings")
-        assertEquals("100", n(pooled, "p50"), "one busy command must outweigh sparse command medians")
-        assertEquals("100", n(pooled, "p95"))
-        assertEquals("20000", n(pooled, "max"))
         val commands = result.getValue("heads").jsonArray.map { it.jsonObject }
         assertEquals(
             listOf("100", "10000", "20000"),
@@ -119,13 +114,6 @@ class PerfSummaryTest {
         assertEquals("200", n(commands.first(), "local_steps"))
         assertEquals(histories.keys.map { it to now - hour }, reads, "every source is read once at one cutoff")
         assertEquals(1, clockReads)
-    }
-
-    @Test
-    fun `fleet timing is absent when no request carries a mark`() {
-        val payloads = PerfPayloads(UsageHeads { emptyList() }) { now }
-        val result = Json.parseToJsonElement(payloads.summaryJson(PerfWindow.H1)).jsonObject
-        assertNull(result["time_before_first_byte_ms"], "an absent distribution is never a zero-latency claim")
     }
 
     @Test
@@ -173,7 +161,6 @@ class PerfSummaryTest {
         assertEquals(0.5, n(s, "cache_hit_ratio").toDouble(), 1e-9)
         assertEquals("7", n(s, "peak_inflight"))
         assertEquals("3", n(s, "io_drops_in_window"), "the counter rose 0 -> 1 -> 3 inside the window")
-        assertEquals("0", n(s, "unattributed"))
     }
 
     @Test
@@ -212,7 +199,6 @@ class PerfSummaryTest {
     fun `an unparseable outcome is unattributed, shown but never a failure`() {
         val rows = listOf(fast(1000), row(2000, "?", "total" to 5L), row(3000, "client_abort", "total" to 5L))
         val s = PerfSummary { now }.json(PerfRowsWindow(rows), PerfWindow.H1, now)
-        assertEquals("1", n(s, "unattributed"))
         assertEquals(0.0, n(s, "failure_share").toDouble(), 1e-9, "a stop and an unknown outcome are not failures")
         assertNull(s.getValue("failure_shares").jsonObject["?"])
         assertEquals("1", n(s.getValue("outcomes").jsonObject, "?"))
@@ -341,32 +327,5 @@ class PerfSummaryTest {
         val blindRows = listOf(fast(8 * day), fast(6 * day))
         val blind = PerfRowsSource { since -> PerfRowsWindow(blindRows.filter { it.ts >= since }) }
         assertEquals("true", n(PerfSummary { now }.summarize(blind, PerfWindow.D7), "clamped"), "no evidence")
-    }
-
-    @Test
-    fun `last_ts names the head's newest row even when the window excludes it`() {
-        val day = 24 * hour
-        val idle = listOf(fast(3 * day), fast(2 * day))
-        val held = PerfRowsSource { since ->
-            PerfRowsWindow(idle.filter { it.ts >= since }, newestHeldTs = idle.maxOf { it.ts })
-        }
-        val hourly = PerfSummary { now }.summarize(held, PerfWindow.H1)
-        assertEquals("0", n(hourly, "count"), "nothing inside the hour")
-        assertEquals((now - 2 * day).toString(), n(hourly, "last_ts"), "the store's newest row, not the window's")
-
-        val stepped = listOf(fast(10 * 60_000L), fast(20 * 60_000L), fast(5 * 60_000L))
-        val inWindow = PerfSummary { now }.json(PerfRowsWindow(stepped), PerfWindow.H1, now)
-        assertEquals(
-            (now - 5 * 60_000L).toString(),
-            n(inWindow, "last_ts"),
-            "a source that cannot say: the newest RETURNED row by ts, not the last appended",
-        )
-
-        val none = PerfSummary { now }.json(PerfRowsWindow(emptyList()), PerfWindow.H24, now)
-        assertTrue(none.containsKey("last_ts"), "always present, so the console never reads undefined")
-        assertEquals(JsonNull, none["last_ts"], "no row anywhere is null, never 0 (which reads as 1970)")
-        val blind = PerfRowsSource { since -> PerfRowsWindow(idle.filter { it.ts >= since }) }
-        val unsaid = PerfSummary { now }.summarize(blind, PerfWindow.H1)
-        assertEquals(JsonNull, unsaid["last_ts"], "the documented fallback: the window's rows, and it has none")
     }
 }

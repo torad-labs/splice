@@ -16,12 +16,6 @@
 // never pays for months of archive. A skipped generation still counts as retention evidence: the
 // files provably reach back to its rotation second, which is all the coverage check needs to tell
 // "quiet" from "rotated away".
-//
-// THE NEWEST ROW (newestHeldTs, the summary's `last_ts`) is read across the same generations,
-// whatever the window: every parsed row updates it, and when the window holds no row the few
-// highest pre-cutoff lines skipped unparsed are parsed at the end, so an idle head still names its
-// last turn without the scan parsing its history. An archived generation skipped unopened cannot
-// hold it while `.1` holds any row: a rotation archives the old `.1` before the live file replaces it.
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
@@ -211,16 +205,9 @@ public class PerfRowsFileSource internal constructor(
         /** The minimum valid top-level timestamp seen (physical order is not a retention premise). */
         private var oldest: Long? = null
 
-        /** The maximum valid top-level timestamp PARSED, in or before the window. */
-        private var newest: Long? = null
-
         /** The newest pre-cutoff counter samples, newest last: a parsed row contributes its parsed
          *  counter, a skipped writer-shaped line its raw text (parsed only if it is needed), so a
          *  torn or counter-less line never erases a sample and spacing never hides one. */
-
-        /** The pre-cutoff lines skipped unparsed with the highest leading-ts hints, ascending: the
-         *  newest row's evidence when the window itself holds none (a head idle past the window).
-         *  Parsed only then, and only the parse is a row's time — a hint never is. */
         private val held = PerfCandidates()
         private val lines = PerfLineDecoder(rowsCache, json, ParseTally { parsedLines++ })
 
@@ -232,11 +219,7 @@ public class PerfRowsFileSource internal constructor(
 
         override fun knownSpan(minimum: Long, maximum: Long) {
             oldest = minOf(oldest ?: minimum, minimum)
-            if (maximum < sinceMs) {
-                afterInWindowRow = false
-                newest = maxOf(newest ?: maximum, maximum)
-                held.skipped(Skipped(maximum, ts = maximum), rows.isNotEmpty(), newest)
-            }
+            if (maximum < sinceMs) afterInWindowRow = false
         }
 
         /** A writer-shaped line provably inside the held span and before the cutoff is skipped unparsed;
@@ -245,7 +228,6 @@ public class PerfRowsFileSource internal constructor(
             val hint = provablyBefore(line).takeUnless { afterInWindowRow }
             if (hint != null && !PerfLineHints.hasEmptyModel(line)) {
                 if (PerfLineHints.carriesDrops(line)) held.baseline(Baseline(raw = line), rows.isNotEmpty())
-                held.skipped(Skipped(hint, line), rows.isNotEmpty(), newest)
                 return
             }
             kept(decode(line))
@@ -267,7 +249,6 @@ public class PerfRowsFileSource internal constructor(
                 if (row.ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row
                 return
             }
-            newest = maxOf(newest ?: row.ts, row.ts)
             if (row.ts >= sinceMs) {
                 rows += row
                 spots += line.spot
@@ -290,7 +271,6 @@ public class PerfRowsFileSource internal constructor(
             val before = hint < sinceMs && hint >= known
             if (!before || line.emptyModel) return false
             if (line.drops.candidate) held.baseline(Baseline(drops = line.drops.count), rows.isNotEmpty())
-            held.skipped(Skipped(hint, ts = line.row?.ts), rows.isNotEmpty(), newest)
             return true
         }
 
@@ -304,16 +284,6 @@ public class PerfRowsFileSource internal constructor(
             return oldest?.let { known ->
                 header.groupValues[1].toLongOrNull()?.takeIf { it < sinceMs && it >= known }
             }
-        }
-
-        /** The newest valid row's ts: the parsed maximum, or — when the window is empty — the highest
-         *  skipped line that PARSES, whichever is later. */
-        private fun newestHeld(): Long? {
-            if (rows.isNotEmpty()) return newest
-            val unparsed = held.latest.asReversed().firstNotNullOfOrNull {
-                it.ts ?: it.raw?.let(lines::parse)?.let(PerfLineHints::tsIn)
-            }
-            return listOfNotNull(newest, unparsed).maxOrNull()
         }
 
         /** A generation skipped unread because it ended before the cutoff: the files provably hold rows
@@ -330,7 +300,6 @@ public class PerfRowsFileSource internal constructor(
             },
             readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,
-            newestHeldTs = newestHeld(),
             windowSkipped = windowSkipped,
         )
     }

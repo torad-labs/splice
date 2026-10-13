@@ -28,9 +28,6 @@ private const val MS_PER_HOUR = 3_600_000L
 private const val HOURS_PER_DAY = 24L
 private const val DAYS_PER_WEEK = 7L
 
-/** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
-internal const val UNATTRIBUTED_OUTCOME: String = "?"
-
 /** A row written before the model rode along: shown under this name, never dropped. */
 private const val UNATTRIBUTED_MODEL: String = "?"
 
@@ -55,33 +52,24 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  reach past the window is NOT reported clamped; without it the oldest returned row is the only
      *  evidence. No row anywhere is "no perf rows recorded yet", not a clamp. A read error rides
      *  through as is and makes the coverage UNKNOWN (coverage_known false, never clamped): the unread
-     *  generation may hold the rest of the window.
-     *
-     *  `last_ts` is the head's newest row, NOT the window's: [PerfRowsWindow.newestHeldTs] is read
-     *  across every generation the source opens, so a head idle for two days still names its last
-     *  turn under a 1h window. It is the row's own `ts` (epoch ms, the number /api/perf/turns prints
-     *  per row), and null when no row exists. A source that cannot say falls back to the newest row
-     *  it RETURNED, which is bounded by the window it was asked for: that is the only case where
-     *  `last_ts` reads null over a head whose newest row predates the window. */
-    fun json(read: PerfRowsWindow, window: PerfWindow, now: Long, firstBytes: MutableList<Long>? = null): JsonObject {
+     *  generation may hold the rest of the window. */
+    fun json(read: PerfRowsWindow, window: PerfWindow, now: Long): JsonObject {
         val inWindow = read.rows.filter { it.ts >= now - window.ms }
         val (localSteps, turns) = inWindow.partition { it.fields[PerfKeys.LOCAL_STEP] == 1L }
         val (activity, codeSteps) = localSteps.partition { it.fields[PerfKeys.ACTIVITY_QUERY] == 1L }
         val coverage = coverage(read, window, now)
         return buildJsonObject {
-            put("window", window.label)
             put("count", turns.size)
             put("local_steps", localSteps.size)
             put("kinds", kinds(turns, activity.size, codeSteps.size))
             put("empty", turns.isEmpty())
-            put("last_ts", read.newestHeldTs ?: read.rows.maxOfOrNull { it.ts })
             put("coverage_known", coverage.known)
             put("clamped", coverage.clamped)
             put("covers_ms", minOf(coverage.coveredMs, window.ms))
             coverage.note()?.let { put("note", it) }
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
-            if (turns.isNotEmpty()) metrics(turns, firstBytes).forEach { (k, v) -> put(k, v) }
+            if (turns.isNotEmpty()) metrics(turns).forEach { (k, v) -> put(k, v) }
             if (inWindow.isNotEmpty()) ioDrops(inWindow, read.dropsBefore).forEach { (k, v) -> put(k, v) }
         }
     }
@@ -117,8 +105,8 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     private fun span(ms: Long): String =
         if (ms >= MS_PER_HOUR) "${ms / MS_PER_HOUR}h" else "${ms / MS_PER_MINUTE}m"
 
-    private fun metrics(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
-        latencies(rows, firstBytes).forEach { (k, v) -> put(k, v) }
+    private fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
+        latencies(rows).forEach { (k, v) -> put(k, v) }
         val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
         // Stopped and unattributed rows stay in outcomes and the denominator, never the failure count.
@@ -126,16 +114,12 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         put("failure_share", failures.values.sum().toDouble() / rows.size)
         // Per failing tag, with the same classification as the Failed request filter.
         putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
-        put("unattributed", byOutcome[UNATTRIBUTED_OUTCOME] ?: 0)
         counters(rows).forEach { (k, v) -> put(k, v) }
         put("models", JsonObject(byModel(rows)))
     }
 
-    private fun latencies(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
-        val first = rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] }
-        // The fleet reuses the same recorded facts gathered for each command, never another read or decode.
-        firstBytes?.addAll(first)
-        stats(first)?.let { put("time_before_first_byte_ms", it) }
+    private fun latencies(rows: List<PerfRow>): JsonObject = buildJsonObject {
+        stats(rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] })?.let { put("time_before_first_byte_ms", it) }
         stats(rows.mapNotNull(::streaming))?.let { put("time_streaming_ms", it) }
         stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
     }

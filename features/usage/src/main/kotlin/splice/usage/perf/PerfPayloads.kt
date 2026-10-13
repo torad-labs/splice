@@ -46,42 +46,28 @@ public class PerfPayloads(
 
     internal fun summaryJson(window: PerfWindow): String {
         val now = clock()
-        val firstBytes = mutableListOf<Long>()
         return buildJsonObject {
-            put("window", window.label)
             putJsonArray(HEADS) {
                 heads.all().forEach { m ->
-                    val mine = mutableListOf<Long>()
-                    val folded = foldHead(m.sinks.perfRows, window, now, mine)
-                    firstBytes += mine
+                    val folded = foldHead(m.sinks.perfRows, window, now)
                     addJsonObject {
                         put(KEY, m.key)
-                        put(LABEL, m.label)
                         folded.forEach { (k, v) -> put(k, v) }
                     }
                 }
             }
-            summary.stats(firstBytes)?.let { put("time_before_first_byte_ms", it) }
         }.toString()
     }
 
     // why: a week of rows is hundreds of MB of file, and the full-row tier holds 16 MiB of it, so reading the summary's
     // window through window() decoded the rest again on every call (desk c: 21 s warm). The compact tier the turns
     // route reads holds every row of the window, so the summary folds that and a second call reads nothing new.
-    private fun foldHead(
-        source: PerfRowsSource?,
-        window: PerfWindow,
-        now: Long,
-        firstBytes: MutableList<Long>,
-    ): JsonObject {
+    private fun foldHead(source: PerfRowsSource?, window: PerfWindow, now: Long): JsonObject {
         val since = now - window.ms
         return when (source) {
-            null -> summary.json(PerfRowsWindow(emptyList()), window, now, firstBytes)
-            is ProjectedPerfRowsSource -> source.projected(since) {
-                firstBytes.clear()
-                summary.json(it.window, window, now, firstBytes)
-            }
-            else -> summary.json(source.window(since), window, now, firstBytes)
+            null -> summary.json(PerfRowsWindow(emptyList()), window, now)
+            is ProjectedPerfRowsSource -> source.projected(since) { summary.json(it.window, window, now) }
+            else -> summary.json(source.window(since), window, now)
         }
     }
 

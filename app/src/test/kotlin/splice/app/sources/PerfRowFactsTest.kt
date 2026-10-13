@@ -83,13 +83,6 @@ class PerfRowFactsTest {
         val window = PerfRowsFileSource(file).window(0)
         assertEquals(work.size, window.rows.size)
         assertEquals(0, window.skipped, "excluded probes are not corrupt rows")
-        Files.writeString(
-            file,
-            """{"ts":100,"model":"real","outcome":"ok"}""" + "\n" +
-                List(60) { probe }.joinToString("\n") + "\n",
-        )
-        val idle = PerfRowsFileSource(file).window(2000)
-        assertEquals(100L, idle.newestHeldTs, "pre-cutoff probes cannot hide the newest real work")
     }
 
     @Test

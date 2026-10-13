@@ -128,7 +128,7 @@ const KNOBS = (() => {
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
     cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
-    said: {}, unsaved: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    said: {}, unsaved: {}, undo: {}, undoT: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -222,7 +222,11 @@ const KNOBS = (() => {
         : `<span class="said ok">Saved</span><button class="act quiet small" data-kact="restart">Restart splice</button>`;
     }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
-    if (st.said[id]) return `<span class="said ok">${esc(st.said[id])}</span>${st.unsaved[id] ? '<span class="said limit">· Not saved</span>' : ""}`;
+    if (st.said[id]) {
+      const u = st.undo[id];
+      return `${u ? `<s class="was">${esc(u.word)}</s>` : ""}<span class="said ok">${esc(st.said[id])}</span>`
+        + `${st.unsaved[id] ? '<span class="said limit">· Not saved</span>' : ""}${u ? `<button class="act quiet small" data-kact="undo" data-id="${esc(id)}">Undo</button>` : ""}`;
+    }
     // a setting the running splice reads only when it starts says so at rest, in the spec's words (v0.4.0 section 9,
     // Resolved: boot-only stays editable, labelled "applies on restart"); saving it then offers Restart splice above
     return needsRestart(id.split("@")[0]) ? `<span class="said">Applies on restart</span>` : "";
@@ -402,16 +406,32 @@ const KNOBS = (() => {
       else sent(id, null, render);
       return true;
     }
+    if (d.kact === "undo") { const u = st.undo[d.id]; if (u) { delete st.undo[d.id]; sent(d.id, u.v, render, false, false); } return true; }
     if (d.kact === "restart") { armRestart(render); return true; }
     if (d.kact === "restart-now") { st.cut = null; restart(render); return true; }
     if (d.kact === "keep-running") { st.cut = null; return true; }
     return true;
   }
   /** Sends the change and redraws when the daemon answers; the row says "Saving" with the wait ring while it is out. */
-  function sent(id, v, render, sure = false) {
+  // A SINGLE PICK CONFIRMS BY SHOWING WHAT IT REPLACED (Marlin, fin, Oct 13, gap 458): for a few seconds the row shows the
+  // old value struck beside the new one, with Undo; then Applied stays, as before. Undo sends the old value back, which
+  // is no value at all where the row followed the shared one or splice's default, and its own result reads Applied.
+  const UNDO_MS = 6000;
+  function sent(id, v, render, sure = false, undoable = true) {
+    const [key, cmd] = id.split("@"), k = KNOB[key], at = valueOf(k), own = cmd ? ownValue(key, cmd) : undefined;
+    const was = cmd ? own ?? null : at.src === "default" ? null : at.v;
+    const wasWord = word(k, cmd ? own ?? at.v : at.v);
     st.slow[id] = "Saving";
-    delete st.said[id];
-    patch(id, v, sure).then((r) => { delete st.slow[id]; render(r); }).catch(() => { delete st.slow[id]; st.bad[id] = "Not saved"; render(); });
+    delete st.said[id]; delete st.undo[id];
+    patch(id, v, sure).then((r) => {
+      delete st.slow[id];
+      if (undoable && r?.ok && !r.restart) {
+        st.undo[id] = { v: was, word: wasWord };
+        clearTimeout(st.undoT[id]);
+        st.undoT[id] = setTimeout(() => { delete st.undo[id]; render(); }, UNDO_MS);
+      }
+      render(r);
+    }).catch(() => { delete st.slow[id]; st.bad[id] = "Not saved"; render(); });
   }
   // a Custom field saves on Enter; left without Enter it goes back to its menu, and the redraw waits a tick, since
   // Chrome fires focusout while innerHTML replaces the field

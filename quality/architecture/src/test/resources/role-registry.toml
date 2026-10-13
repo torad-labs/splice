@@ -88,6 +88,7 @@ names = [
     "HoldChange",
     "ListingReturned",
     "MuseMintWriteGuard",
+    "ParseTally",
     "ProtocolAnomaly",
     "PulseTick",
     "RawSseFlush",
@@ -127,7 +128,9 @@ child's tools/list answer is back and the cache has not kept it yet: the one ins
 land, which the cache's own test uses to force that interleaving), HandoffMark (the \
 turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \
 its own rather than folded onto one of the observers above: an observer is subscribed to, a mark \
-is set). Substituting any for any other is not a type error and would be silent: RestoreStep \
+is set). ParseTally (9cfae331a) counts one perf line decoded, the read's own measure of how much it \
+decoded; wired where FileIoTask or a release was meant it would count nothing while the work ran. \
+Substituting any for any other is not a type error and would be silent: RestoreStep \
 for WsRoundAbort unwinds an upgrade in the middle of a turn. These need MORE naming than a shared shape, not less."""
 
 # ── 18 names, () -> Boolean ───────────────────────────────────────────────────────────────────────

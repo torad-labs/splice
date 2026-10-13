@@ -1,5 +1,6 @@
 // NEW: the /health body, assembled from the head set's verdict, the per-head readings and the booted config's
-// identity. The bootedAt seam (ControlHealthBootIdentityTest) and every field name are the ones /health has always served.
+// identity. Every launch shim ever shipped reads its flat version, wantShimVersion and topologyStale, which stay. Oct 12:
+// bootedAtEpochMillis, setupState, setupCommand, runtimeNotAnswering and configPath go, as nothing read them here.
 package splice.app.control.api
 
 import kotlinx.serialization.json.JsonArray
@@ -19,10 +20,8 @@ internal class ControlHealthReport(
     private val readiness: HeadReadiness,
     private val signals: HeadSignals,
     private val topologyDigest: TopologyDigest,
-    private val configPath: String,
     private val topologyStale: TopologyStale,
     private val clientVersions: ClientVersionTracker,
-    private val bootedAtEpochMillis: Long,
 ) {
     /** The /health body, read at the current instant. */
     fun json(): String = json(System.currentTimeMillis())
@@ -39,33 +38,22 @@ internal class ControlHealthReport(
                 put("turnPathStalled", JsonArray(head.stalled.map { JsonPrimitive(it) }))
             }
             put("version", GATEWAY_VERSION)
-            put("bootedAtEpochMillis", bootedAtEpochMillis)
             put("wantShimVersion", SHIM_VERSION)
             clientVersions.aggregateWarning()?.let { put("clientVersionWarning", it) }
             // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.
             put(ControlFields.HEADS, head.configured)
-            // Launch shims wait for readyHeads + failedHeads == heads before POSTing /launch (post
-            // startDaemonHeads) — NOT readyHeads == heads: a start-failed head stays in `heads`
-            // forever with running=false, so the old equality-wait spun forever on a degraded boot
-            // (review 2026-07-22 round 3).
+            // ready + failed == heads, NOT ready == heads: a start-failed head stays in `heads` forever with
+            // running=false (review 2026-07-22 round 3). Doctor and the e2e rigs read the three.
             put("readyHeads", head.running)
             put("failedHeads", head.failed)
             putFailedHeadReasons(this, head.reasons)
-            putRuntimeNotAnswering(this)
             putQuotaResets(this, nowEpochMillis)
             putQuotaFull(this)
-            if (head.configured == 0 && head.running == 0) {
-                if (head.failed == 0) {
-                    put("setupState", "not_set_up")
-                    put("setupCommand", "splice setup")
-                }
-            }
             // JW-04: the booted config identity — an edited splice.toml used to be silently inert
             // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
             // recomputed per request and fails OPEN on an unreadable file. V4-162: the digest is the
             // version the daemon RUNS, which a window-only edit moves, so it is read per request too.
             put("topologyDigest", topologyDigest())
-            put("configPath", configPath)
             put("topologyStale", topologyStale())
         }.toString()
     }
@@ -75,17 +63,6 @@ internal class ControlHealthReport(
     private fun putFailedHeadReasons(into: JsonObjectBuilder, reasons: Map<String, String>) {
         if (reasons.isEmpty()) return
         into.putJsonObject("failedHeadReasons") { reasons.forEach { (key, reason) -> put(key, reason) } }
-    }
-
-    /** V4-417: each local head whose runtime did not answer at the last background probe, beside the
-     *  ready count that does not change for it; absent when none, so a healthy daemon's shape is
-     *  unchanged and a daemon that has not probed yet claims nothing. */
-    private fun putRuntimeNotAnswering(into: JsonObjectBuilder) {
-        val silent = signals.silentRuntimes()
-        if (silent.isEmpty()) return
-        into.putJsonObject("runtimeNotAnswering") {
-            silent.toSortedMap().forEach { (key, endpoint) -> put(key, endpoint) }
-        }
     }
 
     /** V4-398: /health puts each refusing head's instant in `quotaResetAtEpochSeconds`; absent when none. */

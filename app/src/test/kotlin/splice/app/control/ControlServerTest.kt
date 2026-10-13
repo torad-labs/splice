@@ -157,7 +157,6 @@ class ControlServerTest {
             health = topologyHealthFor(
                 heads,
                 topologyDigest = TopologyDigest { "boot-digest-abc" },
-                configPath = "/tmp/splice.toml",
                 topologyStale = { true },
             ),
             heads = heads,
@@ -238,7 +237,6 @@ class ControlServerTest {
         // JW-04: the booted config identity + per-request staleness recompute ride /health so
         // shim/doctor/dashboard can see an edited-but-inert splice.toml.
         assertEquals("boot-digest-abc", body["topologyDigest"]?.jsonPrimitive?.content)
-        assertEquals("/tmp/splice.toml", body["configPath"]?.jsonPrimitive?.content)
         assertEquals("true", body["topologyStale"]?.jsonPrimitive?.content)
     }
 

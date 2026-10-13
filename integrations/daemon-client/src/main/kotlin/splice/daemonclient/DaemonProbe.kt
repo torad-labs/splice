@@ -59,11 +59,10 @@ public object DaemonProbe {
         public val failedReasons: Map<String, String> = emptyMap(),
     )
 
-    /** Which topology the daemon booted with: its digest, the config file it read, and whether that file has
-     *  changed since. Each is null when the daemon does not say. */
+    /** Which topology the daemon runs: its digest, and whether the config file has changed since. Each is null when
+     *  the daemon does not say. */
     public data class HealthTopology(
         public val digest: String? = null,
-        public val configPath: String? = null,
         public val stale: Boolean? = null,
     )
 
@@ -160,7 +159,6 @@ public object DaemonProbe {
             ),
             topology = HealthTopology(
                 digest = JsonScalars.str(obj, "topologyDigest"),
-                configPath = JsonScalars.str(obj, "configPath"),
                 stale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
             ),
             turnPathStalled = (obj["turnPathStalled"] as? JsonArray)

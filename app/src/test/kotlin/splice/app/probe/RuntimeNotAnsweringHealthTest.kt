@@ -1,16 +1,11 @@
-// /health and the heads route carry each local runtime's reach from the daemon's held snapshot: a silent
-// runtime is named, one that answers is unmarked, and ok / readyHeads / failedHeads stay what launch shims wait on.
+// The heads route carries each local runtime's reach from the daemon's held snapshot: a silent runtime is named, and
+// one that answers is unmarked. /health no longer names them (Oct 12): nothing read it there.
 package splice.app.probe
 
 import com.sun.net.httpserver.HttpServer
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -24,7 +19,6 @@ import splice.app.control.UsageWarning
 import splice.app.control.UsageWarningSource
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.HeadSignals
-import splice.app.control.healthFor
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.topology.AuthConfig
@@ -78,13 +72,9 @@ class RuntimeNotAnsweringHealthTest {
         authSurface = HeadAuthSurface(authKind = "x"),
     )
 
-    /** The one signals value a test reads both surfaces through, so the health body and the heads route
-     *  are given the same silent runtimes. */
+    /** The signals the heads route reads its silent runtimes through. */
     private fun signals(heads: Map<String, ManagedHead>, silent: RuntimeNotAnswering?) =
         HeadSignals(heads, silent ?: RuntimeNotAnswering { emptyMap() })
-
-    private fun health(heads: Map<String, ManagedHead>, silent: RuntimeNotAnswering?): JsonObject =
-        Json.parseToJsonElement(healthFor(heads, signals = signals(heads, silent)).json()).jsonObject
 
     private fun local(port: Int) = ProviderConfig(
         dialect = Dialect.OPENAI_CHAT,
@@ -107,22 +97,6 @@ class RuntimeNotAnsweringHealthTest {
     )
 
     @Test
-    fun `health names the head whose runtime is silent, and its ready count is what it was`() {
-        val body = health(heads, RuntimeNotAnswering { mapOf("bonsai" to ":8099") })
-        assertEquals(":8099", body.getValue(FIELD).jsonObject.getValue("bonsai").jsonPrimitive.content)
-        assertEquals(setOf("bonsai"), body.getValue(FIELD).jsonObject.keys)
-        assertTrue(body.getValue("ok").jsonPrimitive.boolean, "a silent runtime is not a broken daemon")
-        assertEquals(3, body.getValue("readyHeads").jsonPrimitive.int)
-        assertEquals(0, body.getValue("failedHeads").jsonPrimitive.int)
-    }
-
-    @Test
-    fun `health without a silent runtime has no such field, so its shape is what it was`() {
-        assertFalse(health(heads, null).containsKey(FIELD))
-        assertFalse(health(heads, RuntimeNotAnswering { emptyMap() }).containsKey(FIELD))
-    }
-
-    @Test
     fun `the heads route marks the silent runtime's head and no other`() {
         val silent = signals(heads, RuntimeNotAnswering { mapOf("bonsai" to ":8099") })
         val statuses = HeadResolver(heads, silent).headStatuses()
@@ -134,7 +108,7 @@ class RuntimeNotAnsweringHealthTest {
     }
 
     @Test
-    fun `a refused runtime and one that answers, probed for real, read back through health and the heads route`() {
+    fun `a refused runtime and one that answers, probed for real, read back through the heads route`() {
         val refused = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }
         val answering = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
             createContext("/") { exchange ->
@@ -152,12 +126,13 @@ class RuntimeNotAnsweringHealthTest {
             watch.tick()
             val silent = RuntimeNotAnswering(watch::notAnswering)
             val bound = Duration.ofMillis(READ_BOUND_MS)
-            val body = assertTimeoutPreemptively(bound, ThrowingSupplier { health(heads, silent) })
-            assertEquals(setOf("bonsai"), body.getValue(FIELD).jsonObject.keys)
-            assertEquals(":$refused", body.getValue(FIELD).jsonObject.getValue("bonsai").jsonPrimitive.content)
-            val marks = HeadResolver(heads, signals(heads, silent)).headStatuses()
-                .filter { it.containsKey(FIELD) }.map { it.getValue("key").jsonPrimitive.content }
-            assertEquals(listOf("bonsai"), marks)
+            val statuses = assertTimeoutPreemptively(
+                bound,
+                ThrowingSupplier { HeadResolver(heads, signals(heads, silent)).headStatuses() },
+            )
+            val marks = statuses.filter { it.containsKey(FIELD) }
+            assertEquals(listOf("bonsai"), marks.map { it.getValue("key").jsonPrimitive.content })
+            assertEquals(":$refused", marks.single().getValue(FIELD).jsonPrimitive.content)
         } finally {
             answering.stop(0)
         }

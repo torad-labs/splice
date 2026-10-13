@@ -1,5 +1,5 @@
-// The runtime-reach readings the daemon holds reach /health and the heads route through the real control plane,
-// and a change to them reaches both on the next request.
+// The runtime-reach readings the daemon holds reach the heads route through the real control plane, and a change to
+// them reaches it on the next request.
 package splice.app.probe
 
 import io.ktor.client.HttpClient
@@ -14,7 +14,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -43,10 +42,10 @@ import java.nio.file.Path
 
 class RuntimeNotAnsweringControlPlaneTest {
 
-    /** The readings the watch holds reach both routes, and a change to them reaches both: /health and the heads
-     *  route each read the same probe at request time, so a second, empty signal set fails here on /api/heads. */
+    /** The readings the watch holds reach the heads route, and a change to them reaches it: the route reads the probe
+     *  at request time, so a second, empty signal set fails here. */
     @Test
-    fun `the readings the watch holds reach the health body and the heads route, and a change to them reaches both`(
+    fun `the readings the watch holds reach the heads route, and a change to them reaches it`(
         @TempDir dir: Path,
     ) = runTest {
         val paths = StatePaths(baseOverride = dir.resolve("state"))
@@ -65,18 +64,12 @@ class RuntimeNotAnsweringControlPlaneTest {
             val port = server.listeningPort
             for (silent in listOf("http://127.0.0.1:9/first", "http://127.0.0.1:9/second")) {
                 probes.silent = mapOf("test" to silent)
-                assertEquals(silent, silentInHealth(client, port), "/health must show the reading the watch holds")
-                assertEquals(silent, silentInHeads(client, port, key), "/api/heads must show the same reading")
+                assertEquals(silent, silentInHeads(client, port, key), "the heads route shows the reading held")
             }
         } finally {
             client.close()
             server.stop()
         }
-    }
-
-    private suspend fun silentInHealth(client: HttpClient, port: Int): String? {
-        val body = Json.parseToJsonElement(client.get("http://127.0.0.1:$port/health").bodyAsText()).jsonObject
-        return body["runtimeNotAnswering"]?.jsonObject?.get("test")?.jsonPrimitive?.content
     }
 
     private suspend fun silentInHeads(client: HttpClient, port: Int, key: String): String? {

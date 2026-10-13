@@ -387,11 +387,9 @@ internal class ControlPlane(
             readiness = HeadReadiness(heads, failedHeads, headCount, TurnPathStalled { probes.stalledKeys() }),
             signals = signals,
             topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
-            configPath = topology.path?.toString().orEmpty(),
             topologyStale = running?.let { TopologyStale(it::stale) }
                 ?: TopologyStaleness.probe(topology.path, topology.digest),
             clientVersions = clientVersions,
-            bootedAtEpochMillis = System.currentTimeMillis(),
         )
     }
 

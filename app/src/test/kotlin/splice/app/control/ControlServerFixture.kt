@@ -39,32 +39,26 @@ internal fun healthFor(
     readiness: HeadReadiness = readinessFor(heads),
     signals: HeadSignals = signalsFor(heads),
     clientVersions: ClientVersionTracker = ClientVersionTracker(),
-    bootedAtEpochMillis: Long = System.currentTimeMillis(),
 ): ControlHealthReport = ControlHealthReport(
     readiness = readiness,
     signals = signals,
     topologyDigest = TopologyDigest { "" },
-    configPath = "",
     topologyStale = TopologyStale { false },
     clientVersions = clientVersions,
-    bootedAtEpochMillis = bootedAtEpochMillis,
 )
 
-/** The /health body of a rig whose running topology is [topologyDigest] at [configPath] and reads [topologyStale]. */
+/** The /health body of a rig whose running topology is [topologyDigest] and reads [topologyStale]. */
 internal fun topologyHealthFor(
     heads: Map<String, ManagedHead>,
     topologyDigest: TopologyDigest = TopologyDigest { "" },
-    configPath: String = "",
     topologyStale: TopologyStale = TopologyStale { false },
     readiness: HeadReadiness = readinessFor(heads),
 ): ControlHealthReport = ControlHealthReport(
     readiness = readiness,
     signals = signalsFor(heads),
     topologyDigest = topologyDigest,
-    configPath = configPath,
     topologyStale = topologyStale,
     clientVersions = ClientVersionTracker(),
-    bootedAtEpochMillis = System.currentTimeMillis(),
 )
 
 /** What guards a rig's control server: the management key it accepts and the log its audit lines go to. */

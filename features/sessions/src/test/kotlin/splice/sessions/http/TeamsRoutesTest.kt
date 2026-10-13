@@ -243,7 +243,7 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `activity is the members labels on the day with tool and object, detail split off, upstream queries counted`() {
+    fun `activity is the members' labelled steps on the day with tool and object, upstream queries left out`() {
         val id = rig.team().id
         val running = ActivityAction("Running tests\nrow V4-131", "Bash", "npm test")
         rig.stores.activity.label(OLD_BUILDER, "codex", running, AT)
@@ -252,13 +252,11 @@ class TeamsRoutesTest {
         rig.stores.activity.label(OUTSIDER, "codex", ActivityAction("Elsewhere"), AT)
         rig.stores.activity.label(LEAD, "claude", ActivityAction("Yesterday"), AT - DAY)
         AsyncFileIo.drain()
-        val first = """{"at":$AT,"session":"$OLD_BUILDER","slot":"b1","head":"codex",""" +
-            """"label":"Running tests","detail":"row V4-131","tool":"Bash","object":"npm test"}"""
-        val second = """{"at":${AT + 1},"session":"$LEAD","slot":"lead","head":"claude",""" +
-            """"label":"Reviewing","detail":null,"tool":null,"object":null}"""
+        val first = """{"at":$AT,"slot":"b1","tool":"Bash","object":"npm test"}"""
+        val second = """{"at":${AT + 1},"slot":"lead","tool":null,"object":null}"""
         assertEquals(
             rig.json(
-                """{"team_id":"$id","state":"on","oldest_kept_epoch_millis":${DAY_START - DAY},""" +
+                """{"state":"on","oldest_kept_epoch_millis":${DAY_START - DAY},""" +
                     """"entries":[$first,$second]}""",
             ),
             rig.json(routes().reads.activity(id, null).body),
@@ -286,14 +284,12 @@ class TeamsRoutesTest {
             body.getValue("oldest_turn_epoch_millis").jsonPrimitive.content,
             "the files still reach back before the team, so its lifetime is whole; the row itself is not tallied",
         )
-        val builder = rig.find(body, "roles", "role", "builder")
+        val builder = rig.find(body, "slots", "slot", "b1")
         assertEquals(
             rig.json(
-                """{"role":"builder","turns":2,""" +
+                """{"slot":"b1","turns":2,""" +
                     """"tokens":{"input":1600000,"cache_read":400000,"cache_write":0,"output":1000010},""" +
-                    """"unpriced_turns":0,"plan_turns":0,"plan_value_usd":null,"moved_turns":2,""" +
-                    """"priced_moved_turns":2,"unreported_usage_turns":0,""" +
-                    """"last_turn_at_epoch_millis":$AT}""",
+                    """"plan_turns":0,"moved_turns":2,"priced_moved_turns":2}""",
             ),
             JsonObject(builder - "cost_usd"),
         )
@@ -301,13 +297,5 @@ class TeamsRoutesTest {
         assertEquals(3.64002, builder.getValue("cost_usd").jsonPrimitive.double, 1e-9)
         val lead = rig.find(body, "slots", "slot", "lead")
         assertEquals("null", lead.getValue("cost_usd").toString(), "a turn with no rate card leaves no dollar figure")
-        assertEquals("1", lead.getValue("unpriced_turns").jsonPrimitive.content)
-        // V4-159: the lead's one row (rig.row's default outcome) is "ok", so checks reads "pass".
-        assertEquals("pass", lead.getValue("checks").jsonPrimitive.content, "the lead's one row is ok")
-        assertEquals(
-            "the outcome tag of the slot's most recently tallied turn (PerfRow.outcome)",
-            lead.getValue("checks_source").jsonPrimitive.content,
-            "checks now has a real source",
-        )
     }
 }

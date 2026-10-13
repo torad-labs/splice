@@ -1,16 +1,5 @@
 // NEW: V4-160 — the team economics, moved verbatim out of TeamsRoutes.kt (concentration, 2026-09-18).
 // TeamsRoutes.kt's header states what the economics count and why.
-//
-// V4-159: WHAT "A CHECK" IS FOR A MEMBER, and where it is read from. The daemon observes nothing
-// inside a session's own tool calls (no git status, no test runner, no CI) — the one thing it DOES
-// observe per slot, already tallied here for tokens and cost, is whether each of the slot's turns
-// reached the backend and came back cleanly: PerfRow.outcome, the same tag TurnPipeline/TurnEnding
-// write and PerfSummary reads (splice.core.perf.OutcomeTag, kt-outcome-tag-single-source). A "check"
-// is therefore defined as the outcome tag of the slot's most recently tallied turn: "pass" when the
-// client received a clean ending (OutcomeTags.isClean), "fail" for anything else (a cancelled,
-// rate-limited, upstream-failed or stopped turn) — a turn-health signal, not a build/test verdict.
-// A slot that has tallied no turns at all has nothing to observe, so it stays the honest empty: checks null, checks_source
-// naming why, exactly as it did before this row landed (CONTRACTS section 8).
 package splice.sessions.http
 
 import kotlinx.serialization.json.JsonObject
@@ -21,23 +10,12 @@ import kotlinx.serialization.json.put
 import splice.core.model.ModelCatalog
 import splice.core.model.TokenCost
 import splice.core.model.TurnBill
-import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.sessions.query.SessionAccountPlans
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfRow
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
-
-/** Where a present [PerfTally.lastOutcome]-derived `checks` value came from. */
-internal const val CHECKS_SOURCE = "the outcome tag of the slot's most recently tallied turn (PerfRow.outcome)"
-
-/** Why `checks` is null: the slot has tallied no turns yet, so there is nothing to read. */
-internal const val NO_TURNS_CHECKS_SOURCE = "no turns recorded yet for this slot"
-private const val CHECKS_PASS = "pass"
-private const val CHECKS_FAIL = "fail"
-
-private const val ROLE = "role"
 
 /** The perf row's session tag width (TurnDrive.SESSION_TAG_CHARS). */
 private const val PERF_TAG_CHARS = 8
@@ -49,40 +27,23 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
         .distinctBy { it.first }
         .toMap()
     private val bySlot = team.slots.associate { it.id to PerfTally() }
-    private val byRole = team.slots.map { it.role }.distinct().associateWith { PerfTally() }
     private var oldest: Long? = null
 
     fun json(): JsonObject {
         val read = team.slots.map { it.head }.distinct().filter { it in heads }
         read.forEach { tally(heads.getValue(it)) }
         return buildJsonObject {
-            put(TEAM_ID, team.id)
             put("oldest_turn_epoch_millis", oldest)
-            put("roles", buildJsonArray { byRole.forEach { (role, tally) -> add(tally.json { it.put(ROLE, role) }) } })
             put(
                 "slots",
                 buildJsonArray {
                     bySlot.forEach { (slot, tally) ->
-                        add(
-                            tally.json {
-                                it.put("slot", slot)
-                                it.put("checks", checksOf(tally.lastOutcome))
-                                it.put("checks_source", checksSourceOf(tally.lastOutcome))
-                            },
-                        )
+                        add(tally.json { it.put("slot", slot) })
                     }
                 },
             )
         }
     }
-
-    /** "pass"/"fail" from the slot's newest tallied outcome tag, null before its first turn. */
-    private fun checksOf(outcome: String?): String? =
-        outcome?.let { if (OutcomeTags.isClean(it)) CHECKS_PASS else CHECKS_FAIL }
-
-    /** Where [checksOf] came from, or why it has nothing to report yet. */
-    private fun checksSourceOf(outcome: String?): String =
-        if (outcome == null) NO_TURNS_CHECKS_SOURCE else CHECKS_SOURCE
 
     /** Every session [slot] ever held, the current one included. */
     private fun held(slot: TeamSlot): List<String> = slot.sessionsHistory + listOfNotNull(slot.session)
@@ -98,13 +59,12 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
             if (row.fields[PerfKeys.LOCAL_STEP] == 1L) continue // No upstream turn to attribute to this team.
             row.session?.let(slotOfTag::get)?.let { slot ->
                 bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
-                byRole.getValue(slot.role).add(row, head.catalog, head.plans)
             }
         }
     }
 }
 
-/** How a tally's JSON names the aggregate it covers (a role, a slot, a project). */
+/** How a tally's JSON names the slot it covers. */
 internal fun interface TallyLabel {
     operator fun invoke(into: JsonObjectBuilder)
 }
@@ -118,8 +78,6 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
 
     /** Counted turns whose model had no rate card, so their dollars are not in [costUsd]. */
     var unpricedTurns: Long = 0L
-        private set
-    var unreportedUsageTurns: Long = 0L
         private set
 
     /** Counted turns that moved any tokens at all: a refused or cut turn moves none and belongs to no money share. */
@@ -135,23 +93,9 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     private var output = 0L
     private var usd = 0.0
 
-    /** The newest counted turn, or null before the first. */
-    var lastAt: Long? = null
-        private set
-
-    /** [lastAt]'s own outcome tag (V4-159's `checks` source) — the row whose ts set [lastAt], not
-     *  simply the last row added: rows arrive in file/append order, but this stays correct even if
-     *  a caller ever hands them out of order. Null before the first counted turn. */
-    var lastOutcome: String? = null
-        private set
-
     /** Moved turns an account with a plan carried: they are counted in [unpricedTurns] and never in [pricedMovedTurns],
-     *  because a plan covered them (fin, Oct 11), and their API-rate value is [planValueUsd], no cost. */
+     *  because a plan covered them (fin, Oct 11). */
     var planTurns: Long = 0L
-        private set
-
-    /** What the plan turns that have a price would have cost at the API rates; null when none had one. */
-    var planValueUsd: Double? = null
         private set
 
     /** The priced turns' dollars, or null when there are turns and none was priced. V4-264: one turn
@@ -162,14 +106,10 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         // Every request the row billed: its final round and the rounds it absorbed (TurnBill).
         val buckets = TurnBill.total(row.fields)
         turns += 1
-        if (!TurnBill.fullyReported(row.fields)) unreportedUsageTurns += 1
         input += buckets.input
         cacheRead += buckets.cacheRead
         cacheWrite += buckets.cacheWrite
         output += buckets.output
-        val previousLastAt = lastAt
-        if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
-        lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
         val amount = TurnBill.usd(row.fields, rates(row.model, catalog)?.at(row.ts), cost)
         val moved = buckets.input + buckets.cacheRead + buckets.cacheWrite + buckets.output > 0L
         val onPlan = plans(row.account)
@@ -186,7 +126,6 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
             onPlan -> {
                 unpricedTurns += 1
                 if (moved) planTurns += 1
-                if (moved && amount != null) planValueUsd = (planValueUsd ?: 0.0) + amount
             }
             amount == null -> unpricedTurns += 1
             else -> usd += amount
@@ -206,13 +145,9 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
             },
         )
         put("cost_usd", costUsd)
-        put("unpriced_turns", unpricedTurns)
         put("plan_turns", planTurns)
-        put("plan_value_usd", planValueUsd)
         put("moved_turns", movedTurns)
         put("priced_moved_turns", pricedMovedTurns)
-        put("unreported_usage_turns", unreportedUsageTurns)
-        put("last_turn_at_epoch_millis", lastAt)
     }
 
     /** The provider model entry's rates, keyed on the canonical id as SessionCost keys them. */

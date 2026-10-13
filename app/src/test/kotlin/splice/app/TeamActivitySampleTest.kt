@@ -135,10 +135,9 @@ class TeamActivitySampleTest {
             // The row's day and the read's day are the same UTC day unless the test straddles midnight;
             // reading both days, when they differ, makes the answer independent of that instant.
             val entries = setOf(before, utcDay()).flatMap { day -> activity(day) }
-            val fields = listOf("session", "slot", "head", "label")
             assertEquals(
-                listOf(listOf(MEMBER, "gpt", "claudex", "Running npm test")),
-                entries.map { entry -> fields.map { entry.getValue(it).jsonPrimitive.content } },
+                listOf("gpt"),
+                entries.map { entry -> entry.getValue("slot").jsonPrimitive.content },
                 "one sample for the member's two turns inside one interval, under its slot",
             )
         }

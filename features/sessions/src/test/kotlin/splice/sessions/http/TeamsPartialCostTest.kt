@@ -146,11 +146,6 @@ class TeamsPartialCostTest {
         expected.forEach { (slot, usd) ->
             assertEquals(usd, dollars(slots.getValue(slot)), 1e-9, "$slot's priced dollars")
         }
-        assertEquals(
-            mapOf("claude" to 1L, "gpt" to 0L, "grok" to 0L, "muse" to 0L),
-            slots.mapValues { (_, tally) -> tally.getValue("unpriced_turns").jsonPrimitive.long },
-            "the haiku turn is counted beside the lead's figure, not folded into it",
-        )
     }
 
     @Test
@@ -184,15 +179,8 @@ class TeamsPartialCostTest {
 
         val lead = slots.getValue("claude")
         assertEquals(44L, lead.getValue("plan_turns").jsonPrimitive.long, "all 44 moved requests ran on the plan")
-        assertEquals(44L, lead.getValue("unpriced_turns").jsonPrimitive.long)
         assertEquals(0L, lead.getValue("priced_moved_turns").jsonPrimitive.long)
         assertEquals("null", lead.getValue("cost_usd").jsonPrimitive.content, "a plan billed nothing")
-        assertEquals(
-            43 * TokenCost().of(TURN, OPUS),
-            lead.getValue("plan_value_usd").jsonPrimitive.double,
-            1e-9,
-            "the API-rate value of the 43 requests the card prices",
-        )
         assertEquals(0L, slots.getValue("gpt").getValue("plan_turns").jsonPrimitive.long)
         assertEquals(53 * TokenCost().of(TURN, SOL), dollars(slots.getValue("gpt")), 1e-9)
     }

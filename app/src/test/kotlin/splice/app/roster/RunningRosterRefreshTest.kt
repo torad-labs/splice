@@ -96,7 +96,6 @@ class RunningRosterRefreshTest {
         assertEquals(200, response.statusCode(), response.body())
         val slot = Json.parseToJsonElement(response.body()).jsonObject["slots"]!!.jsonArray.single().jsonObject
         assertEquals("10.0", slot.getValue("cost_usd").jsonPrimitive.content)
-        assertEquals("0", slot.getValue("unpriced_turns").jsonPrimitive.content)
     }
 
     private fun assertBoard(fixture: RunningRosterFixture) {

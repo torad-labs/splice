@@ -21,7 +21,6 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 
-internal const val TEAM_ID = "team_id"
 private const val OLDEST_KEPT = "oldest_kept_epoch_millis"
 private const val EDGE_STORE = "edges"
 private const val REASON_KEY = "reason"
@@ -68,7 +67,6 @@ public class TeamReads internal constructor(
                 texts.read(sender, members.headOf(sender), sent.map { it.edge.id }.toSet())
             }
             buildJsonObject {
-                put(TEAM_ID, team.id)
                 val state = stores.edgeState()
                 val oldest = stores.oldestEdgeDay()
                 val retention = retentionState(state, oldest, window)
@@ -89,7 +87,6 @@ public class TeamReads internal constructor(
             val slots = Members(team, emptyList()).slotOfSession
             val rows = slots.keys.flatMap { stores.activity.rows(it) }.filter { it.at in window }
             buildJsonObject {
-                put(TEAM_ID, team.id)
                 val state = stores.labelState()
                 val oldest = stores.oldestLabelDay()
                 val retention = retentionState(state, oldest, window)
@@ -105,15 +102,10 @@ public class TeamReads internal constructor(
                     "entries",
                     buildJsonArray {
                         rows.filter { it.label != null }.sortedBy { it.at }.forEach { row ->
-                            val label = row.label.orEmpty()
                             add(
                                 buildJsonObject {
                                     put("at", row.at)
-                                    put("session", row.session)
                                     put("slot", slots[row.session]?.id)
-                                    put("head", row.head)
-                                    put("label", label.substringBefore('\n'))
-                                    put("detail", label.substringAfter('\n', "").trim().takeIf { it.isNotEmpty() })
                                     put("tool", row.tool)
                                     put("object", row.subject)
                                 },

@@ -81,11 +81,12 @@ const PERF_HEADS = (() => {
   function models(h) {
     const ms = Object.entries(h.models || {});
     if (ms.length < 2) return "";
-    // a request that named no model failed before one answered, so its time is no model's and is left out; a failed
-    // share prints from 1% up, as the failure reasons do
+    // a time needs an answer: a request that named no model failed before one answered, and a model every request to
+    // failed never answered, so neither prints one (277 ms read fast on a model at 100% failed); a failed share prints
+    // from 1% up, as the failure reasons do
     return ms.sort((x, y) => y[1].count - x[1].count).map(([id, m]) => {
       const named = id !== "?", name = named ? modelName(S.labels, id) ?? id : "No model named";
-      const typical = named && m.total_ms?.p50 != null ? ` · ${secs(m.total_ms.p50)} typical` : "";
+      const typical = named && m.failure_share < 1 && m.total_ms?.p50 != null ? ` · ${secs(m.total_ms.p50)} typical` : "";
       const failed = m.failure_share >= 0.005 ? ` · ${pct(m.failure_share)} failed` : "";
       return `<span class="m">${esc(name)} · ${n0(m.count)}${typical}${failed}</span>`;
     }).join("");

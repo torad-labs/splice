@@ -82,13 +82,12 @@ private const val OUT = "out"
 private const val IN = "in"
 
 /** V4-314: the text a hand-off carried, as every edge reader reports it (a team's chat, a session's
- *  edges): the redacted text the sender's transcript holds for the call, the file it was read from, or
- *  why there is none. A text nobody found is null with its reason, never an empty string. */
+ *  edges): the redacted text the sender's transcript holds for the call, or why there is none. A text
+ *  nobody found is null with its reason, never an empty string. */
 internal object HandedText {
     fun put(into: JsonObjectBuilder, id: String, sent: SentTexts?) {
         val text = sent?.texts?.get(id)
         into.put("text", text)
-        into.put("text_source", sent?.path?.takeIf { text != null })
         into.put("missing_reason", if (text == null) missingReason(sent) else null)
     }
 

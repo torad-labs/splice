@@ -224,12 +224,11 @@ class TeamsRoutesTest {
         val chat = rig.json(routes().reads.chat(id, null).body)
         val base = """"from":"$LEAD","from_slot":"lead",""" +
             """"to":"uds:/run/2.sock","to_slot":"b1""""
-        val source = "/t/$LEAD.jsonl"
         assertEquals(
             listOf(
-                rig.json("""{"at":$AT,$base,"text":"build row 7","text_source":"$source","missing_reason":null}"""),
+                rig.json("""{"at":$AT,$base,"text":"build row 7","missing_reason":null}"""),
                 rig.json(
-                    """{"at":${AT + 1},$base,"text":null,"text_source":null,""" +
+                    """{"at":${AT + 1},$base,"text":null,""" +
                         """"missing_reason":"The message is not in the sender transcript."}""",
                 ),
             ),

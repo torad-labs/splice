@@ -173,14 +173,14 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             json(
                 """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out",""" +
-                    """"text":"take the plan","text_source":"/t/alpha.jsonl","missing_reason":null}""",
+                    """"text":"take the plan","missing_reason":null}""",
             ),
             edges[0],
         )
         assertEquals(
             json(
                 """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",""" +
-                    """"text":null,"text_source":null,""" +
+                    """"text":null,""" +
                     """"missing_reason":"The sender transcript is no longer on this machine."}""",
             ),
             edges[1],
@@ -188,7 +188,7 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             json(
                 """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"out",""" +
-                    """"text":null,"text_source":null,""" +
+                    """"text":null,""" +
                     """"missing_reason":"The message is not in the sender transcript."}""",
             ),
             edges[2],
@@ -222,7 +222,7 @@ class SessionsConsoleRoutesTest {
     /** An edge's text keys when its sender has no transcript: these tests give no head a tree, so the
      *  vanilla tree is the only one searched (V4-314). */
     private fun unread(): String =
-        """"text":null,"text_source":null,""" +
+        """"text":null,""" +
             """"missing_reason":"The sender transcript is no longer on this machine.""""
 
     private fun rowsOf(routes: SessionsRoutes): Map<String, JsonObject> =

@@ -128,7 +128,7 @@ class SessionsRoutesWiringTest {
             val handed = json(two.bodyAsText())["edges"]!!.jsonArray.single().jsonObject
             val reason = handed["missing_reason"]!!.jsonPrimitive.content
             assertEquals(
-                json("""$edge,"direction":"in","text":null,"text_source":null,"missing_reason":"$reason"}"""),
+                json("""$edge,"direction":"in","text":null,"missing_reason":"$reason"}"""),
                 handed,
             )
             assertEquals("The sender transcript is no longer on this machine.", reason)

@@ -20,16 +20,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.ClaudeLogins
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
@@ -96,7 +93,6 @@ class ClaudeHeadRoutesTest {
         val routes = ClaudeHeadRoutes(
             heads = launchHeadsOf(claudeHead(configDir)),
             home = home,
-            claudeLogins = ClaudeLogins(home.resolve("synthetic-logins")),
             wrappedHead = WrappedHead(
                 home = home,
                 installPaths = InstallPaths(binOverride = bin, shareOverride = share),
@@ -144,14 +140,13 @@ class ClaudeHeadRoutesTest {
     }
 
     @Test
-    fun `wrap through the route answers ok, and mode flips to wrapped on the next GET`(
+    fun `wrap through the route answers an empty body, and mode flips to wrapped on the next GET`(
         @TempDir home: Path,
     ) {
         serveHermetic(home) { port, rig ->
             rig.linkCmdToReal()
             val response = postJson(port, "/api/claude-head/wrap")
-            assertTrue(response["ok"]!!.jsonPrimitive.boolean, "$response")
-            assertFalse(response.containsKey("settings_backup_path"), "wrap writes nothing to back up (V4-445)")
+            assertEquals(emptySet<String>(), response.keys, "$response")
 
             val client = HttpClient(CIO) { expectSuccess = false }
             val status = try {

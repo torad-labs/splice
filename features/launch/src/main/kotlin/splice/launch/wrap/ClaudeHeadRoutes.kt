@@ -11,13 +11,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
-import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
-import splice.client.ClaudeLogins
 import splice.client.wrap.ClaudeHeadStatus
 import splice.client.wrap.UnwrapResult
 import splice.client.wrap.WrapResult
@@ -38,7 +33,6 @@ public class ClaudeHeadRoutes(
     private val heads: LaunchHeads,
     home: Path = UserHome.dir(),
     private val wrappedHead: WrappedHead = WrappedHead(home),
-    private val claudeLogins: ClaudeLogins = ClaudeLogins(),
 ) {
     public suspend fun status(call: ApplicationCall) {
         call.respondText(statusJson(wrappedHead.status()), ContentType.Application.Json)
@@ -50,26 +44,15 @@ public class ClaudeHeadRoutes(
             return
         }
         when (val result = wrappedHead.wrap()) {
-            is WrapResult.Ok -> call.respondText(
-                buildJsonObject {
-                    put("ok", true)
-                    putStatus(this, result.status)
-                }.toString(),
-                ContentType.Application.Json,
-            )
+            // An empty body: the console and `splice setup` read the status, then the GET.
+            is WrapResult.Ok -> call.respondText("{}", ContentType.Application.Json)
             is WrapResult.Refused -> respondRefused(call, result.reason)
         }
     }
 
     public suspend fun unwrap(call: ApplicationCall) {
         when (val result = wrappedHead.unwrap()) {
-            is UnwrapResult.Ok -> call.respondText(
-                buildJsonObject {
-                    put("ok", true)
-                    putStatus(this, result.status)
-                }.toString(),
-                ContentType.Application.Json,
-            )
+            is UnwrapResult.Ok -> call.respondText("{}", ContentType.Application.Json)
             is UnwrapResult.Refused -> respondRefused(call, result.reason)
         }
     }
@@ -88,31 +71,9 @@ public class ClaudeHeadRoutes(
         call.respondText(LaunchReplies.errorJson(reason), ContentType.Application.Json, HttpStatusCode.Conflict)
     }
 
+    /** What the Models strip shows: whether `claude` is wrapped, and where the shim sits. */
     private fun statusJson(status: ClaudeHeadStatus): String = buildJsonObject {
-        putStatus(this, status)
-        val labels = claudeLogins.labels()
-        putJsonObject("claude_logins") {
-            put("count", labels.size)
-            put("selected", claudeLogins.selected())
-            putJsonArray("labels") { labels.forEach { add(it) } }
-            // FEATURES.md 4.5: "the constraint ... is printed on the strip" — carried here rather
-            // than on /api/auth, which ClientAuthProvider (generic to every client-auth head, not
-            // Claude-specific) is the wrong layer for a Claude-only sentence; see FINAL REPORT.
-            // The pool chooses a subscription per turn; login save-back still owns the native files.
-            put(
-                "constraint",
-                "Splice uses the account with quota whose weekly reset comes soonest. " +
-                    "The five-hour reset breaks ties. Unknown quota comes last. " +
-                    "Each session keeps its account while it remains available. " +
-                    "Your saved order overrides this default.",
-            )
-        }
+        put("mode", status.mode)
+        put("shim_path", status.shimPath)
     }.toString()
-
-    private fun putStatus(into: JsonObjectBuilder, status: ClaudeHeadStatus) {
-        into.put("mode", status.mode)
-        into.put("resolves_to", status.resolvesTo)
-        into.put("shim_path", status.shimPath)
-        into.put("real_binary_path", status.realBinaryPath)
-    }
 }

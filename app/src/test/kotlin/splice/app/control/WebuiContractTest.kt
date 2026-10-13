@@ -226,13 +226,8 @@ class WebuiContractTest {
         val payload = api("/api/claude-head")
         assertFields(
             payload,
-            listOf("mode", "resolves_to", "shim_path", "real_binary_path", "claude_logins"),
+            listOf("mode", "shim_path"),
             "ClaudeHeadPayload",
-        )
-        assertFields(
-            payload["claude_logins"]!!.jsonObject,
-            listOf("count", "selected", "labels", "constraint"),
-            "ClaudeHeadPayload.claude_logins",
         )
         // The one VALUE this wall pins, because a name check could not have caught it: the webui's
         // CLAUDE_HEAD_MODES is the closed set the settings page branches on, and it read `wrap`

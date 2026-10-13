@@ -192,7 +192,6 @@ class ClaudeHeadRoutesWiringTest {
                 val body = Json.parseToJsonElement(response.bodyAsText()).jsonObject
                 assertTrue(body["mode"]!!.jsonPrimitive.content in setOf("separate", "wrapped"))
                 assertTrue(body.containsKey("shim_path"))
-                assertTrue(body.containsKey("claude_logins"))
             } finally {
                 client.close()
             }

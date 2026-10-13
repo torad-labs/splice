@@ -124,15 +124,21 @@ const server = Bun.serve({
       return new Response("not found", { status: 404 });
     }
     const bodyText = await req.text();
+    const requestSha256 = createHash("sha256").update(bodyText).digest("hex");
+    // A body that is not JSON is splice sending something the API would refuse: it is answered and recorded as the
+    // 400 the API gives, so the run's log shows it instead of a normal 429 or 200 that hides it.
     const body = (() => {
       try { return JSON.parse(bodyText) as { stream?: boolean; model?: string }; }
-      catch { return {}; }
+      catch { return null; }
     })();
+    if (body === null) {
+      record({ path, status: 400, malformed: true, request_sha256: requestSha256 });
+      return Response.json({ type: "error", error: { type: "invalid_request_error", message: "request body is not JSON" } }, { status: 400 });
+    }
     // Only labels leave the synthetic mock; bearer values are never recorded.
     const authorization = req.headers.get("authorization");
     const login = authorization === "Bearer synthetic-one" ? "one"
       : authorization === "Bearer synthetic-two" ? "two" : null;
-    const requestSha256 = createHash("sha256").update(bodyText).digest("hex");
     if (POOLED && login === null) {
       record({ path, status: 401, login: "unexpected", request_sha256: requestSha256 });
       return Response.json({ type: "error", error: { type: "authentication_error", message: "synthetic pool login missing" } }, { status: 401 });

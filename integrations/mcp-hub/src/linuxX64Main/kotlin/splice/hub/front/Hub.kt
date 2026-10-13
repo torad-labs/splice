@@ -65,8 +65,13 @@ class Hub(
         files.saveState(Rpc.encode(state))
     }
 
-    /** Keeps every open stream alive, and front.json's last calls current for the daemon's idle stop. */
+    /** Keeps every open stream alive and front.json current for the daemon's sweep: last calls for its idle stop, and
+     *  no session whose Claude Code has exited (a launch is that process's pid; an unknown launch is kept). */
     fun keepAlive() {
+        sessions.values.filter { it.route.launch.toIntOrNull()?.let(Ids::running) == false }.forEach {
+            sessions.remove(it.id)
+            it.stream?.close()
+        }
         sessions.values.forEach { it.stream?.push(": keepalive\n\n") }
         save()
         timers.at(clock.now() + KEEPALIVE) { keepAlive() }

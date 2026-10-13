@@ -156,9 +156,9 @@ class DoctorReportTest {
         assertTrue(shown.contains("[codex] turn ERROR"), shown)
         val written = Json.parseToJsonElement(Files.readString(out)).jsonObject
         val logs = (written.getValue("logs") as JsonArray).map { it.jsonPrimitive.content }
-        assertEquals(4, logs.size)
+        assertEquals(6, logs.size, "every line of the tail")
         // The launch line's cwd is a free-form suffix: the real home's project never leaves.
-        assertTrue(logs[3].endsWith("[codex] launch"), logs[3])
+        assertTrue(logs[5].contains("[codex] launch") && !logs[5].contains("real-private"), logs[5])
         assertEquals(
             setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
             Files.getPosixFilePermissions(out),

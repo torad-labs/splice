@@ -20,6 +20,7 @@ compaction.project[].instructions
 compaction.project[].model	
 compaction.project[].path	
 daemon	
+daemon.auto_update	
 daemon.control_port	
 daemon.effort	
 daemon.fold_marker_text	
@@ -34,6 +35,7 @@ daemon.replay_reasoning
 daemon.show_reasoning	
 daemon.state_dir	
 daemon.summary	
+daemon.update_channel	
 defaults	
 defaults.*	
 heads	

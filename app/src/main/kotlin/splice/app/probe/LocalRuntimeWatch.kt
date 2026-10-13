@@ -137,4 +137,5 @@ internal class LocalRuntimeWatch(
 // refused connection answers at once, so the cost is one short request per local runtime per tick.
 private const val WATCH_INTERVAL_MS = 5_000L
 
+// why: the restart line names the interval in seconds, the unit a person reads it in.
 private const val MS_PER_SECOND = 1_000L

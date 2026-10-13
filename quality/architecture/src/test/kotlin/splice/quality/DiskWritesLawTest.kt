@@ -347,6 +347,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.copy(" to 3,
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 1,
+        "Files.writeString(" to 1,
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeRelease.kt" to mapOf("Files.write(" to 1),

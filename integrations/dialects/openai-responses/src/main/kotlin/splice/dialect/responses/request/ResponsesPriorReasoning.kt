@@ -12,8 +12,12 @@ import splice.dialect.responses.websocket.REASONING_ITEM_TYPE
 /** Drops reasoning items that precede the last real user prompt; the current turn's reasoning stays. */
 public class ResponsesPriorReasoning {
     /** [input] without the reasoning items before the last real prompt; [input] itself when none is dropped
-     *  or no prompt exists. A real prompt is a user message that does not follow a tool output: the follow-up
-     *  message that carries a tool result's images does, and so is part of its turn, not the start of one. */
+     *  or no prompt exists. A real prompt is a user message whose run of user messages does not start right after
+     *  a tool output. Each text beside a tool result rides as its own user message (Claude Code sends a hook's
+     *  context and every reminder that way), and so does the follow-up carrying a tool result's images: all of
+     *  them belong to the tool's round. Reading only the item just before took the second such message for a
+     *  new prompt, so the turn in flight lost its own reasoning and the input changed from its first reasoning
+     *  item, a prompt-cache miss over the whole turn on the next round. */
     public fun withoutPriorTurns(input: List<JsonElement>): List<JsonElement> {
         val prompt = input.indices.lastOrNull { prompt(input, it) } ?: return input
         if ((0 until prompt).none { isReasoning(input[it]) }) return input
@@ -21,12 +25,15 @@ public class ResponsesPriorReasoning {
     }
 
     private fun prompt(input: List<JsonElement>, at: Int): Boolean {
-        val item = input[at] as? JsonObject ?: return false
-        val type = JsonScalars.str(item, ITEM_TYPE_KEY)
-        val answersTool = (input.getOrNull(at - 1) as? JsonObject)
-            ?.let { JsonScalars.str(it, ITEM_TYPE_KEY).orEmpty().endsWith(TOOL_OUTPUT_SUFFIX) } == true
-        val message = type == null || type == MESSAGE_ITEM_TYPE
-        return message && JsonScalars.str(item, ITEM_ROLE_KEY) == USER_ROLE_NAME && !answersTool
+        if (!isUserMessage(input[at])) return false
+        val before = (at - 1 downTo 0).firstOrNull { !isUserMessage(input[it]) } ?: return true
+        return !JsonScalars.str(input[before] as? JsonObject, ITEM_TYPE_KEY).orEmpty().endsWith(TOOL_OUTPUT_SUFFIX)
+    }
+
+    private fun isUserMessage(item: JsonElement): Boolean {
+        val obj = item as? JsonObject ?: return false
+        val type = JsonScalars.str(obj, ITEM_TYPE_KEY)
+        return (type == null || type == MESSAGE_ITEM_TYPE) && JsonScalars.str(obj, ITEM_ROLE_KEY) == USER_ROLE_NAME
     }
 
     private fun isReasoning(item: JsonElement): Boolean =

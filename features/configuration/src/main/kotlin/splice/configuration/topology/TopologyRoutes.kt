@@ -60,6 +60,7 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
         val body = buildJsonObject {
             put(TOPOLOGY, TopologySecrets().masked(current))
             put("stale", stale())
+            put("vocab", TopologyVocab().of(decode(current).getOrNull()))
         }
         return JsonReply(HttpStatusCode.OK, body.toString())
     }

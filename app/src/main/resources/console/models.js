@@ -208,6 +208,7 @@ function draftOf(c) {
     // with no tier declared, one window serves every default tier: the head's own, shown as the default model's
     headWin: TIERS.some((t) => c.slots[t]) ? "" : big(c.models.find((m) => m.id === c.defaults.opus)?.window ?? 0),
     mode: c.prompt.mode, text: c.prompt.text, file: c.prompt.file, per: perOf(c), url: c.url,
+    ...fieldsOf(c),
   };
 }
 // the other commands on this command's provider: an edit to the provider's own fields (its address, a model's window)
@@ -235,7 +236,8 @@ function draftState(c) {
   const head = { ok: !unset || (Boolean(hw) && (hmax === null || hw <= hmax)), over: unset && Boolean(hw) && hmax !== null && hw > hmax, max: hmax };
   const same = JSON.stringify(d) === JSON.stringify(draftOf(c));
   const url = { ok: d.url === c.url || urlOk(d.url) };
-  return { tiers, head, url, ok: TIERS.every((t) => tiers[t].ok) && head.ok && url.ok, same };
+  const own = ownState(c, d);
+  return { tiers, head, url, own, ok: TIERS.every((t) => tiers[t].ok) && head.ok && url.ok && own.ok, same };
 }
 const logsOf = (key) => ui.logs[key];
 // Remove: two presses, and what stays is said before the second. A command a session is on says who, and each name opens it.
@@ -425,17 +427,24 @@ function paneHtml() {
   const restart = ui.said === "Saved" && ui.pending ? restartBtn() : "";
   const form = `<section class="form">`
     + addedHtml(c)
+    + '<h3 class="gh">Where it goes</h3>'
     + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to">`
     + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
+    + whereHtml(c, d, st.own)
+    + signInHtml(c, d, st.own)
+    + '<h3 class="gh">Models</h3>'
     + runtimeHtml(c)
     + tierRows
     + nowRow(c)
     + windowsRow(c)
     + clientRow(c)
+    + pricesHtml(c, d, st.own)
+    + runningHtml(c, d, st.own)
+    + '<h3 class="gh">Instructions</h3>'
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
-    + `<div class="foot"><button class="act primary" data-act="save"${st.ok && !st.same && !ui.saving ? "" : " disabled"}>Save</button>${saidHtml}${restart}</div></section>`;
+    + saveRowHtml(c, st, saidHtml, restart) + "</section>";
   const q = ui.logq.trim().toLowerCase(), hit = (l) => !q || l.raw.toLowerCase().includes(q);
   const lines = (logsOf(c.key) ?? []).filter(hit);
   const ev = eventsOf(lines);
@@ -546,6 +555,209 @@ function nowRow(c) {
     + `<span class="fig">${num(g.queued ?? 0)} waiting</span>${errs.map((x) => `<span class="fig limit">${x}</span>`).join("") || '<span class="fig">No errors</span>'}</div>`;
 }
 
+// ---------- a command's own fields, edited in place (gaps 461/462; marlin's four groups) ----------
+// Where it goes and Running write the command's own table; Sign-in, Runs on this machine and the quirks write its provider's,
+// which every command on the provider shares, so those rows name the others (sharedHtml). Prices write the command's own
+// card per model, [heads.KEY.rates], which wins over the provider's row. Every value reaches the daemon in the one Save.
+const MASKED = "********"; // GET /api/topology serves each extra_headers value as this; sent back, it keeps the stored one
+const vocab = () => data.topo?.vocab ?? {};
+const cmdDialect = (c) => data.heads.find((x) => x.key === c.key)?.dialect ?? "";
+const numText = (n) => (n == null ? "" : String(n));
+function fieldsOf(c) {
+  const t = topology(), h = t.heads?.[c.key] ?? {}, p = t.providers?.[c.provKey] ?? {};
+  return {
+    port: numText(h.port), prefix: h.discovery_prefix ?? "", kind: p.auth?.kind ?? "", env: p.auth?.env ?? "",
+    headers: Object.entries(p.extra_headers ?? {}).map(([name, value]) => ({ name, value })),
+    local: p.local ?? null, isolate: [...(h.claude?.isolate ?? [])],
+    rates: Object.fromEntries(c.models.map((m) => [m.id, { i: numText(m.rates?.input), o: numText(m.rates?.output) }])),
+    quirks: { ...(p.quirks ?? {}) },
+  };
+}
+// what a local provider is when splice.toml does not say: a provider /api/models/local answers for is local
+const autoLocal = (c) => (data.local ?? []).some((x) => x.provider === c.provKey);
+// a press that matches what splice already decides on its own leaves the line out of splice.toml
+const localPick = (c, yes) => (fieldsOf(c).local === null && yes === autoLocal(c) ? null : yes);
+const portOk = (v) => /^\d+$/.test(v) && +v >= 1 && +v <= 65535;
+const priceOk = (v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0;
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+// the quirks this command's dialect reads, each with its kind and words, as GET /api/topology serves them
+const quirksOf = (c) => (vocab().quirks ?? []).filter((q) => q.dialects.includes(cmdDialect(c)));
+function quirkOk(q, v) {
+  if (v === undefined) return true;
+  if (q.kind === "int") return Number.isInteger(v) && v >= 0;
+  if (q.words) return q.words.includes(v);
+  return true;
+}
+function ownState(c, d) {
+  const was = fieldsOf(c);
+  const names = d.headers.map((x) => x.name.trim());
+  const header = d.headers.map((x, i) => (x.fresh && !names[i] && !x.value) || (HEADER_NAME.test(names[i]) && names.indexOf(names[i]) === i && x.value !== ""));
+  const rate = Object.fromEntries(Object.entries(d.rates).map(([id, x]) => {
+    const w = was.rates[id], moved = x.i !== w?.i || x.o !== w?.o;
+    return [id, { i: !moved || priceOk(x.i), o: !moved || priceOk(x.o) }];
+  }));
+  const quirk = Object.fromEntries(quirksOf(c).map((q) => [q.name, quirkOk(q, d.quirks[q.name])]));
+  const s = {
+    port: portOk(d.port) || d.port === was.port, prefix: d.prefix.trim() !== "",
+    env: d.env === "" || /^[A-Za-z_][A-Za-z0-9_]*$/.test(d.env), header, rate, quirk,
+  };
+  s.ok = s.port && s.prefix && s.env && header.every(Boolean) && Object.values(rate).every((x) => x.i && x.o) && Object.values(quirk).every(Boolean);
+  return s;
+}
+const bad = (ok, word) => (ok ? "" : `<span class="said limit">${word}</span>`);
+function whereHtml(c, d, s) {
+  return `<span class="lbl">Port</span><div class="ctl"><input class="field num" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port">${bad(s.port, "Not a port")}</div>`
+    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}</div>`;
+}
+// the names of what a command can share with your own Claude Code, by the item splice.toml spells (claude.share, isolate)
+const SHARE_NAME = { settings: "Settings", mcps: "MCP servers", skills: "Skills", hooks: "Hooks", agents: "Agents", commands: "Commands",
+  plugins: "Plugins", claude_md: "CLAUDE.md", sessions: "Sessions", projects: "Transcripts" };
+const shareName = (x) => SHARE_NAME[x] ?? x;
+const kindName = (k) => (vocab().auth_kinds ?? []).find((x) => x.kind === k)?.label ?? k;
+function signInHtml(c, d, s) {
+  const kinds = vocab().auth_kinds ?? [];
+  const items = kinds.map((x) => `<button role="menuitem" data-act="kind" data-v="${esc(x.kind)}"><span>${esc(x.label)}</span><span class="mmeta">${esc(x.kind)}</span></button>`).join("");
+  const env = d.kind === "api-key"
+    ? `<span class="lbl">Key variable</span><div class="ctl"><input class="field mono" id="h-env" value="${esc(d.env)}" placeholder="${esc(`${c.provKey.toUpperCase()}_API_KEY`)}" spellcheck="false" autocomplete="off" aria-label="Key variable">${bad(s.env, "Not a variable name")}</div>` : "";
+  const rows = d.headers.map((x, i) => `<div class="hdr">${x.fresh ? `<input class="field mono" id="hn-${i}" data-hn="${i}" value="${esc(x.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Header name">` : `<span class="hname">${esc(x.name)}</span>`}`
+    + `<input class="field mono" type="password" id="hv-${i}" data-hv="${i}" value="${x.value === MASKED ? "" : esc(x.value)}" placeholder="${x.value === MASKED ? "Kept" : "Value"}" autocomplete="off" aria-label="${esc(x.name || "Header")} value">`
+    + `<button class="icon" data-act="hdr-rm" data-i="${i}" aria-label="Remove">${GL.close}</button>${bad(s.header[i], "Needs a name and a value")}</div>`).join("");
+  return '<h3 class="gh">Sign-in</h3>'
+    + `<span class="lbl">Signs in with</span><div class="ctl menuwrap"><button class="pickbtn" data-act="kindpick">${esc(kindName(d.kind))}${ICON.caret}</button>${ui.pick === "kind" ? `<div class="menu">${items}</div>` : ""}${sharedHtml(c)}</div>`
+    + env
+    + `<span class="lbl">Headers</span><div class="ctl col">${rows}<button class="act quiet" data-act="hdr-add">Add header</button></div>`;
+}
+function pricesHtml(c, d, s) {
+  if (!c.models.length) return "";
+  const cell = (id, k) => `<td class="num"><input class="field price" id="pr-${k}-${esc(id)}" data-rate="${esc(id)}" data-rk="${k}" value="${esc(d.rates[id][k])}" placeholder="No price" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="${k === "i" ? "In" : "Out"} per 1M tokens">${bad(s.rate[id][k], "Not a price")}</td>`;
+  const body = c.models.map((m) => `<tr><td class="mname">${esc(m.label)}</td>${cell(m.id, "i")}${cell(m.id, "o")}</tr>`).join("");
+  return '<h3 class="gh">Prices</h3>'
+    + `<div class="ctl wide"><table class="every prices"><thead><tr><th>Model</th><th class="num">In per 1M</th><th class="num">Out per 1M</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+// the items a command shares with your own Claude Code: every item splice shares, each one this command keeps its own of unpressed
+function runningHtml(c, d, s) {
+  const local = cmdDialect(c) === "openai-chat" ? (() => {
+    const on = d.local ?? autoLocal(c);
+    return `<span class="lbl">Runs on this machine</span><div class="ctl"><div class="switch" role="group" aria-label="Runs on this machine">`
+      + `<button data-act="local" data-v="yes" aria-pressed="${on}">Yes</button><button data-act="local" data-v="no" aria-pressed="${!on}">No</button></div>${sharedHtml(c)}</div>`;
+  })() : "";
+  const items = vocab().share ?? [];
+  const share = items.length ? `<span class="lbl">Shares with Claude Code</span><div class="ctl"><div class="switch multi" role="group" aria-label="Shares with Claude Code">${items.map((x) => `<button data-act="share" data-v="${esc(x)}" aria-pressed="${!d.isolate.includes(x)}">${esc(shareName(x))}</button>`).join("")}</div></div>` : "";
+  const quirks = quirksOf(c).map((q) => `<span class="lbl mono">${esc(q.name)}</span><div class="ctl">${quirkCtl(q, d.quirks[q.name])}${bad(s.quirk[q.name], "Not a value")}</div>`).join("");
+  return '<h3 class="gh">Running</h3>' + local + share + quirks;
+}
+function quirkCtl(q, v) {
+  const opt = (val, word) => `<button data-act="quirk" data-q="${esc(q.name)}" data-v="${esc(val === undefined ? "" : JSON.stringify(val))}" aria-pressed="${JSON.stringify(v) === JSON.stringify(val)}">${esc(word)}</button>`;
+  const sw = (opts) => `<div class="switch" role="group" aria-label="${esc(q.name)}">${opt(undefined, "Provider's own")}${opts}</div>`;
+  if (q.kind === "bool") return sw(opt(true, "On") + opt(false, "Off"));
+  if (q.words) return sw(q.words.map((w) => opt(w, w)).join(""));
+  if (q.kind === "list") return `<input class="field mono" id="q-${esc(q.name)}" data-ql="${esc(q.name)}" value="${esc((v ?? []).join(", "))}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(q.name)}">`;
+  if (q.kind === "table") return `<span class="fig mono">${v === undefined ? "Provider's own" : esc(JSON.stringify(v))}</span>`;
+  return `<input class="field mono${q.kind === "int" ? " num" : ""}" id="q-${esc(q.name)}" data-q="${esc(q.name)}" data-qk="${q.kind}" value="${esc(v ?? "")}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(q.name)}">`;
+}
+function ownInput(t, d) {
+  if (t.id === "h-port") d.port = t.value;
+  else if (t.id === "h-prefix") d.prefix = t.value;
+  else if (t.id === "h-env") d.env = t.value.trim();
+  else if (t.dataset.hn) d.headers[+t.dataset.hn].name = t.value;
+  else if (t.dataset.hv) { const x = d.headers[+t.dataset.hv]; x.value = t.value || (x.fresh ? "" : MASKED); }
+  else if (t.dataset.rate) d.rates[t.dataset.rate][t.dataset.rk] = t.value.trim();
+  else if (t.dataset.ql) { const v = t.value.split(",").map((x) => x.trim()).filter(Boolean); d.quirks[t.dataset.ql] = v.length ? v : undefined; }
+  else if (t.dataset.q) {
+    const v = t.value.trim();
+    d.quirks[t.dataset.q] = v === "" ? undefined : t.dataset.qk === "int" ? (/^\d+$/.test(v) ? Number(v) : v) : v;
+  } else return false;
+  return true;
+}
+// each change in the draft as the Save row lists it: what it is, the value it had, struck, and the value it takes
+const clip = (v) => { const x = String(v ?? ""); return x.length > 40 ? `${x.slice(0, 39)}…` : x; };
+function changesOf(c) {
+  const a = draftOf(c), d = ui.draft, out = [];
+  const add = (name, was, now) => { if (JSON.stringify(was) !== JSON.stringify(now)) out.push({ name, was: clip(was), now: clip(now) }); };
+  const label = (id) => c.models.find((m) => m.id === id)?.label ?? c.missing.find((m) => m.id === id)?.label ?? id ?? "None";
+  add("Sends to", a.url, d.url.trim());
+  add("Port", a.port, d.port);
+  add("Model prefix", a.prefix, d.prefix.trim());
+  add("Signs in with", kindName(a.kind), kindName(d.kind));
+  add("Key variable", a.env || "Default", d.env || "Default");
+  for (const x of a.headers) if (!d.headers.some((y) => y.name === x.name)) add(x.name, "Set", "Removed");
+  for (const y of d.headers) {
+    if (y.fresh) { if (y.name.trim()) add(y.name.trim(), "None", "Set"); continue; }
+    if (y.value !== MASKED) add(y.name, "Set", "New value");
+  }
+  for (const t of TIERS) {
+    add(`${tierName(t)} model`, label(a.tiers[t].model), label(d.tiers[t].model));
+    if (d.tiers[t].model && a.tiers[t].model === d.tiers[t].model) add(`${tierName(t)} window`, a.tiers[t].win, d.tiers[t].win);
+  }
+  add("Window", a.headWin, d.headWin);
+  add("System prompt", { append: "Append", replace: "Replace" }[a.mode] ?? a.mode, { append: "Append", replace: "Replace" }[d.mode] ?? d.mode);
+  add("System prompt text", a.file || a.text, d.file || d.text);
+  for (const root of new Set([...Object.keys(a.per), ...Object.keys(d.per)])) {
+    add(`Prompt in ${nameOfRoot(root)}`, a.per[root] ? clip(a.per[root].file || a.per[root].text) || "Set" : "None", d.per[root] ? clip(d.per[root].file || d.per[root].text) || "Set" : "None");
+  }
+  const yn = (v) => (v ? "Yes" : "No");
+  add("Runs on this machine", yn(a.local ?? autoLocal(c)), yn(d.local ?? autoLocal(c)));
+  for (const x of vocab().share ?? []) add(`Shares ${shareName(x)}`, yn(!a.isolate.includes(x)), yn(!d.isolate.includes(x)));
+  for (const m of c.models) {
+    add(`${m.label} in`, a.rates[m.id].i || "No price", d.rates[m.id].i || "No price");
+    add(`${m.label} out`, a.rates[m.id].o || "No price", d.rates[m.id].o || "No price");
+  }
+  const qv = (v) => (v === undefined ? "Provider's own" : Array.isArray(v) ? v.join(", ") : String(v));
+  for (const q of quirksOf(c)) add(q.name, qv(a.quirks[q.name]), qv(d.quirks[q.name]));
+  return out;
+}
+function saveRowHtml(c, st, saidHtml, restart) {
+  const list = st.same ? [] : changesOf(c), n = list.length;
+  const rows = list.map((x) => `<li><span class="cname">${esc(x.name)}</span><span class="was">${esc(x.was)}</span><span class="now">${esc(x.now)}</span></li>`).join("");
+  const acts = n ? `<button class="act primary" data-act="save"${st.ok && !ui.saving ? "" : " disabled"}>Save ${n} ${n === 1 ? "change" : "changes"}</button><button class="act quiet" data-act="discard">Discard</button>` : "";
+  return `${n ? `<ul class="changes">${rows}</ul>` : ""}<div class="foot">${acts}${saidHtml}${restart}</div>`;
+}
+// a model's own price card: the card it has, else the one it is priced at now, whole, with the cell's new number in it
+function cardOf(h, m, i, o) {
+  const was = h.rates?.[m.id], r = m.rates;
+  const lc = r?.long_context;
+  const card = was ? { ...was } : r ? {
+    input: r.input, cache_read: r.cache_read, output: r.output,
+    ...(r.cache_write != null ? { cache_write: r.cache_write } : {}), ...(r.cache_write_1h != null ? { cache_write_1h: r.cache_write_1h } : {}),
+    ...(lc ? { long_context_over_input_tokens: lc.over_input_tokens, long_context_input: lc.input, long_context_cache_read: lc.cache_read, long_context_output: lc.output,
+      ...(lc.cache_write != null ? { long_context_cache_write: lc.cache_write } : {}), ...(lc.cache_write_1h != null ? { long_context_cache_write_1h: lc.cache_write_1h } : {}) } : {}),
+  } : {};
+  card.input = Number(i); card.output = Number(o);
+  // a model with no price has no cache price either: a cache read is priced as an input token until one is set
+  card.cache_read ??= card.input;
+  return card;
+}
+function applyOwn(t, c, d) {
+  const a = fieldsOf(c), head = t.heads[c.key], prov = t.providers[c.provKey];
+  if (d.port !== a.port && portOk(d.port)) head.port = Number(d.port);
+  if (d.prefix.trim() !== a.prefix) head.discovery_prefix = d.prefix.trim();
+  if (JSON.stringify(d.isolate) !== JSON.stringify(a.isolate)) {
+    head.claude ??= {};
+    if (d.isolate.length) head.claude.isolate = [...d.isolate]; else delete head.claude.isolate;
+    if (!Object.keys(head.claude).length) delete head.claude;
+  }
+  for (const m of c.models) {
+    const x = d.rates[m.id], w = a.rates[m.id];
+    if (x.i === w.i && x.o === w.o) continue;
+    head.rates ??= {};
+    head.rates[m.id] = cardOf(head, m, x.i, x.o);
+  }
+  if (!prov) return;
+  if (d.kind !== a.kind || d.env !== a.env) {
+    prov.auth = { ...prov.auth, kind: d.kind };
+    if (d.env && d.kind === "api-key") prov.auth.env = d.env; else delete prov.auth.env;
+  }
+  if (JSON.stringify(d.headers) !== JSON.stringify(a.headers)) {
+    const kept = d.headers.filter((x) => x.name.trim());
+    if (kept.length) prov.extra_headers = Object.fromEntries(kept.map((x) => [x.name.trim(), x.value])); else delete prov.extra_headers;
+  }
+  if (d.local !== a.local) { if (d.local === null) delete prov.local; else prov.local = d.local; }
+  if (JSON.stringify(d.quirks) !== JSON.stringify(a.quirks)) {
+    const q = Object.fromEntries(Object.entries(d.quirks).filter(([, v]) => v !== undefined));
+    if (Object.keys(q).length) prov.quirks = q; else delete prov.quirks;
+  }
+}
+
 // ---------- Save: one PUT of the topology, the way Settings writes it ----------
 function applyDraft(tree, c, d) {
   const t = JSON.parse(JSON.stringify(tree));
@@ -577,6 +789,7 @@ function applyDraft(tree, c, d) {
     const w = parseWindow(d.headWin);
     if (w && w !== parseWindow(draftOf(c).headWin)) head.context_window = w;
   }
+  applyOwn(t, c, d);
   // the head's prompt
   const set = (o, p) => {
     delete o.system_prompt; delete o.system_prompt_file; delete o.system_prompt_mode;
@@ -1128,6 +1341,14 @@ function onClick(e) {
     case "per": ui.draft.per[d.p] = { mode: "append", text: "", file: "" }; ui.pick = null; ui.said = null; render(); break;
     case "unper": delete ui.draft.per[d.p]; ui.said = null; render(); break;
     case "save": save(); break;
+    case "discard": ui.draft = draftOf(cmdByKey(ui.open)); ui.said = null; ui.pick = null; render(); break;
+    case "kindpick": ui.pick = ui.pick === "kind" ? null : "kind"; render(); break;
+    case "kind": ui.draft.kind = d.v; ui.pick = null; ui.said = null; render(); break;
+    case "hdr-add": ui.draft.headers.push({ name: "", value: "", fresh: true }); render(); document.getElementById(`hn-${ui.draft.headers.length - 1}`)?.focus(); break;
+    case "hdr-rm": ui.draft.headers.splice(+d.i, 1); ui.said = null; render(); break;
+    case "local": ui.draft.local = localPick(cmdByKey(ui.open), d.v === "yes"); ui.said = null; render(); break;
+    case "share": { const iso = ui.draft.isolate, i = iso.indexOf(d.v); if (i < 0) iso.push(d.v); else iso.splice(i, 1); ui.said = null; render(); break; }
+    case "quirk": ui.draft.quirks[d.q] = d.v === "" ? undefined : JSON.parse(d.v); ui.said = null; render(); break;
     case "restart-splice": pressRestart(); break;
     case "restart-now": ui.cut = null; restartSplice(); break;
     case "keep-running": ui.cut = null; render(); break;
@@ -1169,6 +1390,7 @@ function onInput(e) {
   else if (t.id === "h-text") { ui.draft.text = t.value; ui.said = null; render(); }
   else if (t.id === "h-url") { ui.draft.url = t.value; ui.said = null; render(); }
   else if (t.dataset.ptext) { ui.draft.per[t.dataset.ptext].text = t.value; ui.said = null; render(); }
+  else if (ownInput(t, ui.draft)) { ui.said = null; render(); }
 }
 root.addEventListener("click", onClick);
 root.addEventListener("input", onInput);

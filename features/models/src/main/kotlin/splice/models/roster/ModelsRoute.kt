@@ -151,9 +151,14 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
         else -> "declared as a slot, but the catalog lists no model with this id"
     }
 
+    /** The whole card, cache prices included: Models' price cells write a command's own card from it, and a card
+     *  written with only what the cell shows would drop the cache prices it did not show. */
     private fun ratesJson(rates: ModelRates): JsonObject = buildJsonObject {
         put("input", rates.input)
         put("output", rates.output)
+        put("cache_read", rates.cacheRead)
+        rates.cacheWrite?.let { put("cache_write", it) }
+        rates.cacheWriteHourly?.let { put("cache_write_1h", it) }
         rates.longContext?.let { tier ->
             put(
                 "long_context",
@@ -161,6 +166,9 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("over_input_tokens", tier.overInputTokens)
                     put("input", tier.input)
                     put("output", tier.output)
+                    put("cache_read", tier.cacheRead)
+                    tier.cacheWrite?.let { put("cache_write", it) }
+                    tier.cacheWriteHourly?.let { put("cache_write_1h", it) }
                 },
             )
         }

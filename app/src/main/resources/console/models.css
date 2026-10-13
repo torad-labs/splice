@@ -233,3 +233,25 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 .cedit .cwho { display: flex; align-items: center; gap: .6rem; color: var(--text); font-weight: 500; }
 .cedit .chint { color: var(--text-mute); }
 .cedit .cfoot { display: flex; align-items: center; gap: .9rem; }
+
+/* a command's own fields, in four groups (gaps 461/462) */
+.form .gh { grid-column: 1 / -1; margin: 1rem 0 -.2rem; font: 600 1.15rem/1 var(--font-name); color: var(--text-mute); }
+.form .gh:first-of-type { margin-top: 0; }
+.field.num { flex: 0 0 9rem; font-family: var(--font-data); }
+.field.mono, .lbl.mono { font-family: var(--font-data); }
+.lbl.mono { font-size: .95rem; overflow-wrap: anywhere; }
+.hdr { display: flex; align-items: center; gap: .9rem; }
+.hdr .field { flex: 0 1 22rem; }
+.hdr .hname { flex: 0 0 22rem; font: 500 1.02rem/1 var(--font-data); color: var(--text); overflow-wrap: anywhere; }
+.hdr .icon { width: 2.2rem; height: 2.2rem; }
+.switch.multi { flex-wrap: wrap; }
+.form .ctl.wide { grid-column: 1 / -1; }
+.every.prices td { padding: .45rem 1.6rem; }
+.every.prices .field.price { width: 9rem; text-align: right; font-family: var(--font-data); }
+.every.prices .said { display: block; margin-top: .4rem; }
+/* the Save row: each change, its old value struck and its new one beside it */
+.changes { grid-column: 1 / -1; list-style: none; margin: .4rem 0 0; padding-left: 12.6rem; display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: .5rem 1.4rem; align-items: baseline; }
+.changes li { display: contents; }
+.changes .cname { font: 500 1.02rem/1.3 var(--font-name); color: var(--text-body); }
+.changes .was { font: 500 .95rem/1.3 var(--font-data); color: var(--text-mute); text-decoration: line-through; overflow-wrap: anywhere; }
+.changes .now { font: 500 .95rem/1.3 var(--font-data); color: var(--text); overflow-wrap: anywhere; }

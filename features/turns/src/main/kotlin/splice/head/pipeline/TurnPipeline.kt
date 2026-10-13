@@ -11,6 +11,7 @@ package splice.head.pipeline
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.CONN_RESET_OUTCOME
+import splice.core.turn.FailureCause
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -60,7 +61,7 @@ internal class TurnPipeline(
                 // event carries the identical raw body, so presenting only one of the two would
                 // have left most failures still quoting a vendor's JSON at the client.
                 val spoken = failures.spoken(outcome.type, outcome.message)
-                if (outcome.traits.deterministic) {
+                if (outcome.traits.deterministic || stalledAfterContent(outcome, emitter)) {
                     val ending = if (outcome.traits.providerReported) {
                         EXPLAINED_PREFIX + spoken
                     } else {
@@ -87,6 +88,11 @@ internal class TurnPipeline(
             is TurnOutcome.Success -> return streamFinish.finishSuccess(emitter, outcome, meta, elapsedMs)
         }
     }
+
+    /** A stall splice could not resume once the client had seen content: the client never retries after content, so
+     *  an error frame there reads only as a lost connection. It ends in words instead (splice-lead's ruling, Oct 12). */
+    private fun stalledAfterContent(outcome: TurnOutcome.Failure, emitter: TurnTerminal): Boolean =
+        outcome.cause == FailureCause.UPSTREAM_STALLED && emitter.contentShown
 }
 
 /** What a deterministic failure reads as on the client: the proxy speaking, marked as such. The

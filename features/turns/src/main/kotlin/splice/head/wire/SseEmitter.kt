@@ -196,6 +196,8 @@ internal class SseEmitter(
      *  ending cannot forget it, and the collect path never arrives because it has its own terminal
      *  ([CollectingTerminal]) whose envelope keeps the failure's REAL status — a buffered 429 stays
      *  429 and a buffered api_error stays 502, which is the shape its callers already assert. */
+    override val contentShown: Boolean get() = contentReached()
+
     override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
         val wireType = PreContentWireType.of(type, contentReached(), permanent)
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return

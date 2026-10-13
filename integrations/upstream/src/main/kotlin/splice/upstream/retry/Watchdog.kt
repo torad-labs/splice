@@ -45,6 +45,7 @@ import splice.upstream.Ticker
 import splice.upstream.WsPathPulse
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -141,6 +142,10 @@ public class TurnWatchdog(
 ) {
     private val firedRef = AtomicReference<WatchdogFired?>(null)
     private val heldRef = AtomicReference<WatchdogHeld?>(null)
+
+    /** The path of the round open now, which the progress cap asks before it ends the turn; null between rounds. */
+    private val roundPath = AtomicReference<PathLiveness?>(null)
+    private val capHeld = AtomicBoolean(false)
     private val startedAt = clock()
     private val progressLock = Any()
     private var progressedAt = startedAt
@@ -212,8 +217,8 @@ public class TurnWatchdog(
      * gpt-5.6-sol turns were reaped at exactly the 300 s first-output tier, with the socket's last
      * server ping 5-20 s old on every close line, and each re-POSTed cold from the client; the
      * model's own answers on that head take 300-750 s of silence before the first delta. Idle is a
-     * stall detector, not a budget (operator, DR-7): a held round is still walled by
-     * [launchTotalCap].
+     * stall detector, not a budget (operator, DR-7): a held round is walled by [launchTotalCap] only once its
+     * path dies too; while it lives, the client's own timeout decides.
      *
      * V4-125 — EVERY TRANSPORT PASSES A PULSE NOW, and this paragraph used to end by saying the SSE
      * path passed none and judged exactly as before. That was the defect: with no pulse the default
@@ -231,8 +236,9 @@ public class TurnWatchdog(
         target: Job,
         clientFrame: ClientFrameEmitted,
         path: PathLiveness = PathLiveness(),
-    ): Job =
-        scope.launch {
+    ): Job {
+        roundPath.set(path)
+        return scope.launch {
             while (isActive) {
                 // pollInterval() is coerced to 250ms..15s, so inWholeMilliseconds is the exact value
                 // delay(Duration) would have used (its <1ms coerceAtLeast(1) rounding is unreachable here).
@@ -253,20 +259,11 @@ public class TurnWatchdog(
                 // fold loop open the next — spending past the cap under a name that means "stop".
                 // One breach kind per poller, each cancelling the scope it actually owns.
                 if (idle >= idleLimit) {
-                    // V4-125: THE STALL TIER IS A HEAL, NOT A VERDICT, so the path pulse must NOT
-                    // gate it. A breach of [WatchdogBudget.stallReanchor] means "cancel this round
-                    // and resume it from the salvage" — a repair the client never sees — so it is
-                    // asked and answered without reference to whether the socket is alive. Letting
-                    // the pulse hold here would silently disable V4-116 on every transport that
-                    // reports a live path, which is precisely the regression this guard exists to
-                    // prevent (three MidStreamTearContinuesTest cases caught it on the SSE path).
-                    // [stallReanchor] is INFINITE when a head has not armed it, and then
-                    // min(streamIdle, INFINITE) is streamIdle, so this reads false and the tier that
-                    // fired is an ordinary idle one that the pulse does judge.
-                    val stallTier = seen &&
-                        budget.stallReanchor.inWholeMilliseconds <= budget.streamIdle.inWholeMilliseconds
+                    // Idle is a probe, never an error (splice-lead's ruling, Oct 12): every tier asks the path first, the
+                    // stall re-anchor tier included. A model thinking in silence on a live path is held; only a path that
+                    // cannot answer is reaped, and on the stall tier that reap is the re-anchor that resumes it.
                     val pingAgo = path.pingAgoMs()
-                    if (!stallTier && path.agrees(pingAgo, probeDispatcher)) {
+                    if (path.agrees(pingAgo, probeDispatcher)) {
                         hold(idle, idleLimit, pingAgo, seen, path.evidence)
                         continue
                     }
@@ -275,7 +272,8 @@ public class TurnWatchdog(
                     return@launch
                 }
             }
-        }
+        }.also { poller -> val _ = poller.invokeOnCompletion { roundPath.compareAndSet(path, null) } }
+    }
 
     /** Record the hold once and say so once; every later poll that holds is the same fact. */
     private fun hold(idleMs: Long, limitMs: Long, pingAgoMs: Long, seen: Boolean, evidence: PathEvidence) {
@@ -295,15 +293,30 @@ public class TurnWatchdog(
         // reported a heartbeat the SSE path does not have (V4-125). The SSE arm deliberately prints
         // NO age: the reading it holds on is "still open", which is not a dated event, and inventing
         // a number for it would be the same false precision in a new place.
-        val proof = when (evidence) {
-            PathEvidence.SERVER_PING -> "last server ping ${pingAgoMs / MS_PER_S}s ago"
-            PathEvidence.OPEN_CONNECTION -> "upstream connection open, no read error"
-        }
         log(
             "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
-                "($proof); holding the round, since the protocol-progress timeout " +
-                "(${budget.totalCap.inWholeSeconds}s) is its wall\n",
+                "(${proof(evidence, pingAgoMs)}); holding the round while the path lives\n",
         )
+    }
+
+    private fun proof(evidence: PathEvidence, pingAgoMs: Long): String = when (evidence) {
+        PathEvidence.SERVER_PING -> "last server ping ${pingAgoMs / MS_PER_S}s ago"
+        PathEvidence.OPEN_CONNECTION -> "upstream connection open, no read error"
+    }
+
+    /** Whether the open round's path is alive past the protocol-progress cap, so the cap holds and the client's own
+     *  timeout decides (splice-lead's ruling, Oct 12). No round open means no path to hold for: the cap stands. */
+    private suspend fun capHolds(): Boolean {
+        val path = roundPath.get() ?: return false
+        val pingAgo = path.pingAgoMs()
+        if (!path.agrees(pingAgo, probeDispatcher)) return false
+        if (capHeld.compareAndSet(false, true)) {
+            log(
+                "no protocol progress past the ${budget.totalCap.inWholeSeconds}s cap on a live path " +
+                    "(${proof(path.evidence, pingAgo)}); holding the turn, the client's own timeout decides\n",
+            )
+        }
+        return true
     }
 
     /** The final turn deadline, also armed while no stream is open. Only protocol progress
@@ -323,12 +336,17 @@ public class TurnWatchdog(
             while (isActive) {
                 // Same coercion floor (250ms) as launchIn, so this is delay(interval)'s exact value.
                 if (!ticker.awaitTick(interval.inWholeMilliseconds)) return@launch
+                if (!progressLapsed() || capHolds()) continue
                 if (progressExpired()) {
                     target.cancel()
                     return@launch
                 }
             }
         }
+
+    private fun progressLapsed(): Boolean = synchronized(progressLock) {
+        clock() - progressedAt >= budget.totalCap.inWholeMilliseconds
+    }
 
     /** Renewal and expiry share a lock: an observed event cannot race a stale clock sample. */
     private fun progressExpired(): Boolean = synchronized(progressLock) {
@@ -370,8 +388,8 @@ public const val MS_PER_S: Long = 1000L
  * V4-125: owns the question "should a breach HOLD the round rather than reap it?" so the watchdog asks
  * [agrees] and does not carry the probe's contract. The pulse defaults to never pinged; the evidence defaults
  * to [PathEvidence.SERVER_PING] because that is what the WebSocket path passes and what every caller meant
- * before it was named. The probe is asked ONLY when the pulse says the path is alive and only for a tier that is
- * a verdict rather than a heal; an absent probe leaves the old behaviour untouched.
+ * before it was named. The probe is asked ONLY when the pulse says the path is alive, on
+ * any tier, the stall re-anchor included (Oct 12); an absent probe leaves the old behaviour untouched.
  */
 public class PathLiveness(
     private val pulse: WsPathPulse = WsPathPulse { NEVER_PINGED_MS },
@@ -381,8 +399,8 @@ public class PathLiveness(
     internal fun pingAgoMs(): Long = pulse.lastPingAgoMs()
 
     /** Two questions in order, each a reason to stop asking: a path whose socket reading is stale is not alive,
-     *  and the probe must agree before the wait is extended. The probe costs a real connection, so the caller
-     *  never asks it on the stall tier, where its answer cannot change the outcome. */
+     *  and the probe must agree before the wait is extended. The probe costs a real connection, so it is
+     *  asked only once the pulse already reads alive. */
     internal suspend fun agrees(pingAgoMs: Long, probeDispatcher: CoroutineDispatcher): Boolean {
         if (pingAgoMs > PATH_PING_GRACE_MS) return false
         return probeAgrees(probeDispatcher)

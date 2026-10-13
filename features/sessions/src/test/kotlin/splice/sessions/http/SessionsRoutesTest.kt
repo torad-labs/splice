@@ -27,7 +27,7 @@ class SessionsRoutesTest {
             """{"pid":11,"sessionId":"s-11","name":"alpha","status":"busy","updatedAt":${now - 5_000},""" +
                 """"cwd":"/w/a","messagingSocketPath":"/run/user/1000/cc-socks/11.sock"}""",
         )
-        Files.writeString(dir.resolve("12.json"), """{"pid":12,"updatedAt":${now - 5_000}}""")
+        Files.writeString(dir.resolve("12.json"), """{"pid":12,"sessionId":"s-12","updatedAt":${now - 5_000}}""")
         val registry = SessionRegistry(
             sessionsDir = dir,
             routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Unknown },
@@ -41,7 +41,7 @@ class SessionsRoutesTest {
         assertEquals("live", alpha["availability"]?.jsonPrimitive?.content)
         assertEquals("uds:/run/user/1000/cc-socks/11.sock", alpha["address"]?.jsonPrimitive?.content)
         assertEquals("s-11", alpha["session_id"]?.jsonPrimitive?.content)
-        val bare = rows.first { it["pid"]?.jsonPrimitive?.content == "12" }
+        val bare = rows.first { it["session_id"]?.jsonPrimitive?.content == "s-12" }
         assertEquals("unknown head", bare["head"]?.jsonPrimitive?.content)
         assertEquals("gone", bare["availability"]?.jsonPrimitive?.content)
     }
@@ -129,7 +129,8 @@ class SessionsRoutesTest {
     @Test
     fun `route names head, direct and unknown while head keeps its old value`(@TempDir dir: Path) {
         listOf(21, 22, 23, 24).forEach { pid ->
-            Files.writeString(dir.resolve("$pid.json"), """{"pid":$pid,"updatedAt":${now - 5_000}}""")
+            val row = """{"pid":$pid,"sessionId":"s-$pid","updatedAt":${now - 5_000}}"""
+            Files.writeString(dir.resolve("$pid.json"), row)
         }
         val routes = mapOf(21L to SessionRoute.Head("codex"), 22L to SessionRoute.Direct, 24L to SessionRoute.Direct)
         val registry = SessionRegistry(
@@ -140,8 +141,8 @@ class SessionsRoutesTest {
         )
         val body = Json.parseToJsonElement(SessionsRoutes(registry, TestTranscripts()).sessionsJson()).jsonObject
         val byPid = body["sessions"]!!.jsonArray.map { it.jsonObject }
-            .associateBy { it["pid"]!!.jsonPrimitive.content }
-        fun field(pid: Int, key: String) = byPid.getValue("$pid")[key]?.jsonPrimitive?.content
+            .associateBy { it["session_id"]!!.jsonPrimitive.content }
+        fun field(pid: Int, key: String) = byPid.getValue("s-$pid")[key]?.jsonPrimitive?.content
 
         assertEquals("head", field(21, "route"))
         assertEquals("codex", field(21, "head"))

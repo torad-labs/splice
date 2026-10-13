@@ -45,9 +45,12 @@ const data = { heads: [], topo: null, models: [], local: [], projects: [], sessi
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
   effOpen: false, logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
-async function readAll() {
-  const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head"];
-  const [heads, topo, models, projects, sessions, claude] = await Promise.all(paths.map((p) => API.get(p)));
+/** Every read the page draws from. With [draw], the page draws as soon as the commands and their models answer, and
+ *  again as each slower read lands: the sessions listing took 4 s and more, doctor 3 s, and Models once sat blank 17 s
+ *  waiting on all of them in a row (walk on d0ec523b5). What has not landed reads Reading where it shows ([pending]). */
+async function readAll({ draw } = {}) {
+  const paths = ["/api/heads", "/api/topology", "/api/models", "/api/claude-head"];
+  const [heads, topo, models, claude] = await Promise.all(paths.map((p) => API.get(p)));
   if (!heads.ok || !topo.ok) {
     if (heads.status !== 0) console.warn(`models: /api/heads answered ${heads.status}`);
     data.err = heads.status === 0 ? "Not answering" : "Not read";
@@ -57,21 +60,27 @@ async function readAll() {
   data.heads = heads.body?.heads ?? [];
   data.topo = topo.body;
   data.models = models.body?.heads ?? [];
-  data.projects = projects.body?.projects ?? [];
-  data.sessions = sessions.body?.sessions ?? [];
   data.claude = claude.ok ? claude.body : null;
-  data.loaded = true;
-  const doctor = await API.get("/api/doctor");
-  data.doctor = doctor.ok ? doctor.body : null;
-  // what each local runtime says about its models, asked of the runtimes themselves (spec 9i)
-  const local = await API.get("/api/models/local");
-  if (!local.ok && local.status !== 0) console.warn(`models: /api/models/local answered ${local.status}`);
-  data.local = local.ok ? local.body?.providers ?? [] : [];
   KNOBS.st.cmds = data.heads.map((h) => h.key);
   KNOBS.st.commandOf = Object.fromEntries(data.heads.map((h) => [h.key, h.label || h.key]));
   KNOBS.st.providerOf = Object.fromEntries(data.heads.map((h) => [h.key, topology().heads?.[h.key]?.provider ?? ""]));
-  data.knobsErr = await KNOBS.load();
+  if (draw && !data.loaded) { data.pending = new Set(["sessions", "projects", "doctor", "local", "knobs"]); data.loaded = true; draw(); }
+  data.loaded = true;
+  const land = (what) => { data.pending?.delete(what); draw?.(); };
+  await Promise.all([
+    API.get("/api/sessions").then((r) => { data.sessions = r.body?.sessions ?? []; land("sessions"); }),
+    API.get("/api/projects").then((r) => { data.projects = r.body?.projects ?? []; land("projects"); }),
+    API.get("/api/doctor").then((r) => { data.doctor = r.ok ? r.body : null; land("doctor"); }),
+    // what each local runtime says about its models, asked of the runtimes themselves (spec 9i)
+    API.get("/api/models/local").then((r) => {
+      if (!r.ok && r.status !== 0) console.warn(`models: /api/models/local answered ${r.status}`);
+      data.local = r.ok ? r.body?.providers ?? [] : [];
+      land("local");
+    }),
+    KNOBS.load().then((err) => { data.knobsErr = err; land("knobs"); }),
+  ]);
 }
+const pending = (what) => !!data.pending?.has(what);
 
 // ---------- the commands: the daemon's heads joined to the topology file and the model roster ----------
 const topology = () => data.topo?.topology ?? {};
@@ -130,6 +139,7 @@ function stateOf(c) {
   // (the walk at 3828, Oct 13: four local heads read Ready with 8099-8102 closed)
   if (c.down) return { state: "runtime", word: "Not answering", fix: null };
   if (c.unread) return { state: "checking", word: "Checking runtime", fix: null };
+  if (!bad && pending("doctor")) return { state: "checking", word: "Reading" };
   if (!bad) return null;
   const auth = bad.id.startsWith("auth/"), keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
   const word = auth ? (keyed ? (refused ? "Credentials refused" : "No key") : "Signed out") : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
@@ -170,6 +180,7 @@ function look(c) {
   if (s?.state === "installation/wrapper") return { cls: "stalled", lamp: GL.relink, word: s.word };
   if (s) return { cls: "stalled", lamp: ICON.signout, word: s.word };
   if (c.running) return { cls: "working", lamp: ICON.trace, word: `${c.running} running` };
+  if (pending("sessions")) return { cls: "working", lamp: '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>', word: "Reading" };
   return { cls: "ready", lamp: "<i></i>", word: "Ready" };
 }
 const order = (cs) => [...cs.filter((c) => stateOf(c)), ...cs.filter((c) => !stateOf(c))];
@@ -294,9 +305,9 @@ function removeHtml(c) {
   if (rm?.failed) {
     const door = rm.failed.act === "reread" ? `<button class="act quiet" data-act="reread">Read again</button>`
       : rm.failed.act === "raw" ? `<button class="act quiet" data-act="rawopen">Raw log</button>` : "";
-    return `<span class="said limit">${esc(rm.failed.word)}</span>${door}${rm.failed.act === "reread" ? "" : `<button class="act quiet" data-act="arm">Remove</button>`}`;
+    return `<span class="said limit">${esc(rm.failed.word)}</span>${door}${rm.failed.act === "reread" ? "" : `<button class="act quiet risky" data-act="arm">Remove</button>`}`;
   }
-  return `<button class="act quiet" data-act="arm">Remove</button>`;
+  return `<button class="act quiet risky" data-act="arm">Remove</button>`;
 }
 async function armRemove(key) {
   ui.rm = { key, armed: true, info: null };
@@ -449,7 +460,7 @@ function paneHtml() {
     + runningHtml(c, d, st.own)
     + '<h3 class="gh">Instructions</h3>'
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
-    + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
+    + (data.knobsErr || pending("knobs") ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
     + saveRowHtml(c, st, saidHtml, restart) + "</section>";
   const q = ui.logq.trim().toLowerCase(), hit = (l) => !q || l.raw.toLowerCase().includes(q);
@@ -518,7 +529,10 @@ async function readLog(key) {
  *  one model, with its served ceiling when it has one, and a rule names every model whose id starts with its prefix.
  *  Each line says it in words, by the model's name where splice has one: a bare "k3 1M" read as nothing (walk, Oct 13). */
 function windowsRow(c) {
-  const name = (id) => c.models.find((m) => m.id === id)?.label ?? id;
+  // splice applies an extra window to the model whose id, less a tier suffix such as [1m], is the window's id
+  // (Topology.declaredWindowFor), so "k3" names Kimi K3 (1M), never the bare id beside a K3 256K row (walk, Oct 13)
+  const bare = (id) => id.replace(/\[[^\]]*\]$/, "");
+  const name = (id) => (c.models.find((m) => m.id === id) ?? c.models.find((m) => bare(m.id) === bare(id)))?.label ?? id;
   const extra = c.extraWindows.map((w) => `<span class="fig">${esc(name(w.id))}: ${big(w.context_window)} context window${w.max_context_window ? `, served up to ${big(w.max_context_window)}` : ""}</span>`);
   const rules = c.windowRules.map((w) => `<span class="fig">Every model whose id starts with <bdo dir="ltr">${esc(w.prefix)}</bdo>: ${big(w.context_window)} context window</span>`);
   if (!extra.length && !rules.length) return "";
@@ -616,8 +630,8 @@ function ownState(c, d) {
 }
 const bad = (ok, word) => (ok ? "" : `<span class="said limit">${word}</span>`);
 function whereHtml(c, d, s) {
-  return `<span class="lbl">Port</span><div class="ctl"><input class="field num${dirt(d.port !== fieldsOf(c).port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port">${bad(s.port, "Not a port")}</div>`
-    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono${dirt(d.prefix !== fieldsOf(c).prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}</div>`;
+  return `<span class="lbl">Port</span><div class="ctl"><input class="field num${dirt(d.port !== fieldsOf(c).port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port">${bad(s.port, "Not a port")}<span class="note">Where Claude Code reaches this command on this computer; each command needs its own</span></div>`
+    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono prefix${dirt(d.prefix !== fieldsOf(c).prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}<span class="note">Goes before each model's name in Claude Code's model picker, so this command's models never clash with another's</span></div>`;
 }
 // the names of what a command can share with your own Claude Code, by the item splice.toml spells (claude.share, isolate)
 const SHARE_NAME = { settings: "Settings", mcps: "MCP servers", skills: "Skills", hooks: "Hooks", agents: "Agents", commands: "Commands",
@@ -1021,7 +1035,7 @@ async function loadProject(id) {
 }
 function projectsHtml() {
   const ps = data.projects;
-  if (!ps.length) return `<div class="projects"><p class="none">No projects</p></div>`;
+  if (!ps.length) return `<div class="projects"><p class="none">${pending("projects") ? "Reading" : "No projects"}</p></div>`;
   const p = ps.find((x) => x.id === ui.proj) ?? ps[0];
   const cs = commandsOf();
   const c = cs.find((x) => x.key === ui.projCmd) ?? cs[0];
@@ -1451,15 +1465,22 @@ document.querySelector('.foot [data-act="theme"]')?.addEventListener("click", to
 
 async function init() {
   render();
-  await readAll();
-  const profiles = await API.get("/api/add/profiles");
-  data.profiles = (profiles.body?.profiles ?? []).filter((p) => p.name !== "nvidia");
-  ui.wide = sideBySide();
   const want = new URLSearchParams(location.search).get("cmd");
   const setting = new URLSearchParams(location.search).get("setting");
   if (setting) ui.effOpen = true;
-  if (want && cmdByKey(want)) openCmd(want);
-  else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
+  ui.wide = sideBySide();
+  // the command he asked for, or on a wide screen the first, opens at the first draw, not once every read has landed
+  let opened = false;
+  const openFirst = () => {
+    if (opened || !data.loaded) return;
+    opened = true;
+    if (want && cmdByKey(want)) openCmd(want);
+    else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
+  };
+  const profiles = API.get("/api/add/profiles").then((r) => { data.profiles = (r.body?.profiles ?? []).filter((p) => p.name !== "nvidia"); });
+  await readAll({ draw: () => { openFirst(); render(); } });
+  await profiles;
+  openFirst();
   render();
   if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
   if (setting) document.querySelector(`.everyset [data-row="${CSS.escape(setting)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" });

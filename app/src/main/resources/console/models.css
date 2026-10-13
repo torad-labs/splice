@@ -264,3 +264,9 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 /* a field whose value the Save row lists carries the command's colour edge, as a set picker does (hitstop) */
 .form .field.dirty { box-shadow: .16rem .16rem 0 var(--edge); }
 .form .unit { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+/* walk on d0ec523b5: a field whose name alone is cryptic says what it does beside it, and wraps under it when narrow */
+.ctl:has(> .note) { flex-wrap: wrap; row-gap: .4rem; }
+.ctl > .note { flex: 1 1 18rem; min-width: 0; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); }
+.field.prefix { flex: 0 1 20rem; min-width: 10rem; }
+/* Remove deletes the command, so it never looks like Stop or Restart beside it */
+.act.quiet.risky { color: var(--limit); border-color: var(--limit); }

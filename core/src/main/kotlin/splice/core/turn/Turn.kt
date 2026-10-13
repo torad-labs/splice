@@ -64,6 +64,9 @@ public data class TurnScope(
      *  instance only when the turn has both session and conversation identities (the cross-turn
      *  recap staircase, 2026-08-26); this default remains the state otherwise. */
     val summaryParts: SharedSummaryParts = SharedSummaryParts(),
+    /** The hash of the request's messages (MessagesHash) when it named a session, streaming or not: its perf row
+     *  carries it, so a re-send of a cut stream (Claude Code re-sends it with stream=false) links to the row it cut. */
+    val messagesHash: String? = null,
 )
 
 /** Tool-surface partition sizes for THIS turn's request; both null when deferral was not in play.

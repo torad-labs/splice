@@ -224,14 +224,13 @@ internal class TurnPreparation(
         val sessionId = arrival.sessionId
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
-        // session. Stamped here, once, when the provider left it null.
-        val prepared = if (fromProvider.meta.scope.sessionId == null && sessionId != null) {
-            fromProvider.copy(
-                meta = fromProvider.meta.copy(scope = fromProvider.meta.scope.copy(sessionId = sessionId)),
-            )
-        } else {
-            fromProvider
+        // session. Stamped here, once, when the provider left it null, with the messages' hash a
+        // session's row carries (V4-319's MessagesHash: without a session no re-send can be told apart).
+        val messagesHash = sessionId?.let { MessagesHash.of(parsed.raw) }
+        val scope = fromProvider.meta.scope.let {
+            it.copy(sessionId = it.sessionId ?: sessionId, messagesHash = messagesHash)
         }
+        val prepared = fromProvider.copy(meta = fromProvider.meta.copy(scope = scope))
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.
@@ -250,15 +249,11 @@ internal class TurnPreparation(
             built,
             parsed.typed.stream,
             arrival.inbound,
-            marked(parsed, sessionId),
+            // V4-319: what a stop of this turn marks. A collect is never listed, so only a stream carries it there.
+            messagesHash.takeIf { parsed.typed.stream },
             hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
         )
     }
-
-    /** V4-319: what a stop of this turn would mark, the hash of its messages. A streaming turn with a
-     *  session only: without a session no re-send can be told apart, and a collect is never listed. */
-    private fun marked(parsed: AnthropicTurnBody, sessionId: String?): String? =
-        if (parsed.typed.stream && sessionId != null) MessagesHash.of(parsed.raw) else null
 
     /** Stream-only, both halves: the detached drive lives in TurnStreamer.stream() and CollectTurn
      *  has no recording, so a non-stream compaction is served attached, as every turn was before

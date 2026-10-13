@@ -165,6 +165,7 @@ internal class TurnTelemetry(
                     turns = PerfTurnIds(trace = drive.trace?.turnId, request = drive.turnId),
                     sessionId = drive.meta.scope.sessionId,
                     responseMessageId = drive.emitter.responseMessageId,
+                    messagesHash = drive.meta.scope.messagesHash,
                     conversationKey = drive.meta.scope.conversationKey,
                 ),
             ),
@@ -278,6 +279,7 @@ internal class TurnTelemetry(
             transcript = PerfTranscriptIds(
                 turns = PerfTurnIds(trace = trace?.turnId),
                 sessionId = meta.scope.sessionId,
+                messagesHash = meta.scope.messagesHash,
             ),
         )
         val rowTs = perfStats.record(rowMeta, snap)

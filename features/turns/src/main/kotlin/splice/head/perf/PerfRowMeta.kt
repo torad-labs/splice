@@ -31,6 +31,7 @@ public data class PerfRowMeta(
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
         transcript.sessionId?.let { into.put("session_id", it) }
         transcript.responseMessageId?.let { into.put("response_message_id", it) }
+        transcript.messagesHash?.let { into.put("messages_hash", it) }
         transcript.turns.trace?.let { into.put("turn", it) }
         transcript.turns.request?.let { into.put("turn_id", it) }
         // V4-444: whether a capture was kept for this turn, said OUTRIGHT on every row. A null `turn` already
@@ -79,4 +80,7 @@ public data class PerfTranscriptIds(
     val responseMessageId: String? = null,
     /** Same stable first-prompt key the provider uses, only for in-memory preflight measurements. */
     val conversationKey: String? = null,
+    /** The hash of the request's messages, on a request that named a session: Requests links a cut turn's row to
+     *  the re-send of the same messages in the same session. */
+    val messagesHash: String? = null,
 )

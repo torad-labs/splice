@@ -71,7 +71,7 @@ private class CommandRegistration(val usage: String, private val factory: Comman
 
 private val verbs: Map<String, CommandRegistration> = mapOf(
     "doctor" to CommandRegistration(
-        "[--json [--with-logs] [--out FILE]]",
+        "[--live] [--json [--with-logs] [--out FILE]]",
         CommandFactory { a -> Command.Doctor(a.drop(1)) },
     ),
     "version" to CommandRegistration("", CommandFactory.Alone(Command.Version)),

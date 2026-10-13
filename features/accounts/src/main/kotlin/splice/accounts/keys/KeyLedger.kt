@@ -1,8 +1,8 @@
 // NEW: Oct 10, 2026 — console BUILD row "a key is its own account" (Marcos, Oct 8; the date from fin; Replaced from
 // hitstop, Oct 9). Each key variable keeps the keys splice has seen under it, by fingerprint, with the time splice first
 // saw each one. The last is the key in use; the ones before it were replaced and keep their own date, so a rotated key
-// reads as a new account and the old one stays on the page marked Replaced. The time is when splice first saw the key,
-// not when it was stored: a key from the environment or a file was never stored by splice.
+// stays on its card and the keys it replaced fold into that card's Replaced line. The time is when splice first saw
+// the key, not when it was stored: a key from the environment or a file was never stored by splice.
 //
 // The ledger holds fingerprints and times only, never a key. It sits beside the key store (key-ledger.json, 0600).
 package splice.accounts.keys

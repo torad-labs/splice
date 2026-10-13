@@ -122,6 +122,9 @@ public data class PerfTranscriptLink(
     val sessionId: String? = null,
     /** The response id the client recorded in its local transcript. */
     val responseMessageId: String? = null,
+    /** The hash of the request's messages (LiveTurns' MessagesHash): a request splice cut when it restarted and the
+     *  client's re-send of it carry the same one in the same session, which is how Requests links the two. */
+    val messagesHash: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

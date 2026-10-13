@@ -336,6 +336,8 @@ public class PerfRoutes(
         put("turn", row.turn)
         put("turn_id", row.turnId)
         put("session_id", row.transcript.sessionId)
+        // Requests links a request splice cut on a restart to the client's re-send: same session, same messages
+        put("messages_hash", row.transcript.messagesHash)
         // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson), and the
         // same classification the window's counters are folded by says why a row has no figure: null
         // cost_reason exactly where cost_usd is a number, so the console never has to guess which it is.

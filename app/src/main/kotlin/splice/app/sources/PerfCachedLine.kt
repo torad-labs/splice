@@ -58,6 +58,7 @@ internal data class PerfCachedLine(
                 value.facts.session,
                 value.transcript.sessionId,
                 value.transcript.responseMessageId,
+                value.transcript.messagesHash,
                 value.facts.account,
                 value.turn,
                 value.turnId,

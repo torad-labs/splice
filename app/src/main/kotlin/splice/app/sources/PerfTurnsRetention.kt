@@ -12,7 +12,7 @@ internal class PerfTurnsRetention : PerfLineKeep {
             shared
         }
         // Request and trace identities are not interned: one-off values cannot crowd repeated descriptions out.
-        listOf(row.turn, row.turnId, row.transcript.responseMessageId).forEach {
+        listOf(row.turn, row.turnId, row.transcript.responseMessageId, row.transcript.messagesHash).forEach {
             if (it != null) textBytes += PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES
         }
         return line.copy(

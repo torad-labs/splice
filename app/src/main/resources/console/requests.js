@@ -400,7 +400,7 @@ async function readRows(held = MAX_HELD) {
     if (answer.truncated) capped = true;
     for (const row of answer.rows || []) rows.push(mapRow(head, row));
   });
-  state.rows = linkCuts(rows);
+  state.rows = linkRetries(linkCuts(rows));
   state.matched = matched;
   state.capped = capped;
   state.order = priced ? "price" : "new";
@@ -452,7 +452,7 @@ function mapRow(head, row) {
   return {
     id: `${head.key}:${row.turn || row.turn_id || row.ts}`, head: head.key, cmd: head.command, turn: row.turn ?? null,
     provider: state.providerOf[head.key] ?? null,
-    ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null,
+    ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null, hash: row.messages_hash ?? null,
     model: modelName(state.modelLabel, row.model), modelId: row.model ?? null,
     account: row.account ?? null, acctLabel: row.account_label ?? null, compact: row.compact === true,
     attempts: row.attempts ?? 0, retries: row.retries ?? 0,
@@ -513,6 +513,20 @@ function linkCuts(rows) {
       }
       waiting = [];
     }
+  }
+  return rows;
+}
+/** A request splice cut when it restarted and the client's re-send of it are one request to the person reading the list:
+ *  the re-send carries the same messages in the same session (messages_hash, the match LiveTurns makes for a stop). The
+ *  cut row names its re-send and the re-send names the cut, each only where the other is in the loaded list, as linkCuts
+ *  does: a row is never pointed at by a guess (fin, Oct 11). retryId: the re-send's row. retryOf: the cut row. */
+function linkRetries(rows) {
+  for (const r of rows) { r.retryId = null; r.retryOf = null; }
+  const later = [...rows].filter((r) => r.sid && r.hash).sort((x, y) => x.ts - y.ts);
+  for (const [i, cut] of later.entries()) {
+    if (cut.outcome !== "error:restarted") continue;
+    const again = later.slice(i + 1).find((r) => r.head === cut.head && r.sid === cut.sid && r.hash === cut.hash && !r.retryOf);
+    if (again) { cut.retryId = again.id; again.retryOf = cut.id; }
   }
   return rows;
 }
@@ -713,12 +727,15 @@ function rowHtml(r) {
   const noReading = r.outcome === "ok" && r.in == null && r.out == null
     ? (r.countedOn ? `<button class="tok quiet door" data-open="${esc(r.countedOn)}">Counted on the next request</button>` : r.counted ? `<span class="tok quiet">Counted on the next request</span>` : `<span class="tok quiet">No usage reported</span>`)
     : "";
+  // the request splice cut when it restarted and the client's re-send of it, each a door to the other (linkRetries)
+  const retry = r.retryId ? `<button class="tok quiet door" data-open="${esc(r.retryId)}">Sent again after the restart</button>`
+    : r.retryOf ? `<button class="tok quiet door" data-open="${esc(r.retryOf)}">Resent after splice restarted</button>` : "";
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}</div>${match}</article>`;
+    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${retry}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and

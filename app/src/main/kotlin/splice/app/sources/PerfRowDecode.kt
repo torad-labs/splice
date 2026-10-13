@@ -77,6 +77,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var session: String? = null
         private var sessionId: String? = null
         private var response: String? = null
+        private var messagesHash: String? = null
         private var account: String? = null
         private var turn: String? = null
         private var turnId: String? = null
@@ -109,6 +110,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 // V4-444: the capture flag and the upstream's own failure words, read like the facts above them.
                 "capture" -> captured = text(parser)?.toBooleanStrictOrNull()
                 "provider_message" -> providerMessage = text(parser)
+                "messages_hash" -> messagesHash = text(parser)
                 PerfKeys.ASYNC_IO_DROPS -> drops = text(parser)?.toLongOrNull()
             }
         }
@@ -130,7 +132,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                     captured = captured,
                     providerMessage = providerMessage,
                 ),
-                transcript = PerfTranscriptLink(sessionId = sessionId, responseMessageId = response),
+                transcript = PerfTranscriptLink(sessionId, response, messagesHash),
                 turns = PerfTurnIds(trace = turn, request = turnId),
             )
         }

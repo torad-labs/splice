@@ -118,8 +118,8 @@ public class SessionsRoutes(
      *  own proved login and its turn count (SessionRowFacts, which says why they travel as one). */
     private val facts: SessionRowFacts = SessionRowFacts(),
 ) {
-    /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
-    public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
+    /** What Settings > Your data lists and deletes of the activity stores. */
+    public val edgeRoutes: ActivityRoutes = ActivityRoutes(activity)
 
     /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
     private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()

@@ -1,12 +1,7 @@
-// NEW: V4-444 — edge resolution and transcript hand-off projection, separated from HTTP routes.
+// NEW: V4-444 — how a stored edge names its recipient, and the text a hand-off carried, for the team readers.
 package splice.sessions.http
 
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import splice.sessions.activity.EdgeWanted
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRecord
 import splice.sessions.transcript.SentTexts
@@ -22,64 +17,6 @@ internal class Addresses(records: List<SessionRecord>) {
     fun reported(edge: MessageEdge): MessageEdge =
         edge.toSession?.let(ofSession::get)?.let { edge.copy(to = it) } ?: edge
 }
-
-/** The edges that touch [sessions], by their ids and by the addresses a legacy edge names: the filter a scan of the day files
- *  keeps. It is the rule [EdgeIndex.edgesOf] files an edge under, so what a scan keeps is what the index then shows. */
-internal class EdgeInterest(private val sessions: Set<String>, private val addresses: Set<String>) : EdgeWanted {
-    override fun wants(edge: MessageEdge): Boolean = edge.from in sessions ||
-        edge.toSession in sessions ||
-        (edge.toSession == null && edge.to in addresses)
-}
-
-/** The edge store read once, each edge as [Addresses.reported] against the registry. */
-internal class EdgeIndex(edges: List<MessageEdge>, records: List<SessionRecord>) {
-    private val reported = Addresses(records).let { addresses -> edges.map(addresses::reported) }
-
-    /** Each registry session's head, by session id: the tree its transcript is read from first. */
-    private val headOf: Map<String, String?> = records
-        .mapNotNull { record -> record.sessionId?.let { id -> id to record.head } }
-        .toMap()
-
-    /** The edges [sessionId] sent or received, oldest first, each with its direction. With [texts], each
-     *  also carries the text its sender handed off ([HandedText]), one read per sender for its own calls;
-     *  the board passes none, since it would read every session's transcript on each poll. */
-    fun edgesOf(sessionId: String, address: String?, texts: SentTextSource? = null): JsonArray {
-        val mine = mine(sessionId, address)
-        val found = texts?.let { source ->
-            mine.groupBy { it.first.from }
-                .mapValues { (sender, sent) -> source.read(sender, headOf[sender], sent.map { it.first.id }.toSet()) }
-        }
-        return buildJsonArray {
-            mine.forEach { (edge, direction) ->
-                add(
-                    buildJsonObject {
-                        put("from", edge.from)
-                        put("to", edge.to)
-                        put("at", edge.at)
-                        put("direction", direction)
-                        if (found != null) HandedText.put(this, edge.id, found[edge.from])
-                    },
-                )
-            }
-        }
-    }
-
-    /** A session's own send is `out` even when it addressed itself: the send is the observed fact. A
-     *  name's edge is `in` for the session stored with it alone, even where that session's address has
-     *  since passed to another (a reused pid's socket). */
-    private fun mine(sessionId: String, address: String?): List<Pair<MessageEdge, String>> =
-        reported.mapNotNull { edge ->
-            when {
-                edge.from == sessionId -> edge to OUT
-                edge.toSession == sessionId -> edge to IN
-                edge.toSession == null && address != null && edge.to == address -> edge to IN
-                else -> null
-            }
-        }
-}
-
-private const val OUT = "out"
-private const val IN = "in"
 
 /** V4-314: the text a hand-off carried, as every edge reader reports it (a team's chat, a session's
  *  edges): the redacted text the sender's transcript holds for the call, or why there is none. A text

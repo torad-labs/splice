@@ -19,8 +19,8 @@
 //   account.switch  the pool's switch, reported beside the perf row that carries the new account.
 //   session.change  derived HERE from turn.start — see [HeadPublisher.turnStarted].
 //   message.edge    V4-130: the SendMessage tool_use a head observed on the wire (MessageEdges).
-//                   Published AND recorded in the edges store, so the per-session edges route and
-//                   the live stream carry the same facts.
+//                   Published AND recorded in the edges store, so a team's chat and the live
+//                   stream carry the same facts.
 //
 // V4-130 STORES: [ConsoleEventPublisher.stores] holds the edges and activity-label stores. Null (tests,
 // tools) means the bus still carries every family and nothing is written to disk; ControlPlane opens

@@ -82,7 +82,7 @@ public class ConsolePorts {
     public var compaction: CompactionInstructions? = null
 
     /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
-     *  after construction like [events]. Null answers the two edges routes with a named 503. */
+     *  after construction like [events]. Null answers the kept-store and team-day routes with a named 503. */
     public var activity: ActivityStores? = null
 
     /** V4-131: the daemon's team store, assigned by ControlPlane after construction like [activity].

@@ -115,7 +115,6 @@ internal class TeamsMount(
         route.get("/api/teams/{id}/slots/{slot}/screen") {
             guard.guarded(call) { screen.offer(id(call), slot(call)).send(call) }
         }
-        route.get("/api/teams/{id}/edges") { guard.guarded(call) { teams.reads.edges(id(call)).send(call) } }
         // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.
         route.get("/api/teams/{id}/chat") {
             guard.guarded(call) {

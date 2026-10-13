@@ -108,7 +108,6 @@ class TeamsRoutesWiringTest {
                 Triple(HttpMethod.Put, "/api/teams/$id", team),
                 Triple(HttpMethod.Put, "/api/teams/$id/sessions", """{"bindings":{"b1":"$BUILDER"}}"""),
                 Triple(HttpMethod.Put, "/api/teams/$id/slots/b1/instructions", """{"instructions":"be terse"}"""),
-                Triple(HttpMethod.Get, "/api/teams/$id/edges", null),
                 Triple(HttpMethod.Get, "/api/teams/$id/chat?day=2026-09-18", null),
                 Triple(HttpMethod.Get, "/api/teams/$id/activity?day=2026-09-18", null),
                 Triple(HttpMethod.Get, "/api/teams/$id/economics", null),

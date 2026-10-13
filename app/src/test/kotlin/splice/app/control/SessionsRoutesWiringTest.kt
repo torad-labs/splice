@@ -1,11 +1,5 @@
-// NEW: V4-130 — the three session routes answer THROUGH A REAL ControlServer, over HTTP with the mgmt
-// key. SessionsConsoleRoutesTest proves the payloads on SessionsRoutes directly; this file proves the
-// lines in ControlServer that route to it and the `activity` property ControlPlane assigns, which no
-// other test reaches: delete a routing line and its route answers 404 here, by name.
-//
-// UNWIRED IS PROVEN, NOT ASSERTED. With `activity` left null the two edges routes answer 503 with the
-// named EDGES_UNWIRED body, never a 500 or a 200 with an empty list that a console would render as
-// "this session has no edges" forever; the transcript route needs no stores and still answers.
+// NEW: V4-130 — the session routes answer THROUGH A REAL ControlServer, over HTTP with the mgmt key: the
+// transcript route is routed, and the sessions listing serves its rows with or without the activity stores.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -30,10 +24,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
-import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import java.net.Socket
@@ -46,7 +38,6 @@ private const val TWO = "e5e5e5e5-0000-4000-8000-000000000005"
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 20L
 private const val CLIENT_VERSION = "2.1.289"
-private const val UNWIRED = "the activity stores are not wired into this control plane"
 
 class SessionsRoutesWiringTest {
 
@@ -106,35 +97,9 @@ class SessionsRoutesWiringTest {
     }
 
     @Test
-    fun `the three session routes are routed and answer their payloads over the wire`() {
+    fun `the transcript route is routed and answers over the wire`() {
         val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { SESSIONS_AT })
-        stores.edges.record(MessageEdge(ONE, "uds:/run/2.sock", SESSIONS_AT, "toolu_1"))
-        assertTrue(AsyncFileIo.drain(), "the file lane drained")
-        serve(stores) { get, bare ->
-            val board = get("/api/sessions/edges")
-            assertEquals(200, board.status.value, board.bodyAsText())
-            val edge = """{"from":"$ONE","to":"uds:/run/2.sock","at":$SESSIONS_AT"""
-            assertEquals(
-                json(
-                    """{"state":"on","sessions":{"$ONE":[$edge,"direction":"out"}],"$TWO":[$edge,""" +
-                        """"direction":"in"}]}}""",
-                ),
-                json(board.bodyAsText()),
-            )
-            val two = get("/api/sessions/$TWO/edges")
-            assertEquals(200, two.status.value, two.bodyAsText())
-            // V4-314: the edge carries its sender's text. No test transcript exists, so it says why
-            // in a path-free sentence; the searched trees stay on this machine.
-            val handed = json(two.bodyAsText())["edges"]!!.jsonArray.single().jsonObject
-            val reason = handed["missing_reason"]!!.jsonPrimitive.content
-            assertEquals(
-                json("""$edge,"direction":"in","text":null,"missing_reason":"$reason"}"""),
-                handed,
-            )
-            assertEquals("The sender transcript is no longer on this machine.", reason)
-            assertTrue('/' !in reason, "the missing-text reason must carry no absolute path: $reason")
-            val anonymous = bare("/api/sessions/$TWO/edges")
-            assertEquals(401, anonymous.status.value, "an edge's text is read with the mgmt key only")
+        serve(stores) { get, _ ->
             // The transcript route is reached. A bad cursor is refused before any tree is opened, so
             // this proves the routing without reading the test JVM's own ~/.claude.
             val refused = get("/api/sessions/$ONE/transcript?cursor=bogus&limit=5")
@@ -166,13 +131,8 @@ class SessionsRoutesWiringTest {
     }
 
     @Test
-    fun `unwired stores answer both edges routes with the named 503, and the sessions rows still serve`() {
+    fun `without stores the sessions rows still serve, with no edges summary`() {
         serve(null) { get, _ ->
-            for (path in listOf("/api/sessions/edges", "/api/sessions/$ONE/edges")) {
-                val reply = get(path)
-                assertEquals(503, reply.status.value, "$path: ${reply.bodyAsText()}")
-                assertEquals(json("""{"error":"$UNWIRED"}"""), json(reply.bodyAsText()), path)
-            }
             val rows = get("/api/sessions")
             assertEquals(200, rows.status.value)
             val body = rows.bodyAsText()

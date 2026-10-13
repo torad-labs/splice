@@ -31,7 +31,7 @@ class MessageEdgesSwitchRoutesTest {
         Json.parseToJsonElement(body).jsonObject.getValue(name).jsonPrimitive.content
 
     @Test
-    fun `off writes no edges but reports off on every session and team reader`(@TempDir root: Path) {
+    fun `off writes no edges and the team chat reports off`(@TempDir root: Path) {
         val rig = TeamRig(root)
         val team = rig.team()
         val stores = stores(root, messageEdges = false)
@@ -41,14 +41,9 @@ class MessageEdgesSwitchRoutesTest {
 
         val source = ActivitySource { stores }
         val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }
-        val edges = ActivityRoutes(rig.registry, source, text)
         val teams = TeamReads(TeamSource { rig.store }, rig.registry, source, text, WallClock { AT })
         val json = Json
         fun state(body: String) = json.parseToJsonElement(body).jsonObject.getValue("state").jsonPrimitive.content
-        assertEquals("off", state(edges.edges(LEAD).body))
-        assertEquals("off", state(edges.boardEdges().body))
-        assertEquals("edges off", field(edges.boardEdges().body, "reason"))
-        assertEquals("off", state(teams.edges(team.id).body))
         assertEquals("off", state(teams.chat(team.id, null).body))
     }
 
@@ -68,7 +63,7 @@ class MessageEdgesSwitchRoutesTest {
 
         val source = ActivitySource { stores }
         val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }
-        val edges = ActivityRoutes(rig.registry, source, text)
+        val edges = ActivityRoutes(source)
         val teams = TeamReads(TeamSource { rig.store }, rig.registry, source, text, WallClock { AT })
         assertEquals("1", field(edges.kept(KeptActivity.EDGES).body, "rows"))
         // the size the store costs on disk, beside what it holds: Settings > Your data reports both, and a row count
@@ -82,8 +77,6 @@ class MessageEdgesSwitchRoutesTest {
         val deletedEdges = edges.deleteKept(KeptActivity.EDGES)
         assertEquals(HttpStatusCode.OK, deletedEdges.status, deletedEdges.body)
         assertEquals("1", field(deletedEdges.body, "rows"))
-        assertEquals("deleted", field(edges.edges(LEAD).body, "state"))
-        assertEquals("edges deleted", field(edges.edges(LEAD).body, "reason"))
         assertEquals("deleted", field(teams.chat(team.id, null).body, "state"))
         assertEquals("0", field(edges.kept(KeptActivity.EDGES).body, "rows"))
         assertEquals("0", field(edges.kept(KeptActivity.EDGES).body, "bytes"), "a deleted store costs nothing")
@@ -96,37 +89,31 @@ class MessageEdgesSwitchRoutesTest {
 
         stores.edges.record(MessageEdge(LEAD, BUILDER, AT, "toolu_after"))
         assertTrue(AsyncFileIo.drain())
-        assertEquals("on", field(edges.edges(LEAD).body, "state"))
         assertEquals("1", field(edges.kept(KeptActivity.EDGES).body, "rows"))
     }
 
     @Test
     fun `delete clears retained edges with the switch off without turning it on`(@TempDir root: Path) {
-        val rig = TeamRig(root)
         val before = stores(root)
         before.edges.record(MessageEdge(LEAD, BUILDER, AT, "toolu_before"))
         assertTrue(AsyncFileIo.drain())
         val off = stores(root, messageEdges = false)
-        val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }
-        val routes = ActivityRoutes(rig.registry, ActivitySource { off }, text)
+        val routes = ActivityRoutes(ActivitySource { off })
         assertEquals("off", field(routes.kept(KeptActivity.EDGES).body, "state"))
         assertEquals("1", field(routes.kept(KeptActivity.EDGES).body, "rows"))
         assertEquals("1", field(routes.deleteKept(KeptActivity.EDGES).body, "rows"))
         off.edges.record(MessageEdge(LEAD, BUILDER, AT, "toolu_ignored"))
         assertTrue(AsyncFileIo.drain())
-        assertEquals("deleted", field(routes.edges(LEAD).body, "state"))
         assertEquals("0", field(routes.kept(KeptActivity.EDGES).body, "rows"))
     }
 
     @Test
     fun `label delete works after all heads stop storing labels`(@TempDir root: Path) {
-        val rig = TeamRig(root)
         val active = stores(root)
         active.activity.label(LEAD, "claude", ActivityAction("Reading README.md", "Read", "README.md"), AT)
         assertTrue(AsyncFileIo.drain())
         val off = ActivityStores(root.resolve("activity"), 7, "", WallClock { AT })
-        val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }
-        val routes = ActivityRoutes(rig.registry, ActivitySource { off }, text)
+        val routes = ActivityRoutes(ActivitySource { off })
         assertEquals("off", field(routes.kept(KeptActivity.LABELS).body, "state"))
         assertEquals("1", field(routes.deleteKept(KeptActivity.LABELS).body, "rows"))
         assertEquals("deleted", field(routes.kept(KeptActivity.LABELS).body, "state"))

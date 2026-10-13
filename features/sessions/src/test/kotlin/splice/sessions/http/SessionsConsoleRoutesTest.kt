@@ -1,5 +1,4 @@
-// NEW: V4-130 — the console's session reads: repo, team and the edges summary on every /api/sessions
-// row, the per-session and board-wide edges routes with direction derived per asked session, and the
+// NEW: V4-130 — the console's session reads: repo and team on every /api/sessions row, and the
 // transcript route resolving a session's head to its own tree through the registry. Every payload is
 // asserted as the whole JSON object the console receives, so a key that drifts fails by name.
 package splice.sessions.http
@@ -101,143 +100,17 @@ class SessionsConsoleRoutesTest {
         rows.values.forEach { assertEquals("null", it["team"].toString(), "team is null until V4-131") }
     }
 
-    @Test
-    fun `edges report a stored name at its session's address and take their direction from the asked session`() {
-        val stores = stores()
-        val routes = SessionsRoutes(
-            registry(),
-            TestTranscripts(),
-            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
-            activity = ActivitySource { stores },
-        )
-        val alpha = routes.edgeRoutes.edges(ALPHA)
-        assertEquals(HttpStatusCode.OK, alpha.status)
-        assertEquals(
-            json(
-                """{"session_id":"$ALPHA","state":"on","edges":[""" +
-                    """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out",${unread()}},""" +
-                    """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",${unread()}}]}""",
-            ),
-            json(alpha.body),
-        )
-        val board = json(routes.edgeRoutes.boardEdges().body)["sessions"]!!.jsonObject
-        assertEquals(setOf(ALPHA, BETA, GAMMA), board.keys, "every registry session, empty arrays included")
-        assertEquals(
-            listOf("out nobody"),
-            board.getValue(GAMMA).jsonArray.map {
-                "${it.jsonObject["direction"]!!.jsonPrimitive.content} ${it.jsonObject["to"]!!.jsonPrimitive.content}"
-            },
-            "a name no session held when it was stored is reported verbatim and received by nobody",
-        )
-    }
-
-    @Test
-    fun `a name is received by the session that held it when stored, never by whoever holds it now`() {
-        // Alpha holds "lead" now. Beta held it when gamma's first call was stored; the second is a row
-        // from before names were stored with their session, and is nobody's.
-        val stores = ActivityStores(tmp.resolve("activity"), 90, "*", WallClock { NOW })
-        stores.edges.record(MessageEdge(GAMMA, "lead", NOW - 5, "toolu_4", BETA))
-        stores.edges.record(MessageEdge(GAMMA, "lead", NOW - 4, "toolu_5"))
-        assertTrue(AsyncFileIo.drain(), "the file lane drained")
-        val routes = SessionsRoutes(
-            registry(),
-            TestTranscripts(),
-            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
-            activity = ActivitySource { stores },
-        )
-        assertEquals(
-            json(
-                """{"session_id":"$BETA","state":"on","edges":[""" +
-                    """{"from":"$GAMMA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"in",${unread()}}]}""",
-            ),
-            json(routes.edgeRoutes.edges(BETA).body),
-        )
-    }
-
-    @Test
-    fun `a session's edges carry the text each sender handed off, or say why there is none`() {
-        // V4-314: the same read team chat makes (TeamsReads.chat), once per sender, for its own calls.
-        // Alpha calls twice, and its transcript holds only the first: the second names the file read.
-        // Each sender's read starts at its own head's tree: alpha's codex, then the vanilla tree.
-        val stores = stores()
-        stores.edges.record(MessageEdge(ALPHA, "uds:/run/b.sock", NOW - 5, "toolu_9"))
-        assertTrue(AsyncFileIo.drain(), "the file lane drained")
-        val asked = mutableListOf<String>()
-        val routes = SessionsRoutes(
-            registry(),
-            handedTexts(asked),
-            roots = TranscriptRoots(mapOf("codex" to head(tmp.resolve("codex"))), vanilla = tmp.resolve(".claude")),
-            activity = ActivitySource { stores },
-        )
-        val edges = json(routes.edgeRoutes.edges(ALPHA).body)["edges"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(
-            json(
-                """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out",""" +
-                    """"text":"take the plan","missing_reason":null}""",
-            ),
-            edges[0],
-        )
-        assertEquals(
-            json(
-                """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",""" +
-                    """"text":null,""" +
-                    """"missing_reason":"The sender transcript is no longer on this machine."}""",
-            ),
-            edges[1],
-        )
-        assertEquals(
-            json(
-                """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"out",""" +
-                    """"text":null,""" +
-                    """"missing_reason":"The message is not in the sender transcript."}""",
-            ),
-            edges[2],
-        )
-        assertEquals(3, edges.size)
-        for (edge in edges.drop(1)) {
-            assertFalse(edge.getValue("missing_reason").jsonPrimitive.content.contains("/t"))
-        }
-        assertEquals(
-            listOf("$ALPHA codex [toolu_1, toolu_9]", "$BETA .claude [toolu_2]"),
-            asked.sorted(),
-            "one read per sender, from its own head's tree first",
-        )
-        asked.clear()
-        routes.edgeRoutes.boardEdges()
-        assertEquals(emptyList<String>(), asked, "the board reads no transcript: it would read them all per poll")
-    }
-
-    /** Alpha's transcript holds its toolu_1 alone, and no other sender has one. Each read is logged in
-     *  [asked] with the tree it started at. */
-    private fun handedTexts(asked: MutableList<String>): TestTranscripts =
-        TestTranscripts(sends = { session, roots, ids ->
-            asked += "$session ${roots.first().fileName} ${ids.sorted()}"
-            if (session == ALPHA) {
-                SentTexts("/t/alpha.jsonl", mapOf("toolu_1" to "take the plan"), ids - "toolu_1", listOf("/t"))
-            } else {
-                SentTexts(null, emptyMap(), ids, listOf("/t"))
-            }
-        })
-
-    /** An edge's text keys when its sender has no transcript: these tests give no head a tree, so the
-     *  vanilla tree is the only one searched (V4-314). */
-    private fun unread(): String =
-        """"text":null,""" +
-            """"missing_reason":"The sender transcript is no longer on this machine.""""
-
     private fun rowsOf(routes: SessionsRoutes): Map<String, JsonObject> =
         json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }
             .associateBy { it["session_id"]!!.jsonPrimitive.content }
 
     @Test
-    fun `unwired stores answer the edges routes with a named 503 and leave the row summary off`() {
+    fun `unwired stores leave the row summary off`() {
         val routes = SessionsRoutes(
             registry(),
             TestTranscripts(),
             roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
         )
-        assertEquals(HttpStatusCode.ServiceUnavailable, routes.edgeRoutes.edges(ALPHA).status)
-        assertEquals(HttpStatusCode.ServiceUnavailable, routes.edgeRoutes.boardEdges().status)
         val rows = json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }
         rows.forEach { assertFalse(it.containsKey("edges"), "zero sends nobody watched is not a count") }
     }

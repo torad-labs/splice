@@ -116,13 +116,6 @@ class TeamsSubagentTrafficTest {
         assertEquals(setOf("uds:/run/1.sock", "uds:/run/2.sock"), targets, "no code-review, no main")
     }
 
-    @Test
-    fun `the run's edges route carries no subagent traffic either`() {
-        val (routes, id) = routes()
-        val directions = rows(routes.reads.edges(id).body, "edges").map { text(it, "direction") }
-        assertEquals(List(13) { "internal" }, directions)
-    }
-
     private fun rows(body: String, array: String): List<JsonObject> =
         Json.parseToJsonElement(body).jsonObject.getValue(array).jsonArray.map { it.jsonObject }
 

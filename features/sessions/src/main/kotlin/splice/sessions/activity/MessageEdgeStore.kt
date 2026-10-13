@@ -102,7 +102,6 @@ public class MessageEdgeStore(
     maxCacheBytes: Long = EDGE_CACHE_BYTES,
 ) {
     private val cache = MessageEdgeCache(days, files, decode, heap, maxCacheBytes)
-    private val scans = MessageEdgeScan(days, files, decode, heap, maxCacheBytes)
 
     /** Whether a message is saved now; asked at every write. */
     public val storing: Boolean get() = stored.on()
@@ -160,8 +159,4 @@ public class MessageEdgeStore(
 
     /** Every retained edge, oldest first, one per tool_use id (the earliest observation wins). With [since], only the days written at or after that instant are read and kept. */
     public fun edges(since: Long? = null): List<MessageEdge> = cache.edges(since)
-
-    /** The retained edges [wanted] accepts, oldest first, read from the day files and not kept: for a caller that names
-     *  the edges it needs (a team, a session) across the whole window, which the row cache cannot hold on a long one. */
-    internal fun scan(wanted: EdgeWanted, since: Long? = null): List<MessageEdge> = scans.scan(wanted, since)
 }

@@ -60,17 +60,6 @@ public class TeamReads internal constructor(
     private val texts: SentTextSource,
     private val clock: WallClock,
 ) {
-    public fun edges(id: String): JsonReply = daily(id, null, null, null) { team, stores, _ ->
-        val members = Members(team, registry?.read().orEmpty(), registry?.let(::NameHolders))
-        buildJsonObject {
-            put(TEAM_ID, team.id)
-            val state = stores.edgeState()
-            put("state", state.wire)
-            state.reason(EDGE_STORE)?.let { put(REASON_KEY, it) }
-            put(EDGE_STORE, buildJsonArray { members.edges(stores.edges.scan(members)).forEach { add(it.json()) } })
-        }
-    }
-
     public fun chat(id: String, day: String?, from: String? = null, to: String? = null): JsonReply =
         daily(id, day, from, to) { team, stores, window ->
             val members = Members(team, registry?.read().orEmpty(), registry?.let(::NameHolders))

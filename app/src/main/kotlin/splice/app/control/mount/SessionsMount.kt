@@ -90,10 +90,6 @@ internal class SessionsMount(
         route.delete("/api/kept/labels") {
             guard.guarded(call) { withContext(fileIo) { routes.edgeRoutes.deleteKept(KeptActivity.LABELS) }.send(call) }
         }
-        route.get("/api/sessions/edges") { guard.guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
-        route.get("/api/sessions/{id}/edges") {
-            guard.guarded(call) { routes.edgeRoutes.edges(call.parameters["id"].orEmpty()).send(call) }
-        }
         noteRoute?.let { notes ->
             route.post("/api/sessions/{id}/message") {
                 guard.guarded(call) { notes.post(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }

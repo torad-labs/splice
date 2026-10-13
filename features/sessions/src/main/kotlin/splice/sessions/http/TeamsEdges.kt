@@ -5,7 +5,6 @@ package splice.sessions.http
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.sessions.activity.EdgeWanted
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.NameHolders
 import splice.sessions.activity.RecipientResolution
@@ -14,30 +13,16 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.transcript.SentTexts
 
-private const val DIRECTION_INTERNAL = "internal"
-private const val DIRECTION_OUT = "out"
-private const val DIRECTION_IN = "in"
-
 /** What ends an address's scheme (`uds:`): a SendMessage `to` without one is a bare name. */
 private const val ADDRESS_SCHEME_END = ':'
 private val SUBAGENT_NAMES = setOf("main", "code-review")
 
-/** One team edge: the stored edge as [Addresses.reported], its direction, and the slots at each end. */
+/** One team edge: the stored edge as [Addresses.reported], and the slots at each end, one of them at least. */
 internal class TeamEdge(
     val edge: MessageEdge,
-    val direction: String,
     val fromSlot: TeamSlot?,
     val toSlot: TeamSlot?,
 ) {
-    fun json(): JsonObject = buildJsonObject {
-        put("from", edge.from)
-        put("to", edge.to)
-        put("at", edge.at)
-        put("direction", direction)
-        put("from_slot", fromSlot?.id)
-        put("to_slot", toSlot?.id)
-    }
-
     /** The chat line, with the text [sent] found for this call or the reason it has none. */
     fun message(sent: SentTexts?): JsonObject = buildJsonObject {
         put("at", edge.at)
@@ -55,7 +40,7 @@ internal class Members(
     private val team: Team,
     private val records: List<SessionRecord>,
     private val names: NameHolders? = null,
-) : EdgeWanted {
+) {
     val slotOfSession: Map<String, TeamSlot> = team.slots
         .flatMap { slot -> (slot.sessionsHistory + listOfNotNull(slot.session)).map { it to slot } }
         .distinctBy { it.first }
@@ -80,10 +65,6 @@ internal class Members(
      *  An address carries its scheme (`uds:`) and reaches the registry member holding it. */
     fun edges(all: List<MessageEdge>): List<TeamEdge> = all.mapNotNull(::teamEdge).sortedBy { it.edge.at }
 
-    /** Whether [stored] is one of the team's: the filter a scan of the day files keeps, so a whole window is read
-     *  without holding the edges of every other team and session. */
-    override fun wants(edge: MessageEdge): Boolean = teamEdge(edge) != null
-
     private fun teamEdge(stored: MessageEdge): TeamEdge? {
         val edge = addresses.reported(stored)
         val from = slotOfSession[edge.from]
@@ -94,7 +75,7 @@ internal class Members(
             slotOfAddress[edge.to] ?: slotOfSession[edge.to] ?: slotSpelledBy(edge, from)
         }
         if (to == null && reachedNoSession(edge)) return null
-        return direction(from, to)?.let { TeamEdge(edge, it, from, to) }
+        return if (from == null && to == null) null else TeamEdge(edge, from, to)
     }
 
     /** Only pre-resolution rows may recover one named team member; explicit null never does. */
@@ -120,11 +101,4 @@ internal class Members(
     /** A call to a name no session held when it was stored: an address carries its scheme. */
     private fun reachedNoSession(edge: MessageEdge): Boolean =
         edge.toSession == null && ADDRESS_SCHEME_END !in edge.to
-
-    private fun direction(from: TeamSlot?, to: TeamSlot?): String? = when {
-        from != null && to != null -> DIRECTION_INTERNAL
-        from != null -> DIRECTION_OUT
-        to != null -> DIRECTION_IN
-        else -> null
-    }
 }

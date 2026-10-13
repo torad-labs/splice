@@ -32,7 +32,7 @@ plugins {
     id("splice.module-law")
     application
     id("com.gradleup.shadow") version "9.6.1"
-    id("org.cyclonedx.bom") version "3.4.1"
+    alias(libs.plugins.cyclonedx)
 }
 
 // :integrations-codemode's compiled runtime suite, rerun by codeModePackagedTest against the fat jar.
@@ -351,7 +351,9 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
     val bundle = thirdPartyLicenses
     val legalTexts = runtimeLegalTexts
     inputs.file(icuLicense).withPathSensitivity(PathSensitivity.NONE)
-    inputs.property("cyclonedxLicenseTexts", "3.4.1")
+    // The license texts come from the CycloneDX plugin, so its version keys the cache: read from the one catalog entry
+    // the plugins block applies, never a second literal a bump could miss.
+    inputs.property("cyclonedxLicenseTexts", libs.versions.cyclonedx.get())
     inputs.files(runtimeLegalArtifacts.artifactFiles).withNormalizer(ClasspathNormalizer::class.java)
     outputs.file(thirdPartyLicenses)
     outputs.cacheIf("a pure function of the license texts and the runtime jars") { true }

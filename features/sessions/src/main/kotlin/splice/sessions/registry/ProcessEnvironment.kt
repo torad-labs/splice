@@ -6,7 +6,8 @@
 // record: a readable environment without SPLICE=1 is a session splice never launched (DIRECT, V4-293). The
 // file is STREAMED entry by entry: bytes are kept only while the entry can still be one of the two keys, so a
 // foreign entry (a credential) is skipped to its NUL byte by byte and is never buffered and never decoded.
-// Everything else — unreadable, empty, a splice launch with no record — is UNKNOWN ("unknown head").
+// Everything else — unreadable, empty, a splice launch with no record — is UNKNOWN ("unknown head"). The MCP plan
+// reads one more key the same way, CLAUDE_CONFIG_DIR, to know which config home a session runs under.
 package splice.sessions.registry
 
 import splice.core.config.StatePaths
@@ -19,6 +20,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 private const val SPLICE_MARKER = "SPLICE"
+private const val CONFIG_HOME_VARIABLE = "CLAUDE_CONFIG_DIR"
 private const val CHUNK = 8192
 private const val NUL: Byte = 0
 
@@ -28,6 +30,14 @@ public class ProcessEnvironment(
 ) {
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
     private val wanted = listOf("$SPLICE_MARKER=").map { it.toByteArray() }
+    private val configHome = listOf("$CONFIG_HOME_VARIABLE=").map { it.toByteArray() }
+
+    /** The config home [pid] runs under: its CLAUDE_CONFIG_DIR, [vanilla] when that is unset, or null when its
+     *  environment could not be read (the process is gone, or not this user's). */
+    public fun configHome(pid: Long, vanilla: Path): Path? {
+        val read = entries(pid, configHome) ?: return null
+        return read[CONFIG_HOME_VARIABLE]?.takeIf { it.isNotBlank() }?.let { Paths.get(it) } ?: vanilla
+    }
 
     /** How [pid] reaches its provider: the head its launch declared, when [headOf] still names that head on the
      *  declared port; DIRECT for a readable environment of a process splice never launched; else UNKNOWN. */
@@ -42,15 +52,15 @@ public class ProcessEnvironment(
     /** No launch record: a session whose environment was read and carries no SPLICE=1 is Direct, and a splice
      *  launch nothing recorded (or one whose environment could not be read) is Unknown. */
     private fun unlaunched(pid: Long): SessionRoute {
-        val read = markers(pid) ?: return SessionRoute.Unknown
+        val read = entries(pid, wanted) ?: return SessionRoute.Unknown
         return if (read[SPLICE_MARKER] == "1") SessionRoute.Unknown else SessionRoute.Direct
     }
 
     /** The wanted entries, or null when the environment was not READ: the file could not be opened or
      *  failed mid-stream (the entries seen so far are not the environment), or it held no byte at all
      *  (the kernel's answer for a zombie), which is no evidence the process lacks SPLICE=1. */
-    private fun markers(pid: Long): Map<String, String>? {
-        val scan = EnvironScan(wanted)
+    private fun entries(pid: Long, keys: List<ByteArray>): Map<String, String>? {
+        val scan = EnvironScan(keys)
         val read = Cancellables.runCatchingCancellable {
             Files.newInputStream(procRoot.resolve(pid.toString()).resolve("environ")).use(scan::read)
         }

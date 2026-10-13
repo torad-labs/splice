@@ -73,6 +73,7 @@ class Hub(
             it.stream?.close()
         }
         sessions.values.forEach { it.stream?.push(": keepalive\n\n") }
+        holders.touch(relay.busy())
         save()
         timers.at(clock.now() + KEEPALIVE) { keepAlive() }
     }

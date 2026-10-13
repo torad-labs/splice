@@ -25,6 +25,9 @@ class Relay(private val sessions: Map<String, Session>, private val routes: Rout
     /** Calls sent and not yet answered; a stopping front waits for these. */
     fun inFlight(): Int = pending.size
 
+    /** The sockets of holders with a call out: a holder working on a long call is in use, not idle. */
+    fun busy(): Set<String> = pending.values.mapNotNull { it.session.route.socket }.toSet()
+
     /** Sends a session's request to [holder] under a front-wide id. */
     fun call(holder: Holder, conn: HttpConn, session: Session, msg: JsonObject, id: JsonElement) {
         val key = "f:${++next}"

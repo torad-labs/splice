@@ -78,6 +78,12 @@ class Holders(
         attach(route, holder, startAllowed = true)
     }
 
+    /** Marks the holders at [sockets] as called now, so the daemon's idle stop never takes one mid-call. */
+    fun touch(sockets: Set<String>) {
+        val now = clock.epoch()
+        sockets.mapNotNull(known::get).forEach { it.lastCall = now }
+    }
+
     fun restore(saved: JsonObject?) {
         saved?.forEach { (socket, v) ->
             val o = v as? JsonObject ?: return@forEach

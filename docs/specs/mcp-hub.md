@@ -18,13 +18,18 @@ Measured on Oct 12 at 8 PM CT: 51 plain `claude` sessions ran 45 copies of ast-g
 1. **Every source.** For each session, splice works out the servers Claude Code itself would load for
    that folder, with Claude Code's own precedence: user scope, project overrides, approved repo
    .mcp.json servers, and the servers of enabled plugins. A repo server that's pending or rejected
-   is left out, because strict mode skips Claude Code's approval prompt and print mode starts
-   pending servers on its own (proof b). The session's startup line names a server left out and how
-   to approve it.
-2. **One launch path.** Splice starts Claude Code with one owner-only file listing every server as a
-   hub address, plus `--strict-mcp-config`, so Claude Code starts none itself. http, sse and ws
-   servers go in unchanged. A `claude` started outside splice reads the files as declared and runs
-   its own copies, as today, because nothing of Marcos's is rewritten.
+   isn't hosted, so Claude Code's own approval prompt keeps deciding it.
+2. **One launch path, no strict mode.** splice starts Claude Code with one owner-only file listing
+   each hosted server as a hub address under its own name. A same-named entry replaces the server
+   Claude Code would have started from that scope, as beed0812e showed for user scope. Strict mode
+   is out (the President's ruling, Oct 12): it drops every claude.ai connector, and keeping them
+   would mean splice reading Marcos's claude.ai login. Plugin servers don't yield to a same-named
+   entry (proof a), so each hosted plugin is loaded for that launch with its MCP off and its skills
+   and commands kept, if Claude Code honors such a mechanism (proof f). If it doesn't, plugin servers
+   stay as Claude Code starts them, and Desktop Commander's cost goes back to Marcos as a plugin
+   on or off decision. http, sse and ws servers and claude.ai connectors are left to Claude Code. A
+   `claude` started outside splice reads the files as declared and runs its own copies, as today,
+   because nothing of Marcos's is rewritten.
 3. **Names kept.** One hub address per server under the name Claude Code gives it, so
    `mcp__ast-grep__<tool>` and `mcp__plugin_<plugin>_<server>__<tool>` don't change (proof a).
 4. **Shared or per session, asked once.** `splice setup` asks once: "Share MCP servers between
@@ -108,7 +113,8 @@ choice, sharing yes or no, lives in splice.toml as the answer `splice setup` sav
    built-in list of stateful servers.
 4. **Started when used:** tools/list from the kept listing.
 5. **The setup question and the console's MCP section,** with the measured savings.
-6. **The strict launch:** every planned server through the hub, plus the fallback line.
+6. **The hub launch:** every hosted server through the hub by name, plugin MCP off where proof (f)
+   allows, plus the fallback line. First, desk proofs (e) and (f).
 
 Owners: splice-config (the host, holders, the console's MCP section and setup), splice-sessions (the
 plan, census and launch, with splice-platform's launch module), and hostshield-lead (the slice).
@@ -118,7 +124,7 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
 - **(a) Plugin names, passed (splice-config, Oct 12).** A `--mcp-config` entry named
   `plugin_standin_tools` gives exactly `mcp__plugin_standin_tools__<tool>`, the plugin's own names.
   Without strict mode it runs beside the plugin's server, not instead of it, and the plugin's own
-  server takes the call. So hosting plugin servers needs strict mode.
+  server takes the call. So a plugin's own server has to be switched off for the launch (proof f).
 - **(b) Strict list, passed for interactive sessions (splice-config, Oct 12).** Strict mode with a
   file listing the same servers shows the same four. It starts neither the plugin's own server nor
   an unapproved repo server, and shows no approval prompt. Only the /mcp display differs: one
@@ -138,3 +144,12 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
   the JVM daemon's boot, which is why the front matters. Carried forward: the new daemon sent
   initialize again, so the front keeps each server's initialize result and an adopted holder is never
   handshaken twice.
+- **Strict mode drops claude.ai connectors (splice-sessions, from the 2.1.296 binary, Oct 12).** With
+  `--strict-mcp-config`, the MCP provider skips the claude.ai connector fetch, and a connector's
+  proxy url and id come only from that fetch with the session's claude.ai login. The President
+  ruled out strict mode.
+- **(e) A same-named entry replaces each scope:** to run before step 6. That's user scope (passed
+  with beed0812e), plus local or project scope and an approved repo server.
+- **(f) A plugin with its MCP off for one launch:** to run before step 6. The plugin stays enabled
+  with its skills and commands, its own server doesn't start, and the hub's same-named entry takes
+  the calls.

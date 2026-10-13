@@ -168,8 +168,9 @@ internal class McpSessions(private val clock: HostClock) {
         }
     }
 
+    /** Unbinding closes the server's sessions but keeps its ended stamp, so its last call still reads after the idle
+     *  sweep stops it. The stamp is already past the idle window by then, so it never makes the server busy again. */
     fun dropServer(server: String) {
-        ended.remove(server)
         forServer(server).forEach { s ->
             sessions.remove(s.id)
             s.stream.close()

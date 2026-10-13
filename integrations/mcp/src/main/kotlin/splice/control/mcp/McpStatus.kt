@@ -115,7 +115,8 @@ internal class McpStatus(
         out.put("sessions", live.size)
         val commands = live.mapNotNull { it.head }.distinct().sorted()
         out.putJsonArray("commands") { commands.forEach { add(JsonPrimitive(it)) } }
-        live.maxOfOrNull { it.lastActivity }?.let { out.put("last_activity", it) }
+        sessions.lastActivity(name).takeIf { it > 0L }?.let { out.put("last_activity", it) }
+        server?.takeIf { it.alive }?.startedAt?.let { out.put("started_at", it) }
         server?.lastError?.let { out.put("last_error", it) }
     }
 }

@@ -69,6 +69,9 @@ internal class HostedServer(
 
     val alive: Boolean get() = process?.isAlive == true && initResult != null
 
+    /** When the current child was started (epoch ms), or null before the first start. */
+    val startedAt: Long? get() = history.startedAt.takeIf { it > 0L }
+
     /** The launch tuple this process serves; the registry keys reservations by it. */
     val identity: McpIdentity get() = McpIdentity(spec.command, spec.args, spec.env)
     val pid: Long? get() = process?.takeIf { it.isAlive }?.pid()

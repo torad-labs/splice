@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -50,8 +51,9 @@ public data class LocalModel(
     /** What the runtime itself says about tool calling: true or false when it reports a capability list, null when
      *  it reports none. Claude Code drives every turn through tools, so a model that says false cannot serve a row. */
     val tools: Boolean? = null,
-    /** What the runtime says about thinking, the same way: Ollama's `/api/show` answers it; LM Studio's v0 listing
-     *  and vLLM say nothing, so null. A provider that sets `reasoning_effort = true` asks every row to think. */
+    /** What the runtime says about thinking, the same way: Ollama's `/api/show` and LM Studio's v1 listing answer it;
+     *  LM Studio before 0.4 and vLLM say nothing, so null. A provider that sets `reasoning_effort = true` asks every
+     *  row to think. */
     val reasoning: Boolean? = null,
 )
 
@@ -98,6 +100,8 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
     public fun models(runtime: LocalRuntime, only: Set<String>?, inferred: Set<String>): List<LocalModel>? =
         when (runtime.kind) {
             LocalRuntimeKind.LM_STUDIO -> get("$root/api/v0/models")?.let { body ->
+                // v0 carries the windows; v1 (LM Studio 0.4+), when it answers, says what each model can do.
+                val v1 = shapes.lmStudioCapabilities(get("$root/api/v1/models"))
                 data(body).map { m ->
                     // An unloaded model reports only its maximum, and LM Studio loads it with its own default window
                     // (measured: max 32768, loaded 8192), so the maximum is a ceiling, as Ollama's card is. A
@@ -110,7 +114,8 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                         loaded ?: max?.takeIf { id in inferred },
                         JsonScalars.str(m, "state"),
                         ceiling = max,
-                        tools = shapes.reportsTool(m, "tool_use"),
+                        tools = v1[id]?.tools ?: shapes.reportsTool(m, "tool_use"),
+                        reasoning = v1[id]?.reasoning,
                     )
                 }
             }
@@ -301,6 +306,29 @@ private class LocalRuntimeShapes {
             reasoning = show?.let(::reportsThinking),
         )
     }
+
+    /**
+     * LM Studio's v1 listing (https://lmstudio.ai/docs/developer/rest/list): `models[]`, each with `key` and
+     * `loaded_instances[].id`, and `capabilities` holding `trained_for_tool_use` and an optional `reasoning`
+     * `{allowed_options, default}` that is "absent when no reasoning config is exposed". Keyed by every id a model
+     * answers to. A model whose options are only "off" cannot think; an absent `reasoning` says nothing, so null.
+     * Empty when the path does not answer with that shape: LM Studio before 0.4 answers an unknown path with an
+     * error object.
+     */
+    fun lmStudioCapabilities(body: JsonObject?): Map<String, LocalModel> =
+        (body?.get("models") as? JsonArray).orEmpty().filterIsInstance<JsonObject>().flatMap { m ->
+            val caps = m["capabilities"] as? JsonObject
+            val options = ((caps?.get("reasoning") as? JsonObject)?.get("allowed_options") as? JsonArray)
+                ?.mapNotNull { JsonScalars.str(it) }
+            val model = LocalModel(
+                JsonScalars.strOrEmpty(m["key"]),
+                null,
+                tools = (caps?.get("trained_for_tool_use") as? JsonPrimitive)?.booleanOrNull,
+                reasoning = options?.any { it != "off" },
+            )
+            val instances = (m["loaded_instances"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+            (listOf(model.id) + instances.map { JsonScalars.strOrEmpty(it["id"]) }).map { it to model }
+        }.filter { it.first.isNotEmpty() }.toMap()
 
     /** Ollama's documented `thinking.values` first, where `[false]` means none; else its capability list. */
     fun reportsThinking(show: JsonObject): Boolean? {

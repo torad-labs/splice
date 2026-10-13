@@ -124,7 +124,7 @@ internal class DoctorLocalRuntime(
     }
 
     /** A provider set to make its rows think, on a runtime that does not say whether a listed row's model can (LM
-     *  Studio's listing, vLLM): no refusal, since nothing says no, but doctor says the setting goes unchecked. */
+     *  Studio before 0.4, vLLM): no refusal, since nothing says no, but doctor says the setting goes unchecked. */
     private fun unsaidThinking(name: String, ids: Set<String>, listed: List<LocalModel>): List<DoctorCheck> =
         ids.filter { id ->
             listed.firstOrNull { it.id == id || it.id == "$id:latest" }?.let { it.reasoning == null } == true

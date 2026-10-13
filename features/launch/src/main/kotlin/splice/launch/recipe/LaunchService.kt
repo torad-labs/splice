@@ -347,6 +347,8 @@ public class LaunchService(
             putAll(LaunchModelEnvironment.models(spec, slots))
             putAll(LaunchModelEnvironment.windows(spec))
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
+            // The default only: splice-launch keeps a MAX_THINKING_TOKENS the caller already set, so a headless caller
+            // that bounds its own thinking keeps that bound (Oct 13, the Temple's read).
             put("MAX_THINKING_TOKENS", "128000")
             // Claude Code's default request timeout is 600s and it also bounds the first-byte
             // deadline; the head's whole-turn cap is the wall that decides a turn, so the client

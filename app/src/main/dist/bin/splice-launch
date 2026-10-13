@@ -678,8 +678,11 @@ drop_own_token() {
 # Reads LAUNCH_RECIPE into the environment (exports and unsets, by name) and the positional parameters (the argv), and
 # runs it: a function's positional parameters are its own, so the argv has to be exec'd from in here.
 # A name that is not a bare identifier is not an environment variable: it is rejected here, never handed on.
+# MAX_THINKING_TOKENS the caller set rides over the recipe's default (splice-lead, Oct 13): a headless caller that bounds
+# its thinking keeps that bound, and a launch with none set gets the recipe's value.
 apply_recipe() {
   drop_own_token
+  ar_thinking=${MAX_THINKING_TOKENS-}
   ar_argc=0
   ar_warning=""
   ar_end=0
@@ -699,6 +702,7 @@ apply_recipe() {
         ar_name=${ar_rest%%=*}
         case $ar_name in
           '' | [0-9]* | *[!A-Za-z0-9_]*) warn "splice: ignoring malformed env key from daemon: '$ar_name'" ;;
+          MAX_THINKING_TOKENS) [ -n "$ar_thinking" ] || { unescape "${ar_rest#*=}"; export "$ar_name=$UNESCAPED"; } ;;
           *) unescape "${ar_rest#*=}"; export "$ar_name=$UNESCAPED" ;;
         esac
         ;;

@@ -109,7 +109,7 @@ public class PerfCommand(
         output.line("  peak inflight           ${num(s, "peak_inflight")}")
         val dropped = num(s, "telemetry_dropped")
         val writes = num(s, "io_drops_in_window")
-        output.line("  telemetry dropped       $dropped row(s), at least $writes write(s) lost (absent from the file)")
+        output.line("  record gaps             $dropped row(s), at least $writes write(s) lost (absent from the file)")
     }
 
     /** Only the kinds that occurred, so a head with no compaction does not print a zero for one. */

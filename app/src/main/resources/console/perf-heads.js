@@ -50,8 +50,13 @@ const PERF_HEADS = (() => {
       const n = Object.entries(h.outcomes || {}).reduce((a, [tag, k]) => a + (isFailed(tag) ? k : 0), 0);
       return n ? `<a class="open bad" href="${door(h.key, { outcome: "fail" })}">${n0(n)}${OPEN}</a><span class="sh">${pct(h.failure_share)}</span>` : "0";
     } },
-    { label: "First byte", key: true, has: (h) => h.time_before_first_byte_ms?.p50 != null, cell: (h) => time(h.time_before_first_byte_ms) },
-    { label: "Streaming", key: true, has: (h) => h.time_streaming_ms?.p50 != null, cell: (h) => time(h.time_streaming_ms) },
+    // The time the gate held a request behind its command's full limit, before splice sent it (queue_wait_ms, from
+    // admit_held_ms): only held requests carry it, so the times are theirs and the line under them says how many waited.
+    // "Waited in line" is the words Requests and Settings already use for it.
+    { label: "Waited in line", key: true, has: (h) => h.queue_wait_ms?.p50 != null, cell: (h) => (h.queue_wait_ms?.p50 == null
+      ? none("None waited") : `${time(h.queue_wait_ms)}<span class="held">${n0(h.queue_wait_ms.count)} of ${n0(h.count)} waited</span>`) },
+    { label: "Time before first byte", key: true, has: (h) => h.time_before_first_byte_ms?.p50 != null, cell: (h) => time(h.time_before_first_byte_ms) },
+    { label: "Time streaming", key: true, has: (h) => h.time_streaming_ms?.p50 != null, cell: (h) => time(h.time_streaming_ms) },
     { label: "Whole request", key: true, has: (h) => h.total_ms?.p50 != null, cell: (h) => time(h.total_ms) },
     { label: "Retries", has: (h) => h.retries > 0, cell: (h) => count(h.retries) },
     { label: "Sign-ins renewed", has: (h) => h.refreshes > 0, cell: (h) => count(h.refreshes) },

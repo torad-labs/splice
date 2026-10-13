@@ -25,6 +25,7 @@
 .prow a.open.bad { color: var(--limit); font-weight: 600; }
 .prow .sh { margin-left: .5rem; color: var(--text-mute); font-size: .92rem; }
 .prow .nr { font: 500 .95rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+.prow .held { display: block; margin-top: .2rem; font: 500 .85rem/1.25 var(--font-name); color: var(--text-mute); }  /* how many of the command's requests the gate held */
 .prow .below { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem 1.2rem; margin: .3rem 0 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
 .prow .below .k { color: var(--limit); text-decoration: none; }
 .prow .below .k:hover, .prow .below a.m:hover { text-decoration: underline; }

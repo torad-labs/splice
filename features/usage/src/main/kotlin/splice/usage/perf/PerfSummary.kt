@@ -5,7 +5,7 @@
 // as zero-latency traffic; a window the files cannot fill says so (clamped + covers_ms), no rows
 // at all says THAT, and a generation that could not be read is carried as read_error, never as
 // short retention, and while a generation is unread the coverage is UNKNOWN, never a clamp.
-// telemetry_dropped is the count of rows during which the counter rose; io_drops_in_window is a LOWER BOUND on the async file-io writes the daemon dropped during the
+// telemetry_dropped (shown as "Record gaps") is the count of rows during which the counter rose; io_drops_in_window is a LOWER BOUND on the async file-io writes the daemon dropped during the
 // window: the per-row counter is cumulative per process and the rows carry no process identity,
 // so a restart is only visible as a decrease, and a new process whose count catches the old one
 // up hides its drops. A dropped perf row is absent from the file, so this is the evidence that
@@ -122,6 +122,9 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         stats(rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] })?.let { put("time_before_first_byte_ms", it) }
         stats(rows.mapNotNull(::streaming))?.let { put("time_streaming_ms", it) }
         stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
+        // Queue pressure (§3): only a request the gate held behind a full limit carries ADMIT_HELD_MS, so the stats are
+        // over the held requests and their count says how many waited.
+        stats(rows.mapNotNull { it.fields[PerfKeys.ADMIT_HELD_MS] })?.let { put("queue_wait_ms", it) }
     }
 
     private fun counters(rows: List<PerfRow>): JsonObject = buildJsonObject {
@@ -143,7 +146,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  wall clock may step), the first one measured against the last row before the cutoff when the
      *  source kept it. A decrease is a restart: the new process's count is taken whole. A restart
      *  whose new count catches the old one up is invisible, so the total is a lower bound. The
-     *  "telemetry dropped" count is the spec's: rows whose own cumulative counter is positive. A window where no row
+     *  telemetry_dropped count (shown as "Record gaps") is the spec's: rows whose own cumulative counter is positive. A window where no row
      *  carried the counter says nothing at all, so the console reads "Not measured" and never a zero. */
     private fun ioDrops(rows: List<PerfRow>, dropsBefore: Long?): JsonObject {
         var previous: Long? = dropsBefore

@@ -26,6 +26,7 @@ import splice.upstream.ClientFrameEmitted
 import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
+import splice.upstream.failure.VendorRefusal
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.sse.WireObserver
 
@@ -150,5 +151,7 @@ internal sealed class RetryOutcome<out T> {
          *  headers die with the response like the body does. Null for every other failure. */
         val planLimit: PlanLimit? = null,
         val rateLimitReply: RateLimitReply? = null,
+        /** A refusal the vendor module knows (VendorRefusals): the retry loop gives up on it at once. */
+        val refusal: VendorRefusal? = null,
     ) : RetryOutcome<Nothing>()
 }

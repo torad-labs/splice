@@ -166,6 +166,8 @@ internal class RetryRules(private val maxRetries: Int) {
      */
     private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
         failed.rateLimitReply != null -> "is a native refusal owned by the client's retry and fallback"
+        // The vendor module named this refusal (VendorRefusals): its own plan, never the generic curve.
+        failed.refusal != null -> "is a known refusal (no retry: ${failed.refusal.why})"
         nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         // V4-233: the upstream named a PLAN window spent until an instant; a re-send before it meets

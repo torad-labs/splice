@@ -1,4 +1,4 @@
-// NEW: (ledger lines 495, 519) prepares each head's Usage reads at startup, one cold scan at a time.
+// NEW: (ledger lines 495, 519) prepares each head's Usage reads at startup, a few cold scans at a time.
 package splice.app.control.mount
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -22,8 +22,11 @@ import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.ProjectedPerfRowsSource
 import java.util.concurrent.ConcurrentHashMap
 
-// A cold reconciliation retains decoded facts; one scan at a time avoids the measured fleet contention.
-private const val COLD_READS_AT_ONCE = 1
+// why: each head reads its own files into its own caches, so heads scan side by side, and every head is ready about when
+// the largest one is rather than after the sum of all of them (splice-lead, Oct 12: desk d's claude-splice took most of
+// a 36 s scan while the others queued behind it). Three, not one per head: since 52fefeb63 a head's totals and window
+// share one decode, which is what the single permit was holding back, and three bound the transient rows held at once.
+private const val COLD_READS_AT_ONCE = 3
 
 // why: the hours an hour-old read left unsettled grow with every turn since, and a heap left idle is paged out, so the
 // first open after hours paid 6 to 15 s (measured live, Oct 12); a read every few minutes keeps both small and hot.

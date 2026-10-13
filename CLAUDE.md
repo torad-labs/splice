@@ -7,15 +7,17 @@ conduct rules the operator has had to repeat to sessions.
 
 Operator: "as an engineer when I code and I have a long build, I'm gonna start coding other things ... I don't keep staring at the screen." Every gradle, gate, test or push command runs in the background, never in the foreground and never in a `sleep` or poll loop. While it runs, the seat edits the next item in its queue. A lock, a peer's file or a red build is never a reason to stop: take the next item and come back when the result arrives. A seat that waits is a splice defect, not a pause.
 
-## splice is installed and restarted only at a major milestone (2026-10-10)
+## This machine follows the beta channel with auto-update (2026-10-13)
 
-Operator: "can we please only install a new version of splice when we have a major milestone? you
-guys are resetting it too often." This replaces "install every verified build" and the hourly
-cadence. Only splice-lead installs, and only for one of two reasons: a major milestone (a v0.4.0
-spec feature finished end to end, or the zero-refusal handover going live), or a fix for something
-broken on the running daemon right now. A green sha alone is not a reason. `tools/release/lead-install.sh`
-refuses without one. No other seat installs or runs `splice restart`. When splice-lead does install,
-it still never asks and never waits, and follows the procedure below.
+Operator: "make sure to keep releasing to better with auto update please throuyghout the day" (read as
+beta), then,
+asked whether this machine follows beta too: "Follow beta here too". This replaces the milestone-only
+rule of 2026-10-10. A beta (v0.4.0-beta.N, a GitHub prerelease) is cut whenever a push lands green
+with user-visible changes, built locally while Actions is locked, without attestation, as he chose.
+Once auto-update ships, this machine's splice.toml carries update_channel = "beta" and
+auto_update = true, and the daemon installs each beta itself, restarting at the first moment with no
+turn in flight or after 30 minutes. Until then, splice-lead installs each beta by the procedure below.
+No other seat installs or runs `splice restart`.
 
 ## How an install runs, once it is due (2026-09-16)
 
@@ -113,7 +115,7 @@ Marcos's standing rulings for splice, one per line.
 - No version bump and no release cut without Marcos's explicit go.
 - GitHub settings, branch protection, rulesets and required checks are Marcos's to change.
 - No detekt or ast-grep ignores, with one exception: LongParameterList skips @Serializable classes, which mirror an outside format (splice.toml, saved state, wire bodies) field by field (Marcos, 2026-10-09).
-- splice is installed and restarted only at a major milestone or for a live fix, by splice-lead alone (Marcos, 2026-10-10).
+- This machine follows the beta channel with auto-update; betas are cut through the day, built locally without attestation while Actions is locked (Marcos, 2026-10-13, replacing milestone-only installs of 2026-10-10).
 - A screen fix takes seconds: the walker names the broken thing to the page's owner, the owner fixes it, the walker reloads the desk, which serves the live console folder, and the owner commits. No test suite, no screenshot set and no rewalk per fix. One look at every page at his width in dark mode comes before Marcos is asked to look (Marcos, 2026-10-12).
 - No test asserts code usage: no call counts, no "method X was called", no file-read counts. A fix lands without a new test unless the test checks what a user sees or a route returns. Speed is proven by timing on a desk (Marcos, 2026-10-12).
 - The push's pre-push is the only gradle run a change needs. No seat runs a separate proof, exact-tree check or duplicate suite before handing builder2 a sha (Marcos, 2026-10-12).

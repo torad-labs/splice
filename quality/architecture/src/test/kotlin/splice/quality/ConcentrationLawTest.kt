@@ -190,7 +190,11 @@ internal object Concentration {
     // not the shared checkout, where a peer's uncommitted UsageMount.kt was riding at 3.20 and read 17. Knob.kt
     // 3.01 is the sixteenth file and RestartCommand.kt is not in the band. The number follows the tree down.
     // 17 -> 16.
-    const val RATCHET_MAX_HIGH = 16
+    // 2026-10-13: the first quality run in 643 commits read 31; fifteen files left the band by real seams in their
+    // owners' hands (the census assignment), and GrokAuthProvider.kt and UpstreamClient.kt left after. HeadRemoval.kt
+    // stayed (3.25 -> 3.44 by neighbourhood: 034f99b5f dropped two high-median neighbours with its splice.head imports)
+    // and waits for the post-release decomposition with ControlPlane.kt. 16 -> 15.
+    const val RATCHET_MAX_HIGH = 15
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

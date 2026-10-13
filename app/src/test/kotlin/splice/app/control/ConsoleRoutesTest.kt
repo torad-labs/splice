@@ -189,7 +189,6 @@ class ConsoleRoutesTest {
 
         // The clamp is STATED, not silent: the window holds two rows and the newest one was returned.
         assertEquals(2, head["count"]!!.jsonPrimitive.content.toInt())
-        assertEquals(1, head["returned"]!!.jsonPrimitive.content.toInt())
         assertEquals(true, head["truncated"]!!.jsonPrimitive.content.toBoolean())
 
         val row = head["rows"]!!.jsonArray[0].jsonObject
@@ -210,18 +209,14 @@ class ConsoleRoutesTest {
         assertEquals(ROW_MODEL, full["model"]!!.jsonPrimitive.content)
         assertEquals(ROW_SESSION, full["session"]!!.jsonPrimitive.content)
         assertEquals(ROW_ACCOUNT, full["account"]!!.jsonPrimitive.content)
-        assertEquals(true, full["cache_cold"]!!.jsonPrimitive.content.toBoolean())
         assertEquals(
             false,
             full["compact"]!!.jsonPrimitive.content.toBoolean(),
             "a recorded false is a fact, and must not read as absent",
         )
 
-        // NOTHING LOOKED, SO NOTHING IS REPORTED. This row carries no account, so the writer never
-        // wrote cache_cold. Rendering that as false would claim the cache was warm about a turn where
-        // no account was in play — a did-not-run wearing a legitimate answer.
+        // NOTHING RECORDED, SO NOTHING IS REPORTED: a field the row never carried is null, never a default.
         val bare = returned[1].jsonObject
-        assertEquals(JsonNull, bare["cache_cold"], "an unrecorded flag is null, never false")
         assertEquals(JsonNull, bare["model"], "an absent model is null, never an empty string")
         assertEquals(JsonNull, bare["compact"], "an absent compact flag is null, never false")
     }

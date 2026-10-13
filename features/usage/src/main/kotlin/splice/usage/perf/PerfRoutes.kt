@@ -8,15 +8,14 @@
 // those facts, so it needs the rows, not a summary of their numbers: this route reads the file source
 // directly and reports each row whole.
 //
-// THE PAYLOAD SAYS WHAT IT IS NOT SHOWING. Three numbers ride beside the rows and none of them is
+// THE PAYLOAD SAYS WHAT IT IS NOT SHOWING. Two numbers ride beside the rows and neither is
 // decoration: `count` is the rows of the window the filters match (V4-444, [TurnsFilter]; with no
-// filter, the window's own size), `returned` is the slice actually sent, and
-// `truncated` is whether the newest-n clamp cut anything. A payload carrying only the rows cannot
-// distinguish "the head was idle" from "the newest n were all that fit", and the console would draw
-// the second as the first. The reader's own `read_error` and `skipped_lines` ride through for the
-// same reason the summary carries them: a generation that could not be read, or lines this read
-// rejected, are missing rows, and a page rendered clean over a holed file is the defect the coverage
-// note exists to break.
+// filter, the window's own size), and `truncated` is whether the newest-n clamp cut anything. A
+// payload carrying only the rows cannot distinguish "the head was idle" from "the newest n were all
+// that fit", and the console would draw the second as the first. The reader's own `read_error`
+// rides through for the same reason the summary carries it: a generation that could not be read is
+// missing rows, and a page rendered clean over a holed file is the defect the coverage note exists
+// to break.
 //
 // BOTH LOOKUPS ARE THE SUMMARY'S, NOT COPIES. The default window is `PerfWindow.H24.ms` — the same
 // 24h `/api/perf/summary` answers an absent window with — and the default/clamp bounds match the tail
@@ -111,8 +110,6 @@ public class PerfRoutes(
 
         call.respondText(
             buildJsonObject {
-                put("since", asked.since)
-                put("n", asked.rows.n)
                 putJsonArray("heads") {
                     matches.forEach { head ->
                         val source = head.sinks.perfRows
@@ -123,13 +120,11 @@ public class PerfRoutes(
                         if (source == null) {
                             addJsonObject {
                                 put("key", head.key)
-                                put("label", head.label)
                                 put("error", UNWIRED_TURNS)
                             }
                         } else if (head.key in pending) {
                             addJsonObject {
                                 put("key", head.key)
-                                put("label", head.label)
                                 put("read_pending", true)
                                 putJsonArray("rows") { }
                             }
@@ -259,13 +254,10 @@ public class PerfRoutes(
         val rows = projection.complete(kept(matching, asked.rows, gaps))
         return buildJsonObject {
             put("key", head.key)
-            put("label", head.label)
             put("order", asked.rows.order.wire)
             put("count", matching.size)
-            put("returned", rows.size)
             put("truncated", matching.size > rows.size)
             read.readError?.let { put("read_error", it) }
-            if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only
             // `count` and `rows` (Settings asks about a hundred such counts) must not pay for figures it drops.
             val usage = asked.figures.usageJson(matching, gaps, asked.zone, reading)
@@ -323,11 +315,8 @@ public class PerfRoutes(
         put(TS, row.ts)
         put("outcome", row.outcome)
         put("cause", row.cause)
-        // ABSENT STAYS ABSENT. A null here is a row that never carried the field — `cache_cold` is
-        // written only alongside an account, so a row without one never had the question asked — and
-        // the JSON null is the third state that keeps the console from rendering "the cache was warm"
-        // over a turn where nothing looked. A missing `model` or `compact` is a legacy or torn row and
-        // is reported the same way, rather than filled in with a value the file does not contain.
+        // ABSENT STAYS ABSENT. A missing `model` or `compact` is a legacy or torn row and is reported as null,
+        // rather than filled in with a value the file does not contain.
         put("model", row.facts.model)
         put("session", row.facts.session)
         // The project object the session rows carry; null where the session is unknown or outside every project.
@@ -338,7 +327,6 @@ public class PerfRoutes(
         put("title", row.facts.session?.let(tags::titleOf))
         put("account", reading.key(row.facts.account))
         put("account_label", reading.label(row.facts.account))
-        put("cache_cold", row.facts.cacheCold)
         put("compact", row.facts.compact)
         // V4-444: whether prompts and answers were saved for this turn, and what the upstream itself said when the
         // upstream is what failed. Both pass through as the writer set them, null where the row carries neither.
@@ -348,7 +336,6 @@ public class PerfRoutes(
         put("turn", row.turn)
         put("turn_id", row.turnId)
         put("session_id", row.transcript.sessionId)
-        put("response_message_id", row.transcript.responseMessageId)
         // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson), and the
         // same classification the window's counters are folded by says why a row has no figure: null
         // cost_reason exactly where cost_usd is a number, so the console never has to guess which it is.

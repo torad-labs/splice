@@ -56,7 +56,6 @@ internal class TurnUsage(
         return Counted(
             localStep = fields[PerfKeys.LOCAL_STEP] == 1L,
             tokens = Tokens(fields[PerfKeys.IN_TOKENS], fields[PerfKeys.CACHED_TOKENS], fields[PerfKeys.OUT_TOKENS]),
-            cutRounds = fields[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
             priced = priced,
             gap = gap,
         )
@@ -77,7 +76,6 @@ internal class TurnUsage(
                 counters.json().forEach { (name, value) -> put(name, value) }
                 val last = lastModels[id]
                 put("last_model", last?.model)
-                put("last_model_ts_epoch_ms", last?.ts)
             }
         }
     }
@@ -115,7 +113,6 @@ internal class TurnUsage(
     private data class Counted(
         val localStep: Boolean,
         val tokens: Tokens,
-        val cutRounds: Long,
         val priced: Priced,
         val gap: PriceGap?,
     )
@@ -136,25 +133,15 @@ internal class TurnUsage(
         private var missingInput = 0L
         private var missingOutput = 0L
 
-        // Source rounds these requests cut while they streamed: billed upstream, their tokens never reported.
-        private var cutRounds = 0L
-
-        // The code-mode steps in this group: replies splice wrote itself, never requests.
-        private var localSteps = 0L
-
         /** V4-444: a code-mode step is a reply splice wrote itself, with nothing sent to a provider, so it is
-         *  COUNTED APART from the requests, as the summary already counts it (PerfSummary.local_steps). Counting it
-         *  as a request made every window with steps report requests that never reached a provider, each one also
-         *  missing its input and output because a step has no token counts, and each one unpriced for a reason no
-         *  case covers. It takes no token count, no price, no reason and no cut round: it has none of those. */
+         *  LEFT OUT of the requests. Counting it as a request made every window with steps report requests that
+         *  never reached a provider, each one also missing its input and output because a step has no token counts,
+         *  and each one unpriced for a reason no case covers. It takes no token count, no price and no reason: it
+         *  has none of those. */
         fun add(row: Counted) {
-            if (row.localStep) {
-                localSteps++
-                return
-            }
+            if (row.localStep) return
             requests++
             addTokens(row.tokens)
-            cutRounds += row.cutRounds
             row.priced.usd?.let { cost = (cost ?: 0.0) + it }
             row.priced.planValue?.let { planValue = (planValue ?: 0.0) + it }
             if (row.gap != null) gaps[row.gap] = gaps.getValue(row.gap) + 1
@@ -169,7 +156,6 @@ internal class TurnUsage(
 
         fun json(): JsonObject = buildJsonObject {
             put("requests", requests)
-            put("local_steps", localSteps)
             put("input_tokens", input)
             put("cached_tokens", cached)
             put("output_tokens", output)
@@ -185,7 +171,6 @@ internal class TurnUsage(
             put("unanswered_requests", gaps.getValue(PriceGap.UNANSWERED))
             put("missing_input_requests", missingInput)
             put("missing_output_requests", missingOutput)
-            put("cut_source_rounds", cutRounds)
         }
     }
 }

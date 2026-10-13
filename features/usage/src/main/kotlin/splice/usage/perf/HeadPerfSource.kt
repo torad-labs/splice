@@ -146,9 +146,6 @@ public data class PerfRowsWindow(
      *  generation that yields ONLY such lines is a broken file, not an idle head, and the summary
      *  says so instead of "no rows recorded yet" (review 2026-09-14). */
     val skipped: Int = 0,
-    /** Rejections following an in-window valid row in source order. Only Requests uses this count;
-     *  unknown-time lines still contribute to [skipped] and its existing file-integrity consumers. */
-    val windowSkipped: Int = 0,
 )
 
 /** The rows recorded at or after [sinceMs] with the evidence the summary needs about them. */

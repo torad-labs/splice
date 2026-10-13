@@ -199,7 +199,6 @@ public class PerfRowsFileSource internal constructor(
         val probeTears = ArrayList<Long?>()
         val errors = ArrayList<String>()
         private var skipped = 0
-        private var windowSkipped = 0
         private var afterInWindowRow = false
 
         /** The minimum valid top-level timestamp seen (physical order is not a retention premise). */
@@ -256,7 +255,6 @@ public class PerfRowsFileSource internal constructor(
         }
 
         private fun rejected(line: PerfCachedLine) {
-            if (afterInWindowRow) windowSkipped++
             // Preserve the original baseline and economics proof, without giving this line a row time.
             if (!skipBefore(line)) {
                 skipped++
@@ -300,7 +298,6 @@ public class PerfRowsFileSource internal constructor(
             },
             readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,
-            windowSkipped = windowSkipped,
         )
     }
 }

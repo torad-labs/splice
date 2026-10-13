@@ -104,13 +104,7 @@ class PerfLocalStepTotalsTest {
         val without = block(client.get("$TURNS&local=0").bodyAsText())
         val with = block(client.get("$TURNS&local=1").bodyAsText())
 
-        assertEquals(
-            JsonObject(totals(without) - "local_steps"),
-            JsonObject(totals(with) - "local_steps"),
-            "including the step moves no figure the totals report",
-        )
-        assertEquals(0L, totals(without).getValue("local_steps").jsonPrimitive.long)
-        assertEquals(1L, totals(with).getValue("local_steps").jsonPrimitive.long, "the step is counted, apart")
+        assertEquals(totals(without), totals(with), "including the step moves no figure the totals report")
         assertEquals(
             requests.size.toLong(),
             totals(with).getValue("requests").jsonPrimitive.long,

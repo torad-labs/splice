@@ -96,9 +96,7 @@ class PerfRowTurnWireTest {
         assertEquals(JsonNull, served[1]["turn"], "no trace, a null")
         assertEquals(JsonNull, served[1]["turn_id"], "legacy absence remains unknown")
         assertEquals(JsonPrimitive("sess-v4345"), served[0]["session_id"])
-        assertEquals(JsonPrimitive("msg_42"), served[0]["response_message_id"])
         assertEquals(JsonNull, served[1]["session_id"])
-        assertEquals(JsonNull, served[1]["response_message_id"])
         assertEquals(JsonPrimitive(0.0014), served[0]["cost_usd"], "the daemon prices this turn's counters")
         assertEquals(JsonNull, served[1]["cost_usd"], "a row without token counters has no known cost")
     }

@@ -68,7 +68,7 @@ internal class McpPluginServers(private val pluginsDir: Path, private val json: 
             manifestServers(json.topLevel(manifest)[Keys.MCP_SERVERS], root, manifest)
         return declared.mapNotNull { (name, entry, source) ->
             (expanded(entry, fills) as? JsonObject)?.let {
-                McpPlannedServer("$PLUGIN_SERVER_PREFIX${plugin}_$name", McpPlanScope.PLUGIN, source, it)
+                McpPlannedServer("$PLUGIN_SERVER_PREFIX${plugin}_$name", McpPlanScope.PLUGIN, source, it, root)
             }
         }
     }

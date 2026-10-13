@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-19"
+SPLICE_SHIM_VERSION="shim-20"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.4.0"
 
@@ -618,6 +618,8 @@ request_launch() {
     rl_i=$((rl_i + 1))
   done
   set -- --data-urlencode "dangerouslySkipPermissions=$DANGEROUS" --data-urlencode "cwd=$(pwd -P)" "$@"
+  # shim-20, MCP hub step 6: this shell's pid, which exec keeps for Claude Code, names the launch to the hub.
+  set -- --data-urlencode "launch=$$" "$@"
   if [ -n "${CLAUDE_CONFIG_DIR+x}" ]; then set -- --data-urlencode "inheritedConfigDir=$CLAUDE_CONFIG_DIR" "$@"; fi
   rl_try=0
   rl_delays=$LAUNCH_BUSY_DELAYS

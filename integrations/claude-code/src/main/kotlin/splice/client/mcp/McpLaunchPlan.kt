@@ -25,16 +25,24 @@ public enum class McpPlanScope(public val wire: String) {
 
 /** One server Claude Code loads for the folder, under the name its tools carry (`mcp__<name>__<tool>`). [entry]
  *  is the declaration as Claude Code reads it, a plugin's root already filled in. It can hold credentials, so
- *  [McpLaunchPlan.json] never prints it. */
+ *  [McpLaunchPlan.json] never prints it. [pluginRoot] is a plugin server's install folder, the path the hub launch
+ *  hands --plugin-dir-no-mcp; null for every other scope. */
 public data class McpPlannedServer(
     val name: String,
     val scope: McpPlanScope,
     val source: Path,
     val entry: JsonObject,
+    val pluginRoot: Path? = null,
 )
 
 /** A declared server Claude Code would not load in the folder, with the reason in words a person can act on. */
-public data class McpLeftOutServer(val name: String, val scope: McpPlanScope, val source: Path, val reason: String)
+public data class McpLeftOutServer(
+    val name: String,
+    val scope: McpPlanScope,
+    val source: Path,
+    val reason: String,
+    val pluginRoot: Path? = null,
+)
 
 /** The plan for one launch: the [folder] Claude Code starts in, under the config home [configDir]. */
 public data class McpLaunchPlan(

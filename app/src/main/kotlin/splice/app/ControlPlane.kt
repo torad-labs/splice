@@ -43,9 +43,13 @@ import splice.app.sources.PerfSourceFiles
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.HostedMcpOverlay
 import splice.client.mcp.McpAccessKey
+import splice.client.mcp.McpHubFront
+import splice.client.mcp.McpHubLaunch
 import splice.client.mcp.McpInventory
+import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
+import splice.client.mcp.PluginFlagGate
 import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumeHookTarget
@@ -61,6 +65,7 @@ import splice.control.mcp.McpHostConfig
 import splice.control.mcp.McpIdleBudget
 import splice.control.mcp.McpRequestBudget
 import splice.control.mcp.McpServerCeiling
+import splice.core.TESTED_CLAUDE_CODE
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.Knob
 import splice.core.config.TurnKey
@@ -90,6 +95,9 @@ import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
+
+// why: the port the MCP hub front listens on, the address shape splice-config set (docs/specs/mcp-hub.md step 6).
+private const val MCP_HUB_FRONT_PORT = 3095
 
 internal class ControlPlane(
     /** The daemon's shared environment: its state, its settings, its management key and its log sink. */
@@ -245,7 +253,15 @@ internal class ControlPlane(
         owner.places().map { it.head }.distinct().forEach(providerAssembly.claudePoolChanges::publish)
         return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
             it.loginGuard = owner
-            it.hostedMcp = HostedMcpOverlay(home, sharing, statePaths.stateDir, log)
+            it.hubLaunch = McpHubLaunch(
+                McpLaunchPlanner(home),
+                sharing,
+                McpAccessKey(mgmtKey::get),
+                McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub")),
+                log,
+                PluginFlagGate(TESTED_CLAUDE_CODE),
+                overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log),
+            )
         }
     }
 

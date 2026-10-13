@@ -14,6 +14,8 @@ public data class LaunchCaller(
     val wrapped: WrappedLaunch? = null,
     /** The calling shim's config root, not the daemon's own inherited environment. */
     val inheritedConfigDir: String? = null,
+    /** MCP hub step 6: the launcher's own pid, which exec keeps for Claude Code; null from a shim before shim-20. */
+    val launch: String? = null,
 ) {
     /** The cwd as an absolute path, or null when the shim sent none or a relative one. */
     internal fun absoluteCwd(): Path? = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }

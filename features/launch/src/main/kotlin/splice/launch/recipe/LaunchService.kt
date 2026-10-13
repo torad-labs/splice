@@ -16,7 +16,9 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
-import splice.client.mcp.HostedMcpOverlay
+import splice.client.mcp.HubLaunchArgs
+import splice.client.mcp.HubLaunchFor
+import splice.client.mcp.McpHubLaunch
 import splice.client.resume.CallingRoster
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.MovingTrust
@@ -66,10 +68,11 @@ public class LaunchService(
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
 
-    /** The servers splice hosts, handed to a wrapped launch with --mcp-config (V4-445): plain claude reads his own
-     *  ~/.claude.json, which splice never writes, so this is how it reaches the one hosted copy. Assigned by the daemon
-     *  before routes serve requests; null runs plain claude over his own servers. */
-    public var hostedMcp: HostedMcpOverlay? = null
+    /** MCP hub step 6: every server the hub runs for this launch, handed to Claude Code with --mcp-config under its
+     *  own name, plus --plugin-dir-no-mcp where a plugin's servers all run there. A launch through the wrapped
+     *  `claude` falls back to the V4-445 file of hosted user servers. Assigned by the daemon before routes serve
+     *  requests; null runs every launch over its own servers. */
+    public var hubLaunch: McpHubLaunch? = null
 
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
@@ -151,6 +154,7 @@ public class LaunchService(
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
         val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)
+        val hub = hubArgs(caller, wrapped, effective, claude)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
@@ -159,14 +163,32 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             wrapped?.let {
                 addAll(listOf("--settings", it.settingsOverlay(roster, held.gateway.statuslineCommand)))
-                addAll(hostedMcp?.args(effective.signIn.headKey).orEmpty())
             }
+            addAll(hub.args)
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             addAll(bounded.args)
         }
-        val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning)
+        val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning, hub.warning)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
+    }
+
+    /** MCP hub step 6: what the hub adds to this launch. A wrapped launch reads his own config home and falls back to
+     *  the V4-445 file; a head's launch reads the head's home. */
+    private fun hubArgs(
+        caller: LaunchCaller,
+        wrapped: WrappedLaunch?,
+        effective: LaunchSpec,
+        claude: String,
+    ): HubLaunchArgs {
+        val launch = HubLaunchFor(
+            configDir = wrapped?.configDir ?: effective.trees.own,
+            folder = caller.absoluteCwd(),
+            launch = caller.launch,
+            claude = Path.of(claude),
+            overlayHead = effective.signIn.headKey.takeIf { wrapped != null },
+        )
+        return hubLaunch?.args(launch) ?: HubLaunchArgs(emptyList())
     }
 
     private fun materializeLaunch(
@@ -211,6 +233,7 @@ public class LaunchService(
         dangerouslySkipPermissions: Boolean,
         adoption: SessionAdoption?,
         continueWarning: String?,
+        hubWarning: String?,
     ): String? {
         val danger = if (dangerouslySkipPermissions) {
             "dangerouslySkipPermissions engaged for ${spec.trees.own}: Claude Code runs with " +
@@ -218,7 +241,7 @@ public class LaunchService(
         } else {
             null
         }
-        return listOfNotNull(danger, adoptionWarning(adoption), continueWarning)
+        return listOfNotNull(danger, adoptionWarning(adoption), continueWarning, hubWarning)
             .takeIf { it.isNotEmpty() }
             ?.joinToString("; ")
     }

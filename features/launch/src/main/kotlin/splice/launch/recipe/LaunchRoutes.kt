@@ -29,6 +29,7 @@ private data class LaunchRequest(
     val dangerouslySkipPermissions: Boolean,
     val cwd: String?,
     val inheritedConfigDir: String?,
+    val launch: String? = null,
 )
 
 /** The head one launch runs, and [wrapped] when it came through the wrapped `claude` (V4-129). */
@@ -122,7 +123,7 @@ public class LaunchRoutes(
         request.dangerouslySkipPermissions,
         // DR-81: key presence is read per launch, not from the boot-frozen spec.
         keyPresentNow = target.keyPresence.keyPresentNow(),
-        caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir),
+        caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir, request.launch),
     )
 
     /** The head [key] launches, given its key/label [targets] (at most one — several were refused).
@@ -146,6 +147,7 @@ public class LaunchRoutes(
             fields["dangerouslySkipPermissions"] == "true",
             fields["cwd"],
             fields["inheritedConfigDir"],
+            fields["launch"],
         )
     }
 
@@ -162,6 +164,7 @@ public class LaunchRoutes(
             dangerouslySkipPermissions,
             JsonScalars.str(body, "cwd"),
             JsonScalars.str(body, "inheritedConfigDir"),
+            JsonScalars.str(body, "launch"),
         )
     }
 }

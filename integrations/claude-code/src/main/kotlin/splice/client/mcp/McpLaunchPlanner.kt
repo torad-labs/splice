@@ -79,7 +79,7 @@ public class McpLaunchPlanner(
         (if (configDir == home.resolve(Keys.VANILLA_DIR)) home else configDir).resolve(Keys.CLAUDE_JSON)
 
     private fun left(server: McpPlannedServer, reason: String) =
-        McpLeftOutServer(server.name, server.scope, server.source, reason)
+        McpLeftOutServer(server.name, server.scope, server.source, reason, server.pluginRoot)
 
     /** The nearest folder at or above [folder] holding `.git`, else [folder]: the key of its `projects` record. */
     private fun projectRoot(folder: Path): Path =

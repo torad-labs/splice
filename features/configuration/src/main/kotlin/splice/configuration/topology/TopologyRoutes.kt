@@ -12,8 +12,8 @@
 // does not decode, fails a check, or cannot be written faithfully answers 200 with ok false and
 // findings, which the console renders beside the editor, and splice.toml is byte-identical after it.
 // restart_required is false for a refusal, which wrote nothing, and for a write that changed nothing but
-// context windows: the running daemon re-reads those (V4-162, TopologyWindows) and every other key is
-// boot-only.
+// context windows or [daemon] mcp_share: the running daemon re-reads both (V4-162, TopologyWindows; the
+// sharing plan reads mcp_share at each plan, Topology.withoutLiveKeys) and every other key is boot-only.
 //
 // SECRETS ARE NEVER READ BACK. Every `extra_headers` value is served as [MASK], since a header can
 // carry a key and nothing here can tell which does. On PUT the mask means "keep the stored value";

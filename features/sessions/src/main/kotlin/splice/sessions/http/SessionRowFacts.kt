@@ -29,11 +29,13 @@ public data class SessionRowFacts(
     val endingOf: SessionEndingOf = NoSessionEnding,
     /** The model splice last served it, or a later move put it on (SessionServedOf): `served_model`. */
     val servedOf: SessionServedOf = NoSessionServed,
+    /** The context window its client reported to its head (SessionWindowOf): `client_context_window`. */
+    val windowOf: SessionWindowOf = NoSessionWindow,
 ) {
     /** One snapshot of every source, taken once per request before the first row is written. A source
      *  without a bounded lookup returns itself, so this is free for the ones that do not need it. */
     public fun forRecords(records: List<SessionRecord>): SessionRowFacts =
-        SessionRowFacts(accountOf.forRecords(records), turnsOf.forRecords(records), endingOf, servedOf)
+        SessionRowFacts(accountOf.forRecords(records), turnsOf.forRecords(records), endingOf, servedOf, windowOf)
 
     /** Each source writes its own keys. The order is the order they are declared in, and nothing here
      *  reads or overwrites another's key: two sources that wanted the same key would be a conflict to
@@ -43,5 +45,6 @@ public data class SessionRowFacts(
         turnsOf.write(record, target)
         endingOf.write(record, target)
         servedOf.write(record, target)
+        windowOf.write(record, target)
     }
 }

@@ -31,6 +31,7 @@ import splice.sessions.http.ProjectSessions
 import splice.sessions.http.SessionActed
 import splice.sessions.http.SessionDrive
 import splice.sessions.http.SessionRowFacts
+import splice.sessions.http.SessionWindowOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
@@ -128,6 +129,9 @@ internal class SessionsWiring(
                 turnsOf = perfFacts.turnsOf(),
                 endingOf = perfFacts.endingOf(),
                 servedOf = perfFacts.servedOf(moves),
+                windowOf = SessionWindowOf { record ->
+                    record.head?.let(heads::get)?.statusline?.clientWindows?.windowFor(record.sessionId)
+                },
             ),
         )
     }

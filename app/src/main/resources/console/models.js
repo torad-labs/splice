@@ -83,6 +83,9 @@ function familyByCmd(cmd) {
     .sort((x, y) => y.command.length - x.command.length)[0];
   return p ? famOf(p) : undefined;
 }
+// a local provider splice has no name for reads as the runtime that answers it, Ollama or LM Studio, never its TOML key
+// in lower case (/api/models/local, spec 9i; marlin, Oct 12)
+const runtimeName = (provKey) => (data.local ?? []).find((p) => p.provider === provKey)?.runtime ?? undefined;
 function commandsOf() {
   const t = topology(), hs = t.heads ?? {}, ps = t.providers ?? {};
   return data.heads.filter((h) => !ui.gone.has(h.key)).map((h) => {
@@ -100,7 +103,7 @@ function commandsOf() {
     const family = PROVIDER_FAMILY[provKey] ?? familyByCmd(h.label || cfg.claude?.command || key) ?? provKey;
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
-      key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? provKey,
+      key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? runtimeName(provKey) ?? provKey,
       url: pcfg.base_url ?? "", models, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",

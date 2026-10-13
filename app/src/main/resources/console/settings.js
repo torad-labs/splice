@@ -782,7 +782,7 @@ function mcpServerRows(m) {
     const project = projectOf(at);
     return { name, from: fromWord(at), project, shared, web, address: web ? addressOf(value) : "", state, value,
       cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
-      cmds: live?.commands || [], stale, last: live?.last_activity || 0, err: live?.last_error || "",
+      cmds: live?.commands || [], stale, last: live?.last_activity || 0, err: live?.last_error || "", started: live?.started_at || 0,
       // the one process splice runs for it now and what it holds, read from /proc by the daemon (McpStatus.kt hosted)
       hosted: !!live?.hosted, rss: live?.rss_bytes ?? null };
   }).sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name));
@@ -816,7 +816,7 @@ function serverRow(s, dim) {
   const used = s.cmds.length || soon ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}${soon}</span>` : "";
   const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
   return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
-    + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}${s.err ? ` <span class="state limit">${esc(s.err)}</span>` : ""}</span>`
+    + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.started ? `Started ${esc(atWord(s.started))}` : ""}${s.started && s.last ? " · " : ""}${s.last ? `Last call ${esc(atWord(s.last))}` : ""}${s.err ? ` <span class="state limit">${esc(s.err)}</span>` : ""}</span>`
     + `<span class="acts">${test}<span class="always">Shared</span></span></div>`;
 }
 const mcpServersHtml = () => {

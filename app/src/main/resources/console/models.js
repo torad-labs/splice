@@ -239,6 +239,40 @@ function draftState(c) {
 }
 const logsOf = (key) => ui.logs[key];
 // Remove: two presses, and what stays is said before the second. A command a session is on says who, and each name opens it.
+// ---------- one command's Stop and Restart (gap 398), POST /api/heads/{head}/stop and /restart ----------
+// The first press reads the sessions mid-request on this command (kit.js's midRequest). Restart with none restarts at
+// once, as Restart splice does. Stop always asks, because the command then serves nothing until it is restarted.
+const HEAD_ACT = { stop: ["Stop", "Stopped", "Not stopped"], restart: ["Restart", "Restarted", "Not restarted"] };
+function headActsHtml(c) {
+  const h = ui.headAct;
+  if (h?.key === c.key && h.busy) return `<span class="said">${ICON.wait}${h.act === "stop" ? "Stopping" : "Restarting"}</span>`;
+  const said = ui.headSaid?.key === c.key ? `<span class="said${ui.headSaid.ok ? "" : " limit"}">${esc(ui.headSaid.word)}</span>` : "";
+  return `${said}<button class="act quiet small" data-act="hact" data-v="restart">Restart</button><button class="act quiet small" data-act="hact" data-v="stop">Stop</button>`;
+}
+function headAskHtml(c) {
+  const h = ui.headAct;
+  if (h?.key !== c.key || !h.cut) return "";
+  const said = h.cut.length ? "Mid-request" : h.act === "stop" ? "Serves nothing until restarted" : "";
+  return armedAsk(said, h.cut, `<button class="act danger small" data-act="hact-now">${HEAD_ACT[h.act][0]} ${esc(c.cmd)}</button>`,
+    '<button class="act quiet small" data-act="hact-keep">Keep running</button>');
+}
+async function pressHeadAct(key, act) {
+  const cut = await midRequest([key]);
+  if (cut.length || act === "stop") { ui.headAct = { key, act, cut }; render(); return; }
+  runHeadAct(key, act);
+}
+async function runHeadAct(key, act) {
+  ui.headAct = { key, act, busy: true }; ui.headSaid = null; render();
+  const res = await API.post(`/api/heads/${encodeURIComponent(key)}/${act}`);
+  ui.headAct = null;
+  ui.headSaid = { key, ok: res.ok, word: HEAD_ACT[act][res.ok ? 1 : 2] };
+  await readAll(); render();
+}
+/** The wire dialect the command speaks, as splice.toml spells it (GET /api/heads' dialect). */
+const dialectHtml = (c) => {
+  const d = data.heads.find((x) => x.key === c.key)?.dialect;
+  return d ? `<span class="dialect" title="Dialect">${esc(d)}</span>` : "";
+};
 function removeHtml(c) {
   const rm = ui.rm?.key === c.key ? ui.rm : null;
   if (rm?.busy) return `<span class="said">${ICON.wait}Removing</span>`;
@@ -357,8 +391,8 @@ function paneHtml() {
   const d = ui.draft, k = look(c), st = draftState(c), s = stateOf(c);
   const fix = s?.fix && !ui.fixing[c.key] && ui.sign?.key !== c.key && ui.keyin?.key !== c.key ? `<button class="act primary small" data-act="fix" data-h="${esc(c.key)}">${esc(s.fix.label)}</button>` : "";
   const head = `<header style="--c:${colorOf(c.family)}"><span class="lamp ${k.cls}" aria-hidden="true">${k.lamp}</span><div class="who"><div class="top"><span class="name">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></div>`
-    + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span>${fix}</div>${signHtml(c)}</div>`
-    + `<div class="acts">${removeHtml(c)}<button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div></header>`;
+    + `<div class="meta"><span class="word ${k.cls}">${esc(k.word)}</span>${fix}${dialectHtml(c)}${headAskHtml(c)}</div>${signHtml(c)}</div>`
+    + `<div class="acts">${headActsHtml(c)}${removeHtml(c)}<button class="icon close" data-act="close" aria-label="Close">${GL.close}</button></div></header>`;
   const unset = !TIERS.some((x) => d.tiers[x].model);
   const tierRows = TIERS.map((t) => {
     const sel = d.tiers[t], ts = st.tiers[t];
@@ -1013,7 +1047,10 @@ function onClick(e) {
   switch (d.act) {
     case "view": ui.view = d.v; ui.pick = null; if (ui.view === "commands" && !ui.wide) Object.assign(ui, { open: null, add: null, draft: null, said: null }); render(); break;
     case "fix": e.stopPropagation(); fix(d.h); break;
-    case "close": dropAdd(); Object.assign(ui, { open: null, add: null, draft: null, said: null }); render(); break;
+    case "hact": pressHeadAct(ui.open, d.v); break;
+    case "hact-now": if (ui.headAct?.cut) runHeadAct(ui.headAct.key, ui.headAct.act); break;
+    case "hact-keep": ui.headAct = null; render(); break;
+    case "close": dropAdd(); ui.headAct = null; Object.assign(ui, { open: null, add: null, draft: null, said: null }); render(); break;
     case "new": Object.assign(ui, { open: null, draft: null, add: { profile: null, name: "", url: "", key: "", rows: [{ id: "", win: "" }], checks: null } }); render(); break;
     case "cancel-add": dropAdd(); ui.add = null; render(); break;
     case "tpl": { a.profile = d.t; const pr = data.profiles.find((x) => x.name === d.t); if (pr && second(pr)) a.url = twinUrl(pr); render(); break; }

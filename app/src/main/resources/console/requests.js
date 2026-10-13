@@ -384,11 +384,11 @@ function unreadable(errors, head, word, why) {
 }
 async function readRows(held = MAX_HELD) {
   const heads = askedHeads();
-  const reads = await Promise.all(heads.flatMap((h) => [API.getReady(turnsPath(h, true, ui.win, held)), API.getReady(turnsPath(h, false))]));
-  const rows = [], errors = [], pending = [], facets = { models: new Map(), accounts: new Map(), sessions: new Map() };
+  const reads = await Promise.all(heads.map((h) => API.getReady(turnsPath(h, true, ui.win, held))));
+  const rows = [], errors = [], pending = [];
   let matched = 0, capped = false, priced = ui.order === "price";
   heads.forEach((head, i) => {
-    const [filtered, window] = [reads[i * 2], reads[i * 2 + 1]];
+    const filtered = reads[i];
     const answer = (filtered.body?.heads || []).find((x) => x.key === head.key);
     if (!filtered.ok || !answer) return unreadable(errors, head, LIST_NOT_READ, refusalOf(filtered, "no answer"));
     if (answer.read_pending) { pending.push(head.command); return; }
@@ -399,10 +399,6 @@ async function readRows(held = MAX_HELD) {
     matched += answer.count ?? 0;
     if (answer.truncated) capped = true;
     for (const row of answer.rows || []) rows.push(mapRow(head, row));
-    const menus = (window.body?.heads || []).find((x) => x.key === head.key)?.usage;
-    for (const m of menus?.models || []) if (m.key) facets.models.set(m.key, modelName(state.modelLabel, m.key));
-    for (const a of menus?.accounts || []) if (a.key) facets.accounts.set(`${head.key}|${a.key}`, { head, account: a.key, label: a.label ?? null });
-    for (const s of menus?.sessions || []) if (s.key) facets.sessions.set(s.key, { head, last: s.last_model_ts_epoch_ms });
   });
   state.rows = linkCuts(rows);
   state.matched = matched;
@@ -411,6 +407,22 @@ async function readRows(held = MAX_HELD) {
   state.held = held;
   state.headErrors = errors;
   state.pending = pending;
+}
+/** The menus' models, accounts and sessions, from the window's unfiltered read. Asked AFTER the list has drawn, never
+ *  beside it: the daemon answers one command's reads one at a time, and this one folds the window's whole usage (2.1 s
+ *  and 8.8 MB for claude-splice's week on desk c, against 0.54 s for the list), so a day jump waited on the menus
+ *  (Marlin, desk c, Oct 12: 17 s to show Saturday). The menus keep their last reading until this answers. */
+async function readMenus(gen) {
+  const heads = askedHeads();
+  const reads = await Promise.all(heads.map((h) => API.getReady(turnsPath(h, false))));
+  if (gen !== readGen) return;
+  const facets = { models: new Map(), accounts: new Map(), sessions: new Map() };
+  heads.forEach((head, i) => {
+    const menus = (reads[i].body?.heads || []).find((x) => x.key === head.key)?.usage;
+    for (const m of menus?.models || []) if (m.key) facets.models.set(m.key, modelName(state.modelLabel, m.key));
+    for (const a of menus?.accounts || []) if (a.key) facets.accounts.set(`${head.key}|${a.key}`, { head, account: a.key, label: a.label ?? null });
+    for (const s of menus?.sessions || []) if (s.key) facets.sessions.set(s.key, { head, last: s.last_model_ts_epoch_ms });
+  });
   state.facets = { models: [...facets.models], accounts: [...facets.accounts], sessions: [...facets.sessions] };
 }
 
@@ -1019,8 +1031,8 @@ async function reload({ standing = false, reading = false } = {}) {
   // the newest requests first, drawn as soon as they answer; the rest of the window follows behind them
   await Promise.all([readRows(FIRST_HELD), readSearch()]);
   if (gen !== readGen) return;
-  if (state.reading) { state.reading = false; render(); }
-  await Promise.all([readWider(), readCompareCount().then(readTileCounts)]);
+  if (state.reading || state.loading) { state.reading = state.loading = false; autoOpen(); render({ keep: false }); const top = ui.open && find(ui.open); if (top) readTrace(top); } // the rows are in: draw them, the menus and counts follow
+  await Promise.all([readWider(), readCompareCount().then(readTileCounts), readMenus(gen)]);
   state.loading = false;
   autoOpen();
   render({ keep: false });

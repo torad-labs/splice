@@ -72,7 +72,7 @@ public class PerfRowsFileSource internal constructor(
         val scan = Scan(0L, PerfSelection.WORK, cache)
         val archives = files.archived(scan.errors).map { it.first }
         if (scan.errors.isNotEmpty() || !AsyncFileIo.awaitFile(file)) {
-            return PerfSessionAccountIndex.Snapshot(emptyMap(), false, emptySet())
+            return PerfSessionAccountIndex.Snapshot(emptyMap())
         }
         return sessionAccounts.accounts(sessions, archives, generations, PerfLineDecode(scan::decode))
     }

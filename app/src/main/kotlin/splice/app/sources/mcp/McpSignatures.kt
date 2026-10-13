@@ -75,6 +75,6 @@ internal class McpSignatures(private val read: McpCensusRead, private val sharin
     private fun nameOf(reg: McpRegistration): String = when (reg.kind) {
         McpSourceKind.PLUGIN_MCP_JSON, McpSourceKind.PLUGIN_INLINE ->
             reg.scope?.parent?.fileName?.let { "plugin_${it}_${reg.name}" } ?: reg.name
-        else -> reg.name
+        McpSourceKind.GLOBAL, McpSourceKind.PROJECT, McpSourceKind.REPO -> reg.name
     }
 }

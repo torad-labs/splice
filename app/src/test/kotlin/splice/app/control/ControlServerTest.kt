@@ -404,11 +404,8 @@ class ControlServerTest {
     }
 
     @Test
-    fun `auth names an account by its ref, compact summarized, logs tailed`() = runTest {
-        // Auth is keyed by head; compact is aggregate stats + tail; logs {key,path,lines[]}.
-        val auth = json.parseToJsonElement(authed("/api/auth")).jsonObject["codex"]!!.jsonObject
-        assertEquals("1a2b3c4d", auth["account_ref"]?.jsonPrimitive?.content)
-        assertEquals("automated", auth["login"]?.jsonPrimitive?.content) // oauth -> automated
+    fun `compact summarized, logs tailed`() = runTest {
+        // compact is aggregate stats + tail; logs {key,path,lines[]}.
         val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["stats"]!!.jsonObject
         assertTrue(compact["tail"]!!.jsonArray.isNotEmpty())
         val logs = json.parseToJsonElement(authed("/api/logs/codex?tail=10")).jsonObject

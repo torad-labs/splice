@@ -204,7 +204,7 @@ class WebuiContractTest {
         assertFields(
             payload["codex"]!!.jsonObject,
             // V4-220 item 6b: `verdict` ({state, at_epoch_ms?}) is on every head's auth object.
-            listOf("kind", "present", "login", "account_ref", "verdict"),
+            listOf("present", "verdict"),
             "ProviderAuth",
         )
     }

@@ -27,16 +27,10 @@ public class AuthStatusRoutes(
      *  the answer, and a field a provider adds later stays out until it is named here. The key appears only masked.
      *  A read failure keeps its place with fixed words in place of the provider's text, so a login that cannot be
      *  read still says so without quoting where. */
-    private val shown = setOf(
-        "account_ref", "display_name", "refusal", "login", "native_place", "head", "source", "subscription",
-        "action_url", "account_token", "last_refresh", "refresh_latched",
-        "env_var", "key_source", "api_key_masked", "key_fingerprint",
-    )
+    private val shown = setOf("display_name", "refusal", "env_var", "api_key_masked")
 
-    // PORT-OF server/src/control/api.mjs auth payload @ pre-public-port-baseline: keyed by head (Node hardcodes
-    // `codex`; multi-head keys each), value = {kind, login, present, verdict, ...describe fields}. The webui
-    // AuthPayload reads every configured head. login = automated for oauth, manual for api-key.
-    // V4-220 item 6b: verdict = {state, at_epoch_ms?}; state is `held` for a credential splice holds,
+    // Keyed by head, value = {present, verdict, ...the shown describe fields}: what Compare, Teams, Accounts and the
+    // doctor read, and no more. V4-220 item 6b: verdict = {state, at_epoch_ms?}; state is `held` for a credential splice holds,
     // and for a forwarded one (auth.kind = client) what upstream last said: unverified, accepted, rejected.
     public suspend fun authJson(): String {
         val described = heads.values.map { head ->
@@ -45,8 +39,6 @@ public class AuthStatusRoutes(
         return buildJsonObject {
             described.forEach { (head, description, accountAuth) ->
                 putJsonObject(head.key) {
-                    put("kind", description.kind)
-                    put("login", if (description.kind.contains("oauth")) "automated" else "manual")
                     put("present", description.present)
                     CredentialVerdictJson().write(this, description.verdict)
                     description.fields.filterKeys { it in shown }.forEach { (key, value) -> put(key, value) }

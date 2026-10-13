@@ -166,7 +166,7 @@ async function load({ asks = true } = {}) {
       split,
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [],
-      moved: au.body?.[h.key]?.last_switch ?? null }); // the command's last move between logins, and why (spec 11h)
+      moved: au.body?.[h.key]?.account_pool?.last_switch ?? null }); // the command's last move between logins, and why (spec 11h)
   }
   for (const p of provs.values()) {
     const heads = new Set(p.cmds.map((c) => c.head));

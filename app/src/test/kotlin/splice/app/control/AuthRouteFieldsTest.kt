@@ -103,17 +103,9 @@ class AuthRouteFieldsTest {
     }
 
     @Test
-    fun `an oauth login answers with its reference and refresh time, never its path, and a read failure as words`() {
+    fun `an oauth login answers with its state, never its path, and a read failure as words`() {
         assertEquals(
-            setOf(
-                "kind",
-                "login",
-                "present",
-                "verdict",
-                "account_ref",
-                "last_refresh",
-                "read_error",
-            ),
+            setOf("present", "verdict", "read_error"),
             answer().getValue(OAUTH),
         )
         val reason = reasonOf(OAUTH)
@@ -121,18 +113,9 @@ class AuthRouteFieldsTest {
     }
 
     @Test
-    fun `an api-key login answers with its variable, source and masked key, never the key or its file`() {
+    fun `an api-key login answers with its variable and masked key, never the key or its file`() {
         assertEquals(
-            setOf(
-                "kind",
-                "login",
-                "present",
-                "verdict",
-                "env_var",
-                "key_source",
-                "api_key_masked",
-                "key_fingerprint",
-            ),
+            setOf("present", "verdict", "env_var", "api_key_masked"),
             answer().getValue(KEYED),
         )
         val body = runBlocking {

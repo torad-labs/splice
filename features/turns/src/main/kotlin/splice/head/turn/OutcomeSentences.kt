@@ -72,7 +72,7 @@ internal object OutcomeSentences {
             "provider; wait for the earliest quota reset or add an account, then retry",
         OutcomeTag.BUDGET_BLOCKED to
             "this head's daily spend budget is reached and its action is block, so splice refused the turn; " +
-            "raise the budget or wait until the next UTC day, then retry",
+            "raise the budget or wait until local midnight, then retry",
         OutcomeTag.AUTH_MISSING to
             "this head has no credentials for its provider, so nothing was sent; sign in to the provider, " +
             "then retry",

@@ -62,7 +62,7 @@ internal class PreDriveRefusals(
      *  refusal sits in HeadAdmission: before a response is committed, while the status line is still ours.
      *  The head's budget ([HeadDeps.HeadQuota.budget]) decides; this only answers for it.
      *
-     *  403 permission_error, never 429: the refusal lasts until the UTC day turns, and a 429 invites
+     *  403 permission_error, never 429: the refusal lasts until local midnight, and a 429 invites
      *  the client to retry into the same refusal. Claude Code does not retry a 403 and shows its
      *  message, so the budget's own sentence — head, spend, limit, when it lifts — is what the
      *  operator reads. Recorded BEFORE responding, like every local refusal (V4-55). A budget that

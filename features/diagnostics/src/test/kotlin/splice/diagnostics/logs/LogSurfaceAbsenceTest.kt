@@ -33,8 +33,10 @@ class LogSurfaceAbsenceTest {
     }
 
     @Test
-    fun `a genuinely absent log stays the quiet empty tail`(@TempDir tmp: Path) {
-        assertEquals("", LogFileSource(tmp.resolve("absent.log")).tail(5))
+    fun `a genuinely absent log says it does not exist yet`(@TempDir tmp: Path) {
+        val absent = tmp.resolve("absent.log")
+        val said = "[logs unavailable: $absent does not exist yet; the daemon creates it when it starts]"
+        assertEquals(said, LogFileSource(absent).tail(5))
     }
 
     // DR-68 redo (codex adversarial probe): the once-per-episode latch must re-arm on ANY healthy

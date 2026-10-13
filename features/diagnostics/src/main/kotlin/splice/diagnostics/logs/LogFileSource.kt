@@ -13,10 +13,9 @@ public class LogFileSource(
     private val logFile: Path,
     private val headTag: String? = null,
 ) : HeadLogSource {
-    // DR-68 (class law, display flavor): genuine absence stays the quiet empty tail; an
-    // UNREADABLE log degrades to one explicit in-band line instead of a silently blank
-    // dashboard/`splice logs` — the daemon.log itself may be the unreadable file, so the
-    // surface IS the returned text.
+    // DR-68 (class law, display flavor): an absent or UNREADABLE log degrades to one explicit
+    // in-band line instead of a silently blank dashboard/`splice logs` — the daemon.log itself
+    // may be the unreadable file, so the surface IS the returned text.
     override fun tail(lines: Int): String {
         if (lines <= 0) return ""
         return Cancellables.runCatchingCancellable {
@@ -35,15 +34,15 @@ public class LogFileSource(
             LogRebase(renderLines(at.lines, lines), at.completeEnd)
         }.getOrElse { failure -> LogRebase(unreadable(failure), 0L) }
 
-    /** DR-68 (class law, display flavor): genuine absence stays the quiet empty tail; an
-     *  UNREADABLE log degrades to one explicit in-band line instead of a silently blank
-     *  dashboard/`splice logs` — the daemon.log itself may be the unreadable file, so the
-     *  surface IS the returned text. */
+    /** DR-68 (class law, display flavor): one explicit in-band line instead of a silently blank
+     *  dashboard/`splice logs`. Absence says so too (splice-lead, Oct 13): an empty tail read the
+     *  same as a log with no lines for this head, so the console could not tell a fresh install
+     *  from a quiet one. */
     private fun unreadable(failure: Throwable): String {
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(logFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         return if (genuinelyAbsent) {
-            ""
+            "[logs unavailable: $logFile does not exist yet; the daemon creates it when it starts]"
         } else {
             "[logs unavailable: $logFile unreadable (${SafeFailureText.render(failure)})]"
         }
@@ -54,7 +53,7 @@ public class LogFileSource(
         lines.asSequence()
             .filter { headTag == null || headTag in it }
             .toList()
-            .takeLast(keep.coerceAtMost(MAX_LOG_LINES))
+            .takeLast(keep.coerceAtMost(LOG_MAX_LINES))
             .joinToString("\n")
 
     override fun path(): String = logFile.toString()
@@ -156,6 +155,11 @@ internal data class LogRebase(val text: String, val offset: Long)
 
 // LogFileSource's tail bounds. File-scope consts (Kotlin style law, 2026-08-15): a top-level
 // `private const val` is the sanctioned home for constants, never a static namespace on the type.
-private const val LOG_TAIL_BYTES = 1024 * 1024
-private const val MAX_LOG_LINES = 2_000
+// why: the bytes one tail or follow read takes from the end of daemon.log, its own window rather than the control
+// plane's shared ?tail cap: enough for LOG_MAX_LINES lines of ordinary length, so a head-filtered tail still finds its
+// lines among every other head's.
+private const val LOG_TAIL_BYTES = 4 * 1024 * 1024
+
+/** The most lines one log read returns; /api/logs clamps its ?tail by this, not by the perf route's cap. */
+public const val LOG_MAX_LINES: Int = 10_000
 private const val NEWLINE_BYTE = '\n'.code.toByte()

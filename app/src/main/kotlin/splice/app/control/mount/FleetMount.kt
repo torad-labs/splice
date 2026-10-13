@@ -1,7 +1,9 @@
 // NEW: LAYOUT-01 — the surface the control plane itself owns: the status payload, the head list with its per-head
-// actions, and each head's log tail. Liveness (/health) is the control server's own row, not this mount's.
+// actions, each head's log tail and the whole daemon log's. Liveness (/health) is the control server's own row, not
+// this mount's.
 package splice.app.control.mount
 
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -19,6 +21,8 @@ import splice.app.control.api.fleet.HeadRoutes
 import splice.core.util.JsonScalars
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
+import splice.diagnostics.logs.HeadLogSource
+import splice.diagnostics.logs.LOG_MAX_LINES
 import splice.heads.HeadStatusListing
 import splice.heads.ListHeads
 import splice.sessions.http.StartCommand
@@ -34,6 +38,8 @@ internal class FleetMount(
     private val guard: ControlGuard,
     /** Read at CALL time for the declared roster's families: ControlPlane assigns it after construction. */
     private val ports: ConsolePorts,
+    /** daemon.log with no head filter, for /api/logs: the lines no head tag reaches, startup and the hub among them. */
+    private val daemonLog: HeadLogSource,
 ) {
     private val headRoutes = HeadRoutes(resolver, audit)
     private val starts = HeadStartCommands(heads)
@@ -60,9 +66,21 @@ internal class FleetMount(
         }
         route.get("/api/heads") { guard.guarded(call) { listHeads.handle(call) } }
         route.post("/api/heads/{head}/{action}") { guard.guarded(call) { headRoutes.headAction(call) } }
+        route.get("/api/logs") { guard.guarded(call) { ControlReplies.respond(call, daemonLogJson(call)) } }
         route.get("/api/logs/{head}") {
-            guard.guarded(call) { headRoutes.logsJson(call, ControlReplies.tail(call, DEFAULT_LOG_TAIL)) }
+            guard.guarded(call) {
+                headRoutes.logsJson(call, ControlReplies.tail(call, DEFAULT_LOG_TAIL, LOG_MAX_LINES))
+            }
         }
+    }
+
+    /** The /api/logs body: the unfiltered tail, in /api/logs/{head}'s shape without a key. */
+    private fun daemonLogJson(call: ApplicationCall): String {
+        val lines = daemonLog.tail(ControlReplies.tail(call, DEFAULT_LOG_TAIL, LOG_MAX_LINES)).split("\n")
+        return buildJsonObject {
+            put("path", daemonLog.path())
+            putJsonArray("lines") { lines.filter { it.isNotEmpty() }.forEach { add(JsonPrimitive(it)) } }
+        }.toString()
     }
 
     /** The /api/status body: the registry rows, each with its family from the declared roster. */

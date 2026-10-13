@@ -14,7 +14,8 @@ internal object ControlReplies {
     suspend fun respond(call: ApplicationCall, body: String) =
         call.respondText(body, ContentType.Application.Json)
 
-    /** The query-param tail clamp both /api/perf (UsageMount) and /api/logs/{head} (FleetMount) apply. */
-    fun tail(call: ApplicationCall, default: Int): Int =
-        (call.request.queryParameters["tail"]?.toIntOrNull() ?: default).coerceIn(1, MAX_TAIL)
+    /** The query-param tail clamp, at [max]: /api/perf (UsageMount) takes the shared cap, the log routes (FleetMount)
+     *  their own window (LogFileSource.LOG_MAX_LINES). */
+    fun tail(call: ApplicationCall, default: Int, max: Int = MAX_TAIL): Int =
+        (call.request.queryParameters["tail"]?.toIntOrNull() ?: default).coerceIn(1, max)
 }

@@ -60,11 +60,11 @@ class LogsCommandTest {
     }
 
     @Test
-    fun `a missing daemon_log is empty and exit-0, never an error`(@TempDir tmp: Path) {
+    fun `a missing daemon_log says so and exits 0, never an error`(@TempDir tmp: Path) {
         val env = stateEnv(tmp) // logs dir exists but no daemon.log written
         val (ok, out) = capture(env, emptyList())
         assertTrue(ok, "a fresh install with no logs is not a failure")
-        assertEquals("", out)
+        assertTrue(out.contains("does not exist yet; the daemon creates it when it starts"), out)
     }
 
     @Test

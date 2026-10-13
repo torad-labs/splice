@@ -32,10 +32,11 @@ class FileSourcesTest {
     }
 
     @Test
-    fun `missing log and non-positive tail are empty`(@TempDir tempDir: Path) {
+    fun `a missing log says so and a non-positive tail is empty`(@TempDir tempDir: Path) {
         val missing = tempDir.resolve("missing.log")
         val source = LogFileSource(missing)
-        assertEquals("", source.tail(10))
+        val said = "[logs unavailable: $missing does not exist yet; the daemon creates it when it starts]"
+        assertEquals(said, source.tail(10))
 
         Files.writeString(missing, "[codex] one\n")
         assertEquals("", source.tail(0))

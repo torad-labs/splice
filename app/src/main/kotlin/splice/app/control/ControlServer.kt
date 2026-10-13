@@ -63,6 +63,7 @@ import splice.app.head.HeadRemovalAssembly
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.diagnostics.logs.LogFileSource
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
@@ -109,7 +110,14 @@ internal class ControlServer(
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
-    private val fleet = FleetMount(heads, resolver, audit, guard, ports)
+    private val fleet = FleetMount(
+        heads,
+        resolver,
+        audit,
+        guard,
+        ports,
+        LogFileSource(config.statePaths.logsDir.resolve("daemon.log")),
+    )
     private val lifecycle = LifecycleMount(shutdownDaemon, ports, guard, heads, log)
 
     /** The control plane arms the raw successor before binding; both Restart and add-save share it. */

@@ -67,6 +67,20 @@ private fun say(line: String) {
     System.out.flush()
 }
 
+// why: enough frames to show which step of the ordered stop a thread is parked in, without the dump drowning the output.
+private const val STOP_DUMP_FRAMES = 25
+
+/** Every live thread's stack, said once when the stop has not reached the listener by its deadline. Under a quiet host
+ *  and on a desk under load average 45 to 57 the stop reaches it in 9 to 226 ms (Oct 13, 13 runs of this child outside
+ *  gradle), yet inside a loaded pre-push it has taken past 10 s and past 30 s, so the next slow run names its own
+ *  cause: the thread the stop is waiting on, and what holds it. */
+private fun sayWhereTheStopWaits() {
+    Thread.getAllStackTraces().forEach { (thread, frames) ->
+        say("THREAD \"${thread.name}\" ${thread.state}")
+        frames.take(STOP_DUMP_FRAMES).forEach { say("    at $it") }
+    }
+}
+
 /** Waits for the stop to reach the control listener, then says whether the listener had stopped accepting and whether
  *  the daemon lock was still held at that moment — ALWAYS, bounded, whatever the stop does to this client.
  *
@@ -93,7 +107,10 @@ private fun awaitListenerClosed(port: Int, lockFile: Path, resume: CountDownLatc
         // A refused connect, a reset, or the read's own timeout. None of them is this thread's answer to give.
     }
     when {
-        portAccepts(port) -> say("$LISTENER_STILL_OPEN$AWAIT_CLOSE_MS")
+        portAccepts(port) -> {
+            say("$LISTENER_STILL_OPEN$AWAIT_CLOSE_MS")
+            sayWhereTheStopWaits()
+        }
         lockHeld(lockFile) -> say(PORT_CLOSED_LOCK_HELD)
         else -> say(LOCK_ALREADY_RELEASED)
     }

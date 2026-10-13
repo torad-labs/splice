@@ -27,10 +27,6 @@ private const val EDGE_STORE = "edges"
 private const val REASON_KEY = "reason"
 private const val NOT_KEPT = "not_kept"
 private const val PARTIALLY_KEPT = "partially_kept"
-internal const val PACKET_NOTE = "no wire source: a SendMessage call carries no dispatch unit"
-internal const val ACTIVITY_SAMPLE_NOTE = "labels are samples: at most one per session every 30 seconds, " +
-    "from its latest tool call while it works or from its client's own activity query; a gap is a session " +
-    "that called no tool"
 
 // why: milliseconds in a day. The reads are day-scoped because the activity store writes one
 // file per day; this converts a day index to the epoch-millis window that file covers.
@@ -96,8 +92,6 @@ public class TeamReads internal constructor(
                 }
                 reason?.let { put(REASON_KEY, it) }
                 put(OLDEST_KEPT, oldest)
-                put("day_start_epoch_millis", window.first)
-                put("packet_note", PACKET_NOTE)
                 put("messages", buildJsonArray { today.forEach { add(it.message(found[it.edge.from])) } })
             }
         }
@@ -119,9 +113,6 @@ public class TeamReads internal constructor(
                 }
                 reason?.let { put(REASON_KEY, it) }
                 put(OLDEST_KEPT, oldest)
-                put("day_start_epoch_millis", window.first)
-                put("sample_interval_note", ACTIVITY_SAMPLE_NOTE)
-                put("upstream_label_queries", rows.count { it.upstream })
                 put(
                     "entries",
                     buildJsonArray {

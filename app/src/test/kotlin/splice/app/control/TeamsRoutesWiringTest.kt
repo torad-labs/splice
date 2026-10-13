@@ -156,7 +156,6 @@ class TeamsRoutesWiringTest {
                 val body = rig.json(reply.bodyAsText())
                 val ats = body.getValue(rows).jsonArray.map { it.jsonObject.getValue("at").jsonPrimitive.content }
                 assertEquals(both, ats, "$panel: the local day's two halves, and nothing at its end")
-                assertEquals(from.toString(), body.getValue("day_start_epoch_millis").jsonPrimitive.content)
             }
         }
     }

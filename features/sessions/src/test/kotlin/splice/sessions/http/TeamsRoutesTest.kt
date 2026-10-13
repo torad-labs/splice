@@ -222,11 +222,6 @@ class TeamsRoutesTest {
         rig.stores.edges.record(MessageEdge(BUILDER, "lead", AT - DAY, "toolu_y", LEAD))
         AsyncFileIo.drain()
         val chat = rig.json(routes().reads.chat(id, null).body)
-        assertEquals(DAY_START.toString(), chat.getValue("day_start_epoch_millis").jsonPrimitive.content)
-        assertEquals(
-            "no wire source: a SendMessage call carries no dispatch unit",
-            chat.getValue("packet_note").jsonPrimitive.content,
-        )
         val base = """"from":"$LEAD","from_slot":"lead","from_head":"claude",""" +
             """"to":"uds:/run/2.sock","to_slot":"b1","packet":null"""
         val source = "/t/$LEAD.jsonl"
@@ -263,7 +258,6 @@ class TeamsRoutesTest {
         AsyncFileIo.drain()
         val chat = rig.json(routes().reads.chat(id, null, from.toString(), to.toString()).body)
         assertEquals(inside.map(Long::toString), rig.column(chat, "messages", "at"), "[from, to): both halves")
-        assertEquals(from.toString(), chat.getValue("day_start_epoch_millis").jsonPrimitive.content)
         val activity = rig.json(routes().reads.activity(id, null, from.toString(), to.toString()).body)
         assertEquals(inside.map(Long::toString), rig.column(activity, "entries", "at"))
         val utc = rig.json(routes().reads.chat(id, "2026-09-18").body)
@@ -328,9 +322,6 @@ class TeamsRoutesTest {
         rig.stores.activity.label(OUTSIDER, "codex", ActivityAction("Elsewhere"), AT)
         rig.stores.activity.label(LEAD, "claude", ActivityAction("Yesterday"), AT - DAY)
         AsyncFileIo.drain()
-        val note = "labels are samples: at most one per session every 30 seconds, " +
-            "from its latest tool call while it works or from its client's own activity query; a gap is a session " +
-            "that called no tool"
         val first = """{"at":$AT,"session":"$OLD_BUILDER","slot":"b1","head":"codex",""" +
             """"label":"Running tests","detail":"row V4-131","tool":"Bash","object":"npm test"}"""
         val second = """{"at":${AT + 1},"session":"$LEAD","slot":"lead","head":"claude",""" +
@@ -338,8 +329,7 @@ class TeamsRoutesTest {
         assertEquals(
             rig.json(
                 """{"team_id":"$id","state":"on","oldest_kept_epoch_millis":${DAY_START - DAY},""" +
-                    """"day_start_epoch_millis":$DAY_START,"sample_interval_note":"$note",""" +
-                    """"upstream_label_queries":1,"entries":[$first,$second]}""",
+                    """"entries":[$first,$second]}""",
             ),
             rig.json(routes().reads.activity(id, null).body),
         )

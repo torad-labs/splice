@@ -33,7 +33,7 @@ public class McpHubGate(private val binDir: Path) {
         return if (supported) null else "it runs on Linux x86-64 only, and this is $os $arch"
     }
 
-    private fun binaries(): String? = HUB_BINARIES.map(binDir::resolve).firstOrNull { !Files.isExecutable(it) }
+    private fun binaries(): String? = HUB_BINARIES.map { binDir.resolve(it) }.firstOrNull { !Files.isExecutable(it) }
         ?.let { "$it is missing or not executable" }
 
     private fun systemd(): String? = try {

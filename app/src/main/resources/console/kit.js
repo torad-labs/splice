@@ -274,9 +274,9 @@ const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<
 // error). A ping is heard: every byte the provider sends resets idle_ms (SseReader onBytes), so a model thinking
 // with pings never reads Stalled (Marlin; desk walk, Oct 10: idle stayed under 5 s across a 36 s pinging hold).
 const STALL_SHOWN_MS = 30000;
-// The fallback only: a head whose gate serves its own tiers (/api/heads gate.first_byte_timeout_ms before any output,
-// gate.stream_idle_ms after) reads Stalled once idle passes that tier, the point where splice itself treats the
-// silence as one (splice-lead, Oct 13, gap 396).
+// The ceiling: a head whose gate serves a tighter tier (/api/heads gate.first_byte_timeout_ms before any output,
+// gate.stream_idle_ms after) reads Stalled sooner, once idle passes that tier; a head at the defaults keeps Marlin's
+// half minute (splice-lead, Oct 13, gap 396).
 // why: under five seconds of quiet is ordinary streaming; a countdown that flickered on every pause would be noise.
 const RESUME_SHOWN_MS = 5000;
 // why: the continuations a round may spend on re-anchors (DEFAULT_MAX_CONTINUATIONS, Turn.kt:266); past them nothing resumes.
@@ -311,7 +311,7 @@ function stallOf(turn, head, endedBy) {
   // provider has begun answering.
   const wontResume = turn.seen_output === true && turn.will_resume === false;
   if (reanchorMs && !wontResume && (turn.resumes ?? 0) < MAX_CONTINUATIONS && idle >= RESUME_SHOWN_MS) return { kind: "silent", ms: idle, resumeMs: Math.max(0, reanchorMs - idle), at };
-  const stallMs = (turn.seen_output ? idleMs : firstByteMs) ?? STALL_SHOWN_MS;
+  const stallMs = Math.min(STALL_SHOWN_MS, (turn.seen_output ? idleMs : firstByteMs) ?? STALL_SHOWN_MS);
   if (idle >= stallMs) return { kind: "silent", ms: idle, wontResume, at };
   return null;
 }

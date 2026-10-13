@@ -115,7 +115,7 @@ class HeadOverrideWriteTest {
             assertEquals("5", overrides()["maxInflight"])
             assertEquals(5, config.getConfig("local").maxInflight)
 
-            patch(ROUTE, """{"maxInflight":null}""")
+            assertEquals(200, patch(ROUTE, """{"maxInflight":null}""").status.value)
             assertEquals(null, overrides()["maxInflight"])
             assertEquals(config.getConfig().maxInflight, config.getConfig("local").maxInflight, "falls back to global")
         }

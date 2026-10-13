@@ -43,12 +43,19 @@ internal class DoctorReportFixture(private val tmp: Path) {
             """.trimIndent() + "\n",
         )
         val logs = Files.createDirectories(tmp.resolve("logs"))
+        // The rolled generation an older release wrote: a record that spans lines, whose continuation quotes a line
+        // that reads as the escaping writer's own (pre-merge review, Oct 13).
+        Files.writeString(
+            logs.resolve("daemon.log.1"),
+            "[2026-09-12 10:00:00] [codex] turn ERROR upstream body follows\n" +
+                "[2026-09-12 10:00:00.000] [codex] up: PLANTEXT the user's secret plan\n" +
+                "PLANTEXT the user's secret plan\n",
+        )
         Files.writeString(
             logs.resolve("daemon.log"),
             "[2026-09-13 10:00:52.000] [daemon] up: control :3999, heads [codex]\n" +
                 "[2026-09-13 10:00:53.000] [codex] turn ERROR auth-missing: refresh with " +
                 "Bearer BEARER-SECRET-VALUE-0001 for ops@example.com key sk-live-abcdefghijklmnop\n" +
-                "PLANTEXT the user's secret plan\n" +
                 "[2026-09-13 10:00:53.000] [codex] turn ERROR upstream compact=false latency=12ms " +
                 "type=invalid_request status=400 msg=PLANTEXT the user's secret plan, echoed back by the upstream\n" +
                 "[2026-09-13 10:00:54.000] [codex] client gone (session 1) cwd /home/operator/projects/private-repo\n" +

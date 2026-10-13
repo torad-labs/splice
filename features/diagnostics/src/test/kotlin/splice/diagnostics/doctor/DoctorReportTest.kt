@@ -82,11 +82,17 @@ class DoctorReportTest {
         assertEquals("false", rows[1].jsonObject.getValue("cache_cold").jsonPrimitive.content, "a JSON boolean only")
         assertEquals(setOf("model", "total"), rows[2].jsonObject.keys, "a prose outcome is not a token: dropped")
         val logs = out.getValue("logs").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(6, logs.size, "every line of the tail")
+        assertEquals(8, logs.size, "every line of both tails, the rolled one first")
+        assertEquals("<redacted:text>", logs[0], "a line the escaping writer never writes is masked whole")
+        assertEquals(
+            "[2026-09-12 10:00:00.000] [codex] <redacted:text>",
+            logs[1],
+            "in a generation an older writer touched, even a line that reads as the daemon's keeps only its shape",
+        )
         assertEquals("<redacted:text>", logs[2], "a line the daemon did not write is masked whole")
-        assertTrue(logs[3].endsWith("status=400 msg=<redacted:text>"), "the head stays, the words go: " + logs[3])
-        assertTrue(logs[1].contains("Bearer <redacted>") && logs[1].contains("<redacted:email>"), logs[1])
-        assertTrue(logs[4].endsWith("cwd <redacted:path>"), "a foreign path is masked whole: " + logs[4])
+        assertTrue(logs[5].endsWith("status=400 msg=<redacted:text>"), "the head stays, the words go: " + logs[5])
+        assertTrue(logs[4].contains("Bearer <redacted>") && logs[4].contains("<redacted:email>"), logs[4])
+        assertTrue(logs[6].endsWith("cwd <redacted:path>"), "a foreign path is masked whole: " + logs[6])
         assertTrue(out["logs_error"] == null)
         val claude = out.getValue("claude_code").jsonObject.getValue("version").jsonPrimitive.content
         assertTrue(claude.startsWith("2.1.257"), claude)
@@ -247,13 +253,13 @@ class DoctorReportTest {
         Files.writeString(logs.resolve("daemon.log.1"), older + "\n")
         val lines = report(env, withLogs = true).getValue("logs").jsonArray.map { it.jsonPrimitive.content }
         assertEquals(500, lines.size, "the last 500 lines of both generations, .1 first")
-        assertTrue(lines.first().endsWith("perf outcome=ok n=107 x"), "606 lines, each as written: " + lines.first())
+        assertTrue(lines.first().endsWith("perf outcome=ok n=106 x"), "605 lines, each as written: " + lines.first())
         assertTrue(lines.last().contains("[codex] launch claudex"), lines.last())
 
         Files.delete(logs.resolve("daemon.log.1"))
         Files.createDirectory(logs.resolve("daemon.log.1"))
         val broken = report(env, withLogs = true)
-        assertEquals(6, broken.getValue("logs").jsonArray.size, "the cap holds: the failure is typed metadata")
+        assertEquals(5, broken.getValue("logs").jsonArray.size, "the cap holds: the failure is typed metadata")
         val error = broken.getValue("logs_error").jsonPrimitive.content
         assertTrue(error.startsWith("rotated:"), "a fixed generation label: $error")
         assertFalse(error.contains(secrets[5]), "the failure text goes through the redaction: $error")

@@ -30,7 +30,8 @@ internal class DoctorReportTail(
         val read = files.tails(statePaths.logsDir.resolve("daemon.log"), LOG_TAIL_BYTES)
         return LogTail(
             lines = buildJsonArray {
-                read.lines.takeLast(LOG_TAIL_LINES).forEach { add(JsonPrimitive(redaction.text(payloads.mask(it)))) }
+                read.generations.flatMap(payloads::mask).takeLast(LOG_TAIL_LINES)
+                    .forEach { add(JsonPrimitive(redaction.text(it))) }
             },
             error = read.error,
         )

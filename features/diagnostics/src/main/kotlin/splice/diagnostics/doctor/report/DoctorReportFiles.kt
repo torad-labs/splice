@@ -13,8 +13,19 @@ import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
-/** What the tails yielded: their lines, or the reason a generation could not be read (absence is empty). */
-internal data class FileLines(val lines: List<String>, val error: String?)
+/** What the tails yielded: their lines, or the reason a generation could not be read (absence is empty), and each
+ *  generation apart, which the log tail judges one at a time (DoctorLogPayloads). */
+internal data class FileLines(
+    val lines: List<String>,
+    val error: String?,
+    val generations: List<GenerationTail> = emptyList(),
+)
+
+/** One generation's bounded tail, and the first bytes of the file: its first line's opening, which the tail never sees. */
+internal data class GenerationTail(val head: String, val lines: List<String>)
+
+// why: the first line's stamp and tag fit in 64 bytes; the head is read only to judge that opening, never shown.
+private const val HEAD_BYTES = 64
 
 internal class DoctorReportFiles(private val redaction: DoctorRedaction) {
 
@@ -26,14 +37,16 @@ internal class DoctorReportFiles(private val redaction: DoctorRedaction) {
         val errors = mutableListOf<String>()
         if (!AsyncFileIo.awaitFile(file)) errors += "pending file write did not settle"
         val generations = listOf("rotated" to file.resolveSibling("${file.fileName}.1"), "active" to file)
-        val lines = generations.flatMap { (label, generation) ->
-            Cancellables.runCatchingCancellable { JsonlSink.readTail(generation, maxBytes).filter { it.isNotEmpty() } }
-                .getOrElse { e ->
-                    failure(label, generation, e)?.let { errors += it }
-                    emptyList()
-                }
+        val tails = generations.map { (label, generation) ->
+            Cancellables.runCatchingCancellable {
+                val head = Files.newInputStream(generation).use { String(it.readNBytes(HEAD_BYTES), Charsets.UTF_8) }
+                GenerationTail(head, JsonlSink.readTail(generation, maxBytes).filter { it.isNotEmpty() })
+            }.getOrElse { e ->
+                failure(label, generation, e)?.let { errors += it }
+                GenerationTail("", emptyList())
+            }
         }
-        return FileLines(lines, errors.takeIf { it.isNotEmpty() }?.joinToString("; "))
+        return FileLines(tails.flatMap { it.lines }, errors.takeIf { it.isNotEmpty() }?.joinToString("; "), tails)
     }
 
     private fun failure(label: String, generation: Path, e: Throwable): String? = when {

@@ -13,6 +13,7 @@ import splice.core.util.DirectoryListing
 import splice.core.util.DropSink
 import splice.core.util.FileTightening
 import splice.core.util.FilesListing
+import splice.core.util.JsonlSink
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -22,6 +23,7 @@ import splice.oauth.OAuthAccountRefused
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
 import java.time.LocalDateTime
@@ -34,12 +36,33 @@ import java.util.concurrent.CancellationException
  *  log's safety no longer hangs on its folder alone; the roll keeps that mode. */
 private class DaemonLogFile(private val file: Path, private val rolled: Path, private val maxBytes: Long) {
     private var writer: java.io.Writer? = null
+
+    /** The opening of every line this writer writes: the millisecond stamp, then a tag. */
+    private val recordLine = Regex("^\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}] \\[")
+
+    // A GENERATION OF ITS OWN (pre-merge review, Oct 13). The doctor's shareable tail trusts a generation only when its
+    // first line and every line of its tail open the way this writer's lines do (DoctorLogPayloads): a daemon.log an
+    // older release wrote can hold a record that spans lines. So a daemon.log that does not open and end that way is
+    // rolled before this writer's first line, which keeps the escaped records apart from anything that was not.
+    init {
+        Cancellables.runCatchingCancellable { if (mixed()) Files.move(file, rolled, REPLACE_EXISTING) }
+            .onFailure { System.err.print("[daemon-log] older log not rolled (${SafeFailureText.render(it)})\n") }
+    }
+
     private var written: Long = Cancellables
         .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
         .onFailure {
             System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}); starting at 0\n")
         }
         .getOrDefault(0L)
+
+    /** Whether daemon.log holds a line this writer would not write, at its opening or in the tail the doctor reads. */
+    private fun mixed(): Boolean {
+        if (!Files.isRegularFile(file) || Files.size(file) == 0L) return false
+        val head = Files.newInputStream(file).use { String(it.readNBytes(LOG_HEAD_BYTES), Charsets.UTF_8) }
+        val tail = JsonlSink.readTail(file, LOG_TRUSTED_TAIL_BYTES)
+        return !recordLine.containsMatchIn(head) || tail.any { it.isNotBlank() && !recordLine.containsMatchIn(it) }
+    }
 
     /** True when [line] reached daemon.log; a line it refused still goes to stderr, the one lane left for it. */
     fun append(line: String, echo: Boolean): Boolean {
@@ -324,6 +347,13 @@ internal fun interface StderrEcho {
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024
+
+// why: a line's stamp and tag fit in 64 bytes, all the opening check reads.
+private const val LOG_HEAD_BYTES = 64
+
+// why: the doctor's log tail reads the last MiB of each generation (DoctorReportTail's LOG_TAIL_BYTES), so the writer
+// checks the same window it will be judged by.
+private const val LOG_TRUSTED_TAIL_BYTES = 1 shl 20
 
 // DR-170: deep enough to name the failing call chain through the daemon's own boot, short enough
 // that a recursive trace cannot flood a synchronous write into the log.

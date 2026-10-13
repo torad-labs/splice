@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *  pass one keeps today's exact behaviour (one generation, then discard). A caller that wants more
  *  than one generation of history — PerfStats' opt-in archive dir is the first — copies [rolled]
  *  out before returning. Exceptions are the caller's problem to avoid: [JsonlSink] runs this under
- *  the same best-effort guard as the append itself, so a broken hook degrades to the old discard
- *  rather than losing the row this append is for. */
+ *  the same best-effort guard as the append itself, so a broken hook keeps `.1` where it is and
+ *  the row appends unrotated, never losing either. */
 public fun interface RotationArchive {
     public fun beforeReplace(rolled: Path)
 }
@@ -46,6 +46,9 @@ public fun interface JsonlForce {
 public object JsonlSink {
     private val locks = ConcurrentHashMap<Path, Any>()
     private val unrotated = AtomicInteger()
+
+    // The rolled generations whose hand-off failed, so the one line saying so is written once per file, not per append.
+    private val keptRolled: MutableSet<Path> = ConcurrentHashMap.newKeySet()
 
     /** The default for every caller that does not name an archive: discard the rolled generation,
      *  exactly as [JsonlSink] always has. */
@@ -175,20 +178,35 @@ public object JsonlSink {
      *  the lane.
      *
      *  V4-133: an existing `.1` is handed to [RotatePolicy.archive] BEFORE the move replaces it —
-     *  the one moment its rows are still on disk anywhere. Best-effort: a throwing hook degrades
-     *  to the discard every caller already lived with, never to a lost or corrupted append. */
+     *  the one moment its rows are still on disk anywhere. A throwing hook keeps `.1` where it is and the
+     *  row appends unrotated, said once in the daemon log: replacing it would lose the generation the
+     *  hook exists to keep. The append itself is never lost or corrupted. */
     private fun rotateIfOver(file: Path, currentSize: Long, encodedSize: Int, policy: RotatePolicy): Boolean {
-        val rotated = policy.rotate && currentSize > 0 && currentSize + encodedSize > policy.maxBytes
-        if (rotated) {
-            val rolled = file.resolveSibling("${file.fileName}.1")
-            if (Files.exists(rolled)) {
-                // A throwing hook degrades to today's discard; it must never block or corrupt the append.
-                Cancellables.runCatchingCancellable { policy.archive.beforeReplace(rolled) }
-            }
-            Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
-        }
+        val over = policy.rotate && currentSize > 0 && currentSize + encodedSize > policy.maxBytes
+        val rolled = file.resolveSibling("${file.fileName}.1")
+        val rotated = over && (!Files.exists(rolled) || handedOff(rolled, policy.archive))
+        if (rotated) Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
         return rotated
     }
+
+    /** The archive hook took [rolled] away (or chose to let it go); false when it threw, which keeps
+     *  [rolled] and is said once per file in the daemon log. */
+    private fun handedOff(rolled: Path, archive: RotationArchive): Boolean =
+        Cancellables.runCatchingCancellable { archive.beforeReplace(rolled) }.fold(
+            onSuccess = {
+                keptRolled.remove(rolled)
+                true
+            },
+            onFailure = { e ->
+                if (keptRolled.add(rolled)) {
+                    DaemonLog.write(
+                        "jsonl: ${rolled.fileName} could not move to the next generation " +
+                            "(${SafeFailureText.render(e)}); kept it and appending unrotated",
+                    )
+                }
+                false
+            },
+        )
 
     /**
      * [encoded], preceded by the newline a torn tail is missing.

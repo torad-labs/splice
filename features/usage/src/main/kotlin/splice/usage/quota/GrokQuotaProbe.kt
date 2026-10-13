@@ -40,13 +40,14 @@ internal class GrokQuotaProbe(
 internal class GrokQuotaParser : QuotaParse {
     private val slots = QuotaSlots()
 
-    /** The body is protobuf JSON, which leaves out a field at its zero value: read Oct 10, 2026, a week with no use
-     *  answered `currentPeriod` and no `creditUsagePercent` at all. So a body that names its period and omits the
-     *  percent is 0% used; only a body with neither is no reading. */
+    /** A body with no `creditUsagePercent` is no reading, even when it names its period (Oct 10, 2026: a quiet week
+     *  answered that way). xAI's own client reads the field as optional, so its absence says nothing about use, and a
+     *  zero made from it would be a figure splice invented. UsageAnswer turns it into "the provider reported no usage",
+     *  never 0% and never the last week's reading kept as today's (splice-lead, Oct 12). */
     override fun parse(body: JsonObject, now: Long): QuotaSnapshot? {
         val config = body["config"] as? JsonObject ?: return null
         val period = config["currentPeriod"] as? JsonObject
-        val used = num(config["creditUsagePercent"]) ?: period?.let { 0.0 } ?: return null
+        val used = num(config["creditUsagePercent"]) ?: return null
         val monthly = str(period?.get("type"))?.contains("MONTH") == true
         val seconds = if (monthly) THIRTY_DAYS_SECONDS else SEVEN_DAYS_SECONDS
         val window = QuotaWindow(used, iso(str(period?.get("end"))), seconds)

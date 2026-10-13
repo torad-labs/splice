@@ -78,7 +78,7 @@ function bump(repoRoot: string, version: string): void {
     throw new Refusal(`release beta: uncommitted edits in ${paths.join(", ")}; the bump commits only its own lines`);
   }
   for (const [path, , after] of rewritten) writeFileSync(join(repoRoot, path), after);
-  run(["git", "commit", "-m", `release: v${version}, the launcher, Versions and package.json say ${version} (splice-platform)`, "--", ...paths], repoRoot, Bun.env, false);
+  run(["git", "commit", "-m", `chore(release): v${version}, the launcher, Versions and package.json say ${version} (splice-platform)`, "--", ...paths], repoRoot, Bun.env, false);
 }
 
 /** The kept hub folder whose two binaries hash to their pins, as lead-install.sh selects it. */

@@ -6,7 +6,6 @@ import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.SessionAccountOf
-import splice.sessions.http.SessionAccountState
 import splice.sessions.registry.SessionRecord
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
@@ -48,15 +47,6 @@ internal class SessionAccountLabels(
                 head?.let { account(it, sessionId, saved[it]) }
 
             override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
-
-            override fun state(head: String?, sessionId: String): SessionAccountState = when {
-                ports.claudeLogins?.hasCarryingProof(head.orEmpty(), sessionId) == true -> SessionAccountState.NONE
-                saved[head]?.let { !it.complete || sessionId !in it.indexed } == true ->
-                    SessionAccountState.HISTORY_LIMITED
-                heads[head]?.authSurface?.authKind == CLIENT_AUTH_KIND && head !in saved ->
-                    SessionAccountState.HISTORY_LIMITED
-                else -> SessionAccountState.NONE
-            }
         }
 
     /** The label this session is pinned to on its head's pool (its own pin, else the head's), or null. */

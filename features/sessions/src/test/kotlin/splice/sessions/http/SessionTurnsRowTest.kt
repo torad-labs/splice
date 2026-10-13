@@ -40,19 +40,6 @@ class SessionTurnsRowTest {
             .associateBy { it.getValue("session_id").jsonPrimitive.content }
     }
 
-    @Test
-    fun `a counted session carries its turns and the moment the count covers from`() {
-        val listed = rows(mapOf(LEAD to SessionTurnCount(turns = 12, fromMs = AT - 5_000)))
-
-        val lead = listed.getValue(LEAD)
-        assertEquals(12L, lead.getValue("turns").jsonPrimitive.long)
-        assertEquals(
-            AT - 5_000,
-            lead.getValue("turns_from_ms").jsonPrimitive.long,
-            "the start rides with the count, so a reader can tell a whole figure from a floor",
-        )
-    }
-
     /** THE KEY A MENU DRAWS FROM. The comparison is made here because it needs both values in the same
      *  unit and the wire never says that `started_at` is milliseconds; a client guessing wrong draws a
      *  floor as a whole figure. The fixture's sessions are registered with `updatedAt` and no
@@ -89,7 +76,6 @@ class SessionTurnsRowTest {
 
         val uncounted = listed.getValue(BUILDER)
         assertFalse(uncounted.containsKey("turns"), "an uncounted session must not read as a measured zero")
-        assertFalse(uncounted.containsKey("turns_from_ms"), "and the start goes with it: half a pair says nothing")
         assertFalse(uncounted.containsKey("turns_partial"), "nor a floor flag about a count that does not exist")
         assertTrue(listed.getValue(LEAD).containsKey("turns"), "while the counted session on the same listing has it")
     }
@@ -101,7 +87,6 @@ class SessionTurnsRowTest {
         val listed = rows(mapOf(LEAD to SessionTurnCount(turns = 0, fromMs = AT - 1)))
 
         assertEquals(0L, listed.getValue(LEAD).getValue("turns").jsonPrimitive.long)
-        assertEquals(AT - 1, listed.getValue(LEAD).getValue("turns_from_ms").jsonPrimitive.long)
     }
 
     @Test

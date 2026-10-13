@@ -238,7 +238,7 @@ class ClaudeCarryingPoolUsageTest {
     }
 
     @Test
-    fun `bounded session history renders a known recent login, never absence for unread history`() = runBlocking {
+    fun `bounded session history renders a known recent login and is decoded once`() = runBlocking {
         val fixture = fixture()
         val rig = fixture.rig()
         val file = home.resolve("bounded-perf.jsonl")
@@ -267,12 +267,6 @@ class ClaudeCarryingPoolUsageTest {
                 val rows = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("sessions").jsonArray
                     .associate { it.jsonObject.getValue("session_id").jsonPrimitive.content to it.jsonObject }
                 assertEquals("added", rows.getValue("moving").getValue("account").jsonPrimitive.content)
-                assertEquals("known", rows.getValue("moving").getValue("account_state").jsonPrimitive.content)
-                assertEquals(
-                    "history_limited",
-                    rows.getValue("staying").getValue("account_state").jsonPrimitive.content,
-                )
-                assertEquals("history_limited", rows.getValue("idle").getValue("account_state").jsonPrimitive.content)
                 val before = source.parsedLines
                 sessionAccounts(client, control, rig)
                 assertEquals(before, source.parsedLines, "an identical listing never decodes the same history again")

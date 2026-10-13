@@ -3,7 +3,7 @@
 //
 // V4-130 (FEATURES.md 4.4, 6) adds, per row:
 //   repo   the git root of the row's cwd (RepoResolver: trusted roots only, worktrees folded into their
-//          shared repo, an outside cwd reported as itself with the reason). The key is left off a row
+//          shared repo, an outside cwd reported as itself). The key is left off a row
 //          with no cwd, because the console types it optional and non-nullable.
 //   team   the id of the first unarchived team the session is bound in, by created time then id
 //          (V4-131, TeamStore.bindingsOf), or null when it is bound in none or the team store is
@@ -14,9 +14,8 @@
 //   last   V4-444: the last main-thread message's role, tool, one-line redacted text and epoch-ms ts;
 //          null without an available transcript message, session id, or enabled transcript view.
 //   turns  how many turns the session has run, from the daemon's per-session accumulator, with
-//          `turns_from_ms` naming the moment the count covers from (SessionTurnsOf, which says why the
-//          pair never travels apart and why an absent `turns` is not a zero). Both keys are left off
-//          together when nothing counted the session.
+//          `turns_partial` saying whether the count is a floor (SessionTurnsOf, which says why an absent
+//          `turns` is not a zero). Both keys are left off together when nothing counted the session.
 // and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
 //
 // WHICH TREES THE TRANSCRIPT ROUTE SEARCHES, in order: the head's own CLAUDE_CONFIG_DIR (the registry
@@ -192,7 +191,6 @@ public class SessionsRoutes(
         s: SessionRecord,
         rowFacts: SessionRowFacts = facts,
     ): JsonObject = buildJsonObject {
-        put("pid", s.process.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
         val trees = roots.treesFor(s.head)
@@ -202,12 +200,10 @@ public class SessionsRoutes(
         put("last", said(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("title", titleOf(s))
-        put("kind", s.client.kind)
         put("version", s.client.version)
         put("cwd", s.process.cwd)
         put("status", s.status.state)
         put("waiting_for", s.status.waitingFor)
-        put("entrypoint", s.client.entrypoint)
         put("status_updated_at", s.status.updatedAt)
         put("started_at", s.process.startedAt)
         put("updated_at", s.process.updatedAt)
@@ -259,7 +255,6 @@ public class SessionsRoutes(
     private fun repoJson(repo: RepoRoot) = buildJsonObject {
         put("root", repo.root)
         repo.worktree?.let { put("worktree", it) }
-        repo.reason?.let { put("reason", it) }
     }
 
     private fun resolverFor(head: String?): RepoResolver {

@@ -21,9 +21,9 @@ import splice.sessions.registry.SessionRecord
 /** The daemon-supplied per-session facts a row carries. Every member defaults to "nothing wired", so a
  *  control plane built without a daemon behind it (tests, tools) publishes no claim about any of them. */
 public data class SessionRowFacts(
-    /** The session's own proved login (SessionAccountOf): `account`, `account_pin`, `account_state`. */
+    /** The session's own proved login (SessionAccountOf): `account`, `account_pin`. */
     val accountOf: SessionAccountOf = SessionAccountOf { _, _ -> null },
-    /** How many turns it has run, and from when (SessionTurnsOf): `turns`, `turns_from_ms`. */
+    /** How many turns it has run (SessionTurnsOf): `turns`, `turns_partial`. */
     val turnsOf: SessionTurnsOf = NoSessionTurns,
     /** How its newest request ended, when that holds it back (SessionEndingOf): `ended_by`. */
     val endingOf: SessionEndingOf = NoSessionEnding,

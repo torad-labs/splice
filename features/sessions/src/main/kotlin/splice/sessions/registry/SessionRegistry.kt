@@ -56,8 +56,6 @@ public data class SessionProcess(
 public data class SessionClient(
     val kind: String?,
     val version: String?,
-    /** How the session was started (`cli` is a terminal), which is where a person answers it. */
-    val entrypoint: String? = null,
 )
 
 public data class SessionRecord(
@@ -212,7 +210,6 @@ public class SessionRegistry(
             client = SessionClient(
                 kind = JsonScalars.str(obj, "kind"),
                 version = JsonScalars.str(obj, "version"),
-                entrypoint = JsonScalars.str(obj, "entrypoint"),
             ),
         )
     }

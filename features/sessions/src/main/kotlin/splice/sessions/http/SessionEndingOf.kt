@@ -40,7 +40,6 @@ public fun interface SessionEndingOf {
                 put("outcome", ending.outcome)
                 ending.account?.let { put("account", it) }
                 ending.resetMs?.let { put("reset_ms", it) }
-                put("at_ms", ending.atMs)
                 if (ending.retries > 0) put("retries", ending.retries)
                 ending.runSinceMs?.let { put("run_since_ms", it) }
             },

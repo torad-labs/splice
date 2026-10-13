@@ -109,11 +109,10 @@ class SessionsActivityTest {
     }
 
     @Test
-    fun `a row says what a waiting session waits for and how it was started`(@TempDir tmp: Path) {
-        val waiting = record(waitingFor = "permission prompt", entrypoint = "cli")
+    fun `a row says what a waiting session waits for`(@TempDir tmp: Path) {
+        val waiting = record(waitingFor = "permission prompt")
         val body = row(tmp, LastSource(null), record = waiting)
         assertEquals("permission prompt", body.getValue("waiting_for").jsonPrimitive.content)
-        assertEquals("cli", body.getValue("entrypoint").jsonPrimitive.content)
     }
 
     @Test
@@ -223,7 +222,6 @@ class SessionsActivityTest {
     private fun record(
         id: String? = "synthetic-activity",
         waitingFor: String? = null,
-        entrypoint: String? = null,
     ) = SessionRecord(
         sessionId = id,
         name = null,
@@ -237,7 +235,7 @@ class SessionsActivityTest {
             updatedAt = null,
             messagingSocketPath = null,
         ),
-        client = SessionClient(kind = null, version = null, entrypoint = entrypoint),
+        client = SessionClient(kind = null, version = null),
     )
 
     private fun row(

@@ -216,10 +216,6 @@ class SessionHistoryRouteTest {
             "login-$BOTH",
             first.getValue("sessions").jsonArray[0].jsonObject.getValue("account").jsonPrimitive.content,
         )
-        assertEquals(
-            "known",
-            second.getValue("sessions").jsonArray[0].jsonObject.getValue("account_state").jsonPrimitive.content,
-        )
     }
 
     @Test

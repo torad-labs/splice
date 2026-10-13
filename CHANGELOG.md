@@ -194,8 +194,8 @@ origin.
   A headless setup never offers it, a configured `bonsai` is left alone, and a rig failure is said
   in plain words (rig's exit codes mapped, its last stderr lines shown; a card or disk too small for
   the model is refused in rig's own sentence before the download) without failing the rest of setup.
-- **A project's record says what governs the repo.** `GET /api/projects/{id}` (and each row of the
-  list) now carries `compaction`, the rules a compaction in that repo resolves to in the daemon's own
+- **A project's record says what governs the repo.** Each row of `GET /api/projects` now carries
+  `compaction`, the rules a compaction in that repo resolves to in the daemon's own
   precedence (a project rule takes precedence over model and global rules,
   and a longer matching project path takes precedence), each with its scope, source and length; `[]` when no rule applies (the client's own instructions stand) and
   `null` when the daemon never wired its table. Beside it, `statusline_roots`: per head, because
@@ -310,9 +310,8 @@ origin.
   It answers 409 when no URL is saved; the desktop flag delivers nothing. `POST /api/playground` sends one prompt
   through one head's own credential and provider: anthropic-passthrough, openai-chat or
   openai-responses, whichever the head is on. A head passing Claude Code's own login through,
-  such as `claude-splice`, is refused. This is an independent one-shot call that never touches
-  the turn pipeline, so it writes no perf row, no trace record and no economics: the request and
-  response ride back in the HTTP response and nowhere else. Every new store (`budgets.json`,
+  such as `claude-splice`, is refused. It is a one-shot call outside the turn pipeline, recorded like
+  any request (see "Compare models sends are recorded like any request" under Changed). Every new store (`budgets.json`,
   `alerts.json`) is a plain 0600 JSON file under the state dir, same shape as `teams.json`.
 - **A llama-server head keeps each conversation on its own slot.** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,

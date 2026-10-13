@@ -7,9 +7,7 @@
 package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.response.header
 import splice.core.auth.CredentialKey
-import splice.core.perf.OutcomeTag
 import splice.core.turn.LiveWatchdogBudget
 import splice.core.util.WallClock
 import splice.head.HeadDeps
@@ -39,6 +37,7 @@ internal class HeadAdmission(
     private val credentialHolds =
         CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock, keyAccounts)
     private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
+    private val refusals = PreDriveRefusals(deps, admission, responses, driver)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
@@ -106,64 +105,6 @@ internal class HeadAdmission(
         }
     }
 
-    /** A 400 before SSE, so the installed client's conditional size-error path can compact.
-     * This is an estimated-input bound with a measured append delta, plus empirical p99 output. */
-    private suspend fun refuseIfOversized(
-        call: ApplicationCall,
-        prepared: Preparation.Ready,
-        admitted: AdmittedTurn,
-        trace: TurnTrace?,
-    ): Boolean {
-        val meta = prepared.built.meta
-        val message = admission.compactionPreflight.refusal(meta, prepared.built.requestBody, prepared.hasPriorExchange)
-            ?: return false
-        val tag = when {
-            meta.compact -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW
-            prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE
-            else -> OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE
-        }
-        trace?.failureSentence(message)
-        driver.recordLocalRefusal(
-            prepared.built.meta,
-            admitted.perf,
-            admitted.t0,
-            LocalRefusal(tag.wire, message, trace),
-        )
-        call.response.header("x-should-retry", "false")
-        admitted.close()
-        responses.respondInvalidRequest(call, message)
-        return true
-    }
-
-    /** V4-133 review: A REACHED `block` BUDGET REFUSES THE TURN HERE, for the reason the rate-limit
-     *  refusal below sits here: before a response is committed, while the status line is still ours.
-     *  The head's budget ([HeadDeps.HeadQuota.budget]) decides; this only answers for it.
-     *
-     *  403 permission_error, never 429: the refusal lasts until the UTC day turns, and a 429 invites
-     *  the client to retry into the same refusal. Claude Code does not retry a 403 and shows its
-     *  message, so the budget's own sentence — head, spend, limit, when it lifts — is what the
-     *  operator reads. Recorded BEFORE responding, like every local refusal (V4-55). A budget that
-     *  is not reached, or only warns, admits the turn and changes nothing on its path. */
-    private suspend fun refuseIfOverBudget(
-        call: ApplicationCall,
-        prepared: Preparation.Ready,
-        admitted: AdmittedTurn,
-        trace: TurnTrace?,
-        keyAccount: KeyNaming,
-    ): Boolean {
-        val block = deps.quotaBundle.budget.admit() ?: return false
-        val named = (keyAccount as? KeyNaming.Named)?.label
-        driver.recordLocalRefusal(
-            prepared.built.meta,
-            admitted.perf,
-            admitted.t0,
-            LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace, named),
-        )
-        admitted.close()
-        responses.respondBudgetBlocked(call, block.message)
-        return true
-    }
-
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
         // exit writes a perf row — the two local refusals below and the drive all go through
@@ -177,7 +118,7 @@ internal class HeadAdmission(
         // The key is the account: a head with no login pool records WHICH key sent the request, and a pooled one
         // answers None without a resolve.
         val keyAccount = keyAccounts.naming()
-        if (refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
+        if (refusals.refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = deps.quotaBundle.activePool?.select(
@@ -225,7 +166,7 @@ internal class HeadAdmission(
         trace: TurnTrace?,
         running: TurnAccountQuota,
     ) {
-        if (refuseIfOversized(call, prepared, admitted, trace)) return
+        if (refusals.refuseIfOversized(call, prepared, admitted, trace)) return
         admitted.retainRequest()
         val inputs = TurnInputs(
             prepared.built,

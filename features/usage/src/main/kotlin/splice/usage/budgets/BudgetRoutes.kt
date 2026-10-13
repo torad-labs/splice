@@ -112,12 +112,9 @@ public class BudgetRoutes(
                 val row = buildJsonObject {
                     fields.forEach { (key, value) -> put(key, value) }
                     put("used_usd", spend?.usedUsd)
-                    put("remaining_usd", spend?.remainingUsd)
                     put("unpriced_turns", spend?.unpricedTurns)
                     put("failed_turns", spend?.failedTurns)
                     HeadPriceGap.wire(lookup, budget.head)?.let { put(UNPRICED_REASON, it) }
-                    put("spend_complete", spend?.complete)
-                    put("spend_pending", spend?.pending)
                 }
                 add(row)
             }

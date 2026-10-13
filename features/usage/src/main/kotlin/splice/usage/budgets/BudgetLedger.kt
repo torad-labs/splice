@@ -83,11 +83,10 @@ internal class BudgetLedger(
         val now = context.clock()
         seededTally(now)
         return synchronized(lock) {
-            val tally = tallyAt(now) ?: return@synchronized BudgetSpend(null, null, 0, false)
+            val tally = tallyAt(now) ?: return@synchronized BudgetSpend(null, 0)
             val complete = tally.seeded && tally.historyReadable && tally.unpriced == 0L
             val used = tally.usd.takeIf { complete }
-            val remaining = used?.let { spend -> limit()?.usd?.let { (it - spend).coerceAtLeast(0.0) } }
-            BudgetSpend(used, remaining, tally.unpriced, complete, pending = tally.seeding, failedTurns = tally.failed)
+            BudgetSpend(used, tally.unpriced, failedTurns = tally.failed)
         }
     }
 

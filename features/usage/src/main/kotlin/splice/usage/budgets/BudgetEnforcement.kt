@@ -74,14 +74,11 @@ public class BudgetEnforcement(
     internal fun spending(head: String): BudgetSpend? = ledgers[head]?.snapshot()
 }
 
-/** Exact head-wide priced spend is unknown if history is unreadable or any turn has no rate card. */
+/** Exact head-wide priced spend: [usedUsd] is null while the day's pre-boot history is still being read, when it is
+ *  unreadable, or when any turn has no rate card. */
 internal data class BudgetSpend(
     val usedUsd: Double?,
-    val remainingUsd: Double?,
     val unpricedTurns: Long,
-    val complete: Boolean,
-    /** True only while the daemon is still reading this day's pre-boot history. */
-    val pending: Boolean = false,
     /** The day's requests that ended failed and reported no usage: they spent nothing and are not in [unpricedTurns]. */
     val failedTurns: Long = 0,
 )

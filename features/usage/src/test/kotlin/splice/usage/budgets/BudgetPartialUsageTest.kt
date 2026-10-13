@@ -4,10 +4,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.model.ModelCatalog
@@ -64,7 +62,7 @@ class BudgetPartialUsageTest {
         head.spent(PARTIAL_BOOT, model, TurnBill.counters(noRequestUsage))
         assertNull(head.admit())
         val spend = owner.spending("synthetic")!!
-        assertTrue(spend.complete)
+        assertNotNull(spend.usedUsd)
         assertEquals(0.0, spend.usedUsd)
     }
 
@@ -79,7 +77,7 @@ class BudgetPartialUsageTest {
         val owner = owner(tmp, listOf(row))
         assertNull(owner.forHead("synthetic", catalog).admit())
         val spend = owner.spending("synthetic")!!
-        assertTrue(spend.complete)
+        assertNotNull(spend.usedUsd)
         assertEquals(0.0, spend.usedUsd)
     }
 
@@ -92,7 +90,7 @@ class BudgetPartialUsageTest {
             TurnBill.counters(noRequestUsage),
         )
         val spend = owner.spending("synthetic")!!
-        assertTrue(spend.complete)
+        assertNotNull(spend.usedUsd)
         assertEquals(0.0, spend.usedUsd)
     }
 
@@ -107,7 +105,7 @@ class BudgetPartialUsageTest {
         val owner = owner(tmp, listOf(row))
         assertNull(owner.forHead("synthetic", catalog).admit())
         val spend = owner.spending("synthetic")!!
-        assertTrue(spend.complete)
+        assertNotNull(spend.usedUsd)
         assertEquals(0.0, spend.usedUsd)
     }
 
@@ -119,7 +117,7 @@ class BudgetPartialUsageTest {
             model,
             TurnBill.counters(Usage(reported = emptySet())),
         )
-        assertFalse(owner.spending("synthetic")!!.complete)
+        assertNull(owner.spending("synthetic")!!.usedUsd)
         assertNull(owner.spending("synthetic")!!.usedUsd)
     }
 
@@ -130,7 +128,7 @@ class BudgetPartialUsageTest {
         head.spent(PARTIAL_BOOT, model, inputOnly)
         assertNotNull(head.admit(), "the reported input alone exceeds the spend limit")
         val spend = owner.spending("synthetic")!!
-        assertFalse(spend.complete, "missing output makes the day a lower bound")
+        assertNull(spend.usedUsd, "missing output makes the day a lower bound")
         assertNull(spend.usedUsd, "the lower bound must not be presented as complete spend")
     }
 
@@ -140,6 +138,6 @@ class BudgetPartialUsageTest {
         val owner = owner(tmp, listOf(row))
         val head = owner.forHead("synthetic", catalog)
         assertNotNull(head.admit(), "seeded input cannot disappear because output was not reported")
-        assertFalse(owner.spending("synthetic")!!.complete)
+        assertNull(owner.spending("synthetic")!!.usedUsd)
     }
 }

@@ -72,13 +72,13 @@ class BudgetSpendTest {
         val head = owner.forHead("native", catalog)
         head.spent(now, "priced", tokens(2))
         assertSame(head, owner.forHead("native", catalog))
-        assertEquals(BudgetSpend(3.0, 2.0, 0, true), owner.spending("native"))
+        assertEquals(BudgetSpend(3.0, 0), owner.spending("native"))
         assertNull(head.admit())
         head.spent(now, "priced", tokens(3))
-        assertEquals(BudgetSpend(6.0, 0.0, 0, true), owner.spending("native"))
+        assertEquals(BudgetSpend(6.0, 0), owner.spending("native"))
         assertTrue(head.admit() != null)
         now += SPEND_DAY_MS
-        assertEquals(BudgetSpend(0.0, 5.0, 0, true), owner.spending("native"))
+        assertEquals(BudgetSpend(0.0, 0), owner.spending("native"))
         assertNull(head.admit())
     }
 
@@ -101,9 +101,7 @@ class BudgetSpendTest {
         head.spent(SPEND_BOOT_MS, "unpriced", emptyMap())
         val spend = owner.spending("head")!!
         assertNull(spend.usedUsd)
-        assertNull(spend.remainingUsd)
         assertEquals(1, spend.unpricedTurns)
-        assertFalse(spend.complete)
         assertNull(owner.spending("unwired"))
     }
 
@@ -154,7 +152,6 @@ class BudgetSpendTest {
         val route = BudgetRoutes(BudgetSource { store }, ConfigService(paths))
         val reply = route.read(owner)
         assertTrue(reply.body.contains("\"used_usd\":2.0"))
-        assertTrue(reply.body.contains("\"remaining_usd\":3.0"))
         assertFalse(reply.body.contains("account"))
         assertTrue(route.read().body.contains("\"used_usd\":null"))
     }

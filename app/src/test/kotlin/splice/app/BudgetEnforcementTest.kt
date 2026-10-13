@@ -44,10 +44,6 @@ class BudgetEnforcementTest {
                 "admission uses the tally it has without file I/O",
             )
             val policy = BudgetRoutes({ plane.budgets }, ConfigService(paths)).read(plane.console.budgets)
-            assertTrue(
-                policy.body.contains("\"spend_complete\":false"),
-                "pending history is explicit on the existing wire",
-            )
             assertTrue(policy.body.contains("\"used_usd\":null"), "pending history never claims an exact amount")
             synchronized(plane.budgets) {
                 assertNull(

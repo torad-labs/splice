@@ -7,7 +7,6 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -69,11 +68,11 @@ class BudgetSeedTest {
         head.spent(SEED_BOOT_MS, "priced", tokens(2))
         repeat(3) { assertNull(head.admit()) }
         assertEquals(0, reads, "admission has not executed the historical reader")
-        assertEquals(BudgetSpend(null, null, 0, false, pending = true), owner.spending("head"))
+        assertEquals(BudgetSpend(null, 0), owner.spending("head"))
         head.spent(SEED_BOOT_MS + 1, "priced", tokens(1))
         runCurrent()
         assertEquals(1, reads, "every pending admission shares one seed")
-        assertEquals(BudgetSpend(4.0, 1.0, 0, true), owner.spending("head"))
+        assertEquals(BudgetSpend(4.0, 0), owner.spending("head"))
         head.spent(SEED_BOOT_MS + 2, "priced", tokens(1))
         assertNotNull(head.admit(), "the seeded and live spend together enforce the cap")
         assertEquals(1, reads)
@@ -102,13 +101,10 @@ class BudgetSeedTest {
         val routes = BudgetRoutes(BudgetSource { store }, ConfigService(paths))
         val saved = routes.write("""{"budgets":[{"head":"head","daily_usd":50,"action":"warn"}]}""", owner)
         assertTrue(saved.body.contains("\"used_usd\":null"), saved.body)
-        assertTrue(saved.body.contains("\"spend_pending\":true"), saved.body)
         assertEquals(0, reads, "the route does not pretend to have completed the historical read")
         runCurrent()
         val complete = routes.read(owner)
         assertTrue(complete.body.contains("\"used_usd\":0.0"), complete.body)
-        assertTrue(complete.body.contains("\"remaining_usd\":50.0"), complete.body)
-        assertTrue(complete.body.contains("\"spend_pending\":false"), complete.body)
         assertEquals(1, reads)
     }
 
@@ -209,7 +205,7 @@ class BudgetSeedTest {
         head.spent(SEED_BOOT_MS, "priced", tokens(0))
         assertNull(head.admit())
         assertTrue(alerts.isEmpty(), "warn-at-turn-end also leaves history on the background dispatcher")
-        assertFalse(owner.spending("head")!!.complete)
+        assertNull(owner.spending("head")!!.usedUsd)
         runCurrent()
         assertEquals(1, alerts.size, "history is not silently ignored when no later turn arrives")
         repeat(3) { assertNull(head.admit()) }
@@ -239,11 +235,11 @@ class BudgetSeedTest {
         )
         val head = owner.forHead("head", seedCatalog)
         assertNull(head.admit())
-        assertFalse(owner.spending("head")!!.complete)
+        assertNull(owner.spending("head")!!.usedUsd)
         now += SEED_DAY_MS
         assertNull(head.admit())
         runCurrent()
-        assertEquals(BudgetSpend(0.0, 5.0, 0, true), owner.spending("head"))
+        assertEquals(BudgetSpend(0.0, 0), owner.spending("head"))
     }
 
     private fun emptyHistory(): HeadPerfHistory = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(emptyList()) } }

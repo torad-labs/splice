@@ -4,8 +4,6 @@ package splice.accounts.edit
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
 import splice.accounts.AccountReplies
@@ -118,7 +116,7 @@ public class AccountEditRoutes(
 
     private suspend fun respondMutation(call: ApplicationCall, result: AccountMutation) {
         when (result) {
-            AccountMutation.Ok -> AccountReplies.respond(call, buildJsonObject { put("ok", true) }.toString())
+            AccountMutation.Ok -> AccountReplies.respond(call, "{}")
             AccountMutation.UnknownHead -> AccountReplies.respondError(call, "unknown head", HttpStatusCode.NotFound)
             // The head is real, so this is a bad request about it rather than a missing head.
             is AccountMutation.UnsupportedAuthKind -> AccountReplies.respondError(

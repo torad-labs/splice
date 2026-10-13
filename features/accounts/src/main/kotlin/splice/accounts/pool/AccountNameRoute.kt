@@ -4,8 +4,6 @@ package splice.accounts.pool
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.accounts.AccountReplies
 import splice.http.JsonBody
 
@@ -25,6 +23,6 @@ public class AccountNameRoute(private val store: AccountNameStore) {
             AccountReplies.respondError(call, refused.message.orEmpty(), HttpStatusCode.BadRequest)
             return
         }
-        AccountReplies.respond(call, buildJsonObject { put("ok", true) }.toString())
+        AccountReplies.respond(call, "{}")
     }
 }

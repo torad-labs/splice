@@ -46,7 +46,6 @@ class AccountOrderRouteTest {
         val changed = client.put("/api/auth/head/order") { setBody("""{"order":["backup","primary"]}""") }
         assertEquals(HttpStatusCode.OK, changed.status)
         val payload = Json.parseToJsonElement(changed.bodyAsText()).jsonObject
-        assertEquals("head", payload.getValue("head").jsonPrimitive.content)
         assertEquals(
             listOf("backup", "primary"),
             payload.getValue("effective_order").jsonArray.map { it.jsonPrimitive.content },

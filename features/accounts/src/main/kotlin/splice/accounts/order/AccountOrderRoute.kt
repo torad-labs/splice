@@ -29,7 +29,6 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
             AccountReplies.respond(
                 call,
                 buildJsonObject {
-                    put("head", head.key)
                     putJsonArray("order") { }
                     putJsonArray("effective_order") { }
                 }.toString(),
@@ -88,7 +87,6 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
     private suspend fun respond(call: ApplicationCall, target: Target) = AccountReplies.respond(
         call,
         buildJsonObject {
-            put("head", target.head)
             putJsonArray("order") { target.source.order().forEach { add(JsonPrimitive(it)) } }
             putJsonArray("effective_order") { target.source.effectiveOrder().forEach { add(JsonPrimitive(it)) } }
             put("next_target", target.source.nextTarget())

@@ -46,8 +46,6 @@ public data class LoginStatus(
     val failure: FailedLogin? = null,
     /** The label actually written, which can differ from an automatic request's candidate. */
     val label: String? = null,
-    /** Archived quota path for a labeled renewal, null when no record was set aside. */
-    val usageSetAside: String? = null,
 ) {
     public val failureReason: String? get() = failure?.reason
     public val failureKind: LoginFailure? get() = failure?.kind

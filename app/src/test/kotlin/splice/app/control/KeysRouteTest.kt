@@ -26,7 +26,6 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -119,7 +118,6 @@ class KeysRouteTest {
         val put = send("PUT", "/api/keys/$STORED", """{"value":"$secret"}""")
         assertEquals(HttpStatusCode.OK, put.status, put.bodyAsText())
         val applied = obj(put)
-        assertTrue(applied["stored"]!!.jsonPrimitive.boolean, "$applied")
         assertEquals(listOf("router" to "store"), readers(applied), "the head reads the stored key now")
         assertEquals(secret, store.read(STORED), "the value landed in keys.toml")
         assertEquals(
@@ -128,13 +126,11 @@ class KeysRouteTest {
         )
 
         val listed = obj(send("GET", "/api/keys")).getValue("keys").jsonArray.map { it.jsonObject }
-        val row = listed.single { it["name"]!!.jsonPrimitive.content == STORED }
-        assertTrue(row["stored"]!!.jsonPrimitive.boolean, "$row")
+        assertTrue(listed.any { it["name"]!!.jsonPrimitive.content == STORED }, "the stored key is listed")
         send("GET", "/api/auth")
 
         val removed = send("DELETE", "/api/keys/$STORED")
         assertEquals(HttpStatusCode.OK, removed.status, removed.bodyAsText())
-        assertFalse(obj(removed)["stored"]!!.jsonPrimitive.boolean)
         assertEquals(listOf("router" to "missing"), readers(obj(removed)), "nothing supplies it once removed")
 
         assertTrue(logged.any { it.contains("keys: stored $STORED") }, "the write is logged by name: $logged")

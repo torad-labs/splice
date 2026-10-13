@@ -18,7 +18,6 @@ package splice.accounts.keys
 
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
 import splice.accounts.AccountReplies
@@ -44,16 +43,15 @@ public class KeyRoutes(
     private val readers = KeyReaders(heads)
     private val ledgers = ConcurrentHashMap<Path, KeyLedger>()
 
-    /** GET /api/keys: `{path, keys: [{name, stored, fingerprint, first_seen_epoch_seconds, replaced, heads}]}`. */
+    /** GET /api/keys: `{keys: [{name, fingerprint, first_seen_epoch_seconds, replaced, heads}]}`. */
     public suspend fun list(call: ApplicationCall) {
         val keys = store() ?: return AccountReplies.respondUnwired(call, KEYS_PORT)
         val byName = readers.byName()
         val stored = keys.names()
         val body = buildJsonObject {
-            put("path", keys.path.toString())
             putJsonArray("keys") {
                 (stored + byName.keys).sorted().forEach { name ->
-                    add(entry(keys, name, name in stored, byName[name].orEmpty()))
+                    add(entry(keys, name, byName[name].orEmpty()))
                 }
             }
         }
@@ -82,15 +80,15 @@ public class KeyRoutes(
             is KeyOutcome.Applied -> {
                 log("[control] keys: ${LogSafe.str(outcome.verb)} ${LogSafe.str(outcome.name)}\n")
                 val name = outcome.name
-                val applied = entry(keys, name, name in keys.names(), readers.byName()[name].orEmpty())
+                val applied = entry(keys, name, readers.byName()[name].orEmpty())
                 AccountReplies.respond(call, applied.toString())
             }
         }
     }
 
     // Every answer about a key is also splice seeing it: the ledger records the fingerprint in use under [name].
-    private fun entry(keys: KeyStore, name: String, stored: Boolean, uses: List<KeyReader>) =
-        readers.json(name, stored, uses, ledgerOf(keys).observe(name, uses.firstNotNullOfOrNull { it.fingerprint }))
+    private fun entry(keys: KeyStore, name: String, uses: List<KeyReader>) =
+        readers.json(name, uses, ledgerOf(keys).observe(name, uses.firstNotNullOfOrNull { it.fingerprint }))
 
     private fun ledgerOf(keys: KeyStore): KeyLedger =
         ledgers.computeIfAbsent(keys.path.resolveSibling(LEDGER_FILE)) { KeyLedger(it, log) }

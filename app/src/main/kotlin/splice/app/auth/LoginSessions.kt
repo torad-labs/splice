@@ -105,7 +105,6 @@ internal class LoginSessions(
             it.copy(
                 state = LoginState.SIGNED_IN,
                 label = result.account?.persistedLabel(),
-                usageSetAside = result.account?.setAsideQuota()?.toString(),
             )
         }
         if (restart == null) return

@@ -24,16 +24,14 @@ internal class KeyReaders(private val heads: Map<String, AccountHead>) {
             }
         }.groupBy({ it.first }, { it.second })
 
-    /** `{name, stored, fingerprint, first_seen_epoch_seconds, replaced, heads: [{head, source}]}`, heads sorted by key.
+    /** `{name, fingerprint, first_seen_epoch_seconds, replaced, heads: [{head, source}]}`, heads sorted by key.
      *  The fingerprint and date are the key in use; replaced lists the keys before it, newest first ([KeyLedger]). */
     fun json(
         name: String,
-        stored: Boolean,
         readers: List<KeyReader>,
         history: KeyHistory,
     ): JsonObject = buildJsonObject {
         put("name", name)
-        put("stored", stored)
         put("fingerprint", history.current?.fingerprint)
         put("first_seen_epoch_seconds", history.current?.firstSeen)
         putJsonArray("replaced") {

@@ -55,7 +55,6 @@ public class LoginRoutes(
 internal object LoginStatusJson {
     fun json(status: LoginStatus): String = buildJsonObject {
         put("id", status.id)
-        put("head", status.head)
         put("state", status.state.wire)
         put("user_code", status.prompt.userCode)
         put("verification_uri", status.prompt.verificationUri)
@@ -63,7 +62,6 @@ internal object LoginStatusJson {
         put("failure_reason", status.failureReason)
         put("failure_kind", status.failureKind?.wire)
         put("label", status.label)
-        put("usage_set_aside", status.usageSetAside)
     }.toString()
 }
 

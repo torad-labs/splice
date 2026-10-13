@@ -56,9 +56,9 @@ internal class McpMemory(
         val held = table.pids.filter { table.inSlice(it, slice) }.toSet()
         // each scope's first process, the holder: its parent is outside the slice. A daemon child placed in the slice
         // is already one of the daemon's own, so it is counted there once
-        val holders = held.filter { table.parentOf(it) !in held && table.parentOf(it) != daemon }
+        val holderPids = held.filter { table.parentOf(it) !in held && table.parentOf(it) != daemon }
         val copies = (claudes + daemon).flatMap { owner -> copiesUnder(table, owner, owners) } +
-            holders.mapNotNull { copyOf(table, it, daemon, owners) }
+            holderPids.mapNotNull { copyOf(table, it, daemon, owners) }
         val heldBy = McpHeldBy(holders.attached, holders.sessions)
         // one server can be declared in several files; the one a plan decides speaks for it
         val servers = declared.groupBy { it.name }

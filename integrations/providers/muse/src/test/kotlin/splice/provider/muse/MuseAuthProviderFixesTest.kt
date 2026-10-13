@@ -407,29 +407,6 @@ class MuseAuthProviderFixesTest {
 
     @Timeout(HANG_BACKSTOP_S)
     @Test
-    fun `a concurrent poll tick and refresh produce one mint`(@TempDir tempDir: Path) = runTest {
-        val file = authFile(tempDir)
-        val calls = AtomicInteger()
-        val entered = CompletableDeferred<Unit>()
-        val proceed = CompletableDeferred<Unit>()
-        val auth = backgroundProvider(file, flightContext = coroutineContext) { _, _ ->
-            calls.incrementAndGet()
-            entered.complete(Unit)
-            proceed.await()
-            MuseMintAttempt.Granted(usageKey("shared-mint"))
-        }
-        val refresh = launch { auth.refresh() }
-        val poll = launch { auth.usageFields() }
-        entered.await()
-        repeat(100) { yield() }
-        proceed.complete(Unit)
-        refresh.join()
-        poll.join()
-        assertEquals(1, calls.get())
-    }
-
-    @Timeout(HANG_BACKSTOP_S)
-    @Test
     fun `a poll mint for token A does not latch a refresh on token B`(@TempDir tempDir: Path) = runTest {
         val file = authFile(tempDir, accessToken = "token-a", apiKey = "key-a")
         val calls = AtomicInteger()

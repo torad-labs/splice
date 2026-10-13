@@ -125,7 +125,6 @@ class PerfTurnUsageTest {
         assertEquals(2_501_000L, totals.getValue("input_tokens").jsonPrimitive.long)
         assertEquals(2_250_900L, totals.getValue("cached_tokens").jsonPrimitive.long)
         assertEquals(250_100L, totals.getValue("output_tokens").jsonPrimitive.long)
-        assertEquals(0.9, totals.getValue("cache_share").jsonPrimitive.double, 0.000001)
         assertEquals(1.47559, totals.getValue("cost_usd").jsonPrimitive.double, 0.000001)
         assertEquals(0L, totals.getValue("unpriced_requests").jsonPrimitive.long)
         assertEquals(1L, totals.getValue("unanswered_requests").jsonPrimitive.long)

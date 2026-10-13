@@ -264,9 +264,6 @@ public class PerfRoutes(
             put("count", matching.size)
             put("returned", rows.size)
             put("truncated", matching.size > rows.size)
-            // The retention evidence, straight from the reader: the oldest timestamp a VALID row holds
-            // at all. Null means the source cannot say — never zero, which would read as 1970.
-            put("oldest_held_ts", read.oldestHeldTs)
             read.readError?.let { put("read_error", it) }
             if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only

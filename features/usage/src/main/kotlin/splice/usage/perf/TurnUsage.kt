@@ -132,11 +132,9 @@ internal class TurnUsage(
 
         // The requests a plan covered priced at the API rates: a value, never a cost.
         private var planValue: Double? = null
-        private var planValued = 0L
         private val gaps = PriceGap.entries.associateWith { 0L }.toMutableMap()
         private var missingInput = 0L
         private var missingOutput = 0L
-        private var missingCache = 0L
 
         // Source rounds these requests cut while they streamed: billed upstream, their tokens never reported.
         private var cutRounds = 0L
@@ -158,7 +156,7 @@ internal class TurnUsage(
             addTokens(row.tokens)
             cutRounds += row.cutRounds
             row.priced.usd?.let { cost = (cost ?: 0.0) + it }
-            row.priced.planValue?.let { planValue = (planValue ?: 0.0) + it; planValued++ }
+            row.priced.planValue?.let { planValue = (planValue ?: 0.0) + it }
             if (row.gap != null) gaps[row.gap] = gaps.getValue(row.gap) + 1
         }
 
@@ -167,12 +165,6 @@ internal class TurnUsage(
             if (incoming == null) missingInput++ else input = (input ?: 0) + incoming
             if (outgoing == null) missingOutput++ else output = (output ?: 0) + outgoing
             if (cache != null) cached = (cached ?: 0) + cache
-            if (incoming != null && cache == null) missingCache++
-        }
-
-        private fun cacheShare(): Double? {
-            val total = input?.takeIf { it > 0 }
-            return if (total != null && missingCache == 0L) (cached ?: 0).toDouble() / total else null
         }
 
         fun json(): JsonObject = buildJsonObject {
@@ -184,7 +176,6 @@ internal class TurnUsage(
             put("cost_usd", cost)
             put("plan_requests", gaps.getValue(PriceGap.PLAN))
             put("plan_value_usd", planValue)
-            put("plan_valued_requests", planValued)
             // Unanswered failures remain requests, but do not qualify estimates as missing spend.
             put("unpriced_requests", gaps.values.sum() - gaps.getValue(PriceGap.UNANSWERED))
             put("unpriced_uncounted_requests", gaps.getValue(PriceGap.UNCOUNTED))
@@ -194,9 +185,7 @@ internal class TurnUsage(
             put("unanswered_requests", gaps.getValue(PriceGap.UNANSWERED))
             put("missing_input_requests", missingInput)
             put("missing_output_requests", missingOutput)
-            put("missing_cache_requests", missingCache)
             put("cut_source_rounds", cutRounds)
-            put("cache_share", cacheShare())
         }
     }
 }

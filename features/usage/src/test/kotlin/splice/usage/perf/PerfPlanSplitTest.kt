@@ -109,7 +109,6 @@ class PerfPlanSplitTest {
 
             val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
             assertEquals("2", totals.text("plan_requests"))
-            assertEquals("1", totals.text("plan_valued_requests"))
             assertEquals("5.9E-4", totals.text("plan_value_usd"))
             assertEquals("5.9E-4", totals.text("cost_usd"), "the cost is the key request alone")
         }

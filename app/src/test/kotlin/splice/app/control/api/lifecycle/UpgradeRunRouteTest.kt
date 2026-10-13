@@ -101,7 +101,7 @@ class UpgradeRunRouteTest {
         logged.clear()
         launchFailure = null
         share = tempDir
-        control.ports.upgradeRuns = runs()
+        control.ports.lifecycle.upgradeRuns = runs()
     }
 
     /** A daemon's view of the share dir; a second one is the daemon that came back on the new jar. */
@@ -130,7 +130,7 @@ class UpgradeRunRouteTest {
 
             Files.writeString(dir.resolve("output.log"), "\u001B[32m✓\u001B[0m staged     9.9.9\n")
             Files.writeString(dir.resolve("exit"), "0\n")
-            control.ports.upgradeRuns = runs()
+            control.ports.lifecycle.upgradeRuns = runs()
             val after = body(get("/api/upgrade/run"))["run"]!!.jsonObject
             assertEquals("succeeded", after["state"]!!.jsonPrimitive.content)
             assertEquals("0", after["exit_code"]!!.jsonPrimitive.content)
@@ -185,7 +185,7 @@ class UpgradeRunRouteTest {
     fun `the routes sit behind the management key and answer a named 503 unwired`() = runBlocking {
         assertEquals(HttpStatusCode.Unauthorized, withTimeout(TIMEOUT_MS) { client.post("$url/api/upgrade") }.status)
         assertEquals(HttpStatusCode.Unauthorized, withTimeout(TIMEOUT_MS) { client.get("$url/api/upgrade/run") }.status)
-        control.ports.upgradeRuns = null
+        control.ports.lifecycle.upgradeRuns = null
         val unwired = post("/api/upgrade", "{}")
         assertEquals(HttpStatusCode.ServiceUnavailable, unwired.status)
         assertEquals("Upgrading from the console is not wired on this daemon.", error(unwired))

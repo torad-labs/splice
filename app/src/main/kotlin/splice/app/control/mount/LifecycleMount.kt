@@ -29,8 +29,8 @@ import splice.lifecycle.upgrade.UpgradeRunsSource
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 
-/** [ports] is read at CALL time: ControlPlane assigns [ConsolePorts.supervised] and
- *  [ConsolePorts.upgrade] after the server is constructed. */
+/** [ports] is read at CALL time: ControlPlane assigns [LifecyclePorts.supervised] and
+ *  [LifecyclePorts.upgrade] after the server is constructed. */
 internal class LifecycleMount(
     private val shutdownDaemon: ShutdownDaemon,
     private val ports: ConsolePorts,
@@ -51,9 +51,9 @@ internal class LifecycleMount(
     // the drain cap the commands themselves stop with (HeadServerFactory builds every head on HeadPolicy's default)
     private val daemonRoutes = DaemonRoutes(restarts, HeadDeps.HeadPolicy().stopDrainMs)
     private val upgradeRoute = UpgradeRoute()
-    private val upgradeRuns = UpgradeRunRoutes(UpgradeRunsSource { ports.upgradeRuns }, log)
+    private val upgradeRuns = UpgradeRunRoutes(UpgradeRunsSource { ports.lifecycle.upgradeRuns }, log)
     private val upgradeChecks =
-        UpgradeCheckRoutes(UpgradeChecksSource { ports.upgradeChecks }, ProcessDispatchers().io())
+        UpgradeCheckRoutes(UpgradeChecksSource { ports.lifecycle.upgradeChecks }, ProcessDispatchers().io())
 
     fun register(route: Route) {
         route.post("/api/daemon/shutdown") {
@@ -65,10 +65,10 @@ internal class LifecycleMount(
         // The same drain as shutdown: the unit or the armed detached successor brings it back.
         // A failed successor arm refuses before this daemon drains.
         route.post("/api/daemon/restart") {
-            guard.guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.supervised) }
+            guard.guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.lifecycle.supervised) }
         }
         route.get("/api/daemon/restart") { guard.guarded(call) { daemonRoutes.statusJson(call) } }
-        route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.upgrade) } }
+        route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.lifecycle.upgrade) } }
         route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
         route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
         route.get("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.snapshot(call) } }

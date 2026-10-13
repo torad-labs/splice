@@ -93,7 +93,7 @@ class CompactionRestartTest {
             runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
-        control.ports.supervised = DaemonSupervised { true }
+        control.ports.lifecycle.supervised = DaemonSupervised { true }
         runBlocking { control.start() }
     }
 

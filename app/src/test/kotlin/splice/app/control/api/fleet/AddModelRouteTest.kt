@@ -136,7 +136,7 @@ class AddModelRouteTest {
             """.trimIndent() + "\n",
         )
         control.ports.add = adds
-        control.ports.supervised = DaemonSupervised { true }
+        control.ports.lifecycle.supervised = DaemonSupervised { true }
     }
 
     /** RED before V4-220: GET and POST /api/add-model answered 404; the console could not add a model. */

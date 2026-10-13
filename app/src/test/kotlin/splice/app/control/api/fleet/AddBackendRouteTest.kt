@@ -159,7 +159,7 @@ class AddBackendRouteTest {
         vars.clear()
         vars["SPLICE_CONFIG"] = tempDir.resolve("splice.toml").toString()
         control.ports.keys = KeyStore(KeyStorePath.defaultPath(env))
-        control.ports.supervised = DaemonSupervised { true }
+        control.ports.lifecycle.supervised = DaemonSupervised { true }
     }
 
     private val fw: String
@@ -311,7 +311,7 @@ class AddBackendRouteTest {
     @Test
     fun `a daemon with no successor wired saves the head and names restart refusal`() = runBlocking {
         vars["FW_API_KEY"] = "k"
-        control.ports.supervised = DaemonSupervised { false }
+        control.ports.lifecycle.supervised = DaemonSupervised { false }
         val id = body(post("/api/add", fw))["id"]!!.jsonPrimitive.content
         val saved = post("/api/add/$id/save")
         assertEquals(HttpStatusCode.OK, saved.status, saved.bodyAsText())

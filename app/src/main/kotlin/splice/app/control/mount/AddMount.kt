@@ -21,7 +21,7 @@ import splice.lifecycle.restart.RestartPhase
 import splice.lifecycle.restart.RestartTaken
 import splice.lifecycle.restart.ShutdownDaemon
 
-/** [ports] is read at CALL time: ConsoleWiring assigns [ConsolePorts.add] and [ConsolePorts.supervised]
+/** [ports] is read at CALL time: ConsoleWiring assigns [ConsolePorts.add] and [LifecyclePorts.supervised]
  *  after the server is constructed. */
 internal class AddMount(
     private val ports: ConsolePorts,
@@ -53,7 +53,9 @@ private class SaveRestart(
     private val shutdown: ShutdownDaemon,
     private val ports: ConsolePorts,
 ) : AddDaemonRestart {
-    override fun take(): AddRestartTaken = when (val taken = restarts.take(false, shutdown, ports.supervised)) {
+    override fun take(): AddRestartTaken = when (
+        val taken = restarts.take(false, shutdown, ports.lifecycle.supervised)
+    ) {
         is RestartTaken.Refused -> AddRestartTaken.Refused(taken.reason)
         is RestartTaken.Accepted -> when (val phase = taken.phase) {
             RestartPhase.Draining -> AddRestartTaken.Draining

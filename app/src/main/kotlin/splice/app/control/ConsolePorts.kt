@@ -18,10 +18,6 @@ import splice.diagnostics.playground.PlaygroundProbe
 import splice.events.bus.EventBus
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
-import splice.lifecycle.restart.DaemonSupervised
-import splice.lifecycle.upgrade.UpgradeChecks
-import splice.lifecycle.upgrade.UpgradeRuns
-import splice.lifecycle.upgrade.UpgradeStatus
 import splice.models.list.LocalRuntimes
 import splice.models.list.ModelsReporter
 import splice.models.roster.DeclaredHeads
@@ -113,26 +109,13 @@ public class ConsolePorts {
      *  restart coming — every one of them a did-not-run wearing a legitimate answer. */
     public var declaredHeads: DeclaredHeads? = null
     public var doctor: DoctorReport? = null
-    public var upgrade: UpgradeStatus? = null
-
-    /** The Version card's "Check": the snapshot GET /api/upgrade/check reports and the read POST makes. Null answers a named 503. */
-    public var upgradeChecks: UpgradeChecks? = null
 
     /** V4-220 item 4: the fixes POST /api/doctor/fix/{id} runs. Null answers a named 503, never a
      *  fix that silently did nothing. */
     public var doctorFixes: DoctorFixes? = null
 
-    /** V4-220 item 4: `splice upgrade` as the console starts it, and the run it reports. Null answers
-     *  a named 503 on POST /api/upgrade and GET /api/upgrade/run, never a run that never started. */
-    public var upgradeRuns: UpgradeRuns? = null
-
-    /** V4-137: whether systemd owns this daemon. Assigned beside the ports above, and read at CALL
-     *  time by the routing lambda for the same reason they are. A supervised daemon drains into its
-     *  unit; an unsupervised one arms a detached successor before draining.
-     *
-     *  NULL IS NOT "ASSUME SUPERVISED". The route refuses an unwired probe: choosing the unit for a
-     *  daemon started by hand would drain it without a successor. */
-    public var supervised: DaemonSupervised? = null
+    /** The upgrade status, its check and run, and whether systemd owns this daemon: see [LifecyclePorts]. */
+    internal val lifecycle: LifecyclePorts = LifecyclePorts()
 
     /** V4-128: the writer over splice.toml, assigned by ControlPlane after construction like [teams] and
      *  read at call time. Null answers GET and PUT /api/topology with a named 503. */

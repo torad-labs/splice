@@ -371,7 +371,7 @@ class ConsoleRoutesTest {
     @Test
     fun `an unwired upgrade port answers a named failure, never a current-looking status`() = runBlocking {
         awaitPort()
-        control.ports.upgrade = null
+        control.ports.lifecycle.upgrade = null
         val response = get("/api/upgrade")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains("upgrade surface"), response.bodyAsText())
@@ -391,7 +391,7 @@ class ConsoleRoutesTest {
             """"latest_unavailable_reason":"no upgrade check has succeeded on this daemon",""" +
             """"rollback_target":null,"rollback_basis":"measured","rollback_unavailable_reason":null,""" +
             """"checked_at_epoch_millis":null}"""
-        control.ports.upgrade = UpgradeStatus { status }
+        control.ports.lifecycle.upgrade = UpgradeStatus { status }
         val response = get("/api/upgrade")
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         assertEquals(status, response.bodyAsText(), "the route serves the port's own bytes")

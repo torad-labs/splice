@@ -109,15 +109,16 @@ internal object ConsoleWiring {
         srv.ports.doctor = DoctorReport(DoctorWiring::consoleJson)
         srv.ports.doctorFixes = DoctorWiring.fixes()
         val upgradeChecks = UpgradeChecks(EnvReader(System::getenv))
-        srv.ports.upgradeChecks = upgradeChecks
-        srv.ports.upgrade = UpgradeStatus(ConsoleUpgradeStatus(EnvReader(System::getenv), upgradeChecks)::json)
+        srv.ports.lifecycle.upgradeChecks = upgradeChecks
+        val upgradeStatus = ConsoleUpgradeStatus(EnvReader(System::getenv), upgradeChecks)
+        srv.ports.lifecycle.upgrade = UpgradeStatus(upgradeStatus::json)
         // V4-137: the draining restart's supervision probe. Unlike the three above, leaving this one
         // unassigned is SAFE BY CONSTRUCTION — ConsolePorts.supervised is null until set and the
         // route refuses on null, so an unwired port declines to drain rather than draining a daemon
         // nothing would restart. It is assigned here anyway because the refusal is not the answer we
         // want on a host where systemd does run the daemon, and pinned for the same reason the others
         // are: the compiler cannot see this line either.
-        srv.ports.supervised = DrainingRestartAdapter()
+        srv.ports.lifecycle.supervised = DrainingRestartAdapter()
 
         // V4-128: the writer is the ONLY seam that edits splice.toml, and it is built here because
         // this is the one place that knows the booted file's path. A null path is a daemon booted
@@ -143,7 +144,7 @@ internal object ConsoleWiring {
 
         // V4-220 item 4: `splice upgrade` over POST /api/upgrade, run out of process. Unassigned, it and
         // GET /api/upgrade/run answer a named 503.
-        srv.ports.upgradeRuns = LifecycleWiring.consoleUpgrades()
+        srv.ports.lifecycle.upgradeRuns = LifecycleWiring.consoleUpgrades()
     }
 
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out

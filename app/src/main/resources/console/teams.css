@@ -168,6 +168,10 @@
 .card.m .why.limit { color: var(--limit); }
 .card.m .use { margin-top: .9rem; padding-top: .75rem; border-top: .12rem solid var(--track); }
 .card.m .use:empty { display: none; }
+/* a member's plan windows under its figures: the window, what it moved on the plan, and the plan's own used percent */
+.planuse p { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .9rem; margin: .6rem 0 0; font: 500 .95rem/1.25 var(--font-data); color: var(--text-body); }
+.planuse b { font-weight: 600; color: var(--text); }
+.planuse span + span { color: var(--text-mute); }
 .slot-acts { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-top: .95rem; position: relative; }
 .menu.use { left: 0; right: auto; top: calc(100% + .5rem); }
 .menu.use button { display: flex; align-items: baseline; justify-content: space-between; gap: 1.8rem; }

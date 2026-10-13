@@ -129,7 +129,7 @@ public class TeamsRoutes(
 
     public fun economics(id: String): JsonReply = withStore { store ->
         val team = store.team(id) ?: return refuse(HttpStatusCode.NotFound, "no such team: $id")
-        JsonReply(HttpStatusCode.OK, TeamEconomics(team, heads).json().toString())
+        JsonReply(HttpStatusCode.OK, TeamEconomics(team, heads, clock()).json().toString())
     }
 
     /** A write answering the saved team: a refusal or an unreadable body is a 400 naming why, an

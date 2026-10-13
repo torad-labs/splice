@@ -55,7 +55,7 @@ const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.r
 
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
-  teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {}, modelLabel: {},
+  teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {}, modelLabel: {}, plans: [],
   economics: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
@@ -118,9 +118,12 @@ async function read() {
 async function readAll() {
   state.loading = true;
   render();
-  const [teams, sessions, heads, models, auth] = await Promise.all([
+  const [teams, sessions, heads, models, auth, plans] = await Promise.all([
     API.get("/api/teams"), API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"), API.get("/api/auth"),
+    API.get("/api/accounts"),
   ]);
+  // each plan's windows as its provider reads them, Accounts' and Usage's numbers, for a member's plan line
+  if (plans.ok) state.plans = plans.body?.accounts || [];
   // one read that fails keeps the teams already on the page and says so above them; only a first read that fails
   // has nothing to show but its refusal (Marlin p223: a failed launch's reread blanked every team)
   const refused = teams.ok ? null : refusalOf(teams, "The teams could not be read");
@@ -306,6 +309,27 @@ function sinceOf(tm) {
   return oldest && oldest > (tm.created_epoch_millis || 0) ? oldest : null;
 }
 
+// ---------- a member's plan windows: what it moved on a plan, beside the plan's own window (web-console §4.13; marlin) ----------
+// The daemon counts the member's requests and tokens on each plan account over the last 5 hours and 7 days, the windows
+// Usage reads a plan over (TeamsEconomics). The plan's used percent is the provider's own, joined as Usage joins it
+// (usage.js planRowOf), and only set beside the member's count: splice never says what share of the window is the member's.
+const planRowOf = (head, label) => state.plans.find((a) => (a.heads || []).includes(head) && a.kind !== "api-key"
+  && (a.ref ? a.ref === label : [a.account_labels?.[head], a.selector_key, a.label, a.display_name]
+    .some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
+const PLAN_WINDOWS = { "5h": ["Last 5 hours", "5-hour window", "five_hour_used_percent"], "7d": ["Last 7 days", "week", "seven_day_used_percent"] };
+function planUseHtml(tm, slotId) {
+  const uses = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId)?.plan_windows || [];
+  if (!uses.length) return "";
+  return `<div class="planuse">${uses.map((u) => {
+    const [when, word, field] = PLAN_WINDOWS[u.window] || [u.window, "window", null];
+    const plan = u.account ? planRowOf(u.head, u.account) : null;
+    // a long window of four weeks or more is the plan's month, as Usage names it
+    const named = u.window === "7d" && (plan?.seven_day_window_seconds ?? 0) >= 28 * 86400 ? "month" : word;
+    const pct = plan && field && plan[field] != null ? `<span>the plan's ${named} is ${Math.round(plan[field])}% used</span>` : "";
+    return `<p><b>${when}</b><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}, ${big(u.tokens)} tokens on ${esc(plan?.display_name || u.account || "a plan")}</span>${pct}</p>`;
+  }).join("")}</div>`;
+}
+
 // ---------- the pick: Sessions' projects, one pick across the pages (kit PICK) ----------
 // A team is where its repo resolves; with no repo, where its lead works. A pick shows every team with a member in the
 // project, so a team across two projects appears under each of them wherever its people are (PROJECTS.md).
@@ -391,7 +415,7 @@ function memberHtml(tm, slot) {
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}${end}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` +
-    `${body}${armedEndHtml(key, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
+    `${body}${armedEndHtml(key, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
 }
 
 const secsSince = (t) => Math.floor((Date.now() - t) / 1000);
@@ -527,7 +551,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model, ended = false }) {
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}</div>` +
     `<div class="meta">${word}<span class="mdl">${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
     (slot.bind_by_rule ? `<p class="rulehint">${esc(ruleLine(tm.repo, slot.head))}</p>` : "") +
-    `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
+    `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
 }
 
 // A member that joins by rule says what it takes, since the toggle's name alone cannot (web-console §4.13; marlin, Oct 13)

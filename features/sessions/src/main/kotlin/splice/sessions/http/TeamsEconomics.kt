@@ -1,7 +1,14 @@
 // NEW: V4-160 — the team economics, moved verbatim out of TeamsRoutes.kt (concentration, 2026-09-18).
 // TeamsRoutes.kt's header states what the economics count and why.
+//
+// PLAN WINDOWS (Oct 13, 2026; web-console §4.13 "Team tracking ... plan window use", marlin's call via splice-lead).
+// Beside the lifetime figures, each slot carries what its sessions moved on a plan account over the trailing 5 hours
+// and 7 days, the two windows Usage reads a plan over, by command and account. These count from the perf session
+// tag as the lifetime does, and from before the team was made too, since a window is the plan's and not the team's.
+// The console puts the provider's own used percent for that account beside them; splice never divides one by the other.
 package splice.sessions.http
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonArray
@@ -20,25 +27,58 @@ import splice.sessions.teams.TeamSlot
 /** The perf row's session tag width (TurnDrive.SESSION_TAG_CHARS). */
 private const val PERF_TAG_CHARS = 8
 
-/** Lifetime economics for one team over the perf files of every head its slots name. */
-internal class TeamEconomics(private val team: Team, private val heads: Map<String, SessionHead>) {
+/** The two windows a plan is read over, as Usage names them. */
+private enum class PlanWindow(val key: String, val millis: Long) {
+    FIVE_HOURS("5h", 5L * 60L * 60L * 1000L),
+    SEVEN_DAYS("7d", 7L * 24L * 60L * 60L * 1000L),
+}
+
+/** One slot's use of one plan account through one command, over one window. */
+private data class PlanUseKey(val slot: String, val window: PlanWindow, val head: String, val account: String?)
+
+/** Requests and the tokens they moved, every bucket summed as the lifetime tokens figure is. */
+private class PlanUse {
+    var turns: Long = 0L
+        private set
+    var tokens: Long = 0L
+        private set
+
+    fun add(moved: Long) {
+        turns += 1
+        tokens += moved
+    }
+}
+
+/** Lifetime economics for one team over the perf files of every head its slots name, and each slot's plan windows
+ *  ending at [now]. */
+internal class TeamEconomics(
+    private val team: Team,
+    private val heads: Map<String, SessionHead>,
+    private val now: Long = System.currentTimeMillis(),
+) {
     private val slotOfTag = team.slots
         .flatMap { slot -> held(slot).map { it.take(PERF_TAG_CHARS) to slot } }
         .distinctBy { it.first }
         .toMap()
     private val bySlot = team.slots.associate { it.id to PerfTally() }
+    private val planUse = LinkedHashMap<PlanUseKey, PlanUse>()
     private var oldest: Long? = null
 
     fun json(): JsonObject {
         val read = team.slots.map { it.head }.distinct().filter { it in heads }
-        read.forEach { tally(heads.getValue(it)) }
+        read.forEach { tally(it, heads.getValue(it)) }
         return buildJsonObject {
             put("oldest_turn_epoch_millis", oldest)
             put(
                 "slots",
                 buildJsonArray {
                     bySlot.forEach { (slot, tally) ->
-                        add(tally.json { it.put("slot", slot) })
+                        add(
+                            tally.json {
+                                it.put("slot", slot)
+                                it.put("plan_windows", windowsOf(slot))
+                            },
+                        )
                     }
                 },
             )
@@ -51,15 +91,38 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
     /** The team's lifetime starts at its creation: a turn before it is no team's turn, even one a
      *  later-bound session made. The cutoff is also what keeps this read bounded now that the perf
      *  history reaches back through the archive (PerfRowsFileSource skips generations older than it);
-     *  a team made before teams recorded a creation time reads from 0, as it always did. */
-    private fun tally(head: SessionHead) {
-        val window = head.perfRows?.window(team.createdAt) ?: return
+     *  a team made before teams recorded a creation time reads from 0, as it always did. The read reaches
+     *  back the longest plan window too, which a lifetime turn never counts from. */
+    private fun tally(key: String, head: SessionHead) {
+        val from = minOf(team.createdAt, now - PlanWindow.SEVEN_DAYS.millis)
+        val window = head.perfRows?.window(from) ?: return
         oldest = listOfNotNull(oldest, window.oldestHeldTs ?: window.rows.minOfOrNull { it.ts }).minOrNull()
-        for (row in window.rows) {
-            if (row.fields[PerfKeys.LOCAL_STEP] == 1L) continue // No upstream turn to attribute to this team.
-            row.session?.let(slotOfTag::get)?.let { slot ->
-                bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
-            }
+        window.rows.asSequence()
+            .filter { it.fields[PerfKeys.LOCAL_STEP] != 1L } // No upstream turn to attribute to this team.
+            .forEach { row -> row.session?.let(slotOfTag::get)?.let { slot -> count(key, head, slot, row) } }
+    }
+
+    private fun count(key: String, head: SessionHead, slot: TeamSlot, row: SessionPerfRow) {
+        if (row.ts >= team.createdAt) bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
+        if (!head.plans(row.account)) return
+        val moved = TurnBill.total(row.fields).let { it.input + it.cacheRead + it.cacheWrite + it.output }
+        PlanWindow.entries.filter { row.ts >= now - it.millis }.forEach { window ->
+            planUse.getOrPut(PlanUseKey(slot.id, window, key, row.account)) { PlanUse() }.add(moved)
+        }
+    }
+
+    /** [slot]'s plan use, the 5-hour window first, as the console draws it. */
+    private fun windowsOf(slot: String): JsonArray = buildJsonArray {
+        planUse.filterKeys { it.slot == slot }.entries.sortedBy { it.key.window.ordinal }.forEach { (use, tally) ->
+            add(
+                buildJsonObject {
+                    put("window", use.window.key)
+                    put("head", use.head)
+                    put("account", use.account)
+                    put("turns", tally.turns)
+                    put("tokens", tally.tokens)
+                },
+            )
         }
     }
 }

@@ -27,10 +27,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 
 /** The status word an accepted restart answers with: the phase the daemon is entering, not one it has
  *  reached. */
@@ -106,14 +104,8 @@ public class DaemonRoutes(private val restarts: DaemonRestarts, private val drai
             RestartPhase.Draining -> put("status", DRAINING)
             is RestartPhase.Waiting -> {
                 put("status", WAITING)
-                putJsonArray("compactions") {
-                    phase.compactions.forEach { slot ->
-                        addJsonObject {
-                            put("head", slot.head)
-                            put("age_ms", slot.ageMs)
-                        }
-                    }
-                }
+                // How many compactions the restart waits on: Settings says the count, never which head or how old.
+                put("compactions", phase.compactions.size)
             }
         }
         drainMs?.let { put("drain_ms", it) }

@@ -12,7 +12,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
-import splice.app.control.api.ControlBodies
 import splice.core.util.LogSink
 import splice.head.HeadDeps
 import splice.lifecycle.restart.CompactionsInFlight
@@ -58,7 +57,8 @@ internal class LifecycleMount(
     fun register(route: Route) {
         route.post("/api/daemon/shutdown") {
             guard.guarded(call) {
-                call.respondText(ControlBodies.okJson(), ContentType.Application.Json, HttpStatusCode.Accepted)
+                // An empty body: the launcher and `splice stop` read only the 202.
+                call.respondText("{}", ContentType.Application.Json, HttpStatusCode.Accepted)
                 shutdownDaemon()
             }
         }

@@ -18,7 +18,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
@@ -119,9 +118,7 @@ class CompactionRestartTest {
         assertEquals(0, drainsAfter(SETTLE_MS), "drained while a compaction was in flight: ${response.bodyAsText()}")
         val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
         assertEquals("waiting", body["status"]!!.jsonPrimitive.content, response.bodyAsText())
-        val waitingOn = body["compactions"]!!.jsonArray.single().jsonObject
-        assertEquals(HEAD_KEY, waitingOn["head"]!!.jsonPrimitive.content)
-        assertEquals(TWO_MINUTES_TEN_MS, waitingOn["age_ms"]!!.jsonPrimitive.content.toLong())
+        assertEquals(1, body["compactions"]!!.jsonPrimitive.content.toInt(), "the one compaction in flight")
 
         val status = json.parseToJsonElement(get("/api/daemon/restart").bodyAsText()).jsonObject
         assertEquals("waiting", status["status"]!!.jsonPrimitive.content, "the pending restart is visible")

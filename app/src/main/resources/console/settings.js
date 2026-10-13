@@ -1052,7 +1052,7 @@ async function restartSplice() {
     render();
     return;
   }
-  ui.restartWait = r.body?.compactions?.length ?? 0;
+  ui.restartWait = r.body?.compactions ?? 0;
   render();
   pollRestart(0);
 }
@@ -1062,7 +1062,7 @@ const RESTART_TRIES = 60;
 function pollRestart(tries) {
   setTimeout(async () => {
     const r = await API.get("/api/daemon/restart");
-    if (r.ok && r.body?.status === "waiting") { ui.restartWait = r.body.compactions?.length ?? 0; render(); }
+    if (r.ok && r.body?.status === "waiting") { ui.restartWait = r.body.compactions ?? 0; render(); }
     if (r.ok && r.body?.status === "idle") { ui.restarting = false; ui.restartWait = 0; render(); refresh(); return; }
     if (tries >= RESTART_TRIES) { ui.restarting = false; ui.restartWait = 0; ui.restartSaid = "Not back yet"; render(); return; }
     pollRestart(tries + 1);

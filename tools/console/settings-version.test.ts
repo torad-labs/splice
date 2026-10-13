@@ -258,8 +258,8 @@ test("Restart splice takes the restart, and says what it is waiting for while it
   const page = await version(NEVER_CHECKED);
   try {
     const pane = page.locator(".pane");
-    restartReply = { status: 202, body: { status: "waiting", compactions: [{ head: "alpha", age_ms: 1200 }] } };
-    restartPhase = { status: "waiting", compactions: [{ head: "alpha", age_ms: 1200 }] };
+    restartReply = { status: 202, body: { status: "waiting", compactions: 1 } };
+    restartPhase = { status: "waiting", compactions: 1 };
     await pane.getByRole("button", { name: "Restart splice" }).click();
     await expect(pane.getByRole("button", { name: "Waiting for 1 compaction" })).toBeDisabled({ timeout: 10_000 });
     expect(restarts).toEqual(["POST"]);

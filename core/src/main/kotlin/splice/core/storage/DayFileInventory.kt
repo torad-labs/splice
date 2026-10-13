@@ -29,14 +29,12 @@ internal class DayFileInventory(prefix: String) {
             if (content.isEmpty()) null else date to content
         }
         return DayInventory(
-            days = kept.size,
             rows = kept.sumOf { (_, content) ->
                 content.filterNot { (file, _) -> packs.any { file.fileName.toString().endsWith(it) } }
                     .sumOf { (file, _) -> countLines(file) }
             },
             bytes = kept.sumOf { (_, content) -> content.sumOf { (_, size) -> size } },
             oldest = kept.firstOrNull()?.first,
-            agesOut = kept.lastOrNull()?.first?.plusDays(retentionDays.toLong()),
         )
     }
 

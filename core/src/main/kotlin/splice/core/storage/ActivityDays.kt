@@ -243,14 +243,12 @@ public class ActivityDays(
     private fun day(epochMs: Long): LocalDate = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate()
 }
 
-/** What one store physically holds, including empty and rolled-only days. [agesOut] is the UTC day
- *  after the newest kept day leaves the configured window; null when no day holds data. */
+/** What one store physically holds, including rolled-only days: its rows, its bytes, and its oldest day holding data
+ *  (null when none does). */
 public data class DayInventory(
-    val days: Int,
     val rows: Long,
     val bytes: Long,
     val oldest: LocalDate?,
-    val agesOut: LocalDate?,
 )
 
 /** A store's delete state is a sibling of its day files, not itself a day file. */

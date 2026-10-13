@@ -44,7 +44,7 @@ class DayMutationTest {
         assertEquals(0, child.exitValue())
         val purged = files.purge()
         assertTrue(purged is DayPurge.Listed && purged.failed.isEmpty())
-        assertEquals(0, files.inventory(7).days)
+        assertEquals(0L, files.inventory(7).bytes)
     }
 
     @Test
@@ -100,7 +100,6 @@ class DayMutationTest {
             assertTrue(purge.get(5, TimeUnit.SECONDS) is DayPurge.Listed)
         }
         assertEquals(0L, files.inventory(7).rows)
-        assertEquals(0, files.inventory(7).days)
     }
 }
 

@@ -63,11 +63,9 @@ class DayFilesDeletionTest {
 
         assertEquals(
             DayInventory(
-                days = 2,
                 rows = 1L,
                 bytes = rolled.toByteArray().size.toLong(),
                 oldest = LocalDate.parse("2026-09-26"),
-                agesOut = LocalDate.parse("2026-10-04"),
             ),
             DayFiles(dir, "edges").inventory(retentionDays = 7),
         )
@@ -98,7 +96,6 @@ class DayFilesDeletionTest {
         Files.write(pack, bytes)
         assertEquals(setOf("retired"), DayFileStores(dir).prefixes())
         val inventory = DayFiles(dir, "retired").inventory(7)
-        assertEquals(1, inventory.days)
         assertEquals(0L, inventory.rows)
         assertEquals(bytes.size.toLong(), inventory.bytes)
         val purged = DayFiles(dir, "retired").purge() as DayPurge.Listed
@@ -129,7 +126,6 @@ class DayFilesDeletionTest {
         ActivityDays(dir, "retired", 7, WallClock { at })
         assertFalse(Files.exists(old), "retention sweeps a retired day's v2 pack")
         val inventory = DayFiles(dir, "retired").inventory(7)
-        assertEquals(1, inventory.days)
         assertEquals(0L, inventory.rows)
         assertEquals(4L, inventory.bytes)
         val purged = DayFiles(dir, "retired").purge() as DayPurge.Listed
@@ -160,7 +156,6 @@ class DayFilesDeletionTest {
         val files = DayFiles(dir, "edges")
         days.append("""{"id":"old"}""")
         val removed = files.deleteKept(retentionDays = 7)
-        assertEquals(1, removed.days)
         assertEquals(1L, removed.rows)
         assertTrue(files.deleted())
         assertEquals(0L, files.inventory(retentionDays = 7).rows)

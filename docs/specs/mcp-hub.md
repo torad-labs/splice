@@ -186,3 +186,18 @@ hostshield-lead (the slice and unit).
    memory and drops the session's open terminals.
 3. Does the hub host, a second long-lived process, carry its own install rule? It restarts only when
    its version changes, which interrupts everyone's per-session tools.
+
+## Step 0 results (desk, Claude Code 2.1.296, stand-in files only)
+
+- **(a) Plugin names, passed (splice-config, Oct 12).** A `--mcp-config` entry named
+  `plugin_standin_tools` gives exactly `mcp__plugin_standin_tools__<tool>`, the plugin's own names.
+  Without strict mode it runs beside the plugin's server, not instead of it, and the plugin's own
+  server takes the call. So hosting plugin servers needs strict mode (part 2).
+- **(b) Strict list, passed for interactive sessions (splice-config, Oct 12).** Strict mode with a
+  file listing the same servers shows the same four. It starts neither the plugin's own server nor
+  an unapproved repo server, and shows no approval prompt. Only the /mcp display differs: one
+  "Built-in MCPs" heading, the plugin row under its config name, and Auth rows for http entries.
+  Finding for step 1: `claude -p` with no flags starts an unapproved repo server, trusted folder or
+  not, while a rejected one stays off. The plan leaves pending servers out on its own (part 1), so
+  print mode's list is not the baseline.
+- **(c) http across a daemon restart:** pending (splice-providers).

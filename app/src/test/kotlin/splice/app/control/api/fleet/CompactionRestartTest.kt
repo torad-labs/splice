@@ -64,7 +64,7 @@ private const val POLL_MS = 25L
 private const val SETTLE_MS = 1_500L
 private const val HEAD_KEY = "claudex"
 private const val TWO_MINUTES_TEN_MS = 130_000L
-private const val PAST_THE_CAP_MS = 600_000L
+private const val PAST_THE_CAP_MS = 900_000L
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CompactionRestartTest {
@@ -173,7 +173,7 @@ class CompactionRestartTest {
     }
 
     @Test
-    fun `a compaction past the client's 600 s is not waited for`() = runBlocking {
+    fun `a compaction past the daemon's 900 s turn cap is not waited for`() = runBlocking {
         awaitPort()
         inFlight = slot(compact = true, ageMs = PAST_THE_CAP_MS)
         post("/api/daemon/restart")

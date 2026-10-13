@@ -118,8 +118,8 @@ class RestartCompactionWaitTest {
     }
 
     @Test
-    fun `a compaction past the client's 600 s is not waited for`(@TempDir tmp: Path) {
-        val daemon = FakeDaemon(compactReads = Int.MAX_VALUE, compact = true, ageMs = 600_000)
+    fun `a compaction past the daemon's 900 s turn cap is not waited for`(@TempDir tmp: Path) {
+        val daemon = FakeDaemon(compactReads = Int.MAX_VALUE, compact = true, ageMs = 900_000)
         val stopped = try {
             restart(tmp).stopIfRunning(daemon.port, emptyList())
         } finally {

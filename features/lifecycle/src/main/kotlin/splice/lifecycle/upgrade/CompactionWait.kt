@@ -1,24 +1,32 @@
 // NEW: V4-216 (2026-09-25) — `splice restart` lets a compaction in flight finish before the stop.
 //
-// A compaction is the one turn a restart must not cut. It runs for minutes; its client (Claude Code)
-// gives it 600 s and then retries the same bytes; and the daemon keeps its answer for that retry
-// (CompactionReplay, FileCompactionRecordings), but only once the compaction has finished. The stop's
-// own drain is 45 s inside a unit that allows 90 in all, so the wait comes BEFORE the stop: the daemon
-// keeps serving, no head closes admission, and ordinary turns never hold a restart. A slot is waited
-// for until it reaches the client's 600 s, and the whole wait is held to the same 600 s, so new
-// compactions arriving meanwhile cannot hold a restart forever. `--now` skips it.
+// A compaction is the one turn a restart must not cut. It runs for minutes, and the daemon keeps its
+// answer for a client that retries it (CompactionReplay, FileCompactionRecordings), but only once the
+// compaction has finished. The stop's own drain is 45 s inside a unit that allows 90 in all, so the wait
+// comes BEFORE the stop: the daemon keeps serving, no head closes admission, and ordinary turns never
+// hold a restart. A slot is waited for until the daemon's own whole-turn cap would end it, and the whole
+// wait is held to the same span, so new compactions arriving meanwhile cannot hold a restart forever.
+// `--now` skips it.
+//
+// 2026-10-13: the span was Claude Code's 600 s abort. Claude Code 2.1.296 no longer aborts a compaction
+// at a flat 600 s: its recovery timer is 1.5 ms per token of the conversation, at least 600 s and at most
+// an hour, and the launch sets API_TIMEOUT_MS to the head's turn cap plus a minute. So the daemon's
+// cap, upstreamTimeoutMs, is now what ends a compaction, and a restart that cut one at 600 s threw away
+// up to five minutes of a summary the client was still waiting for.
 //
 // V4-220: it lives beside the in-flight read it is built on, so `splice upgrade`'s own restart takes it
 // too (UpgradeDaemon) with the dependency running one way, restart -> upgrade.
 package splice.lifecycle.upgrade
 
+import splice.core.config.Knob
 import splice.core.terminal.TerminalOutput
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
-// why: Claude Code aborts an auto-compaction at 600 s of wall clock and retries it; a slot older than
-// that has no client waiting on its answer, and the whole wait is held to the same span.
-private const val CAP_MS = 600_000L
+// why: the daemon ends a compaction at its whole-turn cap (WatchdogBudget.forCompact keeps only that wall), so a slot
+// older than it is about to end anyway, and the whole wait is held to the same span. This is the knob's default: a
+// command with a longer upstreamTimeoutMs is waited on this long and then restarted.
+private val CAP_MS = Knob.UPSTREAM_TIMEOUT_MS.count()
 
 internal class CompactionWait(
     private val output: TerminalOutput,

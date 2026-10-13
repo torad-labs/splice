@@ -107,7 +107,7 @@ version with `--to vX.Y.Z`), stages it beside the current one under
 the wait; a count it cannot read is waited out the same 30 minutes and then refused), repoints the live jar, restarts the daemon and runs doctor.
 Before anything stops, the new release's own `doctor` must answer and `check-config` must accept your
 config, so a release that refuses your config is never activated. Before the restart, a running compaction is waited
-on for up to ten minutes so it is not cut (`--now` skips that too). After it, `/health` must report the new version within 15 seconds. If the wait expires, the
+on for up to 15 minutes, the daemon's own cap on a turn, so it is not cut (`--now` skips that too). After it, `/health` must report the new version within 15 seconds. If the wait expires, the
 release stays staged in `releases/<version>` and the command exits 1. A second upgrade while one runs is refused. The live launch shim is replaced to match the jar. An edit to a recorded
 release's shim is saved as `splice-launch.edited` beside that release, with its diff printed;
 a flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. It is also recorded as the rollback copy. `splice upgrade --rollback` puts the previous release back, waits for in-flight turns the same way, and refuses when that release would refuse your config; it is kept

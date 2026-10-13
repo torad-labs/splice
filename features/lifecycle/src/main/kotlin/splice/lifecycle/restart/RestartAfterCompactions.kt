@@ -2,8 +2,8 @@
 // flight, as `splice restart` does from the CLI (V4-216, CompactionWait).
 //
 // POST /api/daemon/restart went straight into the 45 s drain, so the console's restart button cut the
-// one turn a restart must not cut: a compaction runs for minutes, Claude Code gives it 600 s and then
-// retries the same bytes, and the daemon keeps the answer for that retry only once it has finished.
+// one turn a restart must not cut: a compaction runs for minutes, up to the daemon's own whole-turn cap, and
+// the daemon keeps the answer for a client that retries it only once it has finished.
 // This is the SAME wait the CLI runs — CompactionWait, over the daemon's own gates instead of
 // /api/heads — held in ONE place so every restart the daemon itself takes on (the console's button,
 // an add's save) goes through it and none goes around it. The daemon keeps serving while it waits, no

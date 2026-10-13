@@ -62,6 +62,8 @@
 }
 .talk > header, .feed > header { display: flex; align-items: center; gap: 1rem; min-height: 4.2rem; padding: .7rem 1.2rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
 .feed > header .dname { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
+/* the feed is a sample, and says so (spec §14): Claude Code asks for a label every 30 s, in fin's words, Oct 13 */
+.feed > header .sampled { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .day { display: flex; align-items: center; gap: .3rem; }
 .day .dname { font: 500 1.2rem/1 var(--font-name); min-width: 5.6rem; text-align: center; }
 @container (min-width: 64rem) {
@@ -72,14 +74,17 @@
    second column, the talk and under it the activity: a sticky talk there left a 574 x 665 px hole under itself beside a
    feed cut off at its own edge in the first column (builder3's full day, console-lead, Oct 10). The
    members span both rows, so a tall column's extra height goes to the second row only (1fr): shared across two auto
-   rows it opened a hole between the talk and the activity (splice-usage, 1440, Oct 13) */
+   rows it opened a hole between the talk and the activity (splice-usage, 1440, Oct 13). That still left a hole under a
+   short team's members, 540 x 650 px beside the activity for three members at 1440 (splice-sessions, Oct 13), so the
+   activity reads under the members and the talk runs the whole height beside both: its size is contained, so its
+   messages never stretch the rows, and it stretches to whatever the left column needs */
 @container (min-width: 88rem) {
-  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "members feed"; grid-template-rows: auto 1fr; }
-  .talk { height: calc(100vh - 31rem); min-height: 40rem; }
+  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "feed talk"; grid-template-rows: auto auto; }
+  .talk { height: auto; min-height: 40rem; contain: size; align-self: stretch; }
 }
 @container (min-width: 128rem) {
   .room { grid-template-columns: 46rem minmax(0, 1fr) 30rem; grid-template-areas: "members talk feed"; grid-template-rows: auto; }
-  .talk { position: sticky; top: 1.6rem; }
+  .talk { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); contain: none; }
   .feed { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); min-height: 40rem; }
 }
 

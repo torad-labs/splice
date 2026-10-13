@@ -822,7 +822,7 @@ function boardHtml(tm) {
     viewsHtml(tm) +
     `<div class="room${viewOf(tm) === "timeline" ? " tlroom" : ""}">${membersHtml(tm)}` +
     `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +
-    `<section class="feed"><header><h3>Activity</h3><span class="dname">${dayName(ui.day)}</span></header>` +
+    `<section class="feed"><header><h3>Activity</h3><span class="sampled">Sampled every 30 s</span><span class="dname">${dayName(ui.day)}</span></header>` +
     `<div class="flow">${feedHtml(tm)}</div></section></div></section>`;
 }
 

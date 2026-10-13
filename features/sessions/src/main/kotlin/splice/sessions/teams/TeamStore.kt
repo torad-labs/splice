@@ -236,8 +236,18 @@ public class TeamStore(
         )
     }
 
+    /** Sets the archive flag, or with [archived] false clears it, a restore, after which its members start again. An
+     *  archived team let its sessions go, so a restore judges every session it still names: one that joined another
+     *  active team meanwhile refuses it, naming that team, as a bind would (one active team per session). */
     @Synchronized
-    public fun archive(teamId: String): Team = change(teamId) { it.copy(archived = true) }
+    public fun archive(teamId: String, archived: Boolean = true): Team {
+        val all = writable()
+        val team = all.firstOrNull { it.id == teamId } ?: throw TeamRefusal("no such team: $teamId")
+        val saved = team.copy(archived = archived, updatedAt = clock())
+        rules.refuseTaken(all, team.takeIf { archived }, saved)
+        write(all.map { if (it.id == teamId) saved else it })
+        return saved
+    }
 
     private fun change(teamId: String, edit: TeamEdit): Team {
         val all = writable()

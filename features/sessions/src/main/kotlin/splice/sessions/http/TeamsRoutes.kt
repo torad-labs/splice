@@ -11,6 +11,7 @@
 //   PUT  /api/teams/{id}/sessions                {bindings: {<slot id>: <session id> | null}}
 //   PUT  /api/teams/{id}/slots/{slot}/instructions  {instructions: string | null}
 //   POST /api/teams/{id}/archive                 sets the flag; nothing is ever deleted
+//   POST /api/teams/{id}/restore                 clears it, so its members start again
 //   GET  /api/teams/{id}/economics               lifetime turns, tokens and dollars per slot
 //   and TeamReads' chat and activity, each for ?day= (a UTC date) or ?from=&to= (the caller's day).
 //
@@ -126,6 +127,8 @@ public class TeamsRoutes(
     }
 
     public fun archive(id: String): JsonReply = write { store -> store.archive(id) }
+
+    public fun restore(id: String): JsonReply = write { store -> store.archive(id, archived = false) }
 
     public fun economics(id: String): JsonReply = withStore { store ->
         val team = store.team(id) ?: return refuse(HttpStatusCode.NotFound, "no such team: $id")

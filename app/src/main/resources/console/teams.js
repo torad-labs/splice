@@ -10,7 +10,7 @@
 //   GET  /api/teams/{id}/chat?from=&to=    the day's messages between members, from the sender's own transcript
 //   GET  /api/teams/{id}/activity?from=&to=   the day's tool work per member, each a tool and its object
 //   PUT  /api/teams · /api/teams/{id} · /api/teams/{id}/sessions · .../slots/{slot}/instructions
-//   POST /api/teams/{id}/archive · .../slots/{slot}/start · .../slots/{slot}/stop
+//   POST /api/teams/{id}/archive · /api/teams/{id}/restore · .../slots/{slot}/start · .../slots/{slot}/stop
 // The day panels take the VIEWER's own day in epoch milliseconds, so the board turns over at his midnight.
 //
 // A REFUSAL IS SHOWN WHERE IT HAPPENED, in the words the daemon used. A start that does not come up puts its own
@@ -820,7 +820,8 @@ function boardHtml(tm) {
     : endingAll ? `<button class="act quiet small stopping" disabled>${ICON.wait}Ending · ${secsSince(endingAll)} s</button>`
     : `<button class="act quiet" data-act="end-all">End all</button>`;
   const allFailed = ui.failed.get(tkey) ? `<span class="refusal" role="status">${esc(ui.failed.get(tkey))}</span>` : "";
-  const more = ro ? "" : allFailed + endAll + `<button class="act" data-act="edit">Edit</button>` +
+  // an archived team's one way back: restoring it is what lets its members start again (TeamStart refuses until then)
+  const more = ro ? `<button class="act" data-act="restore">Restore</button>` : allFailed + endAll + `<button class="act" data-act="edit">Edit</button>` +
     `<button class="icon" data-act="more" aria-label="More" aria-expanded="${ui.menu === "more"}">${GLYPH.more}</button>` +
     (ui.menu === "more" ? `<div class="menu"><button data-act="archive">Archive</button></div>` : "");
   const day = `<div class="day"><button class="icon" data-act="day" data-d="1" aria-label="Earlier day"${ui.day >= 6 ? " disabled" : ""}>${GLYPH.back}</button>` +
@@ -829,7 +830,7 @@ function boardHtml(tm) {
   return `<section class="team${ro ? " archived" : ""}" data-key="team:${esc(tm.id)}">` +
     `<header class="team-head"><div class="who"><h2>${esc(tm.name)}</h2>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
     `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm), "since members joined") : ""}</div></div>` +
-    `<div class="acts">${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
+    `<div class="acts">${ro && ui.failed.has(`restore:${tm.id}`) ? `<span class="refusal" role="status">${["Not restored", ...ui.failed.get(`restore:${tm.id}`)].join(" · ")}</span>` : ""}${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
     viewsHtml(tm) +
     `<div class="room${viewOf(tm) === "timeline" ? " tlroom" : ""}">${membersHtml(tm)}` +
     `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +
@@ -1215,6 +1216,18 @@ document.addEventListener("click", async (e) => {
       ui.menu = null; ui.failed.delete("archive");
       await act(await API.post(`/api/teams/${tm.id}/archive`), "The team was not archived", "archive");
       break;
+    case "restore": {
+      ui.failed.delete(`restore:${tm.id}`);
+      const answer = await API.post(`/api/teams/${tm.id}/restore`);
+      if (answer.ok) { await read(); break; }
+      // fin: "Not restored", then each held member as its chip, "on", and the active team that holds it, read from the
+      // teams this page already has; the daemon's own sentence goes to the console log, never onto the screen
+      console.warn("restore refused:", refusalOf(answer, "Not restored"));
+      ui.failed.set(`restore:${tm.id}`, tm.slots.filter((s) => s.session).flatMap((s) => alsoOn(tm, s.session).map((name) =>
+        `<span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span> on ${esc(name)}`)));
+      render();
+      break;
+    }
     case "day": ui.day = Math.max(0, Math.min(6, ui.day + +b.dataset.d)); render(); await readTeam(); break;
     case "start": await startSlot(tm, slot); break;
     case "use": { const k = `${tm.id}/${slot.id}`; ui.menu = ui.menu === k ? null : k; render(); break; }

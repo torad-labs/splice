@@ -94,6 +94,7 @@ internal class TeamsMount(
             }
         }
         route.post("/api/teams/{id}/archive") { guard.guarded(call) { teams.archive(id(call)).send(call) } }
+        route.post("/api/teams/{id}/restore") { guard.guarded(call) { teams.restore(id(call)).send(call) } }
         // The three writes that drive a member: start it, stop its turn, answer what it is waiting on. The terminal
         // behind all three is SessionTerminal's contract, read per call.
         route.post("/api/teams/{id}/slots/{slot}/start") {

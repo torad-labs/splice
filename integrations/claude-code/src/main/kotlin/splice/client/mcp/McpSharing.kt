@@ -34,49 +34,6 @@ import kotlinx.serialization.json.putJsonObject
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The launch tuple that IS a hosted server's identity: same tuple, same process. */
-public data class McpServerSpec(
-    val name: String,
-    val command: String,
-    val args: List<String>,
-    val env: Map<String, String>,
-    /** The entry's own `cwd`, unexpanded; set only on a per-session server, which starts there. */
-    val cwd: String? = null,
-)
-
-/** How the hub runs a server (MCP hub step 3): one copy for every session, one copy per session, or not at all,
- *  because the server is the operator's own to start (excluded, unreadable, a web transport, no command). */
-public enum class McpShareClass(public val wire: String) {
-    SHARED("shared"),
-    PER_SESSION("per_session"),
-    OWN("own"),
-}
-
-/** A stable key for why a server is not shared, and the value the reason names (the variable, the path, the cwd,
- *  the URL). The sentence beside it is what the CLI and doctor print; the console words the key, so no page parses
- *  prose. */
-public data class McpWhy(val key: String, val value: String? = null)
-
-/** One planning pass over the operator's `mcpServers`: what is hosted, what is not and why, and
- *  the object to write into a head's `.claude.json` in place of the original. [why] is [passthrough]'s reason as a
- *  key and value, under the same names. */
-public data class McpPlan(
-    val hosted: Map<String, McpServerSpec>,
-    val passthrough: Map<String, String>,
-    val rewritten: JsonObject,
-    val why: Map<String, McpWhy> = emptyMap(),
-    /** The servers the hub starts once per session, each with its declared tuple; also in [passthrough] with its
-     *  reason, because until the strict launch (hub step 6) Claude Code starts them itself. */
-    val perSession: Map<String, McpServerSpec> = emptyMap(),
-) {
-    /** [name]'s class: shared, one per session, or the operator's own. */
-    public fun classOf(name: String): McpShareClass = when (name) {
-        in hosted -> McpShareClass.SHARED
-        in perSession -> McpShareClass.PER_SESSION
-        else -> McpShareClass.OWN
-    }
-}
-
 /** One refusal: the sentence the CLI prints and the key and value the console words. [perSession] says the server
  *  still runs through the hub, one copy per session, rather than not at all. */
 private data class Rejected(val words: String, val why: McpWhy, val perSession: Boolean = false)

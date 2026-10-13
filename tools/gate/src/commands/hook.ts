@@ -760,6 +760,17 @@ export function readLadder(root: string): Leg[] {
   return legs;
 }
 
+/** A `bun test` leg's per-test timeout. Bun's 5 s default fails a test that spawns git or the gate a few times whenever the
+ *  pre-push runs it beside gradle on a loaded machine (promote.test.ts and hook.test.ts both timed out so, Oct 12), so every
+ *  bun test leg, narrowed or whole, runs with this one bound and no test needs its own. */
+const BUN_TEST_TIMEOUT_MS = "30000";
+
+/** The leg's argv as spawned: a `bun test` leg gets [BUN_TEST_TIMEOUT_MS]. */
+function legArgv(command: readonly string[]): string[] {
+  const [bun, test, ...rest] = command;
+  return bun === "bun" && test === "test" ? [bun, test, "--timeout", BUN_TEST_TIMEOUT_MS, ...rest] : [...command];
+}
+
 /** Runs each direct leg from the repository root, all at once. A leg that exits nonzero, or cannot start, fails; its
  *  output tail is shown only then. Returns the failed legs. */
 export async function runDirectLegs(root: string, legs: readonly Leg[]): Promise<Leg[]> {
@@ -767,7 +778,7 @@ export async function runDirectLegs(root: string, legs: readonly Leg[]): Promise
     legs.map(async (leg) => {
       const started = performance.now();
       try {
-        const proc = Bun.spawn([...leg.command], { cwd: root, env: spawnEnv({}), stdout: "pipe", stderr: "pipe" });
+        const proc = Bun.spawn(legArgv(leg.command), { cwd: root, env: spawnEnv({}), stdout: "pipe", stderr: "pipe" });
         const [stdout, stderr, status] = await Promise.all([
           new Response(proc.stdout).text(),
           new Response(proc.stderr).text(),

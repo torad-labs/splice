@@ -842,7 +842,9 @@ async function testServer(name) {
 // ---------- MCP servers: shared or one per session, and what sharing saves (mcp-hub.md, How it works 4) ----------
 // The one stored choice is [daemon] mcp_share in splice.toml, the answer `splice setup` saves. Absent reads as shared,
 // which is how splice hosts servers today, so the switch never shows a third "not asked" state (splice-config, Oct 12).
-const shareOn = () => ui.topo?.topology?.daemon?.mcp_share !== false;
+// ONE SWITCH, ONE FACT (Marlin, Oct 13, gap 464): servers are shared only when both mcp_share and mcp_hosting are on, so
+// the switch reads both, and Shared turns on whichever was off. One per session writes mcp_share only.
+const shareOn = () => ui.topo?.topology?.daemon?.mcp_share !== false && ui.topo?.topology?.daemon?.mcp_hosting !== false;
 function shareCard() {
   if (!ui.topo) return ""; // an unread splice.toml draws no switch: one tap would write over what it never read
   const on = shareOn();
@@ -851,12 +853,13 @@ function shareCard() {
   const said = ui.shareSaid ? `<span class="said${ui.shareSaid.bad ? " limit" : ""}">${esc(ui.shareSaid.word)}</span>` : "";
   return cardRow([kcard(`<div class="lbl">Share servers between sessions</div><div class="ctl col"><div class="line">${sw}${said}</div></div>`)]);
 }
-/** PUT /api/topology with only [daemon] mcp_share changed. A changed choice applies to new connections; a running copy
+/** PUT /api/topology with [daemon] mcp_share changed, and mcp_hosting cleared when sharing is turned on. A changed choice applies to new connections; a running copy
  *  finishes with its session, so nothing here is cut. */
 async function setShare(on) {
   if (!ui.topo || on === shareOn()) return;
   const t = structuredClone(ui.topo.topology ?? {});
   t.daemon = { ...(t.daemon ?? {}), mcp_share: on };
+  if (on) delete t.daemon.mcp_hosting; // absent is on (Topology.kt mcpHosting)
   ui.shareSaving = true; ui.shareSaid = null; render();
   const r = await API.put("/api/topology", { topology: t });
   ui.shareSaving = false;

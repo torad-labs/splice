@@ -298,7 +298,8 @@ const KNOBS = (() => {
     st.cfg = { ...st.cfg, knobs: { ...st.cfg?.knobs, [key]: { ...st.cfg?.knobs?.[key], value: body.applied[key], scope: "runtime" } } };
     delete st.bad[id];
     const restart = (body.restart_required ?? []).includes(key) || needsRestart(key);
-    if (!restart) st.said[id] = "Applied";
+    if (!restart) st.said[id] = body.not_persisted ? "Until restart" : "Applied";
+    if (body.not_persisted) console.warn(`${key}: applied, not kept: ${body.not_persisted}`);
     return { ok: true, restart, persisted: body.persisted ?? null };
   }
   // A command's own value: PATCH /api/config?head=<command> writes it to [heads.<command>.overrides], and null clears it

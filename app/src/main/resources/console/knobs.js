@@ -128,7 +128,7 @@ const KNOBS = (() => {
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
     cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
-    said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    said: {}, unsaved: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -222,7 +222,7 @@ const KNOBS = (() => {
         : `<span class="said ok">Saved</span><button class="act quiet small" data-kact="restart">Restart splice</button>`;
     }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
-    if (st.said[id]) return `<span class="said ok">${esc(st.said[id])}</span>`;
+    if (st.said[id]) return `<span class="said ok">${esc(st.said[id])}</span>${st.unsaved[id] ? '<span class="said limit">· Not saved</span>' : ""}`;
     // a setting the running splice reads only when it starts says so at rest, in the spec's words (v0.4.0 section 9,
     // Resolved: boot-only stays editable, labelled "applies on restart"); saving it then offers Restart splice above
     return needsRestart(id.split("@")[0]) ? `<span class="said">Applies on restart</span>` : "";
@@ -298,8 +298,10 @@ const KNOBS = (() => {
     st.cfg = { ...st.cfg, knobs: { ...st.cfg?.knobs, [key]: { ...st.cfg?.knobs?.[key], value: body.applied[key], scope: "runtime" } } };
     delete st.bad[id];
     const restart = (body.restart_required ?? []).includes(key) || needsRestart(key);
-    if (!restart) st.said[id] = body.not_persisted ? "Until restart" : "Applied";
-    if (body.not_persisted) console.warn(`${key}: applied, not kept: ${body.not_persisted}`);
+    // applied but not written to the state file: two true facts, Applied and Not saved, the second in the limit colour
+    // (fin, Oct 13); the value is gone at the next start, which follows from the two words
+    if (!restart) st.said[id] = "Applied";
+    if (body.not_persisted) { st.unsaved[id] = true; console.warn(`${key}: applied, not saved: ${body.not_persisted}`); } else delete st.unsaved[id];
     return { ok: true, restart, persisted: body.persisted ?? null };
   }
   // A command's own value: PATCH /api/config?head=<command> writes it to [heads.<command>.overrides], and null clears it

@@ -50,6 +50,10 @@ public enum class OutcomeTag(public val wire: String) {
     UNEXPECTED("error:unexpected"),
     RATE_LIMITED("error:rate-limited"),
 
+    /** The provider's own 429, relayed to the client with its status, headers and body: a rate limit the client can
+     *  retry, never splice giving up on the turn, so it is not [UPSTREAM_FAILED] and opens no run of refusals. */
+    RATE_LIMIT_RELAYED("error:rate-limit-relayed"),
+
     /** V4-419: the upstream named a PLAN window spent until a reset that is still ahead (a 429 body or the
      *  unified headers), and the turn ended on that: the one that met it, and every one held behind it. A burst
      *  429 with no named reset is [RATE_LIMITED] or [UPSTREAM_FAILED], never this. */

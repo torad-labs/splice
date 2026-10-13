@@ -60,6 +60,9 @@ internal object OutcomeSentences {
         OutcomeTag.RATE_LIMITED to
             "the provider kept rate limiting this account, so splice held the turn without contacting it; " +
             "wait for the limit to clear, then retry",
+        OutcomeTag.RATE_LIMIT_RELAYED to
+            "the provider rate limited this request, and splice passed its answer on to the client; " +
+            "wait for the limit to clear, then retry",
         // V4-419: the row's own words when its ending spoke none (a record older than the ending). A turn that
         // ends this way speaks the window and the reset instead: [planLimit].
         OutcomeTag.PLAN_LIMIT to

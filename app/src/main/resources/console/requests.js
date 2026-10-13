@@ -41,7 +41,7 @@ const RV_KEPT = REQVIEW.kept; // whether a state has records to draw, as the sha
 // A provider's own failure takes the glyph of the FACT it shares: a rate limit is the limit, an api_error is the
 // retries splice spent on it, and a refused credential is the credential glyph (its word, "Credentials refused",
 // is what separates it from being signed out). The rest are the plain bang.
-const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:at-capacity": "limit", "error:turn-cap": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit",
+const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:at-capacity": "limit", "error:turn-cap": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit", "error:rate-limit-relayed": "limit",
   "error:all-accounts-exhausted": "limit", "error:budget-blocked": "limit", "error:auth-missing": "signout", "error:upstream-failed": "retries",
   "failure:overloaded_error": "retries", "error:conn-reset": "retries", "error:upstream-frame-too-large": "bang", empty_model: "bang", "error:unexpected": "bang",
   "failure:rate_limit_error": "limit", "failure:api_error": "retries", "failure:authentication_error": "signout",
@@ -940,7 +940,7 @@ const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.h
 // provider line, in the shape of No answer: the row's word says why, the account says whose, and a reset the row holds
 // is the lock beside the word. A resumed or started-over request says what set it off, from the row alone: stall_ms is
 // the silence that triggered the re-anchor, and a re-anchor with no silence was a broken stream (PerfKeys REANCHORS).
-const LIMITED = (r) => r.outcome === "error:rate-limited" || r.outcome === "failure:rate_limit_error"
+const LIMITED = (r) => r.outcome === "error:rate-limited" || r.outcome === "error:rate-limit-relayed" || r.outcome === "failure:rate_limit_error"
   || (r.outcome === "error:upstream-failed" && r.cause === "VENDOR_RATE_LIMITED");
 function noteHtml(r, who) {
   let out = LIMITED(r) && r.attempts === 0 ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">Not sent</span></p>` : "";

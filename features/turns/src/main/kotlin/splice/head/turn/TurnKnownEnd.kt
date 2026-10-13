@@ -5,7 +5,6 @@ package splice.head.turn
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
-import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
@@ -56,7 +55,7 @@ internal class TurnKnownEnd(
         val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
         val failure = ForeignCredential.upstreamsOwn(read, e.body, sent)
         val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
-        val outcome = endingTag(drive, e.planLimit)
+        val outcome = endingTag(drive, e)
         log(telemetry.errTurn(outcome.wire, drive, detail))
         // V4-59: the code rides OUTSIDE the snippet bound on purpose. Bounding the presented
         // line instead pushed the appended login hint past ERR_SNIPPET, silently dropping the
@@ -115,14 +114,17 @@ internal class TurnKnownEnd(
 
     /** V4-419: the tag an upstream failure ends the turn on. One caused by a spent plan window ends
      *  [OutcomeTag.PLAN_LIMIT] and speaks the window and its reset on the trace before the record closes (a surface
-     *  that spoke first wins over the table's sentence); every other one is [OutcomeTag.UPSTREAM_FAILED].
+     *  that spoke first wins over the table's sentence); the provider's own 429 relayed to the client is
+     *  [OutcomeTag.RATE_LIMIT_RELAYED], a rate limit and not a give-up; every other one is
+     *  [OutcomeTag.UPSTREAM_FAILED].
      *
      *  V4-444: the reset instant is also COUNTED on the row, so a surface reading the perf file alone (the console's
      *  Requests list) can say when the window comes back instead of only that it was spent. Before this it was
      *  recorded on one ending out of three: the one where admission turned the request away with every account spent
      *  ([splice.head.admission.ExhaustedAccountAdmission]). */
-    private fun endingTag(drive: TurnDrive, plan: PlanLimit?): OutcomeTag {
-        if (plan == null) return OutcomeTag.UPSTREAM_FAILED
+    private fun endingTag(drive: TurnDrive, failed: UpstreamFailed): OutcomeTag {
+        val plan = failed.planLimit
+            ?: return if (failed.rateLimitReply != null) OutcomeTag.RATE_LIMIT_RELAYED else OutcomeTag.UPSTREAM_FAILED
         drive.trace?.failureSentence(OutcomeSentences.planLimit(plan))
         drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, plan.resetEpochSeconds)
         // V4-444: and how long the window is, where the upstream said so, so a surface can name the window ("5

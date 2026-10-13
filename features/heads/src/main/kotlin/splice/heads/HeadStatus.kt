@@ -15,13 +15,14 @@ import splice.core.head.Head
 
 /** Projects the current state of one runtime head using the established control API shape. */
 public object HeadStatus {
-    public fun json(head: Head, authKind: String): JsonObject = buildJsonObject {
+    public fun json(head: Head, authKind: String, dialect: String? = null): JsonObject = buildJsonObject {
         val h = head.healthSnapshot()
         put("key", head.key)
         put("label", head.label)
         put("name", head.key)
         put("port", head.port)
         put("authKind", authKind)
+        put("dialect", dialect)
         put("wantVersion", GATEWAY_VERSION)
         put("running", h.running)
         put("healthy", h.ok)

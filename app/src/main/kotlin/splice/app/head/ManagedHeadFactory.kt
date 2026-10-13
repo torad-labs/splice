@@ -30,6 +30,7 @@ import splice.core.model.TurnPrice
 import splice.core.perf.KeptHistory
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
+import splice.core.topology.DialectWires
 import splice.core.usage.QuotaReadFailures
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
@@ -184,6 +185,7 @@ internal class ManagedHeadFactory(
             },
             authSurface = HeadAuthSurface(
                 authKind = ctx.providerCfg.auth.kind,
+                dialect = DialectWires.name(ctx.providerCfg.dialect),
                 keyPresence = keyPresence,
                 accountPool = accountPools.source(stores.accounts.pool, key, accountOrders),
                 accountAuth = accountPools.authSource(wired),

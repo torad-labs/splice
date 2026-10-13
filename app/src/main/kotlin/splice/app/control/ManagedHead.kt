@@ -68,6 +68,9 @@ public data class HeadSources(
 public data class HeadAuthSurface(
     /** The auth dialect for HeadStatus.authKind (webui) — known at wiring time (chatgpt-oauth|api-key). */
     val authKind: String = "unknown",
+    /** The provider's wire dialect as splice.toml spells it (openai-responses, openai-chat, anthropic-passthrough), for
+     *  /api/heads; null where a head was wired without one. */
+    val dialect: String? = null,
     /** DR-81: "does this head hold a working api key RIGHT NOW" — read per /launch, never frozen
      *  into the launch spec (the spec is assembled once at boot; `splice key set` promises live
      *  pickup, and a boot-frozen gate left the paste-your-key capture hook armed against a

@@ -9,6 +9,9 @@
 //   raw upstream bytes      TearAwareEvents (malformed SSE frame), ZeroEventFailure (snippet=)
 //   websocket close text    WsRoundDriver (failed before any client frame), InboxListener (closed by the peer)
 //   tool-call arguments     TurnPreparation (activity label answered locally)
+//   exception text          AuthProbeLoop (tick threw, loop died), LocalRuntimeWatch and TurnPathProbeLoop (DIED),
+//                           HeadProbes (failed to start), HeadShutdown (stop failed uncaught), BudgetLedger (spend
+//                           short): a parse failure's message can quote the body it failed on (splice-lead, Oct 13)
 // A line without the daemon's `[date time] [tag]` opening is not the daemon's: a stack frame or a child's stderr, which
 // can quote anything, so it is masked whole.
 package splice.diagnostics.doctor.report
@@ -28,6 +31,13 @@ private val PAYLOAD_STARTS: Regex = listOf(
     "websocket round failed before any client frame \\(",
     "socket closed by the peer \\(status=\\d+, ",
     "activity label answered locally: \"",
+    "\\[auth-probe] probe tick threw: ",
+    "\\[auth-probe] loop died: ",
+    "LOCAL RUNTIME WATCH DIED \\(",
+    "TURN PATH PROBE DIED \\(",
+    "\\[boot] failed to start: ",
+    "head stop failed uncaught: [^:]*: ",
+    "today's spend before this daemon started is short: ",
 ).joinToString("|").toRegex()
 
 internal class DoctorLogPayloads {

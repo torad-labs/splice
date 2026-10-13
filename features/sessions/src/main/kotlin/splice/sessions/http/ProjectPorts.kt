@@ -4,7 +4,6 @@ package splice.sessions.http
 import splice.core.compaction.CompactionInstructions
 import splice.sessions.registry.ProjectRef
 import splice.sessions.registry.SessionRecord
-import splice.sessions.registry.TrustedRoot
 
 /** A session's project, as the sessions rows resolve it: the same answer the Teams and request rows use. */
 public fun interface ProjectOf {
@@ -19,11 +18,6 @@ public fun interface ProjectFolders {
 /** The project a working directory belongs to (a team's repo), asked of the same resolver. */
 public fun interface ProjectAt {
     public operator fun invoke(cwd: String): ProjectRef?
-}
-
-/** The trusted root a head's statusline probes a path under, as the sessions rows' resolver sees it. */
-public fun interface StatuslineRootOf {
-    public operator fun invoke(path: String, head: String): TrustedRoot?
 }
 
 /** The daemon's compaction table, read at CALL time: the control plane assigns it after the routes are

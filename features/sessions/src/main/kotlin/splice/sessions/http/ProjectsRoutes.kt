@@ -8,16 +8,13 @@
 // sessions as well as registry rows (using the Sessions route's RepoResolver: trusted roots only,
 // worktrees folded into their repo), plus each team's declared repo after its sessions have ended.
 //
-// WHAT GOVERNS THE REPO (FEATURES.md 4.14, "its compaction scope and the effective instructions, the
-// statusline roots entry"). `compaction` is core's own answer for this root —
+// WHAT GOVERNS THE REPO (FEATURES.md 4.14, "its compaction scope and the effective instructions").
+// `compaction` is core's own answer for this root —
 // CompactionInstructions.rulesFor, the rules a compaction here can resolve to in resolve's precedence,
 // shadowed ones left out — as {scope, source, chars}, the shape GET /api/compaction/instructions
 // uses; no instruction text crosses the wire, for that route's reason. An empty list means no rule
 // applies and the client's own instructions stand; null means the daemon never wired the table,
-// which is not the same fact. `statusline_roots` is one entry per head, because statuslineGitRoots
-// is per-head overridable: the trusted root that head's statusline probes this repo under (home, tmp
-// or statuslineGitRoots) and the root itself, both null when the repo is outside every one, where
-// that head's statusline shows no branch.
+// which is not the same fact.
 //
 // FILES ARE READ ONLY FROM A KNOWN PROJECT. {id} must be one of the roots the list reports, or the
 // route is a 404: a path from the URL is never read on its own say-so. The repo's own instruction
@@ -49,7 +46,6 @@ public class ProjectsRoutes(
     private val heads: Map<String, SessionHead>,
     private val lookup: ProjectLookup,
     private val teams: TeamSource,
-    private val statuslineRoot: StatuslineRootOf = StatuslineRootOf { _, _ -> null },
     private val compaction: CompactionSource = CompactionSource { null },
 ) {
     public fun list(): JsonReply {
@@ -111,7 +107,6 @@ public class ProjectsRoutes(
                 put("root", root)
                 RepoOrigin.of(root)?.let { put("remote", it) }
                 put("compaction", compactionOf(root))
-                put("statusline_roots", statuslineRootsOf(root))
             }
         }
 
@@ -130,18 +125,5 @@ public class ProjectsRoutes(
                 }
             }
         } ?: JsonNull
-
-        private fun statuslineRootsOf(root: String) = buildJsonArray {
-            heads.keys.sorted().forEach { head ->
-                val covering = statuslineRoot(root, head)
-                add(
-                    buildJsonObject {
-                        put("head", head)
-                        put("root", covering?.path)
-                        put("entry", covering?.origin?.wire)
-                    },
-                )
-            }
-        }
     }
 }

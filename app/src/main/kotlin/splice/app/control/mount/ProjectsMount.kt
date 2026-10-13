@@ -13,7 +13,6 @@ import splice.sessions.http.ProjectFolders
 import splice.sessions.http.ProjectLookup
 import splice.sessions.http.ProjectOf
 import splice.sessions.http.ProjectsRoutes
-import splice.sessions.http.StatuslineRootOf
 import splice.sessions.http.TeamSource
 import splice.sessions.registry.SessionSource
 
@@ -36,7 +35,6 @@ internal class ProjectsMount(
                 ProjectFolders(routes.projects::folders),
             ),
             TeamSource { ports.teams },
-            statuslineRoot = StatuslineRootOf(routes::statuslineRootOf),
             compaction = CompactionSource { ports.compaction },
         )
     }

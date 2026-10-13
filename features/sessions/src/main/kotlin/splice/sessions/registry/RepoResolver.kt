@@ -58,17 +58,6 @@ internal const val REASON_NO_REPO: String = "the cwd is not inside a git reposit
  *  itself with [reason] saying why. [worktree] is set only for a linked worktree of [root]. */
 public data class RepoRoot(val root: String, val worktree: String? = null, val reason: String? = null)
 
-/** Which entry of the trusted set a root came from: the home directory, /tmp, or the operator's own
- *  statuslineGitRoots knob. [wire] is the word the project row prints. */
-public enum class TrustedRootOrigin(public val wire: String) {
-    HOME("home"),
-    TMP("tmp"),
-    CONFIGURED("statuslineGitRoots"),
-}
-
-/** The trusted root that covers a path, realpath-resolved, and which entry of the set it is. */
-public data class TrustedRoot(val path: String, val origin: TrustedRootOrigin)
-
 private data class CachedRoot(val root: RepoRoot, val expiresAtMs: Long)
 
 internal class RepoResolver(
@@ -78,11 +67,7 @@ internal class RepoResolver(
 ) {
     /** Resolved once: the root set is process-invariant. A root that does not exist on this host
      *  (a devcontainer /workspace) is simply not a trusted root. */
-    private val trusted: List<Pair<Path, TrustedRootOrigin>> = buildList {
-        home?.let { add(it to TrustedRootOrigin.HOME) }
-        add("/tmp" to TrustedRootOrigin.TMP)
-        extraRoots.forEach { add(it to TrustedRootOrigin.CONFIGURED) }
-    }.mapNotNull { (raw, origin) -> realPath(raw)?.let { it to origin } }
+    private val trusted: List<Path> = (listOfNotNull(home, "/tmp") + extraRoots).mapNotNull { realPath(it) }
 
     private val cache = LinkedHashMap<String, CachedRoot>(REPO_CACHE_MAX_ENTRIES, CACHE_LOAD_FACTOR, true)
 
@@ -97,22 +82,13 @@ internal class RepoResolver(
         return root
     }
 
-    /** The innermost trusted root over [path] — the same boundary [resolve] walks up to — or null when
-     *  [path] lies outside every one (or does not exist), where the statusline shows no branch and
-     *  the repo walk never reads a `.git`. */
-    public fun trustedRootOf(path: String): TrustedRoot? {
-        val real = directory(path) ?: return null
-        return boundaryOf(real)?.let { (root, origin) -> TrustedRoot(root.toString(), origin) }
-    }
-
-    /** The innermost trusted root containing [real], with its origin. */
-    private fun boundaryOf(real: Path): Pair<Path, TrustedRootOrigin>? =
-        trusted.filter { real.startsWith(it.first) }.maxByOrNull { it.first.nameCount }
+    /** The innermost trusted root containing [real]. */
+    private fun boundaryOf(real: Path): Path? = trusted.filter { real.startsWith(it) }.maxByOrNull { it.nameCount }
 
     private fun place(cwd: String): RepoRoot {
         val real = directory(cwd)
             ?: return RepoRoot(cwd, reason = if (absolute(cwd)) REASON_MISSING else REASON_NOT_ABSOLUTE)
-        val boundary = boundaryOf(real)?.first ?: return RepoRoot(cwd, reason = REASON_UNTRUSTED)
+        val boundary = boundaryOf(real) ?: return RepoRoot(cwd, reason = REASON_UNTRUSTED)
         return walkUp(real, boundary) ?: RepoRoot(cwd, reason = REASON_NO_REPO)
     }
 

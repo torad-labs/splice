@@ -90,13 +90,10 @@ class ProjectsRoutesTest {
         settings = ConfigSessionSettings(config),
     )
 
-    // FEATURES.md 4.14's "compaction scope and effective instructions, the statusline roots entry":
-    // the rules core says a compaction in this repo resolves to (a project rule shadows the global
-    // one), and per head the trusted root its statusline probes the repo under, through the SAME
-    // SessionsRoutes resolver ControlServer wires, so a head that overrides statuslineGitRoots
-    // answers with its own root.
+    // FEATURES.md 4.14's "compaction scope and effective instructions": the rules core says a
+    // compaction in this repo resolves to (a project rule shadows the global one).
     @Test
-    fun `the row names the compaction rules for its repo and each head's statusline root`() {
+    fun `the row names the compaction rules for its repo`() {
         rig.team()
         Files.createDirectories(rig.repo.resolve(".git"))
         Files.createDirectory(tmp.resolve("elsewhere/.git"))
@@ -104,7 +101,6 @@ class ProjectsRoutesTest {
         val config = ConfigService(
             StatePaths(baseOverride = tmp.resolve("state")),
             headOverrides = mapOf("statuslineGitRoots" to tmp.toString()),
-            perHeadOverrides = mapOf("grok" to mapOf("statuslineGitRoots" to rig.repo.toString())),
             envReader = EnvReader { null },
             log = { },
         )
@@ -122,7 +118,6 @@ class ProjectsRoutesTest {
             heads,
             ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) }),
             TeamSource { rig.store },
-            StatuslineRootOf(sessions::statuslineRootOf),
             CompactionSource { wired },
         )
         val repo = rig.repo.toRealPath().toString()
@@ -131,15 +126,6 @@ class ProjectsRoutesTest {
             Json.parseToJsonElement("""[{"scope":"project","source":"project:$repo","chars":9}]"""),
             row.getValue("compaction"),
             "the repo's project rule shadows the global one, and its length is live",
-        )
-        val base = tmp.toRealPath().toString()
-        assertEquals(
-            Json.parseToJsonElement(
-                """[{"head":"codex","root":"$base","entry":"statuslineGitRoots"},""" +
-                    """{"head":"grok","root":"$repo","entry":"statuslineGitRoots"}]""",
-            ),
-            row.getValue("statusline_roots"),
-            "grok's own statuslineGitRoots override is its answer; codex has the global one",
         )
         val elsewhere = rig.json(routes(table).project(tmp.resolve("elsewhere").toString()).body)
         assertEquals(

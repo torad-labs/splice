@@ -1,8 +1,8 @@
 // NEW: V4-319 — the console's reads of a head's live turns, and its stop.
 //
-// GET  /api/heads/{head}/turns/live      -> {head, turns: [{id, session, model, compact, age_ms,
-//                                           idle_ms, seen_output, resumes, retries, stopped}]}
-// POST /api/heads/{head}/turns/{id}/stop -> {stopped: true, head, session}
+// GET  /api/heads/{head}/turns/live      -> {turns: [{id, session, model, idle_ms, seen_output, resumes,
+//                                           retries, will_resume, stopped}]}
+// POST /api/heads/{head}/turns/{id}/stop -> {}
 //
 // Read in process from the registry HeadServerFactory fills as it builds each head (LiveTurnsByHead),
 // as the wire tap's route reads its ring. An unknown head is a 400 naming it, never a 404: the console
@@ -28,9 +28,8 @@ public fun interface LiveTurnsSource {
 
 public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val registry: LiveTurnsSource) {
 
-    public fun live(head: String): JsonReply = resolved(head) { key, turns ->
+    public fun live(head: String): JsonReply = resolved(head) { _, turns ->
         val body = buildJsonObject {
-            put("head", key)
             putJsonArray("turns") {
                 turns.list().forEach { turn ->
                     add(
@@ -38,8 +37,6 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
                             put("id", turn.id)
                             put("session", turn.session)
                             put("model", turn.model)
-                            put("compact", turn.compact)
-                            put("age_ms", turn.ageMs)
                             put("idle_ms", turn.silence.idleMs)
                             put("seen_output", turn.silence.seenOutput)
                             put("resumes", turn.silence.resumes)
@@ -55,16 +52,10 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
     }
 
     public fun stop(head: String, id: String): JsonReply = resolved(head) { key, turns ->
-        val stopped = turns.stop(id)
-        if (stopped == null) {
-            refuse(HttpStatusCode.NotFound, "no live turn $id on head $key: it has ended")
+        if (turns.stop(id)) {
+            JsonReply(HttpStatusCode.OK, "{}")
         } else {
-            val body = buildJsonObject {
-                put("stopped", true)
-                put("head", key)
-                put("session", stopped.session)
-            }
-            JsonReply(HttpStatusCode.OK, JsonWire.string(body))
+            refuse(HttpStatusCode.NotFound, "no live turn $id on head $key: it has ended")
         }
     }
 

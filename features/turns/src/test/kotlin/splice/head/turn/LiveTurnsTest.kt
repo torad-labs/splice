@@ -88,8 +88,8 @@ class LiveTurnsTest {
 
         assertEquals(
             listOf(
-                LiveTurn("turn-1", "sess-a", "gpt-5.6-sol", compact = true, ageMs = 75, stopped = false),
-                LiveTurn("turn-2", null, "gpt-5.6-terra", compact = false, ageMs = 25, stopped = false),
+                LiveTurn("turn-1", "sess-a", "gpt-5.6-sol", stopped = false, silence = TurnSilence(75)),
+                LiveTurn("turn-2", null, "gpt-5.6-terra", stopped = false, silence = TurnSilence(25)),
             ),
             turns.list(),
         )
@@ -117,21 +117,21 @@ class LiveTurnsTest {
     }
 
     @Test
-    fun `a stop cancels the turn's own job with an OperatorStop and answers its session`() {
+    fun `a stop cancels the turn's own job with an OperatorStop`() {
         val slot = slot()
         turns.admit(slot, meta("sess-a"), hash("go"))
         val job = Job()
         val other = Job()
         turns.driving(slot, job)
 
-        assertEquals(LiveTurns.Stopped("sess-a"), turns.stop("turn-1"))
+        assertTrue(turns.stop("turn-1"))
 
         assertTrue(job.isCancelled, "the stopped turn's job is cancelled")
         assertTrue(causeOf(job) is OperatorStop, "${causeOf(job)}")
         assertFalse(other.isCancelled, "no other job is touched")
         assertEquals(listOf(true), turns.list().map { it.stopped }, "listed as stopped until the slot goes")
         slot.release()
-        assertNull(turns.stop("turn-1"), "a released turn is no longer live")
+        assertFalse(turns.stop("turn-1"), "a released turn is no longer live")
     }
 
     @Test
@@ -151,7 +151,7 @@ class LiveTurnsTest {
         val job = Job()
         turns.driving(slot(), job)
         assertFalse(job.isCancelled)
-        assertNull(turns.stop("turn-1"), "an id nothing minted is not live")
+        assertFalse(turns.stop("turn-1"), "an id nothing minted is not live")
     }
 
     @Test
@@ -211,7 +211,7 @@ class LiveTurnsTest {
         turns.stop("turn-1")
         assertTrue(turns.refusesResend("sess-a", request("go", stream = false)))
 
-        assertEquals(LiveTurns.Stopped("sess-a"), turns.stop("turn-1"))
+        assertTrue(turns.stop("turn-1"))
 
         assertFalse(turns.refusesResend("sess-a", request("go", stream = false)))
     }
@@ -223,7 +223,7 @@ class LiveTurnsTest {
         val job = Job()
         turns.driving(slot, job)
 
-        assertEquals(LiveTurns.Stopped(null), turns.stop("turn-1"))
+        assertTrue(turns.stop("turn-1"))
 
         assertTrue(job.isCancelled)
         assertFalse(turns.refusesResend(null, request("go", stream = false)))

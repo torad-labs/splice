@@ -85,7 +85,6 @@ class LiveTurnIdleReadingTest {
             slot.touch() // Upstream headers are not a body byte.
             now += 100L
             val row = reading()
-            assertEquals(500L, row.getValue("age_ms").jsonPrimitive.long)
             assertEquals(500L, row.getValue("idle_ms").jsonPrimitive.long)
         } finally {
             slot.release()
@@ -128,7 +127,6 @@ class LiveTurnIdleReadingTest {
             slot.received()
             now += 300_001L
             val row = reading()
-            assertEquals(301_001L, row.getValue("age_ms").jsonPrimitive.long)
             assertEquals(300_001L, row.getValue("idle_ms").jsonPrimitive.long)
             now += 100L
             assertEquals(300_101L, reading().getValue("idle_ms").jsonPrimitive.long)
@@ -146,7 +144,6 @@ class LiveTurnIdleReadingTest {
                 slot.received()
                 now += 1L
                 val row = reading()
-                assertEquals(401L * (n + 1), row.getValue("age_ms").jsonPrimitive.long)
                 assertEquals(1L, row.getValue("idle_ms").jsonPrimitive.long)
             }
         } finally {
@@ -162,7 +159,6 @@ class LiveTurnIdleReadingTest {
             now += 500L
             first.received()
             assertEquals(listOf(0L, 500L), turns.list().map { it.silence.idleMs })
-            assertEquals(listOf(700L, 500L), turns.list().map { it.ageMs })
         } finally {
             first.release()
             second.release()
@@ -195,7 +191,6 @@ class LiveTurnIdleReadingTest {
             assertEquals(28, written.count { it.startsWith(": ping") })
             assertEquals(2, written.count { it.startsWith("event: ping") })
             val row = reading()
-            assertEquals(3_000L, row.getValue("age_ms").jsonPrimitive.long)
             assertEquals(3_000L, row.getValue("idle_ms").jsonPrimitive.long)
         } finally {
             slot.release()

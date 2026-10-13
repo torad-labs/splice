@@ -192,7 +192,7 @@ class HeadServerTurnStopTest {
 
             val stop = rig.routes.stop("codex", id)
             assertEquals(200, stop.status.value, stop.body)
-            assertEquals(json("""{"stopped":true,"head":"codex","session":"$SESSION"}"""), json(stop.body))
+            assertEquals("{}", stop.body)
 
             // Bounded: a stop that cancels nothing leaves the turn held, and that must fail, not hang.
             val body = withTimeout(WAIT_MS) { held.await() }

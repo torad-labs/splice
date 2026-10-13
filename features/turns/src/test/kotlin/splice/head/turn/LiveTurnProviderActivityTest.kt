@@ -194,7 +194,6 @@ class LiveTurnProviderActivityTest {
             rig.now += 300L
             runCurrent()
             assertEquals(300L, rig.turns.list().single().silence.idleMs)
-            assertEquals(900L, rig.turns.list().single().ageMs)
             assertEquals(0L, drive.perfCounter(PerfKeys.EVENTS_IN), "no parsed event exists to reset the reading")
         } finally {
             body.close()
@@ -221,7 +220,6 @@ class LiveTurnProviderActivityTest {
                 .drive(rig.inputs(turn, this), Terminals, events)
             rig.now += 25L
             assertEquals(25L, rig.turns.list().single().silence.idleMs)
-            assertEquals(1_025L, rig.turns.list().single().ageMs)
         } finally {
             turn.slot.release()
         }

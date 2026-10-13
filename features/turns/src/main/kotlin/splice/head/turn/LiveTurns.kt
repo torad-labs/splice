@@ -129,11 +129,8 @@ public data class LiveTurn(
     val id: String,
     val session: String?,
     val model: String,
-    val compact: Boolean,
-    val ageMs: Long,
     val stopped: Boolean,
-    /** Silent for its whole age, having heard nothing, until the provider's first byte says otherwise. */
-    val silence: TurnSilence = TurnSilence(ageMs),
+    val silence: TurnSilence,
 )
 
 /** One head's live turns and its unused stop marks. [ids] mints a whole random UUID per turn, so no
@@ -196,8 +193,6 @@ public class LiveTurns(
             id,
             session,
             meta.route.upstreamModel,
-            meta.compact,
-            now - since,
             stopped.get(),
             TurnSilence(
                 idleMs = (now - lastByte.get()).coerceAtLeast(0L),
@@ -261,20 +256,17 @@ public class LiveTurns(
         return live.values.sortedBy { it.since }.map { it.view(now) }
     }
 
-    /** Stops the live turn [id] and answers its session, or null when no turn with that id is live
+    /** Stops the live turn [id] and answers true, or false when no turn with that id is live
      *  (it ended, or never ran here). A second stop of the same turn answers again and does nothing.
      *  The mark is left BEFORE the cancel, so the re-send the cancel provokes always finds it. */
-    public fun stop(id: String): Stopped? {
-        val turn = live[id] ?: return null
+    public fun stop(id: String): Boolean {
+        val turn = live[id] ?: return false
         if (turn.claimStop()) {
             mark(turn)
             turn.cancel()
         }
-        return Stopped(turn.session)
+        return true
     }
-
-    /** What a stop answers: the session whose turn it was, null when the client sent none. */
-    public data class Stopped(val session: String?)
 
     private fun mark(turn: Live) {
         val session = turn.session ?: return

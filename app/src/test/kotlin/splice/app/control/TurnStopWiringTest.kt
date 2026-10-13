@@ -75,7 +75,7 @@ class TurnStopWiringTest {
         serve(ports = { it.liveTurns = LiveTurnsByHead().apply { put("codex", LiveTurns()) } }) { calls ->
             val live = calls.get("/api/heads/codex/turns/live")
             assertEquals(200, live.status.value, live.bodyAsText())
-            assertEquals(json("""{"head":"codex","turns":[]}"""), json(live.bodyAsText()))
+            assertEquals(json("""{"turns":[]}"""), json(live.bodyAsText()))
             val ended = calls.post("/api/heads/codex/turns/ended-turn/stop")
             assertEquals(404, ended.status.value, ended.bodyAsText())
             val gone = """{"error":"no live turn ended-turn on head codex: it has ended"}"""

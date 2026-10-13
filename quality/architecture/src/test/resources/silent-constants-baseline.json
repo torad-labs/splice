@@ -32,7 +32,6 @@
     "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt": 2,
     "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt": 2,
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorInstallProbes.kt": 1,
-    "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorLogEvents.kt": 1,
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorProbeWrite.kt": 1,
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorProbes.kt": 2,
     "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/report/DoctorJsonReport.kt": 1,

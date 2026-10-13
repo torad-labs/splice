@@ -33,7 +33,6 @@ private val ALLOWED_PATH_PREFIXES = listOf(
 private const val UNPARSABLE_HOST = "<unparsable>"
 
 internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = emptyList()) {
-    private val events = DoctorLogEvents()
 
     private val allowedPrefixes = ALLOWED_PATH_PREFIXES + spliceDirs.map { it.toString().replace(home.toString(), "~") }
 
@@ -92,7 +91,4 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
                 onSuccess = { host -> host?.takeIf { it.isNotBlank() }?.let(::text) ?: UNPARSABLE_HOST },
                 onFailure = { UNPARSABLE_HOST },
             )
-
-    /** Daemon EVENTS only, each reduced to its structure; every other line is counted, not shown. */
-    fun logLines(lines: List<String>, names: SafeNames): LogSelection = events.select(lines, names)
 }

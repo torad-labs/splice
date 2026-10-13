@@ -101,9 +101,8 @@ internal class DoctorJsonReport(
         // --json and the console's /api/doctor carry the same numbers for one run.
         put("state_dir_usage", shape.stateDirUsage(stateDir.scan(System.currentTimeMillis())))
         if (withLogs) {
-            val logs = tail.logs(names)
+            val logs = tail.logs()
             put("logs", logs.lines)
-            put("logs_dropped_in_tail", logs.dropped)
             logs.error?.let { put("logs_error", it) }
         }
     }

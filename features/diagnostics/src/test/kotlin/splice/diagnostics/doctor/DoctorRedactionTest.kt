@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.diagnostics.doctor.report.DoctorRedaction
-import splice.diagnostics.doctor.report.SafeNames
 import java.nio.file.Paths
 
 class DoctorRedactionTest {
@@ -72,8 +71,7 @@ class DoctorRedactionTest {
         assertEquals(32, key.length)
         assertFalse(redaction.text("connection failed $key").contains(key))
         val log = "[2026-09-13 10:00:53] [$key] turn compact=false model=$key"
-        val selected = redaction.logLines(listOf(log), SafeNames(redaction, null))
-        assertFalse(selected.kept.joinToString("\n").contains(key), selected.toString())
+        assertFalse(redaction.text(log).contains(key), redaction.text(log))
     }
 
     @Test
@@ -87,61 +85,6 @@ class DoctorRedactionTest {
         )
         val keyed = redaction.host("https://AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefghij.example.invalid/v1")
         assertFalse(keyed.contains("AbCdEfGh"), keyed)
-    }
-
-    @Test
-    fun `log lines keep the structure of daemon events only and count the rest`() {
-        val lines = listOf(
-            "[2026-09-13 10:00:52] [daemon] up: control :3196, heads [openrouter]",
-            "user: please remember my secret plan PLANTEXT",
-            "[2026-09-13 10:00:53] [daemon] PLANTEXT the user secret plan behind a daemon prefix",
-            "[2026-09-13 10:00:53] [daemon] failed PLANTEXT the user said name=Voldemort city=Paris behind a head",
-            "[2026-09-13 10:00:53] [claudex][code-mode] abandoned record 9 (outer call_x): history mismatch",
-            "    at splice.core.topology.HeadConfig.deserialize(Topology.kt:202)",
-            "[2026-09-13 10:00:53] [codex] turn ERROR auth-missing: Authorization: Bearer verysecrettoken",
-            "[2026-09-13 10:00:53] [claudex] turn compact=false model=gpt-5.6-sol latency=1200ms ok out=42 tool=false",
-            "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 session=" + "x".repeat(1000) +
-                " api_key=abc client_secret=s3cr3t model=gpt-6-astra compact=false attempts=NaN",
-            "[2026-09-13 10:00:55] [mcp-host] context7: hosted as pid 4242",
-            "[2026-09-13 10:00:56] [mcp-host] context7: pid 4242 exited (exited with code 3 /home/me/secret)",
-            "[2026-09-13 10:00:57] [mcp-host] context7: some prose the child printed",
-        )
-        val out = redaction.logLines(lines, SafeNames(redaction, null))
-        assertEquals(
-            listOf(
-                "[2026-09-13 10:00:52] [daemon] up: control",
-                "[2026-09-13 10:00:53] [daemon] failed",
-                "[2026-09-13 10:00:53] [claudex][code-mode] abandoned record",
-                "[2026-09-13 10:00:53] [codex] turn ERROR",
-                "[2026-09-13 10:00:53] [claudex] turn compact=false model=gpt-5.6-sol",
-                "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 model=gpt-6-astra compact=false",
-                "[2026-09-13 10:00:55] [mcp-host] context7: hosted as pid",
-                "[2026-09-13 10:00:56] [mcp-host] context7: pid 4242 exited",
-            ),
-            out.kept,
-            "head plus vocabulary pairs only: prose pairs, a session id, secret-named keys, NaN are gone; " +
-                "a turn line keeps compact= and model= (latency is not numeric, ok is not a pair)",
-        )
-        assertEquals(4, out.dropped, "prose, prefixed prose, a stack frame and a child's prose are not daemon events")
-    }
-
-    @Test
-    fun `pairs are harvested only from the run that directly follows the event head`() {
-        val lines = listOf(
-            "[2026-09-13 10:00:53] [codex] turn ERROR upstream-echo model=ProjectApollo status=merger total=123456",
-            "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42 said model=ProjectApollo compact=false",
-            "[2026-09-13 10:00:55] [gateway] perf outcome=ok status=429 total=7",
-        )
-        val out = redaction.logLines(lines, SafeNames(redaction, null))
-        assertEquals(
-            listOf(
-                "[2026-09-13 10:00:53] [codex] turn ERROR",
-                "[2026-09-13 10:00:54] [gateway] perf outcome=ok total=42",
-                "[2026-09-13 10:00:55] [gateway] perf outcome=ok status=429 total=7",
-            ),
-            out.kept,
-            "free text ends the run; a pair after it is not the daemon's; status is a number only",
-        )
     }
 
     @Test

@@ -56,11 +56,13 @@ class DoctorReportTest {
         fixture.report(env, withLogs, run)
 
     @Test
-    fun `planted secrets and conversation text never reach the report, with or without logs`() {
+    fun `planted secrets never reach the report, and conversation text stays out unless logs are asked for`() {
         val env = plant()
         for (withLogs in listOf(false, true)) {
             val text = report(env, withLogs).toString()
-            secrets.forEach { assertFalse(text.contains(it), "$it leaked (withLogs=$withLogs): $text") }
+            // Oct 13: --with-logs carries the raw daemon.log lines, redacted, so prose the daemon logged rides with them.
+            val kept = secrets.filterNot { withLogs && it.startsWith("PLANTEXT") }
+            kept.forEach { assertFalse(text.contains(it), "$it leaked (withLogs=$withLogs): $text") }
             assertTrue(text.contains("chatgpt.example.invalid"), text)
         }
     }
@@ -82,10 +84,9 @@ class DoctorReportTest {
         assertEquals("false", rows[1].jsonObject.getValue("cache_cold").jsonPrimitive.content, "a JSON boolean only")
         assertEquals(setOf("model", "total"), rows[2].jsonObject.keys, "a prose outcome is not a token: dropped")
         val logs = out.getValue("logs").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(4, logs.size)
-        assertEquals(2, out.getValue("logs_dropped_in_tail").jsonPrimitive.content.toInt(), "prose, prefixed or not")
-        assertEquals("[2026-09-13 10:00:53] [codex] turn ERROR", logs[1], "structure only: no words after the head")
-        assertEquals("[2026-09-13 10:00:54] [codex] client gone", logs[2], "a cwd is a free-form suffix: gone")
+        assertEquals(6, logs.size, "every line of the tail, prose included")
+        assertTrue(logs[1].contains("Bearer <redacted>") && logs[1].contains("<redacted:email>"), logs[1])
+        assertTrue(logs[4].endsWith("cwd <redacted:path>"), "a foreign path is masked whole: " + logs[4])
         assertTrue(out["logs_error"] == null)
         val claude = out.getValue("claude_code").jsonObject.getValue("version").jsonPrimitive.content
         assertTrue(claude.startsWith("2.1.257"), claude)
@@ -245,14 +246,14 @@ class DoctorReportTest {
         val older = (1..600).joinToString("\n") { "[2026-09-12 10:00:00] [daemon] perf outcome=ok n=$it x" }
         Files.writeString(logs.resolve("daemon.log.1"), older + "\n")
         val lines = report(env, withLogs = true).getValue("logs").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(500, lines.size, "the last 500 daemon events of both generations, .1 first")
-        assertTrue(lines.first().endsWith("perf outcome=ok n=105"), "604 events, pairs kept: " + lines.first())
-        assertTrue(lines.last().endsWith("[codex] launch"), lines.last())
+        assertEquals(500, lines.size, "the last 500 lines of both generations, .1 first")
+        assertTrue(lines.first().endsWith("perf outcome=ok n=107 x"), "606 lines, each as written: " + lines.first())
+        assertTrue(lines.last().contains("[codex] launch claudex"), lines.last())
 
         Files.delete(logs.resolve("daemon.log.1"))
         Files.createDirectory(logs.resolve("daemon.log.1"))
         val broken = report(env, withLogs = true)
-        assertEquals(4, broken.getValue("logs").jsonArray.size, "the cap holds: the failure is typed metadata")
+        assertEquals(6, broken.getValue("logs").jsonArray.size, "the cap holds: the failure is typed metadata")
         val error = broken.getValue("logs_error").jsonPrimitive.content
         assertTrue(error.startsWith("rotated:"), "a fixed generation label: $error")
         assertFalse(error.contains(secrets[5]), "the failure text goes through the redaction: $error")
@@ -352,16 +353,6 @@ class DoctorReportTest {
         val out = report(env, withLogs = true, run = DoctorRun(two, emptyList()))
         val heads = out.getValue("topology").jsonObject.getValue("heads").jsonObject.keys
         assertEquals(setOf("head-1", "<head-2>"), heads, "the real head-1 keeps its name; the unsafe one is aliased")
-        val logs = out.getValue("logs").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(
-            listOf(
-                "[2026-09-13 10:00:52] [<head-2>] perf outcome=ok total=42",
-                "[2026-09-13 10:00:53] [head-1][quota] failed",
-                "[2026-09-13 10:00:54] [daemon] turn ERROR",
-            ),
-            logs,
-            "tags aliased, heads kept, prose after an accepted head gone with every pair behind it",
-        )
         assertFalse(out.toString().contains("sk-live-abcdefghijklmnop"))
     }
 

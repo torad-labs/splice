@@ -49,11 +49,11 @@ private const val DAEMON_WIDE =
     "splice reads this setting once for every command, never per command; set it for every command (PATCH /api/config)"
 
 // why: mirrorReasoning is read per command, but ConfigCoercion pins it false on every layer, so a value is ignored.
-private const val PINNED = "pinned false by project rule on every command; ask Marcos to change"
+private const val MIRROR_PINNED_FALSE = "pinned false by project rule on every command; ask Marcos to change"
 
 // Each knob a command's own value never reaches, with the words it is refused in.
 private val PER_COMMAND_REFUSALS: Map<Knob, String> =
-    daemonWideKnobs.associateWith { DAEMON_WIDE } + (Knob.MIRROR_REASONING to PINNED)
+    daemonWideKnobs.associateWith { DAEMON_WIDE } + (Knob.MIRROR_REASONING to MIRROR_PINNED_FALSE)
 private const val HEAD_WRITE_UNWIRED =
     "the topology writer is not wired into this control plane; a command's value cannot be written"
 

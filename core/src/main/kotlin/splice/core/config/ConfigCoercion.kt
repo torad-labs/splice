@@ -34,18 +34,16 @@ private const val MIN_AUTH_CACHE_MS = 5_000L
 // then fail every budget PUT that leaves its action to the default.
 private val BUDGET_ACTIONS = setOf("warn", "block")
 
-/** Whether a text knob's reader can use [text]; a value that fails is refused by name, like any other bad value. */
-internal fun interface TextKnobCheck {
-    operator fun invoke(text: String): Boolean
-}
+// why: the text knobs whose readers take only some words; ConfigCoercion.coerce refuses the rest by name.
+private val CHECKED_TEXT_KNOBS = setOf(Knob.PROJECTS_FOLDERS, Knob.BUDGET_DEFAULT_ACTION)
 
-// why: the text knobs whose readers take only some words. A Projects folder is an ABSOLUTE path, since a relative one
-// names a different folder per process. The budget default is warn or block, since BudgetStore takes nothing else and a
-// saved typo then failed every budget PUT that left its action to the default (Oct 12, §9 audit).
-private val TEXT_CHECKS: Map<Knob, TextKnobCheck> = mapOf(
-    Knob.PROJECTS_FOLDERS to TextKnobCheck { text -> text.split(':').all(ProjectFolderCheck::absolute) },
-    Knob.BUDGET_DEFAULT_ACTION to TextKnobCheck { text -> text in BUDGET_ACTIONS },
-)
+/** Which words a checked text knob's reader can use. */
+private object TextKnobWords {
+    fun accepts(knob: Knob, text: String): Boolean = when (knob) {
+        Knob.PROJECTS_FOLDERS -> text.split(':').all(ProjectFolderCheck::absolute)
+        else -> text in BUDGET_ACTIONS
+    }
+}
 
 // why: a poll faster than the five-minute cadence would hammer the provider's usage endpoint
 private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
@@ -236,8 +234,10 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // window stays whatever it already was.
         knob == Knob.HISTORY_RETENTION_DAYS -> coerceString(raw)?.let { HistoryWindowWords.of(it)?.text }
         // A text knob whose reader can use only some words refuses the rest by name (the same reject log, doctor row,
-        // PATCH answer and boot finding as every other bad value): TEXT_CHECKS says which words each one takes.
-        knob in TEXT_CHECKS -> coerceString(raw)?.takeIf { TEXT_CHECKS.getValue(knob)(it) }
+        // PATCH answer and boot finding as every other bad value). A Projects folder is an ABSOLUTE path, since a relative
+        // one names a different folder per process; the budget default is warn or block, since BudgetStore takes nothing
+        // else and a saved typo failed every budget PUT that left its action to the default (Oct 12, §9 audit).
+        knob in CHECKED_TEXT_KNOBS -> coerceString(raw)?.takeIf { TextKnobWords.accepts(knob, it) }
         else -> when (knob.kind) {
             KnobKind.BOOL -> coerceBool(raw)
             KnobKind.NUMBER -> coerceNumber(knob, raw)

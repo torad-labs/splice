@@ -200,13 +200,14 @@ public class ResumeHookRoute(
         return real?.takeIf { !Files.exists(it, NOFOLLOW_LINKS) || Files.isRegularFile(it, NOFOLLOW_LINKS) }
     }
 
-    /** [dir] resolved with symlinks followed when it is a directory under [tree]. A folder's first session
-     *  starts before Claude Code makes its project directory (Oct 12: five of the week's seven refused
+    /** [dir] resolved with symlinks followed when it is a directory directly under [tree]: Claude Code keeps a
+     *  session's transcript one level down, so a deeper folder is refused whether or not it exists. A folder's first
+     *  session starts before Claude Code makes its project directory (Oct 12: five of the week's seven refused
      *  startups came the minute their project directory was made), so a directory that does not exist yet
      *  counts when it is one plain name directly under [tree]. */
     private fun projectDir(dir: Path, tree: Path): Path? {
         val made = resolved(dir)
-        if (made != null) return made.takeIf { it.startsWith(tree) && Files.isDirectory(it, NOFOLLOW_LINKS) }
+        if (made != null) return made.takeIf { it.parent == tree && Files.isDirectory(it, NOFOLLOW_LINKS) }
         val name = dir.fileName?.toString()?.takeUnless { it == "." || it == ".." } ?: return null
         val unmade = tree.resolve(name)
         val free = !Files.exists(unmade, NOFOLLOW_LINKS) || Files.isDirectory(unmade, NOFOLLOW_LINKS)

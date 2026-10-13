@@ -643,16 +643,17 @@ names = [
 ]
 reason = """Two frame writers on two different planes. FrameWrite "writes one already-serialized frame to the client" on the L3 turn stream, and its KDoc names its place: "the third rung of this file's write-port ladder: FrameWrite -> ImmediateSseWriter.write -> RawSseWrite + RawSseFlush". Suspending is its contract, not a detail — the write back-pressures on the client socket and a failure out of it is how the head learns the client is gone. SseWrite writes one frame on the MCP transport's own SSE channel (control/api/McpRoutes.kt), read by an MCP client, never by the turn. Sharing a port would let management-plane frames into a client turn — the leak the L3 wire walls exist for — and turn frames into an MCP session."""
 
-# ── 3 names, () -> List<String> ───────────────────────────────────────────────────────────────────
+# ── 4 names, () -> List<String> ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->List<String>"
 dated = "2026-09-24"
 names = [
     "GpuProbe",
+    "NetstatRun",
     "ProjectFolders",
     "TurnPathStalled",
 ]
-reason = """Three reads that answer with names, where the EMPTY list means opposite things. ProjectFolders (sessions/http) lists the saved Projects folders, and empty is the default that makes a project the git repo. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles. WrapperBinSource (app/head HeadRemoval) is the claude wrapper directory the console was handed, null when none was, which Remove reads to unlink a command's link; a jar or a trace directory in its place would have Remove unlink files from the wrong folder."""
+reason = """Three reads that answer with names, where the EMPTY list means opposite things. ProjectFolders (sessions/http) lists the saved Projects folders, and empty is the default that makes a project the git repo. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles. WrapperBinSource (app/head HeadRemoval) is the claude wrapper directory the console was handed, null when none was, which Remove reads to unlink a command's link; a jar or a trace directory in its place would have Remove unlink files from the wrong folder. NetstatRun (upstream/transport MacNetstat, 2026-10-13) is one raw run of macOS netstat's TCP listing, line by line, which MacNetstat parses for a socket's unacknowledged bytes; it throws when the run fails, and its lines are netstat's columns, never names, so handed in for a name list it would put whole table rows on /health or the setup question."""
 
 # ── 2 names, () -> Path? ──────────────────────────────────────────────────────────────────────────
 [[groups]]

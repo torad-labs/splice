@@ -11,6 +11,7 @@ import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 public class QuotaReadWatch(
     private val probe: QuotaProbe,
@@ -23,7 +24,7 @@ public class QuotaReadWatch(
             snapshot
         },
         onFailure = { failure ->
-            outcome.read(QuotaReadFailure(reason(failure), clock() / MS_PER_SECOND))
+            outcome.read(QuotaReadFailure(reason(failure), TimeUnit.MILLISECONDS.toSeconds(clock())))
             throw failure
         },
     )
@@ -44,5 +45,3 @@ internal class QuotaUnreadable(val reason: QuotaReadReason) : IOException("no li
 
 // why: the statuses a usage endpoint answers when the credential itself is refused.
 private val SIGNED_OUT_STATUSES = setOf(HttpStatus.UNAUTHORIZED, HttpStatus.FORBIDDEN)
-
-private const val MS_PER_SECOND = 1_000L

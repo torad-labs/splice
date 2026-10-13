@@ -21,6 +21,8 @@ import splice.usage.economics.EconomicsRead
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.ProjectedPerfRowsSource
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.DurationUnit
 
 // why: each head reads its own files into its own caches, so heads scan side by side, and every head is ready about when
 // the largest one is rather than after the sum of all of them (splice-lead, Oct 12: desk d's claude-splice took most of
@@ -34,10 +36,6 @@ private const val KEEP_WARM_MS = 300_000L
 
 // why: a failed refresh costs only the next open its own read, which is what it would have done anyway.
 private const val KEEP_WARM_BEST_EFFORT = "the next economics read does the work this refresh would have"
-
-// why: the startup scan's readiness is logged in seconds to a tenth, as long scans are read off the daemon log.
-private const val MS_PER_TENTH = 100L
-private const val TENTHS = 10L
 
 // why: without hourly history, prepare the same 24-hour window a request with no explicit cutoff defaults to.
 private const val DEFAULT_REQUEST_WINDOW_MS = 86_400_000L
@@ -160,9 +158,9 @@ internal class UsageReadWarmup(
     }
 
     private fun ready(head: UsageHead, what: String) {
-        val tenths = (clock() - startedMs) / MS_PER_TENTH
-        val after = "${tenths / TENTHS}.${tenths % TENTHS}"
-        log?.invoke("[${LogSafe.str(head.key)}][usage] $what read $after s after start\n")
+        // seconds to a tenth, as long scans are read off the daemon log: "12.3s"
+        val after = (clock() - startedMs).milliseconds.toString(DurationUnit.SECONDS, 1)
+        log?.invoke("[${LogSafe.str(head.key)}][usage] $what read $after after start\n")
     }
 
     /** Reads the window the way the turns route will: through its projection where the source keeps one, so the

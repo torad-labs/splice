@@ -7,8 +7,11 @@ import splice.client.mcp.GIT_DIR
 import splice.client.mcp.PLUGINS_DIR
 import splice.client.mcp.PLUGIN_WALK_DEPTH
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.name
 
 /** [path]'s real filesystem identity, or itself when that cannot be resolved (missing, denied) —
@@ -66,14 +69,30 @@ internal fun interface PluginFileMatch {
     operator fun invoke(path: Path): Boolean
 }
 
+/** Whether an unreadable plugins folder has been said yet: one line per daemon, whichever reader met it. */
+private object PluginWalkFailure {
+    val said = AtomicBoolean(false)
+}
+
 /** Shared by both plugin readers: a bounded, regular-file walk that never MATCHES inside a `.git`
  *  clone (the marketplace mirrors under `plugins/marketplaces` and `plugins/cache` carry real git
  *  history, not plugin manifests — matching a file there would be counting the plugin's own source
  *  control, not what Claude Code loads). */
-internal class PluginFileWalk {
+internal class PluginFileWalk(private val log: LogSink = LogSink(DaemonLog::write)) {
+    /** A plugins folder that cannot be read is walked as empty, as before, and said once per daemon by its
+     *  exception's class alone (the path sits under the person's config home): read as nothing, an unreadable
+     *  folder looked the same as having no plugins (a Temple notice, via splice-lead). */
     operator fun invoke(root: Path, matches: PluginFileMatch): List<Path> = Cancellables.runCatchingCancellable {
         Files.walk(root, PLUGIN_WALK_DEPTH).use { stream -> stream.filter { candidate(it, matches) }.toList() }
-    }.getOrElse { emptyList() }
+    }.getOrElse { failure ->
+        if (PluginWalkFailure.said.compareAndSet(false, true)) {
+            log(
+                "[mcp] a Claude Code plugins folder could not be read (${failure::class.simpleName}), so the MCP " +
+                    "servers its plugins declare are not counted; said once until the daemon restarts\n",
+            )
+        }
+        emptyList()
+    }
 
     private fun candidate(path: Path, matches: PluginFileMatch): Boolean =
         Files.isRegularFile(path) && matches(path) && path.none { part -> part.name == GIT_DIR }

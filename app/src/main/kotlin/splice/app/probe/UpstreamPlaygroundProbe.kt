@@ -34,7 +34,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
@@ -45,7 +44,6 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.parse.AnthropicParse
-import splice.core.perf.OutcomeTag
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -56,7 +54,7 @@ import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundOutcome
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.diagnostics.playground.PlaygroundResult
-import splice.head.usage.CompareAnswer
+import splice.head.usage.CompareSendRecord
 import splice.head.usage.CompareSends
 import splice.head.usage.ProviderReply
 import splice.head.usage.ProviderReplyObserver
@@ -146,7 +144,7 @@ internal class UpstreamPlaygroundProbe(
         sender.sends?.admit(model, sender.login?.label)?.let {
             return PlaygroundBlocked(sender.head, it.message)
         }
-        val row = SendRecord(sender, model, clock())
+        val row = CompareSendRecord(sender.sends, model, sender.login?.label, clock)
         val url = provider.upstreamUrl
         val creds = sender.creds
         // The login's headers ride ON TOP of the provider's, as on a real turn (SseRoundPost).
@@ -160,31 +158,19 @@ internal class UpstreamPlaygroundProbe(
             sender.login?.selectedAccount,
             CredentialKey.fromHeaders(headers, (creds as? Credentials.ApiKey)?.header),
         )
-        // Past admit() the provider may already be charging, so every way out leaves the row and the spend: an answer
-        // writes them with its tokens, any failure but cancellation as a failed send, a cancelled handler (the caller
-        // left) as an abandoned one before the cancellation goes on, and an Error in the finally. The write is
-        // synchronous, so a cancelled coroutine still makes it.
-        try {
-            return Cancellables.runCatchingBestEffort {
+        // every way out past admit() leaves the row and the spend (CompareSendRecord)
+        return row.around(
+            send = {
                 val statement = client.preparePost(url) {
                     headers { headers.forEach { (name, value) -> append(name, value) } }
                     contentType(ContentType.Application.Json)
                     setBody(turn.requestBody.toString())
                 }
                 sender.observer?.posted(replySender)
-                statement.execute { sent ->
-                    response(provider, sender, turn, replySender, Sent(url, sent, row))
-                }
-            }.getOrElse {
-                row.write(usage.unanswered())
-                PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}")
-            }
-        } catch (cancelled: CancellationException) {
-            row.write(ReadSend(null, OutcomeTag.CLIENT_ABORT.wire))
-            throw cancelled
-        } finally {
-            row.write(usage.unanswered())
-        }
+                statement.execute { sent -> response(provider, sender, turn, replySender, Sent(url, sent, row)) }
+            },
+            failed = { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") },
+        )
     }
 
     /** Header acceptance is published before reading the body, even if that stream later fails. */
@@ -199,7 +185,6 @@ internal class UpstreamPlaygroundProbe(
         val creds = sender.creds
         val at = clock()
         val responseHeaders = QuotaHeaderRead { sent.headers[it] }
-        val headers = replySender.requestHeaders
         sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders), replySender)
         (sender.auth as? RefreshableAuthProvider)?.upstreamAnswered(sent.status.value, sent.status.isSuccess())
         val whole = sent.bodyAsText()
@@ -208,11 +193,11 @@ internal class UpstreamPlaygroundProbe(
             sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders, bodyText), replySender)
         }
         val read = usage.of(provider, turn, sent.status.value, sent.status.isSuccess(), whole)
-        posted.row.write(read)
+        posted.row.write(read.outcome, read.usage)
         val requestJson = buildJsonObject {
             sender.login?.let { put("account", it.label) }
             put("url", url)
-            putJsonObject("headers") { redacted(headers, creds).forEach { (k, v) -> put(k, v) } }
+            putJsonObject("headers") { redacted(replySender.requestHeaders, creds).forEach { (k, v) -> put(k, v) } }
             put("body", turn.requestBody)
         }
         val responseJson = buildJsonObject {
@@ -222,20 +207,8 @@ internal class UpstreamPlaygroundProbe(
         return PlaygroundResult(requestJson, responseJson)
     }
 
-    /** One send's Requests row and budget spend, written once: the first way out writes them, any later one is a no-op. */
-    private inner class SendRecord(private val sender: Sender, private val model: String, private val startedAt: Long) {
-        private var written = false
-
-        fun write(read: ReadSend) {
-            if (written) return
-            written = true
-            val answer = CompareAnswer(model, sender.login?.label, read.outcome, clock() - startedAt, read.usage)
-            sender.sends?.answered(answer)
-        }
-    }
-
     /** The request as it went out and the answer's headers, kept with the send's record. */
-    private data class Sent(val url: String, val response: HttpResponse, val row: SendRecord)
+    private data class Sent(val url: String, val response: HttpResponse, val row: CompareSendRecord)
 
     /** Every header that may carry a credential, by the trace's own rule, and the credential's own header by
      *  name whatever it is called, read as redacted. */

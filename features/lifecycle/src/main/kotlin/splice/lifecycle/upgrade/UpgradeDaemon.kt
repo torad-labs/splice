@@ -130,7 +130,7 @@ internal class UpgradeDaemon(
         var seen: DaemonHealth? = null
         repeat(CONFIRM_POLLS) {
             seen = health()
-            if (seen?.version == version && seen?.ready == true) return DaemonRestarted.Serving
+            if (seen?.let { it.version == version && it.ready } == true) return DaemonRestarted.Serving
             pacing.confirmPause()
         }
         val last = seen?.version

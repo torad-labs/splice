@@ -45,7 +45,7 @@ const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x
 const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
   .filter((k) => shownKnob(k.key) && (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
 // the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin);
-// so does "Run at most" while the hub serves, since the hub stops servers when idle and hostshield's slice caps their
+// so does "Run at most" while the hub serves, since the hub stops servers when idle and the host's MCP slice caps their
 // memory instead of a count (v0.4.0 section 8, as built under the hub)
 const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0)
   && (key !== "mcpMaxServers" || !ui.hubOn);

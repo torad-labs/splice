@@ -134,7 +134,7 @@ internal class UpgradeCommand(
         }
         return activation.activate(version, installed).then {
             layout.prunable().forEach(layout::discard)
-            Upgraded.Ok(finish(version, a.now))
+            Upgraded.Ok(finish(version, installed, a.now))
         }
     }
 
@@ -159,7 +159,7 @@ internal class UpgradeCommand(
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
             return Upgraded.Ok(false)
         }
-        return activation.activate(previous, installed).then { Upgraded.Ok(finish(previous, a.now)) }
+        return activation.activate(previous, installed).then { Upgraded.Ok(finish(previous, installed, a.now)) }
     }
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
@@ -180,7 +180,9 @@ internal class UpgradeCommand(
         return answer
     }
 
-    private fun finish(version: String, now: Boolean): Boolean {
+    /** Restarts on [version] and says how it went; a daemon that does not come back names the way back to [from],
+     *  which activation kept as the previous release, since a new jar that cannot boot is what --rollback is for. */
+    private fun finish(version: String, from: String, now: Boolean): Boolean {
         val restart = daemon.restart(layout.liveJar, version, now)
         val restarted = restart is DaemonRestarted.Serving
         val glyph = if (restarted) "$GREEN✓$RESET" else "$RED✗$RESET"
@@ -188,7 +190,9 @@ internal class UpgradeCommand(
             DaemonRestarted.Serving -> "restarted, serving $version"
             is DaemonRestarted.StillOld ->
                 "still serves ${restart.version} (a daemon started by hand?); run: splice restart"
-            DaemonRestarted.NotAnswering -> "did not answer after the restart; run: splice restart"
+            DaemonRestarted.NotAnswering ->
+                "did not answer after the restart; run: splice restart, " +
+                    "or splice upgrade --rollback to go back to $from"
         }
         output.line("  $glyph ${"daemon".padEnd(UPGRADE_PAD)} $outcome")
         output.line("")

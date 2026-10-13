@@ -7,12 +7,14 @@
 // file is STREAMED entry by entry: bytes are kept only while the entry can still be one of the two keys, so a
 // foreign entry (a credential) is skipped to its NUL byte by byte and is never buffered and never decoded.
 // Everything else — unreadable, empty, a splice launch with no record — is UNKNOWN ("unknown head"). The MCP plan
-// reads one more key the same way, CLAUDE_CONFIG_DIR, to know which config home a session runs under.
+// reads one more key the same way, CLAUDE_CONFIG_DIR, to know which config home a session runs under. On macOS,
+// which has no /proc, the same block comes from ps (DarwinPs) and is scanned the same way.
 package splice.sessions.registry
 
 import splice.core.config.StatePaths
 import splice.core.process.LaunchOwners
 import splice.core.util.Cancellables
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.file.Files
@@ -28,6 +30,7 @@ public class ProcessEnvironment(
     private val procRoot: Path = Paths.get("/proc"),
     private val owners: LaunchOwners = LaunchOwners(StatePaths().stateDir),
 ) {
+    private val darwin = DarwinPs()
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
     private val wanted = listOf("$SPLICE_MARKER=").map { it.toByteArray() }
     private val configHome = listOf("$CONFIG_HOME_VARIABLE=").map { it.toByteArray() }
@@ -60,11 +63,21 @@ public class ProcessEnvironment(
      *  failed mid-stream (the entries seen so far are not the environment), or it held no byte at all
      *  (the kernel's answer for a zombie), which is no evidence the process lacks SPLICE=1. */
     private fun entries(pid: Long, keys: List<ByteArray>): Map<String, String>? {
+        if (darwin.here) return darwinEntries(pid, keys)
         val scan = EnvironScan(keys)
         val read = Cancellables.runCatchingCancellable {
             Files.newInputStream(procRoot.resolve(pid.toString()).resolve("environ")).use(scan::read)
         }
         return scan.found.takeIf { read.isSuccess && scan.bytes > 0 }
+    }
+
+    /** The wanted entries of the block ps gave, or null when ps could not read the process or macOS hid its
+     *  environment (an empty block), as for an unreadable /proc environ. */
+    private fun darwinEntries(pid: Long, keys: List<ByteArray>): Map<String, String>? {
+        val block = darwin.environ(pid) ?: return null
+        val scan = EnvironScan(keys)
+        scan.read(ByteArrayInputStream(block))
+        return scan.found.takeIf { scan.bytes > 0 }
     }
 }
 

@@ -5,6 +5,7 @@
 // domain (a container sharing ~/.claude) or a pid whose start time moved (reused after the session
 // exited) is GONE, whatever the host process with that number is doing (review 2026-09-14: liveness
 // read only the pid and a five-minute tolerance, and read a stranger's /proc environ as the head).
+// On macOS, which has no /proc, both facts come from ps as Claude Code spells them there (DarwinPs).
 package splice.sessions.registry
 
 import java.io.IOException
@@ -29,15 +30,18 @@ internal class ProcPidIdentity(
         ProcessHandle.of(pid).flatMap { it.info().startInstant() }.map { it.toEpochMilli() }.orElse(null)
     },
 ) : PidIdentity {
+    private val darwin = DarwinPs()
+
     private val domain: String? by lazy {
         val machineId = read(machineIdFile)?.trim()?.takeIf { it.isNotEmpty() }
         val pidNs = pidNamespace()
         if (machineId == null || pidNs == null) null else "linux:$machineId:$pidNs"
     }
 
-    override fun hostDomain(): String? = domain
+    override fun hostDomain(): String? = domain ?: darwin.domain()
 
     override fun procStart(pid: Long): String? {
+        if (darwin.here) return darwin.lstart(pid)
         val stat = read(procRoot.resolve(pid.toString()).resolve("stat")) ?: return null
         val afterComm = stat.substringAfterLast(')').trim().split(' ')
         return afterComm.getOrNull(START_TIME_FIELD_AFTER_COMM)

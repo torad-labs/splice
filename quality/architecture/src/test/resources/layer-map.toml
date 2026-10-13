@@ -31,6 +31,7 @@ modules = [
     ":integrations-dialects-openai-chat",
     ":integrations-dialects-openai-responses",
     ":integrations-http",
+    ":integrations-mcp-hub",
     ":integrations-oauth",
     ":integrations-providers-codex",
     ":integrations-providers-grok",

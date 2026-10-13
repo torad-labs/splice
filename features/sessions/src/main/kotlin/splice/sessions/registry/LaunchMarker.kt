@@ -18,13 +18,13 @@ package splice.sessions.registry
  *  JSON, which names a secret header file: they are matched here and never logged. */
 public object LaunchMarker {
     /** The settings key every splice launch on macOS carries, true. */
-    public const val KEY: String = "spliceLaunch"
+    public const val SPLICE_LAUNCH_KEY: String = "spliceLaunch"
 
     /** Whether this host's launches carry the mark: macOS only. */
     public val here: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac")
 
     private const val SETTINGS_FLAG = "--settings"
-    private val marked = "\"$KEY\":true"
+    private val marked = "\"$SPLICE_LAUNCH_KEY\":true"
 
     /** The --settings arguments of a launch: [overlay], the JSON a wrapped launch passes (marked by its writer on
      *  macOS), or, for a launch with none, the mark alone on macOS and nothing elsewhere. */

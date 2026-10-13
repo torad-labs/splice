@@ -106,7 +106,7 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
                 put("command", statuslineCommand)
                 put("padding", 0)
             }
-            if (marked) put(LaunchMarker.KEY, true)
+            if (marked) put(LaunchMarker.SPLICE_LAUNCH_KEY, true)
         }.toString()
 }
 

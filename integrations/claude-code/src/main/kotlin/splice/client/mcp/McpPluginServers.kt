@@ -56,10 +56,11 @@ internal class McpPluginServers(private val pluginsDir: Path, private val json: 
 
     private fun pluginServers(id: String, root: Path, folder: Path): List<McpPlannedServer> {
         val plugin = id.substringBefore(PLUGIN_ID_SEPARATOR)
+        val data = pluginsDir.resolve(PLUGIN_DATA_DIR).resolve(id.replace(unsafeInData, "-"))
         val fills = mapOf(
             PLUGIN_ROOT_VARIABLE to root.toString(),
             PROJECT_DIR_VARIABLE to folder.toString(),
-            PLUGIN_DATA_VARIABLE to pluginsDir.resolve(PLUGIN_DATA_DIR, id.replace(unsafeInData, "-")).toString(),
+            PLUGIN_DATA_VARIABLE to data.toString(),
         )
         val mcpJson = root.resolve(MCP_JSON_FILE)
         val manifest = root.resolve(CLAUDE_PLUGIN_DIR).resolve(PLUGIN_JSON_FILE)

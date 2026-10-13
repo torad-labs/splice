@@ -17,30 +17,31 @@ import kotlin.time.Duration.Companion.seconds
 
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
 
-    /** `on work (1 of 2 open) · pinned to work · 5h 12% · 7d 40%; switched from primary to work 3m ago: 7d window exhausted` */
-    public fun summary(view: HeadAccountPoolView): String {
+    /** `on Work (1 of 2 open) · pinned to Work · 5h 12% · 7d 40%; switched from Max to Work 3m ago: 7d window exhausted`.
+     *  [names] are the logins' Accounts names by pool label; a label with none is printed as it is. */
+    public fun summary(view: HeadAccountPoolView, names: Map<String, String> = emptyMap()): String {
         val safe = safeView(view)
         val selected = if (safe.selectionUnknown) null else safe.selectedAccount()
         val open = safe.accounts.count { it.available && it.credential.present }
-        val choice = selected?.label?.let(::name) ?: "no account"
+        val choice = selected?.label?.let { shown(it, names) } ?: "no account"
         val selection = if (safe.selectionUnknown) "selection unknown" else "on $choice"
         val head = "$selection ($open of ${safe.accounts.size} open)"
-        val pin = safe.pinnedLabel?.let { "pinned to ${name(it)}" }
-        val missing = if (safe.accounts.any { it.primary && !it.credential.present }) {
-            "primary credential missing"
-        } else {
-            null
-        }
+        val pin = safe.pinnedLabel?.let { "pinned to ${shown(it, names)}" }
+        val missing = "primary credential missing".takeIf { safe.accounts.any { it.primary && !it.credential.present } }
         val switch = safe.lastSwitch?.let {
-            "; switched from ${name(it.from)} to ${name(it.to)} ${ago(it.atEpochMillis)}: ${it.reason}"
+            "; switched from ${shown(it.from, names)} to ${shown(it.to, names)} ${ago(it.atEpochMillis)}: ${it.reason}"
         }
         return listOfNotNull(head, pin, missing, selected?.let(::windows)).joinToString(" · ") + switch.orEmpty()
     }
 
     /** Missing primary requires unlabeled login even while a backup is open; exhaustion names a reset. */
-    internal fun check(headKey: String, view: HeadAccountPoolView): DoctorCheck {
+    internal fun check(
+        headKey: String,
+        view: HeadAccountPoolView,
+        names: Map<String, String> = emptyMap(),
+    ): DoctorCheck {
         val safe = safeView(view)
-        val detail = summary(safe)
+        val detail = summary(safe, names)
         if (safe.accounts.any { it.primary && !it.credential.present }) {
             return DoctorCheck(headKey, CheckStatus.WARN, detail, "splice login $headKey", fixKind = FixKind.COMMAND)
         }
@@ -81,6 +82,9 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             selectionUnknown = view.selectionUnknown || missingSelection || droppedSelected,
         )
     }
+
+    /** A login by its Accounts name when it has one, else by its label. */
+    private fun shown(label: String, names: Map<String, String>): String = names[label] ?: name(label)
 
     private fun name(label: String): String = ClaudeLoginPlaceId.entries
         .singleOrNull { label == "native:${it.wire}" }?.let { "${it.command}'s login" } ?: label

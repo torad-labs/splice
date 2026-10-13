@@ -26,7 +26,8 @@ internal class StatusExtras(private val accountPools: AccountPoolRead) {
             is AccountPoolsRead.Read -> {
                 if (read.pools.isNotEmpty()) println()
                 read.pools.forEach { (key, view) ->
-                    println("  accounts  $BOLD$key$RESET ${accountText.summary(view)}")
+                    val text = accountText.summary(view, read.accountNames[key].orEmpty())
+                    println("  accounts  $BOLD$key$RESET $text")
                 }
             }
         }

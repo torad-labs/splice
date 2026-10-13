@@ -46,6 +46,10 @@ public sealed class AccountPoolsRead {
         /** Account-keyed observations stay with the roster instead of becoming a head's verdict. */
         public var accountRefusals: Map<String, Map<String, ProviderAnswer>> = emptyMap()
             internal set
+
+        /** Per head, each login's name as Accounts shows it (its display_name), by its pool label. */
+        public var accountNames: Map<String, Map<String, String>> = emptyMap()
+            internal set
     }
 
     public data class Unread(public val reason: String, public val fix: String?) : AccountPoolsRead()

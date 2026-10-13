@@ -24,7 +24,9 @@ internal object AccountHealthChecks {
         authRefusals: Map<String, ProviderAnswer> = emptyMap(),
     ): List<DoctorCheck> =
         read.nativeLogins.filter { it.expired || !it.present }.map { login ->
-            val current = read.pools[login.head]?.let { AccountPoolText().summary(it) }
+            val current = read.pools[login.head]?.let {
+                AccountPoolText().summary(it, read.accountNames[login.head].orEmpty())
+            }
             val standing = if (login.expired) {
                 "has an expired access token and cannot take over"
             } else {

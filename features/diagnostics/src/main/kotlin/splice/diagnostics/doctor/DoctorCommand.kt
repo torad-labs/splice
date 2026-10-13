@@ -272,7 +272,7 @@ public class DoctorCommand(
         is AccountPoolsRead.Read -> if (pools.pools.isEmpty()) {
             listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
         } else {
-            pools.pools.map { (head, view) -> accountText.check(head, view) } +
+            pools.pools.map { (head, view) -> accountText.check(head, view, pools.accountNames[head].orEmpty()) } +
                 AccountHealthChecks.checks(pools, authRefusals)
         }
     }

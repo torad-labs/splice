@@ -37,6 +37,7 @@ public class AccountPoolJson {
         into.putJsonObject("account_pool") {
             put("selected_label", view.selectedLabel)
             put("pinned_label", view.pinnedLabel)
+            put("next_target_label", view.nextTargetLabel)
             putJsonArray("accounts") {
                 view.accounts.forEach { account ->
                     addJsonObject {

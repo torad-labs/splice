@@ -21,6 +21,9 @@ import splice.upstream.credentials.AccountLabelPolicy
 // why: one roster key is shared by account identity and refusal ownership.
 internal const val ACCOUNT_LABEL_FIELD = "label"
 
+// why: an Accounts name longer than this is cut, so one status line stays one line.
+private const val NAME_CHARS = 48
+
 internal class AccountRosterProjection {
     private val pools = AccountPoolProjection()
     private val headKey = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -46,15 +49,19 @@ internal class AccountRosterProjection {
         val metadata = (root["head_pools"] as? JsonObject)?.let { pools.parse(it.toString()) }.orEmpty()
         val views = byHead.mapValues { (head, roster) -> view(head, roster, metadata[head]) }
         val native = byHead.flatMap { (head, roster) -> roster.mapNotNull { native(head, it) } }
-        return AccountPoolsRead.Read(views, native, refusals.unkeyed(byHead))
-            .also { it.accountRefusals = refusals.keyed(byHead) }
+        return AccountPoolsRead.Read(views, native, refusals.unkeyed(byHead)).also {
+            it.accountRefusals = refusals.keyed(byHead)
+            it.accountNames = byHead.mapValues { (head, roster) -> names(head, roster) }
+        }
     }
 
     private fun view(head: String, rows: List<JsonObject>, metadata: HeadAccountPoolView?): HeadAccountPoolView {
         val accounts = rows.mapNotNull { account(head, it, metadata) }.distinctBy { it.label }
         val carrying = rows.filter { JsonScalars.str(it, "carrying_request") == "true" }
+        // With no request carried yet and no selection, the head is on the login its pool sends the next turn to.
         val selected = carrying.singleOrNull()?.let { selector(head, it) }
             ?: metadata?.selectedLabel ?: accounts.firstOrNull { it.selected }?.label
+            ?: metadata?.nextTargetLabel?.takeIf { target -> accounts.any { it.label == target } }
         return HeadAccountPoolView(
             selected,
             accounts.map { it.copy(selected = it.label == selected) },
@@ -67,6 +74,13 @@ internal class AccountRosterProjection {
             blockedUntilEpochSecondsByLabel = metadata?.blockedUntilEpochSecondsByLabel.orEmpty(),
         )
     }
+
+    /** Each login's Accounts name by its pool label: a name a person gave or splice's default ("Max 2"), never an
+     *  email. Control characters are dropped, since the name is printed to a terminal. */
+    private fun names(head: String, rows: List<JsonObject>): Map<String, String> = rows.mapNotNull { row ->
+        val shown = JsonScalars.str(row, "display_name")?.filterNot(Char::isISOControl)?.trim()?.take(NAME_CHARS)
+        selector(head, row)?.let { label -> shown?.takeIf(String::isNotEmpty)?.let { label to it } }
+    }.toMap()
 
     private fun unsafeSelection(head: String, rows: List<JsonObject>): Boolean =
         rows.count { JsonScalars.str(it, "carrying_request") == "true" } > 1 || rows.any {

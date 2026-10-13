@@ -422,7 +422,13 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginOutcomeFile.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
-    "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt" to mapOf("Files.copy(" to 3),
+    "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt" to mapOf(
+        "Files.copy(" to 3,
+        "Files.move(" to 1,
+    ),
+    // The retagged copy of a resumed session, in the same README row as ResumeAcrossHeads.
+    "integrations/claude-code/src/main/kotlin/splice/client/resume/SessionIdRetag.kt" to
+        mapOf("Files.newOutputStream(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/SessionOwnership.kt" to mapOf(
         "Files.createTempFile(" to 1,
         "Files.move(" to 1,

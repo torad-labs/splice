@@ -336,7 +336,7 @@ class IndependentSourceRoundTest {
             val first = sourceStep(client, head.port, "source-stop", """[{"role":"user","content":"go"}]""")
             assertTrue(first.contains("tool_use"))
             val live = deps.traffic.liveTurns.list().single()
-            assertTrue(deps.traffic.liveTurns.stop(live.id) != null)
+            assertTrue(deps.traffic.liveTurns.stop(live.id))
             withTimeout(15_000) { while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield() }
             assertTrue(checkNotNull(interceptor.reading).isCancelled)
             assertEquals(1, provider.ended.get())

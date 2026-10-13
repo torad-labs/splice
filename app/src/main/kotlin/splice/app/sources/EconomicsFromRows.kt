@@ -37,6 +37,9 @@ private val LOCAL_ECONOMICS_REFUSALS = setOf(
     OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW.wire,
 )
 
+/** The endings Accounts counts as rate limited: splice's own named 429 and the provider's relayed one. */
+private val RATE_LIMITED_ENDINGS = setOf(OutcomeTag.RATE_LIMITED.wire, OutcomeTag.RATE_LIMIT_RELAYED.wire)
+
 /**
  * WHICH rows an hour of the rollup is made of, kept apart from the arithmetic over them because the
  * two readers that need the answer do not both have a price to apply.
@@ -112,10 +115,11 @@ internal class EconomicsFromRows(private val price: TurnPrice, private val plans
                 // over zero turns instead of being diluted by turns that never had the choice.
                 deferralTurns = client.count { it.fields[PerfKeys.TOOLS_EAGER] != null }.toLong(),
             ),
-            // The turns the upstream refused with a named 429. A 429 that ended as a generic upstream
-            // failure is indistinguishable from any other upstream failure in a row, so a rebuilt hour
+            // The turns the upstream refused with a named 429, the provider's own 429 relayed to the client
+            // included (RATE_LIMIT_RELAYED, an attempted turn, so not a local refusal). A 429 that ended as a
+            // generic upstream failure is indistinguishable from any other upstream failure in a row, so a rebuilt hour
             // can read this counter low; nothing draws it, and every figure that IS drawn is exact.
-            rateLimited = client.count { it.outcome == OutcomeTag.RATE_LIMITED.wire }.toLong(),
+            rateLimited = client.count { it.outcome in RATE_LIMITED_ENDINGS }.toLong(),
             cost = cost(client),
         )
     }

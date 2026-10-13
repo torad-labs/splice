@@ -26,6 +26,7 @@ import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvi
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import splice.upstream.credentials.CredentialLock
+import splice.upstream.failure.VendorRefusals
 import splice.upstream.retry.SingleFlight
 import java.nio.file.Path
 import kotlin.coroutines.CoroutineContext
@@ -42,7 +43,7 @@ public class MuseAuthProvider(
     private val authCacheMs: Long,
     private val prefetchScope: CoroutineScope? = null,
     flightContext: CoroutineContext = ProcessDispatchers().background(),
-) : RefreshableAuthProvider, AccountCredentialIdentitySource {
+) : RefreshableAuthProvider, AccountCredentialIdentitySource, VendorRefusals by MuseRefusals() {
     private val store = MuseCredentialStore(authPath, log, clock)
     private val singleFlight = SingleFlight<Credentials?>(flightContext)
     private val mintFlight = SingleFlight<MintFlightResult>(flightContext)

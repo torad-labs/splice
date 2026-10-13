@@ -154,6 +154,10 @@ every failing check.
 
 ## Quick start
 
+### Guided setup
+
+`splice setup` is what the installer tells you to run next. It says what it finds on the machine, then asks where to start (OpenRouter, a ChatGPT, Grok, Kimi or Muse sign-in, or the topology you already have), which other commands to add, and whether plain `claude` itself goes through splice or a separate `claude-splice` sits beside it. It also asks whether sessions share MCP servers, and, on a Linux machine with an NVIDIA card, whether to run a local model. It shows a summary and writes nothing until you confirm; without a terminal it takes every default. The sections below are the same steps by hand.
+
 ### API-key starter: OpenRouter
 
 This is the zero-config provider path. It uses a paid API key, not a subscription allowance.
@@ -214,6 +218,7 @@ Admin verbs go through the `splice` command:
 
 ```bash
 splice status         # per-head status
+splice setup          # guided setup: pick a plan or key, add commands, sign in
 splice doctor         # check the whole install; every failing check prints its fix
 splice doctor --json  # the same as a redacted, shareable report (--with-logs, --out FILE, --live)
 splice add <profile>  # add a provider + head without editing TOML (codex|grok|kimi|muse|deepseek|openrouter|claude|local|api-key)
@@ -227,6 +232,8 @@ splice trace <head>   # a head's full request/response trace from disk (--turn I
 splice restart        # restart, after waiting for running compactions; --now skips the wait; a supervising systemd unit supplies its own environment
 splice init           # write a starter config with no head; install.sh already runs it
 splice install --all  # (re)link the wrapper commands
+splice key set|list|unset  # the API-key store, ~/.config/splice/keys.toml
+splice logs           # the daemon log (--head <key>, --tail N, --follow)
 <head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi, claude-muse)
 ```
 
@@ -301,13 +308,13 @@ shell's environment unless a systemd user unit runs the daemon, when the unit's 
 
 Each of these is a **password-equivalent secret**: anything that can read the file (or the environment variable) can spend against your account. Keep files `600`, never commit them, never paste them.
 
-Splice signs in on its own. Each OAuth head keeps its own credential file under `~/.config/splice/auth/`, written by `splice login <head>`, and it may be a different account from the one the vendor's own CLI or desktop app uses. The native apps' files (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`, `~/.config/muse/auth.json`) are never read unless you name one in `auth.file`. Sharing a file lets both programs rewrite the same credential, so a refresh or replacement can leave the other program using stale bytes. `splice doctor` warns when a head still names one.
+Splice signs in on its own. Each OAuth head keeps its own credential file under `~/.config/splice/auth/`, written by `splice login <head>`, and it may be a different account from the one the vendor's own CLI or desktop app uses. The native apps' files (`~/.codex/auth.json`, `~/.grok/auth.json`, `~/.kimi/credentials/kimi-code.json`, `~/.config/muse/auth.json`) are never read unless you name one in `auth.file`, or, for Codex and Grok, in `CODEX_AUTH_PATH` or `GROK_AUTH_PATH`. Sharing a file lets both programs rewrite the same credential, so a refresh or replacement can leave the other program using stale bytes. `splice doctor` warns when a head still names one.
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
 | Claude (`claude-splice`) | `client` | Plain claude’s login and claude-splice’s own login in separate Claude Code directories; additional accounts under `~/.splice/state/claude-accounts/<head>/<label>/` | Claude Code performs sign-in; splice never refreshes the commands' own credentials and refreshes only the added folders it owns |
-| codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
-| grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
+| codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` or `CODEX_AUTH_PATH` |
+| grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` or `GROK_AUTH_PATH` |
 | kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
 | muse (Meta) | `muse-oauth` | `~/.config/splice/auth/muse.json` | splice's own device-flow account token plus minted inference key (`claude-muse login`); the Muse Code CLI file only by explicit `auth.file` |
 | OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key; password-equivalent |
@@ -328,29 +335,29 @@ whose kind it carries inside; a mislabeled file is refused at boot, never silent
 holding one account has no pool and behaves exactly as before: nothing extra on the status line,
 in `splice status` or in `splice doctor`. Inside a head, `/login` signs in the primary and
 `/login --label <name>` adds an account the same way; a `/login` while an earlier sign-in is still
-waiting for its browser cancels one started by the hook and starts over on Linux. A terminal-started login is named and left alone.
+waiting for its browser cancels one started by the hook and starts over. A terminal-started login is named and left alone.
 
 A pool does not lift a plan's limits: it lets a session continue on another account you hold while
 one is exhausted.
 
-Selection is sticky per session and decided only between turns. A manual pin goes first. A saved
+Selection is sticky per session. A manual pin goes first. A saved
 order then gives explicit priority; without one, a session keeps its usable account and fallback
 prefers an available account whose weekly quota resets soonest, with the five-hour reset breaking
 ties. Missing or expired quota does not outrank a usable current reading. The session changes
 accounts when its quota is exhausted, its credential is rejected or a provider hold makes it
-unavailable; it does not return to the primary just because that account's window reset. A turn already streaming finishes on the account it
-started on. The first turn after a switch pays one cold prompt-cache read, and its perf row says
-so and names the account. When every account is out, the turn fails the way limits fail today
-and names the earliest reset across the pool. The status line names the session's account and why it switched. `splice status` and `splice doctor`
-show the head's accounts and its last automatic switch; the daemon log
+unavailable; it does not return to the primary just because that account's window reset. When a login refuses a turn
+with a limit that waiting cannot clear, and no output has reached the client yet, that same turn moves to a free login. The first turn after a switch pays one cold prompt-cache read, and its perf row says
+so and names the account. When every account is out before a turn starts, the turn is refused
+and names the earliest reset across the pool. If every login runs out during a turn, it ends with the refused login's own limit message. The status line names the session's account and why it switched. `splice status` and `splice doctor`
+show the head's accounts and its last switch, a pinned one included, with its reason; the daemon log
 records each switch once under `[<head>]`.
 
 ### Sign in to a ChatGPT account from the console or the terminal
 
 In the console's Accounts page, a ChatGPT head's sign-in uses the device code. The daemon starts the
 flow and the page shows a verification address and a code. Open the address on any machine, enter
-the code, and the page finishes when you approve. The code lives 15 minutes. A refused or expired code
-says so on the page; try again. Pick a label when you sign in, or leave it unnamed:
+the code, and the page finishes when you approve. The code lives 15 minutes. A code not approved in time
+leaves the login Not completed on the page, with Try again. Pick a label when you sign in, or leave it unnamed:
 an unnamed login reads as its plan word ("Max"), then "Max 2" and so on, counted per provider in the order splice
 first saw each. "Sign in again" on a head's first account replaces it in place under its own label.
 No page and no API answer shows an email address or an account id: every login is shown by its label, and
@@ -358,7 +365,7 @@ splice keeps an opaque eight-character reference for it (`ref`) that the console
 
 To name a login, press "Name it" or "Rename" on its row, or send `PUT /api/accounts/names/<ref>` with
 `{"name": "..."}` and the management key. A name is trimmed, at most 48 characters, and has no `@` or
-control character; a blank name clears your choice. Chosen names live in `account-names.json` in the state
+control character; a blank name sent to the route clears your choice (on the page, a blank field keeps the old name). Chosen names live in `account-names.json` in the state
 directory (`~/.splice/state/`, mode 0600) with the numbers given to unnamed logins, and apply on the next
 request with no restart. A login that has no reference yet is renamed in its own file instead.
 
@@ -381,17 +388,18 @@ curl -X DELETE -H "Authorization: Bearer $KEY" \
 ```
 
 A session's pin outranks the head's pin for that session only. `DELETE` without `session` drops the
-head's pin and always answers `{"ok":true}`. A label the head does not hold (400), or an account with no
+head's pin and answers `{"ok":true}` on a head with an account pool; a head with no pool answers 400. A label the head does not hold (400), or an account with no
 credential file (409), is refused and nothing is pinned. A pin on an account that is out of quota falls
 back to the automatic rule and stays set. To see a pin: `GET /api/auth` shows a head's pin as `pinned_label`, and `splice sessions` and `GET /api/sessions` show each session's account and, when it has one, its pin (`account` and `account_pin`). The pin takes effect on the next turn, and a daemon
 restart clears every pin. Without any pin, a session keeps its account until a limit, then moves to
-the account whose weekly window resets soonest.
+the next free login in your saved order, then the primary; with no saved order, to the login whose weekly window resets soonest.
 
 ### API keys on the Accounts page
 
-An API-key head's key appears as an account: its variable name (for example `DEEPSEEK_API_KEY`), a short
-fingerprint, the day splice first saw it, and the keys it replaced, each with its own first-seen day.
-Rotating a key reads as a new account and the old one stays listed as replaced. Only the first and last four characters of a long key appear on `/api/auth`; the key itself is
+An API-key head's key appears as an account: its variable name (for example `DEEPSEEK_API_KEY`) and the
+last four characters of the key; once it has replaced an earlier key, the day splice first saw it too.
+Rotating a key keeps the one card for that variable, with the key it replaced listed on it as Replaced, with its own day.
+The API reports a fingerprint and first-seen day for every key. Only the first and last four characters of a long key appear on `/api/auth`; the key itself is
 never logged; `splice key set|list|unset` or `PUT`/`DELETE /api/keys/<VARIABLE>` manage
 the store. If the ledger (`key-ledger.json`) cannot be written, the list still answers, a key first
 seen at that moment shows no day, and the daemon log says so once.
@@ -402,16 +410,20 @@ seen at that moment shows no day, and the daemon log says so once.
 `knobs`: its `value`, the `scope` that set it (default, toml, head, file, env or runtime), its
 `disposition` (`live` takes effect on running sessions, `restart` needs a daemon restart), and
 `editable`. A knob that cannot be changed carries a `read_only_reason`. A head-only knob is set in
-`[heads.<key>.overrides]`: `PATCH /api/config?head=<key>` edits that table (comments kept, backup first), while a `PATCH` without `?head=` refuses it. `mirrorReasoning` is pinned false: it reads `restart`, is
-not editable, and any value written for it, in TOML or by `CLAUDEX_MIRROR_REASONING`, is dropped.
+`[heads.<key>.overrides]`: `PATCH /api/config?head=<key>` edits that table (comments kept, backup first), while a `PATCH` without `?head=` refuses it. `mirrorReasoning` is pinned false: it reads `restart`, a `PATCH` for it answers under `applied` with
+`false`, and any value written for it, in TOML or by `CLAUDEX_MIRROR_REASONING`, is dropped.
 
 ### A second head on the same provider
 
-`splice add <profile> --name <key>` adds another provider-and-head pair for a profile you already
-use, for example a second ChatGPT or OpenRouter head with its own models. The key takes lowercase
-letters, digits and dashes and must be new. splice picks a free port, names the command
-`claude-<key>` unless you pass `--command`, and an API-key head reads its own `<KEY>_API_KEY`.
-`--model <id>` adds rows. A key, a command or a table that already exists is refused with a
+`splice add <profile> --name <key>` adds a second head for a profile you already use, for example a
+second ChatGPT or OpenRouter head with its own models. It asks whether the head sends with the provider's
+key (`--key provider`, which adds only a head) or a new one (`--key new`, which adds a provider and a head);
+under `--yes` it refuses until one is given. The key takes lowercase letters, digits and dashes and must
+be new. splice picks a free port and keeps the command the profile ships with, such as `claude-openrouter`,
+so a second head on such a profile needs `--command`; only the local and api-key profiles name it
+`claude-<key>`. A new API-key provider reads `<KEY>_API_KEY`, dashes written as underscores.
+`--model <id>` sets the head's models in place of the profile's starter ones; on a provider the file
+already holds, a model it does not declare is dropped, unless none is declared. A key, a command or a table that already exists is refused with a
 sentence naming it, and a duplicated TOML table is reported by name and line, never by value.
 
 ### Test homes and loopback-only endpoint overrides
@@ -429,8 +441,8 @@ stand-in on its own machine.
 A Claude head can hold multiple subscriptions. `POST /api/auth/<head>/login` on the control plane
 adds one through Claude Code's own browser sign-in into a new folder under `~/.splice/state/claude-accounts/<head>/<label>/`, never
 replacing another login. Once filed, it can join a running head through membership publication.
-The pool is per head, uses the same pin, saved order and sticky default selection described above,
-and switches only between turns. Plain claude’s login and claude-splice’s own login are separate
+The pool is per head, and uses the same pin, saved order, sticky default selection and same-turn
+hand-off on a refusal described above. Plain claude’s login and claude-splice’s own login are separate
 selectable places on `claude-splice`: splice reads their live access tokens without refreshing
 or replacing their credentials during selection. It can refresh an added folder's credential
 because no other program uses that folder.
@@ -463,7 +475,7 @@ into the head, and `splice login` changes the head's login only under four rules
 3. **Filed by account.** Each label records its account's id and email from the head's
    `.claude.json`, never a token; this labelled-copy operation copies the credential file byte for byte and never calls Anthropic with it. A login
    is filed only under the label of its own account. A `/login` to another account inside the head
-   is refused under the selected label, naming both accounts: save it under a new label, or add
+   is refused under the selected label, which the refusal names without naming either account: save it under a new label, or add
    `--discard` to a switch to drop it.
 4. **Fail closed.** If splice cannot read whose login the head holds, it changes nothing.
 
@@ -679,7 +691,7 @@ calling needs `--enable-auto-tool-choice` and a `--tool-call-parser` for the mod
 Every Claude Code session normally starts its own copy of every stdio MCP server in its config.
 splice starts each such server once, in the daemon, and serves it to every session over
 Streamable HTTP on loopback: each head's `.claude.json` is rewritten to point at the hosted URL
-while your own config file is never edited. A server whose launch line names a working directory, a path that starts with `./` or `../` or contains a slash, a location flag such as `--root`, an existing absolute directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`; a bare file name such as `server.js` is not a path, so that server is hosted); a hosted
+while your own config file is never edited. A server whose launch line names a working directory, a relative path (one that starts with `./` or `../`, or contains a slash without starting at `/`), a location flag such as `--root`, an existing absolute directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`; a bare file name such as `server.js` is not a path, so that server is hosted); a hosted
 server runs in your home directory, so one that reads its working directory without naming it
 (`mcp-server-git` with no `--repository`) belongs in `mcp_hosting_exclude`;
 `http`/`sse`/`ws` servers pass through untouched. Hosted servers start on first use and are reaped when idle. When a new server would exceed

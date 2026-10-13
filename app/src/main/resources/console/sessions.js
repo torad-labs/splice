@@ -192,7 +192,9 @@ function metaHtml(s, L, inPane) {
   const when = `<span class="when">${past ? `${s.at.toLocaleDateString("en-US", { weekday: "short" })} ` : ""}${clock(s.at)}</span>`;
   // a registration that stopped refreshing while nothing runs through splice for it: alive, but not heard from (§4)
   const quiet = s.row.availability === "stale" && !s.turn ? `<span>Not heard from since ${backWord(s.at)}</span>` : "";
-  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}`;
+  // its age, off the registration's start (§4: identity, head/model, age, activity); the open pane has room for it
+  const started = inPane && s.row.started_at ? `<span>Started ${backWord(new Date(s.row.started_at))}</span>` : "";
+  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}${started}`;
   // on a list card everything but the time sits in one row that drops whole parts from its end when it runs out of
   // room, the folder first, then the model, then the team; the open pane has the width and shows every part (hitstop b6bae4e)
   return inPane ? `<div class="meta">${parts}</div>` : `<div class="meta"><span class="parts">${parts}</span>${when}</div>`;
@@ -370,6 +372,8 @@ function sessionTiles() {
   const every = sumCounts(items.map((x) => x[2])), all = state.rows.length;
   return tilesHtml([["", "Every project", every, all, countWords(every, all, "session")], ...items], picked());
 }
+// headless runs never register, so the list says so under its cards rather than count them (§4 Resolved)
+const HEADLESS = `<p class="headless">Runs started with claude -p never appear here</p>`;
 function listHtml() {
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
@@ -383,7 +387,7 @@ function listHtml() {
   }
   // PICKED, THE LIST IS THAT PROJECT'S CARDS, WITH NO HEADER: the picker already names it. Its ended cards fold under
   // its own line, as they do in its group
-  if (picked() != null) return `<div class="list">${head}${list.map(cardHtml).join("")}${restHtml(picked(), ended)}</div>`;
+  if (picked() != null) return `<div class="list">${head}${list.map(cardHtml).join("")}${restHtml(picked(), ended)}${HEADLESS}</div>`;
   let cards, loose = ended;
   if (ui.grouped) {
     const groups = groupsOf(list); ui.gorder = groups.map(([k]) => k);
@@ -393,7 +397,7 @@ function listHtml() {
   } else { ui.gorder = null; cards = list.map(cardHtml).join(""); }
   const fold = loose.length ? `<button class="act quiet fold" data-act="ended" aria-expanded="${ui.ended}">${loose.length} ended${ICON.caret}</button>` : "";
   const endedList = ui.ended && loose.length ? `<div class="ended">${loose.map(cardHtml).join("")}</div>` : "";
-  return `<div class="list">${head}${cards}${fold}${endedList}</div>`;
+  return `<div class="list">${head}${cards}${fold}${endedList}${HEADLESS}</div>`;
 }
 
 // ---------- the open session ----------

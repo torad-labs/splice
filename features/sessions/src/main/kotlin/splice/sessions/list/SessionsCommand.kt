@@ -82,7 +82,8 @@ public class SessionsCommand(
         val head = headLabel(s.route) + accountText(account)
         val model = account?.model?.let { "  ${clean(it)}" }.orEmpty()
         val cwd = shortCwd(clean(s.process.cwd.orEmpty()).replaceFirst(home, "~"))
-        val age = s.process.updatedAt?.let { ago(now - it) } ?: "never"
+        val age = listOfNotNull(ago("started", now, s.process.startedAt), ago("updated", now, s.process.updatedAt))
+            .joinToString(", ").ifEmpty { "never updated" }
         val availability = s.availability.name.lowercase()
         output.line(
             "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET$model  ${clean(s.status.state ?: "-")}  " +
@@ -137,12 +138,13 @@ public class SessionsCommand(
 
     private fun shortCwd(cwd: String): String = if (cwd.length > CWD_MAX) "…" + cwd.takeLast(CWD_MAX) else cwd
 
-    private fun ago(ms: Long): String {
-        val minutes = ms / MS_PER_MINUTE
+    /** "[word] 3h ago" for the moment [at], or null when the registry did not say. */
+    private fun ago(word: String, now: Long, at: Long?): String? {
+        val minutes = (now - (at ?: return null)) / MS_PER_MINUTE
         return when {
-            minutes < 1 -> "just now"
-            minutes < MINUTES_PER_HOUR -> "${minutes}m ago"
-            else -> "${minutes / MINUTES_PER_HOUR}h ago"
+            minutes < 1 -> "$word just now"
+            minutes < MINUTES_PER_HOUR -> "$word ${minutes}m ago"
+            else -> "$word ${minutes / MINUTES_PER_HOUR}h ago"
         }
     }
 

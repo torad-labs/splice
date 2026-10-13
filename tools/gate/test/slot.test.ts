@@ -149,7 +149,7 @@ describe("the gradle slot", () => {
     const pushTree = fakeBuildRoot();
     await runUnderSlot({ layout: pushTree.layout, label: "pre-push", args: ["help"], env: { CI: "", PATH: pushTree.path } });
     expect(readFileSync(checkout.receipt, "utf8")).not.toContain("splice.daemon");
-    expect(readFileSync(pushTree.receipt, "utf8")).toContain("-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Dsplice.daemon=pre-push");
+    expect(readFileSync(pushTree.receipt, "utf8")).toContain("-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Xms256m -XX:G1PeriodicGCInterval=30000 -Dsplice.daemon=pre-push");
   });
 
   test("--parallel is CI's and the pre-push tree's: every other local build runs one project at a time", async () => {

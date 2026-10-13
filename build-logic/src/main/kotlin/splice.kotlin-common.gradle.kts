@@ -92,6 +92,11 @@ tasks.withType<Test>().configureEach {
     // per-connection state, so the 1000-stream CEILING test needs the extra heap. Real load is tens
     // of streams (far under 1g either way); this only funds the stress ceiling.
     maxHeapSize = "2g"
+    // A SMALL START, GROWN ON DEMAND. With no -Xms a test JVM's starting heap is 1/64 of the machine's RAM, about 1.9 GB on
+    // this 124 GB box, so every fork held nearly its whole cap from its first test however little its suite keeps live, and
+    // buildgate admits a pre-push by the anon memory its forks held (Oct 12: 8.5 GB predicted, hours in line). The cap
+    // above still funds the stress ceiling; a suite only grows toward it when it needs to.
+    minHeapSize = "256m"
     // FOUR PROCESSORS FOR EVERY TEST JVM (V4-307). A local build can run in one scope capped at 512
     // tasks, shared by every test JVM of a --parallel ladder, and each JVM sizes its CPU-sized
     // pools (virtual-thread carriers, Netty event loops, coroutine workers) to the host's 32 cores and

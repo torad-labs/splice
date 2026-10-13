@@ -28,7 +28,10 @@ export const SLOT_TIMEOUT_EXIT = 75;
 const PRE_PUSH_LABEL = "pre-push";
 /** Projects the pre-push tree builds at once; hostshield's own cap (6) stays the ceiling for every other build. */
 const PRE_PUSH_WORKERS = 3;
-const HEAP_CAPS = "-Xmx1536m -XX:MaxMetaspaceSize=512m";
+/** -Xms256m: with no -Xms a JVM's starting heap is 1/64 of the machine's RAM, which here (124 GB) is past the 1536m cap, so
+ *  each daemon started at its whole cap and buildgate measured it as anon memory however little it held. The periodic GC hands
+ *  an idle daemon's heap back: the Kotlin daemon sits idle through every test leg of a push. */
+const HEAP_CAPS = "-Xmx1536m -XX:MaxMetaspaceSize=512m -Xms256m -XX:G1PeriodicGCInterval=30000";
 /** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (hostshield's 2 GB heap and 5 minute idle
  *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays hostshield's. */
 function localDaemon(label: string): string[] {

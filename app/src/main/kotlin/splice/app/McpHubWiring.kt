@@ -8,11 +8,15 @@ package splice.app
 
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.serialization.json.JsonObject
+import splice.client.mcp.McpBearer
 import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpSharing
 import splice.control.mcp.GlobalMcpServers
 import splice.control.mcp.McpHandshakeBudget
 import splice.control.mcp.hub.McpHub
+import splice.control.mcp.hub.McpHubCalls
+import splice.control.mcp.hub.McpHubGate
+import splice.control.mcp.hub.McpHubOff
 import splice.control.mcp.hub.McpHubPaths
 import splice.control.mcp.hub.McpLaunchEnv
 import splice.control.mcp.hub.McpLaunchPlace
@@ -21,7 +25,10 @@ import splice.control.mcp.hub.McpLaunchServers
 import splice.core.config.UserHome
 import splice.core.process.LaunchOwners
 import splice.core.util.EnvReader
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
 import splice.launch.install.InstallLayout
 import splice.sessions.registry.ProcessEnvironment
 import java.io.IOException
@@ -59,9 +66,35 @@ internal class McpHubWiring(
         }
     }
 
-    fun hub(sharing: McpSharing, startBound: McpHandshakeBudget, io: CoroutineDispatcher, log: LogSink): McpHub {
-        val holder = InstallLayout().shareDir(EnvReader(System::getenv)).resolve("splice-mcp-holder")
-        return McpHub(sharing, servers, places, McpHubPaths(stateDir, holder, UserHome.dir()), startBound, io, log)
+    /** The hub, or its off answer when this machine cannot run it (McpHubGate, decided once here at boot), with one log
+     *  line either way. A running hub writes <state>/mcp-hub/access-key, the bearer [access] the front checks every
+     *  session against; the management key is fixed for the process, so one write at boot keeps it current. */
+    fun hub(
+        sharing: McpSharing,
+        startBound: McpHandshakeBudget,
+        io: CoroutineDispatcher,
+        log: LogSink,
+        access: McpBearer,
+    ): McpHubCalls {
+        val bin = InstallLayout().shareDir(EnvReader(System::getenv))
+        val refusal = McpHubGate(bin).refusal() ?: writeAccess(access)
+        if (refusal != null) {
+            log("[mcp-hub] ${LogSafe.str(refusal)}; MCP servers stay hosted in the daemon\n")
+            return McpHubOff(refusal)
+        }
+        log("[mcp-hub] on: holders run from ${LogSafe.str(bin.toString())}\n")
+        val paths = McpHubPaths(stateDir, bin.resolve("splice-mcp-holder"), UserHome.dir())
+        return McpHub(sharing, servers, places, paths, startBound, io, log)
+    }
+
+    /** Writes the bearer the front checks sessions against, or says why it could not, which keeps the hub off. */
+    private fun writeAccess(access: McpBearer): String? = try {
+        val dir = stateDir.resolve("mcp-hub")
+        Files.createDirectories(dir)
+        SecureFile.writeAtomic0600(dir.resolve("access-key"), access())
+        null
+    } catch (e: IOException) {
+        "the access key could not be written (${SafeFailureText.render(e)})"
     }
 
     private fun folderOf(pid: Long): Path? = try {

@@ -88,7 +88,7 @@ public class McpHub(
     private val startBound: McpHandshakeBudget,
     io: CoroutineDispatcher,
     log: LogSink,
-) {
+) : McpHubCalls {
     private val codec = JsonRpcCodec()
     private val tuple = HubTuple(paths.home)
     private val holders = HubHolders(paths.stateDir.resolve("mcp-hub"), paths.holder, paths.slice, io, log)
@@ -96,13 +96,13 @@ public class McpHub(
     private val front = HubFront(paths.stateDir.resolve("mcp-hub").resolve("front.json"))
 
     /** `POST /api/mcp/hub/resolve`: where [body]'s server is, starting nothing. */
-    public fun resolve(body: String): McpHubReply {
+    override fun resolve(body: String): McpHubReply {
         val targeted = target(body)
         return targeted.target?.let(::found) ?: refused(targeted)
     }
 
     /** `POST /api/mcp/hub/start`: [body]'s holder started unless it runs. */
-    public suspend fun start(body: String): McpHubReply {
+    override suspend fun start(body: String): McpHubReply {
         val targeted = target(body)
         val target = targeted.target ?: return refused(targeted)
         val run = when {
@@ -117,7 +117,7 @@ public class McpHub(
     }
 
     /** `POST /api/mcp/hub/listing`: what a fresh holder answered, kept for the server's next sessions. */
-    public fun listing(body: String): McpHubReply {
+    override fun listing(body: String): McpHubReply {
         val targeted = target(body)
         val target = targeted.target ?: return refused(targeted)
         val parsed = codec.parse(body)
@@ -131,7 +131,7 @@ public class McpHub(
      *  [idleMs] (the MCP idle limit), since the next call starts one again; and the shared holders no current plan names
      *  (a tuple change left them behind) once no live session is bound to them, a session whose launch ended no longer
      *  counting. The host's sweep calls it at [now]. */
-    public fun sweep(now: Long, idleMs: Long) {
+    override fun sweep(now: Long, idleMs: Long) {
         val report = front.report()
         val bound = report?.bindings?.filter { it.launch.isEmpty() || places.of(it.launch) != null }
         val view = SharedView(bound, bound?.let(::currentShared).orEmpty(), report?.lastCalls.orEmpty(), idleMs, now)

@@ -471,7 +471,7 @@ internal class ControlPlane(
         val config = mcpHostConfig()
         // MCP hub steps 3 and 4: the daemon half the hub front calls; the host's sweep stops ended sessions' copies.
         val hub = McpHubWiring(globalRead, statePaths.stateDir)
-            .hub(sharing, config.initializeTimeout, ProcessDispatchers().io(), log)
+            .hub(sharing, config.initializeTimeout, ProcessDispatchers().io(), log, McpAccessKey(mgmtKey::get))
         return McpHost(sharing, globalRead, config = config, log = log, inventory = inventory, hub = hub)
     }
 

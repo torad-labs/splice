@@ -9,7 +9,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 
-public class McpHubRoutes(private val hub: McpHub) {
+public class McpHubRoutes(private val hub: McpHubCalls) {
     public suspend fun resolve(call: ApplicationCall) {
         answer(call, hub.resolve(call.receiveText()))
     }

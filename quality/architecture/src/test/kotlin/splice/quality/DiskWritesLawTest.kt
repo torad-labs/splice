@@ -298,6 +298,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The hub's kept listings and holder records (MCP hub steps 3 and 4), in the mcp-listings and mcp-hub rows.
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolders.kt" to mapOf("writeAtomic0600(" to 1),
+    // The hub front's access key, in the mcp-hub/access-key row.
+    "app/src/main/kotlin/splice/app/McpHubWiring.kt" to mapOf("writeAtomic0600(" to 1),
     // The hub launch file and the V4-445 file, in the mcp-hub/launch-<pid> and wrapped-mcp README rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpHubLaunch.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/HostedMcpOverlay.kt" to mapOf("writeAtomic0600(" to 1),

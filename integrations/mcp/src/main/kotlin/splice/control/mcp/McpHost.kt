@@ -22,7 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpSharing
-import splice.control.mcp.hub.McpHub
+import splice.control.mcp.hub.McpHubCalls
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -62,7 +62,7 @@ public class McpHost(
     inventory: McpInventory? = null,
     /** MCP hub steps 3 and 4: the daemon half the hub front calls (resolve, start, listing); null when the daemon
      *  serves no front. Its per-session holders are stopped by this host's sweep once their session ends. */
-    public val hub: McpHub? = null,
+    public val hub: McpHubCalls? = null,
 ) {
     private val codec = JsonRpcCodec()
 

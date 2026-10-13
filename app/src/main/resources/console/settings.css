@@ -699,3 +699,5 @@ button.count:hover { color: var(--text); }
 #st .adv .advbtn { display: inline-flex; align-items: center; gap: .4rem; }
 #st .adv .advbtn svg { width: .95rem; height: .95rem; color: var(--text-mute); transition: transform var(--t-snap); }
 #st .adv .advbtn[aria-expanded="true"] svg { transform: rotate(90deg); }  /* right when closed, down when open, as Full log does (marlin) */
+/* saving stopped while its switch is on (the disk at splice's free-space floor): said in full under the size it kept */
+.dcard .dstop { margin: 0; font: 500 1.15rem/1.4 var(--font-name); color: var(--limit); }

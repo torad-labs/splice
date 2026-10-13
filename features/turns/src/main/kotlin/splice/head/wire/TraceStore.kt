@@ -68,9 +68,9 @@ public class TraceStore(
 ) {
     /** Whether the next request is recorded; moved by the capture switch with no restart. A store records until told
      *  not to, so a fixture that builds one gets what it always got. */
-    public val recording: TraceSwitch = TraceSwitch(true)
+    public val recording: TraceSwitch = TraceSwitch(true, now)
 
-    private val bodies = TraceBodies(heap = heap, budget = bodyBudget)
+    private val bodies = TraceBodies(heap = heap, budget = bodyBudget, saves = recording)
 
     init {
         require(maxBodyChars > 0) { "a trace keeps at least one character of a body; maxBodyChars=$maxBodyChars" }

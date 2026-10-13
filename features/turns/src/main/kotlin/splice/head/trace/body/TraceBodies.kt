@@ -39,7 +39,11 @@ internal class TraceBodies(
     private val budget: DayBodyBudget = DayBodyBudget(maxPackBytes, minFreeBytes = 0),
     decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
     validation: TraceBodyValidation? = null,
+    /** Told when a record is refused in part or whole for capacity, and when one saves whole; null tells no one. */
+    private val saves: TraceBodySaves? = null,
 ) {
+    /** Whether the record being encoded lost a body to capacity; encode runs on one file lane, so one flag serves. */
+    private var refusedBody = false
     private var activeFile: Path? = null
     private var activeIndex = TracePackIndex(heap)
     private val fullLog = TracePackFullLog(log, maxPackBytes)
@@ -56,8 +60,11 @@ internal class TraceBodies(
             activeFile = file
             activeIndex = TracePackIndex(heap)
         }
+        refusedBody = false
         return budget.withLock(day.parent) {
             val line = if (budget.evicted(day)) {
+                refusedBody = true
+                saves?.refused(BODY_BUDGET_EVICTED_REASON)
                 encodeReferences(replace(record) { resolution.unavailable(BODY_BUDGET_EVICTED_REASON) })
             } else {
                 try {
@@ -70,6 +77,8 @@ internal class TraceBodies(
                         encodeReferences(references)
                     }
                 } catch (capacity: DayBodyCapacityException) {
+                    refusedBody = true
+                    saves?.refused(capacity.reason)
                     fullLog.full(file, capacity.reason)
                     encodeReferences(replace(record) { resolution.unavailable(capacity.reason) })
                 }
@@ -77,9 +86,11 @@ internal class TraceBodies(
             // The index obeys the bodies' free-space floor and its own shared cap, which drops the oldest completed day
             // first: a record refused by either is dropped, said once per day.
             budget.admitIndex(day, line.size.toLong())?.let { reason ->
+                saves?.refused(reason)
                 indexFullLog.full(day, reason)
                 throw DayBodyCapacityException(reason)
             }
+            if (!refusedBody) saves?.saved()
             line
         }
     }
@@ -143,6 +154,8 @@ internal class TraceBodies(
             put("parts", parts)
         }
     } catch (capacity: TracePackFull) {
+        refusedBody = true
+        saves?.refused(capacity.reason)
         fullLog.full(pack.file, capacity.reason)
         resolution.unavailable(capacity.reason)
     }
@@ -158,4 +171,11 @@ internal class TraceBodies(
         }
         return JsonObject(fields)
     }
+}
+
+/** Who hears that a record lost its bodies, or its line, to capacity, and that one saved whole again. */
+public interface TraceBodySaves {
+    public fun refused(reason: String)
+
+    public fun saved()
 }

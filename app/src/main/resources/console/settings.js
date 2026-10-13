@@ -368,6 +368,22 @@ const traceSetDays = (head) => {
   const all = ks.cfg?.knobs?.traceRetentionDays;
   return all && all.scope !== "default" && Number(all.value) >= 1 ? Number(all.value) : null;
 };
+/** Since when prompts and answers have not saved, from each command's trace/kept answer: the first stop among the
+ *  commands saving, the reason in words, and the commands it holds for. Null while every one saves whole. Settings said
+ *  "25.2 GB counted" while nothing had been saved since 10:44 AM, the disk at splice's free-space floor (walk on d0ec523b5). */
+function traceStopped() {
+  const stops = ui.heads.map((h, i) => ({ h, b: ui.kept.trace?.[i] })).filter(({ h, b }) => traceOn(h) && b?.saving_stopped_at_epoch_ms);
+  if (!stops.length) return null;
+  const at = Math.min(...stops.map(({ b }) => b.saving_stopped_at_epoch_ms));
+  const why = String(stops.find(({ b }) => b.saving_stopped_at_epoch_ms === at).b.saving_stopped_reason || "");
+  const words = /free-space floor/.test(why) ? "the disk is down to the 64 GB splice always leaves free; free up space and saving starts again on the next request"
+    : /index budget/.test(why) ? "the 16 GB kept for request records is full of today's"
+    : /body budget|evicted/.test(why) ? "the 32 GB kept for prompts and answers is full of today's" : why;
+  const today = new Date(at).toDateString() === new Date().toDateString();
+  const when = today ? new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : atWord(at);
+  const who = stops.length < ui.heads.filter(traceOn).length ? ` for ${stops.map(({ h }) => h).join(", ")}` : "";
+  return { when, words, who };
+}
 function traceKeepWords() {
   const w = ui.hist.window, windowDays = w.forever ? Infinity : w.nothing ? 0 : w.days;
   const days = ui.heads.map((h, i) => {
@@ -400,10 +416,12 @@ function dataRow(r) {
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   const said = r.knob ? saidHtml(r.knob) : "";
+  const stop = r.id === "trace" ? traceStopped() : null;
+  const stopped = stop ? `<p class="dstop" role="status">Nothing new saved since ${esc(stop.when)}${esc(stop.who)}: ${esc(stop.words)}</p>` : "";
   return drow({
     name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r), keep: keep + said, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
     sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob)) : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
-    more: on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : "",
+    more: stopped + (on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : ""),
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });
 }
@@ -1296,7 +1314,8 @@ function summary(id) {
   if (id === "busy") return [`${word(KNOB.maxInflight, val("maxInflight"))} at once`, `${word(KNOB.maxQueued, val("maxQueued"))} waiting`];
   if (DATA_ROWS.some(stillReading)) return ["Reading"];
   const h = DATA_ROWS.filter((r) => !(r.noRoute || r.own)).map(heldOf), tag = DATA_ROWS.some((r) => r.noRoute || r.own) ? "counted" : "kept"; // a total that leaves a store out says counted
-  return h.some((x) => x === null) ? ["Not read"] : [`${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
+  const stop = traceStopped();
+  return h.some((x) => x === null) ? ["Not read"] : [...(stop ? [`Saving stopped ${stop.when}`] : []), `${mbWord(h.reduce((s, x) => s + x.bytes, 0))} ${tag}`];
 }
 function cardHtml(x) {
   const f = found(x.id), s = summary(x.id);

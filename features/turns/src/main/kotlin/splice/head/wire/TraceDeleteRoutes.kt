@@ -33,10 +33,11 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
     public fun delete(head: String): JsonReply = answer(head, delete = true)
 
     private fun answer(head: String, delete: Boolean): JsonReply {
-        val key = heads.byName(head).firstOrNull()?.key
+        val found = heads.byName(head).firstOrNull()
             ?: return refuse(HttpStatusCode.BadRequest, "unknown head: $head")
+        val key = found.key
         val traceDir = dir() ?: return refuse(HttpStatusCode.ServiceUnavailable, TRACE_KEEP_UNWIRED)
-        return Cancellables.runCatchingCancellable { read(key, traceDir, delete) }
+        return Cancellables.runCatchingCancellable { read(key, traceDir, delete, found.trace?.stopped) }
             .fold(
                 onSuccess = { JsonReply(HttpStatusCode.OK, it) },
                 onFailure = { failure ->
@@ -52,18 +53,22 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
             )
     }
 
-    private fun read(key: String, traceDir: Path, delete: Boolean): String {
+    private fun read(key: String, traceDir: Path, delete: Boolean, stopped: TraceStop?): String {
         val files = removal?.let { DayFiles(traceDir, key, true, it) } ?: DayFiles(traceDir, key, ownerOnly = true)
         val retention = config.getConfig(key).traceKeptDays
         val inventory = if (delete) files.deleteKept(retention) else files.inventory(retention)
-        return inventoryJson(inventory, retention)
+        return inventoryJson(inventory, retention, stopped)
     }
 
-    private fun inventoryJson(inventory: DayInventory, keptDays: Int): String = buildJsonObject {
+    private fun inventoryJson(inventory: DayInventory, keptDays: Int, stopped: TraceStop?): String = buildJsonObject {
         put("records", inventory.rows)
         put("bytes", inventory.bytes)
         // The UTC days this command keeps now, the day running included; null when it keeps every day (forever).
         put("kept_days", keptDays.takeIf { it != Int.MAX_VALUE })
+        // Since when this command's requests have not saved whole, and the store's reason (the disk at the free-space
+        // floor, the body budget spent); both null while they save whole. The size above stays what is kept.
+        put("saving_stopped_at_epoch_ms", stopped?.atEpochMs)
+        put("saving_stopped_reason", stopped?.reason)
     }.let(JsonWire::string)
 
     private fun refuse(status: HttpStatusCode, message: String): JsonReply =

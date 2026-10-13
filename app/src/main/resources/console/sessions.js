@@ -36,6 +36,13 @@ function refusalOf(answer, fallback) {
   return answer.body?.error || `${fallback} (${answer.status}).`;
 }
 
+/** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
+ *  all, and the daemon's sentence, or the status it answered, to the console's log under [what], never on the screen. */
+function refusedAs(answer, word, what) {
+  console.warn(`${what}: ${answer.status === 0 ? "splice is not answering" : answer.body?.error || `splice answered ${answer.status}`}`);
+  return answer.status === 0 ? "Not answering" : word;
+}
+
 // ---------- reading ----------
 async function read() {
   tick();
@@ -43,7 +50,7 @@ async function read() {
     API.get("/api/heads/retired")]);
   state.reading = sessions.body?.reading !== false; // off: no question text, no choices, answered in the terminal
   state.noteVersions = new Set(sessions.body?.note_versions || []); // the Claude Code versions a note is known to reach
-  state.error = sessions.ok ? null : refusalOf(sessions, "The sessions could not be read");
+  state.error = sessions.ok ? null : refusedAs(sessions, "Not read", "/api/sessions");
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null, authKind: h.authKind ?? null, cannotStart: h.cannotStart ?? null }));
   // kept apart from the live commands: nothing runs on a removed one, so Stop, a move and the live reads never ask it
   state.retired = retiredHeads(retired, state.heads);
@@ -720,7 +727,7 @@ async function pinLogin(s, label) {
   const res = label ? await API.post(`/api/auth/${encodeURIComponent(s.head)}/switch`, { label, session: s.id })
     : await API.del(`/api/auth/${encodeURIComponent(s.head)}/switch?session=${encodeURIComponent(s.id)}`);
   ui.pinning = null;
-  if (!res.ok) ui.failed.set(s.id, refusalOf(res, label ? "It could not be switched" : "It could not be unpinned"));
+  if (!res.ok) ui.failed.set(s.id, refusedAs(res, label ? "Not switched" : "Not unpinned", `pin ${s.id}`));
   await reload();
 }
 /** What the session used today, on every command it ran on: the same per-session totals Requests sums

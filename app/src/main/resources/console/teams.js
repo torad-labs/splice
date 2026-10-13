@@ -128,10 +128,10 @@ async function readAll() {
   if (plans.ok) state.plans = plans.body?.accounts || [];
   // one read that fails keeps the teams already on the page and says so above them; only a first read that fails
   // has nothing to show but its refusal (Marlin p223: a failed launch's reread blanked every team)
-  const refused = teams.ok ? null : refusalOf(teams, "The teams could not be read");
+  const refused = teams.ok ? null : refusedAs(teams, "Not read", "/api/teams");
   state.error = refused && !state.everRead ? refused : null;
   state.stale = refused && state.everRead ? refused : null;
-  if (teams.ok) { state.teams = teams.body?.teams || []; state.everRead = true; }
+  if (teams.ok) { state.teams = teams.body?.teams || []; state.everRead = true; state.readAt = Date.now(); }
   state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
   state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
   state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null }));
@@ -228,6 +228,13 @@ function refusalOf(answer, fallback) {
   if (answer.body?.error) return answer.body.error;
   if (answer.status === 502) return `${fallback}: the connection to splice dropped before it answered.`;
   return `${fallback}: splice gave no reason (${answer.status}).`;
+}
+
+/** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
+ *  all, and the daemon's sentence, or the status it answered, to the console's log under [what], never on the screen. */
+function refusedAs(answer, word, what) {
+  console.warn(`${what}: ${answer.status === 0 ? "splice is not answering" : answer.body?.error || `splice answered ${answer.status}`}`);
+  return answer.status === 0 ? "Not answering" : word;
 }
 
 // ---------- a member's state, in the words its own client registered ----------
@@ -917,7 +924,7 @@ function render() {
       ? `<div class="ghost-teams" aria-busy="true" aria-label="Reading teams">${[[11, 26, 18], [9, 22, 15], [12, 24, 17]].map((w, i) => GHOST.card(w, i)).join("")}</div>`
       : !state.teams.length
         ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
-        : (state.stale ? `<p class="why limit stale">${esc(state.stale)} These are the teams as last read.</p>` : "")
+        : (state.stale ? `<p class="why limit stale">${esc(state.stale)}${state.readAt ? ` · Last read ${hhmm(state.readAt)}` : ""}</p>` : "")
           + pickLineHtml(groupsNow(), picked(), ui.pmenu, teamCount()) + tabsHtml() + (tm ? boardHtml(tm) : "");
   sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";
   document.querySelector(".app").inert = Boolean(ui.compose);
@@ -1020,20 +1027,21 @@ async function startSlot(tm, slot, path = null) {
     console.warn(`start ${key}: ${answer.body?.error || 504}`);
     ui.unstarted.set(key, { screen: answer.body?.screen || "", why: reasonOf(answer.body?.error) });
   } else if (answer.status === 409 && answer.body?.reason === "closed") {
-    ui.unstarted.set(key, { path, why: "Its terminal closed before it came up" });
+    ui.unstarted.set(key, { path, why: "Terminal closed" });
   } else if (!answer.ok) {
-    ui.failed.set(key, refusalOf(answer, "The member did not start"));
+    // the card's own Not started, with no reason line; Not answering when splice did not answer (fin)
+    const word = refusedAs(answer, "Not started", `start ${key}`);
+    if (answer.status === 0) ui.failed.set(key, word);
+    else ui.unstarted.set(key, { why: null });
   }
   await read();
 }
 
-/** The daemon's reason a start gave up, without the slot it names first: "Claude Code had not registered after 45s"
- *  reads "Claude Code did not come up within 45 s". */
+/** The reason line a start that gave up keeps on its card, as a state (fin; Marlin p223): "Claude Code had not registered
+ *  after 45s" reads "Waited 45 s". Any other reason has no line; its sentence is already in the console's log. */
 const reasonOf = (said) => {
-  const why = String(said || "").replace(/^[^:]*did not start:\s*/, "").replace(/;.*$/, "").trim();
-  const waited = why.match(/had not registered after (\d+)\s*s/);
-  if (waited) return `Claude Code did not come up within ${waited[1]} s`;
-  return why ? why[0].toUpperCase() + why.slice(1) : "It did not come up";
+  const waited = String(said || "").match(/had not registered after (\d+)\s*s/);
+  return waited ? `Waited ${waited[1]} s` : null;
 };
 /** The folder a question names: its panel's line that is a path, as the client drew it. */
 const pathOf = (offer) => (offer?.panel || []).map((l) => l.text).find((t) => /^[~/]/.test(t)) || null;
@@ -1112,7 +1120,7 @@ async function answerTrust(tm, slot, choice, label) {
   const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice, label });
   ui.trusting.delete(key);
   if (!answered.ok) {
-    ui.failed.set(key, refusalOf(answered, "The answer did not reach the member"));
+    ui.failed.set(key, refusedAs(answered, "Not sent", `answer ${key}`));
     await read();
     return;
   }
@@ -1129,7 +1137,7 @@ async function answerSlot(tm, slot, choice) {
   const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice });
   if (!answered.ok) {
     ui.answered.delete(key);
-    ui.failed.set(key, refusalOf(answered, "The answer did not reach the member"));
+    ui.failed.set(key, refusedAs(answered, "Not sent", `answer ${key}`));
   }
   await read();
 }
@@ -1137,7 +1145,7 @@ async function answerSlot(tm, slot, choice) {
 /** A refused act keeps the board: its word sits by the control that was refused, [where] in ui.failed. */
 async function act(answer, whenRefused, where) {
   if (!answer.ok) {
-    ui.failed.set(where, refusalOf(answer, whenRefused));
+    ui.failed.set(where, refusedAs(answer, whenRefused, where));
     render();
     return false;
   }
@@ -1214,7 +1222,7 @@ document.addEventListener("click", async (e) => {
     case "more": ui.menu = ui.menu === "more" ? null : "more"; render(); break;
     case "archive":
       ui.menu = null; ui.failed.delete("archive");
-      await act(await API.post(`/api/teams/${tm.id}/archive`), "The team was not archived", "archive");
+      await act(await API.post(`/api/teams/${tm.id}/archive`), "Not archived", "archive");
       break;
     case "restore": {
       ui.failed.delete(`restore:${tm.id}`);
@@ -1235,7 +1243,7 @@ document.addEventListener("click", async (e) => {
       ui.menu = null;
       ui.failed.delete(`bind:${tm.id}/${slot.id}`);
       await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }),
-        "The session was not bound", `bind:${tm.id}/${slot.id}`);
+        "Not added", `bind:${tm.id}/${slot.id}`);
       break;
     case "stop": ui.armedStop.add(`${tm.id}/${slot.id}`); render(); break;
     case "stop-keep": ui.armedStop.delete(`${tm.id}/${slot.id}`); render(); break;

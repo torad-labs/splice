@@ -33,6 +33,9 @@ internal data class WiredAccountCredential(
     val present: Boolean = true,
     /** V4-410: why splice will not load this account's credential (a symlinked file), in words. */
     val refusal: String? = null,
+    /** The account a native place's credential proved, once its profile was read: a login to another account in the
+     *  same place changes it while the label stays. Null until proved, and for every other kind of account. */
+    val account: String? = null,
 )
 
 /** Chooses the legacy primary when readable, otherwise the first readable labeled credential. */

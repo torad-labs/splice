@@ -38,6 +38,7 @@ internal class ClaudeNativeAccountWiring(
                 credential = WiredAccountCredential(
                     present = view.credential.present,
                     refusal = view.credential.refusal,
+                    account = view.identity.account?.uuid,
                 ),
             )
         }

@@ -3,7 +3,6 @@
 // about credentials and the head's name table; their values and rules are unchanged.
 package splice.head.transport
 
-import splice.core.auth.CredentialKey
 import splice.head.HeadDeps
 
 /** The account a turn's perf row names: the credential an attempt actually sent, else the login the turn
@@ -17,7 +16,7 @@ internal class TurnAccountLabel {
 
     /** Refresh and failover replace this request's observation using the headers of each actual attempt, and each
      *  attempt reports its credential's digest as the newest one sent by the head and by this request's session. */
-    fun observe(key: CredentialKey?, sessionId: String?) {
+    fun observe(key: String?, sessionId: String?) {
         val known = names
         if (key != null) known?.sent(key, sessionId)
         observed = key?.let { known?.forCredential(it) }

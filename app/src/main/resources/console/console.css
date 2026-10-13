@@ -504,20 +504,17 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .ptiles { display: flex; flex-wrap: wrap; gap: 1rem; }
 /* a removed command's name in a menu, with its one muted word (kit REMOVED_TAG) */
 .rtag { margin-left: .7rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
-/* each tile at least its content, the rest of the row shared equally: a 4-digit total beside three lamps never spills */
-/* a tile alone on a wrapped line stops at 40rem, never the page's width with its total at the far end (splice-lead,
-   Oct 12: "No project" across 3828); a row of twelve shares about 15rem a tile, so a full row never reaches it */
-.ptile { flex: 1 1 auto; min-width: max-content; max-width: 40rem; display: flex; flex-direction: column; gap: 1rem; padding: 1.1rem 1.2rem 1.2rem;
+/* each tile its own content's width on every row, its whole name included, left-aligned and never grown to fill: a
+   last row of three stood three times the width of the tiles above it at 3394 (marlin, Oct 13). Only a name past
+   40rem is cut, with an ellipsis */
+.ptile { flex: 0 0 auto; max-width: 40rem; display: flex; flex-direction: column; gap: 1rem; padding: 1.1rem 1.2rem 1.2rem;
   text-align: left; cursor: pointer; color: var(--text-body); font: 500 1.6rem/1.1 var(--font-name);
   background: var(--obj-sunk); border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj); }
 .ptile:hover { color: var(--text); border-color: var(--text-mute); }
 /* picked by its look, no word (fin): the Teams tab's raised card */
 .ptile.on { color: var(--text); background: var(--obj); border-color: var(--ink); box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .ptop { display: flex; align-items: baseline; gap: .8rem; min-width: 0; }
-/* the name takes the room left beside the total, and unless it is short (.short, 12 characters or fewer, kit
-   tilesHtml) adds nothing to the tile's least width: a long name truncates first, a short one never */
-.ptile .tname { flex: 1 1 0; width: 0; min-width: 0; font: 500 1.6rem/1.1 var(--font-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ptile .tname.short { min-width: max-content; }
+.ptile .tname { flex: 0 1 auto; min-width: 0; font: 500 1.6rem/1.1 var(--font-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ptile .ptotal { flex: none; color: var(--text-mute); font: 500 1.35rem/1 var(--font-data); }
 .plamps { display: flex; align-items: center; gap: .7rem; min-height: 2.6rem; }  /* a project with nothing live keeps the row, empty */
 .ptile .pc.big { gap: .35rem; font: 600 1.35rem/1 var(--font-data); }

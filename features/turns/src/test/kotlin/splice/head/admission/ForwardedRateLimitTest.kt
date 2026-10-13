@@ -189,10 +189,11 @@ class ForwardedRateLimitTest {
         }
     }
 
-    // Since the admission wait (Oct 11): the turn that meets a headerless 429 gets it natively and at once, and a LATER
-    // turn into the short hold it armed waits the hold out instead of replaying the refusal (CredentialHoldAdmission).
+    // Since the admission wait (Oct 11): the turn that meets a headerless 429 gets it natively once its budget is spent
+    // (V4-61 backs off first while budget is left), and a LATER turn into the short hold it armed waits the hold out
+    // instead of replaying the refusal (CredentialHoldAdmission).
     @Test
-    fun `headerless provider 429 reaches the client immediately without holding another login`() = runBlocking {
+    fun `headerless 429 reaches the client natively once spent, holding no other login`() = runBlocking {
         val rig = LimitRig(directory, limits = false)
         rig.head.start()
         try {
@@ -202,7 +203,7 @@ class ForwardedRateLimitTest {
             assertEquals("true", headers["x-should-retry"])
             assertEquals(null, headers["retry-after"])
             assertEquals(null, headers["anthropic-ratelimit-unified-status"])
-            assertEquals(1, rig.refused.size, "native backoff belongs to the client, not four hidden proxy retries")
+            assertEquals(1, rig.refused.size, "a one-attempt budget sends the refusal once")
         } finally {
             rig.close()
         }
@@ -337,7 +338,9 @@ private class LimitRig(
     private val providerClient = HttpClient(CIO)
     val upstream = UpstreamClient(
         totalTimeoutMs = 30_000,
-        maxRetries = 4,
+        // One attempt: these cases pin what the client receives once the budget is spent. With budget left, a burst
+        // 429 waits out V4-61's 15s floor first, which this real-socket rig would sit through.
+        maxRetries = 1,
         client = providerClient,
         clock = clock,
         holdStore = FileProviderHoldStore(directory.resolve("provider-hold.json"), LogSink {}),

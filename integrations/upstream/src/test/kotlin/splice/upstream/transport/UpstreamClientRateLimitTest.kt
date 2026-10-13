@@ -81,7 +81,7 @@ class NativeRateLimitHeadersTest {
     }
 
     @Test
-    fun `native refusals relay the whole rate-limit header family verbatim without retrying`() = runTest {
+    fun `a native refusal waits out V4-61's floor, then relays its rate-limit headers verbatim`() = runTest {
         val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal"}}"""
         val retained = linkedMapOf(
             "Anthropic-Ratelimit-Requests-Limit" to listOf("50"),
@@ -96,6 +96,7 @@ class NativeRateLimitHeadersTest {
             "X-Should-Retry" to listOf("true", "false"),
         )
         var attempts = 0
+        val floors = mutableListOf<Long>()
         val engine = MockEngine {
             attempts++
             respond(
@@ -108,7 +109,7 @@ class NativeRateLimitHeadersTest {
             totalTimeoutMs = 30_000L,
             maxRetries = 4,
             client = HttpClient(engine),
-            pacing = RetryPacing(backoff = { _, _ -> error("native retry belongs to the client") }),
+            pacing = RetryPacing(backoff = { _, floor -> floors += floor }),
             clock = ElapsedClock { 0L },
         )
         fun context() = PostContext(
@@ -124,7 +125,8 @@ class NativeRateLimitHeadersTest {
             assertEquals(retained, failure.rateLimitReply?.headers)
         }
         assertTrue(follower.localHold)
-        assertEquals(1, attempts, "neither proxy retries nor the held follower reach upstream")
+        assertEquals(listOf(15_000L, 15_000L, 15_000L), floors, "a long Retry-After waits the 15s ceiling (V4-61)")
+        assertEquals(4, attempts, "the budget's four attempts, and the held follower never reaches upstream")
     }
 }
 
@@ -167,7 +169,7 @@ class UpstreamClientRateLimitTest {
         }
         val client = UpstreamClient(
             totalTimeoutMs = 30_000L,
-            maxRetries = 4,
+            maxRetries = 1,
             client = HttpClient(engine),
             clock = ElapsedClock { 0L },
         )

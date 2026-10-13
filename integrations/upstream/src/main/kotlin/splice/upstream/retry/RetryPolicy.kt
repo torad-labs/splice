@@ -170,7 +170,6 @@ internal class RetryRules(private val maxRetries: Int) {
      * what a retry IS, never holes in V4-62.
      */
     private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
-        failed.rateLimitReply != null -> "is a native refusal owned by the client's retry and fallback"
         // The vendor module named this refusal (VendorRefusals): its own plan, never the generic curve.
         failed.refusal != null -> "is a known refusal (no retry: ${failed.refusal.why})"
         nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.vendorAuth) ->

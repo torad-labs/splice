@@ -76,7 +76,7 @@ class UpstreamClientProviderHoldRestartTest {
         }
         val original = client(dir, refusing)
         val observer = assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
-        assertEquals(1, refusing.requestHistory.size, "a native refusal is never retried by splice")
+        assertEquals(1, refusing.requestHistory.size, "a named plan window is never re-sent before its reset (V4-233)")
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "synthetic-a")))
         assertTrue(Files.exists(dir.resolve("hold-$key.json")))
 

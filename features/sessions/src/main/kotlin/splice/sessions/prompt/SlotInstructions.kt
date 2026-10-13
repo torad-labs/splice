@@ -19,7 +19,9 @@
 //
 // DETERMINISTIC. The same bindings produce the same bytes, so an unchanged team never breaks a cache:
 // teams by created time then id (TeamStore.bindingsOf), one block per bound slot, nothing
-// time-dependent in the text.
+// time-dependent in the text. The lead's address is the registry's last word for that session: a read that
+// misses the entry (a registry rewrite in flight) keeps the address it had, so the line never flips to
+// "session <id>" for one turn and back, which would cost every member a turn without the cache.
 package splice.sessions.prompt
 
 import splice.sessions.teams.Team
@@ -46,6 +48,7 @@ public class SlotInstructions(
     private val address: SessionAddress = SessionAddress { null },
 ) {
     private val lastApplied = LinkedHashMap<String, Int>()
+    private val knownAddress = LinkedHashMap<String, String>()
 
     /** The text for [session]'s turn, or null when it is bound in no live (unarchived) team. */
     public fun forSession(session: String?): SlotPrompt? {
@@ -79,8 +82,21 @@ public class SlotInstructions(
     private fun leadLine(team: Team, slot: TeamSlot): String {
         if (slot.lead) return "You are the team's lead."
         val lead = team.slots.firstOrNull { it.lead } ?: return "The team has no lead slot."
-        val reach = lead.session?.let { session -> address(session) ?: "session $session" }
+        val reach = lead.session?.let { session -> addressOf(session) ?: "session $session" }
             ?: "not bound to a session yet"
         return "The lead is the ${lead.role} slot (${lead.id}); reach it at $reach."
+    }
+
+    /** [session]'s address as the registry gives it now, else the last one it gave, newest kept last. */
+    private fun addressOf(session: String): String? {
+        val fresh = address(session)
+        return synchronized(knownAddress) {
+            if (fresh != null) {
+                knownAddress.remove(session)
+                knownAddress[session] = fresh
+                if (knownAddress.size > REMEMBERED_SESSIONS) knownAddress.remove(knownAddress.keys.first())
+            }
+            fresh ?: knownAddress[session]
+        }
     }
 }

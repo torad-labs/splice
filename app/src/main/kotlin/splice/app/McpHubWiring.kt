@@ -4,6 +4,10 @@
 // folder is the process's working directory, its config home the CLAUDE_CONFIG_DIR it runs under, and the servers it
 // loads are step 1's plan for that home and folder (McpLaunchPlanner), so a per-session copy is the one Claude Code
 // itself would have started. An id splice cannot place loads the user-scope servers only.
+//
+// ON macOS (Oct 13), which has no /proc, the folder comes from lsof's cwd line and the environment from ps
+// (DarwinPs, splice-sessions'), each in the shape the Linux read gives; the Linux reads are unchanged. UNTESTED ON A MAC:
+// written against lsof(8) and ps(1) on a Linux machine, and the hub itself does not run there yet (McpHubGate).
 package splice.app
 
 import kotlinx.coroutines.CoroutineDispatcher
@@ -30,11 +34,14 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.launch.install.InstallLayout
+import splice.sessions.registry.DarwinPs
 import splice.sessions.registry.ProcessEnvironment
+import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.TimeUnit
 
 // why: the byte that ends each NAME=value entry in /proc/<pid>/environ.
 private const val NUL_SEPARATOR = '\u0000'
@@ -47,6 +54,7 @@ internal class McpHubWiring(
     private val owners = LaunchOwners(stateDir)
     private val environment = ProcessEnvironment(procRoot, owners)
     private val planner = McpLaunchPlanner(UserHome.dir())
+    private val darwin = DarwinPs()
 
     /** Why [hub] left the hub off, in the words its routes' 503 gives, or null once it is on; /health reports it. */
     var offReason: String? = null
@@ -102,18 +110,50 @@ internal class McpHubWiring(
         "the access key could not be written (${SafeFailureText.render(e)})"
     }
 
-    private fun folderOf(pid: Long): Path? = try {
-        Files.readSymbolicLink(procRoot.resolve(pid.toString()).resolve("cwd"))
+    private fun folderOf(pid: Long): Path? {
+        if (darwin.here) return DarwinCwd().of(pid)
+        return try {
+            Files.readSymbolicLink(procRoot.resolve(pid.toString()).resolve("cwd"))
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun environ(pid: Long): Map<String, String> {
+        if (darwin.here) return darwinEnviron(pid)
+        return try {
+            String(Files.readAllBytes(procRoot.resolve(pid.toString()).resolve("environ")))
+                .split(NUL_SEPARATOR)
+                .filter { it.contains('=') }
+                .associate { it.substringBefore('=') to it.substringAfter('=') }
+        } catch (_: IOException) {
+            emptyMap()
+        }
+    }
+
+    /** The block ps gives, split as the Linux read splits /proc/<pid>/environ; empty when ps could not read it. */
+    private fun darwinEnviron(pid: Long): Map<String, String> = darwin.environ(pid)?.decodeToString().orEmpty()
+        .split(NUL_SEPARATOR)
+        .filter { it.contains('=') }
+        .associate { it.substringBefore('=') to it.substringAfter('=') }
+}
+
+/** A process's working folder on macOS: `lsof -a -p <pid> -d cwd -Fn`, which any user may run on their own processes,
+ *  prints it on the line starting n. Null when lsof cannot say. */
+private class DarwinCwd {
+    fun of(pid: Long): Path? = try {
+        val process = ProcessBuilder("/usr/sbin/lsof", "-a", "-p", pid.toString(), "-d", "cwd", "-Fn")
+            .redirectInput(ProcessBuilder.Redirect.from(File("/dev/null")))
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        val out = process.inputStream.bufferedReader().use { it.readText() }
+        val exited = process.waitFor(LSOF_WAIT_MS, TimeUnit.MILLISECONDS)
+        if (!exited) process.destroyForcibly()
+        out.takeIf { exited }?.lineSequence()?.firstOrNull { it.startsWith("n/") }?.let { Paths.get(it.substring(1)) }
     } catch (_: IOException) {
         null
     }
-
-    private fun environ(pid: Long): Map<String, String> = try {
-        String(Files.readAllBytes(procRoot.resolve(pid.toString()).resolve("environ")))
-            .split(NUL_SEPARATOR)
-            .filter { it.contains('=') }
-            .associate { it.substringBefore('=') to it.substringAfter('=') }
-    } catch (_: IOException) {
-        emptyMap()
-    }
 }
+
+// why: how long lsof may take to name one process's folder before the launch reads as unplaced; it answers in milliseconds.
+private const val LSOF_WAIT_MS = 2_000L

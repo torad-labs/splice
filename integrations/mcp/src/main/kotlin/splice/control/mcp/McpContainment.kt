@@ -28,6 +28,10 @@
 //     LoadState=loaded for a slice nobody declared, with MemoryMax=infinity. So placement asks for the
 //     CAP and never for existence, or an uncapped cgroup would read as containment — the campaign's
 //     false-green signature.
+//
+// ON macOS (Oct 13) there is no systemd, no slice and no oom_score_adj, so neither half applies: the command is spawned
+// as it stands and McpDarwinBound measures each child instead, stopping one that runs past its bound. The Linux paths
+// are untouched.
 package splice.control.mcp
 
 import splice.core.util.LogSafe
@@ -57,12 +61,16 @@ internal class McpContainment(
     private val adj: Int = HOSTED_ADJ,
     private val cap: SliceMemoryCap = SystemdSliceCap(),
     private val oom: OomScoreAdjWrite = ProcOomScoreAdj(),
+    /** The macOS bound, or null off macOS, where the slice and the adj above contain the child. */
+    private val darwin: McpDarwinBound? =
+        if (System.getProperty("os.name").orEmpty().startsWith("Mac")) McpDarwinBound(log) else null,
 ) {
     private val uncappedSaid = AtomicBoolean(false)
 
     /** The argv to spawn: inside the declared slice when that slice CARRIES A CAP, else the command as
      *  it stands. Containment that does not exist is said once, never faked. */
     public fun placed(command: List<String>): List<String> {
+        if (darwin != null) return command
         val ceiling = cap(slice)
         if (ceiling == null || ceiling == UNCAPPED) {
             if (uncappedSaid.compareAndSet(false, true)) {
@@ -81,6 +89,7 @@ internal class McpContainment(
     /** Off splice's inherited -1000, so every reaper can select the child. A value that did not land
      *  is said in words: this is the half that has no gauge of its own. */
     public fun protect(name: String, process: Process) {
+        if (darwin != null) return darwin.watch(name, process)
         val landed = oom(process.pid(), adj)
         if (landed != adj) {
             log(

@@ -21,6 +21,9 @@
 //
 // UNTESTED ON A MAC: written against ps(1) and the bundle above on a Linux machine. Off macOS every member answers
 // null and nothing runs, so the Linux reads are unchanged.
+//
+// Public for one more reader (splice-config, Oct 13): the MCP hub reads a launch's whole environment for its per-session
+// server copy (McpHubWiring), as it reads /proc/<pid>/environ on Linux.
 package splice.sessions.registry
 
 import java.io.IOException
@@ -40,19 +43,19 @@ private const val REMEMBERED_PIDS = 1024
 // why: the JDK's default load factor; LinkedHashMap takes access order only through the constructor that asks for it.
 private const val PID_LOAD = 0.75f
 
-internal class DarwinPs(
+public class DarwinPs(
     /** Whether this host is macOS. Elsewhere every read answers null and no ps runs. */
-    val here: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac"),
+    public val here: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac"),
 ) {
     private val starts = ByBirth<String>()
     private val environs = ByBirth<ByteArray>()
     private val beforeName = Regex(" (?=[A-Za-z_][A-Za-z0-9_]*=)")
 
     /** Claude Code's pidDomain on macOS, or null off macOS. */
-    fun domain(): String? = DARWIN_PID_DOMAIN.takeIf { here }
+    internal fun domain(): String? = DARWIN_PID_DOMAIN.takeIf { here }
 
     /** [pid]'s start as Claude Code writes procStart on macOS, or null off macOS or when ps cannot say. */
-    fun lstart(pid: Long): String? {
+    internal fun lstart(pid: Long): String? {
         if (!here) return null
         val born = bornAt(pid)
         starts[pid, born]?.let { return it }
@@ -63,7 +66,7 @@ internal class DarwinPs(
 
     /** [pid]'s environment as /proc/<pid>/environ spells it (NUL-separated NAME=value), empty when macOS hides it,
      *  or null off macOS or when ps cannot read the process. */
-    fun environ(pid: Long): ByteArray? {
+    public fun environ(pid: Long): ByteArray? {
         if (!here) return null
         val born = bornAt(pid)
         environs[pid, born]?.let { return it }

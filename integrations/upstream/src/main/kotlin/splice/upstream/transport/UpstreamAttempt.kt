@@ -27,6 +27,7 @@ import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
 import splice.upstream.failure.VendorRefusal
+import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.sse.WireObserver
 
@@ -67,8 +68,12 @@ public data class PostContext(
      *  then the second refusal of the same bytes, never retried, and read as an overflow (WsSizeRefusal). */
     public var bodyRefusedAsTooLarge: Boolean = false
 
-    /** A native pooled refusal is recoverable only by choosing another login, never by retrying this one. */
-    internal val nativePool: Boolean get() = relayRateLimitReplies && limits.rateLimitCooldown != null
+    /** A login from a pool, which a refusal waiting cannot fix leaves for another login before any byte reaches the
+     *  client: the native wire and a translated one alike (the Oct deviation of §11). */
+    internal val pooled: Boolean get() = limits.rateLimitCooldown != null
+
+    /** A pooled login whose client understands the provider's native 429, which is handed off with no wait. */
+    internal val nativePool: Boolean get() = relayRateLimitReplies && pooled
 
     /** Delivered only after the provider accepts the HTTP request, before consuming its stream. */
     public var upstreamAccepted: splice.upstream.StreamStart = splice.upstream.StreamStart {}
@@ -155,5 +160,10 @@ internal sealed class RetryOutcome<out T> {
         val refusal: VendorRefusal? = null,
         /** The vendor module named this status a dead credential (VendorRefusals.isAuthFailure); a 401 needs no name. */
         val vendorAuth: Boolean = false,
-    ) : RetryOutcome<Nothing>()
+    ) : RetryOutcome<Nothing>() {
+        /** A 429 the same login cannot outwait: a named plan window, or a pushback past the 15s ceiling (V4-61). */
+        val waitCannotHelp: Boolean
+            get() = status == HttpStatus.TOO_MANY_REQUESTS &&
+                (planLimit != null || (retryAfterMs ?: 0L) > RETRY_AFTER_GIVE_UP_MS)
+    }
 }

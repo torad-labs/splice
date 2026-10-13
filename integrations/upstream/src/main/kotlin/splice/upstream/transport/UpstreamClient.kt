@@ -48,7 +48,6 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.MAX_STREAM_REISSUES
 import splice.upstream.retry.ProviderHoldStore
-import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RateLimitTurn
 import splice.upstream.retry.ReissueRules
@@ -166,16 +165,20 @@ public class UpstreamClient(
         /** The rules for THIS request's bound. */
         val rules = RetryRules(maxRetries)
 
-        /** The loop's own give-up: the last failure it saw, with the cooldown armed and followers protected. */
-        fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> =
-            LoopStep.Done(UpstreamPost.Ended(rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)))
+        /** The loop's own give-up: the last failure it saw, with the cooldown armed and followers protected. A pooled
+         *  login's 429 that waiting cannot fix is handed back, so the account handoff moves the turn to another login
+         *  before any byte reaches the client (§11's Oct deviation), for a translated pool as for the native one. */
+        fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> {
+            val failure = rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)
+            val refused = ctx.pooled && lastErr?.waitCannotHelp == true
+            return LoopStep.Done(if (refused) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure))
+        }
 
-        /** An armed hold ends the attempt before any request: native pooled refusals are handed back to switch
+        /** An armed hold ends the attempt before any request: a pooled login's hold is handed back to switch
          *  credentials, every other hold ends the call. Null when no hold is armed. */
         fun held(ctx: PostContext): LoopStep<Nothing>? {
             val held = cooldown.heldFailure(ctx.onRetry) ?: return null
-            val pooled = ctx.nativePool && held.rateLimitReply != null
-            return LoopStep.Done(if (pooled) UpstreamPost.Refused(held) else UpstreamPost.Ended(held))
+            return LoopStep.Done(if (ctx.pooled) UpstreamPost.Refused(held) else UpstreamPost.Ended(held))
         }
 
         var attempt: Int = 0
@@ -347,7 +350,9 @@ public class UpstreamClient(
 
     /** A native pooled refusal that waiting cannot fix leaves as a value before any consume callback, so the account
      *  handoff moves the request to the next login: a named plan window, or a pushback past the 15s ceiling. A burst
-     *  429 keeps V4-61 like every other failure: it waits the floor on the same login, and relays once spent. */
+     *  429 keeps V4-61 like every other failure: it waits the floor on the same login, and relays once spent. A
+     *  translated pool takes V4-61's plan first, which evicts the login, and the give-up hands it back
+     *  ([RetryState.gaveUp]). */
     private suspend fun failedStep(
         ctx: PostContext,
         failed: RetryOutcome.Failed,
@@ -357,8 +362,7 @@ public class UpstreamClient(
     ): LoopStep<Nothing> {
         state.lastErr = failed
         val nativeRefusal = ctx.nativePool && failed.rateLimitReply != null
-        val waitCannotHelp = failed.planLimit != null || (failed.retryAfterMs ?: 0L) > RETRY_AFTER_GIVE_UP_MS
-        return if (nativeRefusal && waitCannotHelp) {
+        return if (nativeRefusal && failed.waitCannotHelp) {
             val failure = state.rules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
             LoopStep.Done(UpstreamPost.Refused(failure))
         } else {

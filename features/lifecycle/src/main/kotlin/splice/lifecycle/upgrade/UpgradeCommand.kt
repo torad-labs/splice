@@ -128,7 +128,8 @@ internal class UpgradeCommand(
         candidate.provenanceGap?.let { gap ->
             val label = "provenance".padEnd(UPGRADE_PAD)
             output.line("  $YELLOW!$RESET $label not checked (gh $gap); to verify it later:")
-            for (asset in listOf(JAR_ASSET, SHIM_ASSET)) output.line("      ${release.verifyLater(dir.resolve(asset))}")
+            listOf(JAR_ASSET, SHIM_ASSET, HUB_HOLDER, HUB_FRONT).map(dir::resolve).filter { Files.exists(it) }
+                .forEach { output.line("      ${release.verifyLater(it)}") }
         }
         if (!daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")

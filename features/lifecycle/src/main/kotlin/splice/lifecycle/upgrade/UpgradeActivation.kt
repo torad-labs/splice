@@ -3,6 +3,8 @@
 // jar last — and every pointer restored when any step throws, so a failure never leaves the daemon on
 // a release the metadata does not name. When the restoration itself fails, the refusal SAYS which
 // pointer it could not put back, never a bare exception. Split from UpgradeCommand.kt (2026-09-13).
+// Oct 13: the MCP hub's holder and front, when the release folder holds both, swap in after the wrapper and
+// before the links, and are put back with them (UpgradeHub).
 package splice.lifecycle.upgrade
 
 import splice.core.terminal.GREEN
@@ -24,6 +26,7 @@ internal class UpgradeActivation(
     private val layout: UpgradeLayout,
     private val wrapper: UpgradeWrapper,
     private val point: LinkPointer = LinkPointer(layout::point),
+    private val hub: UpgradeHub = UpgradeHub(output, layout.share, JdkUpgradeProcess()),
 ) {
 
     /** One transaction: the wrapper first (its I/O can fail; nothing is exposed yet), then the
@@ -41,6 +44,7 @@ internal class UpgradeActivation(
         val liveBefore = if (Files.isSymbolicLink(layout.liveJar)) Files.readSymbolicLink(layout.liveJar) else null
         val hadShim = Files.exists(layout.liveShim)
         var previousShim: Path? = null
+        val hubSwapped = mutableMapOf<String, Boolean>()
         val flipped = Cancellables.runCatchingBestEffort {
             previousShim = wrapper.activate(
                 layout.liveShim,
@@ -48,20 +52,29 @@ internal class UpgradeActivation(
                 dir.resolve(SHIM_ASSET),
                 fromDir.resolve(EDITED_SHIM),
             )
+            hub.swap(dir, fromDir, hubSwapped)
             point(layout.previous, Path.of(from))
             point(layout.current, Path.of(version))
             point(layout.liveJar, layout.share.relativize(dir.resolve(JAR_ASSET)))
         }
         val error = flipped.exceptionOrNull()
         if (error != null) {
-            val failed = restore(links, liveBefore, previousShim, hadShim)
+            val failed = restore(links, liveBefore, previousShim, hadShim) + hubBack(hubSwapped, fromDir)
             val why = "activating $version failed (${SafeFailureText.render(error)})"
             return Upgraded.Refused(
                 if (failed.isEmpty()) "$why; $from restored" else "$why; recovery FAILED for $failed",
             )
         }
         output.line("  $GREEN✓$RESET ${"activated".padEnd(UPGRADE_PAD)} $version ($from kept for --rollback)")
+        if (hubSwapped.isNotEmpty()) hub.swapped()
         return Upgraded.Ok(Unit)
+    }
+
+    /** Puts back each hub program the swap replaced; returns the names it could NOT restore. */
+    private fun hubBack(swapped: Map<String, Boolean>, fromDir: Path): List<String> {
+        val failed = mutableListOf<String>()
+        swapped.forEach { (name, hadLive) -> attempt(failed, name) { hub.restore(name, hadLive, fromDir) } }
+        return failed
     }
 
     /** Puts every pointer back, continuing past a step that fails; returns the names it could NOT

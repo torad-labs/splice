@@ -4,6 +4,7 @@
 // skips it; without a signed-in gh the stage proceeds on the sha256 match and says how to verify
 // later, V4-217), then the candidate must answer `version` like a splice jar and run its own
 // doctor. Everything lands in a staging directory; a refusal at any step leaves nothing activated.
+// Oct 13: on Linux x86-64, the MCP hub's holder and front too, when the sums list both (UpgradeHub).
 // Network and processes go through two seams so the command is tested without a socket or a gh.
 package splice.lifecycle.upgrade
 
@@ -59,8 +60,10 @@ internal class UpgradeRelease(
         val gap = if (remote) attestationGap() else null
         return fetched(base, SUMS_ASSET).then { sums ->
             Files.createDirectories(staging)
-            stageAssets(Fetching(base, staging, String(sums), remote, gap)).then {
-                Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
+            val fetching = Fetching(base, staging, String(sums), remote, gap)
+            stageAssets(fetching).then {
+                listOf(SHIM_ASSET, HUB_HOLDER, HUB_FRONT).map(staging::resolve).filter { Files.exists(it) }
+                    .forEach { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString(SHIM_MODE)) }
                 validate(staging.resolve(JAR_ASSET)).then { version -> Upgraded.Ok(Staged(version, gap)) }
             }
         }
@@ -91,8 +94,20 @@ internal class UpgradeRelease(
         val gap: String?,
     )
 
+    /** The jar and shim, then the MCP hub's holder and front the way install.sh gets them: on Linux x86-64 only,
+     *  and only when the release's sums list both, each checked against them and attested like the jar. A release
+     *  without the pair stages neither, and the installed pair stays as it is (UpgradeHub). */
     private fun stageAssets(fetching: Fetching): Upgraded<Unit> {
-        for (asset in listOf(JAR_ASSET, SHIM_ASSET)) {
+        val hub = listOf(HUB_HOLDER, HUB_FRONT)
+        val os = System.getProperty("os.name").orEmpty()
+        val arch = System.getProperty("os.arch").orEmpty()
+        val onPlatform = os == "Linux" && arch in setOf("amd64", "x86_64")
+        val listed = hub.all { name -> fetching.sums.lineSequence().any { it.trim().endsWith(" $name") } }
+        if (onPlatform && !listed) {
+            val label = "mcp hub".padEnd(UPGRADE_PAD)
+            output.line("  $YELLOW!$RESET $label not in this release; the installed pair stays as it is")
+        }
+        for (asset in listOf(JAR_ASSET, SHIM_ASSET) + hub.takeIf { onPlatform && listed }.orEmpty()) {
             val refused = stageAsset(fetching, asset)
             if (refused is Upgraded.Refused) return refused
         }

@@ -112,9 +112,10 @@ on for up to 15 minutes, the daemon's own cap on a turn, so it is not cut (`--no
 release stays staged in `releases/<version>` and the command exits 1. A second upgrade while one runs is refused. The live launch shim is replaced to match the jar. An edit to a recorded
 release's shim is saved as `splice-launch.edited` beside that release, with its diff printed;
 a flat install's live launcher is kept as `splice-launch.edited`, because splice cannot tell whether it was edited. It is also recorded as the rollback copy. `splice upgrade --rollback` puts the previous release back, waits for in-flight turns the same way, and refuses when that release would refuse your config; it is kept
-until the next successful upgrade. Config and credentials are never touched. `splice upgrade` stages the jar and the
-launch shim only, never the MCP hub's `splice-mcp-holder` and `splice-mcp-front`; to get or update those on Linux
-x86-64, re-run the installer above. 0.3.x has no
+until the next successful upgrade. Config and credentials are never touched. On Linux x86-64, a release that lists
+the MCP hub's `splice-mcp-holder` and `splice-mcp-front` has both checked and staged like the jar, swapped in with it,
+and put back by a rollback. A running front reloads onto the new program, and the hub's units are left as they are.
+0.3.x has no
 `splice upgrade`: re-run the pinned installer above, then follow
 [the 0.4.0 upgrade notes](CHANGELOG.md#upgrading-from-03x).
 

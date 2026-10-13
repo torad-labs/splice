@@ -9,12 +9,22 @@ import kotlinx.serialization.json.put
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
 import splice.core.usage.QuotaFull
+import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionSource
 import java.util.concurrent.TimeUnit
 
 internal class HeadSignals(
     private val heads: Map<String, ManagedHead>,
     private val runtimeNotAnswering: RuntimeNotAnswering,
+    /** Who runs on which head now; null names no client pids. */
+    private val sessions: SessionSource? = null,
 ) {
+    /** For each head, the pids of the Claude Code clients its live sessions run in, from the session registry. */
+    fun clientPids(): Map<String, List<Long>> = sessions?.read().orEmpty()
+        .filter { it.availability == SessionAvailability.LIVE }
+        .mapNotNull { record -> record.head?.let { head -> record.process.pid?.let { head to it } } }
+        .groupBy({ it.first }, { it.second })
+
     /** V4-417: the local heads whose runtime is silent, from the daemon's held probe. */
     fun silentRuntimes(): Map<String, String> = runtimeNotAnswering()
 

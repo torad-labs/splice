@@ -6,7 +6,6 @@ package splice.app.control.api.fleet
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.JsonObject
 import splice.app.control.api.HeadResolver
-import splice.heads.HeadStatus
 import splice.heads.HeadTarget
 import splice.heads.HeadResolver as FeatureHeadResolver
 
@@ -23,8 +22,7 @@ internal class HeadFeatureAdapter(
 
             override suspend fun restart(): Unit = managed.head.restart()
 
-            override fun status(): JsonObject =
-                HeadStatus.json(managed.head, managed.authSurface.authKind, managed.authSurface.dialect)
+            override fun status(): JsonObject = resolver.status(managed)
 
             override fun tailLogs(tail: Int): String = managed.sources.logs.tail(tail)
 

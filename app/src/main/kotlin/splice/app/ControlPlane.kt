@@ -331,7 +331,17 @@ internal class ControlPlane(
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = mcpSharing(controlPort)
         val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
-        val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() })
+        // One session source serves the sessions routes and the heads route's client pids.
+        val sessions = ArrivalJoinedSessions(
+            SessionRegistry(
+                home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
+                RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
+                heard = console.sessionsHeard,
+                foreground = foregroundTools,
+            ),
+            console.sessionHeads,
+        )
+        val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() }, sessions)
         // The request cap is asked for at every request, not resolved here once: the console's own PATCH of
         // maxRequestBytes reaches the control listener's guard without a restart, the same way it reaches a head.
         val guard = ControlGuard(
@@ -355,15 +365,7 @@ internal class ControlPlane(
             runtime = ControlRuntime(
                 launchService = launchService(home, sharing, controlPort),
                 shutdownDaemon = shutdownDaemon,
-                sessions = ArrivalJoinedSessions(
-                    SessionRegistry(
-                        home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
-                        RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
-                        heard = console.sessionsHeard,
-                        foreground = foregroundTools,
-                    ),
-                    console.sessionHeads,
-                ),
+                sessions = sessions,
                 mcpHost = mcpHost,
                 clientVersions = clientVersions,
             ),

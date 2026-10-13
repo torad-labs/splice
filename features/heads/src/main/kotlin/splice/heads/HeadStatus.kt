@@ -4,6 +4,7 @@ package splice.heads
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -15,7 +16,13 @@ import splice.core.head.Head
 
 /** Projects the current state of one runtime head using the established control API shape. */
 public object HeadStatus {
-    public fun json(head: Head, authKind: String, dialect: String? = null): JsonObject = buildJsonObject {
+    /** [pids] are the Claude Code clients running on this head now, as the caller's session registry reads them. */
+    public fun json(
+        head: Head,
+        authKind: String,
+        dialect: String? = null,
+        pids: List<Long> = emptyList(),
+    ): JsonObject = buildJsonObject {
         val h = head.healthSnapshot()
         put("key", head.key)
         put("label", head.label)
@@ -34,7 +41,7 @@ public object HeadStatus {
         put("gate", gateJson(gate))
         put("maxInflight", if (gate.limit <= 0) null else gate.limit)
         put("health", healthJson(head, h))
-        putJsonArray("pids") {}
+        putJsonArray("pids") { pids.forEach { add(JsonPrimitive(it)) } }
     }
 
     /** The gate's own reading: what it holds, what it has held, and the limits that reading is judged

@@ -6,16 +6,10 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
-import splice.dialect.responses.PromptCachePolicy
-import splice.dialect.responses.ResponsesBackendQuirks
-import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ResponsesReasoningQuirks
-import splice.dialect.responses.ResponsesToolQuirks
-import splice.dialect.responses.tools.ToolDeferralPolicy
-import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MuseKeyMintCall
+import splice.provider.muse.MuseQuirks
 import splice.upstream.CredentialHeaders
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
@@ -67,21 +61,7 @@ internal class MuseResponsesArm(
 
     private fun museQuirks(ctx: ProviderBuild): ResponsesQuirks = quirksOverlay.responsesQuirks(
         ctx.providerCfg,
-        ResponsesQuirks(
-            providerTag = "muse",
-            lite = ResponsesLiteQuirks(),
-            backend = ResponsesBackendQuirks(
-                store = false,
-                promptCache = PromptCachePolicy(CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, "24h"),
-            ),
-            reasoning = ResponsesReasoningQuirks(
-                supportsSummary = true,
-            ),
-            tools = ResponsesToolQuirks(
-                emitToolChoice = true,
-                toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
-            ),
-        ),
+        MuseQuirks().defaultQuirks(),
         ctx.cfg,
     ).let { overlaid ->
         // QuirksConfig's non-null default would replace Muse's session key with first-message hash.

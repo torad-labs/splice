@@ -22,12 +22,16 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
     // V4-339: one per wire shape. A lite turn's replayed partial prose is commentary (V4-335's rule).
     private val defaultReanchorPolicy: ReanchorPolicy by lazy {
-        ResponsesReanchorPolicy(decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) })
+        ResponsesReanchorPolicy(
+            decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
+            continueReasoningOnly = deps.quirks.roundTrip.continueReasoningOnly,
+        )
     }
     private val liteReanchorPolicy: ReanchorPolicy by lazy {
         ResponsesReanchorPolicy(
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
             prosePhase = AssistantPhase.COMMENTARY,
+            continueReasoningOnly = deps.quirks.roundTrip.continueReasoningOnly,
         )
     }
     private val liteShape = ResponsesLiteShape(deps.quirks)

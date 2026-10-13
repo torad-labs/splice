@@ -1,11 +1,13 @@
 // NEW: one same-body re-send of a round the model answered with nothing (the empty_model class).
 package splice.head.round
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.upstream.ReanchorPolicy
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 
@@ -20,15 +22,27 @@ import splice.upstream.RoundResult
  * Exactly one re-send, the same body byte for byte, inside whatever the post itself allows (the watchdog's turn
  * budget is the post's own). A second empty ends as it ends today. A closed empty message is the model's finished
  * answer (codex ends the turn there), so it is never re-sent.
+ *
+ * A vendor whose empties repeat for the same bytes carries on instead: when the turn's [reanchor] rule builds a
+ * continuation from the empty round (its reasoning, then a request for the answer), that request is the one sent.
+ * Muse ended 418 of 3,538 turns empty on 2026-10-13, in runs of up to 25 in one session, and the identical re-send
+ * healed 39 of 451, so for it the input has to change.
  */
-internal class EmptyAnswerRetry(private val perf: TurnPerf?) {
+internal class EmptyAnswerRetry(private val perf: TurnPerf?, private val reanchor: ReanchorPolicy? = null) {
     suspend fun post(body: RoundBody, direct: PostRound): RoundResult {
         val framesBefore = contentFrames()
         val first = direct(body)
         val emptied = emptied(first)
         if (emptied == null || contentFrames() > framesBefore) return first
-        perf?.add(PerfKeys.EMPTY_RETRIES, 1)
-        return billed(emptied.usage, direct(body))
+        val carried = continuation(body, emptied)
+        perf?.add(if (carried != null) PerfKeys.EMPTY_CONTINUES else PerfKeys.EMPTY_RETRIES, 1)
+        return billed(emptied.usage, direct(carried?.let { RoundBody.Tree(it) } ?: body))
+    }
+
+    /** The request that carries on from [empty], when the turn's rule has one and [body] is the tree it extends. */
+    private fun continuation(body: RoundBody, empty: TurnOutcome.Success): JsonObject? {
+        val request = (body as? RoundBody.Tree)?.element as? JsonObject ?: return null
+        return reanchor?.continuationForEmpty(request, empty)
     }
 
     /** The empty round was a request of its own and cost its input: it folds in as an absorbed round, the way the

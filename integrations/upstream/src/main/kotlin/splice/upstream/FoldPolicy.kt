@@ -40,6 +40,11 @@ public fun interface ReanchorPolicy {
      *  streaming: the live listing's "will it resume". A dialect that has a rule overrides it with the same
      *  conditions [continuationForFailure] refuses on; the default is no rule. */
     public fun wouldContinue(live: LiveRound): Boolean = false
+
+    /** The request that carries on from a round that completed with nothing for the client, sent in place of the
+     *  identical re-send; null keeps that re-send. A dialect whose vendor ends rounds after reasoning alone builds
+     *  it from the round's own reasoning; the default is no such rule. */
+    public fun continuationForEmpty(requestBody: JsonObject, empty: TurnOutcome.Success): JsonObject? = null
 }
 
 /** Where a streaming turn stands, as far as a re-anchor rule can tell: how many continuations it has spent, and

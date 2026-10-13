@@ -27,11 +27,13 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
 /** [prosePhase] is the phase the replayed partial prose carries: commentary on a lite turn, null (the
- *  bare item it always had) on any other. */
+ *  bare item it always had) on any other. [continueReasoningOnly] is the vendor's quirk of the same name: a
+ *  round that completed with reasoning alone is carried on from that reasoning instead of re-sent identically. */
 internal class ResponsesReanchorPolicy(
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
     private val prosePhase: AssistantPhase? = null,
+    private val continueReasoningOnly: Boolean = false,
 ) : ReanchorPolicy {
 
     private val continuation = ResponsesContinuation()
@@ -51,6 +53,17 @@ internal class ResponsesReanchorPolicy(
     /** The same refusals as [continuationForFailure], read off a round still streaming: the budget is spent or a
      *  tool call has opened. Prose never ends it: with none the request restarts whole, with some it carries on. */
     override fun wouldContinue(live: LiveRound): Boolean = live.attempt < maxContinuations && !live.toolOpened
+
+    /** The round's encrypted reasoning, then a commentary marker asking for the answer it never gave: the same
+     *  shape as [markerContinuation], which this vendor already accepts mid-stream. Null with the quirk off or no
+     *  reasoning to carry, which keeps the identical re-send. */
+    override fun continuationForEmpty(requestBody: JsonObject, empty: TurnOutcome.Success): JsonObject? {
+        if (!continueReasoningOnly) return null
+        val reasoning = empty.handoffs.reasoningEnvelopes.mapNotNull { decodeReasoningEnvelope(it) }
+        if (reasoning.isEmpty()) return null
+        val marker = ResponsesAssistantText.item(ANSWER_MARKER_TEXT, AssistantPhase.COMMENTARY)
+        return continuation.continuationRequest(requestBody, reasoning + marker)
+    }
 
     // Tool blocks end eligibility both ways: an OPEN tear committed partial args JSON to the
     // wire (corrupt block, nothing to splice onto), and a COMMITTED tool_use means the
@@ -118,6 +131,10 @@ private const val MARKER_TEXT: String =
     "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
         "above stops. Do not repeat or restate anything already written, and do not " +
         "restate reasoning you have already given."
+
+private const val ANSWER_MARKER_TEXT: String =
+    "You finished reasoning without giving an answer or calling a tool. Give your answer now, " +
+        "or make the tool call your reasoning chose. Do not restate your reasoning."
 
 // FILE SCOPE ON PURPOSE: one shared immutable set, read per failure classification.
 //

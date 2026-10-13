@@ -111,6 +111,10 @@ public data class ResponsesRoundTripQuirks(
      *  harness staleness guard). From the 3rd identical failure the result's output gains an
      *  escalating directive; success or changed arguments reset. Off restores plain passthrough. */
     val loopGuard: Boolean = true,
+    /** A round that completed with reasoning and nothing else is carried on from that reasoning instead of re-sent
+     *  identically: the next request replays the round's encrypted reasoning and asks for the answer. Off keeps the
+     *  identical re-send. A vendor that ends rounds after reasoning alone turns it on in its own quirks. */
+    val continueReasoningOnly: Boolean = false,
 )
 
 /** The finite quirk surface separating codex / xai / openai-platform on this dialect. */

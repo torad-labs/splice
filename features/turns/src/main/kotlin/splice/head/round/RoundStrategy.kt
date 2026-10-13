@@ -53,7 +53,7 @@ internal class RoundStrategy(
         perf: TurnPerf?,
     ): UpstreamEnding? {
         val recovery = observedReanchor(reanchor)
-        val emptyRetry = EmptyAnswerRetry(perf)
+        val emptyRetry = EmptyAnswerRetry(perf, reanchor)
         val interceptedPost = PostRound { body ->
             emptyRetry.post(body, PostRound { intercept(it, emitter, postRound, perf) })
         }

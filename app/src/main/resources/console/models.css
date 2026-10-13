@@ -219,3 +219,11 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 .pickbtn.dflt-tier { box-shadow: none; border-color: var(--track-line); }
 .pickbtn .dflt, .menu .dflt { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
 .menu button .dflt { margin-left: auto; }
+/* Projects > Compaction: each rule that reaches a compaction here, widest first, with what it is set to (spec 7) */
+.cedit-open { margin: -.8rem 0 1.8rem; }
+.cedit { display: flex; flex-direction: column; gap: 1.6rem; margin-bottom: 1.8rem; }
+.cedit .crow { display: flex; flex-direction: column; align-items: flex-start; gap: .7rem; }
+.cedit .crow > .field { align-self: stretch; }
+.cedit .cwho { display: flex; align-items: center; gap: .6rem; color: var(--text); font-weight: 500; }
+.cedit .chint { color: var(--text-mute); }
+.cedit .cfoot { display: flex; align-items: center; gap: .9rem; }

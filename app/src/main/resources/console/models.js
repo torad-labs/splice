@@ -104,7 +104,7 @@ function commandsOf() {
     const family = PROVIDER_FAMILY[provKey] ?? familyByCmd(h.label || cfg.claude?.command || key) ?? provKey;
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
-      key, cmd: h.label || cfg.claude?.command || key, provKey, family, prov: PROVIDER_NAME[family] ?? runtimeName(provKey) ?? provKey,
+      key, cmd: h.label || cfg.claude?.command || key, provKey, family, mainId: first ?? null, prov: PROVIDER_NAME[family] ?? runtimeName(provKey) ?? provKey,
       url: pcfg.base_url ?? "", models, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
@@ -549,6 +549,91 @@ function everyHtml() {
   return `<div class="every-wrap"><div class="search">${G('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>')}<input class="field" id="q" placeholder="Search" value="${esc(ui.q)}" autocomplete="off"></div>${table}</div>`;
 }
 
+// ---------- Projects: compaction's rules for this project and command, edited in place (spec 7 Resolved) ----------
+// Four rules reach a compaction here, widest first: everywhere, the command's model, this project, this project with that
+// model. Each is left to the rule above it (its entry absent), set to Claude Code's own instructions (an empty text, which
+// opts out of every wider one), or given text, inline or from a file. The whole topology goes back through PUT
+// /api/topology with only [compaction] changed; a compaction-only edit serves the next compaction with no restart.
+const CX_MODES = { inherit: "Inherit", off: "Claude Code's", text: "Text", file: "File" };
+const CX_HINT = { inherit: "Takes the rule above", off: "Claude Code compacts with its own instructions" };
+const samePath = (written, root) => written === root || written === homeRel(root) || written === `${homeRel(root)}/`;
+function cxEntries(t, root, model) {
+  const cx = t.compaction ?? {};
+  return {
+    g: cx,
+    m: model ? (cx.model ?? []).find((x) => x.model === model) : null,
+    p: (cx.project ?? []).find((x) => samePath(x.path, root) && !x.model),
+    pm: model ? (cx.project ?? []).find((x) => samePath(x.path, root) && x.model === model) : null,
+  };
+}
+const cxState = (e) => (e?.file != null ? { mode: "file", text: "", file: e.file } : e?.instructions === "" ? { mode: "off", text: "", file: "" }
+  : e?.instructions != null ? { mode: "text", text: e.instructions, file: "" } : { mode: "inherit", text: "", file: "" });
+function openComp(p, c) {
+  const e = cxEntries(topology(), p.root, c.mainId);
+  const rows = Object.fromEntries(Object.entries(e).map(([k, v]) => [k, cxState(v)]));
+  if (rows.g.mode === "inherit") rows.g.mode = "off"; // everywhere has no wider rule: absent is Claude Code's own
+  ui.comp = { root: p.root, head: c.key, model: c.mainId, rows, said: null, saving: false };
+}
+function compEditHtml(p, c) {
+  const cx = ui.comp, model = c.models.find((m) => m.id === cx.model)?.label ?? cx.model;
+  const chip = `<span class="chip" style="--c:${colorOf(c.family)}">${esc(model ?? "")}</span>`;
+  const who = { g: `<span>Everywhere</span>`, m: chip, p: `<span class="pname">${esc(p.name)}</span>`, pm: `<span class="pname">${esc(p.name)}</span>${chip}` };
+  const row = (k) => {
+    const st = cx.rows[k], modes = k === "g" ? ["off", "text", "file"] : ["inherit", "off", "text", "file"];
+    const sw = `<div class="switch" role="group" aria-label="Compaction rule">${modes.map((v) => `<button data-act="cmode" data-s="${k}" data-v="${v}" aria-pressed="${st.mode === v}">${CX_MODES[v]}</button>`).join("")}</div>`;
+    const body = st.mode === "text" ? `<textarea class="field ptext" id="cx-${k}" data-cx="${k}" rows="3" aria-label="Compaction instructions">${esc(st.text)}</textarea>`
+      : st.mode === "file" ? `<input class="field" id="cxf-${k}" data-cxf="${k}" value="${esc(st.file)}" placeholder="~/notes/compact.md" spellcheck="false" autocomplete="off" aria-label="Instructions file">`
+      : `<span class="chint">${CX_HINT[st.mode]}</span>`;
+    return `<div class="crow"><div class="cwho">${who[k]}</div>${sw}${body}</div>`;
+  };
+  const keys = cx.model ? ["g", "m", "p", "pm"] : ["g", "p"];
+  const said = cx.said ? `<span class="said limit">${esc(cx.said)}</span>` : "";
+  return `<div class="cedit">${keys.map(row).join("")}<div class="cfoot"><button class="act primary" data-act="csave"${cx.saving ? " disabled" : ""}>Save</button>`
+    + `<button class="act quiet" data-act="ccancel">Cancel</button>${said}</div></div>`;
+}
+// the rule as written: nothing for inherit, an empty text for Claude Code's own, else the text or the file
+const cxFields = (st) => (st.mode === "off" ? { instructions: "" } : st.mode === "text" ? { instructions: st.text } : st.mode === "file" ? { file: st.file.trim() } : null);
+function compTable(t, cx) {
+  const was = t.compaction ?? {}, rows = cx.rows, root = cx.root, model = cx.model;
+  const g = rows.g.mode === "off" ? {} : cxFields(rows.g); // everywhere's own words are no rule at all
+  const keep = (list, mine) => (list ?? []).filter((x) => !mine(x));
+  const writtenRoot = (was.project ?? []).find((x) => samePath(x.path, root))?.path ?? root;
+  const models = keep(was.model, (x) => model && x.model === model);
+  const projects = keep(was.project, (x) => samePath(x.path, root) && (x.model ?? null) === (null));
+  const both = model ? keep(projects, (x) => samePath(x.path, root) && x.model === model) : projects;
+  if (model && cxFields(rows.m)) models.push({ model, ...cxFields(rows.m) });
+  if (cxFields(rows.p)) both.push({ path: writtenRoot, ...cxFields(rows.p) });
+  if (model && cxFields(rows.pm)) both.push({ path: writtenRoot, model, ...cxFields(rows.pm) });
+  return { ...g, model: models, project: both };
+}
+// what stops a save before it is sent: an empty text or file, or a table that holds a rule twice, which splice would
+// write and then keep its old rules over ("[compaction] unchanged", splice-turns)
+function compRefusal(table) {
+  if (Object.values(ui.comp.rows).some((st) => st.mode === "text" && !st.text.trim())) return "Write the text, or pick Claude Code's";
+  if (Object.values(ui.comp.rows).some((st) => st.mode === "file" && !st.file.trim())) return "Name the file";
+  const twice = (keys) => keys.some((k, i) => keys.indexOf(k) !== i);
+  if (twice(table.model.map((x) => x.model)) || twice(table.project.map((x) => `${x.path}\n${x.model ?? ""}`))) return "splice.toml holds one rule twice; fix it there first";
+  return null;
+}
+async function compSave() {
+  const cx = ui.comp, t = structuredClone(topology());
+  const table = compTable(t, cx);
+  cx.said = compRefusal(table);
+  if (cx.said) { render(); return; }
+  t.compaction = table;
+  cx.saving = true; render();
+  const res = await API.put("/api/topology", { topology: t });
+  cx.saving = false;
+  if (!res.ok || !res.body?.ok) {
+    const found = res.body?.findings ?? [];
+    if (found.length) console.warn(`models: saving compaction refused: ${found.map((x) => x.message).join("; ")}`);
+    cx.said = found.length ? "Config error" : "Not saved"; render(); return;
+  }
+  ui.comp = null; ui.files = {};
+  ui.pending = Boolean(res.body.restart_required); ui.restartDue = ui.pending;
+  await readAll(); render();
+}
+
 // ---------- Projects: files, the prompt stack, and where compaction reads ----------
 async function loadProject(id) {
   if (ui.files[id]) return;
@@ -593,9 +678,10 @@ function projectsHtml() {
   const ladder = rows.length
     ? `<ol class="ladder">${rows.map((r, i) => `<li class="${i === lit ? "lit" : ""}"><span class="rung"></span><span class="rname">${esc(r.scope)}</span>${i === lit ? `<span class="rfile">${esc(r.source)}</span>${r.chars === 0 ? `<span class="rempty">Empty</span>` : ""}` : ""}</li>`).join("")}</ol>`
     : `<p class="none">Claude Code's own</p>`;
+  const comp = ui.comp && ui.comp.root === p.root && ui.comp.head === c.key ? compEditHtml(p, c) : `${ladder}<button class="act quiet small cedit-open" data-act="cedit">Edit</button>`;
   const bar = c.window ? `<div class="winbar" style="--c:${colorOf(c.family)}"><div class="bar"><span class="tick" style="left:85%"></span></div><span class="wlabel">${big(c.window)}</span></div>` : "";
   const right = `<div class="proj"><header><h2>${esc(p.name)}</h2><span class="ppath" title="${esc(p.root ?? "")}"><bdo dir="ltr">${esc(p.place ?? homeRel(p.root))}</bdo></span></header>${files}`
-    + `<section class="pblock">${chips}<div class="twin"><div><h3>System prompt</h3>${stack}</div><div><h3>Compaction</h3>${ladder}${bar}</div></div></section></div>`;
+    + `<section class="pblock">${chips}<div class="twin"><div><h3>System prompt</h3>${stack}</div><div><h3>Compaction</h3>${comp}${bar}</div></div></section></div>`;
   return `<div class="projects"><nav class="proj-list">${list}</nav>${right}</div>`;
 }
 
@@ -909,8 +995,12 @@ function onClick(e) {
     case "save": save(); break;
     case "restart-splice": restartSplice(); break;
     case "clearq": ui.q = ""; render(); break;
-    case "proj": ui.proj = d.p; ui.file = null; render(); break;
-    case "projcmd": ui.projCmd = d.h; render(); break;
+    case "proj": ui.proj = d.p; ui.file = null; ui.comp = null; render(); break;
+    case "projcmd": ui.projCmd = d.h; ui.comp = null; render(); break;
+    case "cedit": { const p = data.projects.find((x) => x.id === ui.proj) ?? data.projects[0], c = cmdByKey(ui.projCmd) ?? commandsOf()[0]; if (p && c) openComp(p, c); render(); break; }
+    case "cmode": ui.comp.rows[d.s].mode = d.v; ui.comp.said = null; render(); break;
+    case "csave": compSave(); break;
+    case "ccancel": ui.comp = null; render(); break;
     case "file": ui.file = ui.file === d.f ? null : d.f; render(); break;
     case "claude": setClaude(d.v); break;
     default: break;
@@ -928,6 +1018,11 @@ function onInput(e) {
     a.said = null;
     render();
     return;
+  }
+  if (ui.comp && (t.dataset.cx || t.dataset.cxf)) {
+    const st = ui.comp.rows[t.dataset.cx || t.dataset.cxf];
+    if (t.dataset.cx) st.text = t.value; else st.file = t.value;
+    ui.comp.said = null; render(); return;
   }
   if (!ui.draft) return;
   if (t.dataset.hw) { ui.draft.headWin = t.value; ui.said = null; render(); }
@@ -951,6 +1046,6 @@ async function init() {
   else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
   render();
   if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
-  setInterval(async () => { if (!ui.draft && !ui.add && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
+  setInterval(async () => { if (!ui.draft && !ui.add && !ui.comp && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
 }
 init();

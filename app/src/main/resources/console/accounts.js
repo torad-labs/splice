@@ -629,10 +629,10 @@ function menuHtml(p, a, spot) {
     return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}">${esc(text)}</button>`;
   }).join("")}</div>`;
 }
-const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // kit.js's, which this page doesn't load
+const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
 function nameHtml(p, a, spot) {
   // a key is named by its variable and, when it replaced another, the day splice first saw it
-  if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${dayWord(a.seen)}` : ""}</span>`;
+  if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${keyDayWord(a.seen)}` : ""}</span>`;
   if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
   const err = ui.renameErr;
   // one visible way to finish, as the key field's Save: both walkers had to guess Enter (p153, p154)
@@ -678,7 +678,7 @@ function cardHtml(p, c, a, i, serves) {
       : a.from === "file" ? `<div class="keysrc"><span class="state">From file</span></div>`
       : "";
     // the keys this one replaced, as one quiet line with the days splice first saw them
-    const n = a.replaced?.length || 0, days = [...new Set((a.replaced || []).filter(Boolean).map(dayWord))];
+    const n = a.replaced?.length || 0, days = [...new Set((a.replaced || []).filter(Boolean).map(keyDayWord))];
     if (n) body += `<div class="keysrc"><span class="state mute">Replaced ${n === 1 ? "an earlier key" : `${n} earlier keys`}${days.length ? ` · ${esc(days.join(", "))}` : ""}</span></div>`;
   } else if (a.out) {
     body = signRow || `<div class="outbox"><button class="act primary" data-act="signin" data-p="${p.id}" data-a="${a.id}">Sign in</button></div>`;

@@ -110,9 +110,12 @@ object HeadHeapProbe {
             val answers = List(requests) { index ->
                 send(client, heads[index % heads.size].port, body).whenComplete { response, failure ->
                     val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+                    // the whole cause chain: a bare CompletionException named no reset, EOF or local close (ad71cc142's red)
+                    val causes = generateSequence(failure) { it.cause }
+                        .joinToString(" <- ") { "${it.javaClass.name}: ${it.message}" }
                     println(
                         "answer $index: elapsed_ms=$elapsed status=${response?.statusCode()} " +
-                            "failure=${failure?.javaClass?.name}",
+                            "failure=${causes.ifEmpty { null }}",
                     )
                 }
             }

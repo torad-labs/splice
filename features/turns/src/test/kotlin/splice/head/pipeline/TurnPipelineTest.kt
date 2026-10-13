@@ -429,7 +429,7 @@ class TurnPipelineTest {
     }
 
     @Test
-    fun `an Anthropic empty end_turn logs its shape and still sends overloaded_error`() = runTest {
+    fun `an Anthropic message the model ended empty on end_turn ends clean, never empty_model`() = runTest {
         val rec = RecTerminal()
         val events = listOf(
             """{"type":"message_start","message":{"usage":{"input_tokens":17}}}""",
@@ -446,15 +446,13 @@ class TurnPipelineTest {
             log = { lines.add(it) },
             clampOutput = { it },
         ).finishStream(rec, success, meta("thinking"), elapsedMs = 1)
-        assertEquals("empty_model", tag)
-        assertEquals("error", rec.ending)
-        assertEquals(ErrorType.OVERLOADED, rec.errorType)
-        assertEquals("overloaded_error", rec.errorType?.wireName)
+        // Claude Code's prompt-suggestion requests ask for silence ("Or nothing"); this is that answer.
+        assertEquals("empty_message", tag)
+        assertEquals("terminal", rec.ending)
         assertTrue(rec.texts.isEmpty())
         val shape = "opened=[] closed=[] stop_reason=end_turn " +
             "input_tokens=17 cache_read_input_tokens=0 cache_creation_input_tokens=0 output_tokens=2"
-        assertEquals(listOf("[gateway] empty-turn shape compact=false $shape\n"), lines)
-        assertTrue(rec.errorMessage.contains(shape), rec.errorMessage)
+        assertEquals(listOf("[gateway] empty-message turn compact=false $shape; ending clean\n"), lines)
     }
 
     @Test

@@ -229,7 +229,14 @@ public class PassthroughStreamTranslator(
             emittedText = channels.emittedText,
             emittedThinking = channels.emittedThinking,
         ),
-        shape = ResponseShape(outputShape = router.describeOutput()),
+        // A message the model closed itself (message_stop after end_turn or stop_sequence) is its answer, empty or
+        // not: graded empty_model, Claude Code's prompt-suggestion requests, whose prompt asks for silence, became
+        // overloaded errors the client re-sent three times at ~300k cached tokens each (24 turns on Oct 12). A stream
+        // with no message_stop, or one that stopped on max_tokens, is still the honest empty error.
+        shape = ResponseShape(
+            messageClosed = terminal.finished && router.endedByModel,
+            outputShape = router.describeOutput(),
+        ),
     )
 }
 

@@ -35,8 +35,15 @@ internal class PassthroughOutputShape {
         if (reason.isNotEmpty()) stopReason = reason.takeIf { it in UpstreamVocabulary.stopReasons } ?: "other"
     }
 
+    /** The model ended its message by itself, on end_turn or stop_sequence: a finished answer even when it holds
+     *  nothing, as Claude Code's prompt-suggestion requests ask for ("Or nothing"). max_tokens, refusal and the
+     *  rest are not, and neither is a stream with no stop_reason. */
+    val endedByModel: Boolean get() = stopReason in MODEL_ENDINGS
+
     fun describe(): String = "opened=[${counts(opened)}] closed=[${counts(closed)}] stop_reason=$stopReason"
 
     private fun counts(kinds: Map<String, Int>): String =
         kinds.entries.joinToString(",") { (kind, count) -> "$kind:$count" }
 }
+
+private val MODEL_ENDINGS = setOf(UpstreamStopReason.END_TURN.wire, UpstreamStopReason.STOP_SEQUENCE.wire)

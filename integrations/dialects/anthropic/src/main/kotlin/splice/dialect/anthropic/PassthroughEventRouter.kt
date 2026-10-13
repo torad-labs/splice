@@ -18,6 +18,9 @@ internal class PassthroughEventRouter(
 ) {
     private val shape = PassthroughOutputShape()
 
+    /** See [PassthroughOutputShape.endedByModel]. */
+    internal val endedByModel: Boolean get() = shape.endedByModel
+
     internal fun describeOutput(): String = "${shape.describe()} ${usage.describe()}"
 
     internal suspend fun onEvent(evt: JsonObject, sink: WireSink) {

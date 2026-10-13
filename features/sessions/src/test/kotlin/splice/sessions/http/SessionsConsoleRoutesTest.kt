@@ -154,6 +154,7 @@ class SessionsConsoleRoutesTest {
             json(
                 """{"messages":[""" +
                     """{"index":0,"role":"user","text":"the head's copy"}],""" +
+                    """"path":"$file",""" +
                     """"moves":[],"unmoved":[],"unparseable_lines":1}""",
             ),
             json(reply.body),

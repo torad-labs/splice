@@ -97,6 +97,7 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
         assertFalse("enforceAvailableModels" in settings)
     }
 
+    // Since 6ad1929b7 a resume whose rows would move goes on as a copy beside the original, which is never written.
     @Test
     fun `an unpinned login head resumes native model rows without retagging them`() {
         val project = configDir.resolve("projects/synthetic-project")
@@ -108,7 +109,8 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
             "claude-synthetic-next",
             "claude-synthetic-provider--foreign-row",
         )
-        Files.writeString(transcript, nativeRow + "\n" + foreignRow + "\n")
+        val original = nativeRow + "\n" + foreignRow + "\n"
+        Files.writeString(transcript, original)
         service.launch(
             spec().let { base ->
                 base.copy(models = base.models.copy(availableModelIds = emptyList()))
@@ -116,6 +118,11 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
             listOf("-r", "synthetic-session"),
             dangerouslySkipPermissions = false,
         )
-        assertEquals(nativeRow + "\n" + nativeRow + "\n", Files.readString(transcript))
+        assertEquals(original, Files.readString(transcript))
+        val copies = Files.list(project).use { files ->
+            files.filter { it != transcript && it.fileName.toString().endsWith(".jsonl") }.toList()
+        }
+        assertEquals(1, copies.size, "the resume goes on as one copy beside the original")
+        assertEquals(nativeRow + "\n" + nativeRow + "\n", Files.readString(copies.single()))
     }
 }

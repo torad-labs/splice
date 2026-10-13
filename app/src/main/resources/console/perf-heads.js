@@ -13,15 +13,22 @@
 
 const PERF_HEADS = (() => {
   const WINDOWS = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
+  // a compaction's ending, in words (StreamCompact's outcome); an outcome not named here reads as its own key
+  const ENDED = {
+    model_text: "summarized", model_thinking: "thought but wrote no summary", tooled_no_text: "called a tool instead of summarizing",
+    empty_model: "came back empty", upstream_error: "refused by the provider", stream_error: "cut off mid-stream",
+  };
   const st = { win: "24h", body: null, error: null, reading: false, gen: 0, warned: new Set(), models: new Set() };
 
   async function read() {
     const gen = ++st.gen;
     st.reading = true;
-    const r = await API.get(`/api/perf/summary?window=${st.win}`);
+    // the compactions ledger beside the summary (TurnsMount /api/compact): its own counts by outcome, which perf rows lack
+    const [r, c] = await Promise.all([API.get(`/api/perf/summary?window=${st.win}`), API.get("/api/compact")]);
     if (gen !== st.gen) return; // a newer window was asked for while this one was read
     st.reading = false;
     st.body = r.ok ? r.body : null;
+    st.compact = c.ok ? c.body?.stats?.heads ?? null : null;
     st.error = r.ok ? null : !r.status || r.status === 502 ? "Not answering" : NOT_READ;
     if (!r.ok) console.warn(`perf summary: ${r.status}`);
     render();
@@ -76,6 +83,15 @@ const PERF_HEADS = (() => {
     return [...byWord].sort((a, b) => b[1].s - a[1].s)
       .map(([word, { tags, s }]) => `<a class="k" href="${door(h.key, { tag: tags.join(",") })}">${s >= 0.005 ? `<b>${pct(s)}</b> ` : ""}${esc(word)}</a>`).join("");
   }
+  /** How the command's compactions ended over the last seven days, from the compactions ledger (CompactPayloads'
+   *  by_outcome_7d): it keeps its own week whatever window the table reads, so the line names its span. Absent when the
+   *  ledger has no compaction for the command in that week or did not answer. */
+  function endings(h) {
+    const by = st.compact?.[h.key]?.by_outcome_7d ?? {};
+    const parts = Object.entries(by).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
+      .map(([o, n]) => `${n0(n)} ${ENDED[o] ?? esc(o.replace(/_/g, " "))}`);
+    return parts.length ? `<span class="m">Compactions in the last 7 days: ${parts.join(", ")}</span>` : "";
+  }
   /** The compactions among the command's requests, which open on Requests with its Compactions toggle on, and the status
    *  labels splice wrote itself from the last tool call with no model (PerfKeys.ACTIVITY_QUERY, ActivityLabel.kt), so
    *  they cost nothing; fin's words, the ones that count has carried since Oct 12. Plain text, since Requests never
@@ -84,7 +100,7 @@ const PERF_HEADS = (() => {
   function sorts(h) {
     const n = h.kinds?.compaction ?? 0, q = h.kinds?.activity_query ?? 0;
     const compactions = n > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(n)} ${n === 1 ? "compaction" : "compactions"}</a>` : "";
-    return compactions + (q > 0 ? `<span class="m">${n0(q)} ${q === 1 ? "status label" : "status labels"} splice wrote · $0</span>` : "");
+    return compactions + endings(h) + (q > 0 ? `<span class="m">${n0(q)} ${q === 1 ? "status label" : "status labels"} splice wrote · $0</span>` : "");
   }
   /** Each model a command answered with, where it used more than one, so a slow or failing model is named (v0.4.0 §3,
    *  model attribution; PerfSummary.byModel). Two read as one line under the row. Three or more stand as sub-rows in the

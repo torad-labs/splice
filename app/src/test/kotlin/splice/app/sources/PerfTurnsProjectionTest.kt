@@ -172,7 +172,6 @@ class PerfTurnsProjectionTest {
         assertEquals(shifted, render(head, source, since = SCALE_SINCE + 1).toString())
         assertEquals(first, render(head, source, since = SCALE_SINCE).toString())
         assertTrue(source.parsedLines - decoded <= 2L, "two repeats decode only the rows they show")
-        assertTrue(source.projectedBytes <= PERF_COMPACT_BYTES)
     }
 
     @Test

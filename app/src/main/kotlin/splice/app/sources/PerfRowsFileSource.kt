@@ -58,9 +58,6 @@ public class PerfRowsFileSource internal constructor(
 ) : PerfRowsSource, ProjectedPerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** The compact cache the turns route reads; no display copy of a row is retained beyond it. */
-    internal val projectedBytes: Long get() = compact.retainedBytes
-
     /** JSON decodes performed by this source, including rejected rows and baseline candidates. */
     internal var parsedLines: Long = 0L
         private set

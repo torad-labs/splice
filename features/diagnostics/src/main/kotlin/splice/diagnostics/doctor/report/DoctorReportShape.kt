@@ -59,15 +59,15 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
      *  that has grown for months is the one thing a doctor report can see and a config dump cannot.
      *
      *  THE NAME IS REDACTED, deliberately: a state filename carries an account label on several
-     *  heads, which is exactly the operator-authored text [redaction] exists for, and [topology]
-     *  already redacts the directory itself for the same reason. */
+     *  heads, so it goes through the same scrub as a check's detail: an unsafe label becomes its alias,
+     *  as it does in the accounts block, and [topology] already redacts the directory itself. */
     fun stateDirUsage(usage: StateDirUsage): JsonObject = buildJsonObject {
         put("size_bytes", usage.sizeBytes)
         put("file_count", usage.fileCount)
         // An EMPTY state dir reports nulls rather than a 1970 timestamp or a fabricated name: the
         // console renders "no files" from an explicit null, and a sentinel would render as data.
         val oldest = usage.oldest
-        put("oldest_file", oldest?.let { JsonPrimitive(redaction.text(it.name)) } ?: JsonNull)
+        put("oldest_file", oldest?.let { JsonPrimitive(safe(it.name)) } ?: JsonNull)
         put("oldest_age_ms", oldest?.let { JsonPrimitive(it.ageMs) } ?: JsonNull)
         // What the walk could not read, so a partial footprint never passes for a whole one
         // (DoctorStateDirScan's header).
@@ -119,7 +119,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                     putJsonObject("last_switch") {
                         put("from", names.label(labels, s.from))
                         put("to", names.label(labels, s.to))
-                        put("reason", redaction.text(s.reason))
+                        put("reason", safe(s.reason))
                         put("at_epoch_millis", s.atEpochMillis)
                     }
                 }
@@ -134,7 +134,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("available", a.available)
         put("credential_present", a.credential.present)
         put("auth_excluded_until_epoch_millis", a.credential.excludedUntilEpochMillis)
-        put("auth_exclusion_reason", a.credential.exclusionReason?.let(redaction::text))
+        put("auth_exclusion_reason", a.credential.exclusionReason?.let(::safe))
         put("plan", a.plan?.let(names::token))
         put("five_hour_used_percent", a.quota.fiveHour.usedPercent)
         put("five_hour_reset_epoch_seconds", a.quota.fiveHour.resetEpochSeconds)

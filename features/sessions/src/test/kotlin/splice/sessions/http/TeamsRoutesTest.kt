@@ -287,7 +287,7 @@ class TeamsRoutesTest {
         val builder = rig.find(body, "slots", "slot", "b1")
         assertEquals(
             rig.json(
-                """{"slot":"b1","turns":2,""" +
+                """{"slot":"b1","plan_windows":[],"turns":2,""" +
                     """"tokens":{"input":1600000,"cache_read":400000,"cache_write":0,"output":1000010},""" +
                     """"plan_turns":0,"moved_turns":2,"priced_moved_turns":2}""",
             ),

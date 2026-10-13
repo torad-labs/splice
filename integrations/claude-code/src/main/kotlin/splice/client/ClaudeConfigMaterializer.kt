@@ -379,6 +379,12 @@ public class ClaudeConfigMaterializer(
                             "refusing to rebuild the head settings over it",
                     )
                 }
+                if (!genuinelyAbsent) {
+                    log(
+                        "[materialize] $dst does not parse as a JSON object (${SafeFailureText.render(failure)}); " +
+                            "rebuilding the head settings without the model it held\n",
+                    )
+                }
                 EMPTY_JSON
             }
     }

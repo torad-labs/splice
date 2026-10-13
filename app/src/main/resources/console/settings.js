@@ -180,10 +180,13 @@ const seenAt = () => Math.max(0, ...(ui.accts || []).map((x) => x.observed_at_ep
 // none of it, where "100% Highest this week" stood on a signed-out login (splice-usage's walk, Oct 13)
 const signedOut = (x) => !x.token_renews && (!x.credential_present || x.auth_exclusion_reason === "credential_missing"
   || (!!x.refusal && !(x.five_hour_used_percent >= 100 || x.seven_day_used_percent >= 100)));
-// each login reporting no window, by its command and its name: a bare "Primary" said neither which login nor where
+// A login by its command and its name: four logins are named Primary on his install, so a bare name never said which one
+// (splice-usage's walks, Oct 13). A name that is the command's own word is said once.
+const loginWord = (x) => [...new Set([ks.commandOf?.[(x.heads || [])[0]], x.display_name || x.provider].filter(Boolean))].join(" · ");
+// each login reporting no window
 const quietProviders = () => [...new Set((ui.accts || [])
   .filter((x) => !signedOut(x) && x.five_hour_used_percent == null && x.seven_day_used_percent == null)
-  .map((x) => [ks.commandOf?.[(x.heads || [])[0]], x.display_name || x.provider].filter(Boolean).join(" · ")).filter(Boolean))];
+  .map(loginWord).filter(Boolean))];
 /** Where the reasoning text lands for the picked option, as three lines of a terminal. */
 function reasoningSketch() {
   const where = val("showReasoning");
@@ -633,16 +636,16 @@ function planNow() {
   const tiles = [], zeros = [];
   if (five) {
     tiles.push(statTile(pctWord(five.five_hour_used_percent), "Highest in 5 hours",
-      planBar(five.five_hour_used_percent, warn) + chipRow([five.display_name || five.provider]) + note(resetWord(five.five_hour_reset_epoch_seconds))));
+      planBar(five.five_hour_used_percent, warn) + chipRow([loginWord(five)]) + note(resetWord(five.five_hour_reset_epoch_seconds))));
   }
   if (week) {
     tiles.push(statTile(pctWord(week.seven_day_used_percent), "Highest this week",
-      planBar(week.seven_day_used_percent, warn) + chipRow([week.display_name || week.provider]) + note(resetWord(week.seven_day_reset_epoch_seconds))));
+      planBar(week.seven_day_used_percent, warn) + chipRow([loginWord(week)]) + note(resetWord(week.seven_day_reset_epoch_seconds))));
   }
   if (over.length) {
     // the accounts themselves, no sentence: the setting under this tile is named "Warn when a plan reaches", so what
     // splice does about them is already on the pane (fin, Marlin's order, Oct 12)
-    tiles.push(statTile(fmt(over.length), `Over ${warn}%`, chipRow(over.map((x) => x.display_name || x.provider))));
+    tiles.push(statTile(fmt(over.length), `Over ${warn}%`, chipRow(over.map(loginWord))));
   } else if (read.length) { zeros.push(zeroFig(`over ${warn}%`)); }
   // NO FOOT LINE UNDER THE BARS (fin, Oct 12): when the plans were last read is the element under "Check plan usage
   // every", and the accounts reporting no window are the chips under the 5-hour row, each beside the setting it

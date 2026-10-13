@@ -20,8 +20,11 @@ private const val TITLE_MAX_BYTES = 2 shl 20
 // why: a session title is a card heading, not a summary (TranscriptMetadata's own limit is a different, longer text).
 private const val SESSION_TITLE_CHARS = 80
 
-// why: only recent sessions are retained, not every transcript the daemon has ever seen.
-private const val TITLE_HELD_FILES = 256
+// why: only recent sessions are retained, but at least every unnamed row one /api/sessions listing reads. The rows are
+// read in the same order every 5 s poll, and a first-in-first-out hold smaller than the list drops each title just
+// before it is asked for again: at 256 for over 256 unnamed rows, every title was read from its file every poll, the
+// class 137738b02 fixed for the tail (splice-sessions, Oct 13). An entry is one title of at most 80 characters.
+private const val TITLE_HELD_FILES = 1024
 
 /** The title of one transcript. A title found stays found while the file is the same file, because the first message
  *  of a session never changes; a transcript with no message of the person's yet is read again when it grows. */

@@ -154,10 +154,13 @@ async function alone(key, read) {
 }
 
 const NOT_READ = "Not read";
+// A CONVERSATION OPENS ON ITS NEWEST 50 MESSAGES, and Show earlier reads the page before. 200 sent 0.3 to 1.5 MB of
+// messages, tool results whole, on every 5 s read of a live session (splice-sessions, Oct 13).
+const LOG_PAGE = 50;
 /** The conversation, from its newest messages; Show earlier reads the page before. */
 const readLog = (s, before = "end") => alone(`log ${s.id} ${before}`, () => readLogNow(s, before));
 async function readLogNow(s, before) {
-  const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?before=${encodeURIComponent(before)}&limit=200`);
+  const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?before=${encodeURIComponent(before)}&limit=${LOG_PAGE}`);
   const held = state.logs[s.id];
   if (!res.ok) {
     // gone reads No transcript and a failed read Not read; the daemon's own words go to the console, never the page (fin)

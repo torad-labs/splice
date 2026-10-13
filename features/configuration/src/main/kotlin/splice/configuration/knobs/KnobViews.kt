@@ -56,7 +56,7 @@ internal class KnobViews {
                 put("disposition", if (knob.restartRequired) "restart" else "live")
                 shape(this, knob)
                 val readOnlyReason = PINNED_REASONS[knob]
-                    ?: "set only in [heads.<key>.overrides], never by PATCH".takeIf { knob.headOnly }
+                    ?: "Set per command in splice.toml, under [heads.<key>.overrides]".takeIf { knob.headOnly }
                 put("editable", readOnlyReason == null)
                 if (readOnlyReason != null) put("read_only_reason", readOnlyReason)
             }

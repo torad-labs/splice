@@ -152,6 +152,9 @@ const KNOBS = (() => {
 
   // the effective value and the scope that set it, as the daemon's knobs block says (spec 9)
   const SOURCE = { runtime: "here", env: "env", file: "file", toml: "toml" };
+  // where a value at rest comes from, in the person's words (spec 9: every knob shows its source inline); the shell's
+  // own row names its variables instead (rowHtml)
+  const SOURCE_WORD = { here: "Set here", file: "Saved here", toml: "From splice.toml", default: "Default" };
   const defOf = (k) => layer("defaults")[k.key] ?? k.def;
   function valueOf(k) {
     const knob = st.cfg?.knobs?.[k.key];
@@ -249,9 +252,16 @@ const KNOBS = (() => {
     }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
     if (st.said[id]) return `<span class="said ok">${esc(st.said[id])}</span>${st.unsaved[id] ? '<span class="said limit">· Not saved</span>' : ""}${undoHtml(id)}`;
-    // a setting the running splice reads only when it starts says so at rest, in the spec's words (v0.4.0 section 9,
-    // Resolved: boot-only stays editable, labelled "applies on restart"); saving it then offers Restart splice above
-    return needsRestart(id.split("@")[0]) ? `<span class="said">Applies on restart</span>` : "";
+    // at rest a setting says where its value comes from and whether a change is read at once or when splice starts, in
+    // the spec's words (v0.4.0 section 9, Resolved: boot-only stays editable, labelled "applies on restart"); saving a
+    // boot-only one then offers Restart splice above
+    return restHtml(id);
+  }
+  function restHtml(id) {
+    const [key, cmd] = id.split("@"), k = KNOB[key];
+    const from = !k ? null : cmd ? (ownValue(key, cmd) !== undefined ? "This command's own" : null) : SOURCE_WORD[valueOf(k).src];
+    const when = needsRestart(key) ? "Applies on restart" : "Live";
+    return `<span class="said">${[from, when].filter(Boolean).map(esc).join(" · ")}</span>`;
   }
   // A command's own value: its control, what the change did, and the way back to the value every other command uses.
   // A command just picked from "One command" has nothing saved yet, so its control shows the shared value until a change.

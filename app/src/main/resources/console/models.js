@@ -705,7 +705,9 @@ function ownInput(t, d) {
 const clip = (v) => { const x = String(v ?? ""); return x.length > 40 ? `${x.slice(0, 39)}…` : x; };
 function changesOf(c) {
   const a = draftOf(c), d = ui.draft, out = [];
-  const add = (name, was, now) => { if (JSON.stringify(was) !== JSON.stringify(now)) out.push({ name, was: clip(was), now: clip(now) }); };
+  // a context window is the one field the running daemon re-reads (TopologyRoutes, V4-162); every other field here is
+  // read when splice starts, so its change says Applies on restart before it is saved (spec 9)
+  const add = (name, was, now, live = false) => { if (JSON.stringify(was) !== JSON.stringify(now)) out.push({ name, was: clip(was), now: clip(now), live }); };
   const label = (id) => c.models.find((m) => m.id === id)?.label ?? c.missing.find((m) => m.id === id)?.label ?? id ?? "None";
   add("Sends to", a.url, d.url.trim());
   add("Port", a.port, d.port);
@@ -719,9 +721,9 @@ function changesOf(c) {
   }
   for (const t of TIERS) {
     add(`${tierName(t)} model`, label(a.tiers[t].model), label(d.tiers[t].model));
-    if (d.tiers[t].model && a.tiers[t].model === d.tiers[t].model) add(`${tierName(t)} window`, a.tiers[t].win, d.tiers[t].win);
+    if (d.tiers[t].model && a.tiers[t].model === d.tiers[t].model) add(`${tierName(t)} window`, a.tiers[t].win, d.tiers[t].win, true);
   }
-  add("Window", a.headWin, d.headWin);
+  add("Window", a.headWin, d.headWin, true);
   add("System prompt", { append: "Append", replace: "Replace" }[a.mode] ?? a.mode, { append: "Append", replace: "Replace" }[d.mode] ?? d.mode);
   add("System prompt text", a.file || a.text, d.file || d.text);
   for (const root of new Set([...Object.keys(a.per), ...Object.keys(d.per)])) {
@@ -741,7 +743,7 @@ function changesOf(c) {
 }
 function saveRowHtml(c, st, saidHtml, restart) {
   const list = st.same ? [] : changesOf(c), n = list.length;
-  const rows = list.map((x) => `<li><span class="cname">${esc(x.name)}</span><span class="was">${esc(x.was)}</span><span class="now">${esc(x.now)}</span></li>`).join("");
+  const rows = list.map((x) => `<li><span class="cname">${esc(x.name)}</span><span class="was">${esc(x.was)}</span><span class="now">${esc(x.now)}</span><span class="when">${x.live ? "Live" : "Applies on restart"}</span></li>`).join("");
   const acts = n ? `<button class="act primary" data-act="save"${st.ok && !ui.saving ? "" : " disabled"}>Save ${n} ${n === 1 ? "change" : "changes"}</button><button class="act quiet" data-act="discard">Discard</button>` : "";
   return `${n ? `<ul class="changes">${rows}</ul>` : ""}<div class="foot">${acts}${saidHtml}${restart}</div>`;
 }

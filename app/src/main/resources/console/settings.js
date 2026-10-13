@@ -1339,8 +1339,10 @@ function othersHtml() {
   const all = KNOBS.others();
   if (!all.length) return "";
   const q = ui.oq.trim().toLowerCase(), hit = all.filter((k) => !q || k.key.toLowerCase().includes(q));
+  // a read-only one says why it cannot be changed here, in the daemon's words (KnobViews read_only_reason)
   const row = (k) => (ks.cfg?.knobs?.[k.key]?.editable === false
-    ? kcard(`<div class="lbl">${esc(k.key)}</div><div class="ctl"><span class="fixed">${esc(word(k, val(k.key)))}</span></div>`)
+    ? kcard(`<div class="lbl">${esc(k.key)}</div><div class="ctl"><span class="fixed">${esc(word(k, val(k.key)))}</span>`
+      + `${ks.cfg.knobs[k.key].read_only_reason ? `<span class="from">${esc(ks.cfg.knobs[k.key].read_only_reason)}</span>` : ""}</div>`)
     : kcard(rowHtml(k)));
   const body = hit.length ? cardRow(hit.map(row)) : `<div class="nomatch"><span class="state">No match</span></div>`;
   return `<details class="others kn"${ui.othersOpen ? " open" : ""}><summary>Every other setting<span class="mmeta">${fmt(all.length)}</span></summary>`

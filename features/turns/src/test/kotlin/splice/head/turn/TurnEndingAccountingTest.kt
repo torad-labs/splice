@@ -336,7 +336,8 @@ class TurnEndingAccountingTest {
     @Test
     fun `conn-reset records perf + local health despite a dead client - DR-128`() {
         val rig = EndingRig("dr128-connreset")
-        emitExpectingDeadClient(rig, IOException("upstream socket tore"))
+        // The client is found dead only by the error-frame write; one already gone is a client_abort (800dade56).
+        emitExpectingDeadClient(rig, IOException("upstream socket tore"), clientGone = false)
         rig.assertRecorded("error:conn-reset")
         assertEquals(1L, rig.health.snapshot().localOrigin)
     }
@@ -757,8 +758,8 @@ private fun emitExpectingDeadClient(rig: EndingRig, ending: UpstreamEnding) = ru
     }
 }
 
-private fun emitExpectingDeadClient(rig: EndingRig, e: Throwable) = runBlocking {
-    val drive = rig.drive()
+private fun emitExpectingDeadClient(rig: EndingRig, e: Throwable, clientGone: Boolean = true) = runBlocking {
+    val drive = rig.drive(clientGone = clientGone)
     try {
         assertThrows<IOException>("the dead-client write still propagates (status quo at the driver)") {
             runBlocking { rig.ending.emitFailure(drive, e) }

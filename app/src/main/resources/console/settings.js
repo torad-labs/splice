@@ -61,7 +61,7 @@ function advancedHtml(id) {
 }
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
+const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, oq: "", othersOpen: false, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -1324,8 +1324,8 @@ function render() {
     + `<div class="acts"><button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button></div></header><div class="body kn">${PANES[x.id]()}</div></div>` : "";
   const was = root.querySelector(".pane .body")?.scrollTop ?? 0;
   // a setting's typed field keeps its caret through a redraw (knobs.js keeps the text)
-  const f = document.activeElement, fid = f?.id?.startsWith("kf-") ? f.id : null, pos = f?.selectionStart;
-  root.innerHTML = `<div class="jobs${ui.shown ? " open" : ""}">${list}${pane}</div>`;
+  const f = document.activeElement, fid = f?.id?.startsWith("kf-") || f?.id === "oq" ? f.id : null, pos = f?.selectionStart;
+  root.innerHTML = `<div class="jobs${ui.shown ? " open" : ""}">${list}${pane}</div>${othersHtml()}`;
   if (was) { const b = root.querySelector(".pane .body"); if (b) b.scrollTop = was; }
   if (fid) { const g = document.getElementById(fid); if (g) { g.focus(); if (pos != null) g.setSelectionRange(pos, pos); } }
   KNOBS.focusCustom(root);
@@ -1333,6 +1333,21 @@ function render() {
   moreBelow();
 }
 
+// EVERY OTHER SETTING (Marlin, hitstop, Oct 13, gap 457): every knob the rows above leave out, in one section at the
+// page's foot, closed on every load, with one search over the setting's key. A read-only one shows its value only.
+function othersHtml() {
+  const all = KNOBS.others();
+  if (!all.length) return "";
+  const q = ui.oq.trim().toLowerCase(), hit = all.filter((k) => !q || k.key.toLowerCase().includes(q));
+  const row = (k) => (ks.cfg?.knobs?.[k.key]?.editable === false
+    ? kcard(`<div class="lbl">${esc(k.key)}</div><div class="ctl"><span class="fixed">${esc(word(k, val(k.key)))}</span></div>`)
+    : kcard(rowHtml(k)));
+  const body = hit.length ? cardRow(hit.map(row)) : `<div class="nomatch"><span class="state">No match</span></div>`;
+  return `<details class="others kn"${ui.othersOpen ? " open" : ""}><summary>Every other setting<span class="mmeta">${fmt(all.length)}</span></summary>`
+    + `<div class="search"><input class="field" id="oq" placeholder="Search" value="${esc(ui.oq)}" autocomplete="off" aria-label="Search every other setting"></div>${body}</details>`;
+}
+root.addEventListener("toggle", (e) => { if (e.target.classList?.contains("others")) ui.othersOpen = e.target.open; }, true);
+root.addEventListener("input", (e) => { if (e.target.id === "oq") { ui.oq = e.target.value; render(); } });
 // An open card taller than its pane says so on its lower edge: "more" is on the pane while content waits below the fold,
 // and goes when the scroll reaches the end. Every card gets it, none draws it unless it overflows.
 function moreBelow() {

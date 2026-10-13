@@ -219,6 +219,10 @@ const KNOBS = (() => {
         + (left.length ? `<span class="menuwrap"><button class="act quiet small" data-kmenu="model:${id}" aria-expanded="${mopen}">${PLUS}Add model</button>`
           + (mopen ? `<div class="menu" role="menu">${left.map((m) => `<button role="menuitem" data-kact="model" data-key="${k.key}" data-m="${esc(m.id)}">${esc(m.label)}</button>`).join("")}</div>` : "") + "</span>" : "") + "</span>";
     }
+    if (c.k === "text") { // a text the daemon reads as it is: a field, applied like a number's
+      const text = st.typing[id] ?? (v === null || v === undefined ? "" : String(v));
+      return `<span class="custom wide"><input class="field" id="kf-${esc(id.replace("@", "-"))}" data-kfield="${id}" value="${esc(text)}" spellcheck="false" autocomplete="off" aria-label="${esc(k.label)}"${bad}></span>`;
+    }
     return "";
   }
   /** The value a pick replaced, struck, and Undo, while they show (gap 458). */
@@ -377,6 +381,7 @@ const KNOBS = (() => {
   }
   function fromField(id, raw) {
     const [key] = id.split("@"), c = KNOB[key].c, s = String(raw).trim();
+    if (c.k === "text") return s === "" ? null : s; // an emptied text setting goes back to splice's default
     if (s === "") return c.none && !c.min ? 0 : defOf(KNOB[key]);
     const n = Number(s.replace(/,/g, ""));
     if (!Number.isFinite(n) || n < 0 || (c.min && n < c.min)) return NaN;
@@ -458,10 +463,20 @@ const KNOBS = (() => {
     });
     root.addEventListener("focusout", (e) => { if (e.target.dataset.kcustom && st.custom === e.target.dataset.kcustom) { st.custom = null; setTimeout(render); } });
   }
+  // EVERY OTHER SETTING (Marlin, hitstop, Oct 13, gap 457): each knob on the wire with no row of its own, named by its
+  // key, its control from the daemon's kind. Each is kept in KNOB from first sight, so a change saves like any other row's.
+  function others() {
+    const wire = st.cfg?.knobs ?? {}, drawn = new Set(LIST.map((k) => k.key));
+    return Object.keys(wire).filter((key) => !drawn.has(key)).sort().map((key) => {
+      const kind = wire[key].kind;
+      KNOB[key] ??= K(key, key, kind === "bool" ? { k: "flag" } : kind === "number" ? { k: "count" } : { k: "text" }, layer("defaults")[key] ?? null);
+      return KNOB[key];
+    });
+  }
   const focusCustom = (root) => { const f = root.querySelector("[data-kcustom]"); if (f) { f.focus(); f.select(); } };
 
   return {
     fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, needsRestart, ownersOf, ownValue,
-    cmdChip, ctlHtml, saidHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom,
+    cmdChip, ctlHtml, saidHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom, others,
   };
 })();

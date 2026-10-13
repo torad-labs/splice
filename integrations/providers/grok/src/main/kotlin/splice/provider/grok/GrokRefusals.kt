@@ -30,7 +30,8 @@ internal class GrokRefusals : VendorRefusals {
         }
 
     /** A 403 in xAI's expiry words is a dead credential, refreshed under V4-38's freshness rule
-     *  (GrokAuthProvider.allowRefreshAfterFailure). */
+     *  (GrokAuthProvider.allowRefreshAfterFailure). When the refresh ran and xAI still refuses it, the client is told
+     *  authentication in xAI's words, never the invalid request a bare 403 reads as. */
     override fun isAuthFailure(status: Int, body: String): Boolean =
         status == HttpStatus.FORBIDDEN && EXPIRED_TOKEN.containsMatchIn(body)
 }

@@ -151,7 +151,9 @@ public class UpstreamClient(
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return UpstreamPost.Ended(state.rules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry))
+        return UpstreamPost.Ended(
+            state.rules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry, state.refreshedOnce),
+        )
     }
 
     private enum class RetryKind { ORDINARY, POST_SEND }
@@ -165,7 +167,7 @@ public class UpstreamClient(
 
         /** The loop's own give-up: the last failure it saw, with the cooldown armed and followers protected. */
         fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> =
-            LoopStep.Done(UpstreamPost.Ended(rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry)))
+            LoopStep.Done(UpstreamPost.Ended(rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)))
 
         /** An armed hold ends the attempt before any request: native pooled refusals are handed back to switch
          *  credentials, every other hold ends the call. Null when no hold is armed. */

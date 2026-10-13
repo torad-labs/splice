@@ -70,12 +70,17 @@ internal class RetryRules(private val maxRetries: Int) {
         cooldown: RateLimitCooldown,
         layers: Int,
         onRetry: RetryNotice,
+        refreshed: Boolean = false,
     ): UpstreamFailed {
         if (last?.status == HttpStatus.TOO_MANY_REQUESTS) return rateLimitFailure(last, cooldown, layers, onRetry)
         protectFollowers(last, cooldown)
+        // A credential the vendor named dead (VendorRefusals.isAuthFailure) and still refused once a refresh ran is
+        // the client's authentication failure, in the vendor's own words: xAI's expiry 403 read as an invalid
+        // request. One the freshness rule kept from a refresh keeps its status, since that 403 is no expiry (V4-38).
+        val status = if (refreshed && last?.vendorAuth == true) HttpStatus.UNAUTHORIZED else last?.status
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
-        return UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
+        return UpstreamFailed(last?.text.orEmpty(), status, layers)
     }
 
     /** Native passthrough replies retain their wire; translated providers retain the plan presentation. */
@@ -276,8 +281,8 @@ private const val NOT_IMPLEMENTED = 501
 private const val SERVER_ERROR_MAX = 599
 
 // FILE SCOPE ON PURPOSE: one IntRange for the process: allocate it once, not once per RetryRules.
-// Its floor reads the shared HttpStatus member: the bottom of the 5xx window IS 500, so re-typing it here was a second declaration of
-// the same status code dressed as a range bound.
+// Its floor reads the shared HttpStatus member: the bottom of the 5xx window IS 500, so re-typing it
+// here was a second declaration of the same status code dressed as a range bound.
 private val SERVER_ERRORS = HttpStatus.INTERNAL_SERVER_ERROR..SERVER_ERROR_MAX
 
 // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.

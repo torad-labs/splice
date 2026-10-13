@@ -67,7 +67,7 @@ public class AddRoutes(
             is AddRequest.Args -> read
         }
         val args = request.args
-        when (val opened = adds.open(args, request.ownKey)) {
+        when (val opened = adds.open(args)) {
             is AddOpened.Opened -> {
                 val session = opened.session
                 log(
@@ -192,8 +192,7 @@ public class AddRoutes(
 
 /** POST /api/add's body read into the CLI's own arguments, or why it cannot be. */
 internal sealed class AddRequest {
-    /** [ownKey]: a second command on a provider the file holds sends with a key of its own, not the provider's. */
-    data class Args(val args: AddArgs, val ownKey: Boolean = false) : AddRequest()
+    data class Args(val args: AddArgs) : AddRequest()
 
     data class Invalid(val reason: String) : AddRequest()
 }
@@ -218,12 +217,16 @@ internal class AddRequestReader {
                     baseUrl = JsonScalars.str(body, "base_url"),
                     models = specs.filterNotNull(),
                     command = JsonScalars.str(body, "command"),
-                    yes = true,
+                    // the console asks whose key on its own form, so its answer always comes with the add
+                    options = AddOptions(yes = true, key = keyOf(body)),
                 ),
-                ownKey = JsonScalars.str(body, "key") == OWN_KEY,
             )
         }
     }
+
+    /** `key: "own"` is a key of the command's own; anything else, or no key at all, is the provider's. */
+    private fun keyOf(body: JsonObject): AddKeyChoice =
+        if (JsonScalars.str(body, "key") == OWN_KEY) AddKeyChoice.NEW else AddKeyChoice.PROVIDER
 
     private fun spec(row: JsonObject): String? {
         val id = JsonScalars.str(row, "id")?.takeIf { it.isNotBlank() } ?: return null

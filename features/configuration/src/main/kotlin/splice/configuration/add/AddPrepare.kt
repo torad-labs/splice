@@ -80,7 +80,7 @@ internal sealed class AddPrepared {
 internal class AddPrepare(
     private val output: TerminalOutput,
     private val checks: AddChecks,
-    prompt: AddPrompter,
+    private val prompt: AddPrompter,
     private val bindable: HeadPortBindable = jdkPortBindable,
     private val lastHeadPort: Int = LAST_HEAD_PORT,
 ) {
@@ -97,12 +97,12 @@ internal class AddPrepare(
     }
 
     /** V4-220: the same decisions as a value, for a caller that answers them rather than prints them. */
-    fun prepare(asked: AddArgs, env: EnvReader, ownKey: Boolean = false): AddPrepared {
+    fun prepare(asked: AddArgs, env: EnvReader): AddPrepared {
         val profile = asked.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
         val args = discovered(asked, profile)
         val key = args.name ?: profile.head.key
         return when (val rows = modelRows.resolve(args, profile)) {
-            is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env, ownKey)
+            is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env)
             is AddRows.Refused -> AddPrepared.Refused(AddRefusal.Models(rows.problem), conflict = false)
         }
     }
@@ -110,7 +110,8 @@ internal class AddPrepare(
     /** A profile a local runtime DESCRIBED (RuntimeHeadAdd), already resolved: no flags to apply and
      *  nothing to prompt for, then the same refusals, render and parse as a catalogue profile. */
     fun described(profile: AddProfile, env: EnvReader): AddCandidate? {
-        val prepared = assembled(AddArgs(profile = profile.name, yes = true), profile, profile.head.key, env)
+        val asked = AddArgs(profile = profile.name, options = AddOptions(yes = true, key = AddKeyChoice.PROVIDER))
+        val prepared = assembled(asked, profile, profile.head.key, env)
         if (prepared is AddPrepared.Refused) output.line("splice add: ${texts.cli(prepared.refusal)}")
         return (prepared as? AddPrepared.Ready)?.candidate
     }
@@ -120,20 +121,18 @@ internal class AddPrepare(
         resolved: AddProfile,
         key: String,
         env: EnvReader,
-        ownKey: Boolean = false,
     ): AddPrepared {
         val path = TopologyLoader.configPath(env)
         val current = TopologyLoader.loadOrMaterialize(path)
         val existing = Files.readString(path).trimEnd('\n') + "\n"
         val conflict = keyConflict(resolved, current, key)
-        val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved)
+        val found = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved)
+        val plan = keyPlan(args, resolved, current, key, found)
+        val problem = plan.refusal
         if (problem != null) return AddPrepared.Refused(problem, conflict = conflict != null)
-        // a second command keeps its provider's address and models; with a key of its own it gets a provider of its
-        // own, in that provider's family, so Accounts lists the key under it (marlin, Oct 12: a provider is a template,
-        // many accounts on one command or one command each, Marcos's Oct 4 rule)
-        val twin = sharedProvider(args, resolved, current, key)
-        val shared = twin.takeUnless { ownKey }
-        val family = twin?.takeIf { ownKey }?.let { ProviderFamilyRule().of(it, current.providers.getValue(it)) }
+        val twin = plan.twin
+        val shared = twin.takeUnless { plan.ownKey }
+        val family = twin?.takeIf { plan.ownKey }?.let { ProviderFamilyRule().of(it, current.providers.getValue(it)) }
         val rendered = twin?.let { onShared(resolved, current.providers.getValue(it)) } ?: resolved
         val floor = ports.floor(current)
         val port = ports.choose(current, resolved.baseUrl, floor)
@@ -158,6 +157,35 @@ internal class AddPrepare(
             },
         )
     }
+
+    /** A second command keeps its provider's address and models; with a key of its own it gets a provider of its
+     *  own, in that provider's family, so Accounts lists the key under it (marlin, Oct 12: a provider is a template,
+     *  many accounts on one command or one command each, Marcos's Oct 4 rule). Asked only when nothing [found]
+     *  refused. */
+    private fun keyPlan(
+        args: AddArgs,
+        resolved: AddProfile,
+        current: Topology,
+        key: String,
+        found: AddRefusal?,
+    ): KeyPlan {
+        val twin = sharedProvider(args, resolved, current, key)
+        val choice = twin?.takeIf { found == null }?.let { whoseKey(args.options, it, key) }
+        val unanswered = twin?.takeIf { found == null && choice == null }?.let { AddRefusal.KeyUnanswered(key, it) }
+        return KeyPlan(twin, choice == AddKeyChoice.NEW, found ?: unanswered)
+    }
+
+    /** The provider a second command shares ([twin], null for a first), whether it brings a key of its own, and the
+     *  add's refusal: one found before the question, or nobody answering whose key. */
+    private data class KeyPlan(val twin: String?, val ownKey: Boolean, val refusal: AddRefusal?)
+
+    /** Whose key a second command on [provider] sends with: the answer given, else the person's at a terminal, else
+     *  none (a run with --yes, or an answer that is neither), which refuses naming the flag: the add never picks. */
+    private fun whoseKey(options: AddOptions, provider: String, key: String): AddKeyChoice? = options.key
+        ?: options.takeUnless { it.yes }?.let {
+            val answer = prompt("'$key' sends with $provider's key, or a new key of its own? [provider/new]", "")
+            AddKeyChoice.entries.firstOrNull { answer.trim().lowercase() == it.flag }
+        }
 
     /** A second command on a profile whose provider the file already holds is a head on that provider, sending to its
      *  address with its key and its models, never a new provider named after the command (marlin, Oct 12: a second

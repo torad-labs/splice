@@ -23,7 +23,7 @@ class AddLocalDiscoveryTest {
             if (answering.any { url.startsWith(it) }) AddHttpReply(200, """{"data":[{"id":"m"}]}""") else null
         }
         AddPrepare(output, AddChecks(output, http), { _, default -> default }).prepare(
-            AddArgs(profile = "local", name = "found", models = listOf("m:1000"), yes = true),
+            AddArgs(profile = "local", name = "found", models = listOf("m:1000"), options = AddOptions(yes = true)),
             EnvReader { null },
         )
     }

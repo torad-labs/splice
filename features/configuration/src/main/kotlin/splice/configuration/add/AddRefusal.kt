@@ -24,6 +24,9 @@ internal sealed class AddRefusal {
     data object QuotedValue : AddRefusal()
 
     data class Models(val problem: AddModelProblem) : AddRefusal()
+
+    /** A second command on [provider] with no answer to whose key it sends with, off a terminal or under --yes. */
+    data class KeyUnanswered(val key: String, val provider: String) : AddRefusal()
 }
 
 /** What makes a row set refusable (AddModelRows.problem), or a prompted window that never became valid. */
@@ -47,7 +50,7 @@ internal class AddRefusalText {
         is AddRefusal.PortUnavailable -> "no free loopback head port in ${r.from}..${r.to}; free a port and retry"
         is AddRefusal.Models -> cliModels(r.problem)
         is AddRefusal.KeyTaken, is AddRefusal.CommandTaken, is AddRefusal.Unparseable, is AddRefusal.NameRequired,
-        is AddRefusal.BaseUrlRequired,
+        is AddRefusal.BaseUrlRequired, is AddRefusal.KeyUnanswered,
         AddRefusal.QuotedValue,
         -> cliStandard(r)
     }
@@ -59,6 +62,8 @@ internal class AddRefusalText {
         is AddRefusal.NameRequired -> "--name is required for '${r.profile}' (lowercase letters, digits, dashes)"
         is AddRefusal.BaseUrlRequired -> "--base-url is required for '${r.profile}'"
         AddRefusal.QuotedValue -> "values must not contain quotes"
+        is AddRefusal.KeyUnanswered ->
+            "'${r.key}' can send with ${r.provider}'s key or a new key of its own; pass --key provider or --key new"
         is AddRefusal.PortUnavailable, is AddRefusal.Models -> error("handled by cli: ${r::class.simpleName}")
     }
 
@@ -68,7 +73,7 @@ internal class AddRefusalText {
             "No free loopback head port in ${r.from}..${r.to}; free a port and try again."
         is AddRefusal.Models -> consoleModels(r.problem)
         is AddRefusal.KeyTaken, is AddRefusal.CommandTaken, is AddRefusal.Unparseable, is AddRefusal.NameRequired,
-        is AddRefusal.BaseUrlRequired,
+        is AddRefusal.BaseUrlRequired, is AddRefusal.KeyUnanswered,
         AddRefusal.QuotedValue,
         -> consoleStandard(r)
     }
@@ -79,6 +84,7 @@ internal class AddRefusalText {
         is AddRefusal.CommandTaken -> "command"
         is AddRefusal.BaseUrlRequired -> "base_url"
         is AddRefusal.Models -> "models"
+        is AddRefusal.KeyUnanswered -> "key"
         is AddRefusal.Unparseable, is AddRefusal.PortUnavailable, AddRefusal.QuotedValue -> null
     }
 
@@ -89,6 +95,7 @@ internal class AddRefusalText {
         is AddRefusal.NameRequired -> "'${r.profile}' needs a name: lowercase letters, digits and dashes."
         is AddRefusal.BaseUrlRequired -> "'${r.profile}' needs a base URL."
         AddRefusal.QuotedValue -> "The base URL and the command must not contain quotes."
+        is AddRefusal.KeyUnanswered -> "Pick whose key '${r.key}' sends with: ${r.provider}'s or a new one."
         is AddRefusal.PortUnavailable, is AddRefusal.Models -> error("handled by console: ${r::class.simpleName}")
     }
 

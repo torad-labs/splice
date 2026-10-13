@@ -58,7 +58,7 @@ class AddPortChoiceTest {
                 name = "new",
                 baseUrl = candidate,
                 models = listOf("m:1000"),
-                yes = true,
+                options = AddOptions(yes = true),
             ),
             env,
         )

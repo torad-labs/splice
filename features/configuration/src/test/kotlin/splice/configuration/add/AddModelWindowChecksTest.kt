@@ -36,7 +36,7 @@ class AddModelWindowChecksTest {
             name = "fw",
             baseUrl = "http://localhost:1/v1",
             models = listOf("m:1000", "extra:2000"),
-            yes = true,
+            options = AddOptions(yes = true),
         )
         val candidate = requireNotNull(prepare.candidate(args, env))
         val results = checks.all(candidate, live = false, env)

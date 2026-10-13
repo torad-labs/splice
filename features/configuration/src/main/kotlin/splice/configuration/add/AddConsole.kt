@@ -123,9 +123,7 @@ public class AddConsole(
 
     internal fun profiles(): List<AddProfile> = AddProfiles().catalog()
 
-    internal fun open(args: AddArgs, ownKey: Boolean = false): AddOpened = when (
-        val prepared = prepare.prepare(args, env, ownKey)
-    ) {
+    internal fun open(args: AddArgs): AddOpened = when (val prepared = prepare.prepare(args, env)) {
         AddPrepared.UnknownProfile -> AddOpened.UnknownProfile
         is AddPrepared.Refused -> AddOpened.Refused(prepared.refusal, prepared.conflict)
         is AddPrepared.Ready -> {

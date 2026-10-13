@@ -55,8 +55,9 @@ internal class AddCommand(
         val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
         if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
         if (!ok) return false
-        val live = candidate.args.live ||
-            (!candidate.args.yes && confirm("Run one short live turn against '${candidate.key}' now?", default = false))
+        val options = candidate.args.options
+        val live = options.live ||
+            (!options.yes && confirm("Run one short live turn against '${candidate.key}' now?", default = false))
         return finish(candidate, env, live)
     }
 
@@ -65,7 +66,7 @@ internal class AddCommand(
             true.also { output.line("  ${"auth".padEnd(ADD_PAD)} your own Claude login is forwarded at launch") }
         checks.credential(c.providerKey, c.provider, env).ok ->
             true.also { output.line("  ${"auth".padEnd(ADD_PAD)} credential already present") }
-        c.args.yes || confirm("Sign in to '${c.key}' now?", default = true) ->
+        c.args.options.yes || confirm("Sign in to '${c.key}' now?", default = true) ->
             ports.login(c.key, c.provider, c.topology)
         else -> false.also { output.line("  ${"auth".padEnd(ADD_PAD)} sign-in is required to add '${c.key}'") }
     }
@@ -109,7 +110,8 @@ internal class AddCommand(
             !ports.daemonUp(port) -> true.also {
                 output.line("  $daemonLabel not running; '${c.key}' comes up on first launch")
             }
-            c.args.yes || confirm("Restart the daemon so '${c.key}' comes up now?", default = true) -> ports.restart()
+            c.args.options.yes || confirm("Restart the daemon so '${c.key}' comes up now?", default = true) ->
+                ports.restart()
             // Needed (V4-227 sweep): the daemon reads splice.toml at start, so a new head waits for one.
             else -> true.also {
                 output.line("  $daemonLabel '${c.key}' comes up at the next start: ${CYAN}splice restart$RESET")

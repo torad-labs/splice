@@ -42,7 +42,6 @@ class RosterAccountReadsTest {
     private val places = object : ClaudeLoginPlaces {
         override fun places(): List<ClaudeLoginPlaceView> = emptyList()
         override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("no login here")
-        override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = error("no refresh here")
         override fun poll(id: String): LoginStatus? = null
         override suspend fun submit(id: String, code: String): Boolean = false
         override fun hasCarryingProof(head: String, session: String): Boolean = false

@@ -7,7 +7,6 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
-import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import splice.app.control.ConsolePorts
 import splice.app.head.HeadRemoval
@@ -48,9 +47,6 @@ internal class ConfigurationMount(
             guard.guarded(call) { removal.remove(call.parameters["key"].orEmpty()).send(call) }
         }
         route.get("/api/topology") { guard.guarded(call) { topologyRoutes.read().send(call) } }
-        route.post("/api/topology/preview") {
-            guard.guarded(call) { topologyRoutes.preview(call.receiveText()).send(call) }
-        }
         route.put("/api/topology") { guard.guarded(call) { topologyRoutes.write(call.receiveText()).send(call) } }
     }
 }

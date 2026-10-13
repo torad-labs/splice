@@ -77,7 +77,6 @@ public interface ClaudeCarrying {
 public interface ClaudeLoginPlaces : ClaudeCarrying {
     public fun places(): List<ClaudeLoginPlaceView>
     public suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus
-    public suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView
     public fun poll(id: String): LoginStatus?
 
     /** Submit the native CLI's documented pasted-code fallback without logging or retaining the code. */

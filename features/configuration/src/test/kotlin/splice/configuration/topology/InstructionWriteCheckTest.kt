@@ -1,5 +1,5 @@
-// PUT /api/topology refuses a changed system_prompt_file the preview would refuse, with the
-// preview's own sentence, and splice.toml is byte-identical after it. Marlin's walk of V4-348 on bb54736ea:
+// PUT /api/topology refuses a changed system_prompt_file a turn could not read, in words naming why, and
+// splice.toml is byte-identical after it. Marlin's walk of V4-348 on bb54736ea:
 // the preview showed a refusal, Save wrote `system_prompt_file = "<missing path>"` anyway and dropped the
 // head's system_prompt. The real loader parses every candidate, so a refusal here is the route's, never a
 // stub's.
@@ -31,6 +31,7 @@ private const val HEAD = "ex"
 private const val PATH = "heads.$HEAD.system_prompt_file"
 private const val SYSTEM_PROMPT = "system_prompt"
 private const val SYSTEM_PROMPT_FILE = "system_prompt_file"
+private const val REGULAR = "instruction file must be a regular file"
 
 private val BASE = """
     [providers.ex]
@@ -78,17 +79,9 @@ class InstructionWriteCheckTest {
         JsonObject(moded + (SYSTEM_PROMPT_FILE to JsonPrimitive(name)))
     }
 
-    private fun previewSentence(routes: TopologyRoutes, name: String, mode: String): String {
-        val ask = """{"head":"$HEAD","file":"$name","mode":"$mode"}"""
-        val reply = routes.preview(ask)
-        assertEquals(HttpStatusCode.BadRequest, reply.status, "the preview must refuse $name: ${reply.body}")
-        return Json.parseToJsonElement(reply.body).jsonObject.getValue("error").jsonPrimitive.content
-    }
-
-    private fun assertRefusedLikePreview(name: String, mode: String = "append") {
+    private fun assertRefused(name: String, sentence: String, mode: String = "append") {
         val routes = routes(BASE)
         val before = Files.readString(file)
-        val sentence = previewSentence(routes, name, mode)
         val reply = routes.write(body(routes, pointedAt(name, mode.takeIf { it != "append" })))
         assertEquals(HttpStatusCode.OK, reply.status, reply.body)
         val answer = Json.parseToJsonElement(reply.body).jsonObject
@@ -103,48 +96,46 @@ class InstructionWriteCheckTest {
 
     @Test
     fun `a missing instruction file is refused and says it does not exist`() {
-        assertRefusedLikePreview("gone.md")
-        val routes = routes(BASE)
-        assertEquals("instruction file does not exist", previewSentence(routes, "gone.md", "append"))
+        assertRefused("gone.md", "instruction file does not exist")
     }
 
     @Test
-    fun `a directory is refused with the preview's sentence`() {
+    fun `a directory is refused as not a regular file`() {
         Files.createDirectory(tmp.resolve("instructions"))
-        assertRefusedLikePreview("instructions")
+        assertRefused("instructions", REGULAR)
     }
 
     @Test
-    fun `a symlink is refused with the preview's sentence`() {
+    fun `a symlink is refused as not a regular file`() {
         Files.writeString(tmp.resolve("real.md"), "Real instructions.\n")
         Files.createSymbolicLink(tmp.resolve("linked.md"), tmp.resolve("real.md"))
-        assertRefusedLikePreview("linked.md")
+        assertRefused("linked.md", REGULAR)
     }
 
     @Test
     fun `a dangling symlink is refused as a link, not as absent`() {
         Files.createSymbolicLink(tmp.resolve("dangling.md"), tmp.resolve("nowhere.md"))
-        assertRefusedLikePreview("dangling.md")
+        assertRefused("dangling.md", REGULAR)
     }
 
     @Test
-    fun `a non-UTF-8 file is refused with the preview's sentence`() {
+    fun `a non-UTF-8 file is refused as not UTF-8 text`() {
         Files.write(tmp.resolve("invalid.md"), byteArrayOf(0xC3.toByte(), 0x28))
-        assertRefusedLikePreview("invalid.md")
+        assertRefused("invalid.md", "instruction file is not UTF-8 text")
     }
 
     @Test
-    fun `a binary file and an oversized file are refused with the preview's sentence`() {
+    fun `a binary file and an oversized file are refused, each in its own words`() {
         Files.write(tmp.resolve("binary.md"), byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()))
         Files.write(tmp.resolve("large.md"), ByteArray(256 * 1024 + 1) { 'x'.code.toByte() })
-        assertRefusedLikePreview("binary.md")
-        assertRefusedLikePreview("large.md")
+        assertRefused("binary.md", "instruction file is not text")
+        assertRefused("large.md", "instruction file exceeds the preview byte limit")
     }
 
     @Test
-    fun `a strip file whose patterns do not compile is refused with the preview's sentence`() {
+    fun `a strip file whose patterns do not compile is refused`() {
         Files.writeString(tmp.resolve("bad.strip"), "(unclosed\n")
-        assertRefusedLikePreview("bad.strip", mode = "strip")
+        assertRefused("bad.strip", "instruction file or matching patterns cannot be read", mode = "strip")
     }
 
     @Test

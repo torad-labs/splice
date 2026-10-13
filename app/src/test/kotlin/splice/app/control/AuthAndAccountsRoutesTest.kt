@@ -317,7 +317,6 @@ class AuthAndAccountsRoutesTest {
                 ),
             )
             override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
-            override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single()
             override fun poll(id: String): LoginStatus? = null
             override suspend fun submit(id: String, code: String): Boolean = false
         }
@@ -363,7 +362,6 @@ class AuthAndAccountsRoutesTest {
                 ),
             )
             override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
-            override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single()
             override fun poll(id: String): LoginStatus? = null
             override suspend fun submit(id: String, code: String): Boolean = false
             override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation {

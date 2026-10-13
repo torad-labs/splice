@@ -64,7 +64,7 @@ internal class AccountsMount(
     private val readFailures = QuotaReadFailureSource { head, label -> ports.quotaReadFailures?.failure(head, label) }
     private val accountsRoute = AccountsRoute(accountHeads, OAuthFirstAccounts(), names, readFailures)
     private val nameRoute = names?.let(::AccountNameRoute)
-    private val claudeRoutes = ClaudeLoginRoutes(logins, names, readFailures)
+    private val claudeRoutes = ClaudeLoginRoutes(logins)
     private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
@@ -101,12 +101,6 @@ internal class AccountsMount(
             guard.guarded(call) { if (!claudeRoutes.poll(call)) loginRoutes.pollLogin(call) }
         }
         route.post("/api/claude-logins/{place}/login") { guard.guarded(call) { claudeRoutes.login(call) } }
-        route.post("/api/claude-logins/{place}/refresh") {
-            guard.guarded(call) {
-                val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
-                claudeRoutes.refresh(call, providers, accountHeads)
-            }
-        }
         route.post("/api/auth/{head}/login/{id}/code") { guard.guarded(call) { claudeRoutes.submit(call) } }
         route.get("/api/auth/{head}/order") {
             guard.guarded(call) { accountOrderRoute.get(call, ports.claudeLogins?.places().orEmpty()) }

@@ -178,8 +178,6 @@ class NativeUsageTruthTest {
     ): ClaudeLoginPlaces = object : ClaudeLoginPlaces {
         override fun places(): List<ClaudeLoginPlaceView> =
             ClaudeLoginRead(paths, {}, WallClock { now }).places(locations)
-        override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView =
-            places().single { it.id == place }
         override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus =
             error("no login in this fixture")
         override fun poll(id: String): LoginStatus? = null

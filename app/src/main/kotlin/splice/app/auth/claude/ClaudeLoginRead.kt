@@ -93,9 +93,6 @@ internal class ClaudeLoginRead(
         log("[claude] carrying login unreported: newest sent credential has no unambiguous login match\n")
     }
 
-    /** Product refreshes wait only for the selected place's captured credential. Other places retain their facts. */
-    suspend fun refresh(location: ClaudeLoginLocation) = facts.refresh(location.target.head.configDir)
-
     /** The account proved by the credential used for this request, not by its command or login place. */
     fun accountForCredential(locations: List<ClaudeLoginLocation>, key: String): ClaudeAccountIdentity? =
         locations.map(facts::read)

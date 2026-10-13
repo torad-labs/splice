@@ -1,29 +1,18 @@
-// NEW: place-addressed native login and refresh, with polling through the existing head login route.
+// NEW: place-addressed native login, with polling through the existing head login route.
 package splice.accounts.claude
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
-import splice.accounts.AccountHead
 import splice.accounts.AccountReplies
-import splice.accounts.pool.AccountNameStore
-import splice.accounts.pool.AccountNaming
 import splice.accounts.signin.LoginStatusJson
-import splice.core.usage.QuotaReadFailureSource
 import splice.core.util.JsonScalars
 import splice.http.JsonBody
-import java.util.concurrent.TimeUnit
 
 private data class NativeLoginRequest(val label: String?)
 
-/** [names] is the names a person chose (labels only), so a refreshed row reads the name the roster shows. */
-public class ClaudeLoginRoutes(
-    private val source: ClaudeLoginPlacesSource,
-    private val names: AccountNameStore? = null,
-    /** Why each login's last limits read failed, read beside its windows. */
-    private val readFailures: QuotaReadFailureSource? = null,
-) {
+public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
     private val body = JsonBody()
 
     public suspend fun login(call: ApplicationCall) {
@@ -47,32 +36,6 @@ public class ClaudeLoginRoutes(
             }
         }
         return NativeLoginRequest((label as? JsonPrimitive)?.takeIf { it.isString }?.content)
-    }
-
-    public suspend fun refresh(
-        call: ApplicationCall,
-        providers: Map<String, String>,
-        heads: Map<String, AccountHead> = emptyMap(),
-    ) {
-        val owner = owner(call) ?: return
-        val place = place(call, owner) ?: return
-        val view = owner.refresh(place)
-        val provider = providers[view.head]
-        if (provider == null) {
-            AccountReplies.respondError(call, "native head provider is not wired", HttpStatusCode.ServiceUnavailable)
-            return
-        }
-        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
-        val naming = AccountNaming(names)
-        val rows = ClaudeLoginRows(naming, readFailures).list(
-            listOf(view),
-            mapOf(view.head to provider),
-            mapOf(view.head to owner.carrying(view.head)),
-            heads,
-            nowSeconds,
-        )
-        val row = naming.settle(rows).single()
-        AccountReplies.respond(call, row.toString())
     }
 
     /** False leaves an OAuth id to the existing route; a native id is answered only on its own head. */

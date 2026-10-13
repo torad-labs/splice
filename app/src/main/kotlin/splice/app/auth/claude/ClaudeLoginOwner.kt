@@ -71,15 +71,6 @@ internal class ClaudeLoginOwner(
      *  that head, and which carries that session. */
     internal fun sent(head: String, session: String?, key: String) = carried.sent(head, session, key)
 
-    // One place is still read against ALL of them: a login's window belongs to its account, and the account's
-    // other logins are where that reading may have been filed.
-    override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView {
-        val location = locations.single { it.id == place }
-        reads.refresh(location)
-        changes?.publish(location.target.head.key)
-        return places().single { it.id == place }
-    }
-
     override fun poll(id: String): LoginStatus? = synchronized(lock) { history[id]?.get() }
 
     override fun refusal(configDir: Path): String? = synchronized(lock) {

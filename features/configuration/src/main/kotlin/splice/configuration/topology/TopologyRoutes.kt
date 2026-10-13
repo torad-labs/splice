@@ -64,9 +64,6 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
         return JsonReply(HttpStatusCode.OK, body.toString())
     }
 
-    /** Resolve a draft head's instruction file without writing splice.toml. */
-    public fun preview(body: String): JsonReply = PromptPreview(source).reply(body)
-
     /** The `topology` object of a request body. A body that is not JSON, not an object, or without that member
      *  gets the same answer, one 400 naming the shape expected, so the parse failure has nothing more to say. */
     private fun topologyObject(body: String): JsonObject? = try {
@@ -135,7 +132,7 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
                 null
             } else {
                 val mode = head.systemPromptMode ?: SystemPromptMode.APPEND
-                PromptPreview(source).refusal(writer, key, file, mode)
+                PromptPreview().refusal(writer, key, file, mode)
                     ?.let { TopologyFinding("heads.$key.system_prompt_file", it) }
             }
         }

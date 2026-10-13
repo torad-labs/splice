@@ -44,7 +44,7 @@ internal class ClaudeLoginRows(
         )
     }
 
-    /** Same row for the roster and an explicit refresh; no credential join key is part of the payload. [carrying] is
+    /** One roster row; no credential join key is part of the payload. [carrying] is
      *  the place whose credential carried the head's newest matched request, or null before any matched. */
     suspend fun json(
         view: ClaudeLoginPlaceView,

@@ -45,7 +45,6 @@ internal class PerfSessionAccountIndex(
 
     val retainedBytes: Long
         get() = INDEX_OVERHEAD_BYTES + entryBytes + requestedBytes + live.sumOf(Generation::bytes)
-    val retainedSessions: Int get() = requested.size
 
     init {
         require(limitSessions > 0 && limitBytes >= INDEX_OVERHEAD_BYTES)

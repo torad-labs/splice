@@ -31,7 +31,6 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     const s = scope(["features/turns/src/main/kotlin/splice/head/HeadDeps.kt"]);
     expect(checks(s.gradle)).toEqual([":app:check", ":features-turns:check"]);
     expect(s.gradle).not.toContain(":core:compileKotlin");
-    expect(s.gradle).not.toContain(":features-events:check");
     expect(s.legs.map((leg) => leg.task)).toEqual(["walls", "oracleReplay"]);
     expect(s.gradle).toContain(":oracleReplay");
     expect(s.gradle).not.toContain(":gateTests");

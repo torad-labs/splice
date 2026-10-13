@@ -22,8 +22,8 @@ internal class RouteFailure(private val audit: ControlAudit) {
 
     suspend fun answer(call: ApplicationCall, failure: Throwable) {
         val committed = call.response.isCommitted
-        // The client leaving a body already on the wire is how every /api/events stream ends (a tab
-        // closed), not a route failure: measured, the console e2e logged one per page before this.
+        // The client leaving a body already on the wire (a tab closed mid-stream) is not a route failure: measured,
+        // the console e2e logged one per page before this.
         if (committed && failure is IOException) return
         val why = "${kind(failure)}: ${SafeFailureText.render(failure)}"
         // The LOG also gets the splice line it came from. A withheld message and a kind alone leave

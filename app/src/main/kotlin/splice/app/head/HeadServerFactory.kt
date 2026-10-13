@@ -43,8 +43,8 @@ internal class HeadServerFactory(
     /** What every head's system-prompt layers resolve from (V4-160, see [HeadPromptInputs]). */
     private val prompts: HeadPromptInputs = HeadPromptInputs(),
     /** V4-134: the daemon's ONE console publisher, which every head reports through. Null only for
-     *  a factory built outside the daemon (tests); Daemon passes ControlPlane's, pinned by
-     *  OneEventBusPinTest, because a head built without it would serve turns the console never hears. */
+     *  a factory built outside the daemon (tests); Daemon passes ControlPlane's, because a
+     *  head built without it would serve turns the console never hears of. */
     private val console: ConsoleEventPublisher? = null,
 ) {
     private val upstreamFactory = UpstreamFactory()

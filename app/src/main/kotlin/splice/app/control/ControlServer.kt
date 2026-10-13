@@ -45,7 +45,6 @@ import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.ControlMount
 import splice.app.control.mount.DaemonSelfAnswers
 import splice.app.control.mount.DiagnosticsMount
-import splice.app.control.mount.EventsMount
 import splice.app.control.mount.FleetMount
 import splice.app.control.mount.LaunchMount
 import splice.app.control.mount.LaunchSessions
@@ -146,8 +145,6 @@ internal class ControlServer(
         usage.nameAccounts(accounts.recordedNames())
     }
 
-    private val events = EventsMount(ports, guard)
-
     // V4-230: the daemon's doctor reads these three answers in process; over loopback, from inside the
     // request it was serving, it read its own /health as "stopped" in 3 page loads of 6.
     private val diagnostics = DiagnosticsMount(
@@ -182,7 +179,6 @@ internal class ControlServer(
         ControlMount(sessionMount::register),
         ControlMount(teams::register),
         ControlMount(projects::register),
-        ControlMount(events::register),
         ControlMount(diagnostics::register),
         ControlMount(models::register),
         ControlMount(launch::register),

@@ -173,8 +173,7 @@ public class Daemon(
             compactionTail,
             clientVersions,
             HeadPromptInputs(topologyDir, topology.projects, sessionProject),
-            // V4-134: the control plane's publisher, so every head reports to the bus the console
-            // route streams from. Pinned by OneEventBusPinTest.
+            // V4-134: the control plane's publisher, so every head reports to the stores the console reads.
             console = controlPlane.console,
         ).also {
             it.credentialAccountNames = controlPlane.credentialAccountNames
@@ -276,11 +275,6 @@ public class Daemon(
             // at the END, so a pass that was cut short is finished by the next call, never taken for done.
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
-
-            // The console hears the stop FIRST, while the control port is still open: every open /api/events read is
-            // ended on purpose with a last frame naming the restart, instead of being cut mid-frame when the socket
-            // closes. The page then reconnects on its own after the stream's own retry delay (EventsRoute).
-            controlPlane.console.bus.stopping()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

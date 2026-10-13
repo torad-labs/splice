@@ -145,8 +145,6 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
         ":integrations-daemon-client",
         ":features-accounts",
     ),
-    // the console's live event stream: the bus, its event shapes, and GET /api/events.
-    ":features-events" to setOf(":integrations-http"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
 )

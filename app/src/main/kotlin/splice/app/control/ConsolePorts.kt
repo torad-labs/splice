@@ -17,7 +17,6 @@ import splice.core.usage.QuotaReadFailureSource
 import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
-import splice.events.bus.EventBus
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.models.list.LocalRuntimes
@@ -49,31 +48,17 @@ import java.nio.file.Path
  *  handing them to an ActivitySource, a TeamSource or a TopologyWriterSource. Four subsystems entered a
  *  file that had no use for them, at 8 C each on a file 29 C over the band.
  *
- *  A DEFAULT INSTANCE IS NOT AVAILABLE for any of these, and the EventBus comment below records
- *  what happened the one time one was: a fresh bus here meant the route streamed a daemon that
- *  looked quiet forever while every head reported to a different bus. */
+ *  A DEFAULT INSTANCE IS NOT AVAILABLE for any of these: the one time one was, a fresh event bus here meant the
+ *  route streamed a daemon that looked quiet forever while every head reported to a different bus. */
 public class ConsolePorts {
     /** Optional local tool callbacks. Unwired keeps the existing unknown or stale session policy. */
     public var foreground: ForegroundToolActivity? = null
-
-    /** v0.4.0 (V4-126, FEATURES.md §6): the console event bus GET /api/events streams from.
-     *
-     *  A SETTABLE PROPERTY, not a constructor parameter: as a parameter it widened this constructor
-     *  17 -> 18, which the constructor-width ratchet reports as WIDENED on a file already recorded as
-     *  debt. ControlPlane assigns it right after construction, the same shape [compaction] takes.
-     *
-     *  NO DEFAULT INSTANCE (V4-134). V4-126 gave this a fresh `EventBus()` so ControlPlane compiled
-     *  unchanged, and that default is exactly how a route ends up streaming a bus nobody publishes
-     *  to: every head reports to the daemon's ONE bus (ControlPlane's ConsoleEventPublisher), so a
-     *  private one here would stream a quiet daemon forever while the heads talked to nobody. Unset,
-     *  the route answers a NAMED 503 instead — the discipline every console port here keeps. */
-    public var events: EventBus? = null
 
     /** V4-136: how /api/compaction/instructions reaches the daemon's ONE compaction resolver.
      *
      *  A SETTABLE PROPERTY, not a constructor parameter — the constructor sits at the width
      *  ratchet's ceiling and V4-105 is burning it down, so the value arrives as an assignment
-     *  ControlPlane makes right after construction (the same shape [events] took).
+     *  ControlPlane makes right after construction.
      *
      *  UNSET IS NOT "NO INSTRUCTIONS CONFIGURED": the route answers a named 5xx, because an empty
      *  scope list from an unwired daemon would tell an operator that nothing is configured while
@@ -82,7 +67,7 @@ public class ConsolePorts {
     public var compaction: CompactionInstructions? = null
 
     /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
-     *  after construction like [events]. Null answers the kept-store and team-day routes with a named 503. */
+     *  after construction like [compaction]. Null answers the kept-store and team-day routes with a named 503. */
     public var activity: ActivityStores? = null
 
     /** V4-131: the daemon's team store, assigned by ControlPlane after construction like [activity].

@@ -6,30 +6,18 @@
 // pin there asserts that ControlPlane still makes this call, since deleting the call would unwire
 // all four ports at once without breaking the build.
 //
-// V4-134, FEATURES.md §6 — ConsoleEventPublisher, below: the daemon's ONE console event bus and
-// the adapter every head reports through. :daemon-head reports what a head observed (HeadEvents); this turns it into the
-// ConsoleEvent families GET /api/events streams. ControlPlane holds the one instance: it hands
-// [bus] to the ControlServer's route and [forHead] to every head HeadServerFactory builds, so the
-// route and the producers cannot hold different buses. OneEventBusPinTest fails if they do.
+// ConsoleEventPublisher, below: the adapter every head reports through. :daemon-head reports what a head observed
+// (HeadEvents); this records what the console reads of it. ControlPlane holds the one instance and hands [forHead] to
+// every head HeadServerFactory builds. Oct 12, 2026: the live stream at GET /api/events, which no console page, CLI
+// or tool ever opened, is gone, and with it the bus this used to publish every head's facts onto.
 //
-// FAMILIES AND WHERE EACH COMES FROM:
-//   head.state      HeadServer's lifecycle lock: started, draining, stopped.
-//   turn.start      the ready turn's admission (HeadAdmission.serveReady), full session id.
-//   turn.end        the one perf-row emitter (TurnTelemetry), keyed by that row's ts.
-//   account.switch  the pool's switch, reported beside the perf row that carries the new account.
-//   session.change  derived HERE from turn.start — see [HeadPublisher.turnStarted].
-//   message.edge    V4-130: the SendMessage tool_use a head observed on the wire (MessageEdges).
-//                   Published AND recorded in the edges store, so a team's chat and the live
-//                   stream carry the same facts.
+// V4-130 STORES: [ConsoleEventPublisher.stores] holds the edges and activity-label stores. Null (tests, tools) means
+// nothing is written to disk; ControlPlane opens the daemon's one instance under the state dir, so no test writes into
+// the operator's state dir. A label or an upstream label query without a session header is stored nowhere: a label
+// row is keyed by its session, and one without a session answers no console read.
 //
-// V4-130 STORES: [ConsoleEventPublisher.stores] holds the edges and activity-label stores. Null (tests,
-// tools) means the bus still carries every family and nothing is written to disk; ControlPlane opens
-// the daemon's one instance under the state dir, so no test writes into the operator's state dir.
-// A label or an upstream label query without a session header is published nowhere and stored
-// nowhere: a label row is keyed by its session, and one without a session answers no console read.
-//
-// WHY IN THIS FILE: the publisher is the console's wiring seam for /api/events, the same job the
-// four ports above do for their routes, so it lives beside them rather than in a package of its own.
+// WHY IN THIS FILE: the publisher is the console's wiring seam for the heads, the same job the four ports above do
+// for their routes, so it lives beside them rather than in a package of its own.
 package splice.app
 
 import kotlinx.coroutines.CoroutineScope
@@ -54,8 +42,6 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
-import splice.events.bus.ConsoleEvent
-import splice.events.bus.EventBus
 import splice.head.HeadEvents
 import splice.head.HeadLifecycle
 import splice.head.turn.LiveTurnsByHead
@@ -249,9 +235,8 @@ internal object ConsoleWiring {
 }
 
 /** How many sessions [ConsoleEventPublisher] remembers the head and latest turn of. A session past
- *  this many more-recent ones is forgotten, and its next turn reads as a first sight again: one extra
- *  session.change for a session that did not move, never a missed move, and until then the registry
- *  hears from it only through its own file. Sized well above the sessions one daemon serves at once. */
+ *  this many more-recent ones is forgotten until its next turn, and until then the registry hears from
+ *  it only through its own file. Sized well above the sessions one daemon serves at once. */
 private const val REMEMBERED_SESSIONS = 4096
 
 internal class ConsoleEventPublisher(
@@ -267,10 +252,6 @@ internal class ConsoleEventPublisher(
      *  held it then. Null (tests, tools) stores every name with none. */
     internal val names: NameHolders? = null,
 ) {
-    /** The bus GET /api/events streams from. ControlPlane assigns this exact instance to the
-     *  ControlServer; nothing else constructs one for production. */
-    internal val bus: EventBus = EventBus()
-
     /** V4-239: every head's wire tap, registered by HeadServerFactory as it builds the head and read by
      *  GET /api/heads/{head}/wire. Here for the reason [slots] is: this is the one console object every
      *  head's factory already receives. */
@@ -307,34 +288,20 @@ internal class ConsoleEventPublisher(
     internal fun forHead(head: String): HeadEvents = HeadPublisher(head)
 
     private inner class HeadPublisher(private val head: String) : HeadEvents {
-        override fun lifecycle(state: HeadLifecycle) {
-            bus.publish { seq -> ConsoleEvent.HeadState(seq, head, state.wire) }
-        }
+        /** Nothing reads a head's lifecycle or an account switch here since the live stream went (Oct 12). */
+        override fun lifecycle(state: HeadLifecycle) = Unit
 
-        /** Also the source of session.change, which reports a session APPEARING or MOVING HEAD:
-         *  the first turn of a session this daemon has not seen, or a turn on a different head than
-         *  that session's last one.
-         *
-         *  A RETIRED SESSION CLEARS ON THE NEXT session.change, NOT ON ITS OWN RETIREMENT. The event
-         *  is a doorbell: the console binds its sessions to a refetch of the poll route, not to this
-         *  payload, so any session.change re-reads the registry and drops what has ended. Retirement
-         *  itself rings nothing, because the registry is Claude Code's own files, which splice only
-         *  reads, and the only fact on the turn path is that a session turned up. */
+        /** Remembers which head [session]'s turn arrived on, for the registry's heard-from time and the listing's
+         *  head join. */
         override fun turnStarted(session: String?) {
-            bus.publish { seq -> ConsoleEvent.TurnStart(seq, head, session) }
-            if (session != null && moved(session)) {
-                bus.publish { seq -> ConsoleEvent.SessionChange(seq, session, head) }
-            }
+            if (session != null) started(session)
         }
 
         override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
-            bus.publish { seq -> ConsoleEvent.TurnEnd(seq, head, perfRowId, outcome) }
             if (session != null) ended(session)
         }
 
-        override fun accountSwitched(from: String?, to: String) {
-            bus.publish { seq -> ConsoleEvent.AccountSwitched(seq, head, from, to) }
-        }
+        override fun accountSwitched(from: String?, to: String) = Unit
 
         override fun messageSent(session: String, to: String, toolUseId: String) {
             val at = clock()
@@ -349,7 +316,6 @@ internal class ConsoleEventPublisher(
                 else -> RecipientResolution.NoHolder
             }
             stores?.edges?.record(MessageEdge(session, to, at, toolUseId, holder, recipient))
-            bus.publish { seq -> ConsoleEvent.EdgeEvent(seq, session, to, at) }
         }
 
         override fun activityLabel(session: String?, action: ActivityAction) {
@@ -360,11 +326,10 @@ internal class ConsoleEventPublisher(
             if (session != null) stores?.activity?.upstream(session, head, clock())
         }
 
-        /** Records [session]'s turn on this head, now, and says whether the head is news. */
-        private fun moved(session: String): Boolean = synchronized(sessionsSeen) {
-            val previous = sessionsSeen.remove(session)
+        /** Records [session]'s turn on this head, now. */
+        private fun started(session: String): Unit = synchronized(sessionsSeen) {
+            sessionsSeen.remove(session)
             seen(session, Seen(head, clock()))
-            previous?.head != head
         }
 
         /** Records that [session]'s turn ended now. The head it is remembered on stays: only a turn's

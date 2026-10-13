@@ -1351,10 +1351,6 @@ origin.
 - **`splice doctor --json` reports the state dir.** The report now carries
   `state_dir_usage`: size, file count, the oldest file (redacted, relative to the state dir) and
   its age, and the entries it could not read. Symlinks are not followed.
-- **A resume within the last 512 events loses nothing, and ids arrive in order.** Resuming
-  `/api/events` with a `Last-Event-ID` more than 256 events back dropped everything past the first
-  256 replayed, with nothing on the wire saying so; a resumed subscription is now sized to hold its whole replay. The event
-  id is taken inside the bus lock, so ids reach every subscriber strictly increasing.
 - **Any head joins any session again.** A session started on one head resumed on any
   other because every head's `projects` tree was the shared `~/.claude/projects`. The
   2026-09-17 head-isolation change read the ruling that head configuration must never leak as

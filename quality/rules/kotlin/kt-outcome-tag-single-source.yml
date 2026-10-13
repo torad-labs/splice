@@ -93,7 +93,6 @@ files:
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
   - app/src/main/kotlin/splice/app/control/**/*.kt
-  - features/events/src/main/**/*.kt
   - "build-logic/src/main/**/*.kt"
   - "build-logic/src/main/**/*.kts"
 rule:

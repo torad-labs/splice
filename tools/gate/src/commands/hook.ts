@@ -485,7 +485,8 @@ export async function preCommit(lay: Layout, lint?: StagedLint): Promise<number>
   }
 
   const modules = gradleModules(root);
-  const unmapped = touched.filter((path) => checksFor(modules, path) === undefined);
+  // A deleted file needs no check, and a deleted module maps none: only a file the commit still holds must be covered.
+  const unmapped = kotlin.filter((path) => checksFor(modules, path) === undefined);
   if (unmapped.length > 0) {
     for (const path of unmapped) console.error(`  ✗ ${path}: no gradle check covers this file`);
     console.error(`pre-commit: ✗ ${unmapped.length} Kotlin file(s) with no check — ${seconds(started)}`);

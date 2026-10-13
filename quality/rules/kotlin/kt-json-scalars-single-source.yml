@@ -57,7 +57,6 @@ files:
   - features/lifecycle/src/main/**/*.kt
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
-  - features/events/src/main/**/*.kt
   - "build-logic/src/main/**/*.kt"
   - "build-logic/src/main/**/*.kts"
 rule:

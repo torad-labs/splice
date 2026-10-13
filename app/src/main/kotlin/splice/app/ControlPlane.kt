@@ -215,9 +215,9 @@ internal class ControlPlane(
      *  (marlin): the send is recorded like a request and weighed by its command's budget (see UpstreamPlaygroundProbe). */
     internal val playground = UpstreamPlaygroundProbe(playgroundProviders)
 
-    /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held
-     *  here, like [probeScope], because both sides of it hang off this class: Daemon hands [console]
-     *  to HeadServerFactory before any head exists, and [start] hands its bus to the ControlServer. */
+    /** V4-134: the daemon's ONE console publisher, which every head reports through. Held here, like [probeScope],
+     *  because Daemon hands [console] to HeadServerFactory before any head exists, and [start] hands its stores to
+     *  the ControlServer. */
     internal val console = ConsoleEventPublisher(
         ConsoleWiring.activityStores(statePaths, config),
         slots = SlotInstructions(teams, ConsoleWiring.sessionAddress(statePaths)),
@@ -368,9 +368,7 @@ internal class ControlPlane(
      *  must fail a test, not just leave the route answering its named 5xx in production.
      *
      *  V4-127/V4-137: [ConsoleWiring.wire]'s four ports carry the same hazard and the same pin
-     *  (ConsoleWiringPinTest). V4-134: [console].bus is THE SAME bus the heads publish to —
-     *  OneEventBusPinTest fails if the route's bus and a head's are ever different instances. V4-130/
-     *  V4-131: the SAME stores/team store the heads already write through. V4-133:
+     *  (ConsoleWiringPinTest). V4-130/V4-131: the SAME stores/team store the heads already write through. V4-133:
      *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
 
@@ -408,7 +406,6 @@ internal class ControlPlane(
         srv.ports.mcpInventory = mcpInventory
         srv.ports.mcpSharing = mcpSharing
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
-        srv.ports.events = console.bus
         srv.ports.activity = console.stores
         srv.ports.teams = teams
         // Oct 10, 2026: the one session driver, so a member's start and stop reach a real terminal instead of

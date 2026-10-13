@@ -50,7 +50,6 @@ modules = [
     ":features-accounts",
     ":features-configuration",
     ":features-diagnostics",
-    ":features-events",
     ":features-heads",
     ":features-launch",
     ":features-lifecycle",

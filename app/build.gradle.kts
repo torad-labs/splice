@@ -70,7 +70,6 @@ dependencies {
     implementation(project(":features-diagnostics"))
     implementation(project(":features-launch"))
     implementation(project(":features-configuration"))
-    implementation(project(":features-events"))
     implementation(project(":integrations-http"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jackson.core)

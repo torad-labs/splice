@@ -48,18 +48,18 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `GET /api/heads` | per head: running, healthy, version match, gate snapshot with live turns, error counters, pids | fleet plates |
 | `POST /api/heads/{head}/{start,stop,restart}` | lifecycle | fleet plates |
 | `POST /api/daemon/shutdown` | stop the daemon | none |
-| `GET /api/config?head=` | effective config plus every layer, restart-required keys | config page |
+| `GET /api/config?head=` | effective config plus every layer, and the knobs block: each knob's value, scope and live or restart disposition; `restart_required_keys` was removed 2026-10-12, since the knobs block carries it per knob | config page |
 | `PATCH /api/config` | hot-apply runtime knobs, persist to state file | config page |
 | `GET /api/usage` | per head: 5h output tokens, ratelimit headers, quota windows (plan, 5h, 7d), warn level; every `usage.quota.<window>` and `usage.ratelimit` carries `observed_at` (epoch seconds, the `resets_at` encoding, null when unrecorded; added 2026-09-24) | fleet meter |
 | `GET /api/perf?tail=` | per head: p50, p95, max per perf field | none |
 | `GET /api/perf/summary?window=1h,24h,7d` | per head: windowed summary (v0.4.0); `last_ts` was removed 2026-10-12, since no reader took it | none |
 | `GET /api/economics` | per head: hourly buckets of what Accounts reads, cost and rate-limited turns (v0.4.0); since 2026-10-12 the token, byte and tool sums stay on disk and are no longer served | burn page |
-| `GET /api/auth` | per head: kind, present, masked account, last refresh, plus the account pool (v0.4.0) | auth cards, pool not shown |
+| `GET /api/auth` | per head: present, verdict, display name, refusal, the key's variable and masked key, a read failure in fixed words, plus the account pool (v0.4.0); kind, login, account ref, last refresh and the other provider fields were removed 2026-10-12, since no reader took them | Compare, Teams, Accounts, doctor |
 | `POST /api/auth/{head}/{refresh,login}` | refresh a token; login is "manual" for OAuth kinds | refresh button |
 | `GET /api/compact` | outcome totals and event tail | compaction page |
 | `GET /api/sessions` | Claude Code session registry joined to heads (v0.4.0) | none |
 | `GET /api/logs/{head}?tail=` | log tail | logs page |
-| `GET /api/mcp` | hosted MCP servers: eligible, hosted, pid, sessions, streams, restarts, last error (v0.4.0) | none |
+| `GET /api/mcp` | hosted MCP servers: eligible, hosted, sessions, last error, plus the hub's step-1 plans (v0.4.0); pid, streams, restarts and class were removed 2026-10-12, since no reader took them | Settings MCP |
 | `POST /launch/{head}`, `/statusline/{head}` | used by the shim and the status line, not by the console | n/a |
 | `GET /mcp/{name}`, `POST /mcp/{name}`, `DELETE /mcp/{name}` | the hosted MCP servers' streamable-HTTP transport for clients (open, post, close a stream), not an operator surface | n/a (excluded: client transport) |
 | `GET /`, `GET /dashboard` | the console itself (dist/index.html) | n/a (excluded: it is the console) |
@@ -70,7 +70,7 @@ Source: `gateway/core/src/main/kotlin/splice/core/config/Knob.kt`. 33 keys. Prec
 default, then `[defaults]` in TOML, then `[heads.<key>.overrides]`, then the state file, then env,
 then a runtime PATCH. Three hot-apply without a restart: `maxInflight`, `maxQueued`,
 `statuslineGitRoots`. The other 30 apply on restart. The console reads the disposition from
-`restart_required_keys` on `/api/config`, never from a hand list.
+each knob's entry in `/api/config`'s knobs block, never from a hand list.
 
 Keys: `port`, `chatgptApiBase`, `codexAuthPath`, `pinnedModel`, `effort`, `summary`,
 `showReasoning`, `replayReasoning`, `mirrorReasoning`, `progressLine`, `foldReasoningModels`,

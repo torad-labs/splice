@@ -31,7 +31,6 @@ internal class TeamRules {
                 instructionsUpdatedAt = if (instructionsMoved) now else stampOf(before, slot),
                 sessionsHistory = before?.sessionsHistory ?: slot.sessionsHistory,
                 joinedAt = before?.joinedAt ?: slot.joinedAt,
-                leftAt = null,
             ),
             now,
         )
@@ -46,15 +45,15 @@ internal class TeamRules {
 
     /** What slot [id] was before this save: a member, or one that left and is added back, with its history. */
     fun before(previous: Team?, id: String): TeamSlot? =
-        previous?.slots?.firstOrNull { it.id == id } ?: previous?.left?.firstOrNull { it.id == id }
+        previous?.slots?.firstOrNull { it.id == id } ?: previous?.left?.firstOrNull { it.slot.id == id }?.slot
 
     /** The members [previous] had that [kept] leaves out join those that left before, each unbound with the time it
      *  left and its history whole; one added back by its id is a member again. Nothing is deleted (spec §14). */
-    fun left(previous: Team?, kept: List<TeamSlot>, now: Long): List<TeamSlot> {
+    fun left(previous: Team?, kept: List<TeamSlot>, now: Long): List<TeamLeft> {
         val ids = kept.map { it.id }.toSet()
         val gone = previous?.slots.orEmpty().filter { it.id !in ids }
-            .map { remembered(it, now).copy(session = null, leftAt = now) }
-        return previous?.left.orEmpty().filter { it.id !in ids } + gone
+            .map { TeamLeft(remembered(it, now).copy(session = null), now) }
+        return previous?.left.orEmpty().filter { it.slot.id !in ids } + gone
     }
 
     fun mintId(): String = "team-" + UUID.randomUUID().toString().replace("-", "").take(ID_HEX_CHARS)

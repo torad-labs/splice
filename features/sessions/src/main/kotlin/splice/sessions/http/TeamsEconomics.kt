@@ -57,7 +57,7 @@ internal class TeamEconomics(
     private val now: Long = System.currentTimeMillis(),
 ) {
     /** Every member, and every one that left: what a member cost stays on the team after it leaves (spec §14). */
-    private val members = team.slots + team.left
+    private val members = team.slots + team.left.map { it.slot }
     private val heldBy = members
         .flatMap { slot -> held(slot).map { Held(it.take(PERF_TAG_CHARS), slot, joined(slot, it)) } }
         .distinctBy { it.tag }
@@ -82,7 +82,7 @@ internal class TeamEconomics(
                             tally.json {
                                 it.put("slot", slot)
                                 // only a member that left carries it, so a member's row reads as it always did
-                                team.left.firstOrNull { gone -> gone.id == slot }?.leftAt
+                                team.left.firstOrNull { gone -> gone.slot.id == slot }?.at
                                     ?.let { at -> it.put("left_epoch_millis", at) }
                                 it.put("plan_windows", windowsOf(slot))
                             },

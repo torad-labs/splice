@@ -80,8 +80,14 @@ public data class TeamSlot(
      *  join (the President's sign-off of §14, Oct 13). A session bound before joins were kept has none, and counts
      *  from the team's creation, as every session did before. */
     @SerialName("joined_epoch_millis") val joinedAt: Map<String, Long> = emptyMap(),
-    /** When the member was removed from its team, on a slot in [Team.left] only. */
-    @SerialName("left_epoch_millis") val leftAt: Long? = null,
+)
+
+/** A member removed from its team: its slot as it last stood, its history whole, and when it left. Its own value, not
+ *  a field on [TeamSlot], so a member's slot never carries a leaving it does not have (ConstructorWidthLawTest). */
+@Serializable
+public data class TeamLeft(
+    val slot: TeamSlot,
+    @SerialName("left_epoch_millis") val at: Long,
 )
 
 @Serializable
@@ -97,7 +103,7 @@ public data class Team(
     val slots: List<TeamSlot> = emptyList(),
     /** The members removed from the team, each with its session history and the time it left: nothing is deleted
      *  (spec §14, the President's sign-off of Oct 13). Only [TeamStore.upsert] writes it; a body's own is ignored. */
-    @SerialName("left_slots") val left: List<TeamSlot> = emptyList(),
+    @SerialName("left_slots") val left: List<TeamLeft> = emptyList(),
     /** The key the team was created under ([TeamStore.create]); null on a team made before keys. */
     @SerialName("idempotency_key") val idempotencyKey: String? = null,
     /** sha256 of the body the team was created from, so a replay under its key can be told from a

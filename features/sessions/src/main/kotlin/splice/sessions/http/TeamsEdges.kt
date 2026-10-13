@@ -42,7 +42,7 @@ internal class Members(
     private val names: NameHolders? = null,
 ) {
     /** A member that left still names its own messages: its history stays on the team (spec §14). */
-    val slotOfSession: Map<String, TeamSlot> = (team.slots + team.left)
+    val slotOfSession: Map<String, TeamSlot> = (team.slots + team.left.map { it.slot })
         .flatMap { slot -> (slot.sessionsHistory + listOfNotNull(slot.session)).map { it to slot } }
         .distinctBy { it.first }
         .toMap()

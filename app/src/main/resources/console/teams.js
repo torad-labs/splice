@@ -74,7 +74,8 @@ const sheet = document.getElementById("sheet");
 
 const team = () => state.teams.find((t) => t.id === ui.team) || null;
 // a member that left still names its own messages and its own figures: its history stays on the team (spec §14)
-const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || (tm.left_slots || []).find((s) => s.id === id) || null;
+const leftOf = (tm) => (tm.left_slots || []).map((l) => ({ ...l.slot, left_epoch_millis: l.left_epoch_millis }));
+const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || leftOf(tm).find((s) => s.id === id) || null;
 const sessOf = (slot) => (slot.session ? state.sessions[slot.session] : null);
 // ONE ACTIVE TEAM PER SESSION is what PUT refuses (Marlin), but older data may hold a session on two. Never pick one
 // silently: a session that looks single-homed when it is not is the worse failure, so each team that holds it names
@@ -300,7 +301,7 @@ function figures(u, since, scope = "since joining") {
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
-  const us = [...tm.slots, ...(tm.left_slots || [])].map((s) => useOf(tm, s.id)).filter(Boolean);
+  const us = [...tm.slots, ...leftOf(tm)].map((s) => useOf(tm, s.id)).filter(Boolean);
   if (!us.length) return null;
   const priced = us.filter((u) => u.usd != null);
   return {
@@ -798,7 +799,7 @@ function membersHtml(tm) {
 }
 /** The members removed from the team, each with when it left and what it did while it was on it (spec §14). */
 function leftHtml(tm) {
-  const gone = tm.left_slots || [];
+  const gone = leftOf(tm);
   if (!gone.length) return "";
   return `<section class="gone" aria-label="Left"><h3>Left</h3><ul>${gone.map((s) =>
     `<li><span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span><span class="ghead">${esc(s.head)}</span>` +

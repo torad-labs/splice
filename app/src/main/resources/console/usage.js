@@ -27,8 +27,8 @@ const dayClock = (d) => (d.toDateString() === NOW.toDateString() ? clock(d) : `$
 const q = (xs, p) => { if (!xs.length) return null; const s = xs.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const failed = (r) => isFailed(r.outcome);
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // the daemon folds days in the viewer's zone
-const HOUR = 3600e3, DAY_MS = 86400e3;
-const WINDOWS = { "5h": { label: "5 hours", ms: 5 * HOUR }, "7d": { label: "7 days", ms: 7 * DAY_MS } };
+const HOUR = 3600e3;
+const WINDOWS = { "5h": { label: "5 hours" }, "7d": { label: "7 days" } };
 const SEP = "\u001f"; // one account can carry several labels (its email, its selector name); a merged key joins them after the head
 const MAX_HELD = 2000; // the most rows one read of a command carries (PerfRoutes.kt MAX_TURNS)
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200 };

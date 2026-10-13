@@ -53,6 +53,15 @@ private val MANAGER_ENV = listOf("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS")
 /** One holder to start: [launch] is the session's launch id for a per-session copy, null for a shared one. */
 internal data class HubStart(val key: String, val server: String, val launch: String?, val spec: HubLaunchSpec)
 
+/** One recorded holder as the sweep weighs it: its launch (null for a shared one), its socket, and when it was
+ *  recorded, in epoch milliseconds (0 for a record older than the field). */
+internal data class HubRecord(val launch: String?, val socket: String, val recordedAt: Long)
+
+/** Whether the sweep keeps a recorded holder running. */
+internal fun interface HubKeep {
+    fun keeps(record: HubRecord): Boolean
+}
+
 /** Where the holders live and how they start: [binary] is splice-mcp-holder beside splice.jar; [io] runs the blocking
  *  spawn and its wait for the socket. */
 internal class HubHolders(
@@ -75,16 +84,19 @@ internal class HubHolders(
             if (running(start.key)) McpResult.Served(Unit) else runInterruptible(io) { spawn(start, bound) }
         }
 
-    /** Stops every per-session holder whose launch [places] no longer knows: its session ended. */
-    fun stopEnded(places: McpLaunchPlaces) {
+    /** Stops every holder [keep] no longer keeps: a per-session copy whose session ended, or a shared one no session
+     *  needs any more. */
+    fun stopUnkept(keep: HubKeep) {
         if (!Files.isDirectory(dir)) return
         val records = Files.list(dir).use { paths ->
             paths.filter { it.fileName.toString().endsWith(".json") }.toList()
         }
         records.forEach { record ->
-            val body = read(record)
+            val body = read(record) ?: return@forEach
             val launch = JsonScalars.str(body, "launch")?.takeIf { it.isNotEmpty() }
-            if (launch != null && places.of(launch) == null) stop(record, JsonScalars.long(body, "pid"))
+            val socket = record.resolveSibling(record.fileName.toString().removeSuffix(".json") + ".sock")
+            val held = HubRecord(launch, socket.toString(), JsonScalars.long(body, "at") ?: 0L)
+            if (!keep.keeps(held)) stop(record, socket, JsonScalars.long(body, "pid"))
         }
     }
 
@@ -153,6 +165,7 @@ internal class HubHolders(
             put("server", start.server)
             put("launch", start.launch.orEmpty())
             put("pid", pid)
+            put("at", System.currentTimeMillis())
         }
         try {
             SecureFile.writeAtomic0600(dir.resolve("${start.key.take(KEY_HEX)}.json"), JsonWire.string(body))
@@ -161,11 +174,10 @@ internal class HubHolders(
         }
     }
 
-    private fun stop(record: Path, pid: Long?) {
-        val socket = record.resolveSibling(record.fileName.toString().removeSuffix(".json") + ".sock")
+    private fun stop(record: Path, socket: Path, pid: Long?) {
         pid?.takeIf { holderAlive(it, socket) }?.let { live ->
             ProcessHandle.of(live).ifPresent { it.destroy() }
-            log("[mcp-hub] stopped holder ${LogSafe.str(live.toString())}: its session ended\n")
+            log("[mcp-hub] stopped holder ${LogSafe.str(live.toString())}: no session needs it\n")
         }
         Files.deleteIfExists(record)
         Files.deleteIfExists(socket)

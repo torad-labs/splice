@@ -33,6 +33,10 @@ import java.nio.file.Path
 // why: 204 stays local: HttpStatus declares no 2xx but OK, as McpHost notes for its own 202.
 private const val HTTP_NO_CONTENT = 204
 
+// why: how long a shared holder no session is bound to is left alone after it was recorded: the front saves a session
+// only once its initialize is answered, so a holder started for a session that is still connecting is never stopped.
+private const val SHARED_GRACE_MS = 300_000L
+
 /** What a hub call answers: a status and a JSON body, or none for 204. */
 public data class McpHubReply(val status: Int, val body: String?)
 
@@ -69,6 +73,7 @@ public class McpHub(
     private val tuple = HubTuple(paths.home)
     private val holders = HubHolders(paths.stateDir.resolve("mcp-hub"), paths.holder, paths.slice, io, log)
     private val listings = HubListings(paths.stateDir.resolve("mcp-listings"), log)
+    private val front = HubFront(paths.stateDir.resolve("mcp-hub").resolve("front.json"))
 
     /** `POST /api/mcp/hub/resolve`: where [body]'s server is, starting nothing. */
     public fun resolve(body: String): McpHubReply {
@@ -102,9 +107,33 @@ public class McpHub(
         return McpHubReply(HTTP_NO_CONTENT, null)
     }
 
-    /** Stops the per-session holders of launches that ended; the host's sweep calls it. */
+    /** Stops the per-session holders of launches that ended, and the shared holders no current plan names (a tuple
+     *  change left them behind) once the front reports no live session bound to them: a session whose launch ended
+     *  no longer counts. The host's sweep calls it. */
     public fun sweep() {
-        holders.stopEnded(places)
+        val bound = front.bindings()?.filter { it.launch.isEmpty() || places.of(it.launch) != null }
+        val current = bound?.let(::currentShared).orEmpty()
+        holders.stopUnkept { record ->
+            record.launch?.let { places.of(it) != null } ?: keepsShared(record, bound, current)
+        }
+    }
+
+    /** A shared holder stays while the front cannot say who is bound, while a session is bound to it, while a current
+     *  plan names it, and while it may still be starting for a session the front has not saved yet. */
+    private fun keepsShared(record: HubRecord, bound: List<HubBinding>?, current: Set<String>): Boolean = when {
+        bound == null || bound.any { it.socket == record.socket } -> true
+        record.socket in current -> true
+        else -> System.currentTimeMillis() - record.recordedAt < SHARED_GRACE_MS
+    }
+
+    /** The sockets of every shared holder a current plan names: the user-scope plan's and each bound launch's. */
+    private fun currentShared(bound: List<HubBinding>): Set<String> {
+        val launches = bound.map { it.launch }.toSet() + ""
+        return launches.flatMap { launch ->
+            val place = launch.takeIf { it.isNotEmpty() }?.let(places::of)
+            val plan = sharing.plan(servers.servers(launch, place))
+            plan.hosted.values.map { holders.socket(tuple.digest(it)).toString() }
+        }.toSet()
     }
 
     /** [body]'s server as its launch reaches it, or the refusal the front is answered with. */

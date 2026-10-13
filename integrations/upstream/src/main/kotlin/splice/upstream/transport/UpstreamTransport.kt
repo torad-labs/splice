@@ -84,7 +84,11 @@ public class UpstreamTransport {
         writeBound: WriteBoundMs,
         sockets: UpstreamSockets,
     ): HttpClient {
-        val queues = sockets.queues ?: ProcNetTcp(log)
+        // macOS keeps no /proc table; its netstat lists the same unacknowledged bytes (MacNetstat).
+        val queues = sockets.queues ?: when {
+            System.getProperty("os.name").orEmpty().startsWith("Mac") -> MacNetstat(log)
+            else -> ProcNetTcp(log)
+        }
         if (noDelayGuard.compareAndSet(false, true)) {
             log(
                 "[upstream] tcp_nodelay(client)=set keepalive(client)=${KEEPALIVE_IDLE_S}s/" +
@@ -157,6 +161,9 @@ public class UpstreamTransport {
      *  table present but unreadable reads as none, so the line names the degraded mode for it too. */
     private fun writeBoundLine(queues: SendQueues): String = if (queues.read() != null) {
         "a request the upstream stops acknowledging is cut at the head's firstByteTimeout (V4-289)"
+    } else if (queues is MacNetstat) {
+        "netstat cannot list TCP send queues here, so only a write waiting in the kernel is cut at " +
+            "firstByteTimeout, and a request that fits in the socket buffers waits for the turn cap"
     } else {
         "the kernel's send-queue table (/proc/net/tcp) cannot be read here, so only a write waiting in the " +
             "kernel is cut at firstByteTimeout, and a request that fits in the socket buffers waits for the " +

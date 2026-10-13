@@ -14,24 +14,15 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
 
     val first: JsonObject get() = turn ?: attempts.first()
     val ts: Long get() = JsonScalars.long(first, "ts") ?: 0L
-
-    /** Earliest attempt opening bounds its perf row; missing timing cannot justify skipping history. */
-    val startedAt: Long get() {
-        val attempt = attempts.firstOrNull() ?: return 0L
-        val at = JsonScalars.long(attempt, "ts") ?: return 0L
-        val duration = JsonScalars.long(attempt, "durationMs") ?: return 0L
-        return (at - duration.coerceAtLeast(0L)).coerceAtLeast(0L)
-    }
     val session: String? get() = JsonScalars.str(first, "session")
     val model: String get() = JsonScalars.strOrEmpty(first["model"])
     val compact: Boolean get() = JsonScalars.str(first, "compact") == "true"
 
-    /** The verb's table and console list read the same closing columns. */
+    /** The verb's table reads its closing columns from here. */
     val ending: TurnEnding? get() = turn?.let { record ->
         val marks = record["perf"]?.jsonObject?.get("marks")?.jsonObject
         TurnEnding(
             outcome = JsonScalars.strOrEmpty(record["outcome"]),
-            failureSentence = JsonScalars.str(record, "failure_sentence"),
             rounds = JsonScalars.strOrEmpty(record["rounds"]),
             attempts = JsonScalars.strOrEmpty(record["attempts"]),
             totalMs = marks?.let { JsonScalars.str(it, PerfKeys.TOTAL) },
@@ -42,7 +33,6 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
 /** Null total duration means the recorded performance marks contained no total. */
 internal data class TurnEnding(
     val outcome: String,
-    val failureSentence: String?,
     val rounds: String,
     val attempts: String,
     val totalMs: String?,

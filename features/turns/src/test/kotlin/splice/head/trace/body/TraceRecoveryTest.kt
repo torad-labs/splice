@@ -1,8 +1,5 @@
 package splice.head.trace.body
 
-import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -16,14 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
-import splice.head.TurnsHead
-import splice.head.TurnsHeadLookup
-import splice.head.compact.CompactView
-import splice.head.compact.HeadCompactSource
 import splice.head.trace.TraceAsk
-import splice.head.trace.TraceDirPort
-import splice.head.trace.TraceQuery
-import splice.head.trace.TraceRoute
 import splice.head.trace.TraceRows
 import splice.head.trace.TraceView
 import java.nio.ByteBuffer
@@ -36,7 +26,7 @@ private const val RECOVERY_DAY = "synthetic-2026-09-18.jsonl"
 
 class TraceRecoveryTest {
     @Test
-    fun `one corrupt body keeps the other records readable and reports its unavailable count`(@TempDir dir: Path) {
+    fun `one corrupt body keeps the other records readable and reports it unavailable`(@TempDir dir: Path) {
         val day = dir.resolve(RECOVERY_DAY)
         val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val good = bodies.encode(record("good", "synthetic good"), day)
@@ -50,9 +40,6 @@ class TraceRecoveryTest {
         bytes[offset.toInt() + 1] = 'S'.code.toByte()
         Files.write(pack, bytes)
 
-        val reply = runBlocking { route(dir).read(RECOVERY_HEAD, TraceQuery("2", null, null)) }
-        assertEquals(HttpStatusCode.OK, reply.status, reply.body)
-        assertEquals("1", Json.parseToJsonElement(reply.body).jsonObject["unavailable_records"]?.jsonPrimitive?.content)
         val turns = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
         assertEquals(listOf("good", "bad"), turns.map { it.id })
         assertEquals(
@@ -169,17 +156,5 @@ class TraceRecoveryTest {
         put("head", RECOVERY_HEAD)
         put("model", "m")
         put("client", buildJsonObject { put("body", body) })
-    }
-
-    private fun route(dir: Path): TraceRoute {
-        val compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        }
-        return TraceRoute(
-            TurnsHeadLookup { listOf(TurnsHead(RECOVERY_HEAD, compact)) },
-            TraceDirPort { dir },
-            Dispatchers.Unconfined,
-            heap = splice.head.syntheticHeapBudget(),
-        )
     }
 }

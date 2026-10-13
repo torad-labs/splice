@@ -1,19 +1,11 @@
-// the count of turns on disk never decodes a record's body: the console's trace list and the
-// verb's table count a store holding one record larger than the heap they run in. The count decoded every
-// line whole, into a String and then through kotlinx, and on claudex's 3.6 GB store (2026-09-26, lines of
-// 2-3 MB) that decode was 83% of GET /api/heads/claudex/trace's 21.4 s; a record past the heap was an
-// OutOfMemoryError. The big record is written here in the daemon's field order, its stamp first; the turns
-// listed are day two's, written by the daemon's own TraceStore, so the big one is counted and never held.
+// the count of turns on disk never decodes a record's body: the verb's table counts a store holding one record
+// larger than the heap it runs in. The count decoded every line whole, into a String and then through kotlinx,
+// and on claudex's 3.6 GB store (2026-09-26, lines of 2-3 MB) that decode was 83% of the trace list's 21.4 s;
+// a record past the heap was an OutOfMemoryError. The big record is written here in the daemon's field order,
+// its stamp first; the turns listed are day two's, written by the daemon's own TraceStore, so the big one is
+// counted and never held.
 package splice.head.trace
 
-import io.ktor.http.HttpStatusCode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -29,10 +21,6 @@ import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
-import splice.head.TurnsHead
-import splice.head.TurnsHeadLookup
-import splice.head.compact.CompactView
-import splice.head.compact.HeadCompactSource
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
@@ -153,18 +141,6 @@ class TraceCensusHeapTest {
     }
 
     @Test
-    fun `the console's list counts a record larger than the daemon's heap without decoding it`(@TempDir tmp: Path) {
-        val (exit, out, err) = child(tmp, "route", store(tmp))
-
-        assertEquals(0, exit, "GET /api/heads/$HEAD/trace?last=2 failed: ${err.take(600)}")
-        assertEquals("200", out.first(), out.first())
-        val payload = Json.parseToJsonElement(out[1]).jsonObject
-        assertEquals(TURNS_ON_DISK.toString(), payload.str("on_disk"))
-        assertEquals("0", payload.str("skipped_lines"))
-        assertEquals(listOf("d2-01", "d2-02"), payload.getValue("turns").jsonArray.map { it.jsonObject.str("id") })
-    }
-
-    @Test
     fun `the verb's table counts a record larger than its heap without decoding it`(@TempDir tmp: Path) {
         val (exit, out, err) = child(tmp, "verb", store(tmp))
 
@@ -174,18 +150,15 @@ class TraceCensusHeapTest {
         assertTrue(table.contains("d2-01") && table.contains("d2-02"), table)
         assertTrue(!table.contains("big"), "the big turn is counted, not listed: $table")
     }
-
-    private fun JsonObject.str(name: String): String = getValue(name).jsonPrimitive.content
 }
 
 /** Run in a second JVM by the tests above, with a heap smaller than the big record, over the trace dir in
- *  args[1]. args[0] names the reader: `verb` is `splice trace claudex --last 2`, its table on stdout; `route` is
- *  the console's GET /api/heads/claudex/trace?last=2, its status then its body on stdout. */
+ *  args[1]: `splice trace claudex --last 2`, its table on stdout. */
 object CensusHeapProbe {
     @JvmStatic
     fun main(args: Array<String>) {
         val traceDir = Path.of(args[1])
-        val ok = if (args[0] == "verb") verb(traceDir) else route(traceDir)
+        val ok = verb(traceDir)
         System.out.flush()
         exitProcess(if (ok) 0 else 1)
     }
@@ -197,16 +170,4 @@ object CensusHeapProbe {
         traceDirs = { traceDir },
         heap = splice.head.syntheticHeapBudget(),
     ).trace(listOf(HEAD, "--last", "2"), EnvReader { null })
-
-    private fun route(traceDir: Path): Boolean {
-        val noCompaction = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        }
-        val heads = TurnsHeadLookup { name -> if (name == HEAD) listOf(TurnsHead(HEAD, noCompaction)) else emptyList() }
-        val route = TraceRoute(heads, { traceDir }, Dispatchers.IO, heap = splice.head.syntheticHeapBudget())
-        val reply = runBlocking { route.read(HEAD, TraceQuery("2", null, null)) }
-        println(reply.status.value)
-        println(reply.body)
-        return reply.status == HttpStatusCode.OK
-    }
 }

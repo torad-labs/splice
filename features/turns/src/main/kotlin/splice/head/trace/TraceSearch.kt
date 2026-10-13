@@ -114,7 +114,6 @@ internal enum class TraceStop(val wire: String) { LIMIT("limit"), TIME("time") }
  *  it opened none, and [stoppedOn] is why it stopped early, null when it read back to the window's start. */
 internal data class TraceFound(
     val hits: List<TraceHit>,
-    val turnsRead: Int,
     val backTo: Long?,
     val stoppedOn: TraceStop?,
 )
@@ -135,13 +134,12 @@ internal class TraceSearch(
     private val readers = TraceBodyReaders(heap)
     private val whitespace = Regex("""\s+""")
     private val hits = ArrayList<TraceHit>()
-    private var read = 0
     private var oldest: Long? = null
     private var stop: TraceStop? = null
 
     override fun close() = readers.close()
 
-    fun found(): TraceFound = TraceFound(hits, read, oldest, stop)
+    fun found(): TraceFound = TraceFound(hits, oldest, stop)
 
     /** Newest line first: the first turn record older than the window is the end of what was asked for, and a line that
      *  is no turn record is passed over. Goes on while neither the limit nor the time is spent. */
@@ -171,7 +169,6 @@ internal class TraceSearch(
     }
 
     private fun take(line: DayLine, turn: Placed) {
-        read++
         oldest = turn.at
         hit(line, turn)?.let { hits += it }
     }

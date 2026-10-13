@@ -186,7 +186,7 @@ class TraceHeapShareTest {
                 ingress.install(this)
                 routing {
                     get("/trace") {
-                        val reply = route.read("synthetic", TraceQuery(null, null, "synthetic-one"))
+                        val reply = route.read("synthetic", "synthetic-one")
                         call.respondText(reply.body, status = reply.status)
                     }
                 }

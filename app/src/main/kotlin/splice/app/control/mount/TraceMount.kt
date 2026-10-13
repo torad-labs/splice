@@ -17,10 +17,7 @@ import splice.client.transcript.TranscriptMessageLookup
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.core.retired.RetiredHeads
-import splice.core.turn.FailureCause
 import splice.head.trace.TraceDirPort
-import splice.head.trace.TraceFailureCause
-import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import splice.head.trace.TraceSearchQuery
 import splice.head.trace.TranscriptRequestRoute
@@ -46,10 +43,6 @@ internal class TraceMount(
         RetiredTurnsHeads(RetiredHeads(config.statePaths.stateDir), turnsLookup),
         TraceDirPort { ports.traceDir },
         fileIo,
-        TraceFailureCause { key, turn, since ->
-            val row = heads[key]?.sources?.perfRows?.window(since)?.rows?.lastOrNull { it.turn == turn }
-            row?.cause?.let { recorded -> FailureCause.entries.firstOrNull { it.name == recorded } }
-        },
     )
     private val traceDeleteRoutes = TraceDeleteRoutes(turnsLookup, TraceDirPort { ports.traceDir }, config)
     private val sessionHeads = SessionHeadAdapter.adapt(heads)
@@ -76,9 +69,7 @@ internal class TraceMount(
         // V4-239: the verbs' reads, the trace's files and the wire tap's ring, under the same key.
         route.get("/api/heads/{head}/trace") {
             guard.guarded(call) {
-                val query = call.request.queryParameters
-                val asked = TraceQuery(last = query["last"], session = query["session"], turn = query["turn"])
-                traceRoute.read(call.parameters["head"].orEmpty(), asked).send(call)
+                traceRoute.read(call.parameters["head"].orEmpty(), call.request.queryParameters["turn"]).send(call)
             }
         }
         route.get("/api/heads/{head}/trace/search") {

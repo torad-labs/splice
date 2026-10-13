@@ -80,7 +80,7 @@ class ConsoleVerbReadsRoutesTest {
 
     /** Every read this row added, as the console calls it. */
     private val reads: List<String> get() = listOf(
-        "$url/api/heads/$HEAD_KEY/trace",
+        "$url/api/heads/$HEAD_KEY/trace?turn=t-1",
         "$url/api/heads/$HEAD_KEY/wire",
     )
 
@@ -123,9 +123,8 @@ class ConsoleVerbReadsRoutesTest {
         awaitPort()
         wireAll()
 
-        val trace = req { get("$url/api/heads/$HEAD_KEY/trace") { auth() } }
-        assertEquals(HttpStatusCode.OK, trace.status, trace.bodyAsText())
-        assertTrue(Json.parseToJsonElement(trace.bodyAsText()).jsonObject.getValue("turns").jsonArray.isEmpty())
+        val trace = req { get("$url/api/heads/$HEAD_KEY/trace?turn=t-1") { auth() } }
+        assertTrue(trace.bodyAsText().contains("no turn t-1"), trace.bodyAsText())
 
         val wire = req { get("$url/api/heads/$HEAD_KEY/wire?last=1") { auth() } }
         assertEquals(HttpStatusCode.OK, wire.status, wire.bodyAsText())

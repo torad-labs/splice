@@ -34,7 +34,6 @@ import splice.head.trace.TraceCommand
 import splice.head.trace.TraceDirPort
 import splice.head.trace.TraceHeadSource
 import splice.head.trace.TraceHeads
-import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import java.nio.file.FileSystemException
 import java.nio.file.Files
@@ -129,7 +128,6 @@ class TraceDeleteRoutesTest {
         assertEquals(HttpStatusCode.OK, before.status)
         assertEquals("1", field(before.body, "records"))
         assertEquals((Files.size(own) + Files.size(ownPack)).toString(), field(before.body, "bytes"))
-        assertEquals("1", field(reader.read("alpha", TraceQuery(null, null, null)).body, "on_disk"))
 
         val deleted = routes.delete("alpha")
         assertEquals(HttpStatusCode.OK, deleted.status, deleted.body)
@@ -142,9 +140,7 @@ class TraceDeleteRoutesTest {
         assertFalse(Files.exists(dir.resolve("alpha-2026-09-19.jsonl"), LinkOption.NOFOLLOW_LINKS))
         assertEquals("1", field(deleted.body, "records"))
         assertEquals("0", field(routes.kept("alpha").body, "records"))
-        assertEquals("deleted", field(reader.read("alpha", TraceQuery(null, null, null)).body, "state"))
-        assertEquals("0", field(reader.read("alpha", TraceQuery(null, null, null)).body, "on_disk"))
-        val missing = reader.read("alpha", TraceQuery(null, null, "turn-alpha-1"))
+        val missing = reader.read("alpha", "turn-alpha-1")
         assertEquals(HttpStatusCode.BadRequest, missing.status)
         assertEquals("trace deleted", field(missing.body, "error"))
 
@@ -152,7 +148,6 @@ class TraceDeleteRoutesTest {
 
         record(alpha, "alpha")
         assertEquals("1", field(routes.kept("alpha").body, "records"))
-        assertEquals("1", field(reader.read("alpha", TraceQuery(null, null, null)).body, "on_disk"))
     }
 
     @Test

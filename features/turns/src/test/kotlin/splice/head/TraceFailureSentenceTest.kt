@@ -21,7 +21,6 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
-import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
@@ -32,7 +31,7 @@ private const val FAILURE = "the connection to chatgpt.com:443 closed mid-reques
 
 class TraceFailureSentenceTest {
     @Test
-    fun `one failed turn serves its spoken failure under the outcome`(@TempDir root: Path) = runBlocking {
+    fun `one failed turn's records carry its spoken failure`(@TempDir root: Path) = runBlocking {
         val store = splice.head.syntheticTraceStore(
             ActivityDays(root, "codex", 7, WallClock { TRACE_DAY }, ownerOnly = true),
             "codex",
@@ -64,10 +63,9 @@ class TraceFailureSentenceTest {
         }
         val heads = TurnsHeadLookup { if (it == "codex") listOf(TurnsHead("codex", compact)) else emptyList() }
         val route = TraceRoute(heads, { root }, Dispatchers.Unconfined)
-        val response = route.read("codex", TraceQuery(null, null, "turn-1"))
+        val response = route.read("codex", "turn-1")
         assertEquals(HttpStatusCode.OK, response.status)
         val body = Json.parseToJsonElement(response.body).jsonObject
-        assertEquals(FAILURE, body.getValue("turn").jsonObject["failure_sentence"]?.jsonPrimitive?.content)
         assertEquals(
             FAILURE,
             body.getValue("records").jsonArray.last().jsonObject["failure_sentence"]?.jsonPrimitive?.content,

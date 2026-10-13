@@ -1,16 +1,10 @@
-// NEW: V4-239 — GET /api/heads/{head}/trace[?last=N][&session=S][&turn=ID]: what `splice trace <head>`
-// prints, for the console. It reads the SAME day files the verb reads, through TraceRows, and selects
-// and summarises turns the same way, so the two cannot disagree about a turn:
+// NEW: V4-239 — GET /api/heads/{head}/trace?turn=ID: one turn's records, as `splice trace --turn` prints them, for
+// the console: {records: [every record of the turn, as written]}. It reads the SAME day files the verb reads, through
+// TraceRows, so the two cannot disagree about a turn. A read without a turn is refused: the console opens one turn
+// at a time, and the verb lists turns from the files itself.
 //
-//   no turn      {head, files, on_disk, skipped_lines, turns: [{id, ts, session, model, compact, open,
-//                 outcome, rounds, attempts, total_ms}]}, the newest [last] (default 20), oldest first
-//   ?turn=ID     {head, turn: <that summary>, cost_usd, records: [every record of the turn, as written]}
-//                (V4-345: cost_usd is the ended turn priced at its model's card, null with no card, and
-//                absent for an open turn)
-//
-// THE LIST CARRIES NO BODY. A body is the user's conversation; it leaves only for the one turn a reader
-// opened, as `splice trace --turn` prints it. The records are the TraceStore's own, headers redacted by
-// name when they were written (HeaderRedaction), bodies exact up to the cap.
+// A body is the user's conversation; it leaves only for the one turn a reader opened. The records are the
+// TraceStore's own, headers redacted by name when they were written (HeaderRedaction), bodies exact up to the cap.
 //
 // WHAT IS ON DISK, CAPTURE ON OR OFF. The files outlive the knob: a head whose trace was turned off
 // keeps the days it recorded until retention deletes them, and the verb reads them either way, so this
@@ -33,12 +27,12 @@ import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
-import splice.head.wire.BAD_LAST
 import splice.http.JsonReply
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 
 internal const val TRACE_UNWIRED = "the daemon wired no trace directory; /api/heads/{head}/trace cannot read it"
+internal const val TRACE_NO_TURN = "a trace read names one turn: ?turn=ID"
 internal const val TRACE_DELETED_STATE = "deleted"
 internal const val TRACE_DELETED_REASON = "trace deleted"
 
@@ -47,10 +41,6 @@ internal const val TRACE_DELETED_REASON = "trace deleted"
 public fun interface TraceDirPort {
     public operator fun invoke(): Path?
 }
-
-/** The query parameters, as they arrived: [last] a count, [session] a session id prefix, [turn] one
- *  turn's id. Blank reads as absent. */
-public data class TraceQuery(val last: String?, val session: String?, val turn: String?)
 
 /** The words to find in what a head's turns sent and got back: [q] the text, [since] the oldest instant to read back to
  *  (epoch ms), [limit] how many turns to answer with. Blank reads as absent. */
@@ -61,7 +51,6 @@ public class TraceRoute(
     private val heads: TurnsHeadLookup,
     private val dir: TraceDirPort,
     private val io: CoroutineDispatcher,
-    private val cause: TraceFailureCause = TraceFailureCause { _, _, _ -> null },
     heap: HeapBudget = JvmHeap.budget,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
@@ -95,55 +84,36 @@ public class TraceRoute(
                     }
                 }
             }.getOrElse { return unreadable(head.key, traceDir, it) }
-            JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).search(head, ask.needle, read))
+            JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).search(head, read))
         }
 
-    public suspend fun read(head: String, query: TraceQuery): JsonReply {
+    /** GET /api/heads/{head}/trace?turn=ID: that turn's records, read on [io] from the newest line until whole. */
+    public suspend fun read(head: String, turn: String?): JsonReply {
         val found = heads.byName(head).firstOrNull()
-        val last = query.last?.takeIf { it.isNotBlank() }
-        val count = if (last == null) DEFAULT_LAST else last.toIntOrNull()?.takeIf { it > 0 }
+        val asked = turn?.takeIf { it.isNotBlank() }
         val traceDir = dir()
         return when {
             found == null -> refuse(HttpStatusCode.BadRequest, "unknown head: $head")
-            count == null -> refuse(HttpStatusCode.BadRequest, BAD_LAST)
+            asked == null -> refuse(HttpStatusCode.BadRequest, TRACE_NO_TURN)
             traceDir == null -> refuse(HttpStatusCode.ServiceUnavailable, TRACE_UNWIRED)
-            else -> answer(found, traceDir, query, count)
+            else -> one(found.key, traceDir, asked)
         }
     }
 
-    /** V4-338: the list says how many turns are on disk, so it reads every line, holding one at a time and
-     *  the records of the turns it lists; one turn's read stops once it holds that turn. Both run on [io]. */
-    private suspend fun answer(head: TurnsHead, traceDir: Path, query: TraceQuery, last: Int): JsonReply {
-        val turn = query.turn?.takeIf { it.isNotBlank() }
-        val ask = TraceAsk(last, query.session?.takeIf { it.isNotBlank() }, turn)
-        return if (turn == null) list(head.key, traceDir, ask) else one(head, traceDir, ask, turn)
-    }
-
-    private suspend fun list(key: String, traceDir: Path, ask: TraceAsk): JsonReply = rows.withRead { share ->
-        val read = withContext(io) {
-            Cancellables.runCatchingCancellable { rows.summaries(traceDir, key, ask, share) }
+    private suspend fun one(key: String, traceDir: Path, turn: String): JsonReply = rows.withRead { share ->
+        val turns = withContext(io) {
+            Cancellables.runCatchingCancellable { rows.turns(traceDir, key, TraceAsk(1, turn = turn), share) }
         }.getOrElse { return unreadable(key, traceDir, it) }
-        JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).list(key, traceDir, read))
-    }
-
-    private suspend fun one(head: TurnsHead, traceDir: Path, ask: TraceAsk, turn: String): JsonReply =
-        rows.withRead { share ->
-            val key = head.key
-            val turns = withContext(io) {
-                Cancellables.runCatchingCancellable { rows.turns(traceDir, key, ask, share) }
-            }.getOrElse { return unreadable(key, traceDir, it) }
-            if (turns.isEmpty()) {
-                val reason = when {
-                    DayFiles(traceDir, key).deleted() -> TRACE_DELETED_REASON
-                    else -> "no turn $turn in $key's trace"
-                }
-                refuse(HttpStatusCode.BadRequest, reason)
-            } else {
-                val selected = turns.single()
-                val failureCause = withContext(io) { cause.read(key, selected.id, selected.startedAt) }
-                JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).turn(head, selected, failureCause))
+        if (turns.isEmpty()) {
+            val reason = when {
+                DayFiles(traceDir, key).deleted() -> TRACE_DELETED_REASON
+                else -> "no turn $turn in $key's trace"
             }
+            refuse(HttpStatusCode.BadRequest, reason)
+        } else {
+            JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).turn(turns.single()))
         }
+    }
 
     /** V4-286: a trace dir or day that cannot be read is said, never an empty list blaming the knob. */
     private fun unreadable(key: String, traceDir: Path, failure: Throwable): JsonReply {

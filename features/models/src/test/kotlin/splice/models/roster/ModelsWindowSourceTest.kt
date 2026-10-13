@@ -1,6 +1,5 @@
-// NEW: console review 2026-09-24 — /api/models says where each row's window came from. A head that
-// declares its own context_window replaces the provider's number on every entry, rule and the
-// default; the route labelled that number "model" while the console's detail said "head window 300k".
+// NEW: console review 2026-09-24 — the windows /api/models reports for each row: the number in force, and the
+// ceiling the provider publishes. Its context_window_source cases went on Oct 12, 2026 with the field (marlin's call).
 package splice.models.roster
 
 import kotlinx.serialization.json.Json
@@ -31,37 +30,8 @@ class ModelsWindowSourceTest {
     private val slots = listOf(HeadModel("grok-4.6", "opus"), HeadModel("grok-code-9", "sonnet"))
     private val declared = mapOf("xai" to DeclaredHead("xai", slots))
 
-    private fun sources(head: HeadConfig, discovered: List<DiscoveredModel> = emptyList()): Map<String, String> {
-        val catalog = provider.catalogFor(head, discovered = discovered)
-        val payload = ModelsRoute(listOf(RosterHead("xai", catalog))).modelsJson(declared)
-        return Json.parseToJsonElement(payload).jsonObject.getValue("heads").jsonArray.single().jsonObject
-            .getValue("models").jsonArray.associate {
-                val row = it.jsonObject
-                row.getValue("id").jsonPrimitive.content to row.getValue("context_window_source").jsonPrimitive.content
-            }
-    }
-
     @Test
-    fun `a head that declares its window says so on every row`() {
-        val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000)
-        assertEquals(mapOf("grok-4.6" to "head", "grok-code-9" to "head"), sources(head))
-    }
-
-    @Test
-    fun `a head without its own window keeps the provider's provenance`() {
-        val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6")
-        assertEquals(mapOf("grok-4.6" to "model", "grok-code-9" to "rule"), sources(head))
-    }
-
-    @Test
-    fun `a discovered model's published ceiling under the head's window is the model's number`() {
-        val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000)
-        val discovered = listOf(DiscoveredModel("grok-4.7", contextWindow = 128_000))
-        assertEquals("model", sources(head, discovered)["grok-4.7"])
-    }
-
-    @Test
-    fun `forwarded model rows report the capped native window and its provenance`() {
+    fun `forwarded model rows report the capped native window`() {
         val native = provider.copy(
             auth = AuthConfig("client"),
             models = listOf(
@@ -78,9 +48,7 @@ class ModelsWindowSourceTest {
                 row.jsonObject.getValue("id").jsonPrimitive.content to row.jsonObject
             }
         assertEquals(200_000L, rows.getValue("native-small").getValue("context_window").jsonPrimitive.long)
-        assertEquals("model", rows.getValue("native-small").getValue("context_window_source").jsonPrimitive.content)
         assertEquals(1_000_000L, rows.getValue("native-wide").getValue("context_window").jsonPrimitive.long)
-        assertEquals("head", rows.getValue("native-wide").getValue("context_window_source").jsonPrimitive.content)
     }
 
     @Test

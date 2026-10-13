@@ -44,23 +44,6 @@ import splice.core.topology.HeadModel
 internal const val MODELS_UNWIRED =
     "the daemon did not wire the declared roster; /api/models cannot report slots or providers"
 
-/** The `context_window_source` labels. A LABEL the console renders and NEVER parses — same contract
- *  as the compaction-instruction scopes — so a new value is a display change and not a protocol one.
- *
- *  THE KEY IS `context_window_source`, AND THIS FILE SHIPPED IT AS `window_source` FIRST. It pairs
- *  with `context_window` on the same row, so a reader needs no inference to know WHICH window's
- *  provenance it reports; the contract's own line had to spend a following sentence saying exactly
- *  that, and a name needing its own contract to explain it is the wrong name. The console declares
- *  the field NON-OPTIONAL in TS read off a live daemon, so the mismatch was invisible to the compiler
- *  and to every fixture — the fixtures spelled it the console's way, so the two hand-authored
- *  artifacts agreed with each other and disagreed with the daemon. */
-private const val WINDOW_FROM_MODEL = "model"
-private const val WINDOW_FROM_HEAD = "head"
-private const val WINDOW_FROM_RULE = "rule"
-private const val WINDOW_FROM_EXTRA = "extra-window"
-private const val WINDOW_FROM_DEFAULT = "default"
-private const val WINDOW_UNKNOWN = "unknown"
-
 public class ModelsRoute(private val heads: List<RosterHead>) {
 
     /** [declared] ARRIVES AT CALL TIME rather than being held — the routing lambda reads the server's
@@ -122,7 +105,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("label", entry.label)
                     put("description", entry.description)
                     put("context_window", entry.contextWindow)
-                    put("context_window_source", resolvedWindowSource(entry, catalog))
                     // The largest window the provider itself publishes for this model, absent where it publishes none:
                     // the number the console caps a window field at, and says so where there is none.
                     entry.maxContextWindow?.takeIf { it > 0 }?.let { put("max_context_window", it) }
@@ -150,7 +132,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("label", "")
                     put("description", "")
                     put("context_window", windowFor(slot.id, catalog))
-                    put("context_window_source", windowSourceFor(slot.id, catalog))
                     put("resolved", false)
                     put("slot", slot.slot)
                     put("pinned", false)
@@ -162,30 +143,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
 
     private fun isPinned(catalog: ModelCatalog?, entry: ModelEntry): Boolean =
         catalog?.pinnedModel?.isNotEmpty() == true && catalog.pinnedModel == entry.id
-
-    /** WHERE this row's window number comes from. Only a row that resolved has the model's own
-     *  declared window; an unresolved slot can still be given one by a prefix rule, an extra window
-     *  or the head's default, and saying which is the difference between a number an operator can
-     *  check and a number they have to trust. */
-    private fun windowSourceFor(id: String, catalog: ModelCatalog?): String = when {
-        catalog == null -> WINDOW_UNKNOWN
-        catalog.models.any { it.id == id } -> WINDOW_FROM_MODEL
-        // the head's window replaced every extra window, rule and the default alike
-        catalog.windows.headWindow != null -> WINDOW_FROM_HEAD
-        catalog.windows.extraWindows.any { it.id == id } -> WINDOW_FROM_EXTRA
-        catalog.windows.windowRules.any { id.startsWith(it.prefix) } -> WINDOW_FROM_RULE
-        else -> WINDOW_FROM_DEFAULT
-    }
-
-    /** A resolved row's window is the head's when the head declared one and it is the number in force;
-     *  a discovered model whose published ceiling sits under the head's window keeps that ceiling
-     *  (ProviderConfig.headWindow clamps to it), and that number is the model's. */
-    private fun resolvedWindowSource(entry: ModelEntry, catalog: ModelCatalog?): String =
-        if (catalog?.windows?.headWindow != null && entry.contextWindow == catalog.windows.headWindow) {
-            WINDOW_FROM_HEAD
-        } else {
-            WINDOW_FROM_MODEL
-        }
 
     private fun windowFor(id: String, catalog: ModelCatalog?): Long? = when {
         catalog == null -> null

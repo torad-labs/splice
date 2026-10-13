@@ -843,7 +843,7 @@ async function readTrace(r) {
   const records = res.ok ? res.body?.records || [] : [];
   if (res.ok && records.length) {
     const tr = traceFrom(records, r);
-    traces.set(r.id, { state: tr.cut ? "cut" : "kept", tr });
+    traces.set(r.id, { state: tr.cut ? "cut" : "kept", tr, body: res.body });
   } else {
     traces.set(r.id, { state: refusedState(res, r), tr: null });
   }
@@ -949,6 +949,12 @@ function framesOf(text, transport) {
 // the moment Sessions lands and not an hour before, so it is never a 404 with an empty body.
 // every request with a session opens it, an ended agent included (Sessions reads history), at the moment this request
 // finished, so its own answer is on the page (splice-sessions, Oct 12)
+// The loaded record as the trace route answered it (TraceRoute), to copy or save whole: what a bug report or a
+// provider ticket needs is the exact JSON, not the drawn view. Only once it is read; before that there is nothing to give.
+const recordActs = (r) => (traces.get(r.id)?.body
+  ? `<button class="act" data-act="copyrec">Copy JSON</button><button class="act" data-act="saverec">Download</button>` : "");
+const recordJson = () => { const r = state.rows.find((x) => x.id === ui.open); return r ? JSON.stringify(traces.get(r.id)?.body ?? null, null, 2) : null; };
+
 const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.html")
   ? `<a class="act" href="sessions.html?at=${+r.ts}#${esc(r.sid)}">Open session</a>` : "");
 
@@ -999,7 +1005,7 @@ function paneHtml() {
       + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>`
     : unanswered ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">No answer</span></p>` : ""; // fin's words, hitstop f4581a6
   return RV.paneHtml(r, { said: said + noteHtml(r, who), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
-    acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
+    acts: `${openSession(r)}${recordActs(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st),
     tr: () => traceOf(r), cells: unbilled ? ["cost", "attempts"] : ["in", "write", "out", "cost", "attempts"], cost: costText(r),
     costSub: r.cost == null && r.planValue != null ? `${money(r.planValue)} at API prices` : "" });
@@ -1111,6 +1117,13 @@ document.addEventListener("click", (e) => {
     case "goto": goTo(document.getElementById("goto")?.value); break;
     case "upto": upTo(v ? +v : null); scrollTo(0, 0); break;
     case "more": ui.n += 200; render(); break;
+    case "copyrec": { const j = recordJson(); if (j) navigator.clipboard?.writeText(j).then(() => { el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy JSON"; }, 1600); }, () => {}); break; }
+    case "saverec": {
+      const j = recordJson(); if (!j) break;
+      const a = document.createElement("a"), url = URL.createObjectURL(new Blob([j], { type: "application/json" }));
+      a.href = url; a.download = `splice-request-${ui.open}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+      break;
+    }
     case "close": {
       ui.open = null; ui.auto = false; render();
       const at = ui.listAt; ui.listAt = null;

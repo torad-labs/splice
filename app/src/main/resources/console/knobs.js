@@ -128,7 +128,7 @@ const KNOBS = (() => {
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
     cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
-    said: {}, unsaved: {}, undo: {}, undoT: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    said: {}, unsaved: {}, undo: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -415,10 +415,10 @@ const KNOBS = (() => {
     return true;
   }
   /** Sends the change and redraws when the daemon answers; the row says "Saving" with the wait ring while it is out. */
-  // A SINGLE PICK CONFIRMS BY SHOWING WHAT IT REPLACED (Marlin, fin, Oct 13, gap 458): for a few seconds the row shows the
-  // old value struck beside the new one, with Undo; then Applied stays, as before. Undo sends the old value back, which
-  // is no value at all where the row followed the shared one or splice's default, and its own result reads Applied.
-  const UNDO_MS = 6000;
+  // A SINGLE PICK CONFIRMS BY SHOWING WHAT IT REPLACED (Marlin, fin, hitstop, Oct 13, gap 458): the row shows the old
+  // value struck beside Applied, with Undo, until that row changes again or the page reloads, so a glance at another row
+  // never loses the way back. Undo sends the old value back, which is no value at all where the row followed the shared
+  // one or splice's default, and its own result reads Applied.
   function sent(id, v, render, sure = false, undoable = true) {
     const [key, cmd] = id.split("@"), k = KNOB[key], at = valueOf(k), own = cmd ? ownValue(key, cmd) : undefined;
     const was = cmd ? own ?? null : at.src === "default" ? null : at.v;
@@ -427,11 +427,7 @@ const KNOBS = (() => {
     delete st.said[id]; delete st.undo[id];
     patch(id, v, sure).then((r) => {
       delete st.slow[id];
-      if (undoable && r?.ok) {
-        st.undo[id] = { v: was, word: wasWord };
-        clearTimeout(st.undoT[id]);
-        st.undoT[id] = setTimeout(() => { delete st.undo[id]; render(); }, UNDO_MS);
-      }
+      if (undoable && r?.ok) st.undo[id] = { v: was, word: wasWord };
       render(r);
     }).catch(() => { delete st.slow[id]; st.bad[id] = "Not saved"; render(); });
   }

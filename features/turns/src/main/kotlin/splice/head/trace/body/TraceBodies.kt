@@ -43,6 +43,10 @@ internal class TraceBodies(
     private var activeFile: Path? = null
     private var activeIndex = TracePackIndex(heap)
     private val fullLog = TracePackFullLog(log, maxPackBytes)
+
+    // Its own, so a refused body and a refused index line, which meet the floor together, are each said once.
+    private val indexFullLog = TracePackFullLog(log, maxPackBytes)
+
     private val resolution = TraceBodyResolution(budget, decoder, validation)
 
     /** Runs on ActivityDays' one file lane. No complete record String or complete encoded body is built. */
@@ -53,22 +57,29 @@ internal class TraceBodies(
             activeIndex = TracePackIndex(heap)
         }
         return budget.withLock(day.parent) {
-            if (budget.evicted(day)) {
-                return@withLock encodeReferences(replace(record) { resolution.unavailable(BODY_BUDGET_EVICTED_REASON) })
-            }
-            try {
-                if (!Files.exists(file, NOFOLLOW_LINKS)) budget.admit(file, TRACE_PACK_START_BYTES.toLong())
-                TraceBodyPack(file, activeIndex, maxPackBytes, budget).use { pack ->
-                    val references = replace(record) { value ->
-                        val text = JsonScalars.str(value) ?: throw IOException("trace body is not a literal")
-                        literal(text, pack)
+            val line = if (budget.evicted(day)) {
+                encodeReferences(replace(record) { resolution.unavailable(BODY_BUDGET_EVICTED_REASON) })
+            } else {
+                try {
+                    if (!Files.exists(file, NOFOLLOW_LINKS)) budget.admit(file, TRACE_PACK_START_BYTES.toLong())
+                    TraceBodyPack(file, activeIndex, maxPackBytes, budget).use { pack ->
+                        val references = replace(record) { value ->
+                            val text = JsonScalars.str(value) ?: throw IOException("trace body is not a literal")
+                            literal(text, pack)
+                        }
+                        encodeReferences(references)
                     }
-                    encodeReferences(references)
+                } catch (capacity: DayBodyCapacityException) {
+                    fullLog.full(file, capacity.reason)
+                    encodeReferences(replace(record) { resolution.unavailable(capacity.reason) })
                 }
-            } catch (capacity: DayBodyCapacityException) {
-                fullLog.full(file, capacity.reason)
-                encodeReferences(replace(record) { resolution.unavailable(capacity.reason) })
             }
+            // The index obeys the bodies' free-space floor too: below it the record is dropped, said once per day.
+            budget.indexRefusal(day, line.size.toLong())?.let { reason ->
+                indexFullLog.full(day, reason)
+                throw DayBodyCapacityException(reason)
+            }
+            line
         }
     }
 

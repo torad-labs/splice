@@ -8,12 +8,14 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.storage.BODY_BUDGET_EVICTED_REASON
 import splice.core.storage.DAY_BODY_SUFFIX
 import splice.core.storage.DayBodyBudget
+import splice.core.storage.DayBodyCapacityException
 import splice.core.storage.DayVolumeSpace
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -42,7 +44,7 @@ class TraceRollingBudgetTest {
     }
 
     @Test
-    fun `the volume floor refuses new bodies but keeps stored bodies reusable`(@TempDir dir: Path) {
+    fun `the volume floor refuses the whole record while stored bodies stay reusable`(@TempDir dir: Path) {
         var free = Long.MAX_VALUE
         val policy = DayBodyBudget(
             ROLLING_FIXTURE_BYTES,
@@ -54,9 +56,12 @@ class TraceRollingBudgetTest {
         val bodies = TraceBodies(budget = policy, heap = splice.head.syntheticHeapBudget())
         val first = encoded(bodies, day, "synthetic first")
         free = ROLLING_FIXTURE_FLOOR
-        val refused = encoded(bodies, day, "synthetic other")
-        assertEquals("trace volume free-space floor reached", body(refused)["reason"]?.jsonPrimitive?.content)
-        assertEquals("true", body(refused)["unavailable"]?.jsonPrimitive?.content)
+        // Below the floor neither a new body nor the index line of a stored one is written.
+        for (text in listOf("synthetic other", "synthetic first")) {
+            val refused = assertThrows(DayBodyCapacityException::class.java) { encoded(bodies, day, text) }
+            assertEquals("trace volume free-space floor reached", refused.reason)
+        }
+        free = Long.MAX_VALUE
         assertEquals(first, encoded(bodies, day, "synthetic first"))
         assertEquals(record("synthetic first"), bodies.hydrate(first, day))
     }

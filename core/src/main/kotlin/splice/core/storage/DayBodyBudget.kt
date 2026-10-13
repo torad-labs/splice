@@ -27,6 +27,9 @@ internal const val DAY_BODY_EVICTED_SUFFIX: String = ".bodies-evicted"
 
 public const val BODY_BUDGET_EVICTED_REASON: String = "evicted by the body budget"
 
+/** Why a write was refused below the free-space floor: a body, or the index line beside it. */
+private const val FLOOR_REACHED = "trace volume free-space floor reached"
+
 /** The usable bytes on the volume containing a trace directory. */
 public fun interface DayVolumeSpace {
     public fun available(dir: Path): Long
@@ -71,13 +74,18 @@ public class DayBodyBudget(
     public fun evicted(day: Path): Boolean =
         Files.isRegularFile(marker(day), NOFOLLOW_LINKS)
 
+    /** The index line a day file takes obeys the bodies' free-space floor: null when [bytes] fit above it, else why
+     *  not. It has no share of [maxBytes]: the day window bounds the index, and only the volume can run out. */
+    public fun indexRefusal(day: Path, bytes: Long): String? =
+        space.available(day.parent).takeIf { it < minFreeBytes || bytes > it - minFreeBytes }?.let { FLOOR_REACHED }
+
     private fun fits(dir: Path, stored: Long, growth: Long): Boolean =
         growth <= maxBytes && stored <= maxBytes - growth &&
             space.available(dir).let { it >= minFreeBytes && growth <= it - minFreeBytes }
 
     private fun reason(dir: Path, growth: Long): String =
         if (space.available(dir).let { it < minFreeBytes || growth > it - minFreeBytes }) {
-            "trace volume free-space floor reached"
+            FLOOR_REACHED
         } else {
             "shared rolling trace body budget exhausted"
         }

@@ -59,16 +59,12 @@ internal class HeadRemoval(
     /** What stays, and who is on the command now. */
     fun read(key: String): JsonReply {
         val topology = stored() ?: return refusal(HttpStatusCode.ServiceUnavailable, "topology is not wired")
-        val head = topology.heads[key] ?: return refusal(HttpStatusCode.NotFound, "unknown head: $key")
+        if (key !in topology.heads) return refusal(HttpStatusCode.NotFound, "unknown head: $key")
         return JsonReply(
             HttpStatusCode.OK,
             buildJsonObject {
-                put("key", key)
-                put("command", commandOf(key, topology))
                 put("requests", facts.requestsOf(key))
                 put("sessions", facts.sessionsOf(key))
-                put("live_sessions", facts.sessionList(facts.liveOn(key)))
-                put("provider", head.provider)
             }.toString(),
         )
     }
@@ -119,17 +115,9 @@ internal class HeadRemoval(
             retired.rejoin(key)
             return refusal(HttpStatusCode.ServiceUnavailable, "topology is not wired")
         }
-        val unlinked = unlink(command, topology.heads.filterKeys { it != key }.keys, topology)
+        unlink(command, topology.heads.filterKeys { it != key }.keys, topology)
         AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE)).set(key, emptyList())
-        return JsonReply(
-            HttpStatusCode.OK,
-            buildJsonObject {
-                put("ok", true)
-                put("restart_required", true)
-                put("wrapper_removed", unlinked)
-                result.backup?.let { put("backup_path", it.toString()) }
-            }.toString(),
-        )
+        return JsonReply(HttpStatusCode.OK, "{}")
     }
 
     /** The writer's refusal, said and logged: a file that changed since splice read it, or a finding the remaining
@@ -161,14 +149,15 @@ internal class HeadRemoval(
 
     private fun commandOf(key: String, topology: Topology): String = topology.heads[key]?.claude?.command ?: key
 
-    /** The wrapper link goes unless another head still answers to the same command. True when it went. */
-    private fun unlink(command: String, others: Set<String>, topology: Topology): Boolean {
-        if (others.any { commandOf(it, topology) == command }) return false
+    /** The wrapper link goes unless another head still answers to the same command; a link that will not go stays. */
+    private fun unlink(command: String, others: Set<String>, topology: Topology) {
+        if (others.any { commandOf(it, topology) == command }) return
         val bin = wrapperBin() ?: InstallPaths().binDir
         val link = bin.resolve(command)
-        if (!isOwnLink(bin, link, command)) return false
-        return Cancellables.runCatchingCancellable { Files.delete(link) }
-            .fold(onSuccess = { true }, onFailure = { false })
+        if (!isOwnLink(bin, link, command)) return
+        if (Cancellables.runCatchingCancellable { Files.delete(link) }.isFailure) {
+            log("[models] the $command wrapper link at $link could not be removed; it stays")
+        }
     }
 
     private fun isOwnLink(bin: Path, link: Path, command: String): Boolean =

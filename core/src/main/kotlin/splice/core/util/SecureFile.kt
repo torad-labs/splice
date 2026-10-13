@@ -135,7 +135,7 @@ public object SecureFile {
             // The bytes reach the disk before the name moves, so a power cut leaves the old file or the new one, never an
             // empty one (splice-config, Oct 13: a cut during splice add could leave an empty splice.toml).
             FileChannel.open(tmp, StandardOpenOption.WRITE).use { channel ->
-                channel.write(ByteBuffer.wrap(content.toByteArray(Charsets.UTF_8)))
+                writeAll(channel, content.toByteArray(Charsets.UTF_8))
                 channel.force(true)
             }
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
@@ -169,7 +169,7 @@ public object SecureFile {
         val temp = ownerOnlyTemp(parent)
         try {
             FileChannel.open(temp, StandardOpenOption.WRITE).use { channel ->
-                channel.write(ByteBuffer.wrap(bytes))
+                writeAll(channel, bytes)
                 channel.force(true)
             }
             linkOrWrite(path, temp, bytes)
@@ -201,6 +201,15 @@ public object SecureFile {
             Files.newByteChannel(path, options)
         }
         Channels.newOutputStream(channel).use { it.write(bytes) }
+    }
+
+    /** Every byte of [bytes] into [channel]: one write may take fewer than it was given, and the staged file must be
+     *  whole before it replaces the target. */
+    private fun writeAll(channel: FileChannel, bytes: ByteArray) {
+        val buffer = ByteBuffer.wrap(bytes)
+        while (buffer.hasRemaining()) {
+            val _ = channel.write(buffer)
+        }
     }
 
     /** An empty owner-only file beside the eventual one in [parent], so a later move or link stays on its volume. */

@@ -48,15 +48,6 @@ internal class WorkerChannel(
         }
     }
 
-    /** Cancellation callbacks must not block on the reaper or throw on its undefined thread. */
-    internal fun closeQuietly() {
-        if (closed.compareAndSet(false, true)) {
-            cleanup(null, CodeModeCleanup(::destroyProcess))
-            cleanup(null, CodeModeCleanup { closeStream(output) })
-            cleanup(null, CodeModeCleanup { closeStream(input) })
-        }
-    }
-
     private fun cleanup(current: CancellationException?, action: CodeModeCleanup): CancellationException? = try {
         action()
         current

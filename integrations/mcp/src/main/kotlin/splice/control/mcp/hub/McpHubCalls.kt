@@ -20,6 +20,11 @@ public interface McpHubCalls {
 
     /** The host's idle sweep, at [now], with the MCP idle limit [idleMs]. */
     public fun sweep(now: Long, idleMs: Long)
+
+    /** Each hub-served server, by the name its holder's record writes, to the launch ids (Claude Code pids) of the
+     *  sessions the front has bound to its holders, shared and per-session alike. Empty when the front saved nothing
+     *  readable (splice-usage's ask for §8's ownership visible per session, Oct 13). */
+    public fun attached(): Map<String, Set<String>>
 }
 
 /** The hub on a machine it cannot run on: the daemon keeps hosting MCP in process, and the front is told why. */
@@ -38,4 +43,6 @@ public class McpHubOff(reason: String) : McpHubCalls {
     override fun sweep(now: Long, idleMs: Long) {
         // Nothing to stop: with the hub off, no holder was started.
     }
+
+    override fun attached(): Map<String, Set<String>> = emptyMap()
 }

@@ -15,10 +15,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.control.mcp.JsonRpcCodec
 import splice.control.mcp.McpResult
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -45,7 +43,6 @@ private const val READY_CHECK_MS = 100L
 
 // why: how much of a digest names a socket: 16 hex keep `<state>/mcp-hub/<key>.sock` far under the 108-byte Unix
 // limit on any home, and 64 bits never collide between the servers one machine runs.
-private const val KEY_HEX = 16
 
 // why: what a scope needs to reach the user's systemd, kept even when a per-session copy takes the session's env.
 private val MANAGER_ENV = listOf("XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS")
@@ -72,6 +69,7 @@ internal class HubHolders(
     private val log: LogSink,
 ) {
     private val starting = ConcurrentHashMap<String, Mutex>()
+    val records: HubRecords = HubRecords(dir)
 
     fun socket(key: String): Path = dir.resolve("${key.take(KEY_HEX)}.sock")
 
@@ -87,14 +85,9 @@ internal class HubHolders(
     /** Stops every holder [keep] no longer keeps: a per-session copy whose session ended, or a shared one no session
      *  needs any more. */
     fun stopUnkept(keep: HubKeep) {
-        if (!Files.isDirectory(dir)) return
-        val records = Files.list(dir).use { paths ->
-            paths.filter { it.fileName.toString().endsWith(".json") }.toList()
-        }
-        records.forEach { record ->
-            val body = read(record) ?: return@forEach
+        records.all().forEach { (record, body) ->
             val launch = JsonScalars.str(body, "launch")?.takeIf { it.isNotEmpty() }
-            val socket = record.resolveSibling(record.fileName.toString().removeSuffix(".json") + ".sock")
+            val socket = records.socketOf(record)
             val held = HubRecord(launch, socket.toString(), JsonScalars.long(body, "at") ?: 0L)
             keep.stopReason(held)?.let { why -> stop(record, socket, JsonScalars.long(body, "pid"), why) }
         }
@@ -184,13 +177,7 @@ internal class HubHolders(
     }
 
     private fun recordedPid(key: String): Long? =
-        JsonScalars.long(read(dir.resolve("${key.take(KEY_HEX)}.json")), "pid")
-
-    private fun read(record: Path): JsonObject? = try {
-        record.takeIf(Files::isRegularFile)?.let { JsonRpcCodec().parse(Files.readString(it)) }
-    } catch (_: IOException) {
-        null
-    }
+        JsonScalars.long(records.read(dir.resolve("${key.take(KEY_HEX)}.json")), "pid")
 
     private fun holderAlive(pid: Long, socket: Path): Boolean = ProcessHandle.of(pid)
         .filter { it.isAlive }

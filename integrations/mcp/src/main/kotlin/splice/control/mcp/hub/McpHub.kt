@@ -77,6 +77,18 @@ private data class SharedView(
      *  carries its old last_call until the front saves its new handshake. */
     fun idle(record: HubRecord): Boolean =
         lastCalls[record.socket]?.let { now - maxOf(it, record.recordedAt) >= idleMs } == true
+
+    /** Why a shared holder stops, or null while it stays: it stays while the front cannot say who is bound, while a
+     *  session is bound to it or a current plan names it, and while it may still be starting for a session the front
+     *  has not saved yet. */
+    fun stopReason(record: HubRecord): String? = when {
+        bound == null -> null
+        idle(record) -> IDLE
+        bound.any { it.socket == record.socket } -> null
+        record.socket in current -> null
+        now - record.recordedAt < SHARED_GRACE_MS -> null
+        else -> ORPHANED
+    }
 }
 
 public class McpHub(
@@ -137,22 +149,19 @@ public class McpHub(
         val view = SharedView(bound, bound?.let(::currentShared).orEmpty(), report?.lastCalls.orEmpty(), idleMs, now)
         holders.stopUnkept { record ->
             when (val launch = record.launch) {
-                null -> sharedStop(record, view)
+                null -> view.stopReason(record)
                 else -> ENDED.takeIf { places.of(launch) == null }
             }
         }
     }
 
-    /** Why a shared holder stops, or null while it stays: it stays while the front cannot say who is bound, while a
-     *  session is bound to it or a current plan names it, and while it may still be starting for a session the front
-     *  has not saved yet. */
-    private fun sharedStop(record: HubRecord, view: SharedView): String? = when {
-        view.bound == null -> null
-        view.idle(record) -> IDLE
-        view.bound.any { it.socket == record.socket } -> null
-        record.socket in view.current -> null
-        view.now - record.recordedAt < SHARED_GRACE_MS -> null
-        else -> ORPHANED
+    override fun attached(): Map<String, Set<String>> {
+        val bindings = front.report()?.bindings ?: return emptyMap()
+        val names = holders.records.serverBySocket()
+        return bindings.filter { it.launch.isNotEmpty() }
+            .mapNotNull { binding -> names[binding.socket]?.let { it to binding.launch } }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, launches) -> launches.toSet() }
     }
 
     /** The sockets of every shared holder a current plan names: the user-scope plan's and each bound launch's. */

@@ -13,6 +13,7 @@ class AddRefusalTextTest {
 
     private val refusals: List<AddRefusal> = listOf(
         AddRefusal.KeyTaken("fw"),
+        AddRefusal.KeyUnanswered("fw", "openai"),
         AddRefusal.CommandTaken("claudex"),
         AddRefusal.Unparseable("bad table"),
         AddRefusal.NameRequired("api-key"),

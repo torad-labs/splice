@@ -4,7 +4,6 @@
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -66,7 +65,6 @@ class TeamScreenTest {
         val reply = screen().offer(id, "b1")
         assertEquals(HttpStatusCode.OK, reply.status, reply.body)
         val body = rig.json(reply.body)
-        assertEquals("s-1", body.getValue("session_id").jsonPrimitive.content)
         assertTrue(body.getValue("asked").jsonPrimitive.content.endsWith("Run the tax tests?"), reply.body)
         val choices = body.getValue("choices").jsonArray.map {
             it.jsonObject.getValue("choice").jsonPrimitive.int to it.jsonObject.getValue("label").jsonPrimitive.content
@@ -75,7 +73,6 @@ class TeamScreenTest {
             listOf(1 to "Yes", 2 to "Yes, and don't ask again", 3 to "No, tell Claude what to do differently"),
             choices,
         )
-        assertTrue(body.getValue("choices").jsonArray.first().jsonObject.getValue("here").jsonPrimitive.boolean)
     }
 
     /** The usual case: he started the member from his own tmux, so Teams never opened its pane. The drive is

@@ -135,7 +135,7 @@ class TeamStartTest {
             val id = team().id
             val reply = start().start(id, "b1")
             assertEquals(HttpStatusCode.OK, reply.status, reply.body)
-            val session = rig.json(reply.body).getValue("session_id").jsonPrimitive.content
+            val session = checkNotNull(slot("b1").session)
             val opened = terminal.opened.single()
             assertEquals(session, opened.session)
             assertEquals(
@@ -173,9 +173,7 @@ class TeamStartTest {
             arrives = false
             val reply = start().start(id, "b1")
             assertEquals(HttpStatusCode.Accepted, reply.status, reply.body)
-            assertEquals("needs_you", rig.json(reply.body).getValue("state").jsonPrimitive.content)
-            val session = rig.json(reply.body).getValue("session_id").jsonPrimitive.content
-            assertEquals(session, slot("b1").session)
+            val session = checkNotNull(slot("b1").session)
             assertNotNull(panes.paneFor(session))
             assertTrue(terminal.closed.isEmpty(), "the question stays where he can answer it")
             assertTrue(terminal.pressed.isEmpty(), "splice never answers it for him")
@@ -186,12 +184,13 @@ class TeamStartTest {
         val id = team().id
         terminal.screenText = trustScreen
         arrives = false
-        val asked = rig.json(start().start(id, "b1").body).getValue("session_id").jsonPrimitive.content
+        start().start(id, "b1")
+        val asked = checkNotNull(slot("b1").session)
         terminal.screenText = ""
         arrives = true
         val reply = start().start(id, "b1")
         assertEquals(HttpStatusCode.OK, reply.status, reply.body)
-        assertEquals(asked, rig.json(reply.body).getValue("session_id").jsonPrimitive.content)
+        assertEquals(asked, slot("b1").session)
         assertEquals(1, terminal.opened.size, "no second terminal")
     }
 
@@ -200,7 +199,8 @@ class TeamStartTest {
         val id = team().id
         terminal.screenText = trustScreen
         arrives = false
-        val asked = rig.json(start().start(id, "b1").body).getValue("session_id").jsonPrimitive.content
+        start().start(id, "b1")
+        val asked = checkNotNull(slot("b1").session)
         terminal.live = false
         val reply = start().start(id, "b1")
         assertEquals(HttpStatusCode.Conflict, reply.status, reply.body)
@@ -263,7 +263,8 @@ class TeamStartTest {
     fun `stop presses the stop key in the terminal splice opened, and refuses a session it did not open`() =
         runBlocking {
             val id = team().id
-            val session = rig.json(start().start(id, "b1").body).getValue("session_id").jsonPrimitive.content
+            start().start(id, "b1")
+            val session = checkNotNull(slot("b1").session)
             val stopped = start().stop(id, "b1")
             assertEquals(HttpStatusCode.OK, stopped.status)
             assertEquals(listOf(SessionPane("%$session") to SessionKey.STOP), terminal.pressed)
@@ -284,10 +285,10 @@ class TeamStartTest {
     fun `an answer presses the choice the person picked, in that member's own pane`() =
         runBlocking {
             val id = team().id
-            val session = rig.json(start().start(id, "b1").body).getValue("session_id").jsonPrimitive.content
+            start().start(id, "b1")
+            val session = checkNotNull(slot("b1").session)
             val answered = start().answer(id, "b1", 3)
             assertEquals(HttpStatusCode.OK, answered.status, answered.body)
-            assertEquals(session, rig.json(answered.body).getValue("session_id").jsonPrimitive.content)
             assertEquals(listOf(SessionPane("%$session") to SessionKey.CHOICE_3), terminal.pressed)
         }
 

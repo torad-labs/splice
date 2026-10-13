@@ -160,8 +160,8 @@ public class SessionDrive(
         val at = locate(driving, session, SCREEN_NOT_OURS, "its terminal is closed, so nothing is being asked")
         val pane = at.pane ?: return requireNotNull(at.refusal)
         return Cancellables.runCatchingCleanup { driving.terminal.screen(pane) }.fold(
-            onSuccess = { offered(session, choices.on(it)) },
-            onFailure = { offered(session, ScreenOffer("", emptyList())) },
+            onSuccess = { offered(choices.on(it)) },
+            onFailure = { offered(ScreenOffer("", emptyList())) },
         )
     }
 
@@ -176,7 +176,7 @@ public class SessionDrive(
         val pane = at.pane ?: return requireNotNull(at.refusal)
         acted.acted(session)
         return Cancellables.runCatchingCleanup { act(driving, pane) }.fold(
-            onSuccess = { JsonReply(HttpStatusCode.OK, buildJsonObject { put("session_id", session) }.toString()) },
+            onSuccess = { JsonReply(HttpStatusCode.OK, "{}") },
             onFailure = { refuse(HttpStatusCode.BadGateway, TERMINAL_REFUSED + SafeFailureText.render(it), REFUSED) },
         )
     }
@@ -209,10 +209,9 @@ public class SessionDrive(
     /** Either the pane to act in or the refusal, never both. SessionContinue reads it to end a client in its pane. */
     internal data class Located(val pane: SessionPane? = null, val refusal: JsonReply? = null)
 
-    private fun offered(session: String, offer: ScreenOffer): JsonReply = JsonReply(
+    private fun offered(offer: ScreenOffer): JsonReply = JsonReply(
         HttpStatusCode.OK,
         buildJsonObject {
-            put("session_id", session)
             put("asked", offer.asked)
             put("draft", offer.draft)
             // The whole prompt above the choices: the tool, what it runs (framed) and why, read before answering.
@@ -233,7 +232,6 @@ public class SessionDrive(
                             // The digit the person presses, which is the same number POST .../answer takes.
                             put("choice", choice.key.ordinal - firstChoice + 1)
                             put("label", choice.label)
-                            put("here", choice.here)
                         },
                     )
                 }

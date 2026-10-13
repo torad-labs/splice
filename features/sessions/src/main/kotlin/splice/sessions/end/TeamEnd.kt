@@ -8,8 +8,8 @@
 // to lose, or confirmed, each started member is ended as its own End would (SessionEnd), and the answer gives each
 // member's outcome by slot; a member whose session had already ended reads as ended.
 //
-//   200  {"members": [{"slot", "session_id", "status", "reason"?}]}   404  no such team.
-//   409  {"reason": "costs", "members": [{"slot", "session_id", "reason", "draft"?}]}   503  no team store.
+//   200  {"members": [{"slot", "status", "reason"?}]}   404  no such team.
+//   409  {"reason": "costs", "members": [{"slot", "reason", "draft"?}]}   503  no team store.
 package splice.sessions.end
 
 import io.ktor.http.HttpStatusCode
@@ -54,13 +54,12 @@ public class TeamEnd(
             buildJsonObject {
                 reason?.let { put("reason", it) }
                 putJsonArray("members") {
-                    each.forEach { (slot, session, answer) ->
+                    each.forEach { (slot, _, answer) ->
                         // the member's own End answered in our JSON; its reason and any unsent words go on
                         val said = JsonScalars.objectOrNull(Json, answer.body)
                         add(
                             buildJsonObject {
                                 put("slot", slot)
-                                put("session_id", session)
                                 put("status", answer.status.value)
                                 said?.get("reason")?.let { put("reason", it) }
                                 said?.get("draft")?.let { put("draft", it) }

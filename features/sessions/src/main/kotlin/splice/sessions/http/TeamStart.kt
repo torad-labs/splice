@@ -14,11 +14,11 @@
 // instructions (SlotInstructions), and a send to the member by its slot name reaches it (`--name <slot>`). A slot with
 // an account has that account pinned to the new session before it opens, so the first turn is already on it. The
 // route then waits for Claude Code to register that id ([SessionArrival], with a deadline) and answers one of:
-//   200  the member is up: its session id, and what a person types to sit in front of it.
+//   200  the member is up, with an empty body: the page reads its session off the team.
 //   404  no such team or slot.   409  nothing started, and the reason (archived, already running, not launchable).
 //   502  the terminal would not open.   503  there is no terminal to start it in.
 //   202  the terminal opened and Claude Code is asking something before it registers (its folder trust question, a
-//        first-run prompt): {"state": "needs_you", "session_id"}. The slot stays bound and the pane stays open; the page
+//        first-run prompt), also with an empty body. The slot stays bound and the pane stays open; the page
 //        reads the question off .../screen and answers it on his click only, through .../answer. splice never answers
 //        it for him (Marlin, Oct 12). A start asked again for that slot then waits on the SAME pane, its 45 s clock
 //        starting over, and a pane his answer closed (No, exit) gives the slot back.
@@ -194,25 +194,14 @@ public class TeamStart(
         pane: SessionPane,
     ): JsonReply {
         repeat(ARRIVAL_SECONDS.toInt()) {
-            if (arrival.arrived(session, 1)) return up(session)
+            if (arrival.arrived(session, 1)) return JsonReply(HttpStatusCode.OK, "{}")
             val asked = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).offering }
             if (asked.getOrDefault(false)) {
-                return JsonReply(
-                    HttpStatusCode.Accepted,
-                    buildJsonObject {
-                        put("state", "needs_you")
-                        put("session_id", session)
-                    }.toString(),
-                )
+                return JsonReply(HttpStatusCode.Accepted, "{}")
             }
         }
         return didNotComeUp(store, driving, member, session, pane)
     }
-
-    private fun up(session: String) = JsonReply(
-        HttpStatusCode.OK,
-        buildJsonObject { put("session_id", session) }.toString(),
-    )
 
     private fun didNotComeUp(
         store: TeamStore,

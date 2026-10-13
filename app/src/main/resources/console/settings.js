@@ -176,9 +176,14 @@ const cardRow = (cards, cls = "") => `<div class="kcards${cls}" style="--n:${per
 // nothing counts fold continuations, so those rows ship with their rename alone.
 const seenAt = () => Math.max(0, ...(ui.accts || []).map((x) => x.observed_at_epoch_seconds || 0));
 /** The providers whose accounts report no plan window at all: what the 5-hour stand-in covers. */
+// Accounts' own rule for a login it shows as Signed out (accounts.js): its last reading is from before, so this pane draws
+// none of it, where "100% Highest this week" stood on a signed-out login (splice-usage's walk, Oct 13)
+const signedOut = (x) => !x.token_renews && (!x.credential_present || x.auth_exclusion_reason === "credential_missing"
+  || (!!x.refusal && !(x.five_hour_used_percent >= 100 || x.seven_day_used_percent >= 100)));
+// each login reporting no window, by its command and its name: a bare "Primary" said neither which login nor where
 const quietProviders = () => [...new Set((ui.accts || [])
-  .filter((x) => x.credential_present && x.five_hour_used_percent == null && x.seven_day_used_percent == null)
-  .map((x) => x.display_name || x.provider).filter(Boolean))];
+  .filter((x) => !signedOut(x) && x.five_hour_used_percent == null && x.seven_day_used_percent == null)
+  .map((x) => [ks.commandOf?.[(x.heads || [])[0]], x.display_name || x.provider].filter(Boolean).join(" · ")).filter(Boolean))];
 /** Where the reasoning text lands for the picked option, as three lines of a terminal. */
 function reasoningSketch() {
   const where = val("showReasoning");
@@ -200,7 +205,7 @@ function elOf(key) {
   }
   if (key === "usageWarnTokens5h") {
     const quiet = quietProviders();
-    return quiet.length ? `<div class="kel">${chipRow(quiet)}</div>` : "";
+    return quiet.length ? `<div class="kel"><span class="kword">No limit reported</span>${chipRow(quiet)}</div>` : "";
   }
   if (key === "mcpMaxServers") {
     const up = Object.values(ui.mcp?.servers || {}).filter((s) => s.hosted).length;
@@ -324,6 +329,14 @@ function histBar(h) {
   return `<div class="hbar"><span class="hend">${atWord(h.held.oldest_epoch_ms)}</span><div class="hdays" role="img" aria-label="${mbWord(h.cut.bytes)} goes; kept from ${h.window.nothing ? "today" : atWord(w)}">`
     + `${days}<span class="hgone" style="--w:${at}%"></span><b class="hfreed" style="--w:${at}%"><span>${mbWord(h.cut.bytes)}</span></b>${tick}</div><span class="hend">Today</span></div>`;
 }
+// The window the daemon keeps: the saved setting, else the one it falls back to with none saved, the wider of the records
+// window and 35 days (SpliceConfig.historyWindow), which GET /api/history spells. knobs.js's 35 is only the starter file's,
+// so an install with none saved read "Keep for 35 days" over 84 days it was keeping for 90 (splice-usage's walk, Oct 13).
+const keptDays = () => {
+  const w = ui.hist?.window;
+  if (ks.cfg?.knobs?.historyRetentionDays?.scope !== "default" || !w) return val("historyRetentionDays");
+  return w.forever ? null : w.nothing ? 0 : w.days;
+};
 function histRow(r) {
   if (ui.hist === undefined) return drow({ name: r.name, door: r.door, amount: READING });
   if (!ui.hist) return drow({ name: r.name, door: r.door, amount: unreadable });
@@ -334,7 +347,7 @@ function histRow(r) {
     name: r.name, hay: `${r.name} ${KNOB.historyRetentionDays.also}`, door: r.door,
     sw: ALWAYS, // the daemon has no switch for turn statistics: only how far back they go
     amount: amountOf(x, r),
-    keep: `${ctlHtml(KNOB.historyRetentionDays, a ? a.v : val("historyRetentionDays"))}${saidHtml("historyRetentionDays")}${rate}`,
+    keep: `${ctlHtml(KNOB.historyRetentionDays, a ? a.v : keptDays())}${saidHtml("historyRetentionDays")}${rate}`,
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
     more: a && a.h ? `<div class="dmore hask">${histBar(a.h)}<div class="hacts"><button class="act danger small" data-act="shorten">Delete ${fmt(a.h.cut.turns)} requests</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>`
       : a ? `<div class="dmore hask"><div class="hbar reading"><span class="hend"></span><div class="hdays"></div><span class="hend">Today</span></div><div class="hacts"><button class="act danger small" disabled>Delete</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>` : "",
@@ -613,7 +626,7 @@ function planNow() {
   if (a === undefined) return `<div class="card peaks">${READING}</div>`;
   if (!a) return `<p class="pidle"><span class="state limit">Not read</span><span>splice did not answer for its accounts</span></p>`;
   const warn = Number(val("usageWarnPct")) || 80;
-  const read = a.filter((x) => x.five_hour_used_percent != null || x.seven_day_used_percent != null);
+  const read = a.filter((x) => !signedOut(x) && (x.five_hour_used_percent != null || x.seven_day_used_percent != null));
   const top = (k) => read.filter((x) => x[k] != null).sort((p, q) => q[k] - p[k])[0];
   const five = top("five_hour_used_percent"), week = top("seven_day_used_percent");
   const over = read.filter((x) => Math.max(x.five_hour_used_percent ?? 0, x.seven_day_used_percent ?? 0) >= warn);

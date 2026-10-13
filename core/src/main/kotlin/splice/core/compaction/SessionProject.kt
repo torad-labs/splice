@@ -34,9 +34,6 @@ import java.util.concurrent.ConcurrentHashMap
 private const val PROJECT_MISS_TTL_MS = 5_000L
 private const val MAX_PROJECT_MISSES = 1_024
 
-/** Claude Code's live-session registry folder inside a CLAUDE_CONFIG_DIR, beside its projects tree. */
-private const val SESSIONS = "sessions"
-
 /** Maps Claude Code's session id to its working directory. The live registry wins; headless runs
  *  fall back to the transcript whose directory encodes the cwd and whose rows retain it exactly. */
 public class SessionProject(
@@ -47,7 +44,9 @@ public class SessionProject(
 ) {
     // listOf(projectsDir), never `+ projectsDir`: a Path is an Iterable of its own name elements.
     private val projectsDirs: List<Path> = headProjectsDirs + listOf(projectsDir)
-    private val sessionsDirs: List<Path> = headProjectsDirs.map { it.resolveSibling(SESSIONS) } + listOf(sessionsDir)
+
+    // each head's live-session registry folder sits beside its projects tree, under the name Claude Code gives it
+    private val sessionsDirs: List<Path> = headProjectsDirs.map { it.resolveSibling("sessions") } + listOf(sessionsDir)
 
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = ConcurrentHashMap<String, Path>()

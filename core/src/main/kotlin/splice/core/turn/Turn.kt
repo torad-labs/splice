@@ -5,7 +5,7 @@ package splice.core.turn
 
 import kotlin.time.Duration
 
-// Usage / ErrorType / ToolSearchCall* / TurnOutcome live in TurnOutcome.kt
+// ErrorType / ToolSearchCall* / TurnOutcome live in TurnOutcome.kt, Usage in Usage.kt
 // (concentration, 2026-08-19). Same-package FQCNs are unchanged.
 
 /** Per-turn facts the pipeline threads through translation and streaming (meta replaces

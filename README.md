@@ -270,6 +270,24 @@ The status line marks a rate-limit reading with `⚠` once it reaches the `usage
 
 Subscription heads poll their own provider every five minutes while the daemon is running so usage can appear before the first turn. ChatGPT reads its usage endpoint, Kimi its usages endpoint, Grok its billing endpoint, and Muse the usage in its key-mint response, using that head's own credential. Claude logins that splice reads, added accounts included, are polled on Anthropic's usage endpoint, each with its own token. Heads using an API key do not poll, and a login forwarded from Claude Code gets no usage reading. Set `CLAUDEX_QUOTA_POLL=off` in the daemon's environment to disable polling, then restart the daemon after pending work finishes; usage can still arrive in each turn's rate-limit headers.
 
+### Daily budgets
+
+A command can carry a daily budget in dollars, set on Accounts from its Day meter (**Set budget**), with
+the action **Warn** or **Block**. It is kept in `budgets.json` in the state directory, and an edit there
+takes effect within a second, with no restart. The budget weighs that command's estimated API-rate cost
+for the day, which starts at local midnight in the daemon's time zone. Turns on a plan account do not
+count against it, and a turn on a model with no rate card is counted as unpriced rather than added in, so
+the budget can read low.
+
+- **Block** refuses each new turn on that command once the day's spend reaches the budget. Claude Code
+  shows splice's refusal, which names the spend and the budget and says new turns are refused until
+  midnight, local time. A turn already running finishes. Raising or removing the budget lets the next turn
+  through, and a Compare models send over budget is refused too.
+- **Warn** serves every turn. When the budget is reached, splice writes one line to the daemon log,
+  `[<command>][budget] WARN reached`, once a day for that command, and posts a sentence to the webhook URL
+  saved in the alert settings, if there is one. On Accounts, the command's Day meter fills and shows its
+  bell. Nothing else announces it: desktop alerts are not delivered, and the status line shows no budget.
+
 ## Heads that see each other
 
 Ask a session on one backend to get a review from a session on another. Both appear in Claude Code's `ListAgents`, and `SendMessage` carries the request and reply. This works across splice heads and plain `claude` sessions on the same machine.
@@ -503,7 +521,9 @@ Every credential splice writes is 0600. splice also writes into the Claude Code 
 (`~/.claude-<head>/`), and the install lives in `~/.local/share/splice` and `~/.local/bin`.
 
 "Only you" below means owner-only: the file is 0600, or it sits inside an owner-only state or log directory.
-The tables use new-install defaults; a selected state root changes those paths.
+The tables use new-install defaults, with the state root at `~/.splice/state`. On an install upgraded from
+before 0.4 that kept its `~/.claude-codex/state`, that adopted folder is the state root in every row, and a
+selected state root changes those paths too.
 "Your umask" means the file gets your account's default permissions, usually readable by other
 local accounts unless its directory prevents it. The last column names the source file that writes
 it; a check in the build (`DiskWritesLawTest`) fails when any source file writes a file this section
@@ -580,11 +600,11 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.splice/state/sessions-seen/<session>.json` | Every session splice has listed: its id, name, folder, head and last activity, so an ended session keeps its card on Sessions and its name on Requests after Claude Code deletes its registration. No transcript content and no credentials | Only you (0600) | Under the one history window: a read leaves out what the window no longer keeps, and shortening the window deletes it in the same save | `SeenSessions.kt` |
 | `~/.splice/state/retired-heads.json` | The commands you removed from Models: each one's key, its command and the folder its sessions wrote under; no credentials | Only you (0600) | Until you add the command back | `RetiredHeads.kt` |
 | `~/.splice/state/mcp-roots-bound` | The MCP servers that asked their client for its roots, which splice then stops sharing between sessions: one SHA-256 digest per server's command, arguments and environment, one per line. The digest cannot be read back, so no command, argument or environment value (often a key) is in the file | Only you (0600) | Kept, so a restart does not share such a server again; a server whose command, arguments or environment change is asked about afresh | `McpRootsVerdicts.kt` |
-| `~/.splice/state/mcp-listings/<digest>.json` | What each MCP server answered the last time the hub started it: its handshake and its tool list, so a session connects and lists the server's tools without starting it, and the server starts on the first tool call. One file per server's command, arguments and environment, named by their SHA-256 digest, so no command, argument or environment value (often a key) is in a file name. The file holds only what the server itself sent: its name, version and tool descriptions | Only you (0600) | Kept across restarts. Rewritten when the server says its tools changed; a server that starts under a new name or version drops the old tool list, and one whose command, arguments or environment change gets a new file | `HubListings.kt` |
+| `~/.splice/state/mcp-listings/<digest>.json` | What each MCP server answered the last time the hub started it: its handshake and its tool list, so a session connects and lists the server's tools without starting it, and the server starts on the first tool call. One file per server's command, arguments and environment, named by their SHA-256 digest, so no command, argument or environment value (often a key) is in a file name. The file holds only what the server itself sent in its handshake and tool list, stored whole: its name, version and capabilities, and each tool's name, description and input schema | Only you (0600) | Kept across restarts. Rewritten when the server says its tools changed; a server that starts under a new name or version drops the old tool list, and one whose command, arguments or environment change gets a new file | `HubListings.kt` |
 | `~/.splice/state/mcp-hub/<key>.json` | One record per MCP server the hub started: the server's name, the launch it was started for (empty for a server every session shares), the process id of the small holder that runs it and when it started, so a restarted daemon still stops each per-session copy when its session ends, and a shared one nobody uses. The holder's socket sits beside it as `<key>.sock`. No command, argument or environment value | Only you (0600) | Until the holder stops: a per-session copy's record goes when its session ends | `HubHolders.kt` |
 | `~/.splice/state/mcp-hub/access-key` | The MCP access key the hub front checks every session's calls against: the same key a session splice launched carries, derived from the management key, never the management key itself | Only you (0600) | Rewritten at each daemon start while this machine runs the hub | `McpHubWiring.kt` |
 | `~/.splice/state/mcp-hub/launch-<pid>.json` | The MCP servers one Claude Code session splice launched reaches through the hub: each server's name and its hub address, with the MCP access key and the session's process id in the headers. No command, argument or environment value | Only you (0600) | Until that session ends: the next launch removes the files of sessions that have ended | `McpHubLaunch.kt` |
-| `~/.splice/state/wrapped-mcp-<command>.json` | The MCP servers splice shares that a plain `claude` reaches when the hub is not set up: each server's name and the address of splice's own MCP host, with the MCP access key. No command, argument or environment value | Only you (0600) | Rewritten at each launch of that command | `HostedMcpOverlay.kt` |
+| `~/.splice/state/wrapped-mcp-<command>.json` | The MCP servers splice shares that a plain `claude` reaches when the hub carries nothing for its launch, such as when the hub is not set up or its front does not answer: each server's name and the address of splice's own MCP host, with the MCP access key. No command, argument or environment value | Only you (0600) | Rewritten at each launch of that command | `HostedMcpOverlay.kt` |
 | `~/.splice/state/account-order.json` and `account-order.json.bak-<epoch-millis>` | Per-head failover order, as stable account selector keys only; no credentials | Only you (0600) | Until changed; a dated backup is kept before each replacement | `AccountOrderStore.kt` |
 | `~/.splice/state/account-names.json` | The names you gave logins on Accounts, each against its ref (the first 8 hex of a hash of the account id, which cannot be read back); never an email, an account id or a credential | Only you (0600) | Until you rename the login or clear its name | `AccountNameStore.kt` |
 | `<primary directory>/<kind>/<primary file>/primary.name` | The name you gave a command's first ChatGPT, Grok, Kimi or Muse account on Accounts; no credentials. It sits beside the pool rather than in the credential, which can be the vendor CLI's own file | Only you (0600) | Until you rename the account again or remove it | `OAuthPrimaryAccount.kt` |
@@ -697,9 +717,10 @@ calling needs `--enable-auto-tool-choice` and a `--tool-call-parser` for the mod
 ### Shared MCP hosting
 
 Every Claude Code session normally starts its own copy of every stdio MCP server in its config.
-splice starts each such server once, in the daemon, and serves it to every session over
-Streamable HTTP on loopback: each head's `.claude.json` is rewritten to point at the hosted URL
-while your own config file is never edited. A server whose launch line names a working directory, a relative path (one that starts with `./` or `../`, or contains a slash without starting at `/`), a location flag such as `--root`, an existing absolute directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`; a bare file name such as `server.js` is not a path, so that server is hosted); a hosted
+splice starts each such server once and serves it to every session over Streamable HTTP on loopback:
+each head's `.claude.json` is rewritten to point at the hosted URL while your own config file is never
+edited. Without the MCP hub a shared server runs in the daemon; with the hub on, each runs in its own
+holder under `app-mcp.slice`, outside the daemon, and the hub's front serves it. A server whose launch line names a working directory, a relative path (one that starts with `./` or `../`, or contains a slash and is not an absolute path, an npm `@scope/name`, a URL or a flag), a location flag such as `--root`, an existing absolute directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`; a bare file name such as `server.js` is not a path, so that server is hosted); a hosted
 server runs in your home directory, so one that reads its working directory without naming it
 (`mcp-server-git` with no `--repository`) belongs in `mcp_hosting_exclude`;
 `http`/`sse`/`ws` servers pass through untouched. Hosted servers start on first use and are reaped when idle. When a new server would exceed
@@ -709,11 +730,14 @@ while calls during that wait report the failure. `[daemon] mcp_hosting = false` 
 `mcp_hosting_exclude = ["name"]` keeps named servers per session.
 
 Hosting reads top-level servers from your global `~/.claude.json` and rewrites them only in each
-sharing head's own copy. Wrapped `claude`, project and plugin entries stay unchanged. `/api/mcp`'s `sources`
+sharing head's own copy; project and plugin files are never changed. Each launch also gets a
+`--mcp-config` file from splice: a plain `claude` reaches the shared servers through
+`wrapped-mcp-<command>.json`, and with the hub on, a launch's own file carries the hub's addresses, which
+replace same-named project servers and can stand in for a plugin's own MCP. `/api/mcp`'s `sources`
 section additionally censuses the other four places a server can be declared on this box (a
 project-scoped override inside `.claude.json`, a repo's own `.mcp.json`, and a plugin's own
-`.mcp.json` or inline `plugin.json`) so you can see what is not hosted and why, even though
-splice does not rewrite those kinds yet.
+`.mcp.json` or inline `plugin.json`) so you can see what is not hosted and why. splice does not rewrite those kinds in any head's file;
+only a hub launch's `--mcp-config` file routes them through the hub.
 
 The shared server limit and activity-edge setting belong under defaults:
 
@@ -725,6 +749,31 @@ messageEdges = "false"
 
 These `[defaults]` values are read when the daemon starts, so an edit applies after `splice restart`;
 `PATCH /api/config` changes a running daemon where the knob allows it, and the answer lists what still needs a restart under `restart_required`.
+
+### MCP servers in Settings
+
+Whether sessions share MCP servers is your choice, kept as `[daemon] mcp_share` in `splice.toml`. With it
+absent or `true`, each server that can be shared runs as one copy for every session. With `false`, every
+session starts its own copy, and those servers read "Sharing is off". `splice setup` asks "Share MCP servers
+between sessions? It uses less memory." once, when the key is not set yet; without a terminal it answers yes.
+Settings changes it with **Share servers between sessions**, Shared or One per session. The change reaches
+new sessions with no restart.
+
+Below the choice, Settings measures the MCP servers running on this machine. **What sharing saves** adds up
+the servers that can be shared: **In use now** is the memory their copies take now, **Shared** is what one
+copy of each would take, and **Sharing saves** is the difference. Each server's row names where it was
+declared, says why it runs per session or per project when it does (Starts in its own folder, Asks which
+project it's in, Set by you, Plugin-owned and the like), and shows its copies and the memory they use now.
+**Used now by** lists the sessions using the server, up to four with a count for the rest, each linking to
+its card on Sessions. Servers that run one copy per session either way, and the ones Claude Code starts
+itself, are listed apart. When splice could not take the measurement, the section reads **Not read**
+instead of showing figures.
+
+The same figures come from `GET /api/mcp/memory`, which takes the management key. Each entry under
+`servers` carries the server's `class` and reason `why`, its `copies`, `bytes_now` (the copies' proportional
+set size, or their resident size where that cannot be read) and `bytes_if_shared`, and `held_by`: the
+sessions holding it, as `{session_id, name}`. A session counts when one of its own copies runs, or when the
+MCP hub has bound it to the server's shared holder.
 
 ### Compaction instructions
 
@@ -907,7 +956,7 @@ integrations/  reusable adapters: claude-code/ (login, mcp, wrap, resume, transc
                daemon-client/ (the CLI's calls to a running daemon), terminal/ (prompts),
                dialects/ (wire contracts) and providers/ (vendor adapters)
 features/      capability projects: turns, sessions, models, heads, accounts, usage, lifecycle,
-               diagnostics, launch, configuration, events, with use-case slices as packages; one
+               diagnostics, launch, configuration, with use-case slices as packages; one
                slice reaches another only through its public read models, ports and commands
 app/           :app: composition: the daemon, the control plane (app/control), the `splice` CLI, the
                fat jar, the launch shim and the sample topology

@@ -48,6 +48,7 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.MAX_STREAM_REISSUES
 import splice.upstream.retry.ProviderHoldStore
+import splice.upstream.retry.RETRY_AFTER_GIVE_UP_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RateLimitTurn
 import splice.upstream.retry.ReissueRules
@@ -344,7 +345,9 @@ public class UpstreamClient(
             is StreamRead.Oversized -> LoopStep.Done(UpstreamPost.Ended(read.ending))
         }
 
-    /** Native pooled refusal leaves as a value before any consume callback; other failures keep their retry policy. */
+    /** A native pooled refusal that waiting cannot fix leaves as a value before any consume callback, so the account
+     *  handoff moves the request to the next login: a named plan window, or a pushback past the 15s ceiling. A burst
+     *  429 keeps V4-61 like every other failure: it waits the floor on the same login, and relays once spent. */
     private suspend fun failedStep(
         ctx: PostContext,
         failed: RetryOutcome.Failed,
@@ -353,7 +356,9 @@ public class UpstreamClient(
         t0: Long,
     ): LoopStep<Nothing> {
         state.lastErr = failed
-        return if (ctx.nativePool && failed.rateLimitReply != null) {
+        val nativeRefusal = ctx.nativePool && failed.rateLimitReply != null
+        val waitCannotHelp = failed.planLimit != null || (failed.retryAfterMs ?: 0L) > RETRY_AFTER_GIVE_UP_MS
+        return if (nativeRefusal && waitCannotHelp) {
             val failure = state.rules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
             LoopStep.Done(UpstreamPost.Refused(failure))
         } else {

@@ -49,7 +49,8 @@ internal class ListenerInventory(
         val topology = if (text == null) {
             null
         } else {
-            when (val read = ConfigFindings.read(text, path.toAbsolutePath().parent ?: path)) {
+            val dir = path.toAbsolutePath().parent ?: path
+            when (val read = ConfigFindings.read(text, dir, configDir = dir)) {
                 is ConfigRead.Ready -> read.topology
                 is ConfigRead.Refused -> {
                     errors.line("splice: ${SafeFailureText.render(TopologyRefusal(read.findings))}")

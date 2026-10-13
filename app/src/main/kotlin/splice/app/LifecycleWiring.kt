@@ -6,6 +6,7 @@ package splice.app
 
 import splice.app.cli.AdminSupport
 import splice.app.cli.ConfigFixOffer
+import splice.app.provider.LocalRowBootFindings
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
@@ -42,6 +43,7 @@ internal object LifecycleWiring {
             EnvReader(System::getenv),
             launchJar,
             repair = ConfigRepair { ConfigFixOffer().offer() },
+            runtimes = LocalRowBootFindings(EnvReader(System::getenv)),
         ).restart(expectedVersion, waitForCompactions)
 
     fun ensureDaemon(port: Int): Boolean =

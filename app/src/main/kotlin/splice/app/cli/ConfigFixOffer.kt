@@ -2,6 +2,7 @@
 // prints the whole list and exits non-zero, and nothing is changed.
 package splice.app.cli
 
+import splice.app.provider.LocalRowBootFindings
 import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.TopologyBackupName
@@ -24,6 +25,8 @@ internal class ConfigFixOffer(
     private val prompter: FixPrompter = TerminalFixPrompter(env),
     private val backups: Path = StatePaths().configBackupsDir,
 ) {
+    private val runtimes = LocalRowBootFindings(env)
+
     /** [broken] as the refusal listing every finding of splice.toml, when the file has findings; null otherwise. */
     fun refusalOf(broken: Throwable): TopologyRefusal? {
         if (broken is TopologyRefusal) return broken
@@ -32,7 +35,7 @@ internal class ConfigFixOffer(
         } catch (_: java.io.IOException) {
             return null
         }
-        val read = ConfigFindings.read(text, backups, configDir()) as? ConfigRead.Refused
+        val read = ConfigFindings.read(text, backups, configDir(), runtimes) as? ConfigRead.Refused
         return read?.let { TopologyRefusal(it.findings) }
     }
 
@@ -45,7 +48,9 @@ internal class ConfigFixOffer(
             file,
             TerminalOutput(System.err::println),
             prompter,
-            { text -> (ConfigFindings.read(text, backups, configDir()) as? ConfigRead.Refused)?.findings.orEmpty() },
+            { text ->
+                (ConfigFindings.read(text, backups, configDir(), runtimes) as? ConfigRead.Refused)?.findings.orEmpty()
+            },
             { source -> backup(source) },
         )
         return session.run()

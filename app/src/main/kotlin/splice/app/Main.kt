@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
+import splice.app.provider.LocalRowBootFindings
 import splice.client.wrap.WrapGuard
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
@@ -228,7 +229,8 @@ internal class DaemonProcess(
         // port (DaemonLockWait): reading is what the winner does next anyway, and a materialized
         // example is idempotent between the two.
         val topologyPath = TopologyLoader.configPath(env)
-        val loaded = TopologyLoader.loadForBoot(topologyPath)
+        // v0.4.0 section 10: what a local runtime that is up refuses is a finding beside the file's own.
+        val loaded = TopologyLoader.loadForBoot(topologyPath, LocalRowBootFindings(env))
         // V4-109: [daemon].state_dir is HONOURED from here on. It could not be applied before this
         // point: the boot-failure net is armed at the top with a StatePaths because it must exist
         // before anything that can throw (JW-01), and the state dir is what the lock, config.json

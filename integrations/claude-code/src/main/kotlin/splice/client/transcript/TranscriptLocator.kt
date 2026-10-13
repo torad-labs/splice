@@ -26,6 +26,13 @@
 // appears after a miss is found on the next lookup, without walking the trees in between. A miss for a lookup that names
 // no working directory is not remembered: nothing then says where a new transcript would land, so it walks as before.
 // Both memories are bounded, least recently used first out.
+//
+// ONLY A NEW PROJECT DIRECTORY SENDS A REMEMBERED LOOKUP BACK TO THE WALK (Oct 13). A session's own project directory
+// moves with every transcript Claude Code creates in it, and in a folder many sessions work in that is every few
+// minutes: each move sent every remembered lookup for that folder through the walk of every project directory, and
+// /api/sessions took 7 s warm and 23.5 s cold (splice-usage, splice-sessions). A copy that appears in the session's own
+// directory is exactly what the probe of that directory finds, so when only own directories moved, the probe runs and
+// the walk does not. When a tree's own time moved, a new project directory may hold a copy, and the walk runs as before.
 package splice.client.transcript
 
 import splice.client.Keys
@@ -76,10 +83,15 @@ internal class TranscriptLocator(private val files: TranscriptFiles = DiskTransc
     /** The time of each directory a transcript appearing later would move, as it was when a lookup began: a projects
      *  tree's own (a new project directory) and, when the session's project directory name [own] was known, that
      *  directory in the tree (a new transcript in it). Null is a directory that did not exist; its creation moves it. */
-    private data class Stamp(val times: Map<Path, Long?>, val own: String?)
+    private data class Stamp(val times: Map<Path, Long?>, val own: String?) {
+        /** The trees' own times alone: a new project directory, the one move the probe of [own] cannot cover. */
+        fun trees(): Map<Path, Long?> =
+            own?.let { name -> times.filterKeys { it.fileName?.toString() != name } } ?: times
+    }
 
-    /** A transcript found, with the [stamp] of every tree ahead of it in root order: a copy appearing there would win. */
-    private data class Found(val path: Path, val stamp: Stamp)
+    /** A transcript found in tree [tree], with the [stamp] of every tree ahead of it in root order: a copy appearing
+     *  there would win. */
+    private data class Found(val path: Path, val stamp: Stamp, val tree: Int)
 
     private data class Hit(val tree: Int, val path: Path)
 
@@ -90,24 +102,51 @@ internal class TranscriptLocator(private val files: TranscriptFiles = DiskTransc
     fun locate(roots: List<Path>, sessionId: String, cwd: String? = null): Path? {
         val key = Key(roots, sessionId)
         val own = cwd?.let(::projectName)
-        found[key]?.let { known -> if (trusted(known, own)) return known.path else found.remove(key) }
-        if (missed[key]?.let { it.own == own && holds(it) } == true) return null
-        return search(key, own)
+        val known = found[key]
+        if (known != null && trusted(known, own)) return known.path
+        if (known != null) found.remove(key)
+        val miss = missed[key]
+        if (miss?.takeIf { it.own == own }?.let(::holds) == true) return null
+        return search(key, own, standing(known, miss, own))
     }
 
+    /** What a remembered lookup still says when no tree moved: the transcript where it was found, or [noHit] for a
+     *  miss. Null sends the lookup through the walk. */
+    private fun standing(known: Found?, miss: Stamp?, own: String?): Hit? =
+        known?.takeIf { probed(it.stamp, own) && files.isFile(it.path) }?.let { Hit(it.tree, it.path) }
+            ?: miss?.takeIf { probed(it, own) }?.let { noHit }
+
+    /** Whether a remembered lookup for [own] needs only the probe of the session's own directories: no tree moved. */
+    private fun probed(stamp: Stamp, own: String?): Boolean =
+        own != null && stamp.own == own && stamp.trees().all { (dir, at) -> files.modified(dir) == at }
+
     /** The walk, with each tree's [Stamp] taken before it, so a transcript appearing during the walk is found by it or
-     *  moves the stamp. */
-    private fun search(key: Key, own: String?): Path? {
+     *  moves the stamp. [standing] stands in for the walk when no tree moved: the transcript still where it was found,
+     *  or [noHit] for a miss. */
+    private fun search(key: Key, own: String?, standing: Hit? = null): Path? {
         val trees = trees(key.roots)
         val times = trees.map { tree -> stampOf(tree, own) }
-        val hit = own?.let { ownDirectory(trees, it, key.sessionId) } ?: walk(trees, key.sessionId)
+        val hit = chosen(trees, own, key.sessionId, standing)
         if (hit != null) {
             missed.remove(key)
-            if (hit.tree == 0 || own != null) found[key] = Found(hit.path, Stamp(merged(times.take(hit.tree)), own))
+            if (hit.tree == 0 || own != null) {
+                found[key] = Found(hit.path, Stamp(merged(times.take(hit.tree)), own), hit.tree)
+            }
         } else if (own != null) {
             missed[key] = Stamp(merged(times), own)
         }
         return hit?.path
+    }
+
+    /** The session's own directory first; then the walk, or with no tree moved, what [standing] says it would find. */
+    private fun chosen(trees: List<Path>, own: String?, sessionId: String, standing: Hit?): Hit? {
+        val probe = own?.let { ownDirectory(trees, it, sessionId) }
+        return when {
+            standing == null -> probe ?: walk(trees, sessionId)
+            probe != null && (standing === noHit || probe.tree <= standing.tree) -> probe
+            standing === noHit -> null
+            else -> standing
+        }
     }
 
     private fun merged(times: List<Map<Path, Long?>>): Map<Path, Long?> =
@@ -146,6 +185,9 @@ internal class TranscriptLocator(private val files: TranscriptFiles = DiskTransc
     private fun projectName(cwd: String): String = cwd.replace(nonAlphanumeric, "-")
 
     private val nonAlphanumeric = Regex("[^A-Za-z0-9]")
+
+    /** The [search] stand-in for a remembered miss: nothing was found, and no tree moved to say a walk would. */
+    private val noHit = Hit(-1, Path.of(""))
 
     /** A bounded map, least recently used first out, safe across concurrent Sessions requests. */
     private class Remembered<K : Any, V : Any> {

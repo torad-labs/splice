@@ -212,6 +212,11 @@ const KNOBS = (() => {
     }
     return "";
   }
+  /** The value a pick replaced, struck, and Undo, while they show (gap 458). */
+  const undoHtml = (id) => {
+    const u = st.undo[id];
+    return u ? `<s class="was">${esc(u.word)}</s><button class="act quiet small" data-kact="undo" data-id="${esc(id)}">Undo</button>` : "";
+  };
   function saidHtml(id) {
     if (st.bad[id]) return `<span class="said limit">${esc(st.bad[id])}</span>`;
     // saved to splice.toml, read by the running splice only once it restarts: the act that brings it in sits beside it
@@ -219,14 +224,10 @@ const KNOBS = (() => {
       return st.restarting ? `<span class="said">${ICON.wait}Restarting</span>`
         : st.cut ? armedAsk("Mid-request", st.cut, '<button class="act danger small" data-kact="restart-now">Restart splice</button>',
           '<button class="act quiet small" data-kact="keep-running">Keep running</button>')
-        : `<span class="said ok">Saved</span><button class="act quiet small" data-kact="restart">Restart splice</button>`;
+        : `<span class="said ok">Saved</span>${undoHtml(id)}<button class="act quiet small" data-kact="restart">Restart splice</button>`;
     }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
-    if (st.said[id]) {
-      const u = st.undo[id];
-      return `${u ? `<s class="was">${esc(u.word)}</s>` : ""}<span class="said ok">${esc(st.said[id])}</span>`
-        + `${st.unsaved[id] ? '<span class="said limit">· Not saved</span>' : ""}${u ? `<button class="act quiet small" data-kact="undo" data-id="${esc(id)}">Undo</button>` : ""}`;
-    }
+    if (st.said[id]) return `<span class="said ok">${esc(st.said[id])}</span>${st.unsaved[id] ? '<span class="said limit">· Not saved</span>' : ""}${undoHtml(id)}`;
     // a setting the running splice reads only when it starts says so at rest, in the spec's words (v0.4.0 section 9,
     // Resolved: boot-only stays editable, labelled "applies on restart"); saving it then offers Restart splice above
     return needsRestart(id.split("@")[0]) ? `<span class="said">Applies on restart</span>` : "";
@@ -236,6 +237,7 @@ const KNOBS = (() => {
   // An own value equal to the shared one cannot go "Back to" the value it already reads; clearing it still matters, since a
   // later change for every command would pass it by, so the button says that (splice-usage's walk, Oct 13: "100 · Back to 100").
   const backHtml = (k, c) => {
+    if (st.undo[`${k.key}@${c}`]) return "";
     const shared = valueOf(k).v, own = ownValue(k.key, c);
     const words = own !== undefined && String(own) === String(shared) ? "Follow every command" : `Back to ${word(k, shared)}`;
     return `<button class="back" data-kact="back" data-key="${k.key}" data-cmd="${esc(c)}">${esc(words)}</button>`;
@@ -425,7 +427,7 @@ const KNOBS = (() => {
     delete st.said[id]; delete st.undo[id];
     patch(id, v, sure).then((r) => {
       delete st.slow[id];
-      if (undoable && r?.ok && !r.restart) {
+      if (undoable && r?.ok) {
         st.undo[id] = { v: was, word: wasWord };
         clearTimeout(st.undoT[id]);
         st.undoT[id] = setTimeout(() => { delete st.undo[id]; render(); }, UNDO_MS);

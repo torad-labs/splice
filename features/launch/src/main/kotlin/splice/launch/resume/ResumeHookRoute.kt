@@ -71,7 +71,11 @@ public class ResumeHookRoute(
     public suspend fun resume(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val body = call.receiveText()
-        val refusal = handle(key, body, call.request.headers[FOREGROUND_OWNER_HEADER])
+        // ALWAYS 200: a failure past the named refusals (the ownership index unwritable, say) is one more refusal
+        // line, never a 500 (Oct 7-8: four of them reached the log as unclassified control failures)
+        val owner = call.request.headers[FOREGROUND_OWNER_HEADER]
+        val refusal = Cancellables.runCatchingCancellable { handle(key, body, owner) }
+            .getOrElse { cause -> "the hook failed (${SafeFailureText.render(cause)})" }
         // refusal is a sentence THIS class composes; the id it may carry passed SESSION_ID_SHAPE first.
         if (refusal != null) log("[resume] hook for ${LogSafe.str(key)} did nothing: ${LogSafe.str(refusal)}\n")
         call.respondText("{}", ContentType.Application.Json)

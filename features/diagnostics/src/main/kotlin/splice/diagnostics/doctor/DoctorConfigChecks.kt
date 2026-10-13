@@ -200,17 +200,28 @@ internal class DoctorConfigChecks(
      *  cell above this one in DoctorSystemPromptCheckTest pins it, V4-36): replacing the field with
      *  nothing is at least a coherent thing to have meant. A strip layer with no pattern list is
      *  not — the mode has no meaning without patterns, which is why an EMPTY one is now a load
-     *  error (HeadSystemPrompt) and an ABSENT one is this row. */
+     *  error (HeadSystemPrompt) and an ABSENT one is this row. An empty `system_prompt = ""` refuses boot (v0.4.0
+     *  section 13, the President's deviation of Oct 13), so doctor fails it the way boot does instead of warning. */
     private fun strippingNothingChecks(topology: Topology): List<DoctorCheck> = topology.heads
         .filterValues { it.systemPromptMode == SystemPromptMode.STRIP && !carriesPrompt(it) }
-        .map { (key, _) ->
-            DoctorCheck(
-                "system-prompt:$key",
-                CheckStatus.WARN,
-                "head '$key' sets system_prompt_mode = \"strip\" with no system_prompt or " +
-                    "system_prompt_file, so the client's field is not edited at all",
-                "add the layer's pattern list, or remove system_prompt_mode",
-            )
+        .map { (key, head) ->
+            if (head.systemPrompt != null) {
+                DoctorCheck(
+                    "system-prompt:$key",
+                    CheckStatus.FAIL,
+                    "head '$key' sets system_prompt_mode = \"strip\" with an empty system_prompt, and splice " +
+                        "refuses to start on it: a strip layer with no patterns would edit nothing",
+                    "add the layer's pattern list, or remove system_prompt and system_prompt_mode",
+                )
+            } else {
+                DoctorCheck(
+                    "system-prompt:$key",
+                    CheckStatus.WARN,
+                    "head '$key' sets system_prompt_mode = \"strip\" with no system_prompt or " +
+                        "system_prompt_file, so the client's field is not edited at all",
+                    "add the layer's pattern list, or remove system_prompt_mode",
+                )
+            }
         }
 
     private fun carriesPrompt(head: HeadConfig): Boolean =

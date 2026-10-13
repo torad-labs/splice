@@ -18,14 +18,11 @@ package splice.upstream.retry
 
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerfTiming
-import splice.core.turn.FailureCause
 import splice.core.util.ERR_SNIPPET
 import splice.core.wire.HttpStatus
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.failure.FailureRules
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryOutcome
 import splice.upstream.transport.TransportFailures
@@ -175,57 +172,8 @@ internal class RetryRules(private val maxRetries: Int) {
         // the same answer. A burst 429 carries no such statement and keeps V4-61's 15s schedule.
         failed.planLimit != null ->
             "names its ${failed.planLimit.claim} plan window spent (no retry before the reset it named)"
-        else -> refusedAsSent(failed)
+        else -> failureRules.refusedAsSent(failed.status, failed.text)
     }
-
-    /** The verdicts on the bytes themselves: a re-send of the same bytes meets the same answer. */
-    private fun refusedAsSent(failed: RetryOutcome.Failed): String? = when {
-        overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"
-        policyRefused(failed) -> "is a content-policy refusal (no retry: the same bytes are refused again)"
-        bodyRejected(failed) ->
-            "rejects the request body (no retry: the same bytes are rejected again): ${failed.text.take(ERR_SNIPPET)}"
-        modelMissing(failed) ->
-            "does not serve the requested model (no retry: a re-send asks for the same model): " +
-                failed.text.take(ERR_SNIPPET)
-        else -> null
-    }
-
-    /** V4-117 audit: a 4xx other than a rate limit whose vendor CODE names a policy refusal (the
-     *  classifier's CONTENT_FILTERED). Unlike a bare status, a code is the vendor's own verdict, and
-     *  the retry matrix entitles that cause to no layer at any phase; retrying it spent the curve on
-     *  an answer that could not change. Keyed the way [overflowed] is, so a 429 still reaches the
-     *  cooldown branch. */
-    private fun policyRefused(failed: RetryOutcome.Failed): Boolean =
-        failed.status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
-            failed.status != HttpStatus.TOO_MANY_REQUESTS &&
-            UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
-            FailureCause.CONTENT_FILTERED
-
-    /** A 400 invalid_request_error whose message names a field of the body (`messages.342.content.0.thinking.
-     *  estimated_tokens: Extra inputs are not permitted`). The vendor validated the bytes we sent, and the same
-     *  bytes fail the same validation: the 2026-10-11 burst re-sent one such body 4 times, each answered with the
-     *  identical 400. A 400 that names no field of the body (a bare "Error", the muse prefill case that was OUR
-     *  bug) keeps V4-62's curve. */
-    private fun bodyRejected(failed: RetryOutcome.Failed): Boolean =
-        failed.status == HttpStatus.BAD_REQUEST && BODY_FIELD_REJECTION.containsMatchIn(failed.text)
-
-    /** A 404 or 400 saying the upstream has no such model: Ollama's `model "x" not found, try pulling it first`,
-     *  vLLM's and OpenAI's "The model `x` does not exist", or the `model_not_found` code. A local runtime answers
-     *  this until the operator pulls or loads the model, which outlasts any retry curve, so each re-send only
-     *  delayed the runtime's own instruction reaching the client (spec v0.4.0 section 10, unavailable model). */
-    private fun modelMissing(failed: RetryOutcome.Failed): Boolean =
-        (failed.status == HttpStatus.NOT_FOUND || failed.status == HttpStatus.BAD_REQUEST) &&
-            MODEL_MISSING.containsMatchIn(failed.text)
-
-    /** V4-167: a 4xx other than a rate limit, whose text says overflow. A 429 reading "too many tokens"
-     *  is a per-minute token quota, which heals with time and must reach the cooldown branch; a 5xx is
-     *  the server's own failure, and V4-62 retries it. Classified on the text before either, a TPM 429
-     *  gave up, armed no cooldown, and told the client to compact a conversation that fit. */
-    private fun overflowed(failed: RetryOutcome.Failed): Boolean =
-        failed.status in HttpStatus.BAD_REQUEST until HttpStatus.INTERNAL_SERVER_ERROR &&
-            failed.status != HttpStatus.TOO_MANY_REQUESTS &&
-            UpstreamFailureClassifier.classify(FailureSource.HTTP, failed.text, failed.status).cause ==
-            FailureCause.REQUEST_TOO_LARGE
 
     /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
     private fun statusPlan(
@@ -335,15 +283,3 @@ private val SERVER_ERRORS = HttpStatus.INTERNAL_SERVER_ERROR..SERVER_ERROR_MAX
 // Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback
 // holds a gate slot for a request nobody is waiting on anymore.
 internal const val RETRY_AFTER_GIVE_UP_MS = 15_000L
-
-/** The vendor's own validation line: type invalid_request_error and a message that opens with a path into the body. */
-private val BODY_FIELD_REJECTION =
-    Regex(""""type"\s*:\s*"invalid_request_error"[^}]*"message"\s*:\s*"(messages|system|tools)[.\[][^"]*:""")
-
-/** The upstream's own "no such model": the `model_not_found` code, or a message naming a model that is not found or
- *  does not exist. The gap is bounded so an unrelated "not found" further along a long body cannot match. */
-private val MODEL_MISSING =
-    Regex(
-        """"code"\s*:\s*"model_not_found"|\bmodel\b[^{}]{0,160}?\b(not found|does not exist)""",
-        RegexOption.IGNORE_CASE,
-    )

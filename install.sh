@@ -478,7 +478,7 @@ if ! run_jar "$JAR_DST" init ||
 fi
 
 # 3b. A running hub front takes the new binary by reload (USR2), never a restart, which would drop every session's
-#     MCP connection (hostshield-lead's contract, Oct 12). `splice init` above already wrote its settings file.
+#     MCP connection (the host supervisor's contract, Oct 12). `splice init` above already wrote its settings file.
 if [ "$HUB_INSTALLED" = 1 ] && command -v systemctl >/dev/null 2>&1 &&
   systemctl --user is-active --quiet splice-mcp-front.service 2>/dev/null; then
   systemctl --user reload splice-mcp-front.service ||

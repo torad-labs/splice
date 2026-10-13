@@ -4,9 +4,9 @@
 // live pair is first kept in the release being left, so a failed activation and a later --rollback both put it back.
 // A release folder holding only one of the two swaps neither, as install.sh installs a pair or none, and one holding
 // neither leaves the installed pair where it is. The hub's systemd units are never touched, whoever placed them
-// (hostshield or `splice install`): only the programs they run are replaced, by rename, so a running front or holder
+// (a host supervisor or `splice install`): only the programs they run are replaced, by rename, so a running front or holder
 // keeps its own file. A running front then takes the new program by reload (USR2), never a restart, which would drop
-// every session's MCP connection (install.sh step 3b, hostshield-lead's contract), and only over units splice wrote
+// every session's MCP connection (install.sh step 3b, the host supervisor's contract), and only over units splice wrote
 // itself: over anyone else's, the reload is printed for their owner to apply (HubUnits.reloadFront, splice-lead).
 package splice.lifecycle.upgrade
 

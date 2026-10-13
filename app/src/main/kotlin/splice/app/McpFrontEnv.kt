@@ -1,4 +1,4 @@
-// NEW: the MCP hub front's environment file (docs/specs/mcp-hub.md; hostshield-lead's installer contract, Oct 12).
+// NEW: the MCP hub front's environment file (docs/specs/mcp-hub.md; the host installer's contract, Oct 12).
 // splice-mcp-front.service's ExecStart reads it, so `splice init` writes it before the front's socket is ever enabled.
 package splice.app
 

@@ -3,7 +3,7 @@
 // writes true and no writes false. The hub reads the key live, so the answer applies to the next connection. With no
 // one watching, the default is taken: shared. A write that fails is said in a line and never fails the setup. In its
 // own file because SetupCommand.kt is watched by the concentration wall.
-// Oct 13 (splice-lead, with hostshield-lead's carve-out): a yes turns the MCP hub on, by enabling its front's socket,
+// Oct 13 (splice-lead, with the host's carve-out): a yes turns the MCP hub on, by enabling its front's socket,
 // only over units splice wrote itself (HubUnits.enable). Units anyone else placed are left as they are.
 package splice.app.cli.setup
 

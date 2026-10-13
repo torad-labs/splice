@@ -163,6 +163,7 @@ class SetupLocalModelTest {
         val expected = listOf(
             "pick heads",
             "ask local",
+            "ask Share MCP servers between sessions? It uses less memory.",
             "ask Install now?",
             "add codex",
             "restart",

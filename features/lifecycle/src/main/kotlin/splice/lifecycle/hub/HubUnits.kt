@@ -1,8 +1,8 @@
-// NEW: the MCP hub's three systemd units, for a machine hostshield has not given them (hostshield-lead, Oct 12). The
-// bytes under resources/splice/lifecycle/hub are hostshield 88076af5d's canonical units, byte for byte: hostshield's
+// NEW: the MCP hub's three systemd units, for a machine its host supervisor has not given them (Oct 12). The
+// bytes under resources/splice/lifecycle/hub are the host supervisor's canonical units, byte for byte: the supervisor's
 // apply owns them wherever it is installed, and this copy only covers a machine without it.
-// Oct 13 (splice-lead, hostshield-lead's carve-out): `splice setup` turns the hub on when its share answer is yes, but
-// only over units splice wrote itself. Splice's bytes are hostshield's byte for byte, so a byte match cannot tell them
+// Oct 13 (splice-lead, the host's carve-out): `splice setup` turns the hub on when its share answer is yes, but
+// only over units splice wrote itself. Splice's bytes are the host's byte for byte, so a byte match cannot tell them
 // apart: each unit splice writes is recorded with its SHA-256 in [record], in splice's own state, and a unit counts as
 // splice's only while it is recorded, still hashes to the record, and is what systemd loads, from this folder with no
 // drop-in.

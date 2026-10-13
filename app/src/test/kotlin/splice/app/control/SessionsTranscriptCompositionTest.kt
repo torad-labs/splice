@@ -66,7 +66,7 @@ class SessionsTranscriptCompositionTest {
         val own = tmp.resolve(".claude-codex")
         val vanilla = tmp.resolve(".claude")
         write(vanilla, "the vanilla copy")
-        write(own, "the head's copy")
+        val headFile = write(own, "the head's copy")
         val routes = SessionsRoutes(
             registry(),
             TranscriptReader(),
@@ -79,6 +79,7 @@ class SessionsTranscriptCompositionTest {
             json(
                 """{"messages":[""" +
                     """{"index":0,"role":"user","text":"the head's copy"}],""" +
+                    """"path":"$headFile",""" +
                     """"moves":[],"unmoved":[],"unparseable_lines":1}""",
             ),
             json(reply.body),

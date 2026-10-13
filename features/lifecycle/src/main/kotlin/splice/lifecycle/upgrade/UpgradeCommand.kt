@@ -91,7 +91,7 @@ internal class UpgradeCommand(
         val base = release.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
         output.line("${BOLD}splice upgrade$RESET$DIM: from $base$RESET")
         val staging = layout.stagingDir()
-        return staged(base, staging, a.to).then { candidate -> promote(a, staging, candidate) }
+        return staged(base, staging, a).then { candidate -> promote(a, staging, candidate) }
     }
 
     /** The validated [candidate] in [staging] becomes the release directory, then is activated and the daemon restarted. */
@@ -135,10 +135,16 @@ internal class UpgradeCommand(
                 .forEach { output.line("      ${release.verifyLater(it)}") }
         }
         if (!daemon.waitIdle(a.now)) {
-            output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
-            return Upgraded.Ok(false)
+            if (!a.auto) {
+                output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
+                return Upgraded.Ok(false)
+            }
+            // Marcos, Oct 13: the updater restarts at the first moment no turn is in flight, or once the wait is spent.
+            val label = "waiting".padEnd(UPGRADE_PAD)
+            output.line("  $YELLOW!$RESET $label the wait for turns is spent; auto-update restarts now")
         }
         return activation.activate(version, installed).then {
+            layout.markManaged()
             layout.prunable().forEach(layout::discard)
             Upgraded.Ok(finish(version, installed, a.now))
         }
@@ -170,10 +176,11 @@ internal class UpgradeCommand(
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
      *  directory, and a `--to` that the candidate jar does not confirm is a refusal, not a rename. */
-    private fun staged(base: String, staging: Path, requested: String?): Upgraded<Staged> {
+    private fun staged(base: String, staging: Path, a: UpgradeArgs): Upgraded<Staged> {
+        val requested = a.to
         // runCatchingCancellable folds I/O and parse failures into a refusal; a refusal the verifier itself
         // answers is already a value, so the cleanup below sees either one.
-        val answer = Cancellables.runCatchingCancellable { release.stage(base, staging) }.fold(
+        val answer = Cancellables.runCatchingCancellable { release.stage(base, staging, attest = !a.auto) }.fold(
             onSuccess = { staged ->
                 staged.then { candidate ->
                     layout.confirmVersion(candidate.version, requested)

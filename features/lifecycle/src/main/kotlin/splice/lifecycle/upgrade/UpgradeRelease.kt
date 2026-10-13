@@ -54,13 +54,15 @@ internal class UpgradeRelease(
         override?.trim()?.takeIf { it.isNotEmpty() }?.trimEnd('/')
             ?: if (to == null) "$RELEASES/latest/download" else "$RELEASES/download/v${to.removePrefix("v")}"
 
-    /** Fetch, verify and validate the release into [staging]. */
-    fun stage(base: String, staging: Path): Upgraded<Staged> {
+    /** Fetch, verify and validate the release into [staging]. [attest] false is the daemon updater (UpgradeAuto): a beta
+     *  built while Actions is locked has no attestation, so that run checks every asset against the release sums alone,
+     *  whether or not gh is signed in, and says so per asset (splice-lead, Oct 13). */
+    fun stage(base: String, staging: Path, attest: Boolean = true): Upgraded<Staged> {
         val remote = !base.startsWith("file:")
-        val gap = if (remote) attestationGap() else null
+        val gap = if (remote && attest) attestationGap() else null
         return fetched(base, SUMS_ASSET).then { sums ->
             Files.createDirectories(staging)
-            val fetching = Fetching(base, staging, String(sums), remote, gap)
+            val fetching = Fetching(base, staging, String(sums), remote, gap, attest)
             stageAssets(fetching).then {
                 listOf(SHIM_ASSET, HUB_HOLDER, HUB_FRONT).map(staging::resolve).filter { Files.exists(it) }
                     .forEach { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString(SHIM_MODE)) }
@@ -92,7 +94,12 @@ internal class UpgradeRelease(
         val sums: String,
         val remote: Boolean,
         val gap: String?,
-    )
+        val attest: Boolean = true,
+    ) {
+        /** A remote asset is attested when the run asks for it and gh can check it. */
+        private val asked: Boolean get() = remote && attest
+        val attests: Boolean get() = asked && gap == null
+    }
 
     /** The jar and shim, then the MCP hub's holder and front the way install.sh gets them: on Linux x86-64 only,
      *  and only when the release's sums list both, each checked against them and attested like the jar. A release
@@ -118,10 +125,15 @@ internal class UpgradeRelease(
         fetched(fetching.base, asset).then { bytes ->
             verifySum(asset, bytes, fetching.sums).then {
                 val file = Files.write(fetching.staging.resolve(asset), bytes)
-                val attested = if (fetching.remote && fetching.gap == null) attest(file, asset) else Upgraded.Ok(Unit)
+                val attested = if (fetching.attests) {
+                    attest(file, asset)
+                } else {
+                    Upgraded.Ok(Unit)
+                }
                 attested.then {
                     val how = when {
                         !fetching.remote -> "sha256 ok (local release base, no attestation)"
+                        !fetching.attest -> "sha256 ok (auto-update checks the release sums only)"
                         fetching.gap == null -> "sha256 ok, attestation ok"
                         else -> "sha256 ok, provenance not checked (gh ${fetching.gap})"
                     }

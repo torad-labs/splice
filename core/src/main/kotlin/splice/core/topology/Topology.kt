@@ -98,10 +98,14 @@ public data class Topology(
 
     /** This topology without every key the running daemon re-reads live: the context windows, and since Oct 12 the
      *  [compaction] table (§7, the console edits it) and `[daemon] mcp_share` (MCP hub step 3: the sharing choice
-     *  applies to new connections, never after a restart). Two files equal here differ only in what a running daemon
+     *  applies to new connections, never after a restart), and since Oct 13 `[daemon] update_channel` and `auto_update`,
+     *  which the daemon's updater reads from the file at each check. Two files equal here differ only in what a running daemon
      *  already applies, so the edit needs no restart and the daemon runs the newer one. */
     public fun withoutLiveKeys(): Topology =
-        withoutWindows().copy(compaction = CompactionConfig(), daemon = daemon.copy(mcpShare = null))
+        withoutWindows().copy(
+            compaction = CompactionConfig(),
+            daemon = daemon.copy(mcpShare = null, updateChannel = null, autoUpdate = null),
+        )
 }
 
 @Serializable
@@ -131,6 +135,10 @@ public data class DaemonConfig(
     // MCP hub step 3: the setup answer, share MCP servers between sessions or start one copy per session. Absent reads
     // as shared. Read live (TopologyWindows), so a change applies to the next connection.
     @SerialName("mcp_share") val mcpShare: Boolean? = null,
+    // Auto-update (Marcos, Oct 13): which releases this install follows, "stable" (absent) or "beta", and whether the
+    // daemon installs a newer one itself. Absent auto_update reads as off. Read live by the daemon's updater.
+    @SerialName("update_channel") val updateChannel: String? = null,
+    @SerialName("auto_update") val autoUpdate: Boolean? = null,
 )
 
 @Serializable

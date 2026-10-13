@@ -47,8 +47,9 @@ private const val OUTPUT_LINES = 200
 private const val KEPT_RUNS = 5
 private val ANSI = Regex("\u001B\\[[0-9;]*m")
 
-/** What the console asked for: a release (latest when [to] is null), or the previous one. */
-public data class UpgradeRequest(val to: String?, val rollback: Boolean)
+/** What the console asked for: a release (latest when [to] is null), or the previous one. [auto] is the daemon updater's
+ *  run instead (UpgradeAuto), which names its release and checks it against the release sums only. */
+public data class UpgradeRequest(val to: String?, val rollback: Boolean, val auto: Boolean = false)
 
 /** Where a run stands, read off its directory. */
 public enum class UpgradeRunState(public val wire: String) {
@@ -120,7 +121,7 @@ public class UpgradeRuns(env: EnvReader, private val launcher: UpgradeRunLaunche
             request.rollback -> listOf("--rollback")
             request.to != null -> listOf("--to", request.to)
             else -> emptyList()
-        }
+        } + listOfNotNull("--auto".takeIf { request.auto })
         Files.writeString(dir.resolve(RUN_FILE), record(id, args, started).toString())
         val refused = launcher.launch(dir, args)
         if (refused != null) {

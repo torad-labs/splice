@@ -491,6 +491,10 @@ fi
 if [ ! -L "$BIN_DIR/splice" ] || [ ! -e "$BIN_DIR/splice" ]; then
   roll_back "install failed — $BIN_DIR/splice missing or dangling"
 fi
+# 4a. The managed-install marker (UpgradeLayout's MANAGED_MARKER): this script laid the install down, so the daemon's
+#     updater may replace it when [daemon] auto_update = true. A jar copied into place by hand never carries it.
+printf 'install.sh\n' > "${SHARE_DIR}/managed-install" ||
+  echo "splice: warning: could not write ${SHARE_DIR}/managed-install; auto-update leaves this install alone" >&2
 # 4b. Keep a PRISTINE copy of this release under releases/<version>/ for `splice upgrade`: it is
 #     what rollback repoints at, and what the upgrade compares the live launch shim against so a
 #     local edit (a host that patches the launcher does so AFTER this script) is kept rather than

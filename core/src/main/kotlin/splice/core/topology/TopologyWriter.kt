@@ -265,7 +265,16 @@ private class TopologyChecks(
     private val quotedPattern = Regex("`[^`]*`")
 
     fun findings(): List<TopologyFinding> =
-        references() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() + compaction()
+        references() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() + compaction() +
+            channel()
+
+    /** `[daemon] update_channel` names one of the two channels releases are published on; anything else would leave the
+     *  updater following nothing while the file looks configured. */
+    private fun channel(): List<TopologyFinding> {
+        val channel = topology.daemon.updateChannel ?: return emptyList()
+        if (channel == "stable" || channel == "beta") return emptyList()
+        return listOf(TopologyFinding("daemon.update_channel", "must be \"stable\" or \"beta\""))
+    }
 
     /** V4-36 and V4-124: a standing prompt the head build would refuse is a finding here, built the way
      *  HeadServerFactory builds it, so a table setting both keys, an unreadable file, a relative project root or a

@@ -132,7 +132,10 @@ internal object ConsoleWiring {
 
         // V4-220 item 4: `splice upgrade` over POST /api/upgrade, run out of process. Unassigned, it and
         // GET /api/upgrade/run answer a named 503.
-        srv.ports.lifecycle.upgradeRuns = LifecycleWiring.consoleUpgrades()
+        val upgradeRuns = LifecycleWiring.consoleUpgrades()
+        srv.ports.lifecycle.upgradeRuns = upgradeRuns
+        // Auto-update (Oct 13): the same runs, started by the daemon itself while splice.toml says auto_update = true.
+        topology.path?.let { LifecycleWiring.autoUpdate(upgradeRuns, it, log).start() }
     }
 
     /** V4-133 (FEATURES.md §5/§6): the console's budget/alert stores and playground probe, split out

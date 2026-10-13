@@ -4,7 +4,7 @@
 # starter with no provider or head instead. Adding a provider/head requires a daemon restart.
 # Context windows are the exception: the running daemon re-reads a context_window edit (model rows,
 # extra_windows, window_rules, default_context_window, a head's context_window) with no restart.
-# So are [daemon] mcp_share and the [compaction] tables.
+# So are [daemon] mcp_share, update_channel and auto_update, and the [compaction] tables.
 #
 # The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
 # Kimi, or Muse subscription.
@@ -33,6 +33,12 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 #                                # run in your home directory, so list any that reads its cwd unnamed
 # mcp_share = true               # setup asks once and writes this: true (absent reads as true) runs one shared
 #                                # copy of each server, false one copy per session; the daemon re-reads it live
+# Auto-update (absent reads as off). When on, the daemon checks hourly for a newer release on update_channel and
+# installs it as `splice upgrade` would, checking each asset against the release's sha256sums.txt. It restarts once no
+# turn is in flight, or after 30 minutes. Only an install that install.sh or `splice upgrade` laid down is replaced.
+# The daemon re-reads both keys at each check.
+# update_channel = "stable"      # "stable" follows releases only; "beta" follows prereleases too
+# auto_update = true
 
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);

@@ -10,13 +10,22 @@ import splice.app.provider.LocalRowBootFindings
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.LogSafe
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.launch.install.InstallLayout
 import splice.lifecycle.restart.ConfigRepair
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
+import splice.lifecycle.upgrade.AutoUpdatePolicy
 import splice.lifecycle.upgrade.SystemdUpgradeLauncher
+import splice.lifecycle.upgrade.UpgradeAuto
 import splice.lifecycle.upgrade.UpgradeRuns
+import splice.topology.TopologyLoader
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal object LifecycleWiring {
     private val output = TerminalOutput(::println)
@@ -57,5 +66,19 @@ internal object LifecycleWiring {
     fun consoleUpgrades(): UpgradeRuns {
         val env = EnvReader(System::getenv)
         return UpgradeRuns(env, SystemdUpgradeLauncher(env))
+    }
+
+    /** The daemon's updater over [runs], its policy read from the booted splice.toml at [path] at every look, so an edit
+     *  applies to the next one. A file that will not parse skips that look; the boot findings already refuse a bad one. */
+    fun autoUpdate(runs: UpgradeRuns, path: Path, log: LogSink): UpgradeAuto =
+        UpgradeAuto(EnvReader(System::getenv), runs, { policy(path, log) }, log)
+
+    private fun policy(path: Path, log: LogSink): AutoUpdatePolicy? {
+        val daemon = Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)).daemon }
+            .onFailure {
+                log("[auto-update] splice.toml unread this look: ${LogSafe.str(SafeFailureText.render(it))}\n")
+            }
+            .getOrNull() ?: return null
+        return AutoUpdatePolicy(enabled = daemon.autoUpdate == true, beta = daemon.updateChannel == "beta")
     }
 }

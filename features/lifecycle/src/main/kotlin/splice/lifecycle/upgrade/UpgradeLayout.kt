@@ -27,6 +27,9 @@ internal const val UPGRADE_PAD = 11
 private const val CURRENT_LINK = "current"
 private const val PREVIOUS_LINK = "previous"
 
+/** install.sh writes the same name (MANAGED_MARKER there). */
+private const val MANAGED_MARKER = "managed-install"
+
 // SemVer 2.0.0 (semver.org, the canonical grammar): no leading zeros in the numeric parts or numeric
 // prerelease identifiers, no empty identifiers, hyphens allowed inside identifiers, build metadata after +.
 private const val NUM = """(?:0|[1-9]\d*)"""
@@ -47,6 +50,17 @@ internal class UpgradeLayout(
     val releases: Path = share.resolve("releases")
     val current: Path = releases.resolve(CURRENT_LINK)
     val previous: Path = releases.resolve(PREVIOUS_LINK)
+
+    /** The managed-install marker: install.sh or `splice upgrade` laid this install down, so splice may replace it.
+     *  The daemon's updater acts only where it exists, never on a jar a person or a build script copied into place. */
+    val managedMarker: Path = share.resolve(MANAGED_MARKER)
+
+    fun isManaged(): Boolean = Files.isRegularFile(managedMarker)
+
+    /** Written after an activation, so an install `splice upgrade` has once replaced is managed from then on. */
+    fun markManaged() {
+        if (!isManaged()) Files.writeString(managedMarker, "splice upgrade\n")
+    }
 
     /** Releases live exactly one normalized SemVer 2.0.0 segment below releases/: a link name ("current"),
      *  "..", an absolute path, a leading zero or an empty identifier is refused BEFORE a path is built,

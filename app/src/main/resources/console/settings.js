@@ -247,7 +247,9 @@ const DATA_ROWS = [
   { id: "journals", g: "text", name: "Code mode work", unit: "files", store: "code_mode", yours: true, knob: "keepCodeModeWork", off: "When off, a restart ends running scripts", life: "1 day unused" },
   { id: "reasoning", g: "text", name: "Reasoning between requests", own: true, door: ["sessions.html", "Sessions"] },
   { id: "hist", g: "records", name: "Usage and request history", unit: "requests", door: ["usage.html", "Usage"] },
-  { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"] },
+  // its own days and its own switch, both live (ConsoleWiring.activityStores reads them per sweep and per write); it never
+  // followed the history window, which this row used to claim (v0.4.0 section 9: every knob drawn with its value)
+  { id: "edges", g: "records", name: "Who messaged whom", unit: "messages", door: ["teams.html", "Teams"], knob: "messageEdges", off: "When off, new messages between agents are not saved" },
   { id: "labels", g: "records", name: "What each agent is doing", unit: "lines", door: ["teams.html", "Teams"] },
 ];
 const EP = { trace: null, hist: "/api/kept/turns", edges: "/api/kept/edges", labels: "/api/kept/labels" };
@@ -415,10 +417,10 @@ function dataRow(r) {
   if (x === undefined) return drow({ name: r.name, yours: r.yours, door: r.door, amount: READING });
   if (!x) return drow({ name: r.name, yours: r.yours, door: r.door, amount: unreadable });
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
-  // the copies keep their own days (the President, Oct 12), so their row sets them where the others show the history window
+  // the copies keep their own days (the President, Oct 12), and the messages theirs, so each row sets them in its Keep for
   const keep = r.id === "originals" ? `${ctlHtml(KNOB.transcriptCopyDays, val("transcriptCopyDays"))}${saidHtml("transcriptCopyDays")}`
     : r.id === "trace" && ui.hist ? `<span class="fixed quiet need">${esc(traceKeepWords())}</span>`
-    : r.id === "edges" && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
+    : r.id === "edges" ? `${ctlHtml(KNOB.activityRetentionDays, val("activityRetentionDays"))}${saidHtml("activityRetentionDays")}`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   const said = r.knob ? saidHtml(r.knob) : "";

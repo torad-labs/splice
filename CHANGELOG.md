@@ -32,8 +32,10 @@
 - **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
   the default `claude` command); per-head system prompts, including a `strip` mode; custom
   compaction instructions; shared MCP hosting.
+- **The MCP hub on Linux.** Every session splice launches gets its MCP servers from one hub that outlives the daemon,
+  shared between sessions by default, so an upgrade or a crash of splice drops no session's tools ([Added](#added)).
 - **Restarts wait for compactions.** Unless you choose `--now`, `splice restart`, `splice upgrade`
-  and `POST /api/daemon/restart` wait for compactions in flight, within Claude Code's 600 s cap. A
+  and `POST /api/daemon/restart` wait for compactions in flight, up to the daemon's own 900 s cap on a turn. A
   finished answer whose client disconnected is kept on disk for its identical retry.
 - **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
   against the release's checksums, and build provenance is verified whenever `gh` is signed in.
@@ -122,6 +124,10 @@ that boundary: transcripts sent to providers, argv other accounts can read, and 
 origin.
 
 ### Known limitations
+- **The MCP hub's socket is not enabled for you.** `splice install --all` writes the hub's systemd units and enables
+  nothing, so on a machine where splice wrote them the hub stays off until you run
+  `systemctl --user enable --now splice-mcp-front.socket`, which `splice doctor` names. Until then each session starts
+  its own MCP servers, as in 0.3.x.
 - **Budget alerts reach the webhook, not the desktop.** A `warn` budget posts to the saved webhook
   and writes the head's log. The `desktop` alert flag is saved, but nothing turns it into a
   desktop notification yet.
@@ -143,6 +149,32 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **The MCP hub: one copy of each MCP server for every session, kept through restarts.** On Linux x86-64 with
+  `systemd --user` running, the MCP servers of each session splice launches run under two small native programs
+  installed beside the jar: `splice-mcp-front`, which holds `127.0.0.1:3095` and every session's connection, and one
+  `splice-mcp-holder` per server. The front outlives the daemon, so an upgrade, a restart or a crash of splice drops no
+  session's tools. Each launch hands Claude Code one owner-only `--mcp-config` file, `<state>/mcp-hub/launch-<pid>.json`,
+  naming every server Claude Code would load in that folder under its own name, so tool names do not change. claude.ai
+  connectors and `http`, `sse` and `ws` servers stay Claude Code's. A plugin's servers move to the hub only on a Claude
+  Code version where splice's own check found `--plugin-dir-no-mcp` works. A server starts on its first tool call, a
+  shared one stops after `mcpIdleTimeoutMs` (30 minutes) with no calls, and one with a call in flight is never stopped.
+  When the front does not answer, the launch says "this session starts its own MCP servers" and Claude Code runs its
+  own. Anywhere else the daemon hosts MCP in process, as before.
+- **MCP servers shared or one per session, asked once.** A first `splice setup` asks whether MCP servers are shared
+  between sessions and saves the answer as `[daemon] mcp_share`; shared is the default. The console's MCP section
+  switches it, for new connections with no restart, and shows measured memory against one shared copy
+  (`GET /api/mcp/memory`). Servers that keep state per process, such as Desktop Commander, or that need the session's
+  folder stay one per session, with the reason.
+- **Installing the MCP hub.** On Linux x86-64, `install.sh` installs `splice-mcp-holder` and `splice-mcp-front` beside
+  the jar, from the jar's siblings, the checkout's build or the release, where each is checked against
+  `sha256sums.txt` and attested like the jar; a rollback restores the previous pair with the previous jar. An update
+  reloads a running front and never restarts it, since a restart would drop every session's MCP connection.
+  `splice install --all` writes `app-mcp.slice`, `splice-mcp-front.socket` and `splice-mcp-front.service` to
+  `~/.config/systemd/user/` only where no unit of that name exists. `splice init` writes `~/.config/splice/mcp-front.env`
+  with the hub's state folder and the control port. `splice doctor` has an MCP hub row: on, never run here with the
+  command that enables it, not answering, or off with the reason.
+- **`splice listeners`** prints the control port and each head's port as JSON, or the config findings when boot would
+  refuse, so a service manager can hand the daemon its sockets.
 - **Settings changes reach the next request, with no restart.** The retry count and the generic retry
   curve, the first-byte and re-send timeouts, the request body cap and read ceiling, the materialization budget,
   the quota poll cadence, the MCP host's idle window, server ceiling, handshake and request budgets, the status
@@ -499,7 +531,7 @@ origin.
   4096 sessions, least recently used first out.
   The status line names the session's account and why it switched. `splice status` and
   `splice doctor` show the head's accounts and its last automatic switch. Doctor names the login
-  carrying requests and reports each retained refusal under its owning head or account.
+  carrying requests and reports the newest retained refusal under its owning head or account.
   Labeled credential files are read without following symlinks (a linked file is never loaded and is listed as refused with a reason in
   `/api/accounts`; its label stays taken, so a new sign-in never reuses it), matching how they are written; the primary file is resolved as before.
   A 401 rejecting the account's own credential excludes future turns from that account,
@@ -759,7 +791,7 @@ origin.
 - **A session splice did not launch joins the head its requests reach.** With no launch record, a session is placed on
   the head whose port its requests arrive on, and keeps that head across a restart. `unknown head` stays for a session
   splice still cannot place.
-- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-19`). It sends each argument exactly as typed, whatever
+- **The launch shim is POSIX `sh` plus `curl`** (marker `shim-20`). It sends each argument exactly as typed, whatever
   it holds, and when `curl` is missing it says so: "splice needs curl to start Claude Code, and curl is not installed"
   with the install command for this machine.
 - **Translated heads no longer show Claude Code's auto-mode notice.** A session on any head but `claude-splice` used to
@@ -870,6 +902,26 @@ origin.
   own under Started by Claude Code.
 
 ### Changed
+- **splice works with the systemd unit that runs it.** `splice start`, `splice restart` and `splice console` go
+  through `splice.service` whenever a unit serves this shell, even while it is down, instead of starting a second daemon
+  beside it. A unit that runs another home's daemon is refused by name and nothing is stopped, and a shell whose home is
+  not the unit's gets a refusal that names the mismatch. A daemon no unit supervises restarts through a detached
+  successor, from the CLI or the console's Restart. `splice restart` refuses any word but `--now`.
+- **The installer keeps to the HOME it runs under,** and refuses a jar and launcher that do not match, fetching the
+  release's launcher when none does. A plain `claude` run under another HOME starts Claude Code directly, or refuses
+  with the reason. A launch against an older daemon stops and says to run `splice restart`, and a reinstall over a
+  running splice prints the same.
+- **`splice status` shows a full plan window.** A ready head whose provider window is full reads ready, at 100%, with
+  its reset time; `/health` and `/api/heads` carry `quotaFull`.
+- **A local runtime head is presented to Claude Code as a Claude model,** so Claude Code prints no unrecognized-model
+  line and compacts at the runtime's own window. A runtime that starts late or loads a model later moves its head's
+  window on the next check, with no restart; a runtime that is down keeps the window in force.
+- **A request body that stops arriving is closed after 30 seconds of silence,** a live setting, `ingressReadIdleMs`.
+- **The daemon log records a launch's inline settings by size and hash.** The whole `--settings` body on every launch
+  rolled `daemon.log` within hours on a busy machine; every other argument is logged as before.
+- **The release's license files** include each bundled dependency's own LICENSE and NOTICE text.
+- **The setup sign-in line, the README and the example config** no longer carry an "unofficial, use at your own risk"
+  disclaimer.
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
   when the socket opened, not from its last use. Retirement replaces an idle connection before
   reuse, never cutting a round already running. The first round on the replacement sends the
@@ -958,7 +1010,8 @@ origin.
   `splice upgrade` and every restart the daemon takes on itself (`POST /api/daemon/restart`,
   an add's save) wait for compactions in flight before stopping. The daemon keeps serving during this wait and no head
   closes admission, so ordinary turns do not hold the compaction wait. Each compaction is waited
-  for until it reaches Claude Code's 600 s cap, and the whole wait has the same cap; `--now` skips
+  for until it reaches the daemon's own cap on a turn (`upstreamTimeoutMs`, 900 s by default), and the whole wait has
+  the same cap, because Claude Code 2.1.296 waits longer than that on a large conversation; `--now` skips
   it, and an unreadable in-flight count is reported before restarting without the wait. A finished
   answer whose client disconnected is kept owner-only under `<state>/compactions/<head>/`. Its
   identical retry can replay that recording for up to two hours without another upstream run;
@@ -1014,10 +1067,11 @@ origin.
   `KIMI_OAUTH_HOST`, `CLAUDE_OAUTH_USAGE_URL`). Those endpoints receive your token, so splice accepts one only
   when its host is `localhost`, `127.0.0.1` or `::1`; any other host is ignored, the vendor's address is
   used, and the daemon log names the variable once.
-- **A restart no longer refuses the requests that arrive during its drain.** A draining command stops accepting at the start
-  of the drain, so a request that arrives then waits in the kernel for the next daemon. A connection that was kept open
-  and idle when the drain starts is closed, so the client's next request opens a new one that waits too, and is not refused
-  with `error:restarted`. `tools/probes/restart-drain-read.ts` reads how a drain went at any install.
+- **A restart under socket activation no longer refuses the requests that arrive during its drain.** On a socket its
+  service manager handed it, a draining command stops accepting at the start of the drain, so a request that arrives then
+  waits in the kernel for the next daemon. A connection that was kept open and idle when the drain starts is closed, so
+  the client's next request opens a new one that waits too. On its own port, a draining command keeps listening and
+  answers a new turn 529 with outcome `error:restarted`, which Claude Code retries. `tools/probes/restart-drain-read.ts` reads how a drain went at any install.
 - **Accounts and Usage open quickly after the daemon has been idle.** The economics read stays warm between opens and is
   ready after a head's own hourly totals are read, not after its whole request window, so the first open no longer
   queues behind every head. The turns route reads a week from an in-memory store, and the session history index
@@ -1059,6 +1113,22 @@ origin.
 - **`splice sessions` names the model each session runs,** beside its head and account.
 
 ### Fixed
+- **`install.sh` says when `gh` did not answer.** A `gh auth status` that took over 20 seconds read as "gh is not
+  signed in"; it now reads "gh did not answer gh auth status within 20 s".
+- **A daemon that runs out of memory exits** and leaves a heap dump, `splice-oom.hprof` in the state folder, instead
+  of running on half alive.
+- **A stop that the halt watchdog had to cut exits with status 70,** not 0, so systemd can tell it from a clean stop.
+- **A stop during startup stays a stop.** A head that had not started stays stopped, and a stop before the control
+  port binds cancels the start.
+- **`splice key set` and `unset` report a refused write** to `keys.toml` in one line and fail, instead of a stack trace.
+- **A logs folder that cannot be created is reported as not created,** with no `daemon.log` kept, and a filesystem
+  without POSIX modes no longer stops the logger from starting.
+- **Doctor reads a slow daemon as running but slow to answer,** a warning, not as stopped; something else on the
+  control port is a warning with an `lsof` fix. Times read as a person reads them and round up, so a hold never reads
+  sooner than it is. A missing launcher reads "splice's launcher is missing". A bin folder that cannot be listed is a
+  warning instead of "no leftover commands", and a leftover command link to the launcher that no head claims is a
+  warning naming the `rm` that clears it. The Claude Code row reads the `claude` on the same PATH as the prerequisites
+  row.
 - **A source that finished is no longer counted as cut.** A client step that failed just after the upstream delivered a
   code-mode round's terminal added a cut to that request's row, though the source was whole and its tokens were
   billed. The cut count now rises only when a source is cut before its terminal arrives.

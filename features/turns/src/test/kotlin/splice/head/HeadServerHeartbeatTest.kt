@@ -63,8 +63,8 @@ class HeadServerHeartbeatTest {
     private lateinit var head: HeadServer
 
     @BeforeAll
-    fun setUp(@TempDir tmp: Path) = runBlocking {
-        this.tmp = tmp
+    fun setUp(@TempDir dir: Path) = runBlocking {
+        tmp = dir
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(

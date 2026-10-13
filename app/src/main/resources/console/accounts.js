@@ -87,13 +87,29 @@ function askEconomics() {
     if (answer.ok && (answer.body?.heads || []).some((h) => h.read_pending)) setTimeout(askEconomics, ECONOMICS_REASK_MS);
   });
 }
+// The sessions on each login come from /api/sessions, which took 4 s and more on his machine while every other read here
+// answers in under one, and the page showed only Add provider until it did (walk on d0ec523b5). So it is asked beside
+// the other reads and never waited on: the cards draw at once with Reading under each login, and when it answers each
+// card takes its sessions and the page draws again. Null is not read yet; a later read keeps the last answer meanwhile.
+let liveSessions = null;
+let askingSessions = false;
+function askSessions() {
+  if (askingSessions) return;
+  askingSessions = true;
+  API.get("/api/sessions").then((ss) => {
+    askingSessions = false;
+    // the sessions running now, each on the login splice proved it uses (/api/sessions account, SessionAccountOf.kt): a
+    // login lists them under its card (v0.4.0 section 9: show which account every session is currently on)
+    liveSessions = ss.ok ? (ss.body?.sessions || []).filter((x) => x.availability === "live" && x.account && x.head) : liveSessions ?? [];
+    for (const p of data) for (const a of p.accounts) if (a.sessionsOn) a.sessions = a.sessionsOn();
+    render();
+  });
+}
 async function load({ asks = true } = {}) {
   tick();
   if (asks) askEconomics();
-  const [st, ac, ks, bg, md, hd, au, ss] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth", "/api/sessions"].map((p) => API.get(p)));
-  // the sessions running now, each on the login splice proved it uses (/api/sessions account, SessionAccountOf.kt): a
-  // login lists them under its card (v0.4.0 section 9: show which account every session is currently on)
-  const liveSessions = (ss.body?.sessions || []).filter((x) => x.availability === "live" && x.account && x.head);
+  askSessions();
+  const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
   // each login's name by the label its pool knows it by on a head, so a session's last switch reads in Accounts' names
   for (const r of ac.body?.accounts || []) for (const h of r.heads || []) LOGIN_NAME.set(`${h}|${r.account_labels?.[h] || r.label}`, r.display_name || r.label);
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
@@ -195,8 +211,8 @@ async function load({ asks = true } = {}) {
         // a session names its login by the label the pool gave it on its head; a login answers to that, its selector or its
         // own label, and a single login with none is the primary
         const namesOn = (head) => { const n = [row.account_labels?.[head], row.selector_key, row.label].filter(Boolean); return n.length ? n : ["primary"]; };
-        const onIt = liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account));
-        p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows, sessions: onIt,
+        const sessionsOn = () => (liveSessions ? liveSessions.filter((x) => (row.heads || []).includes(x.head) && namesOn(x.head).includes(x.account)) : null);
+        p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows, sessions: sessionsOn(), sessionsOn,
           // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
@@ -424,8 +440,11 @@ function meterHtml(c, pick = null) {
   // a day with no request yet says so in muted ink, never a figure of nothing (hitstop's mock, fin)
   const none = c.unread ? `<em>${c.unread}</em>${c.unreadWhy ? ` <span class="state">${esc(c.unreadWhy)}</span>` : ""}` : !c.local && c.spent != null && !c.priced && !c.unpriced && !c.failed ? "<em>No requests</em>" : "";
   if (!c.budget) {
+    // a command whose every account is on a plan has nothing a budget caps, since a budget caps what a key was charged
+    // (BudgetEnforcement.kt:34), so its row offers none, as the split row's does; a day not read yet keeps that rule
+    const offer = c.split?.allPlan ? "" : `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>`;
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${none || spent}${share ? ` <em>${share}</em>` : ""}${unpriced(c)}</span>`
-      + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${refills(day)}${c.unread ? "" : openingRow(c)}</div>`;
+      + `${offer}${refills(day)}${c.unread ? "" : openingRow(c)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
   const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${[share, ...asides(c)].filter(Boolean).join(", ")}` : ""}`;
@@ -676,6 +695,7 @@ function sessWhy(x) {
   return own + (sw ? `Moved from ${loginOf(x.head, sw.from)} to ${loginOf(x.head, sw.to)} at ${new Date(sw.at_epoch_millis).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}: ${sw.reason}` : "");
 }
 function sessionsHtml(a) {
+  if (a.sessions === null) return `<div class="onlogin"><span class="state mute">Reading sessions</span></div>`;
   const on = a.sessions || [];
   if (!on.length) return "";
   // each name carries the lamp Sessions gives a running session (kit.js look), so it reads as an agent on this login now

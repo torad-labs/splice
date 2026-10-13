@@ -355,12 +355,15 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .meter.windows.spend { grid-template-columns: auto minmax(0, 1fr) auto auto; column-gap: 1.3rem; }  /* outside the cards: its own columns */
 .meter.windows.spend .money { white-space: normal; }  /* the figure wraps when the card is narrow, so the reset and the button keep their words whole and inside the edge */
 .meter.windows.spend .act { white-space: nowrap; }
-/* a Day that carries a figure and a count under it gives them the whole row: "Day" and the figure on the first line,
-   Set budget and the reset on the next, so no phrase breaks off and nothing packs beside the tab (3828, 1440, b09b81c15) */
-.meter.windows.spend:has(> span.money > .unpriced) { row-gap: .9rem; }
-.meter.windows.spend:has(> span.money > .unpriced) > .money { grid-column: 2 / -1; }
-.meter.windows.spend:has(> span.money > .unpriced) > .act { grid-row: 2; grid-column: 3; }
-.meter.windows.spend:has(> span.money > .unpriced) > .when { grid-row: 2; grid-column: 4; }
+/* Every Day row has one shape (walk on d0ec523b5): the day on the first line, across the whole row after "Day", wrapping
+   inside it; the budget's control and the reset on the second, at the right, so Set budget sits in the same place on every
+   row that can carry a budget and no head's long text can run over its own controls or into the next column */
+.meter.windows.spend { row-gap: .9rem; }
+.meter.windows.spend > :not(.label):not(.act):not(.when):not(.chip):not(.opening) { grid-column: 2 / -1; min-width: 0; }
+.meter.windows.spend > .act { grid-row: 2; grid-column: 3; justify-self: end; }
+.meter.windows.spend > .when { grid-row: 2; grid-column: 4; }
+/* why a day was not read is a sentence: its own line under "Not read", wrapping inside the row */
+.meter.windows.spend > .money .state { display: block; margin-top: .4rem; white-space: normal; line-height: 1.35; overflow-wrap: anywhere; }
 .meter.windows.spend > .money > em, .meter.windows.spend .money .unpriced.own .part { white-space: nowrap; }
 .meter.windows.spend > .money > .unpriced.own { width: auto; }
 .meter .editor { margin-top: 0; }
@@ -467,10 +470,6 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .meter.windows.spend > .money.line .part:first-child { padding-left: 2ch; }
 .meter.windows.spend > .money.line .sep { white-space: pre; }
 .meter.windows.spend:has(> span.money.line) > .label { align-self: start; line-height: 1.5; }
-.meter.windows.spend:has(> span.money.line) { row-gap: .9rem; }
-.meter.windows.spend:has(> span.money.line) > .money { grid-column: 2 / -1; }
-.meter.windows.spend:has(> span.money.line) > .act { grid-row: 2; grid-column: 3; }
-.meter.windows.spend:has(> span.money.line) > .when { grid-row: 2; grid-column: 4; }
 
 /* ---------- the project picker (Marlin, fin, Oct 11; hitstop's mock): one pick shared by Sessions, Teams and
    Requests, and the doors to projects elsewhere with someone waiting (kit pickerHtml) ---------- */

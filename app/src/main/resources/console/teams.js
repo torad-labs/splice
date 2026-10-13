@@ -617,8 +617,8 @@ function chatHtml(tm) {
   // A message whose text is not in its sender's transcript is drawn as who and when, with no box; the day says so
   // once, at its top (marlin, Oct 13). splice keeps no message text of its own: it reads the sender's transcript.
   const bare = msgs.filter((m) => !m.text?.trim()).length;
-  const said = `${bare === msgs.length ? "These messages show" : `${bare} of these messages show`} who and when: ` +
-    "their text is not in the sender's transcript on this machine";
+  // the line is a state, in fin's word (Oct 13), with the count only when some of the day's messages have their text
+  const said = bare === msgs.length ? "Not in the transcript" : `${bare} of ${msgs.length} not in the transcript`;
   const lead = bare ? `<p class="cut"><span>${said}</span></p>` : "";
   return keptHtml(panel) + lead + msgs.map((m) => {
     const from = m.from_slot ? slotOf(tm, m.from_slot) : null;

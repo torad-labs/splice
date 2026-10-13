@@ -70,6 +70,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.UUID
 import kotlin.io.path.isSymbolicLink
@@ -116,6 +117,38 @@ private class MigrationPlan {
             parked.joinToString(", ") { globalProjects.relativize(it).toString() } + "\n"
 }
 
+/** Every file of a shared projects tree copied into a head's own, for [ProjectsLink.ensureOwn]: bytes, never a link,
+ *  so nothing this head writes reaches the shared tree. Files.copy takes the kernel's direct copy, which a filesystem
+ *  with reflinks may share extents through; ext4, this machine's, copies the bytes. A symlink in the tree (Claude Code
+ *  writes subagent transcripts as absolute links into it) is copied as its target's bytes, as ResumeAcrossHeads copies
+ *  one; a link to no regular file has none and is named once. The copy is refused before it starts when it would leave
+ *  less than a tenth of the disk free: a tree of tens of gigabytes must not fill the disk under every other job. */
+private class OwnTreeCopy(private val log: LogSink) {
+    fun fill(shown: Path, staged: Path) {
+        val bytes = Files.walk(shown).use { tree ->
+            tree.filter { Files.isRegularFile(it) }.mapToLong(Files::size).sum()
+        }
+        val store = Files.getFileStore(staged)
+        if (store.usableSpace - bytes < store.totalSpace / FREE_SHARE) {
+            throw FileSystemException("$shown", null, "a $bytes-byte copy would leave under a tenth of the disk free")
+        }
+        Files.walk(shown).use { tree ->
+            tree.forEach { entry ->
+                val target = staged.resolve(shown.relativize(entry).toString())
+                when {
+                    Files.isDirectory(entry, NOFOLLOW_LINKS) -> Files.createDirectories(target)
+                    Files.isSymbolicLink(entry) && !Files.isRegularFile(entry) ->
+                        log("[projects] skipped $entry: a link to no regular file has no bytes to copy\n")
+                    else -> Files.copy(entry, target, COPY_ATTRIBUTES)
+                }
+            }
+        }
+    }
+}
+
+// why: the share of the disk a private projects tree's copy must leave free, a tenth
+private const val FREE_SHARE = 10L
+
 // The aside tree's name marker: `.projects.migrating-<uuid>` beside the link. A sweep that could not
 // finish leaves it there, and the next launch finds it by this marker.
 private const val ASIDE_MARK = ".migrating-"
@@ -155,9 +188,9 @@ internal class ProjectsLink(
     }
 
     /** A head that isolates projects but whose [dst] is still a link from when it shared them gets a real tree, as a
-     *  fresh head does, holding every file the link showed: each is HARDLINKED from the tree the link points at (the
-     *  merge's rules, run the other way), so a session appending through the link keeps the same bytes, nothing is
-     *  copied or moved, and the shared tree is untouched. The swap is the link's removal and one rename, the window
+     *  fresh head does, holding a COPY of every file the link showed ([OwnTreeCopy]). Never a hardlink: Claude Code
+     *  appends to a transcript in place, so a shared inode would carry this head's resumed sessions into the shared
+     *  tree, the leak head isolation forbids (splice-lead, Oct 13). The shared tree is read only. The swap is the link's removal and one rename, the window
      *  [link] accepts. A failure before the swap leaves the link serving; one at the rename puts the link back. Either
      *  is logged, and the next launch tries again (splice-lead, Oct 13). */
     private fun ownFromLink(dst: Path, log: LogSink) {
@@ -166,12 +199,8 @@ internal class ProjectsLink(
         val made = Cancellables.runCatchingCancellable {
             linkTo = Files.readSymbolicLink(dst)
             Files.createDirectory(staged)
-            // every file the link shows, hardlinked into the new tree by the merge's preflight run the other way
-            val plan = MigrationPlan()
-            val shown = PathProbe.resolved(dst)?.takeIf { Files.isDirectory(it, NOFOLLOW_LINKS) }
-            val refusal = shown?.let { preflight(it, staged, plan) }
-            if (refusal != null) throw FileSystemException("$shown", null, refusal)
-            plan.apply(fs, mutableListOf())
+            PathProbe.resolved(dst)?.takeIf { Files.isDirectory(it, NOFOLLOW_LINKS) }
+                ?.let { shown -> OwnTreeCopy(log).fill(shown, staged) }
             Files.delete(dst)
         }
         val swapped = if (made.isFailure) {

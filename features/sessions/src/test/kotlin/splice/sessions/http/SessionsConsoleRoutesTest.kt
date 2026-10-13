@@ -139,7 +139,7 @@ class SessionsConsoleRoutesTest {
                             ),
                         )
                     }
-                    else -> TranscriptLookup.Missing(roots.map { it.resolve("projects").toString() })
+                    else -> TranscriptLookup.Missing
                 }
             },
         )
@@ -160,11 +160,6 @@ class SessionsConsoleRoutesTest {
         )
         val missing = routes.transcript(BETA, null, null)
         assertEquals(HttpStatusCode.NotFound, missing.status)
-        assertEquals(
-            listOf(vanilla.resolve("projects").toString(), own.resolve("projects").toString()),
-            json(missing.body)["searched"]!!.jsonArray.map { it.jsonPrimitive.content },
-            "beta has no head: vanilla first, then every head's own tree",
-        )
         assertEquals(HttpStatusCode.BadRequest, routes.transcript(ALPHA, "x", null).status)
     }
 

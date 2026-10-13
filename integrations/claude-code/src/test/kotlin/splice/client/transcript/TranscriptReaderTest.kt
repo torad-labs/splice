@@ -238,15 +238,10 @@ class TranscriptReaderTest {
     }
 
     @Test
-    fun `a miss names every projects dir searched, and a bad id or cursor is refused`() {
+    fun `a miss is missing, and a bad id or cursor is refused`() {
         val reader = TranscriptReader()
         val roots = listOf(home.resolve(".claude"), home.resolve(".claude-x"))
-        assertEquals(
-            TranscriptLookup.Missing(
-                listOf(home.resolve(".claude/projects").toString(), home.resolve(".claude-x/projects").toString()),
-            ),
-            reader.page(ID, roots, null, 1),
-        )
+        assertEquals(TranscriptLookup.Missing, reader.page(ID, roots, null, 1))
         assertTrue(reader.page("../etc", roots, null, 1) is TranscriptLookup.Refused)
         assertTrue(reader.page(ID, roots, "1.2.3", 1) is TranscriptLookup.Refused)
         assertTrue(reader.page(ID, roots, "-1.0", 1) is TranscriptLookup.Refused)

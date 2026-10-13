@@ -127,7 +127,7 @@ class TeamRig(val tmp: Path, retentionDays: Int = 90) {
 
 internal class TestTranscripts(
     private val pages: (String, List<Path>, String?, Int) -> TranscriptLookup = { _, roots, _, _ ->
-        TranscriptLookup.Missing(roots.map { it.resolve("projects").toString() })
+        TranscriptLookup.Missing
     },
     private val sends: (String, List<Path>, Set<String>) -> SentTexts = { _, roots, ids ->
         SentTexts(null, emptyMap(), ids, roots.map { it.resolve("projects").toString() })

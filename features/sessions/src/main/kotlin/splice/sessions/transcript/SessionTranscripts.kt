@@ -94,8 +94,8 @@ public data class TranscriptPage(
 public sealed class TranscriptLookup {
     public data class Found(val page: TranscriptPage) : TranscriptLookup()
 
-    /** No root holds a transcript for this session id; [searched] names every projects directory tried. */
-    public data class Missing(val searched: List<String>) : TranscriptLookup()
+    /** No root holds a transcript for this session id. */
+    public data object Missing : TranscriptLookup()
 
     /** The request itself cannot be served: a malformed id or cursor. */
     public data class Refused(val reason: String) : TranscriptLookup()

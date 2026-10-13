@@ -22,7 +22,7 @@
 // names the head of a session splice launched), the vanilla ~/.claude tree (sessions splice did not
 // launch, and history written before V4-115 un-linked the trees), then every other head's tree. A
 // session whose head is unknown starts at the vanilla tree. The page reports the path it read, and a
-// miss reports every projects dir it searched.
+// miss says so.
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
@@ -153,12 +153,9 @@ public class SessionsRoutes(
         val ask = TranscriptAsk(trees, cursor, size, before)
         return when (val lookup = ask.lookup(transcripts, sessionId)) {
             is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null))
-            is TranscriptLookup.Missing -> JsonReply(
+            TranscriptLookup.Missing -> JsonReply(
                 HttpStatusCode.NotFound,
-                buildJsonObject {
-                    put("error", "no transcript for this session id")
-                    put("searched", buildJsonArray { lookup.searched.forEach { add(JsonPrimitive(it)) } })
-                }.toString(),
+                buildJsonObject { put("error", "no transcript for this session id") }.toString(),
             )
             is TranscriptLookup.Refused -> JsonReply(
                 HttpStatusCode.BadRequest,

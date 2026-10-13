@@ -148,7 +148,7 @@ public class TranscriptReader(
             return TranscriptLookup.Refused(if (start == null) BAD_CURSOR else BAD_ID)
         }
         val file = locator.locate(roots, sessionId)
-            ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+            ?: return TranscriptLookup.Missing
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
 
@@ -163,7 +163,7 @@ public class TranscriptReader(
         val file = if (refusal == null) locator.locate(roots, sessionId) else null
         return when {
             refusal != null -> TranscriptLookup.Refused(refusal)
-            file == null -> TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+            file == null -> TranscriptLookup.Missing
             else -> back.lookup(file, sessionId, end, limit)
         }
     }
@@ -171,7 +171,7 @@ public class TranscriptReader(
     override fun pageAt(sessionId: String, roots: List<Path>, atMs: Long, limit: Int): TranscriptLookup {
         if (!validSessionId.matches(sessionId)) return TranscriptLookup.Refused(BAD_ID)
         val file = locator.locate(roots, sessionId)
-            ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+            ?: return TranscriptLookup.Missing
         return back.lookup(file, sessionId, seek.after(file, atMs), limit)
     }
 

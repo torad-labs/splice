@@ -484,6 +484,25 @@ function drawNav() {
 }
 drawNav();
 
+// THE STALE MARK (web-console.md:385, :397; gap 460): splice.toml on disk no longer matches what the daemon booted with,
+// so a change written there, by this console or by hand, waits on a restart. /health says so as topologyStale; the
+// mark sits in the side column's foot on every page and is absent while the two match. Read once the page's scripts have
+// loaded (API comes after this file), then every 15 s; an unanswered read leaves the mark as it was.
+const STALE_READ_MS = 15_000;
+async function markStale() {
+  const foot = document.querySelector(".side .foot");
+  const res = foot ? await API.get("/health") : null;
+  if (!res?.ok) return;
+  const mark = foot.querySelector(".stale");
+  if (res.body?.topologyStale !== true) { mark?.remove(); return; }
+  if (mark) return;
+  const add = document.createElement("span");
+  add.className = "stale";
+  add.textContent = "splice.toml changed · restart to apply";
+  foot.prepend(add);
+}
+addEventListener("DOMContentLoaded", () => { markStale(); setInterval(markStale, STALE_READ_MS); });
+
 // ---------- the project pick: ONE PICK across Sessions, Teams and Requests (Marlin, Oct 11) ----------
 // Choosing a project on any of them changes it on all of them, so it lives in this browser and in the address: the
 // address wins when he arrives by a link ("Open on Requests"), and what he picked last carries to the next page he

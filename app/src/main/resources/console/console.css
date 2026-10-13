@@ -109,6 +109,8 @@ button { font: inherit; color: inherit; }
   background: var(--key-light); border-radius: 0 .2rem .2rem 0;
 }
 .side .foot { margin-top: auto; display: flex; gap: .6rem; padding-left: .8rem; }
+/* the stale mark (kit.js markStale): the key's ink, small, wrapping beside the theme toggle rather than widening the column */
+.side .foot .stale { align-self: center; max-width: 11rem; font-size: .78rem; line-height: 1.25; color: var(--key-ink); }
 
 .page { padding: 3.2rem 4rem 6rem; min-width: 0; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; margin-bottom: 3.2rem; }

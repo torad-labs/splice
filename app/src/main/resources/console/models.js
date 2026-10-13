@@ -110,6 +110,8 @@ function commandsOf() {
       url: pcfg.base_url ?? "", models, missing, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
+      // the daemon's own watch of a local runtime's port, the truth Accounts reads as Not answering (HeadProbes)
+      down: !!h.runtimeNotAnswering,
     };
   });
 }
@@ -122,6 +124,9 @@ function stateOf(c) {
   const mine = checks.filter((x) => x.id === `auth/${c.key}` || x.id === `daemon/head ${c.key}` || wrapperOf(x, c));
   const bad = mine.find((x) => x.status === "fail" || x.status === "warn");
   if (!c.live) return { state: "stopped", word: "Not started", fix: bad?.fix_id ? { id: bad.fix_id, label: "Start" } : { head: c.key, label: "Start" } };
+  // a local head whose runtime does not answer is not Ready, whatever its checks say: nothing listens on its port
+  // (the walk at 3828, Oct 13: four local heads read Ready with 8099-8102 closed)
+  if (c.down) return { state: "runtime", word: "Not answering", fix: null };
   if (!bad) return null;
   const auth = bad.id.startsWith("auth/"), keyed = /key/i.test(c.auth), refused = /refus|reject|invalid|401/i.test(bad.detail ?? "");
   const word = auth ? (keyed ? (refused ? "Credentials refused" : "No key") : "Signed out") : bad.id === "installation/wrapper" ? "Command not found" : "Not started";
@@ -157,7 +162,7 @@ function look(c) {
   if (ui.fixing[c.key]) return { cls: "working", lamp: '<svg class="wait" viewBox="0 0 40 40"><circle cx="20" cy="20" r="15"/></svg>', word: ui.fixing[c.key] };
   const s = stateOf(c);
   if (ui.keyin?.key === c.key) return { cls: "working", lamp: ICON.signout, word: "Add key" };
-  if (s?.state === "stopped") return { cls: "stalled", lamp: GL.notstarted, word: s.word };
+  if (s?.state === "stopped" || s?.state === "runtime") return { cls: "stalled", lamp: GL.notstarted, word: s.word };
   if (s?.state === "installation/wrapper") return { cls: "stalled", lamp: GL.relink, word: s.word };
   if (s) return { cls: "stalled", lamp: ICON.signout, word: s.word };
   if (c.running) return { cls: "working", lamp: ICON.trace, word: `${c.running} running` };

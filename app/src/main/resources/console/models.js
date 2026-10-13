@@ -637,10 +637,10 @@ function pricesHtml(c, d, s) {
   const cell = (id, k) => `<td class="num"><input class="field price${dirt(d.rates[id][k] !== was[id][k])}" id="pr-${k}-${esc(id)}" data-rate="${esc(id)}" data-rk="${k}" value="${esc(d.rates[id][k])}" placeholder="No price" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="${k === "i" ? "In" : "Out"} per 1M tokens">${bad(s.rate[id][k], "Not a price")}</td>`;
   const shown = c.models.some((m) => cacheShown(c, m.id, d.rates[m.id]));
   const cache = (id) => (!shown ? "" : !cacheShown(c, id, d.rates[id]) ? '<td class="num"></td>'
-    : `<td class="num"><input class="field price dirty" id="pr-c-${esc(id)}" data-rate="${esc(id)}" data-rk="c" value="${esc(d.rates[id].c ?? d.rates[id].i)}" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="Cache read per 1M tokens">${bad(s.rate[id].c, "Not a price")}</td>`);
+    : `<td class="num"><input class="field price dirty" id="pr-c-${esc(id)}" data-rate="${esc(id)}" data-rk="c" value="${esc(d.rates[id].c ?? d.rates[id].i)}" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="Cached per 1M tokens">${bad(s.rate[id].c, "Not a price")}</td>`);
   const body = c.models.map((m) => `<tr><td class="mname">${esc(m.label)}</td>${cell(m.id, "i")}${cell(m.id, "o")}${cache(m.id)}</tr>`).join("");
   return '<h3 class="gh">Prices</h3>'
-    + `<div class="ctl wide"><table class="every prices"><thead><tr><th>Model</th><th class="num">In per 1M</th><th class="num">Out per 1M</th>${shown ? '<th class="num">Cache read per 1M</th>' : ""}</tr></thead><tbody>${body}</tbody></table></div>`;
+    + `<div class="ctl wide"><table class="every prices"><thead><tr><th>Model</th><th class="num">In per 1M</th><th class="num">Out per 1M</th>${shown ? '<th class="num">Cached per 1M</th>' : ""}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 // the items a command shares with your own Claude Code: every item splice shares, each one this command keeps its own of unpressed
 function runningHtml(c, d, s) {
@@ -726,7 +726,7 @@ function changesOf(c) {
   for (const m of c.models) {
     add(`${m.label} in`, a.rates[m.id].i || "No price", d.rates[m.id].i || "No price");
     add(`${m.label} out`, a.rates[m.id].o || "No price", d.rates[m.id].o || "No price");
-    if (cacheShown(c, m.id, d.rates[m.id])) add(`${m.label} cache read`, "No price", d.rates[m.id].c ?? d.rates[m.id].i);
+    if (cacheShown(c, m.id, d.rates[m.id])) add(`${m.label} cached`, "No price", d.rates[m.id].c ?? d.rates[m.id].i);
   }
   const qv = (v) => (v === undefined ? "Provider's own" : Array.isArray(v) ? v.join(", ") : String(v));
   for (const q of quirksOf(c)) add(quirkName(q.name), qv(a.quirks[q.name]), qv(d.quirks[q.name]));

@@ -45,6 +45,7 @@ import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
 import splice.launch.LaunchSpec
 import java.io.IOException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -75,7 +76,7 @@ public class ResumeHookRoute(
         // line, never a 500 (Oct 7-8: four of them reached the log as unclassified control failures)
         val owner = call.request.headers[FOREGROUND_OWNER_HEADER]
         val refusal = Cancellables.runCatchingCancellable { handle(key, body, owner) }
-            .getOrElse { cause -> "the hook failed (${SafeFailureText.render(cause)})" }
+            .getOrElse { cause -> "the hook failed (${explained(cause)})" }
         // refusal is a sentence THIS class composes; the id it may carry passed SESSION_ID_SHAPE first.
         if (refusal != null) log("[resume] hook for ${LogSafe.str(key)} did nothing: ${LogSafe.str(refusal)}\n")
         call.respondText("{}", ContentType.Application.Json)
@@ -142,7 +143,7 @@ public class ResumeHookRoute(
             rewriter.rewrite(transcript, CallingRoster(pinnedModel, offered, managed.head.key))
         }
             .getOrElse { cause ->
-                return "session $sessionId could not be moved onto $pinnedModel (${SafeFailureText.render(cause)})"
+                return "session $sessionId could not be moved onto $pinnedModel (${explained(cause)})"
             }
         if (rewritten > 0) {
             log(
@@ -205,6 +206,16 @@ public class ResumeHookRoute(
         val unmade = tree.resolve(name)
         val free = !Files.exists(unmade, NOFOLLOW_LINKS) || Files.isDirectory(unmade, NOFOLLOW_LINKS)
         return unmade.takeIf { free && dir.parent?.let(::resolved) == tree }
+    }
+
+    /** What failed, said so the next one explains itself and still quotes nothing it read: the exception's class, a
+     *  filesystem failure's reason (never its path), the class of what it wraps, and the line in splice that threw,
+     *  where a message splice wrote is spelled out. A message itself is withheld, as [SafeFailureText] withholds it:
+     *  this route reads transcripts, and a parser's message can quote their bytes. */
+    private fun explained(failure: Throwable): String {
+        val reason = (failure as? FileSystemException)?.reason?.let { ": $it" }.orEmpty()
+        val wrapped = failure.cause?.let { " from ${it::class.simpleName}" }.orEmpty()
+        return "${failure::class.simpleName}$reason$wrapped${SafeFailureText.site(failure)}"
     }
 
     private fun parse(body: String): JsonObject? = try {

@@ -549,6 +549,10 @@ if [ -n "$PROVENANCE_DEFERRED" ]; then
   echo "splice: to verify it later, with gh installed and signed in:"
   echo "  gh attestation verify $JAR_DST --repo torad-labs/splice"
   echo "  gh attestation verify $SHIM_DST --repo torad-labs/splice"
+  if [ "$HUB_INSTALLED" = 1 ]; then
+    echo "  gh attestation verify $SHARE_DIR/splice-mcp-holder --repo torad-labs/splice"
+    echo "  gh attestation verify $SHARE_DIR/splice-mcp-front --repo torad-labs/splice"
+  fi
 fi
 
 # 5. Verify, don't assume: run the same checkup a user would. Its findings are NEXT STEPS

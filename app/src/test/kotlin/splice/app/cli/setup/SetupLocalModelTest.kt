@@ -162,6 +162,8 @@ class SetupLocalModelTest {
         // ticked heads landed and the daemon restarted for them.
         val expected = listOf(
             "pick heads",
+            "ask Keep these context windows for codex?",
+            "ask Run one short live turn against 'codex' once it is up?",
             "ask local",
             "ask Share MCP servers between sessions? It uses less memory.",
             "ask Install now?",
@@ -178,13 +180,14 @@ class SetupLocalModelTest {
         assertTrue("Local model:" in summary && "about 9 GB" in summary, chrome.toString())
     }
 
-    /** Every question answered yes, `codex` ticked, each answer recorded in [events]. */
+    /** Every question answered yes but the live turn, which would run a real command, `codex` ticked, each answer
+     *  recorded in [events]. */
     private fun wizardPrompts(events: MutableList<String>) = SetupPrompts(
         frame = WizardFrame(
             out = chrome,
             ask = ConfirmPrompt { question, _ ->
                 events += if (question.startsWith("Run a local model")) "ask local" else "ask $question"
-                true
+                !question.startsWith("Run one short live turn")
             },
         ),
         choose = { options, index -> SelectOutcome.Chosen(options[index].value) },

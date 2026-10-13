@@ -7,6 +7,7 @@ import splice.app.CommandLiveTurn
 import splice.app.ConsolePrompter
 import splice.configuration.add.AddModelChoice
 import splice.configuration.add.AddProfiles
+import splice.configuration.add.WINDOW_ATTEMPTS
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -72,5 +73,3 @@ internal class SetupHeadChoices(
         }
     }
 }
-
-private const val WINDOW_ATTEMPTS = 3

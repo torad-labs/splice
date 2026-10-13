@@ -17,7 +17,10 @@ import java.nio.file.Path
 
 internal const val DEFAULT_WINDOW = 128_000L
 private const val MAX_PROMPTED_MODELS = 8
-private const val WINDOW_ATTEMPTS = 3
+
+// why: a mistyped context window is asked for again, never saved, and three misses end the question; enough for a
+// slip, few enough that a person who does not know the number is not stuck. Setup's window question shares it.
+public const val WINDOW_ATTEMPTS: Int = 3
 
 /** A TOML value `splice add` will write bare: no quote, no backslash, no control character. */
 internal val addValuePattern = Regex("[^\"\\\\\\p{Cntrl}]+")

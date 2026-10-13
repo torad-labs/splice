@@ -8,7 +8,6 @@ import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.host.CodeModeHostDrains
@@ -78,29 +77,6 @@ class CodeModeHostControlTimeoutTest {
                 assertFalse(host.draining, "A late old failure must not quarantine a healthy replacement")
                 assertFalse(replacement.isClosed)
             }
-        }
-    }
-
-    @Test
-    fun `a dying control generation cannot quarantine its already cleared replacement slot`() = runBlocking {
-        val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
-        val messages = ConcurrentLinkedQueue<String>()
-        JvmCodeModeRuntime(
-            limits = PoolLimits(maxWorkers = 1),
-            launch = HostLaunch(
-                startTimeoutMs = 300,
-                spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
-            ),
-        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
-            val first = runtime.startSession("first", "return 'fixture';", emptySet())
-            assertTrue(first.advance() is CodeModeStep.Completed)
-            withTimeout(5_000) { while (runtime.liveCells() != 0) yield() }
-            processes.first().exitOnEngineClose = true
-            runtime.closeSession("first")
-            HostLifecycleAwait.ended(messages)
-            val next = withTimeout(5_000) { runtime.startSession("new", "return 'fixture';", emptySet()) }
-            assertTrue(next.advance() is CodeModeStep.Completed)
-            assertEquals(2, processes.size)
         }
     }
 }

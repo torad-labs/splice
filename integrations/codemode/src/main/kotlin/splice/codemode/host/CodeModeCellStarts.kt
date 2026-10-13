@@ -53,8 +53,6 @@ internal class CodeModeCellStarts(
         }
     }
 
-    fun count(): Int = cells.size
-
     fun closeAll() {
         cells.forEach(JvmCodeModeCell::stop)
     }

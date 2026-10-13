@@ -171,8 +171,6 @@ public class JvmCodeModeRuntime(
         pool.closeSession(sessionKey)
     }
 
-    internal fun liveCells(): Int = cells.count()
-
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             try {

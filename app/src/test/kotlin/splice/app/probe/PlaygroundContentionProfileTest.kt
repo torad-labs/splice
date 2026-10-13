@@ -32,9 +32,12 @@ class PlaygroundContentionProfileTest {
                 repeat(2) { fixture.playground() }
                 val idle = List(5) { scenario(fixture, "idle-loaded", 0) }.sorted()[2]
                 val expected = Json.parseToJsonElement(fixture.controlRead()).jsonObject
-                fixture.coldReads()
-                val cold = scenario(fixture, "cold-loaded-console", 4, expected)
-                val warm = scenario(fixture, "warm-loaded-console", 4, expected)
+                // Medians on every side, as idle is: one sample on a loaded pre-push host fails on a single pause.
+                val cold = List(3) {
+                    fixture.coldReads()
+                    scenario(fixture, "cold-loaded-console", 4, expected)
+                }.sorted()[1]
+                val warm = List(3) { scenario(fixture, "warm-loaded-console", 4, expected) }.sorted()[1]
                 assertTrue(
                     maxOf(cold, warm) <= idle * ROUTE_IDLE_MULTIPLE,
                     "route ns: idle=$idle cold=$cold warm=$warm; limit=${idle * ROUTE_IDLE_MULTIPLE}",

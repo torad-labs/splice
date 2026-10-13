@@ -94,7 +94,7 @@ summary_field = true
 # the normal SSE path, which keeps sole ownership of retry, the 401 refresh and the 429 cooldown.
 # With the key false or absent no WebSocket is ever constructed and the request path is
 # byte-identical to a build without the feature.
-websocket = true
+websocket = false   # ships off (project law): turning it on is your one-line change here
 # zstd_request_body (default false): compress request bodies the way codex-cli 0.145.0 does to
 # this endpoint (2.7x measured). Codex ONLY — xAI 400s on a compressed body; never set it elsewhere.
 zstd_request_body = true

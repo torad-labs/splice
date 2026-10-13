@@ -194,7 +194,12 @@ internal object Concentration {
     // owners' hands (the census assignment), and GrokAuthProvider.kt and UpstreamClient.kt left after. HeadRemoval.kt
     // stayed (3.25 -> 3.44 by neighbourhood: 034f99b5f dropped two high-median neighbours with its splice.head imports)
     // and waits for the post-release decomposition with ControlPlane.kt. 16 -> 15.
-    const val RATCHET_MAX_HIGH = 15
+    // 2026-10-13, later: HeadRemoval.kt leaves by its own seams, behavior unchanged. HeadRemovalAssembly.kt takes the
+    // control server's parts (the splice.app.control import goes with it) and WrapperLinks.kt the wrapper-link removal.
+    // By this law's formula, counted by hand: C 141.0 -> 105.0 (logic 122 -> 98, concerns 10 -> 7) against a
+    // denominator near 41, ratio 3.44 -> about 2.6; the two new files are C near 47 and 41, and splice.app.head's
+    // median moves 90.5 -> 89.0. The train's run of this law is the measurement. 15 -> 14.
+    const val RATCHET_MAX_HIGH = 14
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

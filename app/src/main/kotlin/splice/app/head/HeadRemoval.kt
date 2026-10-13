@@ -14,11 +14,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.order.ACCOUNT_ORDER_FILE
 import splice.accounts.order.AccountOrderStore
-import splice.app.control.ConsolePorts
-import splice.app.control.ControlRuntime
-import splice.app.control.ManagedHead
-import splice.core.config.ConfigService
-import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
 import splice.core.retired.RetiredHead
 import splice.core.retired.RetiredHeads
@@ -29,28 +24,21 @@ import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.http.JsonReply
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.isSymbolicLink
 
 // why: the writer's own file-level refusals are filed under the file's name, and this phrase is its drift refusal.
 private const val TOPOLOGY_FILE_KEY = "splice.toml"
 private const val CHANGED_ON_DISK = "changed while this write was prepared"
 
-/** Where the wrapper links live; null reads the install's own bin dir. */
-internal fun interface WrapperBinSource {
-    operator fun invoke(): Path?
-}
-
 internal class HeadRemoval(
     private val writer: TopologyWriterSource,
-    private val wrapperBin: WrapperBinSource,
+    wrapperBin: WrapperBinSource,
     private val statePaths: StatePaths,
     private val facts: HeadRemovalFacts,
     private val log: LogSink,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val retired = RetiredHeads(statePaths.stateDir)
+    private val links = WrapperLinks(wrapperBin, log)
 
     /** What stays, and who is on the command now. */
     fun read(key: String): JsonReply {
@@ -148,34 +136,9 @@ internal class HeadRemoval(
     /** The wrapper link goes unless another head still answers to the same command; a link that will not go stays. */
     private fun unlink(command: String, others: Set<String>, topology: Topology) {
         if (others.any { commandOf(it, topology) == command }) return
-        val bin = wrapperBin() ?: InstallPaths().binDir
-        val link = bin.resolve(command)
-        if (!isOwnLink(bin, link, command)) return
-        if (Cancellables.runCatchingCancellable { Files.delete(link) }.isFailure) {
-            log("[models] the $command wrapper link at $link could not be removed; it stays")
-        }
+        links.unlink(command)
     }
-
-    private fun isOwnLink(bin: Path, link: Path, command: String): Boolean =
-        command.isNotEmpty() && link.normalize().parent == bin.normalize() && link.isSymbolicLink()
 
     private fun refusal(status: HttpStatusCode, message: String): JsonReply =
         JsonReply(status, buildJsonObject { put("error", message) }.toString())
-}
-
-/** Assembles the removal from what the control server already holds, so the server names none of its parts. */
-internal class HeadRemovalAssembly(
-    private val config: ConfigService,
-    private val ports: ConsolePorts,
-    private val runtime: ControlRuntime,
-    private val heads: Map<String, ManagedHead>,
-    private val log: LogSink,
-) {
-    fun build(): HeadRemoval = HeadRemoval(
-        TopologyWriterSource { ports.topology },
-        WrapperBinSource { ports.wrapperBin },
-        config.statePaths,
-        HeadRemovalFacts(config.statePaths, heads, RegisteredSessions { runtime.sessions }),
-        log,
-    )
 }

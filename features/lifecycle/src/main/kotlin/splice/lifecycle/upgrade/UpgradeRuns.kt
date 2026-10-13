@@ -61,9 +61,7 @@ public enum class UpgradeRunState(public val wire: String) {
 public data class UpgradeRunView(
     val id: String,
     val args: List<String>,
-    val startedAtMillis: Long,
     val state: UpgradeRunState,
-    val exitCode: Int?,
     val output: List<String>,
 )
 
@@ -155,7 +153,7 @@ public class UpgradeRuns(env: EnvReader, private val launcher: UpgradeRunLaunche
         val started = JsonScalars.long(run, "started_at_epoch_millis") ?: 0L
         val state = state(dir, started)
         val args = (run["args"] as? JsonArray).orEmpty().mapNotNull(JsonScalars::str)
-        return UpgradeRunView(dir.fileName.toString(), args, started, state, exitCode(dir), output(dir))
+        return UpgradeRunView(dir.fileName.toString(), args, state, output(dir))
     }
 
     private fun state(dir: Path, started: Long): UpgradeRunState {

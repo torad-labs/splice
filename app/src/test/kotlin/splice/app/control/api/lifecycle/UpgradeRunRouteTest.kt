@@ -133,13 +133,12 @@ class UpgradeRunRouteTest {
             control.ports.lifecycle.upgradeRuns = runs()
             val after = body(get("/api/upgrade/run"))["run"]!!.jsonObject
             assertEquals("succeeded", after["state"]!!.jsonPrimitive.content)
-            assertEquals("0", after["exit_code"]!!.jsonPrimitive.content)
             assertEquals(listOf("✓ staged     9.9.9"), strings(after, "output"))
             assertTrue(launched.none { "--now" in it.second }, "the console asked for --now: $launched")
         }
 
     @Test
-    fun `a rollback runs the rollback, and a failed run reports its exit`() = runBlocking {
+    fun `a rollback runs the rollback, and a failed run reports it failed`() = runBlocking {
         assertEquals(JsonNull, body(get("/api/upgrade/run"))["run"])
         val started = post("/api/upgrade", """{"rollback":true}""")
         assertEquals(HttpStatusCode.Accepted, started.status, started.bodyAsText())
@@ -148,7 +147,6 @@ class UpgradeRunRouteTest {
         Files.writeString(dir.resolve("exit"), "1\n")
         val failed = body(get("/api/upgrade/run"))["run"]!!.jsonObject
         assertEquals("failed", failed["state"]!!.jsonPrimitive.content)
-        assertEquals("1", failed["exit_code"]!!.jsonPrimitive.content)
         assertEquals(HttpStatusCode.Accepted, post("/api/upgrade", "{}").status, "an ended run holds nothing")
     }
 

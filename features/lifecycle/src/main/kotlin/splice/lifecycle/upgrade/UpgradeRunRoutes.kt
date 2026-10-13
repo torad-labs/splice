@@ -92,8 +92,6 @@ public class UpgradeRunRoutes(private val runs: UpgradeRunsSource, private val l
         put("id", run.id)
         putJsonArray("args") { run.args.forEach { add(JsonPrimitive(it)) } }
         put("state", run.state.wire)
-        put("started_at_epoch_millis", run.startedAtMillis)
-        put("exit_code", run.exitCode)
         putJsonArray("output") { run.output.forEach { add(JsonPrimitive(it)) } }
     }
 

@@ -994,6 +994,11 @@ function noteHtml(r, who) {
     const n = r.sourceAttempts;
     out += `<p class="upmsg note"><span class="state">The script's source stream reset after ${n} ${n === 1 ? "try" : "tries"}</span></p>`;
   }
+  // A record shown while its command no longer saves them was kept from before saving was turned off, and the daemon
+  // deletes a non-saving command's days at its next start (HeadKeptFiles), so the record says both (gap 597)
+  if (RV_KEPT(traceState(r)) && state.capture[r.head]?.on === false) {
+    out += `<p class="upmsg note"><span class="state">Saved before saving was turned off · deleted when splice next starts</span></p>`;
+  }
   return out;
 }
 function paneHtml() {

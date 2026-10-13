@@ -20,7 +20,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 private const val INITIALIZE = "initialize"
-private const val TOOLS = "tools"
+private const val HUB_LISTING_TOOLS = "tools"
 
 // why: the initialize field naming the server and its version, which tells a new package from the kept one.
 private const val SERVER_INFO = "serverInfo"
@@ -34,10 +34,10 @@ internal class HubListings(private val dir: Path, private val log: LogSink) {
     fun keep(digest: String, initialize: JsonObject, tools: JsonObject?) {
         val before = read(digest)
         val sameServer = (before[INITIALIZE] as? JsonObject)?.get(SERVER_INFO) == initialize[SERVER_INFO]
-        val keptTools = tools ?: (before[TOOLS] as? JsonObject)?.takeIf { sameServer }
+        val keptTools = tools ?: (before[HUB_LISTING_TOOLS] as? JsonObject)?.takeIf { sameServer }
         val body = buildJsonObject {
             put(INITIALIZE, initialize)
-            keptTools?.let { put(TOOLS, it) }
+            keptTools?.let { put(HUB_LISTING_TOOLS, it) }
         }
         try {
             SecureFile.writeAtomic0600(file(digest), JsonWire.string(body))

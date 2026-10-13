@@ -5,6 +5,7 @@
 package splice.diagnostics.doctor
 
 import splice.client.mcp.ClaudeCodeVersionsDir
+import splice.client.mcp.HUB_FRONT_CONNECT_MS
 import splice.client.mcp.PluginFlagVerdicts
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
@@ -18,9 +19,6 @@ import java.nio.file.Files
 private const val HUB_FRONT_PORT = 3095
 
 private const val HUB_ROW = "MCP hub"
-
-// why: the launch's own bound for a front that is serving (McpHubLaunch); one that has not accepted by then is not.
-private const val HUB_FRONT_CONNECT_MS = 250
 
 /** Projects the daemon's aggregate Claude Code drift warning into one doctor row. */
 internal class DoctorClientVersion {

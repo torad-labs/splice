@@ -23,7 +23,7 @@ import java.time.Clock
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val PLUGIN = "spliceflagcheck"
+private const val FLAG_CHECK_PLUGIN = "spliceflagcheck"
 private const val SKILL = "hello"
 private const val MARKER = "mcp-started"
 
@@ -40,7 +40,7 @@ private val PROJECT_CONFIG = listOf(
 )
 
 // A refusal the client does not retry (x-should-retry: false below), so one request ends the run.
-private const val REFUSAL = """{"type":"error","error":{"type":"invalid_request_error",""" +
+private const val REFUSAL_BODY = """{"type":"error","error":{"type":"invalid_request_error",""" +
     """"message":"splice's plugin flag check reads one request and ends the run"}}"""
 
 /** Runs the check against one installed version's binary and says what it found. */
@@ -73,7 +73,7 @@ public class PluginFlagCheck(private val clock: Clock = Clock.systemUTC()) {
             exit == null -> failed("Claude Code gave no answer within ${RUN_SECONDS}s")
             Files.exists(root.resolve(MARKER)) -> failed("the plugin's .mcp.json was read: its server started")
             !model.asked.get() -> failed("Claude Code exited $exit without asking the model")
-            !model.sawSkill.get() -> failed("the plugin's skill $PLUGIN:$SKILL did not reach the model")
+            !model.sawSkill.get() -> failed("the plugin's skill $FLAG_CHECK_PLUGIN:$SKILL did not reach the model")
             else -> PluginFlagVerdict(true, clock.instant().toString())
         }
     }
@@ -86,10 +86,10 @@ public class PluginFlagCheck(private val clock: Clock = Clock.systemUTC()) {
 
     /** The plugin, its skill, and its one server, which only leaves the marker. */
     private fun plugin(root: Path): Path {
-        val plugin = root.resolve("plugin").resolve(PLUGIN)
+        val plugin = root.resolve("plugin").resolve(FLAG_CHECK_PLUGIN)
         val manifest = Files.createDirectories(plugin.resolve(CLAUDE_PLUGIN_DIR))
         val skill = Files.createDirectories(plugin.resolve("skills").resolve(SKILL))
-        Files.writeString(manifest.resolve("plugin.json"), """{"name":"$PLUGIN","version":"1.0.0"}""")
+        Files.writeString(manifest.resolve("plugin.json"), """{"name":"$FLAG_CHECK_PLUGIN","version":"1.0.0"}""")
         Files.writeString(
             skill.resolve("SKILL.md"),
             "---\nname: $SKILL\ndescription: splice's plugin flag check. Says hello.\n---\nSay hello.\n",
@@ -161,11 +161,11 @@ private class StandInModel {
         val body = it.requestBody.readAllBytes().decodeToString()
         if (it.requestURI.path.startsWith("/v1/messages")) {
             asked.set(true)
-            if (body.contains("$PLUGIN:$SKILL")) sawSkill.set(true)
+            if (body.contains("$FLAG_CHECK_PLUGIN:$SKILL")) sawSkill.set(true)
         }
         it.responseHeaders.add("content-type", "application/json")
         it.responseHeaders.add("x-should-retry", "false")
-        val bytes = REFUSAL.encodeToByteArray()
+        val bytes = REFUSAL_BODY.encodeToByteArray()
         it.sendResponseHeaders(HttpStatus.BAD_REQUEST, bytes.size.toLong())
         it.responseBody.write(bytes)
     }

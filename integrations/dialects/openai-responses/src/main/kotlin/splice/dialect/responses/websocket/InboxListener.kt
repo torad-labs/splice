@@ -13,6 +13,7 @@ import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.wire.FIELD_ERROR
 import splice.core.wire.FIELD_TYPE
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
@@ -92,7 +93,7 @@ internal class InboxListener(
         val error = event[FIELD_ERROR] as? JsonObject
         val words = listOf(event[FIELD_TYPE], error?.get(FIELD_TYPE), error?.get(FIELD_CODE))
             .mapNotNull { JsonScalars.str(it)?.takeIf(protocolWord::matches) }
-        val status = (event[FIELD_STATUS] as? JsonPrimitive)?.intOrNull?.let { "status=$it" }
+        val status = (event[EVENT_FIELD_STATUS] as? JsonPrimitive)?.intOrNull?.let { "status=$it" }
         return (words + listOfNotNull(status)).joinToString(" ").ifEmpty { "?" }
     }
 
@@ -207,6 +208,5 @@ private const val ABNORMAL_CLOSURE = 1006
 private const val TYPELESS_EVENT = "untyped"
 
 // The Responses websocket's `error` event: {"type":"error","status":400,"error":{"type":…,"code":…,"message":…}}.
-private const val FIELD_ERROR = "error"
 private const val FIELD_CODE = "code"
-private const val FIELD_STATUS = "status"
+private const val EVENT_FIELD_STATUS = "status"

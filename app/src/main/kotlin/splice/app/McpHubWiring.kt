@@ -37,7 +37,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 // why: the byte that ends each NAME=value entry in /proc/<pid>/environ.
-private const val NUL = '\u0000'
+private const val NUL_SEPARATOR = '\u0000'
 
 internal class McpHubWiring(
     private val global: GlobalMcpServers,
@@ -110,7 +110,7 @@ internal class McpHubWiring(
 
     private fun environ(pid: Long): Map<String, String> = try {
         String(Files.readAllBytes(procRoot.resolve(pid.toString()).resolve("environ")))
-            .split(NUL)
+            .split(NUL_SEPARATOR)
             .filter { it.contains('=') }
             .associate { it.substringBefore('=') to it.substringAfter('=') }
     } catch (_: IOException) {

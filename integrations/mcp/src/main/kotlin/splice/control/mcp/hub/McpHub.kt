@@ -39,7 +39,7 @@ private const val SHARED_GRACE_MS = 300_000L
 
 // why: the words the log gives for each kind of stop.
 private const val ENDED = "its session ended"
-private const val IDLE = "no session called it within the MCP idle limit"
+private const val IDLE_REASON = "no session called it within the MCP idle limit"
 private const val ORPHANED = "no current plan names it and no live session is bound to it"
 
 /** What a hub call answers: a status and a JSON body, or none for 204. */
@@ -83,7 +83,7 @@ private data class SharedView(
      *  has not saved yet. */
     fun stopReason(record: HubRecord): String? = when {
         bound == null -> null
-        idle(record) -> IDLE
+        idle(record) -> IDLE_REASON
         bound.any { it.socket == record.socket } -> null
         record.socket in current -> null
         now - record.recordedAt < SHARED_GRACE_MS -> null

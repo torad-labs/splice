@@ -36,7 +36,7 @@ private const val HUB_UNREACHED =
     "this session starts its own MCP servers: the MCP hub is not answering, or its launch file could not be written"
 
 // why: the front is a local process on loopback; one that has not accepted in this long is not serving.
-private const val HUB_FRONT_CONNECT_MS = 250
+public const val HUB_FRONT_CONNECT_MS: Int = 250
 
 /** One launch the hub file is written for. [configDir] is the config home Claude Code reads, [folder] the folder it
  *  starts in, [launch] its id: the pid the launcher records and then execs Claude Code in. [claude] is the binary the
@@ -76,9 +76,9 @@ public class McpHubLaunch(
     /** The V4-445 file a wrapped launch carries when the hub carries nothing. */
     private val overlay: HostedMcpOverlay? = null,
 ) {
-    private val dir = front.dir
-    private val frontPort = front.port
-    private val procRoot = front.procRoot
+    private val dir: Path get() = front.dir
+    private val frontPort: Int get() = front.port
+    private val procRoot: Path get() = front.procRoot
 
     public fun args(launch: HubLaunchFor): HubLaunchArgs {
         val hub = hubArgs(launch)

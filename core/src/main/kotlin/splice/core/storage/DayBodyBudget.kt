@@ -21,7 +21,7 @@ public const val TRACE_BODY_MAX_BYTES: Long = 32L shl 30
 
 /** Rolling JSONL index capacity shared by every head in a trace directory: past it the oldest completed day goes whole
  *  (splice-lead, Oct 12). The history window still bounds both; this keeps a busy window inside the disk. */
-public const val TRACE_INDEX_MAX_BYTES: Long = 16L shl 30
+internal const val TRACE_INDEX_MAX_BYTES: Long = 16L shl 30
 
 /** Trace bodies never consume the volume's last 64 GiB of usable space. */
 internal const val TRACE_BODY_MIN_FREE_BYTES: Long = 64L shl 30

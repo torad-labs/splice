@@ -5,6 +5,7 @@
     ":core splice.core.config.knobsByKey",
     ":core splice.core.media.ImageHeaderProbe",
     ":core splice.core.media.ImagePx",
+    ":core splice.core.memory.HEAP_RESIDENT_BYTES",
     ":core splice.core.parse.lenientJson",
     ":core splice.core.reasoning.REASONING_ENVELOPE_TAG",
     ":core splice.core.reasoning.REASONING_ENVELOPE_VERSION",

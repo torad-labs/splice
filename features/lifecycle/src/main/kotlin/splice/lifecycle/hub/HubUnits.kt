@@ -65,7 +65,7 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
      *  the command for their owner to apply. Where no front unit is loaded at all, it says nothing. */
     public fun reloadFront() {
         if (!UNITS.all(::ours)) {
-            if (systemctl(LOAD_STATE + SERVICE) != NOT_FOUND) {
+            if (systemctl(LOAD_STATE + SERVICE) != LOAD_STATE_NOT_FOUND) {
                 output.line(
                     "splice: the MCP hub's units here were not written by splice, so their owner reloads the front " +
                         "onto the new program: $RELOAD_LINE",
@@ -111,7 +111,7 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
     private fun absent(name: String): Boolean =
         !Files.exists(unitDir.resolve(name), LinkOption.NOFOLLOW_LINKS) &&
             !Files.exists(unitDir.resolve("$name.d"), LinkOption.NOFOLLOW_LINKS) &&
-            systemctl(LOAD_STATE + name) == NOT_FOUND
+            systemctl(LOAD_STATE + name) == LOAD_STATE_NOT_FOUND
 
     private fun create(name: String): Boolean {
         val bytes = template(name) ?: return false
@@ -135,8 +135,11 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
 
 private val UNITS = listOf("app-mcp.slice", "splice-mcp-front.socket", "splice-mcp-front.service")
 private const val RESOURCES = "/splice/lifecycle/hub"
-private const val NOT_FOUND = "not-found"
+private const val LOAD_STATE_NOT_FOUND = "not-found"
+
+// why: the bound on one systemctl --user call; a call still running past it is killed and reads as no answer.
 private const val TIMEOUT_MS = 15_000L
+
 private const val SOCKET = "splice-mcp-front.socket"
 private val ENABLE = listOf("enable", "--now", SOCKET)
 private const val ENABLE_LINE = "systemctl --user enable --now $SOCKET"

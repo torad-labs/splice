@@ -303,6 +303,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The hub launch file and the V4-445 file, in the mcp-hub/launch-<pid> and wrapped-mcp README rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpHubLaunch.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/HostedMcpOverlay.kt" to mapOf("writeAtomic0600(" to 1),
+    // The plugin flag check's throwaway plugin and its per-version verdicts, in their README rows.
+    "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagCheck.kt" to
+        mapOf("Files.writeString(" to 3),
+    "integrations/claude-code/src/main/kotlin/splice/client/mcp/PluginFlagVerdicts.kt" to
+        mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/KeyStore.kt" to mapOf("FileChannel.open(" to 1, "writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/MgmtKey.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/TurnKey.kt" to mapOf("writeAtomic0600(" to 1),
@@ -334,6 +339,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeActivation.kt" to mapOf("Files.copy(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeCommand.kt" to mapOf("Files.move(" to 1),
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeHub.kt" to mapOf(
+        "Files.copy(" to 1,
+        "Files.move(" to 1,
+    ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLayout.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.createSymbolicLink(" to 1,

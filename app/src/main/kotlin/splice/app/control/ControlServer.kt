@@ -124,7 +124,7 @@ internal class ControlServer(
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard, log)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log, config.statePaths.stateDir)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
-    private val trace = TraceMount(heads, resolver, config, ports, guard)
+    private val trace = TraceMount(resolver, config, ports, guard)
     private val sessionWiring = SessionsWiring(sessions, heads, config, ports, log)
 
     /** What a login added after a plan limit does for the sessions it stopped (ControlPlane hooks the pool to it). */

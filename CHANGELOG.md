@@ -950,8 +950,7 @@ origin.
 - **The daemon log records a launch's inline settings by size and hash.** The whole `--settings` body on every launch
   rolled `daemon.log` within hours on a busy machine; every other argument is logged as before.
 - **The release's license files** include each bundled dependency's own LICENSE and NOTICE text.
-- **The setup sign-in line, the README and the example config** no longer carry an "unofficial, use at your own risk"
-  disclaimer.
+- **The setup sign-in line, the README and the example config** no longer carry a risk disclaimer.
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
   when the socket opened, not from its last use. Retirement replaces an idle connection before
   reuse, never cutting a round already running. The first round on the replacement sends the

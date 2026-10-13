@@ -88,9 +88,21 @@ private const val FROM_END = "end"
 // why: before=at:<epoch ms> opens the page ending at that moment: a request's door to its place in a conversation.
 private const val AT_MOMENT = "at:"
 
-/** One transcript read: forward from [cursor], back from [before] (or the end), or the page ending at `at:<ms>`. */
+// why: cursor=after:<index> reads from where the message with that index starts to the end of the file: a live pane's
+// five-second poll asks only for its last message, which may have grown, and what came after it, a few KB, where a read
+// from the end sent its whole page again.
+private const val AFTER_MESSAGE = "after:"
+
+/** One transcript read: forward from [cursor], back from [before] (or the end), the page ending at `at:<ms>`, or what
+ *  follows the message a cursor `after:<index>` names. */
 private class TranscriptAsk(val trees: List<Path>, val cursor: String?, val size: Int, val before: String?) {
+    /** The message index an `after:` cursor names; null for every other read. */
+    val after: Long? = cursor?.takeIf { before == null && it.startsWith(AFTER_MESSAGE) }
+        ?.removePrefix(AFTER_MESSAGE)?.toLongOrNull()?.takeIf { it >= 0 }
+
     fun lookup(transcripts: SessionTranscripts, sessionId: String): TranscriptLookup = when {
+        after != null -> transcripts.pageAfter(sessionId, trees, after, size)
+        cursor?.startsWith(AFTER_MESSAGE) == true -> TranscriptLookup.Refused("not a message this daemon numbered")
         before == null -> transcripts.page(sessionId, trees, cursor, size)
         before.startsWith(AT_MOMENT) -> before.removePrefix(AT_MOMENT).toLongOrNull()
             ?.let { transcripts.pageAt(sessionId, trees, it, size) }
@@ -144,7 +156,8 @@ public class SessionsRoutes(
     }.toString()
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages
-     *  instead: `end`, or the `earlier` cursor the page before handed back (V4-444: a session opens at its newest). */
+     *  instead: `end`, or the `earlier` cursor the page before handed back (V4-444: a session opens at its newest).
+     *  `cursor=after:<index>` reads what follows the message with that index, which it reads again, numbered alike. */
     public fun transcript(sessionId: String, cursor: String?, limit: Int?, before: String? = null): JsonReply {
         if (!viewEnabled()) return SessionTranscriptOff.reply
         val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
@@ -152,7 +165,8 @@ public class SessionsRoutes(
         val size = limit ?: DEFAULT_TRANSCRIPT_PAGE
         val ask = TranscriptAsk(trees, cursor, size, before)
         return when (val lookup = ask.lookup(transcripts, sessionId)) {
-            is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null))
+            is TranscriptLookup.Found ->
+                JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null, ask.after != null))
             TranscriptLookup.Missing -> JsonReply(
                 HttpStatusCode.NotFound,
                 buildJsonObject { put("error", "no transcript for this session id") }.toString(),
@@ -251,10 +265,12 @@ public class SessionsRoutes(
         return resolvers.computeIfAbsent(settings.gitRoots(head)) { RepoResolver(it) }
     }
 
-    private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {
+    private fun pageJson(page: TranscriptPage, fromEnd: Boolean, after: Boolean): String = buildJsonObject {
         put("messages", buildJsonArray { page.messages.forEach { add(MessageWire.json(it)) } })
         put("path", page.path) // the transcript file this page was read from, which the pane names under its log
         if (fromEnd) put("earlier", page.earlier)
+        // more came after the message than one page holds: the pane reads from the end instead
+        if (after) put("more", page.next != null)
         put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
         // a move that did not come back leaves no mark, but splice ended the client for it: when he pressed
         put("unmoved", buildJsonArray { transcripts.unmoved(page.sessionId).forEach { add(JsonPrimitive(it)) } })

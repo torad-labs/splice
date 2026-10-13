@@ -166,6 +166,16 @@ public interface SessionTranscripts {
         limit: Int,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source cannot open at a moment")
 
+    /** Up to [limit] messages from where the message numbered [after] starts, as [pageBefore] numbers them: a live pane
+     *  reads its last message again, which may have grown, and what follows it, never the page it already has.
+     *  [TranscriptPage.next] is set when more follows than [limit]. Ports that cannot seek refuse. */
+    public fun pageAfter(
+        sessionId: String,
+        roots: List<Path>,
+        after: Long,
+        limit: Int,
+    ): TranscriptLookup = TranscriptLookup.Refused("this transcript source cannot read after a message")
+
     public fun sentTexts(
         sessionId: String,
         roots: List<Path>,

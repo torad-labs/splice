@@ -183,6 +183,27 @@ async function readLogNow(s, before) {
   const jump = before === "end" || String(before).startsWith("at:");
   render({ stick: jump, hold: !jump });
 }
+// A LIVE CONVERSATION'S POLL ASKS ONLY FOR WHAT IS NEWER: its last message again, which may have grown, and what came
+// after it, a few KB where a read from the end sent its whole page every five seconds (splice-runtime-lead, Oct 13). It
+// keeps the earlier pages he read back, and the view follows only when he was at the bottom. More than a page behind,
+// a cursor the daemon refuses or reading turned off reads from the end.
+const FOLLOW_PX = 40;
+const readNewer = (s) => alone(`log ${s.id} newer`, () => readNewerNow(s));
+async function readNewerNow(s) {
+  const last = state.logs[s.id]?.messages?.at(-1);
+  if (!last) return readLogNow(s, "end");
+  const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?cursor=${encodeURIComponent(`after:${last.index}`)}&limit=${LOG_PAGE}`);
+  const held = state.logs[s.id];
+  if (res.status === 400 || res.body?.more || res.body?.state === "off") return readLogNow(s, "end");
+  if (!res.ok || !Array.isArray(res.body?.messages) || !held?.messages) return;
+  const page = res.body, from = page.messages[0]?.index ?? Infinity;
+  const kept = held.messages.filter((m) => m.index < from);
+  if (JSON.stringify(held.messages.slice(kept.length)) === JSON.stringify(page.messages)) return; // nothing new
+  const log = root.querySelector(".log");
+  const follow = !log || log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX;
+  state.logs[s.id] = { ...held, messages: [...kept, ...page.messages], moves: page.moves ?? held.moves, unmoved: page.unmoved ?? held.unmoved };
+  render({ stick: follow });
+}
 
 // ---------- what the page says about a session (look() and the lamp are kit.js's) ----------
 // THE FOLDER NEVER TITLES A CARD INSIDE A GROUP (Marlin, Oct 11: he knows a session by what he asked it, and the
@@ -1136,14 +1157,18 @@ addEventListener("resize", () => {
   else render({ stick: false });
 });
 
-/** Every read, then one draw. The open conversation is read again only while its session can still add to it, and
- *  never once he has read back with Show earlier, which a fresh read from the end would throw away. */
+/** Every read, then one draw. The open conversation is read again only while its session can still add to it: what
+ *  is newer than its last message once it has one, which keeps the pages read back, and never while it shows a
+ *  moment from a request's door. */
 async function reload() {
   await read();
   if (ui.open && !find(ui.open)) ui.open = null;
   render({ stick: false });
-  const s = ui.open && find(ui.open);
-  if (s && s.state !== "ended" && state.logs[s.id] !== null && !state.logs[s.id]?.extended) readLog(s);
+  const s = ui.open && find(ui.open), held = s && state.logs[s.id];
+  if (s && s.state !== "ended" && held !== null) {
+    if (held?.messages && !held.at) readNewer(s);
+    else if (!held?.extended) readLog(s);
+  }
   if (s && s.state !== "ended" && Date.now() - (usageAt.get(s.id) ?? 0) >= USAGE_EVERY_MS) readUsage(s);
 }
 

@@ -24,6 +24,7 @@ import kotlinx.serialization.json.put
 import splice.core.session.SessionKey
 import splice.core.session.SessionPane
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.http.JsonReply
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
@@ -170,11 +171,15 @@ internal class MoveArrival(
             }
         }.getOrNull()
 
-    /** The bottom of the attempt's screen: the question a first-run prompt holds on is the last thing on it. */
+    /** The bottom of the attempt's screen: the question a first-run prompt holds on is the last thing on it. A screen
+     *  that could not be read says so in its place, as a team start's does (TeamStart), never as no screen at all. */
     private suspend fun tail(driving: SessionDriver, pane: SessionPane): String =
         Cancellables.runCatchingCleanup {
             if (driving.terminal.isOpen(pane)) driving.terminal.screen(pane) else ""
-        }.getOrDefault("").lines().filter(String::isNotBlank).takeLast(SCREEN_TAIL_LINES).joinToString("\n")
+        }.fold(
+            { it.lines().filter(String::isNotBlank).takeLast(SCREEN_TAIL_LINES).joinToString("\n") },
+            { "(the screen could not be read: ${SafeFailureText.render(it)})" },
+        )
 
     private fun sentence(move: Move, missed: String, wentBack: Boolean): String {
         val why = if (missed == MISSED_NO_START) {

@@ -180,7 +180,8 @@ async function readLogNow(s, before) {
     state.logs[s.id] = { messages, path: page.path ?? held?.path ?? null, earlier: page.earlier ?? null, extended: before !== "end", at: String(before).startsWith("at:") || (held?.at && before !== "end"), moves: page.moves ?? held?.moves ?? [], unmoved: page.unmoved ?? held?.unmoved ?? [],
       unreadable: (before === "end" ? 0 : held?.unreadable ?? 0) + (page.unparseable_lines ?? 0) };
   }
-  render({ stick: before === "end" || String(before).startsWith("at:") });
+  const jump = before === "end" || String(before).startsWith("at:");
+  render({ stick: jump, hold: !jump });
 }
 
 // ---------- what the page says about a session (look() and the lamp are kit.js's) ----------
@@ -642,9 +643,11 @@ function composerHtml(s) {
 }
 
 // ---------- render ----------
-function render({ stick = true, slide = false } = {}) {
+function render({ stick = true, slide = false, hold = false } = {}) {
   const before = slide ? new Map([...root.querySelectorAll(".list .s")].map((el) => [el.dataset.key, el.getBoundingClientRect().top])) : null;
   const oldLog = root.querySelector(".log"), keep = oldLog && !stick ? oldLog.scrollTop : null;
+  // an earlier page lands above what he is reading: the view keeps its distance from the bottom, so it stays put
+  const fromBottom = oldLog && hold ? oldLog.scrollHeight - oldLog.scrollTop : null;
   // the five-second read redraws the page: the Message field keeps his focus and caret through it
   const say = document.activeElement?.id === "say" ? document.activeElement : null, caret = say ? [say.selectionStart, say.selectionEnd] : null;
   root.className = `sessions${ui.open || ui.missing ? " open" : ""}`;
@@ -661,7 +664,7 @@ function render({ stick = true, slide = false } = {}) {
   const addr = ui.open && !ui.auto ? `#${ui.open}` : ui.missing ? `#${ui.missing}` : "";
   if (location.hash !== addr) history.replaceState(history.state, "", `${location.pathname}${location.search}${addr}`);
   const log = root.querySelector(".log");
-  if (log) log.scrollTop = keep ?? log.scrollHeight;
+  if (log) log.scrollTop = fromBottom != null ? log.scrollHeight - fromBottom : keep ?? log.scrollHeight;
   if (before) slideFrom(before);
 }
 /** The sliding move: each card starts where it stood and eases to its new place, on the shared list-move tokens
@@ -687,6 +690,16 @@ function holdList() {
   if (sorted().map((s) => s.id).join() !== held) render({ stick: false, slide: true });
 }
 root.addEventListener("pointerover", (e) => { pointerIn = Boolean(e.target.closest(".list")); holdList(); });
+// SCROLLING TO THE TOP OF A CONVERSATION READS THE PAGE BEFORE IT, as Show earlier does. The pane opens on 50 messages,
+// not 200, and he scrolled up through 200 without a click before (splice-runtime-lead, Oct 13). Scroll events do not
+// bubble, so the root listens while they are captured; alone() keeps a burst of them to one read.
+const EARLIER_AT_PX = 400;
+root.addEventListener("scroll", (e) => {
+  const log = e.target;
+  if (!log.classList?.contains("log") || log.scrollTop > EARLIER_AT_PX) return;
+  const s = ui.open && find(ui.open), held = s && state.logs[s.id];
+  if (held?.earlier) readLog(s, held.earlier);
+}, true);
 root.addEventListener("pointerleave", () => { pointerIn = false; holdList(); });
 document.addEventListener("focusin", holdList);
 document.addEventListener("focusout", () => setTimeout(holdList));

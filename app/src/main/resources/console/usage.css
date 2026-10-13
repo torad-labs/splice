@@ -114,31 +114,7 @@
 /* the filters in the page head, so one picked down the page stays in sight */
 .hfilters { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-right: auto; }
 
-/* ---------- each command ---------- */
-.lat-head, .lat .vals { display: grid; grid-template-columns: repeat(3, 6.4rem); column-gap: 1rem; justify-items: end; }
-.lat-head { width: max-content; margin: 1.3rem 0 0 auto; font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
-.lat { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 1.2rem; row-gap: .7rem; margin-top: 1.3rem; }
-.lat-head + .lat { margin-top: .6rem; }
-.lat:has(.tk span) { padding-bottom: 1.3rem; }
-.lat .label { font: 500 1rem/1 var(--font-name); color: var(--text-body); align-self: baseline; white-space: nowrap; }
-.lat .scale { grid-column: 1 / -1; grid-row: 2; }
-.scale { position: relative; height: 1.3rem; background: var(--track); border-radius: .25rem; box-shadow: inset 0 0 0 .1rem var(--track-line); }
-.scale .tk { position: absolute; top: 0; bottom: 0; width: .1rem; background: var(--track-line); }
-.scale .tk span { position: absolute; top: calc(100% + .3rem); left: 0; transform: translateX(-50%); font: 500 .78rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.scale .span { position: absolute; top: .18rem; bottom: .18rem; background: var(--c); border: .1rem solid var(--ink); border-radius: .2rem; min-width: .3rem; }
-.scale .mk.max { position: absolute; top: 50%; width: .22rem; height: 1.7rem; margin: -.85rem 0 0 -.11rem; border-radius: .1rem; background: var(--text-body); }
-.lat .vals { grid-column: 2; grid-row: 1; justify-self: end; align-self: baseline; font: 500 .98rem/1 var(--font-data); color: var(--text); font-variant-numeric: tabular-nums; }
-.lat .vals > span { white-space: nowrap; }
-/* the window, left to right: a dot per request as high as it took, a tick per failure that opens it */
-.trail { margin-top: 1.5rem; padding-top: 1.2rem; border-top: .12rem solid var(--track); }
-.trail .field { position: relative; height: 4.6rem; background: var(--track); border-radius: .25rem; box-shadow: inset 0 0 0 .1rem var(--track-line); }
-.trail .field i { position: absolute; width: .5rem; height: .5rem; margin: 0 0 -.25rem -.25rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .08rem var(--ink); }
-.trail .field .base { position: absolute; left: 0; right: 0; border-top: .12rem dashed var(--track-line); }
-.trail .ft { position: absolute; top: -.35rem; bottom: -.35rem; width: .2rem; margin-left: -.1rem; background: var(--limit); border-radius: .1rem; }
-.trail .ft:hover { box-shadow: 0 0 0 .16rem var(--text); }
-.trail .xw { position: relative; height: 1.5rem; margin-top: .45rem; }
-.trail .xw span { position: absolute; top: 0; font: 500 .82rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-/* the command that's slow or failing today leads, with since when; its stretch is lit on the trail */
+/* the command that's slow or failing today leads, with since when */
 .heads, .breakdown { display: flex; flex-direction: column; gap: 2rem; }  /* the table and Commands: one heading, then their cards on one line */
 .heads > header { margin-bottom: -.6rem; }
 .flag { margin: 1.1rem 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1.4rem; }
@@ -147,7 +123,6 @@
 .flag a:hover { text-decoration: underline; }
 .flag .vs { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
 .flag .vs b { font: 600 1.02rem/1 var(--font-data); color: var(--text); }
-.trail .field .since { position: absolute; top: 0; bottom: 0; min-width: .35rem; background: color-mix(in srgb, var(--limit) 16%, transparent); border-left: .12rem solid var(--limit); }
 /* the rest, one line each; a line opens its card in place */
 .quiet-heads { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin: 1.6rem 0 0; }
 .quiet-heads > span:first-child { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); margin-right: .4rem; }
@@ -160,36 +135,7 @@
   .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @container (min-width: 150rem) { .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); } }
-/* under last week: what grew, each agent this week against last week, the biggest change first; a line opens its requests */
-.kcard .grew { display: flex; flex-direction: column; margin: .3rem 0 -.2rem; border-top: .12rem solid var(--track); }
-.kcard .gline {
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 1rem; row-gap: .25rem;
-  padding: .55rem .5rem; margin: 0 -.5rem; border-radius: .3rem; text-decoration: none;
-}
 /* the rule between lines sits at the card's own width, like the border over and under the list */
-.kcard .gline + .gline::before { content: ""; position: absolute; left: .5rem; right: .5rem; top: 0; border-top: .12rem solid var(--track); }
-.kcard .gline:hover { background: var(--track); }
-.kcard .gline .who { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
-.kcard .gline .nm { font: 500 1.08rem/1.15 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kcard .gline .st { font: 500 .9rem/1.15 var(--font-name); color: var(--text-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kcard .gline .vals { display: inline-flex; align-items: center; gap: 1.1rem; }
-.kcard .gline .pair { display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; }
-.kcard .gline .pair b { font: 500 1rem/1 var(--font-data); color: var(--text-body); font-variant-numeric: tabular-nums; }
-.kcard .gline .pair b:last-child { font-weight: 600; color: var(--text); }
-.kcard .gline .pair i { font-style: normal; font-size: 1rem; line-height: 1; color: var(--text-mute); }
-.kcard .gline .pair em { font: 500 .95rem/1 var(--font-name); font-style: normal; color: var(--text-mute); }
-.kcard .gline .chg { font: 600 1.05rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; text-align: right; min-width: 4.3rem; font-variant-numeric: tabular-nums; }
-.kcard .gline .chg.up { color: var(--limit); }
-.kcard .gline .go { color: var(--text-mute); }
-.kcard .gline:hover .go { color: var(--key-light); }
-/* under one key: this week, last week and what changed, the share bar and the request link kept */
-.brow.cmp { grid-template-columns: minmax(10rem, 1.1fr) minmax(4.5rem, .9fr) 5.2rem 5.6rem 5.6rem 7.4rem; gap: .8rem; }
-.brow.cmp .share { gap: .55rem; }
-.brow.cmp .sbar { max-width: calc(100% - 3.8rem); }
-.brow .chg { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
-.brow .chg b { font: 600 1.1rem/1 var(--font-data); color: var(--text-body); }
-.brow .chg b.up { color: var(--limit); }
-.brow .chg .new { font: 500 .88rem/1 var(--font-name); font-style: normal; color: var(--text-mute); border: .1rem solid var(--track-line); border-radius: .25rem; padding: .18rem .36rem; }
 
 /* where a plan or key card goes when clicked: the breakdown's word and an arrow down, at the foot's right */
 .pcard .drill, .kcard .drill { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }

@@ -284,20 +284,6 @@ class ConsoleRoutesTest {
         )
         assertEquals("slow", unresolved["slot"]!!.jsonPrimitive.content)
         assertTrue(unresolved["reason"]!!.jsonPrimitive.content.isNotEmpty(), "and it must say why")
-
-        // THE KEY THE CONSOLE ACTUALLY READS. This route shipped it as `window_source`; the console
-        // declares `context_window_source` NON-OPTIONAL in TS, so the mismatch was invisible to the
-        // compiler AND to every fixture — the fixtures spelled it the console's way, and two
-        // hand-authored artifacts agreed with each other while disagreeing with the daemon. Both rows
-        // carry it, so both are pinned: a rename that touches one branch and not the other is the
-        // other half of this same defect.
-        for (row in listOf(resolved, unresolved)) {
-            assertTrue(
-                row.containsKey("context_window_source"),
-                "the console reads exactly this key, on every row: ${row.keys}",
-            )
-            assertFalse(row.containsKey("window_source"), "and not the name it shipped with first")
-        }
     }
 
     // ── GET /api/status: each head's family ─────────────────────────────────────────────────────

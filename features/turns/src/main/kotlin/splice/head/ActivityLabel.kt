@@ -121,7 +121,17 @@ internal class ActivityLabel {
     private fun generic(name: String): String =
         if (name.startsWith(MCP_PREFIX)) "Calling ${name.substringAfterLast("__")}" else "Using $name"
 
-    private fun isPrelude(token: String): Boolean = token in COMMAND_PREFIXES || token.contains('=')
+    /** [segment] past its prelude: assignments, privilege and the shell's own words, and a wrapper with its options and
+     *  duration (`timeout -k 5 600`, `nice -n 10`, `nohup`), so what is left starts at the command they run. */
+    private fun dropPrelude(segment: List<String>): List<String> {
+        val start = segment.indexOfFirst { it !in COMMAND_PREFIXES && !it.contains('=') }
+        if (start < 0 || segment[start] !in WRAPPERS) return if (start < 0) emptyList() else segment.drop(start)
+        var at = start + 1
+        while (at < segment.size && WRAPPER_ARG.matches(segment[at])) {
+            at += if (segment[at] in VALUED_OPTIONS) 2 else 1
+        }
+        return dropPrelude(segment.drop(at))
+    }
 
     private fun str(input: JsonObject, key: String): String? =
         (input[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
@@ -131,7 +141,7 @@ internal class ActivityLabel {
      *  before any `| tail` behind it. A line continued with a backslash is one line, so its flags are never a head. */
     private fun commandHead(command: String?): String? {
         val words = command.orEmpty().replace(LINE_CONTINUATION, " ").split(SEGMENT_SPLIT).asSequence()
-            .map { segment -> segment.trim().split(WHITESPACE).filter { it.isNotEmpty() }.dropWhile { isPrelude(it) } }
+            .map { segment -> segment.trim().split(WHITESPACE).filter { it.isNotEmpty() }.let(::dropPrelude) }
             .firstOrNull { segment ->
                 segment.firstOrNull()?.let { it !in NOT_A_COMMAND && !it.startsWith('-') } == true
             }
@@ -186,6 +196,15 @@ private val SHELL_PRELUDE = setOf("cd", "pushd", "popd", "export", "set", "sourc
  *  condition or a body (`if grep -q`, `do git add`) or alone on their segment (`done`, `fi`). */
 private val SHELL_KEYWORDS = setOf("if", "elif", "while", "until", "then", "else", "do", "done", "fi", "esac", "{", "}")
 private val COMMAND_PREFIXES = setOf("sudo", "env", "time", "!") + SHELL_KEYWORDS
+
+/** Commands that run the command after them, behind their own options and, for `timeout`, a duration. */
+private val WRAPPERS = setOf("timeout", "nice", "nohup", "stdbuf", "ionice")
+
+/** A wrapper's options that take the next word as their value: `timeout -k 5 -s KILL`, `nice -n 10`. */
+private val VALUED_OPTIONS = setOf("-k", "-s", "-n", "-c")
+
+/** A wrapper's own word: an option, or `timeout`'s duration. */
+private val WRAPPER_ARG = Regex("-.*|\\d+(\\.\\d+)?[smhd]?")
 
 /** A segment led by one of these is no command to name: the prelude, or a header whose words are names (`for k in`). */
 private val NOT_A_COMMAND = SHELL_PRELUDE + setOf("for", "select", "case")

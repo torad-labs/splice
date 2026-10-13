@@ -49,11 +49,6 @@ internal class StatuslineRenderer(
     private val row = StatuslineRow(catalog)
     private val windowLearner = StatuslineWindowLearner(catalog, clientWindows)
 
-    /** V4-132 (FEATURES.md §4.5 "Claude windows", §6 "statusline rate_limits capture"): each
-     *  session's last captured `rate_limits` snapshot. Internal, not wrapped in an accessor fun —
-     *  [StatuslineRenderer] already sits at detekt's 15-function class ceiling, and a property read
-     *  ([StatuslineRateLimits.forSession]) costs it nothing a wrapper function would. */
-    internal val rateLimits = StatuslineRateLimits()
     private val bars = StatuslineBars()
 
     fun render(
@@ -74,7 +69,6 @@ internal class StatuslineRenderer(
         val snapshot = usage?.snapshot()
         val pool = accountPool?.view(sessionId)
         val account = pool?.selectedAccount()
-        rateLimits.record(sessionId, account?.label, root)
         val selectedQuota = pool?.selectedQuota()
         val shownQuota = if (pool == null) snapshot?.quota else pool.quotaOr(snapshot?.quota)
         val switchReason = pool?.lastSwitch?.takeIf { it.to == account?.label }?.reason
@@ -232,8 +226,5 @@ private const val CACHE_GOOD_PCT = 70
 private const val CACHE_OK_PCT = 40
 private const val K = 1000
 
-// V4-132: pulled out of 4 call sites (StringLiteralDuplication, threshold 4) once
-// StatuslineRateLimits.kt's modelScoped() added a fourth read of the same JSON field name.
-// internal, not private: StatuslineRateLimits.kt (same package) reaches this one constant across
-// the concentration split rather than carrying a second "model" literal of its own.
-internal const val MODEL_FIELD = "model"
+// why: the payload's model object, read by name in three places here, so a renamed field is one edit.
+private const val MODEL_FIELD = "model"

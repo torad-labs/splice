@@ -404,9 +404,8 @@ class ControlServerTest {
 
     @Test
     fun `usage soft-warn fires from a 90 percent ratelimit`() = runTest {
-        // Node shape: {window_hours, warn_pct, warn_tokens_5h, heads:[{key,label,usage:{...,warn}}]}
+        // shape: {heads:[{key,label,usage:{...,warn}}]}
         val payload = json.parseToJsonElement(authed("/api/usage")).jsonObject
-        assertEquals("5", payload["window_hours"]?.jsonPrimitive?.content)
         val warn = payload["heads"]!!.jsonArray.first().jsonObject["usage"]!!.jsonObject["warn"]!!.jsonObject
         assertEquals("warn", warn["level"]?.jsonPrimitive?.content)
         assertEquals("ratelimit", warn["source"]?.jsonPrimitive?.content)

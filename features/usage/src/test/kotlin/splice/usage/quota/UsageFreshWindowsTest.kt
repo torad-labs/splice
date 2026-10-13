@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
@@ -21,15 +18,11 @@ import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import splice.usage.statusline.StatuslineRenderer
 import splice.usage.statusline.StatuslineWarn
-import java.nio.file.Path
 
 /** V4-396: /api/usage shows a plan window only while it is current — read under 15 minutes ago and
  *  not yet reset — the rule the status line already applies (QuotaFreshness). Marlin's header read
  *  "claude-splice 7d 99%" from a reading 13.8 hours old on a home with no Claude credential. */
 class UsageFreshWindowsTest {
-    @TempDir
-    lateinit var tmp: Path
-
     private val nowMs = 1_788_000_000_000L
     private val nowS = nowMs / 1_000
 
@@ -42,7 +35,6 @@ class UsageFreshWindowsTest {
         )
         val payloads = UsagePayloads(
             UsageHeads { listOf(head) },
-            ConfigService(StatePaths(baseOverride = tmp.resolve("state"))),
             WallClock { nowMs },
         )
         return Json.parseToJsonElement(payloads.usageJson()).jsonObject

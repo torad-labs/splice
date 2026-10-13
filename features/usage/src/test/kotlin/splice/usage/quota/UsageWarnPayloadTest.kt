@@ -9,21 +9,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
-import java.nio.file.Path
 
 class UsageWarnPayloadTest {
-    @TempDir
-    lateinit var tmp: Path
-
     private val nowMs = 1_788_000_000_000L
     private val nowS = nowMs / 1_000
 
@@ -39,7 +32,6 @@ class UsageWarnPayloadTest {
         )
         val payloads = UsagePayloads(
             UsageHeads { listOf(head) },
-            ConfigService(StatePaths(baseOverride = tmp.resolve("state"))),
             WallClock { nowMs },
         )
         val root = Json.parseToJsonElement(payloads.usageJson()).jsonObject

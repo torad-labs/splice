@@ -14,14 +14,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
@@ -29,16 +26,12 @@ import splice.usage.UsageHead
 import splice.usage.UsageHeadSinks
 import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
-import java.nio.file.Path
 
 private const val OBSERVED = 1_789_310_000L
 private const val FIVE_RESET = 1_789_320_000L
 private const val SEVEN_RESET = 1_789_900_000L
 
 class UsagePayloadsTest {
-    @TempDir
-    lateinit var tmp: Path
-
     private fun usage(view: UsageView, pool: HeadAccountPoolSource? = null): JsonObject {
         val head = UsageHead(
             key = "codex",
@@ -50,7 +43,6 @@ class UsagePayloadsTest {
         // V4-396: a window shows only while current, so the payload reads a minute after OBSERVED.
         val payloads = UsagePayloads(
             UsageHeads { listOf(head) },
-            ConfigService(StatePaths(baseOverride = tmp)),
             WallClock { (OBSERVED + 60) * 1_000 },
         )
         val root = Json.parseToJsonElement(payloads.usageJson()).jsonObject

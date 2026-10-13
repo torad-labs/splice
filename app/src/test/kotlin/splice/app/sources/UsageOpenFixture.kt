@@ -3,8 +3,6 @@ package splice.app.sources
 
 import kotlinx.coroutines.CoroutineScope
 import org.junit.jupiter.api.Assertions.assertEquals
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
 import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -71,7 +69,7 @@ internal class UsageOpenFixture(dir: Path, scope: CoroutineScope) {
             ),
         )
     }
-    internal val payloads = UsagePayloads(heads, ConfigService(StatePaths(baseOverride = dir)), WallClock { now })
+    internal val payloads = UsagePayloads(heads, WallClock { now })
 
     private fun probe(): QuotaSnapshot {
         assertEquals(thread, Thread.currentThread().threadId(), "all probe work stays on the measured thread")

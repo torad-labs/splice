@@ -13,7 +13,6 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.pool.AccountPoolJson
 import splice.accounts.pool.HeadAccountPoolView
-import splice.core.config.ConfigService
 import splice.core.usage.PlanWindows
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
@@ -30,8 +29,6 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.milliseconds
 
-private const val USAGE_WINDOW_HOURS = 5
-
 // A provider refusal until a known instant is a fully spent window: the warn reads 100 percent.
 private const val FULL_PERCENT = 100
 
@@ -41,7 +38,6 @@ private const val OBSERVED_AT = "observed_at"
 
 public class UsagePayloads(
     private val heads: UsageHeads,
-    private val config: ConfigService,
     /** Decides which plan windows have already reset when warn reads them. */
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
@@ -56,11 +52,7 @@ public class UsagePayloads(
     // PORT-OF server/src/control/api.mjs usage payload @ pre-public-port-baseline: top-level window/warn knobs +
     // per-head {key,label,usage:{output_tokens_5h,entries,ratelimit,warn}} (webui UsagePayload).
     public fun usageJson(): String {
-        val cfg = config.getConfig()
         return buildJsonObject {
-            put("window_hours", USAGE_WINDOW_HOURS)
-            put("warn_pct", cfg.usageWarnPct)
-            put("warn_tokens_5h", cfg.usageWarnTokens5h)
             putJsonArray(HEADS) {
                 val nowSeconds = clock().milliseconds.inWholeSeconds
                 heads.all().forEach { m ->

@@ -16,9 +16,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindow
@@ -28,11 +25,10 @@ import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
-import java.nio.file.Path
 
 class QuotaProbeNowRouteTest {
     @Test
-    fun `a page-open request probes and the next request reuses its observation`(@TempDir root: Path) =
+    fun `a page-open request probes and the next request reuses its observation`() =
         testApplication {
             var now = 1_788_000_000_000L
             var calls = 0
@@ -67,7 +63,6 @@ class QuotaProbeNowRouteTest {
             }
             val payloads = UsagePayloads(
                 UsageHeads { listOf(UsageHead("synthetic", "claude-synthetic", source, UsageHeadWarn(80, 0))) },
-                ConfigService(StatePaths(baseOverride = root)),
                 WallClock { now },
             )
             application {

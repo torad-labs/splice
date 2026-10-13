@@ -192,10 +192,9 @@ class SpentReadingSurfacesTest {
         )[1]
     }
 
-    private fun warn(head: ManagedHead, state: StatePaths): JsonObject {
+    private fun warn(head: ManagedHead): JsonObject {
         val payloads = UsagePayloads(
             UsageHeadAdapter.heads(mapOf(KEY to head)),
-            ConfigService(state),
             WallClock(System::currentTimeMillis),
         )
         val row = Json.parseToJsonElement(payloads.usageJson()).jsonObject.getValue("heads").jsonArray.single()
@@ -223,7 +222,7 @@ class SpentReadingSurfacesTest {
         assertTrue(line.trimEnd().endsWith("ready · week at 100%, resets ${chicago.at(resets)}"), line)
         assertFalse(line.contains("out of quota"), line)
 
-        val usage = warn(head, state)
+        val usage = warn(head)
         assertEquals("100", usage.getValue("pct").jsonPrimitive.content)
         assertNotEquals("provider_reset", usage.getValue("source").jsonPrimitive.content, usage.toString())
     }
@@ -241,7 +240,7 @@ class SpentReadingSurfacesTest {
 
         val line = statusLine(tmp, health)
         assertTrue(line.trimEnd().endsWith("ready"), line)
-        assertNotEquals("provider_reset", warn(head, state).getValue("source").jsonPrimitive.content)
+        assertNotEquals("provider_reset", warn(head).getValue("source").jsonPrimitive.content)
     }
 
     @Test

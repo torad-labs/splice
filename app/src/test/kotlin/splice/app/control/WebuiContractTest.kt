@@ -194,7 +194,7 @@ class WebuiContractTest {
     @Test
     fun `usage payload matches UsagePayload plus nested HeadUsage`() = runBlocking {
         val payload = api("/api/usage")
-        assertFields(payload, listOf("window_hours", "warn_pct", "warn_tokens_5h", "heads"), "UsagePayload")
+        assertFields(payload, listOf("heads"), "UsagePayload")
         val head = payload["heads"]!!.jsonArray.first().jsonObject
         assertFields(head, listOf("key", "label", "usage"), "HeadUsageEntry")
         val usage = head["usage"]!!.jsonObject

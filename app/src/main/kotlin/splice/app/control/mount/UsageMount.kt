@@ -46,7 +46,7 @@ internal class UsageMount(
 ) {
     private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins })
     private val usageLookup = UsageHeadAdapter.consoleLookup(resolver, ports, config.statePaths)
-    private val usagePayloads = UsagePayloads(usageHeads, config)
+    private val usagePayloads = UsagePayloads(usageHeads)
     private val perfPayloads = PerfPayloads(usageHeads)
     private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
 

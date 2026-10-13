@@ -99,8 +99,9 @@ public class CapturedTranscripts(
             else -> null
         }
 
-    private fun resultText(content: JsonElement?): String = when (content) {
-        is JsonArray -> content.mapNotNull { JsonScalars.str(it as? JsonObject, "text") }.joinToString("\n")
-        else -> JsonScalars.str(content).orEmpty()
+    private fun resultText(content: JsonElement?): String = if (content is JsonArray) {
+        content.mapNotNull { JsonScalars.str(it as? JsonObject, "text") }.joinToString("\n")
+    } else {
+        JsonScalars.str(content).orEmpty()
     }
 }

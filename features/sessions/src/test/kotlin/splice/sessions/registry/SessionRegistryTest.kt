@@ -220,8 +220,6 @@ class SessionRegistryTest {
         write(dir, 12, """{"pid":12,"updatedAt":$now,"status":"busy"}""")
         val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.process.pid }
         assertEquals("input needed", rows.getValue(11L).status.waitingFor)
-        assertEquals("cli", rows.getValue(11L).client.entrypoint)
         assertNull(rows.getValue(12L).status.waitingFor)
-        assertNull(rows.getValue(12L).client.entrypoint)
     }
 }

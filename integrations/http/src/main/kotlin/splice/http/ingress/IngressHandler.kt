@@ -67,6 +67,7 @@ internal class IngressHandler(
         if (entry.refusal == null) {
             reading = entry
             if (msg is LastHttpContent) entry.arrived = true
+            entry.small = HttpUtil.getContentLength(msg, -1L) in 0L..SMALL_BODY_BYTES
             ownership.register(msg, entry)
             if (entry.lease != null && isUndeclared(msg)) growing = ChunkedBody(entry, admittedCap)
             ctx.fireChannelRead(msg)

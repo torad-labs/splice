@@ -17,6 +17,7 @@ import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
@@ -120,24 +121,27 @@ public class HeapIngress(
                 } finally {
                     val input = call.request.receiveChannel()
                     val owner = checkNotNull(ownership)
-                    Cancellables.withCleanup({ settle(call, owner, entry, input) }) { drainArrived(entry, input) }
+                    Cancellables.withCleanup({ settle(call, owner, entry, input) }) { drainBody(owner, entry, input) }
                 }
             }
         }
     }
 
     /**
-     * A body the route never read but whose last bytes are already in is read to its end here, so the connection
-     * stays reusable, as the reply's keep-alive promised. Cancelling it instead would fail Ktor's copier mid-write
-     * and end every later request on the connection: that is why an unread body used to close it, and a client
-     * reusing the socket after a kept-alive reply met a reset (marlin's console 502, Oct 12). The read is bounded by
-     * the body already admitted and charged, and runs even when the call was cancelled, so the charge settles.
+     * A body the route never read is read to its end here when its last bytes are already in, or when it is small and
+     * declared, so the connection stays reusable, as the reply's keep-alive promised. Cancelling it instead would fail
+     * Ktor's copier mid-write and end every later request on the connection: that is why an unread body used to close
+     * it, and a client reusing the socket after a kept-alive reply met a reset (marlin's console 502, Oct 12). The read
+     * is bounded by the body already admitted and charged, and runs even when the call was cancelled, so the charge
+     * settles. A small body still on its way gets the listener's read-idle bound, or [SMALL_BODY_WAIT_MS]; one that
+     * does not finish within it stays unread, and settle closes the connection after the reply.
      */
-    private suspend fun drainArrived(entry: IngressRequest, input: ByteReadChannel) {
-        if (!entry.arrived || input.isClosedForRead) return
+    private suspend fun drainBody(owner: IngressOwnership, entry: IngressRequest, input: ByteReadChannel) {
+        if (input.isClosedForRead || !owner.drainable(entry)) return
+        val waitMs = readIdleMs?.invoke() ?: SMALL_BODY_WAIT_MS
         withContext(NonCancellable) {
             Cancellables.discard(
-                Cancellables.runCatchingCleanup { input.discard() },
+                Cancellables.runCatchingCleanup { withTimeoutOrNull(waitMs) { input.discard() } },
                 "a body that cannot be read to its end stays unread, and settle closes its connection",
             )
         }

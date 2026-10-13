@@ -6,6 +6,13 @@ import splice.core.memory.HeapLease
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** A body this small, with its length declared, is read to its end after a route that ignored it, even when its last
+ *  bytes have not reached Ktor yet: it is one socket buffer at most, already admitted and charged. */
+internal const val SMALL_BODY_BYTES = 64 * 1024L
+
+/** How long that read waits for the rest of a small body on a listener with no read-idle bound of its own. */
+internal const val SMALL_BODY_WAIT_MS = 2_000L
+
 internal class IngressOwnership(private val connectionLease: HeapLease?) {
     val halted = AtomicBoolean()
     val draining = AtomicBoolean()
@@ -38,14 +45,20 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
 
     /**
      * Whether the reply about to go out for the oldest owed request must say Connection: close. It must when that
-     * request's body has not all arrived: a body still on its way is never drained, so its connection closes after the
-     * reply, and a reply that said keep-alive would send the client's next request into a reset.
+     * request's body has not all arrived and is not small: a large or undeclared body still on its way is never
+     * drained, so its connection closes after the reply, and a reply that said keep-alive would send the client's next
+     * request into a reset. A small declared body is drained after the reply instead (HeapIngress), because its last
+     * bytes can land in a later socket read than its headers, and nothing asks for that read while the route ignores
+     * the body: closing there turned a console button's kept-alive POST into a close (HeapIngressTest, Oct 12).
      */
     fun announceClose(): Boolean = synchronized(lock) {
         val entry = responses.firstOrNull() ?: return@synchronized false
-        if (!entry.arrived) entry.closeAnnounced = true
+        if (!entry.arrived && !entry.small) entry.closeAnnounced = true
         entry.closeAnnounced
     }
+
+    /** Whether [entry]'s unread body is read to its end: it is all in, or it is small and this connection still reads. */
+    fun drainable(entry: IngressRequest): Boolean = entry.arrived || (entry.small && !halted.get())
 
     fun responded(): Boolean = synchronized(lock) {
         val entry = responses.removeFirstOrNull() ?: return@synchronized false
@@ -92,6 +105,9 @@ internal class IngressRequest(
     /** The body's last bytes reached Ktor, so reading it to its end cannot wait on the client. */
     @Volatile
     var arrived = false
+
+    /** Its declared length is at most [SMALL_BODY_BYTES], so it is drained rather than closed on; set before [IngressOwnership.register]. */
+    var small = false
 
     /** Its reply went out saying Connection: close, so the connection closes once that reply is written. */
     @Volatile

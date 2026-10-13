@@ -20,6 +20,7 @@ import splice.lifecycle.restart.ConfigRepair
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.upgrade.AutoUpdatePolicy
+import splice.lifecycle.upgrade.AutoUpdateSettings
 import splice.lifecycle.upgrade.SystemdUpgradeLauncher
 import splice.lifecycle.upgrade.UpgradeAuto
 import splice.lifecycle.upgrade.UpgradeRuns
@@ -71,7 +72,13 @@ internal object LifecycleWiring {
     /** The daemon's updater over [runs], its policy read from the booted splice.toml at [path] at every look, so an edit
      *  applies to the next one. A file that will not parse skips that look; the boot findings already refuse a bad one. */
     fun autoUpdate(runs: UpgradeRuns, path: Path, log: LogSink): UpgradeAuto =
-        UpgradeAuto(EnvReader(System::getenv), runs, { policy(path, log) }, log)
+        UpgradeAuto(EnvReader(System::getenv), runs, updateSettings(path, log), log)
+
+    /** `[daemon] auto_update` and `update_channel` from the splice.toml at [path], read fresh at every ask. */
+    fun updateSettings(path: Path, log: LogSink): AutoUpdateSettings = AutoUpdateSettings { policy(path, log) }
+
+    /** The same for a CLI verb: the splice.toml the daemon reads, with nothing logged. */
+    fun cliUpdateSettings(): AutoUpdateSettings = updateSettings(TopologyLoader.configPath(), LogSink {})
 
     private fun policy(path: Path, log: LogSink): AutoUpdatePolicy? {
         val daemon = Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(path)).daemon }

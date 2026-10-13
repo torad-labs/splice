@@ -125,6 +125,7 @@ public sealed class Command {
                     LifecycleWiring.restart(it, waitForCompactions = false, launchJar = LifecycleWiring.installedJar())
                 },
                 InstallWiring.units(EnvReader(System::getenv)),
+                LifecycleWiring.cliUpdateSettings(),
             )
             return outcomeExitCode(verb.upgrade(args))
         }

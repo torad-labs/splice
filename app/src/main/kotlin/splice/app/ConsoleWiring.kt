@@ -47,6 +47,7 @@ import splice.diagnostics.playground.PlaygroundProbe
 import splice.head.HeadEvents
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
+import splice.lifecycle.upgrade.AutoUpdateSettings
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
 import splice.lifecycle.upgrade.UpgradeChecks
 import splice.lifecycle.upgrade.UpgradeStatus
@@ -96,7 +97,10 @@ internal object ConsoleWiring {
         srv.ports.declaredHeads = topology.declaredHeads
         srv.ports.doctor = DoctorReport(DoctorWiring::consoleJson)
         srv.ports.doctorFixes = DoctorWiring.fixes()
-        val upgradeChecks = UpgradeChecks(EnvReader(System::getenv))
+        val upgradeChecks = UpgradeChecks(
+            EnvReader(System::getenv),
+            settings = topology.path?.let { LifecycleWiring.updateSettings(it, log) } ?: AutoUpdateSettings { null },
+        )
         srv.ports.lifecycle.upgradeChecks = upgradeChecks
         val upgradeStatus = ConsoleUpgradeStatus(EnvReader(System::getenv), upgradeChecks)
         srv.ports.lifecycle.upgrade = UpgradeStatus(upgradeStatus::json)

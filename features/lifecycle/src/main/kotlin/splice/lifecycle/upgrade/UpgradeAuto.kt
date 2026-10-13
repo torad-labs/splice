@@ -17,13 +17,9 @@
 // until the daemon restarts or a newer one is published, so a release that cannot install does not loop.
 package splice.lifecycle.upgrade
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -37,9 +33,6 @@ private const val FIRST_LOOK_MINUTES = 10L
 // why: betas are cut through the day; an hour keeps a new one at most an hour away and stays far inside GitHub's
 // unauthenticated limit of 60 API reads an hour.
 private const val LOOK_EVERY_MINUTES = 60L
-
-// why: the updater compares the first page of releases, newest first; a newer release is never past the 30th.
-private const val RELEASES_API = "https://api.github.com/repos/torad-labs/splice/releases?per_page=30"
 
 /** What splice.toml says now: whether the daemon installs newer releases itself, and whether betas count as newer. */
 public data class AutoUpdatePolicy(val enabled: Boolean, val beta: Boolean)
@@ -56,8 +49,7 @@ public class UpgradeAuto(
     private val log: LogSink,
 ) {
     private val layout = UpgradeLayout(env)
-    private val fetch: UpgradeFetch = JdkUpgradeFetch()
-    private val json = Json { ignoreUnknownKeys = true }
+    private val channel = ReleaseChannel(env)
     private val tried = mutableSetOf<String>()
     private var saidUnmanaged = false
 
@@ -113,23 +105,10 @@ public class UpgradeAuto(
         }
     }
 
-    /** The highest published version on the channel: never a draft, and a prerelease only on beta. */
-    private fun newest(beta: Boolean): String? {
-        val releases = releases()?.let { json.parseToJsonElement(String(it)) as? JsonArray } ?: return null
-        return releases.mapNotNull { it as? JsonObject }
-            .filter { JsonScalars.str(it, "draft") == "false" }
-            .filter { beta || JsonScalars.str(it, "prerelease") == "false" }
-            .mapNotNull { JsonScalars.str(it, "tag_name")?.removePrefix("v") }
-            .filter(layout::isVersion)
-            .maxByOrNull(::ReleaseOrder)
-    }
-
-    /** The releases page, or null when it could not be read, which is logged and skips this look. */
-    private fun releases(): ByteArray? = try {
-        fetch(RELEASES_API)
-    } catch (failed: UpgradeFetchFailed) {
-        log("[auto-update] could not read the releases: ${LogSafe.str(failed.why)}\n")
-        null
+    /** The newest release on the channel (ReleaseChannel), or null when it could not be read, which is logged. */
+    private fun newest(beta: Boolean): String? = when (val read = channel.newest(beta)) {
+        is Upgraded.Ok -> read.value
+        is Upgraded.Refused -> null.also { log("[auto-update] ${LogSafe.str(read.reason)}\n") }
     }
 }
 

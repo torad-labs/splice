@@ -52,13 +52,18 @@ public sealed class UpgradeCheckOutcome {
     public class TooSoon(public val retryAfterSeconds: Long) : UpgradeCheckOutcome()
 }
 
+/** [settings] names the channel at each read: on beta the newest release comes from the releases list the daemon's
+ *  updater reads (ReleaseChannel), prereleases included, so the Check, `splice upgrade --check` and auto-update agree. */
 public class UpgradeChecks(
     private val env: EnvReader,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val settings: AutoUpdateSettings = AutoUpdateSettings { null },
 ) {
     /** The release reader. Internal and replaceable so a test puts its fake at the network edge; production never touches it. */
     internal var release: UpgradeRelease =
         UpgradeRelease(TerminalOutput { }, JdkUpgradeFetch(), JdkUpgradeProcess(), "java")
+
+    internal var channel: ReleaseChannel = ReleaseChannel(env)
 
     private val last = AtomicReference(UpgradeSnapshot(UpgradeReadState.NEVER, null, null, null))
     private val running = AtomicBoolean(false)
@@ -83,8 +88,13 @@ public class UpgradeChecks(
 
     private fun read(startedAt: Long): UpgradeSnapshot {
         val staging = Files.createTempDirectory(CHECK_STAGING_PREFIX)
+        val beta = settings.read()?.beta == true
         val answer = Cancellables.runCatchingCancellable {
-            release.latest(release.base(null, env("SPLICE_RELEASE_BASE_URL")), staging)
+            if (beta) {
+                channel.newest(beta = true)
+            } else {
+                release.latest(release.base(null, env("SPLICE_RELEASE_BASE_URL")), staging)
+            }
         }
         discard(staging)
         val failure = answer.exceptionOrNull()

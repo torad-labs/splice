@@ -38,8 +38,11 @@ public class UpgradeVerb(
     private val restart: VersionedRestart,
     /** The MCP hub's systemd units, for the front's reload after the hub's programs are swapped in; null off Linux. */
     private val units: HubUnits? = null,
+    /** splice.toml's update channel, which `--check` follows. */
+    private val channel: AutoUpdateSettings = AutoUpdateSettings { null },
 ) {
     public fun upgrade(args: List<String>): Boolean {
+        if (args == listOf("--check")) return UpgradeCheckLine(output, env, channel).answer()
         val settings = DaemonSettings(errors)
         val daemon = UpgradeDaemon(
             output,
@@ -70,7 +73,8 @@ internal class UpgradeCommand(
 
     fun upgrade(args: List<String>): Boolean {
         val parsed = parser.parse(args) ?: return parser.usage()
-        if (parsed.check) return check()
+        // --check is answered by the verb (UpgradeCheckLine) before an upgrade is built; here it has nothing to run.
+        if (parsed.check) return parser.usage()
         val answer = if (parsed.rollback && parsed.to != null) {
             Upgraded.Refused("--rollback takes no --to: it repoints at the previous release only")
         } else {
@@ -84,26 +88,6 @@ internal class UpgradeCommand(
                 false
             }
         }
-    }
-
-    /** `--check` (spec §5): the newest published release beside the installed one, read the way the console's Check
-     *  reads it (UpgradeChecks), with nothing staged, activated or restarted. False when the release could not be read. */
-    private fun check(): Boolean {
-        val installed = layout.installedVersion()
-        val snapshot = (UpgradeChecks(env).check() as? UpgradeCheckOutcome.Done)?.snapshot
-        val latest = snapshot?.latest
-        if (latest == null) {
-            output.line("splice upgrade --check: the newest release was not read (${snapshot?.reason ?: "no answer"})")
-            return false
-        }
-        output.line(
-            if (ReleaseOrder(latest) > ReleaseOrder(installed)) {
-                "$latest is newer than the installed $installed; run: splice upgrade"
-            } else {
-                "$installed is installed, and the newest release is $latest"
-            },
-        )
-        return true
     }
 
     private fun upgradeTo(a: UpgradeArgs): Upgraded<Boolean> {

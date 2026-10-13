@@ -127,14 +127,12 @@ function fold(into, g) {
 }
 /** The window's totals across every command that answered: per account, model, session and day, as the daemon folded them. */
 function foldWindow(reads, heads) {
-  const w = { total: ZERO(), accounts: new Map(), models: new Map(), sessions: new Map(), days: new Map(), slices: new Map(), byHead: new Map(), errors: [], pending: false, reading: new Set() };
+  const w = { total: ZERO(), accounts: new Map(), models: new Map(), sessions: new Map(), days: new Map(), slices: new Map(), errors: [], pending: false, reading: new Set() };
   heads.forEach((head, i) => {
     const answer = (reads[i].body?.heads || []).find((x) => x.key === head.key);
     if (!reads[i].ok || !answer || answer.error) { w.errors.push(head.command); console.warn(`${head.command}: ${answer?.error ?? reads[i].status}`); return; }
     if (answer.read_pending) { w.pending = true; w.reading.add(head.key); return; }
     const u = answer.usage;
-    const seen = w.byHead.get(head.key);
-    w.byHead.set(head.key, { count: (seen?.count ?? 0) + (answer.count ?? 0), returned: (seen?.returned ?? 0) + (answer.returned ?? 0), truncated: seen?.truncated === true || answer.truncated === true });
     if (!u) return;
     fold(w.total, u.totals);
     const cols = (answer.asks || []).map((a) => fold(ZERO(), a.usage?.totals ?? {})), had = w.slices.get(head.key);

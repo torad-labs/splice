@@ -31,9 +31,13 @@ private val GEAR = LongArray(1 shl Byte.SIZE_BITS) { byte ->
     ByteBuffer.wrap(MessageDigest.getInstance("SHA-256").digest(byteArrayOf(byte.toByte()))).long
 }
 
+/** Cuts one literal's bytes into stored parts. A resumed literal starts with the [reused] parts it shares with a
+ *  recent one and drops the first [skip] bytes it is fed, which already lie inside the last of them. */
 internal class TraceChunker(
     private val pack: TraceBodyPack,
     private val heap: HeapReservations = JvmHeap.budget,
+    reused: List<JsonObject> = emptyList(),
+    private var skip: Int = 0,
 ) : OutputStream() {
     private val bufferLease = heap.reserve(CHUNK_MAX.toLong()) ?: throw HeapCapacityException()
     private val buffer = ByteArray(CHUNK_MAX).also { HeapOwners.keep(it, bufferLease) }
@@ -42,7 +46,16 @@ internal class TraceChunker(
     private var count = 0
     private var gear = 0L
 
+    init {
+        if (!partsLease.resize(reused.size * TRACE_CHUNK_REFERENCE_BYTES)) throw HeapCapacityException()
+        parts += reused
+    }
+
     override fun write(value: Int) {
+        if (skip > 0) {
+            skip--
+            return
+        }
         buffer[count++] = value.toByte()
         gear = (gear shl 1) + GEAR[value.toUByte().toInt()]
         val boundary = count >= CHUNK_MIN && (gear and (CHUNK_TARGET - 1).toLong()) == 0L
@@ -72,18 +85,19 @@ private const val TRACE_CHUNK_REFERENCE_BYTES = 64L
 
 /** Stream one JSON string literal once; lone surrogate code units remain exact across a truncation boundary. */
 internal object TraceLiteral {
-    fun encode(text: String, sink: OutputStream, heap: HeapReservations = JvmHeap.budget) {
+    /** Encodes [text] from char [from]; from 0 the literal opens with its quote, past it the quote is already out. */
+    fun encode(text: String, sink: OutputStream, heap: HeapReservations = JvmHeap.budget, from: Int = 0) {
         val peak = heap.reserve(TRACE_LITERAL_SCRATCH_CHARS * 2L + TRACE_LITERAL_ENCODER_BYTES)
             ?: throw HeapCapacityException()
-        peak.use { encoded(text, sink) }
+        peak.use { encoded(text, sink, from) }
     }
 
-    private fun encoded(text: String, sink: OutputStream) {
+    private fun encoded(text: String, sink: OutputStream, start: Int) {
         val scratch = CharArray(TRACE_LITERAL_SCRATCH_CHARS)
         val writer = OutputStreamWriter(sink, Charsets.UTF_8)
-        writer.write('"'.code)
-        var from = 0
-        text.indices.forEach { index ->
+        if (start == 0) writer.write('"'.code)
+        var from = start
+        for (index in start until text.length) {
             val char = text[index]
             val escaped = shortEscape(char)
             val unicode = needsUnicode(text, index)
@@ -96,6 +110,20 @@ internal object TraceLiteral {
         if (from < text.length) span(writer, text, from, text.length, scratch)
         writer.write('"'.code)
         writer.flush()
+    }
+
+    /** How many bytes char [index] of [text] encodes to; a surrogate pair counts all four at its first half. */
+    fun width(text: String, index: Int): Int {
+        val char = text[index]
+        return when {
+            shortEscape(char) != null -> SHORT_ESCAPE_BYTES
+            needsUnicode(text, index) -> UNICODE_ESCAPE_BYTES
+            char.isLowSurrogate() -> 0
+            char.isHighSurrogate() -> UTF8_PAIR_BYTES
+            char.code < UTF8_ONE_BYTE_LIMIT -> 1
+            char.code < UTF8_TWO_BYTE_LIMIT -> 2
+            else -> UTF8_THREE_BYTES
+        }
     }
 
     private fun span(writer: Writer, text: String, from: Int, until: Int, scratch: CharArray) {
@@ -148,3 +176,21 @@ private const val TRACE_LITERAL_HEX_RADIX = 16
 
 // why: RFC 8259 encodes one UTF-16 code unit as four hexadecimal digits.
 private const val TRACE_LITERAL_HEX_DIGITS = 4
+
+// why: a short escape is a backslash and one letter.
+private const val SHORT_ESCAPE_BYTES = 2
+
+// why: a Unicode escape is a backslash, u, and four hexadecimal digits.
+private const val UNICODE_ESCAPE_BYTES = 6
+
+// why: a UTF-16 surrogate pair is one code point beyond U+FFFF, four bytes in UTF-8.
+private const val UTF8_PAIR_BYTES = 4
+
+// why: UTF-8 encodes code units below 0x80 in one byte.
+private const val UTF8_ONE_BYTE_LIMIT = 0x80
+
+// why: UTF-8 encodes code units below 0x800 in two bytes.
+private const val UTF8_TWO_BYTE_LIMIT = 0x800
+
+// why: every other code unit of the Basic Multilingual Plane is three bytes in UTF-8.
+private const val UTF8_THREE_BYTES = 3

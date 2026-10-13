@@ -41,6 +41,9 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
 
     // Weak keys reuse queued equal literals without keeping completed request bodies alive.
     val literals = WeakHashMap<String, JsonArray>()
+
+    // The few large literals a body's opening is matched against (TraceLiteralPrefix).
+    val recent = TraceRecentLiterals(heap)
     private val literalLease = HeapOwners.charge(literals, heap, 0L)
     private var keys = LongArray(0)
     private var offsets = LongArray(0)
@@ -94,6 +97,7 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
         offsets.fill(0L)
         size = 0
         literals.clear()
+        recent.clear()
     }
 
     fun cache(text: String, parts: JsonArray) {

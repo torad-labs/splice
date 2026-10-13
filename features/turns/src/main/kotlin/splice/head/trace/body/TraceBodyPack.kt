@@ -85,7 +85,11 @@ internal class TraceBodyPack(
     fun cached(text: String): JsonArray? =
         index.literals[text]?.takeIf { parts -> parts.all { current(it as JsonObject) } }
 
-    private fun current(part: JsonObject): Boolean = TracePackBytes.matches(
+    /** Where [text] resumes after the stored chunks it shares with a recent literal, or null to encode it whole. */
+    fun resume(text: String): TraceLiteralResume? = index.recent.resume(text, this)
+
+    /** [part] still names whole bytes of this pack under its digest, after any truncate and regrow. */
+    fun current(part: JsonObject): Boolean = TracePackBytes.matches(
         channel,
         FORMAT,
         part.getValue("offset").jsonPrimitive.long,

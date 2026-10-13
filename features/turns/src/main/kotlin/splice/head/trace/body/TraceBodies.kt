@@ -145,9 +145,13 @@ internal class TraceBodies(
 
     private fun literal(text: String, pack: TraceBodyPack): JsonObject = try {
         val parts = pack.cached(text) ?: run {
-            val chunks = TraceChunker(pack, heap)
-            TraceLiteral.encode(text, chunks, heap)
-            chunks.finish().also { activeIndex.cache(text, it) }
+            val resume = pack.resume(text)
+            val chunks = TraceChunker(pack, heap, resume?.parts.orEmpty(), resume?.skip ?: 0)
+            TraceLiteral.encode(text, chunks, heap, resume?.from ?: 0)
+            chunks.finish().also {
+                activeIndex.cache(text, it)
+                activeIndex.recent.remember(text, it)
+            }
         }
         buildJsonObject {
             put(TRACE_REFERENCE_TAG, TracePackFormat.V2.version)

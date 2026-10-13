@@ -54,4 +54,4 @@
 .kn .mchip .icon svg { width: .95rem; height: .95rem; }
 
 /* a command's own settings on Models */
-.kn .only.every { font: 500 .98rem/1.2 var(--font-name); color: var(--text-mute); }
+.kn .only .word, .kn .only.every { font: 500 .98rem/1.2 var(--font-name); color: var(--text-mute); }

@@ -225,8 +225,13 @@ const KNOBS = (() => {
   }
   // A command's own value: its control, what the change did, and the way back to the value every other command uses.
   // A command just picked from "One command" has nothing saved yet, so its control shows the shared value until a change.
-  const backHtml = (k, c) =>
-    `<button class="back" data-kact="back" data-key="${k.key}" data-cmd="${esc(c)}">Back to ${esc(word(k, valueOf(k).v))}</button>`;
+  // An own value equal to the shared one cannot go "Back to" the value it already reads; clearing it still matters, since a
+  // later change for every command would pass it by, so the button says that (splice-usage's walk, Oct 13: "100 · Back to 100").
+  const backHtml = (k, c) => {
+    const shared = valueOf(k).v, own = ownValue(k.key, c);
+    const words = own !== undefined && String(own) === String(shared) ? "Follow every command" : `Back to ${word(k, shared)}`;
+    return `<button class="back" data-kact="back" data-key="${k.key}" data-cmd="${esc(c)}">${esc(words)}</button>`;
+  };
   function overHtml(k, c, hl = esc) {
     const own = ownValue(k.key, c);
     return `<div class="over">${cmdChip(c, hl)}${ctlHtml(k, own === undefined ? valueOf(k).v : own, c)}${saidHtml(`${k.key}@${c}`)}${backHtml(k, c)}</div>`;
@@ -259,7 +264,7 @@ const KNOBS = (() => {
     const lines = owners.map((c) => overHtml(k, c, hl)).join("");
     const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(st.commandOf[c] || c)}</button>`).join("")}</div>` : "") + "</span>" : "";
-    const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
+    const only = k.only ? `<span class="only"><span class="word">Only</span>${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     // THE SLOT UNDER A CONTROL HOLDS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the page passes what it already
     // knows — the last read, the mark on a bar, the providers reporting nothing, how many servers run — and passes
     // nothing where that fact is not on the wire. A row with no element is its name and its control.

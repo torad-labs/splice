@@ -252,7 +252,10 @@ button.count:hover { color: var(--text); }
    number at one end, action at the other, instead of both clumped in the first third of a 3828 row */
 @container kcard (min-width: 80rem) {
   #st .vcard .ctl { width: 100%; align-items: center; }
-  #st .vcard .ctl > .act { margin-left: auto; }
+  /* Check stays beside the number it checks; the first other act takes the far edge and the rest follow it, where two
+     auto margins split the row and left Check floating mid-card at 3828 (splice-usage's walk, Oct 13) */
+  #st .vcard .ctl > .act:not([data-act="check"]) { margin-left: auto; }
+  #st .vcard .ctl > .act:not([data-act="check"]) ~ .act { margin-left: 0; }
   /* "Running" is a word, not a setting's name, so it takes the room it needs instead of a settings label's column:
      at 3828 the 22rem column held 400px of air between the word and the number it names (r6) */
   #st .vcard .kin { grid-template-columns: auto minmax(0, 1fr); column-gap: 2rem; }
@@ -605,6 +608,9 @@ button.count:hover { color: var(--text); }
 #st .kin > .kel { margin: 0; font: 500 1.15rem/1.4 var(--font-data); color: var(--text-body); }
 #st .kin > .kel b { font-weight: 500; color: var(--text); font-variant-numeric: tabular-nums; }
 #st .kin > .kel .cdoors { gap: .5rem; }
+/* the word that says what a row of chips is, on their line: the 5-hour row's logins that report no limit */
+#st .kin > .kel:has(> .kword) { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; }
+#st .kin > .kel > .kword { font: 500 1rem/1.2 var(--font-name); color: var(--text-mute); }
 /* the warn mark on an empty track: the same bar the account figures draw, with no fill, so the per-cent he picks is
    read where he will meet it */
 #st .kin > .kel > .pct.mark { position: relative; height: .55rem; border-radius: .28rem; background: var(--track); }
@@ -641,7 +647,10 @@ button.count:hover { color: var(--text); }
 /* the commands with their own value: a row of cells that fills the width, the control on its own line above them */
 #st .kn .ctl.col:has(.over) { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); align-items: stretch; gap: 1rem 1.6rem; }
 #st .kn .ctl.col > .line { grid-column: 1 / -1; }
-#st .kn .ctl.col > .over { padding: .2rem 0 .2rem 1.1rem; }
+/* every command's line has one shape, its chip beside its control and the way back under the control, so a long command
+   name never wraps one line's Back under its picker while a short one's sits beside it (splice-usage's walk at 3828, Oct 13) */
+#st .kn .ctl.col > .over { display: grid; grid-template-columns: max-content minmax(0, 1fr); justify-items: start; align-items: center; padding: .2rem 0 .2rem 1.1rem; }
+#st .kn .ctl.col > .over > :not(.chip) { grid-column: 2; }
 /* a quiet line of facts UNDER the tiles, where the head is already carrying the zeros (MCP servers: how many servers
    splice leaves to each session, and anything a hosted one last failed with) */
 .zeros.under { display: flex; margin-top: 1.2rem; }

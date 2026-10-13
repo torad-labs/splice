@@ -107,7 +107,7 @@ function commandsOf() {
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, mainId: first ?? null, prov: PROVIDER_NAME[family] ?? runtimeName(provKey) ?? provKey,
-      url: pcfg.base_url ?? "", models, missing, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
+      url: pcfg.base_url ?? "", extraWindows: pcfg.extra_windows ?? [], windowRules: pcfg.window_rules ?? [], models, missing, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
       // the daemon's own watch of a local runtime's port, the truth Accounts reads as Not answering (HeadProbes)
@@ -430,6 +430,7 @@ function paneHtml() {
     + runtimeHtml(c)
     + tierRows
     + nowRow(c)
+    + windowsRow(c)
     + `<span class="lbl">System prompt</span><div class="ctl col">${modeSwitch("head", d.mode)}${d.file ? pfile(d.file) : `<textarea class="field ptext" id="h-text" rows="3">${esc(d.text)}</textarea>`}</div>`
     + (data.knobsErr ? "" : `<div class="kn">${KNOBS.commandRowsHtml(c.key, COMMAND_KNOBS)}</div>`)
     + `<span class="lbl">Projects</span><div class="ctl col">${per}${addPer}</div>`
@@ -494,6 +495,14 @@ async function readLog(key) {
   const why = parsed.find((l) => l.raw.startsWith("[logs unavailable:"))?.raw.slice(1, -1);
   ui.logWhy[key] = why ? why[0].toUpperCase() + why.slice(1) : res.ok ? null : "Log not read";
   render();
+}
+/** The windows the provider declares beside its models (gap 473), read from GET /api/topology: an extra window names
+ *  one model, with its served ceiling when it has one, and a rule names every model whose id starts with its prefix. */
+function windowsRow(c) {
+  const extra = c.extraWindows.map((w) => `<span class="fig"><bdo dir="ltr">${esc(w.id)}</bdo> ${big(w.context_window)}${w.max_context_window ? `, served up to ${big(w.max_context_window)}` : ""}</span>`);
+  const rules = c.windowRules.map((w) => `<span class="fig" title="Every model whose id starts with ${esc(w.prefix)}"><bdo dir="ltr">${esc(w.prefix)}…</bdo> ${big(w.context_window)}</span>`);
+  if (!extra.length && !rules.length) return "";
+  return `<span class="lbl">Windows</span><div class="ctl col">${[...extra, ...rules].join("")}</div>`;
 }
 /** What the command's gate holds right now and what has failed on it, as GET /api/heads serves them. */
 function nowRow(c) {

@@ -166,7 +166,7 @@
 .tokens > header .tsub { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
 .tokens .card { padding: .4rem 1.5rem .6rem; }
 .trow {
-  display: grid; grid-template-columns: minmax(12rem, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 1.2rem; align-items: baseline;
+  display: grid; grid-template-columns: minmax(12rem, 1.4fr) repeat(5, minmax(0, 1fr)); gap: 1.2rem; align-items: baseline;
   padding: 1rem 0; border-top: .12rem solid var(--track); font: 500 1.05rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text);
 }
 .trow.thead { border-top: 0; padding: .8rem 0 .7rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
@@ -176,3 +176,6 @@
 .trow .who { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; min-width: 0; }
 .trow .sb { font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); }
 .tokens .empty { margin: 1rem 0; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }
+/* an account's cold turns, under its command, the account's name indented in the name face */
+.trow.tacct { border-top: 0; padding: .2rem 0 .8rem; }
+.trow.tacct .an { padding-left: 1rem; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); min-width: 0; overflow-wrap: anywhere; }

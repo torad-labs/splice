@@ -115,10 +115,11 @@ function turnsUrl(head, held, f, label) {
 const labelsOf = (f) => (f.account ? f.account.split("|").slice(1).join("|").split(SEP) : [null]);
 const headsFor = (f) => S.heads.filter((h) => !f.account || f.account.split("|")[0] === h.key);
 
-const ZERO = () => ({ requests: 0, in: 0, cached: 0, write: 0, out: 0, noIn: 0, noOut: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0, failed: 0, limited: 0 });
+const ZERO = () => ({ requests: 0, in: 0, cached: 0, write: 0, out: 0, noIn: 0, noOut: 0, cold: 0, coldIn: 0, coldUn: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0, failed: 0, limited: 0 });
 function fold(into, g) {
   into.requests += g.requests ?? 0; into.in += g.input_tokens ?? 0; into.cached += g.cached_tokens ?? 0; into.out += g.output_tokens ?? 0;
   into.write += g.cache_write_tokens ?? 0; into.noIn += g.missing_input_requests ?? 0; into.noOut += g.missing_output_requests ?? 0; // a request with no count adds nothing, and is counted apart
+  into.cold += g.cold_requests ?? 0; into.coldIn += g.cold_input_tokens ?? 0; into.coldUn += g.cold_requests == null ? g.requests ?? 0 : g.cold_unmarked_requests ?? 0; // a daemon that sends no mark marks none
   if (g.cost_usd != null) into.cost = (into.cost ?? 0) + g.cost_usd;
   into.plan += g.plan_requests ?? 0;
   if (g.plan_value_usd != null) into.planValue = (into.planValue ?? 0) + g.plan_value_usd;
@@ -270,6 +271,7 @@ function fold2(t, e) {
   t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local; t.unanswered += e.unanswered;
   t.failed += e.failed ?? 0; t.limited += e.limited ?? 0;
   t.write += e.write ?? 0; t.noIn += e.noIn ?? 0; t.noOut += e.noOut ?? 0;
+  t.cold += e.cold ?? 0; t.coldIn += e.coldIn ?? 0; t.coldUn += e.coldUn ?? 0;
   if (e.cost != null) t.cost = (t.cost ?? 0) + e.cost;
   if (e.planValue != null) t.planValue = (t.planValue ?? 0) + e.planValue;
   return t;
@@ -440,18 +442,28 @@ function byHtml() {
 // reported reads "Not reported", never 0: a provider that never reports a cache write (OpenAI's Responses) sends 0 on every
 // request, so a window of input with no write at all is that silence. Requests that carried no count are said under the command.
 const NOT_REPORTED = `<span class="nr">Not reported</span>`;
+// The turns that ran cache-cold because the session moved to another account, and the input they sent (v0.4.0 section 11).
+// Rows written before splice marked a switch read "Not reported" when they are all there is, and are counted under the figure
+// when they are part of it, so an unmarked turn never reads as a warm one.
+function coldCell(s) {
+  if (s.cold === 0 && s.coldUn >= s.requests) return `<span class="num">${NOT_REPORTED}</span>`;
+  const un = s.coldUn ? `<i class="of">${n0(s.coldUn)} not marked</i>` : "";
+  return `<span class="num">${s.cold ? `${n0(s.cold)} ${s.cold === 1 ? "turn" : "turns"}<i class="of">${tokWord(s.coldIn)} input</i>` : `<span class="nr">None</span>`}${un}</span>`;
+}
 function tokensHtml() {
   // a command still being read keeps its row, its figures to come, so a half-read window never reads as "No requests"
   const w = D.scoped, rd = D.reading ?? new Set(), list = headsOrder().map((h) => [h, w.byHead.get(h)]).filter(([h, s]) => rd.has(h) || s?.requests > 0);
   const cell = (missing, v, sub = "") => `<span class="num">${missing ? NOT_REPORTED : `${tokWord(v)}${sub}`}</span>`;
   const row = ([h, s]) => {
-    if (rd.has(h)) return `<div class="trow"><div class="who">${chip(h)}<span class="sb">Not counted yet</span></div>${`<span class="num">${GHOST.bar(5)}</span>`.repeat(4)}</div>`;
+    if (rd.has(h)) return `<div class="trow"><div class="who">${chip(h)}<span class="sb">Not counted yet</span></div>${`<span class="num">${GHOST.bar(5)}</span>`.repeat(5)}</div>`;
     const noIn = s.noIn >= s.requests, gap = Math.max(s.noIn, s.noOut);
     const share = (v) => (s.in > 0 ? `<i class="of">${Math.round((100 * v) / s.in)}% of input</i>` : "");
     return `<div class="trow"><div class="who">${chip(h)}${gap && !noIn ? `<span class="sb">${n0(gap)} of ${n0(s.requests)} requests carried no count</span>` : ""}</div>`
-      + cell(noIn, s.in) + cell(noIn, s.cached, share(s.cached)) + cell(noIn || (s.write === 0 && s.in > 0), s.write, share(s.write)) + cell(s.noOut >= s.requests, s.out) + `</div>`;
+      + cell(noIn, s.in) + cell(noIn, s.cached, share(s.cached)) + cell(noIn || (s.write === 0 && s.in > 0), s.write, share(s.write)) + cell(s.noOut >= s.requests, s.out) + coldCell(s) + `</div>`
+      + [...w.accounts.values()].filter((a) => a.head === h && a.cold > 0).sort((a, b) => b.cold - a.cold)
+        .map((a) => `<div class="trow tacct"><span class="an">${acctLabel(h, a.label, a.name)}</span>${"<span></span>".repeat(4)}${coldCell(a)}</div>`).join("");
   };
-  const head = `<div class="trow thead"><span>Command</span><span class="num">Input</span><span class="num">Cached</span><span class="num">Written to cache</span><span class="num">Output</span></div>`;
+  const head = `<div class="trow thead"><span>Command</span><span class="num">Input</span><span class="num">Cached</span><span class="num">Written to cache</span><span class="num">Output</span><span class="num">Cold after a switch</span></div>`;
   return `<section class="tokens"><header><h2>Tokens</h2><span class="tsub">As each provider counted them</span></header><div class="card">${list.length ? head + list.map(row).join("") : `<p class="empty">No requests</p>`}</div></section>`;
 }
 

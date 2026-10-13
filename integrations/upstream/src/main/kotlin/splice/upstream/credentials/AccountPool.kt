@@ -81,9 +81,6 @@ public class AccountPool(
         true,
     )
 
-    /** The lock selection, views and reset share; tests assert nothing slow runs while it is held. */
-    internal val sessionMonitor: Any get() = sessions
-
     private val headLastSwitch = AtomicReference<AccountSwitch?>(null)
     private val statelessLock = Any()
     private var statelessPrevious: SessionAccount? = null

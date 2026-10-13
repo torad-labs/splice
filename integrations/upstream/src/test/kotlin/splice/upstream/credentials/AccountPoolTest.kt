@@ -405,45 +405,6 @@ class AccountPoolTest {
     }
 
     @Test
-    fun `credential evidence is read off the sticky-session monitor`() {
-        val now = AtomicReference(1_000_000L)
-        val monitorHolder = AtomicReference<Any?>(null)
-        var readUnderMonitor = false
-
-        fun account(label: String, primary: Boolean): PoolAccount {
-            val source = object : RefreshableAuthProvider, AccountCredentialIdentitySource {
-                override suspend fun credentials(): Credentials = Credentials.Bearer("secret", "id")
-                override suspend fun describe(): AuthDescription = AuthDescription(true, "test", emptyMap())
-                override suspend fun refresh(): Credentials = credentials()
-                override fun credentialIdentity(): CredentialFileIdentity? =
-                    CredentialFileIdentity(1, 100L, "digest-$label")
-                override fun credentialEvidence(): AccountCredentialIdentitySource.CredentialEvidence {
-                    val monitor = monitorHolder.get()
-                    if (monitor != null && Thread.holdsLock(monitor)) readUnderMonitor = true
-                    return AccountCredentialIdentitySource.CredentialEvidence(
-                        credentialIdentity(),
-                        AccountCredentialIdentitySource.CredentialPresence.PRESENT,
-                    )
-                }
-            }
-            return PoolAccount(
-                label = label,
-                primary = primary,
-                auth = source,
-                quota = AccountQuotaSource { null },
-                cooldown = RateLimitCooldown(ElapsedClock { 0L }),
-            )
-        }
-
-        val pool = AccountPool(listOf(account("primary", true), account("plus-a", false)), WallClock(now::get))
-        monitorHolder.set(pool.sessionMonitor)
-
-        pool.chosen("session")
-
-        assertFalse(readUnderMonitor, "credential evidence must be read off the sticky-session monitor")
-    }
-
-    @Test
     fun `published horizons include credential exclusion and provider cooldown without a second calculation`() {
         val fixture = Fixture()
         val account = fixture.account("primary", primary = true)

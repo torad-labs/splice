@@ -340,6 +340,28 @@ function histRow(r) {
       : a ? `<div class="dmore hask"><div class="hbar reading"><span class="hend"></span><div class="hdays"></div><span class="hend">Today</span></div><div class="hacts"><button class="act danger small" disabled>Delete</button><button class="act quiet small" data-act="unask">Cancel</button></div></div>` : "",
   });
 }
+// How long prompts and answers stay, claiming no more than is true. Each command keeps them for "Keep prompts and
+// answers for" when that knob is set, on the command or for all, and for the history window otherwise (splice-lead and
+// splice-turns, Oct 12); its trace/kept answer carries that number as kept_days once the route has it. Sooner than either
+// once trace passes its shared size caps, 32 GiB of bodies and 16 GiB of records, where the oldest whole day goes first
+// (DayBodyBudget): at 12 GB a day the bodies last about 3 days.
+const traceSetDays = (head) => {
+  const own = Number(ks.cfg?.layers?.perHead?.[head]?.traceRetentionDays);
+  if (own >= 1) return own;
+  const all = ks.cfg?.knobs?.traceRetentionDays;
+  return all && all.scope !== "default" && Number(all.value) >= 1 ? Number(all.value) : null;
+};
+function traceKeepWords() {
+  const w = ui.hist.window, windowDays = w.forever ? Infinity : w.nothing ? 0 : w.days;
+  const days = ui.heads.map((h, i) => {
+    const said = ui.kept.trace?.[i]?.kept_days;
+    return Number.isInteger(said) ? said : traceSetDays(h) ?? windowDays;
+  });
+  const n = days.length ? Math.max(...days) : windowDays;
+  if (n === Infinity) return "Until its size caps, oldest day first";
+  if (n === 0) return "Today only";
+  return `Up to ${n} ${n === 1 ? "day" : "days"}, sooner past its size caps, oldest day first`;
+}
 function dataRow(r) {
   if (r.id === "hist") return histRow(r);
   if (r.own) { // splice keeps no copy: the reasoning rides inside the conversations Claude Code writes, so the switch stops it and Sessions deletes it
@@ -354,7 +376,8 @@ function dataRow(r) {
   const on = r.id === "trace" ? ui.heads.filter(traceOn) : null;
   // the copies keep their own days (the President, Oct 12), so their row sets them where the others show the history window
   const keep = r.id === "originals" ? `${ctlHtml(KNOB.transcriptCopyDays, val("transcriptCopyDays"))}${saidHtml("transcriptCopyDays")}`
-    : (r.id === "edges" || r.id === "trace") && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
+    : r.id === "trace" && ui.hist ? `<span class="fixed quiet need">${esc(traceKeepWords())}</span>`
+    : r.id === "edges" && ui.hist ? `<span class="fixed quiet">${esc(ui.hist.window.forever ? "Forever" : ui.hist.window.nothing ? "Today only" : `${ui.hist.window.days} days`)}</span>`
     : r.id === "labels" ? `<span class="fixed quiet">Today and yesterday</span>`
     : r.life ? `<span class="fixed quiet">${esc(r.life)}</span>` : "";
   const said = r.knob ? saidHtml(r.knob) : "";

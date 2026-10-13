@@ -74,7 +74,7 @@ class PeerNoteSocketTest {
         @TempDir root: Path,
     ) {
         val inbox = inbox(root)
-        assertEquals(NoteOutcome.Submitted("id-1"), send(record(inbox.socket)))
+        assertEquals(NoteOutcome.Submitted, send(record(inbox.socket)))
         val frame = inbox.received.get(5, TimeUnit.SECONDS)
         assertEquals(PeerNoteFrame.encode("run the gate", "id-1"), frame)
     }
@@ -85,7 +85,7 @@ class PeerNoteSocketTest {
         val audited = listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289", "2.1.296")
         for (version in audited) {
             val inbox = inbox(root.resolve(version).also { Files.createDirectory(it) })
-            assertEquals(NoteOutcome.Submitted("id-1"), send(record(inbox.socket, version)))
+            assertEquals(NoteOutcome.Submitted, send(record(inbox.socket, version)))
             assertEquals(PeerNoteFrame.encode("run the gate", "id-1"), inbox.received.get(5, TimeUnit.SECONDS))
         }
     }

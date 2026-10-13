@@ -67,11 +67,11 @@ public class PeerNoteSocket(
             ?: return NoteOutcome.Refused(HttpStatusCode.Conflict, "the session has no messaging socket")
         val id = newId.next()
         val frame = PeerNoteFrame.encode(text, id).toByteArray(Charsets.UTF_8)
-        return withTimeoutOrNull(timeoutMs) { runInterruptible(io) { deliver(socket, frame, id) } }
+        return withTimeoutOrNull(timeoutMs) { runInterruptible(io) { deliver(socket, frame) } }
             ?: NoteOutcome.Failed("the session's inbox did not take the note in time")
     }
 
-    private fun deliver(socket: Path, frame: ByteArray, id: String): NoteOutcome {
+    private fun deliver(socket: Path, frame: ByteArray): NoteOutcome {
         unsafe(socket)?.let { return NoteOutcome.Refused(HttpStatusCode.Conflict, it) }
         val sent = Cancellables.runCatchingCancellable {
             SocketChannel.open(StandardProtocolFamily.UNIX).use { channel ->
@@ -86,7 +86,7 @@ public class PeerNoteSocket(
             }
         }
         // A write that failed is reported and never retried: part of the note may already have arrived.
-        return sent.fold({ NoteOutcome.Submitted(id) }, { NoteOutcome.Failed(SafeFailureText.render(it)) })
+        return sent.fold({ NoteOutcome.Submitted }, { NoteOutcome.Failed(SafeFailureText.render(it)) })
     }
 
     /** Why this socket may not be written to, or null when it may: a real socket, this user's, in a directory only this user enters,

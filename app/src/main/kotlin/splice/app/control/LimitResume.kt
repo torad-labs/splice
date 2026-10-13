@@ -77,7 +77,7 @@ internal class LimitResume(
         val outcome = Cancellables.runCatchingCancellable { sender.send(record, NEW_ACCOUNT_NOTE) }
             .getOrElse { NoteOutcome.Failed(SafeFailureText.render(it)) }
         when (outcome) {
-            is NoteOutcome.Submitted -> log("[limit-resume] released ${LogSafe.str(id)} on ${LogSafe.str(head)}")
+            NoteOutcome.Submitted -> log("[limit-resume] released ${LogSafe.str(id)} on ${LogSafe.str(head)}")
             is NoteOutcome.Refused -> unreached(id, outcome.reason)
             is NoteOutcome.Failed -> unreached(id, outcome.reason)
         }

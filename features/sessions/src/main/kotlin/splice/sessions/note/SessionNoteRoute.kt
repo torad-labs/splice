@@ -1,8 +1,8 @@
 // NEW: V4-444 — POST /api/sessions/{id}/message: a note from the console to one live session (the session page's "Send a
 // note to this session"). It is PEER-NOTE delivery and claims nothing more (V4-444 audit, splice-builder2, Sep 29 9:36 PM
 // CT): the session receives it as a message from another session, never as the operator typing, and it cannot approve,
-// configure or run a command for it. The answer is 202 "submitted": writing the frame is transport, and the client gives no
-// receipt for an accepted message, so delivery is always unknown.
+// configure or run a command for it. The answer is 202 with an empty body: writing the frame is transport, and the client
+// gives no receipt for an accepted message, so delivery is always unknown.
 //
 // The target is resolved HERE from the registry, never from the client: one running session, alone on its socket. Running
 // is every registration that is not GONE: the registry's STALE is a pid still alive that has not refreshed its file
@@ -32,7 +32,7 @@ private const val SHARED_SOCKET = "more than one running session answers on that
 
 /** What sending one note came to. Only [Submitted] put bytes on the socket. */
 public sealed class NoteOutcome {
-    public data class Submitted(val messageId: String) : NoteOutcome()
+    public data object Submitted : NoteOutcome()
 
     /** Nothing was sent: the target or its version is not one this route may write to. */
     public data class Refused(val status: HttpStatusCode, val reason: String) : NoteOutcome()
@@ -73,15 +73,8 @@ public class SessionNoteRoute(
     private suspend fun submit(target: SessionRecord, text: String): JsonReply {
         val sender = sender ?: return stop(HttpStatusCode.NotImplemented, "this splice cannot send notes").reply
         return when (val outcome = sender.send(target, text)) {
-            is NoteOutcome.Submitted -> JsonReply(
-                HttpStatusCode.Accepted,
-                buildJsonObject {
-                    put("submitted", true)
-                    put("message_id", outcome.messageId)
-                    // The client gives no receipt for an accepted message, so nothing here can say it was read.
-                    put("delivery", "unknown")
-                }.toString(),
-            )
+            // The client gives no receipt for an accepted message, so nothing here can say it was read.
+            NoteOutcome.Submitted -> JsonReply(HttpStatusCode.Accepted, "{}")
             is NoteOutcome.Refused -> stop(outcome.status, outcome.reason).reply
             is NoteOutcome.Failed -> stop(HttpStatusCode.BadGateway, outcome.reason).reply
         }

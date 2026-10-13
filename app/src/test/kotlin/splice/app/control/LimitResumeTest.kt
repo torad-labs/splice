@@ -62,7 +62,7 @@ class LimitResumeTest {
             SessionEndingOf { endings[it] },
             SessionNoteSender { target, text ->
                 sent += target.sessionId to text
-                if (target.sessionId == "c") NoteOutcome.Failed("no messaging socket") else NoteOutcome.Submitted("m")
+                if (target.sessionId == "c") NoteOutcome.Failed("no messaging socket") else NoteOutcome.Submitted
             },
             LifecycleScope(Dispatchers.Unconfined),
             { logged += it },

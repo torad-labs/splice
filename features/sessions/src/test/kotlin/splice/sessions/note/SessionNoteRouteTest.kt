@@ -44,7 +44,7 @@ class SessionNoteRouteTest {
         client = SessionClient(kind = null, version = version),
     )
 
-    private class Recording(private val answer: NoteOutcome = NoteOutcome.Submitted("m-1")) : SessionNoteSender {
+    private class Recording(private val answer: NoteOutcome = NoteOutcome.Submitted) : SessionNoteSender {
         val sent = mutableListOf<Pair<SessionRecord, String>>()
 
         override suspend fun send(target: SessionRecord, text: String): NoteOutcome {
@@ -69,13 +69,10 @@ class SessionNoteRouteTest {
         Json.parseToJsonElement(reply.body).jsonObject[name]!!.jsonPrimitive.content
 
     @Test
-    fun `a note to a live session is submitted, and the answer says delivery is unknown`() {
+    fun `a note to a live session is submitted`() {
         val sender = Recording()
         val reply = post(route(sender, record()), "s-1", """{"text":"run the gate"}""")
         assertEquals(HttpStatusCode.Accepted, reply.status)
-        assertEquals("true", field(reply, "submitted"))
-        assertEquals("m-1", field(reply, "message_id"))
-        assertEquals("unknown", field(reply, "delivery"))
         assertEquals("run the gate", sender.sent.single().second)
     }
 

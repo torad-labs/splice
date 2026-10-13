@@ -127,16 +127,19 @@ class Holders(
         }
         holder.identity = identity
         holder.init = null
-        link.send(Rpc.encode(hello(route.shared)))
+        link.send(Rpc.encode(hello()))
         timers.at(clock.now() + HANDSHAKE_BUDGET) {
             if (!holder.ready && holder.connecting) holder.settle("${route.server} did not answer initialize")
         }
     }
 
-    /** The front's initialize: a shared server is asked for no roots, a session's own copy for the session's. */
-    private fun hello(shared: Boolean): JsonObject {
-        val capabilities =
-            if (shared) JsonObject(emptyMap()) else buildJsonObject { put("roots", JsonObject(emptyMap())) }
+    /** The front's initialize offers roots to every server, as the in-process host does (JsonRpcCodec): a server
+     *  that depends on them then asks. A session's own copy is asked its session's; a shared copy's ask is answered
+     *  with none and recorded (Relay.sharedRoots), so its next sessions each start their own copy in their own folder.
+     *  Offering roots only to per-session copies left a server that checks the capability on the shared copy, in the
+     *  hub's home folder, never asking and so never recorded. */
+    private fun hello(): JsonObject {
+        val capabilities = buildJsonObject { put("roots", JsonObject(emptyMap())) }
         return buildJsonObject {
             put("jsonrpc", "2.0")
             put(Rpc.ID, "$HELLO${++next}")

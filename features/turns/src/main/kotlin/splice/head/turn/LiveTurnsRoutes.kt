@@ -14,7 +14,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.core.head.GateSlot
+import splice.core.head.GateHealth
 import splice.core.util.JsonWire
 import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
@@ -27,21 +27,23 @@ public fun interface LiveTurnsSource {
     public operator fun invoke(): LiveTurnsByHead?
 }
 
-/** A head's gate slots as its health snapshot reads them now: why each admitted turn is where it is. */
+/** A head's gate as its health snapshot reads it now: why each admitted turn is where it is, and who waits. */
 public fun interface LiveGateSource {
-    public operator fun invoke(head: String): List<GateSlot>
+    public operator fun invoke(head: String): GateHealth?
 }
 
 public class LiveTurnsRoutes(
     private val heads: TurnsHeadLookup,
     private val registry: LiveTurnsSource,
-    private val gates: LiveGateSource = LiveGateSource { emptyList() },
+    private val gates: LiveGateSource = LiveGateSource { null },
 ) {
 
     /** Each live turn, with the gate's phase, age since admission and compaction flag when its slot names it, so the
-     *  console can say why a turn is held (connecting, streaming, a compaction). */
+     *  console can say why a turn is held (connecting, streaming, a compaction), and under `waiting` each turn the
+     *  gate has queued, oldest first, with its session and how long it has waited. */
     public fun live(head: String): JsonReply = resolved(head) { key, turns ->
-        val slots = gates(key).filter { it.turnId != null }.associateBy { it.turnId }
+        val gate = gates(key)
+        val slots = gate?.live.orEmpty().filter { it.turnId != null }.associateBy { it.turnId }
         val body = buildJsonObject {
             putJsonArray("turns") {
                 turns.list().forEach { turn ->
@@ -61,6 +63,17 @@ public class LiveTurnsRoutes(
                                 put("age_ms", slot.ageMs)
                                 put("compact", slot.compact)
                             }
+                        },
+                    )
+                }
+            }
+            // Turns the gate has not let in yet: a quiet agent that is only waiting its turn, and since when.
+            putJsonArray("waiting") {
+                gate?.waiting.orEmpty().forEach { wait ->
+                    add(
+                        buildJsonObject {
+                            put("session", wait.session)
+                            put("waited_ms", wait.waitedMs)
                         },
                     )
                 }

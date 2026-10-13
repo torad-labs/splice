@@ -37,7 +37,7 @@ internal class TurnsMount(
     private val liveTurnsRoutes = LiveTurnsRoutes(
         turnsLookup,
         LiveTurnsSource { ports.liveTurns },
-        LiveGateSource { key -> heads[key]?.head?.healthSnapshot()?.gate?.live.orEmpty() },
+        LiveGateSource { key -> heads[key]?.head?.healthSnapshot()?.gate },
     )
 
     fun register(route: Route) {

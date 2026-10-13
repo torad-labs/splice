@@ -95,6 +95,8 @@ public data class GateHealth(
     val limit: Int = 0,
     val counts: GateCounts = GateCounts(),
     val live: List<GateSlot> = emptyList(),
+    /** The turns queued for a slot, oldest first: who waits, and for how long. */
+    val waiting: List<GateWait> = emptyList(),
     /** The head's configured watchdog limits, the ceilings a live slot's idle is read against. */
     val watchdog: GateWatchdog = GateWatchdog(),
 )
@@ -130,6 +132,10 @@ public data class GateCounts(
 
 /** Where an admitted turn stands: waiting on the upstream, or hearing from it. */
 public enum class GatePhase { CONNECT, STREAMING }
+
+/** One turn queued for a slot, read at the snapshot's instant: the Claude Code session it came from (null when
+ *  the request named none), and how long it has waited since it entered the queue. */
+public data class GateWait(val session: String?, val waitedMs: Long)
 
 /** One slot the gate holds, read at the snapshot's instant on the monotonic clock. */
 public data class GateSlot(

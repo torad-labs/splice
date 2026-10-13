@@ -62,6 +62,7 @@ internal class HeadDiagnostics(
                     avgWaitMs = gateSnap.traffic.avgWaitMs,
                 ),
                 live = gateSnap.live,
+                waiting = gateSnap.waiting,
                 // The first-output, idle and re-anchor tiers are live knobs, read as a turn would read them now; the
                 // no-progress limit is restartRequired (Knob.UPSTREAM_TIMEOUT_MS), the one the head was built with. A tier with
                 // no limit is INFINITE here and crosses as null rather than as the Long.MAX_VALUE it converts to,

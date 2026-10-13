@@ -24,6 +24,7 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import splice.core.head.GatePhase
 import splice.core.head.GateSlot
+import splice.core.head.GateWait
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.upstream.TurnEnd
@@ -105,6 +106,8 @@ public class InflightGate(
         val traffic: GateTraffic,
         /** One reading per slot held, oldest first. */
         val live: List<GateSlot>,
+        /** One reading per queued waiter, oldest first. */
+        val waiting: List<GateWait> = emptyList(),
     )
 
     public fun snapshot(): Snapshot = synchronized(lock) {
@@ -120,6 +123,7 @@ public class InflightGate(
                 avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
             ),
             live = live.map { it.reading(now) },
+            waiting = queue.map { GateWait(it.session, now - it.queuedAt) },
         )
     }
 

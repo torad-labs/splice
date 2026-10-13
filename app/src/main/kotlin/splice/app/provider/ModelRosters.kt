@@ -43,6 +43,7 @@ import kotlin.time.Duration.Companion.seconds
 // budget (about two minutes); 10s matches the response bound, and every head is asked at once, so ten
 // providers cost one wait, not ten.
 private val DISCOVERY_DEADLINE: Duration = 10.seconds
+private const val NONE_KEPT = "no list was kept, so the picker is splice.toml's rows"
 
 // why: a provider release joins every running head within an hour, without polling its endpoint per turn.
 private const val REFRESH_INTERVAL_MS = 3_600_000L
@@ -73,6 +74,10 @@ internal class ModelRosters(
     private val cache = RosterCache(statePaths)
 
     private val byHead = ConcurrentHashMap<String, List<DiscoveredModel>>()
+
+    /** Each head's last fallback line: the hourly refresh says it again only when it changed. A forwarded Claude login
+     *  and a local runtime are never asked, so their line printed every hour (the field audit, Oct 13). */
+    private val said = ConcurrentHashMap<String, String>()
     private val boundary = DaemonBoundary()
 
     /** What [key]'s provider published most recently, or last published when it did not answer. Empty
@@ -127,19 +132,22 @@ internal class ModelRosters(
      *  when the reason does not already say, and why no kept list stood in when none did. */
     private fun fallback(key: String, provider: ProviderConfig, missed: Discovery.Unavailable): List<DiscoveredModel> {
         val at = missed.url?.takeUnless { it in missed.reason }?.let { " (asked at $it)" }.orEmpty()
-        val kept = byHead[key]?.let { KeptRoster.Kept(it) } ?: cache.read(key, provider)
-        log("[$key] models: ${missed.reason}$at; ${instead(kept)}\n")
+        val kept = byHead[key]?.takeIf { it.isNotEmpty() }?.let { KeptRoster.Kept(it) } ?: cache.read(key, provider)
+        val line = "[$key] models: ${missed.reason}$at; ${instead(kept)}\n"
+        if (said.put(key, line) != line) log(line)
         return (kept as? KeptRoster.Kept)?.models.orEmpty()
     }
 
     private fun instead(kept: KeptRoster): String = when (kept) {
-        is KeptRoster.Kept -> "using the ${kept.models.size} it published last"
-        KeptRoster.None -> "no list was kept, so the picker is splice.toml's rows"
+        is KeptRoster.Kept ->
+            if (kept.models.isEmpty()) NONE_KEPT else "using the ${kept.models.size} it published last"
+        KeptRoster.None -> NONE_KEPT
         is KeptRoster.OtherUrl -> "the list kept was published at ${kept.url}, so the picker is splice.toml's rows"
         is KeptRoster.Unreadable -> "${kept.reason}, so the picker is splice.toml's rows"
     }
 
     private fun keep(key: String, found: Discovery.Found) {
+        said.remove(key)
         Cancellables.runCatchingCancellable { cache.write(key, found) }
             .onFailure { log("[$key] models: could not keep the discovered list (${SafeFailureText.render(it)})\n") }
     }

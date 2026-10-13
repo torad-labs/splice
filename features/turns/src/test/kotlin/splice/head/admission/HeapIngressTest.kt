@@ -314,7 +314,9 @@ class HeapIngressTest {
 
     @Test
     fun `a kept-alive connection serves the next request after a route leaves a small body unread`() = runBlocking {
-        val heap = HeapBudget(1024 * 1024, 128 * 1024)
+        // Room for two requests at once: a POST's charge returns when its call finishes, just after the client has the
+        // reply, so the GET sent at once can overlap it on the one connection.
+        val heap = HeapBudget(1024 * 1024, 256 * 1024)
         val ingress = HeapIngress(heap, { 32 * 1024 }, AdmissionErrorBody)
         val server = testServer(ingress) {
             routing {

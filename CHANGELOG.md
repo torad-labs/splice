@@ -845,9 +845,29 @@ origin.
   the last hour, 24 hours or 7 days. Cache hit, retries, sign-ins renewed, cold cache and most at once appear once a
   command has a figure for them. Each count opens its requests on Requests, each kind of failure included, and a row
   says when its record covers less than the window. `/api/perf/summary` carries `cache_cold`, the turns that began
-  on a cold prompt cache, and `null` for a command that never records it.
-- **Requests opens on one kind of failure** with `?tag=` and an outcome tag, shown as a chip you can clear, and with
-  Compactions on with `?compact=1`.
+  on a cold prompt cache, and `null` for a command that never records it. Record gaps counts the requests during
+  which splice lost some of its own local writes, and shows only when there were any. Under a row, each reason
+  its requests failed reads once, largest first, with its share from 1%, and opens every outcome it covers; its
+  compactions open Requests with Compactions on; and the status labels splice wrote for Claude Code read as
+  "12 status labels splice wrote · $0". A command that used two models names each on one line with its requests,
+  typical whole request and failed share. One that used three or more lists them as sub-rows in the table's
+  Requests, Failed and Whole request columns, the three busiest first and the rest behind "N more models". A model
+  that never answered prints no time.
+- **Requests opens on one kind of failure** with `?tag=` and an outcome tag, or several tags as a comma list
+  (`?tag=error:a,error:b`), shown as one chip you can clear, and with Compactions on with `?compact=1`.
+  `/api/perf/turns?outcome=` takes the same comma list and matches any of its tags.
+- **Requests pairs a request splice cut on a restart with the client's re-send of it.** The cut row reads "Sent
+  again after the restart" and the re-send reads "Resent after splice restarted", each a door to the other, where
+  both are in the list. They pair on the same command, session and messages: every request that names a session,
+  streamed or not, now records `messages_hash`, and `/api/perf/turns` serves it. Rows written before the change
+  carry no hash and pair with nothing.
+- **Requests goes to a time.** The window menu's Go to lists the requests up to a day and minute, in the narrowest
+  window that reaches it, under an Up to chip you can clear.
+- **Settings › MCP chooses between sharing and one copy per session, and says what sharing saves.** The switch,
+  Shared or One per session, writes `[daemon] mcp_share`; unset reads as Shared. What sharing saves, read from
+  `GET /api/mcp/memory`, sets the memory every copy of a shareable server holds now against one copy each. A server
+  kept one per session either way is listed under that heading with its reason, and one Claude Code starts on its
+  own under Started by Claude Code.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -1646,6 +1666,20 @@ origin.
 - **A conversation that comes back without its messages reads Not read,** never Reading for good.
 - **A move that did not land says when its screen could not be read,** instead of answering as though the terminal
   showed nothing.
+- **A provider's own 429, relayed to the client, ends `error:rate-limit-relayed`,** not `error:upstream-failed`. Each
+  read as a give-up, so Sessions said Gave up after a run of them. Requests words it Rate limited under the limit's
+  glyph and counts it under the limited filter, and no session reads it as giving up.
+- **An open rate-limited request says whose limit it was.** One splice held unsent reads Not sent on the provider
+  line. A resumed or started-over request says why its first try ended, such as "Started over after a 20 s
+  silence", "after the stream broke" or "Resumed 3 times · 45 s of silence".
+- **A request that failed before any model answered reads $0,** on Usage and in its detail, with Cost and Attempts
+  and no token figures. No price stays for a request a model answered with no rate card.
+- **Usage's first open marks each command still being read** with its chip and Not counted yet, above the figures
+  it is missing from, so a half-read week never reads as the whole week. A command that could not be read shows
+  its chip and Not read.
+- **Settings › MCP names a plugin's server by its plugin,** not by its version folder or a half-installed clone,
+  and by the place it is really declared when it is declared twice. A server the Servers list keeps one per session
+  for its own reason reads under One per session either way with that reason, out of the savings figures.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

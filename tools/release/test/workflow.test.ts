@@ -31,7 +31,7 @@ function assets(): readonly string[] {
   const manifest = readManifest(join(repoRoot, "dist"));
   if (!(manifest instanceof Error)) return manifest.assets;
   return [
-    "splice.jar", "splice-launch", "install.sh",
+    "splice.jar", "splice-launch", "install.sh", "splice-mcp-holder", "splice-mcp-front",
     "LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md",
     "bom.cdx.json", "dependency-licenses.json",
   ];

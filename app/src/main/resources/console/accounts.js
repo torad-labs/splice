@@ -399,7 +399,8 @@ function refills(day) {
 }
 
 function windowsHtml(a, next = null) {
-  let rows = "";
+  // a held login says so on its own line under the header, where a narrow card wraps it instead of cutting its name
+  let rows = held(a) ? `<span class="heldline">${heldUntil(a)}</span>` : "";
   for (const w of a.windows) {
     const full = atLimit(w);
     // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
@@ -420,7 +421,7 @@ function windowsHtml(a, next = null) {
   if (a.staleAt != null) rows += `<span class="stale-at">${GLYPH.eye}Read ${at(a.staleAt)}</span>`;
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
     const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
-    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}${w ? ` <span class="limword">· limit reached</span>` : ""}</span>${w ? `${locked(false, "")}${resets(w)}` : ""}</span>`;
+    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked(false, "")}${resets(w)}<span class="nextwhy">Limit reached; it serves again from ${at(w.resetMs)}</span>` : ""}</span>`;
   }
   return `<div class="windows">${rows}</div>`;
 }
@@ -649,7 +650,7 @@ function slotHtml(p, c, a, serves) {
   if (a.out) return `<span class="state">Signed out</span>`;
   if (a.renews) return `<span class="state">Token expired</span>`;
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
-  if (held(a)) return `${pin}${locked(false, heldUntil(a))}`;
+  if (held(a)) return `${pin}${locked(false, "")}`;
   const use = (cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
   const mv = ui.moving;
   if (p.kind === "plan" && mv && mv.a === a.id && mv.c === c.cmd) {

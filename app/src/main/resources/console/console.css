@@ -582,5 +582,7 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 .card .onlogin .sdoor .lamp.working .beat { stroke-dasharray: 16 64; animation: tlamp-trace 2.2s linear infinite; }
 .card .onlogin .sdoor.more { color: var(--text-mute); }
 .card .onlogin .sdoor > svg { flex: none; width: 1rem; height: 1rem; color: var(--text-mute); }  /* a session pinned to this login alone */
-/* a held next login says so in words beside its name; the lock column keeps only the glyph (walk on db0e2687c) */
-.windows .next .who .limword { color: var(--limit); }
+/* a held login, and a held next, say so in words on a line of their own that wraps inside a narrow card; the header and
+   the Next row keep only the lock, so neither cuts a name (walk on ea24c63fc, Claude's cards at 650 px) */
+.windows .heldline { grid-column: 1 / -1; font: 500 1.05rem/1.35 var(--font-name); color: var(--limit); }
+.windows .next .nextwhy { grid-column: 2 / -1; font: 500 1rem/1.35 var(--font-name); color: var(--limit); white-space: normal; }

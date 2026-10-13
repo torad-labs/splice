@@ -273,3 +273,5 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 /* the tier rows' column names, over the picker and the window box they name (walk on 1b40881cf) */
 .ctl.colhead { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); margin-bottom: -.4rem; }
 .ctl.colhead .ch-model { min-width: 19rem; }
+/* a session's window figure stands apart from its chip (walk on ea24c63fc) */
+.fig > a.chip { margin-right: .55rem; }

@@ -12,8 +12,6 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHeadLookup
-import splice.head.trace.TRACE_DELETED_REASON
-import splice.head.trace.TRACE_DELETED_STATE
 import splice.head.trace.TraceDirPort
 import splice.http.JsonReply
 import java.io.IOException
@@ -58,23 +56,12 @@ public class TraceDeleteRoutes @JvmOverloads constructor(
         val files = removal?.let { DayFiles(traceDir, key, true, it) } ?: DayFiles(traceDir, key, ownerOnly = true)
         val retention = config.getConfig(key).traceKeptDays
         val inventory = if (delete) files.deleteKept(retention) else files.inventory(retention)
-        return inventoryJson(key, inventory, files.deleted())
+        return inventoryJson(inventory)
     }
 
-    private fun inventoryJson(key: String, inventory: DayInventory, deleted: Boolean): String = buildJsonObject {
-        put("head", key)
-        val state = when {
-            deleted -> TRACE_DELETED_STATE
-            inventory.days > 0 -> "kept"
-            else -> "empty"
-        }
-        put("state", state)
-        if (deleted) put("reason", TRACE_DELETED_REASON)
-        put("days", inventory.days)
+    private fun inventoryJson(inventory: DayInventory): String = buildJsonObject {
         put("records", inventory.rows)
         put("bytes", inventory.bytes)
-        put("oldest", inventory.oldest?.toString())
-        put("ages_out", inventory.agesOut?.toString())
     }.let(JsonWire::string)
 
     private fun refuse(status: HttpStatusCode, message: String): JsonReply =

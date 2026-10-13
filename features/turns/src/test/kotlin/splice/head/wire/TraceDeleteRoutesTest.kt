@@ -127,13 +127,8 @@ class TraceDeleteRoutesTest {
         val reader = TraceRoute(heads, TraceDirPort { dir }, Dispatchers.Unconfined)
         val before = routes.kept("alpha")
         assertEquals(HttpStatusCode.OK, before.status)
-        assertEquals("kept", field(before.body, "state"))
-        assertEquals("1", field(before.body, "days"))
         assertEquals("1", field(before.body, "records"))
         assertEquals((Files.size(own) + Files.size(ownPack)).toString(), field(before.body, "bytes"))
-        assertEquals("2026-09-18", field(before.body, "oldest"))
-        // The window is the history window now (90 days on an install with no setting), not a fixed week.
-        assertEquals("2026-12-17", field(before.body, "ages_out"))
         assertEquals("1", field(reader.read("alpha", TraceQuery(null, null, null)).body, "on_disk"))
 
         val deleted = routes.delete("alpha")
@@ -145,7 +140,6 @@ class TraceDeleteRoutesTest {
         assertEquals("unrelated", Files.readString(planted))
         assertEquals("external bytes", Files.readString(outside))
         assertFalse(Files.exists(dir.resolve("alpha-2026-09-19.jsonl"), LinkOption.NOFOLLOW_LINKS))
-        assertEquals("deleted", field(deleted.body, "state"))
         assertEquals("1", field(deleted.body, "records"))
         assertEquals("0", field(routes.kept("alpha").body, "records"))
         assertEquals("deleted", field(reader.read("alpha", TraceQuery(null, null, null)).body, "state"))
@@ -157,7 +151,6 @@ class TraceDeleteRoutesTest {
         assertDeletedCli(dir)
 
         record(alpha, "alpha")
-        assertEquals("kept", field(routes.kept("alpha").body, "state"))
         assertEquals("1", field(routes.kept("alpha").body, "records"))
         assertEquals("1", field(reader.read("alpha", TraceQuery(null, null, null)).body, "on_disk"))
     }
@@ -183,7 +176,6 @@ class TraceDeleteRoutesTest {
         assertEquals("{}\n", Files.readString(day))
         assertEquals("synthetic pack", Files.readString(pack))
         assertFalse(DayFiles(dir, "alpha").deleted(), "a refused purge is never marked deleted")
-        assertEquals("kept", field(routes.kept("alpha").body, "state"))
     }
 
     @Test
@@ -193,10 +185,9 @@ class TraceDeleteRoutesTest {
         assertEquals(HttpStatusCode.BadRequest, unknown.status)
         assertEquals(HttpStatusCode.ServiceUnavailable, route(root, null).delete("alpha").status)
         assertTrue(Files.list(dir).use { it.toList() }.isEmpty())
-        assertEquals("empty", field(route(root, dir).kept("alpha").body, "state"))
+        assertEquals("0", field(route(root, dir).kept("alpha").body, "records"))
         val deleted = route(root, dir).delete("alpha")
         assertEquals(HttpStatusCode.OK, deleted.status)
-        assertEquals("deleted", field(deleted.body, "state"))
         assertEquals("0", field(deleted.body, "records"))
     }
 }

@@ -8,7 +8,7 @@
 //
 // Mounted by usage.js: render() draws PERF_HEADS.html() beside the Breakdown. This file reads the page's own helpers at
 // draw time (chip, colorOf, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, n0, secs, OPEN, OUTCOME_WORD,
-// tagWord, countWord, isFailed, GHOST, esc).
+// tagWord, isFailed, GHOST, esc).
 "use strict";
 
 const PERF_HEADS = (() => {
@@ -80,7 +80,8 @@ const PERF_HEADS = (() => {
     const byWord = new Map();
     for (const [tag, s] of Object.entries(h.failure_shares || {})) {
       if (!(s > 0)) continue;
-      const word = countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed";
+      // a share, never a count, so the outcome's own word: countWord's "when splice restarted" stood bare under 1%
+      const word = OUTCOME_WORD[tag] || tagWord(tag) || "Failed";
       const seen = byWord.get(word);
       if (!seen) byWord.set(word, { tags: [tag], s });
       else Object.assign(seen, { tags: [...seen.tags, tag], s: seen.s + s });

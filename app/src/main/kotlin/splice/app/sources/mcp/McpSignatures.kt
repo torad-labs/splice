@@ -4,8 +4,11 @@ package splice.app.sources.mcp
 
 import kotlinx.serialization.json.JsonArray
 import splice.client.mcp.McpCensusReport
+import splice.client.mcp.McpDispositioned
 import splice.client.mcp.McpRegistration
+import splice.client.mcp.McpShareClass
 import splice.client.mcp.McpSourceKind
+import splice.client.mcp.McpWhy
 import splice.core.util.JsonScalars
 
 // why: a `${VAR}` Claude Code expands before it starts the server, so its text is never on the running command line.
@@ -19,8 +22,15 @@ internal fun interface McpCensusRead {
     fun census(): McpCensusReport?
 }
 
-/** One declared stdio server under the name Claude Code gives it, and the words a copy's command line holds. */
-internal data class McpServerSignature(val name: String, val words: List<String>) {
+/** One declared stdio server under the name Claude Code gives it, the words a copy's command line holds, and how the
+ *  hub runs it as the census decides: [shareClass] is null where no plan decides it yet, and [why] says why it isn't
+ *  shared. */
+internal data class McpServerSignature(
+    val name: String,
+    val words: List<String>,
+    val shareClass: McpShareClass? = null,
+    val why: McpWhy? = null,
+) {
     /** How strongly [line] is this server: the length of the words it holds, or zero when one is missing. */
     fun strength(line: String): Int = if (words.all(line::contains)) words.sumOf(String::length) else 0
 }
@@ -28,13 +38,15 @@ internal data class McpServerSignature(val name: String, val words: List<String>
 /** Turns the census into signatures. http, sse and ws servers have no process and are left out. */
 internal class McpSignatures(private val read: McpCensusRead) {
     fun all(): List<McpServerSignature> =
-        read.census()?.dispositioned.orEmpty().mapNotNull { signature(it.registration) }.distinct()
+        read.census()?.dispositioned.orEmpty().mapNotNull { signature(it) }.distinct()
 
-    private fun signature(reg: McpRegistration): McpServerSignature? {
+    private fun signature(d: McpDispositioned): McpServerSignature? {
+        val reg = d.registration
         val command = JsonScalars.str(reg.entry, "command") ?: return null
         val args = (reg.entry["args"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.str(it) }
         val words = args.filterNot { it.startsWith("-") }.flatMap(::literal)
-        return McpServerSignature(nameOf(reg), words.ifEmpty { literal(command.substringAfterLast('/')) })
+        val name = nameOf(reg)
+        return McpServerSignature(name, words.ifEmpty { literal(command.substringAfterLast('/')) }, d.shareClass, d.why)
     }
 
     private fun literal(arg: String): List<String> = arg.split(EXPANDED).filter { it.length >= MIN_PIECE }

@@ -190,6 +190,13 @@ button.count:hover { color: var(--text); }
 .cchip .spin { width: 1rem; height: 1rem; }
 
 /* ---------- MCP servers ---------- */
+/* what sharing saves, one row a server: its name, why it stays per session (empty for one sharing serves), its copies,
+   what they hold now and what one copy would hold. The figures share fixed columns so they read down the list. */
+.mrows { display: flex; flex-direction: column; margin-top: 1.4rem; }
+.mrow { display: grid; grid-template-columns: minmax(18rem, 1.4fr) minmax(0, 2fr) 9rem 10rem 11rem; column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
+.mrow:first-child { border-top: 0; }
+.mrow .nm { font: 500 1.1rem/1.2 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
+.mrow .fig { text-align: right; }
 .srvs { display: flex; flex-direction: column; }
 .srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 20rem 8rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
 .srv:first-child { border-top: 0; }

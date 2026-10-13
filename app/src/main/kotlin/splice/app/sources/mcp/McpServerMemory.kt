@@ -4,7 +4,7 @@ package splice.app.sources.mcp
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
 
-internal class McpServerMemory(private val name: String, private val copies: List<McpCopy>) {
+internal class McpServerMemory(private val server: McpServerSignature, private val copies: List<McpCopy>) {
     private val hosted = copies.filter { it.hosted }
 
     val bytesNow: Long = copies.sumOf { it.bytes }
@@ -17,7 +17,12 @@ internal class McpServerMemory(private val name: String, private val copies: Lis
     }
 
     fun into(out: JsonObjectBuilder) {
-        out.put("name", name)
+        out.put("name", server.name)
+        // how the hub runs it, as /api/mcp words it: null where no plan decides it yet (a project, repo or plugin
+        // server)
+        out.put("class", server.shareClass?.wire)
+        out.put("why", server.why?.key)
+        out.put("value", server.why?.value)
         out.put("copies", copies.size)
         out.put("hosted_copies", hosted.size)
         out.put("sessions", copies.filterNot { it.hosted }.map { it.owner }.distinct().size)

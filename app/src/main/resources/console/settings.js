@@ -61,7 +61,7 @@ function advancedHtml(id) {
 }
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
+const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -92,6 +92,9 @@ function readKept() {
   // the MCP host's own snapshot. The route is mounted only while splice hosts MCP (ControlServer.kt), so a 404 here is
   // the honest answer "nothing is hosted", not a failure: it is drawn as that sentence and never as an unread figure.
   get("/api/mcp", (r) => { ui.mcp = r.ok ? r.body : r.status === 404 ? false : null; });
+  // the sharing choice ([daemon] mcp_share) and what every copy on this machine holds against one copy each
+  get("/api/topology", (r) => { ui.topo = r.ok ? r.body : null; });
+  get("/api/mcp/memory", (r) => { ui.mmem = r.ok ? r.body : null; });
   // the plan windows Accounts draws, read here for the highest of each against the warn line these settings set
   get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; });
   // the projects the saved folders actually make, and whether each folder is still on disk (ProjectsRoutes.kt): the
@@ -671,6 +674,8 @@ const MCP_STATE = {
   location_flag: { word: "Per project", line: "A different place in each project" },
   roots: { word: "Per project", line: "Asks which project it's in" },
   directory: { word: "Per project", line: "One project's folder" },
+  stateful: { word: "Keeps state", line: "Holds one session's own work" },
+  per_session_choice: { word: "Per session", line: "Sharing is off" },
   no_command: { word: "No command" },
   unreadable: { word: "Unreadable" },
   plugin: { word: "Plugin-owned" },
@@ -778,7 +783,81 @@ async function testServer(name) {
   render();
 }
 
-const mcpHtml = () => `<section class="tally">${mcpNow()}</section>${mcpServersHtml()}<section class="sub">${blocks(keysOf("mcp"))}</section>`;
+// ---------- MCP servers: shared or one per session, and what sharing saves (mcp-hub.md, How it works 4) ----------
+// The one stored choice is [daemon] mcp_share in splice.toml, the answer `splice setup` saves. Absent reads as shared,
+// which is how splice hosts servers today, so the switch never shows a third "not asked" state (splice-config, Oct 12).
+const shareOn = () => ui.topo?.topology?.daemon?.mcp_share !== false;
+function shareCard() {
+  if (!ui.topo) return ""; // an unread splice.toml draws no switch: one tap would write over what it never read
+  const on = shareOn();
+  const sw = `<span class="switch">${[[true, "Shared"], [false, "One per session"]].map(([v, w]) =>
+    `<button data-act="mshare" data-v="${v}" aria-pressed="${v === on}"${ui.shareSaving ? " disabled" : ""}>${w}</button>`).join("")}</span>`;
+  const said = ui.shareSaid ? `<span class="said${ui.shareSaid.bad ? " limit" : ""}">${esc(ui.shareSaid.word)}</span>` : "";
+  return cardRow([kcard(`<div class="lbl">Share servers between sessions</div><div class="ctl col"><div class="line">${sw}${said}</div></div>`)]);
+}
+/** PUT /api/topology with only [daemon] mcp_share changed. A changed choice applies to new connections; a running copy
+ *  finishes with its session, so nothing here is cut. */
+async function setShare(on) {
+  if (!ui.topo || on === shareOn()) return;
+  const t = structuredClone(ui.topo.topology ?? {});
+  t.daemon = { ...(t.daemon ?? {}), mcp_share: on };
+  ui.shareSaving = true; ui.shareSaid = null; render();
+  const r = await API.put("/api/topology", { topology: t });
+  ui.shareSaving = false;
+  if (!r.ok || !r.body?.ok) {
+    const found = r.body?.findings ?? [];
+    if (found.length) console.warn(`settings: saving mcp_share refused: ${found.map((x) => x.message).join("; ")}`);
+    ui.shareSaid = { word: found.length ? "Config error" : "Not saved", bad: true };
+    render();
+    return;
+  }
+  ui.shareSaid = { word: r.body.restart_required ? "After a restart" : "New sessions" };
+  const [topo, mcp, mem] = await Promise.all([API.get("/api/topology"), API.get("/api/mcp"), API.get("/api/mcp/memory")]);
+  ui.topo = topo.ok ? topo.body : ui.topo;
+  ui.mcp = mcp.ok ? mcp.body : mcp.status === 404 ? false : null;
+  ui.mmem = mem.ok ? mem.body : null;
+  render();
+}
+// A server sharing would serve with one copy: one the hub shares now, or one it runs per session only because sharing
+// is off. Every other server keeps one copy per session either way and is named below with its reason.
+const shareable = (s) => s.class === "shared" || s.why === "per_session_choice";
+const copiesWord = (n) => `${fmt(n)} ${n === 1 ? "copy" : "copies"}`;
+const memRow = (s, what, shared) => `<div class="mrow"><span class="nm">${esc(s.name)}</span>${what}`
+  + `<span class="fig">${s.copies ? copiesWord(s.copies) : ""}</span><span class="fig">${s.copies ? `<b>${esc(mbWord(s.bytes_now))}</b> now` : ""}</span>`
+  + `<span class="fig">${shared}</span></div>`;
+const whyCell = (s) => {
+  const m = MCP_STATE[s.why];
+  if (!m) return `<span class="why"></span>`;
+  const code = s.value ? `<code>${esc(homeWord(s.value))}</code>` : "";
+  return `<span class="why"><span class="w">${esc(m.word)}${code}</span>${m.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</span>`;
+};
+/** GET /api/mcp/memory: every copy of every declared stdio server on this machine, PSS summed, against one copy each. */
+function savingsHtml() {
+  const m = ui.mmem;
+  if (m === undefined) return `<section class="tally"><div class="card peaks">${READING}</div></section>`;
+  if (!m) return `<section class="tally"><p class="pidle"><span class="state limit">Not read</span><span>splice did not measure its MCP servers</span></p></section>`;
+  const all = m.servers || [];
+  const share = all.filter((s) => shareable(s) && s.copies);
+  const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
+  const copies = share.reduce((n, s) => n + s.copies, 0);
+  const tiles = share.length ? [
+    statTile(mbWord(now), "In use now", note(copiesWord(copies))),
+    statTile(mbWord(one), "Shared", note(`${fmt(share.length)} ${share.length === 1 ? "copy" : "copies"}`)),
+    statTile(mbWord(Math.max(0, now - one)), "Sharing saves"),
+  ] : [];
+  const head = `<div class="thead"><h3>What sharing saves</h3>${tiles.length ? "" : `<span class="zeros">${zeroFig("copies running")}</span>`}</div>`;
+  const rows = share.map((s) => memRow(s, `<span class="why"></span>`, `<b>${esc(mbWord(s.bytes_if_shared))}</b> shared`));
+  // the hub keeps these one per session whatever the switch says: each says why, in the words its rows use above
+  const kept = all.filter((s) => s.class === "per_session" && s.why !== "per_session_choice");
+  // servers no plan decides yet (a project's, a repo's or a plugin's): Claude Code starts them itself, a copy a session
+  const own = all.filter((s) => !shareable(s) && s.class !== "per_session" && s.copies);
+  const list = (title, xs) => (xs.length ? `<section class="sub"><h3>${title}</h3><div class="mrows">${xs.map((s) => memRow(s, whyCell(s), "")).join("")}</div></section>` : "");
+  return `<section class="tally">${head}${tiles.length ? `<div class="figs3 n3">${tiles.join("")}</div>` : ""}`
+    + (rows.length ? `<div class="mrows">${rows.join("")}</div>` : "") + `</section>`
+    + list("One per session either way", kept) + list("Started by Claude Code", own);
+}
+
+const mcpHtml = () => `${shareCard()}${savingsHtml()}<section class="tally">${mcpNow()}</section>${mcpServersHtml()}<section class="sub">${blocks(keysOf("mcp"))}</section>`;
 
 // the three settings that cap splice itself, in the order they bite: how many run, how many wait, how big one may be
 const LIMITS = ["maxInflight", "maxQueued", "maxRequestBytes"];
@@ -1216,6 +1295,7 @@ document.addEventListener("click", (e) => {
     case "restart": pressRestart(); return;
     case "restart-now": ui.armed = null; restartSplice(); return;
     case "mtest": testServer(d.name); return;
+    case "mshare": setShare(d.v === "true"); return;
     case "adv": ui.adv[d.id] = !ui.adv[d.id]; break;
     case "runlog": ui.runLog = !ui.runLog; render(); return;
     case "delete": ui.armed = null; render(); remove(d.id); return;

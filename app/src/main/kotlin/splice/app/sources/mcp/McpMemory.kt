@@ -46,8 +46,12 @@ internal class McpMemory(
         val table = ProcTable()
         val claudes = table.pids.filter { table.exe(it)?.contains(CLAUDE_CODE_EXE) == true }.toSet()
         val copies = (claudes + daemon).flatMap { owner -> copiesUnder(table, owner, Owners(claudes, declared)) }
-        val servers = declared.map { it.name }.distinct()
-            .map { name -> McpServerMemory(name, copies.filter { it.server == name }) }
+        // one server can be declared in several files; the one a plan decides speaks for it
+        val servers = declared.groupBy { it.name }
+            .map { (name, sigs) ->
+                val decided = sigs.firstOrNull { it.shareClass != null } ?: sigs.first()
+                McpServerMemory(decided, copies.filter { it.server == name })
+            }
             .sortedByDescending { it.bytesNow }
         return buildJsonObject {
             put("measured_at", clock())

@@ -65,7 +65,7 @@ const state = {
   pending: {},
   error: null, loading: true,
 };
-const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), ending: new Map(), armedEnd: new Map(), failed: new Map(), stopping: new Set(), answered: new Map() };
+const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), ending: new Map(), armedEnd: new Map(), armedStop: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
 // From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
 // Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
 const ANSWER_HOLD_MS = 30_000;
@@ -391,7 +391,7 @@ function memberHtml(tm, slot) {
   if (!s || s.availability === "gone") return vacantHtml(tm, slot, { key, ro, lead, chip, model, ended: Boolean(s) });
   state.stalls[slot.id] = null;
   const L = stallLook(slot, s) ?? stateOf(s);
-  const stop = !liveNow(s) || ro ? ""
+  const stop = !liveNow(s) || ro || ui.armedStop.has(key) ? ""
     : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
     : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
   // a refused Stop leaves the card where it is, Stop back in its place, and the refusal beside it
@@ -415,10 +415,19 @@ function memberHtml(tm, slot) {
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}${end}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` +
-    `${body}${armedEndHtml(key, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
+    `${body}${liveNow(s) && !ro ? armedStopHtml(key, slot.id, now) : ""}${armedEndHtml(key, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
 }
 
 const secsSince = (t) => Math.floor((Date.now() - t) / 1000);
+/** Stop armed, End's pattern (Marlin, Oct 13): the first press names the turn it would end, by the member's last tool
+ *  call, and only the second press stops it; Keep running, Escape or a tap elsewhere disarms it. */
+function armedStopHtml(key, slotId, now) {
+  if (!ui.armedStop.has(key)) return "";
+  const turn = now ? `Ends the turn on ${activityHtml(now)}` : "Ends the running turn";
+  return `<div class="armed end"><span class="word working">${ICON.wait}${turn}</span>` +
+    `<button class="act danger small" data-act="stop-now" data-s="${esc(slotId)}">Stop</button>` +
+    `<button class="act quiet small" data-act="stop-keep" data-s="${esc(slotId)}">Keep running</button></div>`;
+}
 /** End armed: what ending would lose, the Working word or his unsent words verbatim and muted, then the danger End and
  *  Restart's own no, Keep running. Nothing of ours is said: his words after Unsent say what goes (fin, Marlin p218). */
 function armedEndHtml(key, slotId) {
@@ -1132,7 +1141,7 @@ sheet.addEventListener("input", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && ui.armedEnd.size) { ui.armedEnd.clear(); render(); return; }
+  if (e.key === "Escape" && (ui.armedEnd.size || ui.armedStop.size)) { ui.armedEnd.clear(); ui.armedStop.clear(); render(); return; }
   if (e.key !== "Escape") return;
   if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
   else if (ui.compose) { ui.compose = null; ui.pick = null; render(); }
@@ -1152,7 +1161,9 @@ document.addEventListener("click", async (e) => {
   const card = e.target.closest(".card[data-go]");
   if (!b && card && !e.target.closest("a, button, input, textarea, select")) { openSession(card); return; }
   // an armed End is disarmed by a tap anywhere but its own row, as Restart's is (fin)
-  if (ui.armedEnd.size && !e.target.closest(".armed.end")) { ui.armedEnd.clear(); if (!b) { render(); return; } }
+  if ((ui.armedEnd.size || ui.armedStop.size) && !e.target.closest(".armed.end")) {
+    ui.armedEnd.clear(); ui.armedStop.clear(); if (!b) { render(); return; }
+  }
   if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; if (!b) { render(); return; } }
   if (!b) {
     if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
@@ -1188,9 +1199,11 @@ document.addEventListener("click", async (e) => {
       await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }),
         "The session was not bound", `bind:${tm.id}/${slot.id}`);
       break;
-    case "stop": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
+    case "stop": ui.armedStop.add(`${tm.id}/${slot.id}`); render(); break;
+    case "stop-keep": ui.armedStop.delete(`${tm.id}/${slot.id}`); render(); break;
+    case "stop-now": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
       const key = `${tm.id}/${slot.id}`;
-      ui.failed.delete(`stop:${key}`); ui.stopping.add(key); render();
+      ui.armedStop.delete(key); ui.failed.delete(`stop:${key}`); ui.stopping.add(key); render();
       const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
       ui.stopping.delete(key);
       const refused = stopRefusal(res);

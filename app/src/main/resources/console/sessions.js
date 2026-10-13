@@ -23,7 +23,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { ending: new Map(), armedEnd: new Map(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(),
+const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(),
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
@@ -253,10 +253,21 @@ function askHtml(s, where = "card") {
 
 const lastOf = (s) => s.row.last;
 // From the press until splice answers, Stop keeps its place, disabled, reading Stopping with the wait ring (hitstop 9e95ae4)
-const stopHtml = (s, cls, icon) => ui.stopping.has(s.id)
+const stopHtml = (s, cls, icon) => ui.armedStop.has(s.id) && canStop(s) ? "" : ui.stopping.has(s.id)
   ? `<button class="${cls} stopping" disabled>${ICON.wait}Stopping</button>`
   : canStop(s) ? `<button class="${cls}" data-act="stop" data-s="${esc(s.id)}">${icon}Stop</button>` : "";
 const canStop = (s) => s.state === "working" && (s.live || drivable(s));
+// Stop armed, End's pattern (Marlin, Oct 13): the first press names the turn it would end, from what the session last
+// did, and only the second press stops it; Keep running, Escape or the turn ending on its own disarms it.
+function armedStopHtml(s, small) {
+  if (!ui.armedStop.has(s.id) || !canStop(s)) return "";
+  const last = lastOf(s), sz = small ? " small" : "";
+  const did = last?.text ? (last.tool ? `${last.tool} ${last.text}` : last.text.replace(/`/g, "")) : "";
+  const turn = did ? `Ends the turn on ${did.length > 80 ? `${did.slice(0, 79)}…` : did}` : "Ends the running turn";
+  return `<div class="armed end"><span class="said">${ICON.wait}${esc(turn)}</span>` +
+    `<button class="act danger${sz}" data-act="stop-now" data-s="${esc(s.id)}">Stop</button>` +
+    `<button class="act quiet${sz}" data-act="stop-keep" data-s="${esc(s.id)}">Keep running</button></div>`;
+}
 function cardHtml(s) {
   const L = movingLook(s) || look(s), last = lastOf(s);
   const stop = stopHtml(s, "act quiet small", "");
@@ -270,7 +281,7 @@ function cardHtml(s) {
   return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
-    + `${metaHtml(s, L, false)}${body}${failedHtml(s, failed, false)}</article>`;
+    + `${metaHtml(s, L, false)}${body}${armedStopHtml(s, true)}${failedHtml(s, failed, false)}</article>`;
 }
 
 // ---------- the list: what needs him first, then what runs, then what rests ----------
@@ -528,7 +539,7 @@ function paneHtml() {
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
-    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${sendToHtml(s)}${composerHtml(s)}</section>`;
+    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${sendToHtml(s)}${composerHtml(s)}</section>`;
 }
 
 // A door to a session splice no longer lists, by link or address: its pane says No transcript where the log would be,
@@ -912,7 +923,9 @@ async function note(s, text) {
 }
 // Escape on the in-prompt card is its Cancel: nothing sent, nothing cleared, his message stays in the field (fin)
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && ui.armedEnd.size) { ui.armedEnd.clear(); render({ stick: false }); return; }
+  if (e.key === "Escape" && (ui.armedEnd.size || ui.armedStop.size)) {
+    ui.armedEnd.clear(); ui.armedStop.clear(); render({ stick: false }); return;
+  }
   if (e.key === "Escape" && ui.open != null && ui.held[ui.open]) { delete ui.held[ui.open]; render({ stick: false }); return; }
   if (e.key === "Escape" && ui.menu) { ui.menu = null; render({ stick: false }); return; }
   if (e.key !== "Escape" || ui.open == null || ui.leftover[ui.open] == null) return;
@@ -968,7 +981,9 @@ document.addEventListener("click", (e) => {
     case "rest": { const p = el.dataset.p; ui.rest.has(p) ? ui.rest.delete(p) : ui.rest.add(p); remember("splice.rest", ui.rest); render({ stick: false }); break; }
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.missing = null; ui.auto = false; render(); break;
-    case "stop": if (s) stop(s); break;
+    case "stop": if (s) { ui.armedStop.add(s.id); render({ stick: false }); } break;
+    case "stop-now": if (s) { ui.armedStop.delete(s.id); stop(s); } break;
+    case "stop-keep": if (s) { ui.armedStop.delete(s.id); render({ stick: false }); } break;
     case "end": if (s) endSession(s, false); break;
     case "end-now": if (s) endSession(s, true); break;
     case "end-keep": if (s) { ui.armedEnd.delete(s.id); render({ stick: false }); } break;

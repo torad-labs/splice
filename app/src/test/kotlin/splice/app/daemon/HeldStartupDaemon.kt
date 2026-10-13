@@ -8,6 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import splice.app.Daemon
 import splice.app.DaemonProcess
 import splice.app.DaemonRun
+import splice.app.STOP_DEADLINE_MS
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.topology.TopologyLoader
@@ -32,10 +33,12 @@ const val UP_PORT_LIVE = "UP_PORT_LIVE="
 private const val LISTENER_STILL_OPEN = "LISTENER_STILL_OPEN after_ms="
 private const val LOCK_ALREADY_RELEASED = "PORT_CLOSED lock_held=false"
 
-// why: the longest this client waits for the stop to reach the listener before reporting what it sees. A real stop
-// closes it in well under a second (Ktor's grace is 100ms), so this is a ceiling for a stop that is not coming, not a
-// guess at one that is: it sits far below the child's own 57s halt floor so the report always beats the watchdog.
-private const val AWAIT_CLOSE_MS = 30_000
+// why: the longest this client waits for the stop to reach the listener before reporting what it sees: the stop's own
+// deadline, so it judges ORDER, not speed. Unloaded, a stop closes the listener well under a second (Ktor's grace is
+// 100ms), but under a loaded pre-push it has taken past 10s (f4651fdcd) and past 30s (the 6f2757beb push, with the
+// ordered stop still finishing unhalted). A listener still open at the deadline is a stop that overran its budget,
+// and the report still lands before the watchdog halts the child TEARDOWN_TAIL_GRACE_MS later.
+private val AWAIT_CLOSE_MS = STOP_DEADLINE_MS.toInt()
 
 const val HOLD_BOUND = "[daemon] control plane bound"
 const val HOLD_UP = "[daemon] up:"

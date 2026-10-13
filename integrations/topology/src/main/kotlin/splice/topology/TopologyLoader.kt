@@ -244,11 +244,16 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
         return LoadedTopology(parse(bytes.toString(Charsets.UTF_8)), sha256Hex(bytes))
     }
 
-    /** Boot and restart: the topology, or a [TopologyRefusal] listing EVERY problem in the file at once. */
-    public fun loadForBoot(path: Path): LoadedTopology {
+    /** Boot and restart: the topology, or a [TopologyRefusal] listing EVERY problem in the file at once, with what each
+     *  local runtime that is up refuses ([runtimes]) among them. */
+    public fun loadForBoot(
+        path: Path,
+        runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
+    ): LoadedTopology {
         val bytes = readOrMaterialize(path, ExclusiveStarterWrite)
         val stateBase = path.toAbsolutePath().parent ?: path
-        return when (val read = ConfigFindings.read(bytes.toString(Charsets.UTF_8), stateBase, configDir = stateBase)) {
+        val text = bytes.toString(Charsets.UTF_8)
+        return when (val read = ConfigFindings.read(text, stateBase, configDir = stateBase, runtimes = runtimes)) {
             is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes))
             is ConfigRead.Refused -> throw TopologyRefusal(read.findings)
         }

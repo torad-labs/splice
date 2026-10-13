@@ -24,6 +24,13 @@ public sealed class ConfigRead {
     public data class Refused(val findings: List<TopologyFinding>) : ConfigRead()
 }
 
+/** What a local runtime that is up says about the rows a topology declares (v0.4.0 section 10, fail-closed boot): a row
+ *  it serves less of, a model it does not list, a model it says cannot call tools. Each refusal is a finding with a key
+ *  path ([ModelRowLine] reads its line). The network lives in :app; a reader with no runtime to ask passes nothing. */
+public fun interface LocalRowFindings {
+    public fun of(topology: Topology): List<TopologyFinding>
+}
+
 /** Reads splice.toml text the way boot does and collects EVERY finding instead of throwing the first.
  *
  *  Three layers, in the order a reader meets them: the structural guards ktoml lacks (all of them), then the
@@ -35,8 +42,13 @@ public sealed class ConfigRead {
  *  [stateBase] only satisfies the knob check's constructor; nothing here reads state. */
 public object ConfigFindings {
     /** [configDir] is the topology's directory, so a head's relative `system_prompt_file` is read where the daemon
-     *  reads it; null leaves the prompt check out. */
-    public fun read(text: String, stateBase: Path, configDir: Path? = null): ConfigRead {
+     *  reads it; null leaves the prompt check out. [runtimes] adds what each local runtime that is up refuses. */
+    public fun read(
+        text: String,
+        stateBase: Path,
+        configDir: Path? = null,
+        runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
+    ): ConfigRead {
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
@@ -52,7 +64,9 @@ public object ConfigFindings {
             configDir = configDir,
         )
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
-        return refused(checks, topology)
+        val local = runtimes.of(topology).distinct()
+            .map { it.copy(line = rows.of(text, it.path) ?: lineOf(text, it.path)) }
+        return refused(checks + local, topology)
     }
 
     /** A knob finding keeps boot's own reason as written (the console writer pins it word for word); the boot
@@ -134,6 +148,7 @@ public object ConfigFindings {
     /** The key a `key = value` line assigns, or null when the line assigns nothing. */
     private fun keyOf(line: String): String? = line.takeIf { it.contains('=') }?.substringBefore("=")?.trim()
 
+    private val rows = ModelRowLine()
     private const val FINDING_FILE = "splice.toml"
     private const val SYNTAX =
         "the parser cannot read this line; check it for a missing =, quote or bracket, or a value the setting rejects"

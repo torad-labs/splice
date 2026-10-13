@@ -10,6 +10,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.TopologyRefusal
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
+import splice.topology.LocalRowFindings
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 
@@ -25,6 +26,7 @@ internal class RestartTopology(
     private val env: EnvReader,
     private val settings: DaemonSettings,
     private val repair: ConfigRepair,
+    private val runtimes: LocalRowFindings,
 ) {
     /** The topology, as a Result that holds null when the file could not be read but a running daemon can still answer
      *  for the head ports; null when the restart must not proceed at all. A splice.toml this build refuses is the
@@ -32,7 +34,7 @@ internal class RestartTopology(
      *  file read again, so `splice restart` repairs and proceeds in one go. */
     fun read(): Result<Topology?>? {
         val path = TopologyLoader.configPath(env)
-        val read = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path).topology }
+        val read = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }
         val failure = read.exceptionOrNull() ?: return read
         output.line("splice: ${SafeFailureText.render(failure)}")
         return if (failure is TopologyRefusal) repaired(path) else withRunningDaemon(path)
@@ -43,7 +45,7 @@ internal class RestartTopology(
     private fun repaired(path: Path): Result<Topology?>? {
         output.line("splice: nothing was stopped and $path is unchanged")
         if (!repair.offer()) return null
-        val again = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path).topology }
+        val again = Cancellables.runCatchingCancellable { TopologyLoader.loadForBoot(path, runtimes).topology }
             .onFailure { output.line("splice: ${SafeFailureText.render(it)}") }
         return if (again.isFailure) null else again
     }

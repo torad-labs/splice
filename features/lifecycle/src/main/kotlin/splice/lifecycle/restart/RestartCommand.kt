@@ -17,6 +17,7 @@ import splice.daemonclient.Reading
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.upgrade.CompactionWait
 import splice.lifecycle.upgrade.JdkUpgradeInflight
+import splice.topology.LocalRowFindings
 import splice.topology.TopologyStatePaths
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
@@ -28,6 +29,7 @@ public class RestartCommand(
     jar: RunningJar,
     private val coldStart: DaemonColdStart = DaemonColdStart(output, errors, env, jar),
     private val repair: ConfigRepair = ConfigRepair { false },
+    runtimes: LocalRowFindings = LocalRowFindings { emptyList() },
 ) {
 
     // The escalation ladder is a process lifecycle, not a control-plane request — it lives on
@@ -38,7 +40,7 @@ public class RestartCommand(
      *  diagnostic goes to [errors], because stdout belongs to the verb. */
     private val settings = DaemonSettings(errors)
 
-    private val topologyRead = RestartTopology(output, env, settings, repair)
+    private val topologyRead = RestartTopology(output, env, settings, repair, runtimes)
 
     /** [expectedVersion] is what the restarted daemon must report: this CLI's own, or the release an
      *  upgrade just activated (the old CLI running `splice upgrade` is not the version coming up).

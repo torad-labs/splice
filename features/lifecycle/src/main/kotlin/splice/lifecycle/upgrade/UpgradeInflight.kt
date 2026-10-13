@@ -49,6 +49,11 @@ public data class CompactionSlot(val head: String, val ageMs: Long)
 
 internal fun interface UpgradeInflight {
     operator fun invoke(): InflightRead
+
+    /** Holds new compactions on every head for [forMs] (CompactionWait, before its first read): null once they are
+     *  held, else why they could not be (a daemon from before the hold, a refused key), which the wait says and goes
+     *  on without. A read with no daemon behind it holds nothing. */
+    fun hold(forMs: Long): String? = null
 }
 
 internal class JdkUpgradeInflight(
@@ -58,6 +63,20 @@ internal class JdkUpgradeInflight(
 ) : UpgradeInflight {
     private val json = Json { ignoreUnknownKeys = true }
     private val client = HttpClient.newHttpClient()
+
+    /** POST /api/daemon/compactions/hold with the mgmt key, the daemon that reads /api/heads for the same restart. */
+    override fun hold(forMs: Long): String? {
+        val key = (MgmtKeyFile().read(env) as? MgmtKeyRead.Present)?.key ?: return "the mgmt key is not readable"
+        return Cancellables.runCatchingCancellable {
+            val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/daemon/compactions/hold?ms=$forMs"))
+                .timeout(Duration.ofSeconds(PROBE_TIMEOUT_S))
+                .header("Authorization", "Bearer $key")
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build()
+            val status = client.send(request, HttpResponse.BodyHandlers.discarding()).statusCode()
+            if (status == HTTP_OK) null else "the daemon answered HTTP $status"
+        }.getOrElse { "the daemon did not answer" }
+    }
 
     override fun invoke(): InflightRead {
         absent()?.let { return it }

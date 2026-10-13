@@ -45,6 +45,21 @@ internal class AdmissionGate(
         return false
     }
 
+    /** A compaction that arrives while a restart HOLDS compactions (AdmissionWindow) waits here, holding its slot and
+     *  not yet described as a compaction, so the restart's read of the compactions in flight does not wait on it.
+     *  True once the hold lapses with the window still open: the restart did not come, and the turn runs as it would
+     *  have. False once the drain closes the window: [release] frees its slot first, so the drain converges, and the
+     *  stopping 529 sends the client's retry to the next daemon instead of starting a summary the stop would cut. */
+    suspend fun compactionAdmittedOrRespond(call: ApplicationCall, release: TurnEnd): Boolean {
+        if (!window.compactionsHeld) return true
+        while (window.compactionsHeld && window.isOpen) deps.seams.waiter.wait(COMPACTION_HOLD_POLL_MS)
+        if (window.isOpen) return true
+        withContext(NonCancellable) { release.ended() }
+        refusals.refused(OutcomeTag.RESTARTED, call.request.headers[SESSION_HEADER])
+        responses.respondStopping(call)
+        return false
+    }
+
     suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? =
         acquireOrRespond(call, call.request.headers[SESSION_HEADER], beforeRefusal = null)
 
@@ -177,3 +192,7 @@ internal class Materializing(
         beforeRefusal?.ended()
     }
 }
+
+// why: a held compaction looks for the drain or the hold's end this often; the drain polls its in-flight count every
+// 50 ms, so a tenth of a second keeps a held slot from holding the drain back while costing one check per wait.
+private const val COMPACTION_HOLD_POLL_MS = 100L

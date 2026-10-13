@@ -3,10 +3,11 @@
 // A compaction is the one turn a restart must not cut. It runs for minutes, and the daemon keeps its
 // answer for a client that retries it (CompactionReplay, FileCompactionRecordings), but only once the
 // compaction has finished. The stop's own drain is 45 s inside a unit that allows 90 in all, so the wait
-// comes BEFORE the stop: the daemon keeps serving, no head closes admission, and ordinary turns never
-// hold a restart. A slot is waited for until the daemon's own whole-turn cap would end it, and the whole
-// wait is held to the same span, so new compactions arriving meanwhile cannot hold a restart forever.
-// `--now` skips it.
+// comes BEFORE the stop: the daemon keeps serving and ordinary turns never hold a restart. A slot is waited
+// for until the daemon's own whole-turn cap would end it, and the whole wait is held to the same span.
+// 2026-10-13: before its first read the wait HOLDS new compactions (Head.compactionHold): one arriving after
+// that read waits at admission instead of starting a summary the stop's 45 s drain would cut, and the drain
+// answers it with the stopping refusal its client retries against the next daemon. `--now` skips all of it.
 //
 // 2026-10-13: the span was Claude Code's 600 s abort. Claude Code 2.1.296 no longer aborts a compaction
 // at a flat 600 s: its recovery timer is 1.5 ms per token of the conversation, at least 600 s and at most
@@ -28,6 +29,10 @@ import kotlin.time.TimeSource
 // command with a longer upstreamTimeoutMs is waited on this long and then restarted.
 private val CAP_MS = Knob.UPSTREAM_TIMEOUT_MS.count()
 
+// why: the hold outlasts the wait by the stop that follows it (the 45 s drain inside a unit that allows 90), and lapses
+// on its own after that, so a restart that never comes holds nothing for long.
+private const val HOLD_PAST_WAIT_MS = 120_000L
+
 internal class CompactionWait(
     private val output: TerminalOutput,
     private val inflight: UpgradeInflight,
@@ -38,6 +43,9 @@ internal class CompactionWait(
      *  that cannot see the slots is said and not waited on: the restart is what fixes a daemon too
      *  sick to answer /api/heads. */
     fun await() {
+        inflight.hold(capMs + HOLD_PAST_WAIT_MS)?.let { why ->
+            output.line("splice: new compactions are not held ($why); one that starts now gets only the stop's drain")
+        }
         val start = TimeSource.Monotonic.markNow()
         val cap = capMs.milliseconds
         while (true) {

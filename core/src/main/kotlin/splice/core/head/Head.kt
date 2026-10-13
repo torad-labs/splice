@@ -5,6 +5,12 @@ package splice.core.head
 import splice.core.usage.QuotaFull
 import splice.core.wire.HttpStatus
 
+/** Holds a head's new compactions for forMs milliseconds; the hold lapses by itself, so a restart that never comes
+ *  leaves nothing held. */
+public fun interface CompactionHold {
+    public fun hold(forMs: Long)
+}
+
 public interface Head {
     public val key: String
     public val label: String
@@ -17,6 +23,11 @@ public interface Head {
      *  its clients instead of refusing their connections while its siblings finish. [stop] does both halves, so
      *  a head with nothing to drain needs nothing here. */
     public suspend fun drain() {}
+
+    /** A restart is about to read the compactions in flight and then stop: [CompactionHold.hold] makes a NEW
+     *  compaction wait at admission instead of starting one the stop's drain would cut, and the drain answers it with
+     *  the stopping refusal its client retries against the next daemon. Null on a head that runs no turns. */
+    public val compactionHold: CompactionHold? get() = null
 
     public suspend fun stop()
 

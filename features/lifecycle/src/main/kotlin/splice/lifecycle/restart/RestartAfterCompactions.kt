@@ -28,6 +28,9 @@ import splice.lifecycle.upgrade.UpgradeInflight
 /** Every compaction the daemon's heads hold a gate slot for right now (V4-213's live rows). */
 public fun interface CompactionsInFlight {
     public operator fun invoke(): List<CompactionSlot>
+
+    /** Holds new compactions on every head for [forMs] before the wait reads (Head.compactionHold); null once held. */
+    public fun hold(forMs: Long): String? = null
 }
 
 /** Where a restart the daemon took on stands. */
@@ -50,7 +53,11 @@ public class RestartAfterCompactions(
 ) {
     private val wait = CompactionWait(
         output = TerminalOutput { line -> log("[control] restart: ${LogSafe.str(line.removePrefix(CLI_PREFIX))}\n") },
-        inflight = UpgradeInflight { InflightRead.Count(0, compactions()) },
+        inflight = object : UpgradeInflight {
+            override fun invoke(): InflightRead = InflightRead.Count(0, compactions())
+
+            override fun hold(forMs: Long): String? = compactions.hold(forMs)
+        },
         pollMs = pollMs,
     )
     private val lock = Any()

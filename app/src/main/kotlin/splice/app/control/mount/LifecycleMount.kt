@@ -34,12 +34,17 @@ internal class LifecycleMount(
     private val shutdownDaemon: ShutdownDaemon,
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
-    heads: Map<String, ManagedHead>,
+    private val heads: Map<String, ManagedHead>,
     log: LogSink,
 ) {
-    private val compactions = CompactionsInFlight {
-        heads.flatMap { (key, managed) ->
+    private val compactions = object : CompactionsInFlight {
+        override fun invoke(): List<CompactionSlot> = heads.flatMap { (key, managed) ->
             managed.head.healthSnapshot().gate.live.filter { it.compact }.map { CompactionSlot(key, it.ageMs) }
+        }
+
+        override fun hold(forMs: Long): String? {
+            heads.values.forEach { it.head.compactionHold?.hold(forMs) }
+            return null
         }
     }
     private val restart = RestartAfterCompactions(compactions, LifecycleScope(ProcessDispatchers().background()), log)
@@ -68,9 +73,31 @@ internal class LifecycleMount(
             guard.guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.lifecycle.supervised) }
         }
         route.get("/api/daemon/restart") { guard.guarded(call) { daemonRoutes.statusJson(call) } }
+        // A restart run from a shell (`splice restart`, `splice upgrade`) holds new compactions before it reads
+        // the ones in flight (CompactionWait); the console's restart holds them in-process through [compactions].
+        // The hold lapses by itself, so it is bounded here: a typo cannot hold compactions for a day.
+        route.post("/api/daemon/compactions/hold") {
+            guard.guarded(call) {
+                val ms = call.request.queryParameters["ms"]?.toLongOrNull()?.takeIf { it in 1..MAX_COMPACTION_HOLD_MS }
+                if (ms == null) {
+                    call.respondText(
+                        """{"error":"ms must be a hold in milliseconds, at most $MAX_COMPACTION_HOLD_MS"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest,
+                    )
+                } else {
+                    val _ = compactions.hold(ms)
+                    call.respondText("""{"held_ms":$ms}""", ContentType.Application.Json, HttpStatusCode.OK)
+                }
+            }
+        }
         route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.lifecycle.upgrade) } }
         route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
         route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
         route.post("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.check(call) } }
     }
 }
+
+// why: the longest hold a restart asks for is the whole-turn cap plus the stop after it; an hour bounds any knob
+// setting a person could reasonably give that cap while refusing a hold no restart would ask for.
+private const val MAX_COMPACTION_HOLD_MS = 3_600_000L

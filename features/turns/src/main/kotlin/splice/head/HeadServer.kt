@@ -21,6 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.ForeignHostLog
+import splice.core.head.CompactionHold
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.usage.QuotaFull
@@ -146,6 +147,8 @@ public class HeadServer(
     override suspend fun start(): Unit = lifecycle.withLock { startLocked() }
 
     override suspend fun drain(): Unit = lifecycle.withLock { drainLocked() }
+
+    override val compactionHold: CompactionHold = CompactionHold(window::holdCompactions)
 
     override suspend fun stop(): Unit = lifecycle.withLock { stopLocked() }
 

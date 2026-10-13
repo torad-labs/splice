@@ -83,6 +83,8 @@ internal class HeadAdmission(
             }
             is Preparation.Ready -> {
                 val meta = prepared.built.meta
+                // Before describe: a compaction held for a restart is not yet one the restart's read waits for.
+                if (meta.compact && !admission.compactionAdmittedOrRespond(call, TurnEnd(admitted::release))) return
                 admitted.slot.describe(
                     meta.route.upstreamModel,
                     meta.compact,

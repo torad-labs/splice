@@ -69,6 +69,7 @@ import splice.head.round.ObservedRoundPost
 import splice.head.round.RunnerSignals
 import splice.head.usage.EconomicsStore
 import splice.head.usage.OutputClamp
+import splice.head.usage.TurnSpend
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
@@ -90,7 +91,7 @@ import kotlin.time.Duration.Companion.seconds
 private class UsageStampRig(tmp: Path, private val tag: String, economics: EconomicsStore? = null) {
     val log = LogSink { }
     val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
-    val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, economics)
+    val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, TurnSpend(economics))
     val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
     val stamp = TurnUsageStamp(usageStore, log, telemetry)
 

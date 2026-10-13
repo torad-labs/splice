@@ -32,6 +32,7 @@ import splice.head.transport.SseRoundPost
 import splice.head.transport.TearAwareEvents
 import splice.head.transport.WsRoundDriver
 import splice.head.transport.ZeroEventFailure
+import splice.head.usage.TurnSpend
 import splice.head.usage.TurnStreamAnswers
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
@@ -55,9 +56,8 @@ internal class TurnDriver(
             deps.stores.perfStats,
             deps.log,
             deps.seams.clock,
-            deps.stores.economicsStore,
+            TurnSpend(deps.stores.economicsStore, deps.quotaBundle.budget),
             deps.seams.events,
-            deps.quotaBundle.budget,
         )
     private val health = HeadHealthCounters()
     private val failures = TurnFailures(provider)

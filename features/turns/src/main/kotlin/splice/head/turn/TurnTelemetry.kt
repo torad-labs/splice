@@ -7,8 +7,6 @@ package splice.head.turn
 
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
-import splice.core.budget.HeadBudget
-import splice.core.budget.NoHeadBudget
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
@@ -20,7 +18,6 @@ import splice.core.turn.Usage
 import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
-import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.FileIoTask
 import splice.core.util.LogSink
@@ -34,8 +31,7 @@ import splice.head.perf.PerfFailure
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.perf.PerfTranscriptIds
-import splice.head.usage.EconomicsStore
-import splice.head.usage.SnapshotEconomics
+import splice.head.usage.TurnSpend
 import splice.head.wire.TurnTrace
 
 // V4-122: ERR_SNIPPET lives in splice.core.util now, at the same 200 this declaration carried.
@@ -65,17 +61,13 @@ internal class TurnTelemetry(
     private val perfStats: PerfStats,
     private val log: LogSink,
     private val clock: ElapsedClock,
-    /** The hourly quota rollup, or null on a head assembled without one — then a turn records no
-     *  economics, which is the honest reading, never a zero-burn row. */
-    private val economics: EconomicsStore? = null,
-    /** V4-134: the console's view of this head. Defaulted like [economics] because tests build this
+    /** Where the turn's spend lands: the hourly quota rollup and the head's daily budget. Defaulted
+     *  to neither, which records no economics and no spend, because tests build this class directly. */
+    private val spend: TurnSpend = TurnSpend(),
+    /** V4-134: the console's view of this head. Defaulted like [spend] because tests build this
      *  class directly; the one production site (TurnDriver) passes the head's own, and HeadEventsTest
      *  fails if a served turn stops reaching it. */
     private val events: HeadEvents = NoHeadEvents,
-    /** V4-133 review: the head's daily spend budget, told each turn's spend beside its perf row.
-     *  Defaulted like [events]; the one production site (TurnDriver) passes the head's own, and
-     *  HeadBudgetTest fails if a served turn stops reaching it. */
-    private val budget: HeadBudget = NoHeadBudget,
 ) {
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
@@ -87,7 +79,7 @@ internal class TurnTelemetry(
     val localAnswers = LocalAnswerRows(headKey, perfStats, log, clock)
 
     /** Drain the paced tail before the sole perf snapshot; publish even if cleanup throws cancellation.
-     *  [rateLimited] marks the one turn the upstream refused with a 429 — see [recordEconomics]. */
+     *  [rateLimited] marks the one turn the upstream refused with a 429 — see [TurnSpend.economics]. */
     suspend fun recordPerf(
         drive: TurnDrive,
         outcomeTag: String,
@@ -175,7 +167,7 @@ internal class TurnTelemetry(
             // The hourly rollup counts this turn only once its request-log line is whole on disk, so a
             // stop or halt never leaves a rollup ahead of the log it is read against.
             whole = FileIoTask {
-                recordEconomics(snap, drive.upstreamModel, ending.rateLimited, accountLabel, outcomeTag)
+                spend.economics(snap, drive.upstreamModel, ending.rateLimited, accountLabel, outcomeTag)
             },
         )
         account?.headSwitch?.let { switched ->
@@ -185,7 +177,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
-        recordSpend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
+        spend.spend(rowTs, drive.upstreamModel, snap.counters, accountLabel, outcomeTag)
     }
 
     private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
@@ -210,42 +202,6 @@ internal class TurnTelemetry(
         if (trace == null) return
         OutcomeSentences.of(outcomeTag)?.let(trace::failureSentenceUnlessSpoken)
         trace.finish(outcomeTag, snap)
-    }
-
-    /** V4-133 review: the day's spend moves by THIS row — its own ts, model and counters, the same
-     *  facts a restarted daemon reads back from the file. Best-effort like [recordEconomics]: a
-     *  budget that throws must never fail the turn it is weighing. A local refusal writes no spend,
-     *  because it spent nothing. */
-    private fun recordSpend(
-        rowTs: Long,
-        model: String,
-        counters: Map<String, Long>,
-        account: String?,
-        outcome: String,
-    ) {
-        Cancellables.discard(
-            Cancellables.runCatchingCancellable { budget.spentOn(account, rowTs, model, counters, outcome) },
-            "telemetry is best-effort; a turn must never fail on its budget",
-        )
-    }
-
-    /** Fold this turn into the hourly quota rollup. The perf snapshot is the single source for
-     *  BOTH the JSONL row and this store, so the dashboard can never disagree with the log line.
-     *  Wrapped because recordPerf's contract is never-throws and telemetry must not fail a turn. */
-    private fun recordEconomics(
-        snap: PerfSnapshot,
-        model: String,
-        rateLimited: Boolean,
-        account: String?,
-        outcome: String,
-    ) {
-        val store = economics ?: return
-        Cancellables.discard(
-            Cancellables.runCatchingCancellable {
-                store.record(SnapshotEconomics().of(snap, model, rateLimited), account, outcome)
-            },
-            "telemetry is best-effort; a turn must never fail on the quota rollup",
-        )
     }
 
     /** V4-99 item 4: ONE entry for every turn refused LOCALLY — after parsing, before any upstream

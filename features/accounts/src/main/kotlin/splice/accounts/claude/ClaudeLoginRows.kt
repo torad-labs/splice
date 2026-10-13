@@ -105,6 +105,7 @@ internal class ClaudeLoginRows(
         put("auth_exclusion_reason", selected?.credential?.exclusionReason)
         val reason = description?.fields?.get(REFUSAL_FIELD) ?: view.credential.refusal
         put("refusal", refusal(view, selected, reason))
+        put("token_renews", !available && description?.fields?.get(TOKEN_RENEWS_FIELD) == "true")
     }
 
     private fun refusal(view: ClaudeLoginPlaceView, selected: HeadAccountView?, reason: String?): String? {

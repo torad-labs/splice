@@ -6,6 +6,10 @@ import splice.accounts.signin.LoginStatus
 import splice.core.auth.AccountRef
 import splice.core.usage.QuotaSnapshot
 
+/** A native place's description field: "true" when its access token has expired beside a refresh token, which its
+ *  own command renews the next time it runs. Such a login is not signed out, and the Accounts row says so. */
+public const val TOKEN_RENEWS_FIELD: String = "token_renews"
+
 /** Each command reads its own native login even when both send requests through the same head. */
 public enum class ClaudeLoginPlaceId(public val wire: String, public val command: String) {
     NATIVE("claude", "claude"),

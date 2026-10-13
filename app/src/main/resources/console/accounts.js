@@ -187,7 +187,9 @@ async function load({ asks = true } = {}) {
         p.accounts.push({ id: acctId(row), row, name: row.display_name, plan: plainPlan(row.plan), windows, sessions: onIt,
           // one observation time behind every bar, so the read line shows as soon as ANY bar drawn here is stale
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
-          out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
+          // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
+          renews: !!row.token_renews,
+          out: !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal),
           canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
           // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
           noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
@@ -258,7 +260,7 @@ const ended = (w) => w.left == null && w.rolledMs != null;
 // stays held, because nothing on the page says it rolled — only a reset that has gone by says that.
 const atLimit = (w) => w.used >= 100 && !ended(w);
 const held = (a) => (a.windows || []).some(atLimit);
-const room = (a) => !a.out && !held(a);
+const room = (a) => !a.out && !a.renews && !held(a);
 const backAt = (a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.left ?? 0));
 const laneAccts = (p, c) => c.order.map((id) => p.accounts.find((a) => a.id === id)).filter(Boolean);
 function ruled(p, c) { // the rule alone: his order, or the soonest reset among the accounts with room
@@ -608,6 +610,7 @@ function slotHtml(p, c, a, serves) {
   if (a.down) return `<span class="state">Not answering</span>`;
   if (serves.length && (!c || serves.includes(c))) return `${pin}${chips}`;
   if (a.out) return `<span class="state">Signed out</span>`;
+  if (a.renews) return `<span class="state">Token expired</span>`;
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
   if (held(a)) return `${pin}${locked()}`;
   if (p.kind === "plan") return `${chips}<button class="act quiet" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
@@ -694,6 +697,8 @@ function cardHtml(p, c, a, i, serves) {
     body = `<div class="windows"><span class="unproved">${never && ui.probing ? "Not read yet" : DAY_NOT_READ}</span>${why ? `<span class="state">${esc(why)}</span>` : ""}</div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model">${a.down ? "" : "<i></i>"}${esc(a.model)}</div>`; // the dot says it answers, so only when it does
+  // how to renew it, under its readings: the route's own words name the command to run
+  if (a.renews && a.row?.refusal) body += `<div class="keysrc"><span class="state">${esc(a.row.refusal)}</span></div>`;
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
     + `${nameHtml(p, a, spot)}${nameIt}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`

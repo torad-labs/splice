@@ -432,7 +432,7 @@ class ClaudeNativePoolWiringTest {
                     .jsonObject
                 assertEquals("false", expired.getValue("available").jsonPrimitive.content)
                 assertEquals(
-                    "Access token expired. Sign in again: run claude and use /login.",
+                    "Access token expired. Run claude once and Claude Code renews it.",
                     expired.getValue("refusal").jsonPrimitive.content,
                 )
                 assertEquals(NATIVE_SELECTOR, expired.getValue("selector_key").jsonPrimitive.content)

@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.claude.TOKEN_RENEWS_FIELD
 import splice.core.auth.ACCOUNT_REF_FIELD
 import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
@@ -37,7 +38,11 @@ private data class NativeAccessDocument(val claudeAiOauth: NativeAccessToken? = 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 @JsonIgnoreUnknownKeys
-private data class NativeAccessToken(val accessToken: String? = null, val expiresAt: Long? = null) {
+private data class NativeAccessToken(
+    val accessToken: String? = null,
+    val expiresAt: Long? = null,
+    val refreshToken: String? = null,
+) {
     override fun toString(): String = "NativeAccessToken(<redacted>)"
 }
 
@@ -86,18 +91,26 @@ internal class ClaudeNativeAuth(
         credentialKey?.let(profiles::read)?.let { account ->
             fields[ACCOUNT_REF_FIELD] = AccountRef.of(account.uuid)
         }
-        if (!present) {
-            fields[REFUSAL_FIELD] = if (observed?.expiresAt?.let { it <= clock() } == true) {
-                "Access token expired. Sign in again: run ${place.command} and use /login."
-            } else {
-                "No usable access token. Sign in again: run ${place.command} and use /login."
-            }
-        }
+        if (!present) fields[REFUSAL_FIELD] = refusal(observed)
+        if (!present && renews(observed)) fields[TOKEN_RENEWS_FIELD] = "true"
         return AuthDescription(present, CLAUDE_ACCOUNT_AUTH_KIND, fields)
     }
 
     override fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? =
         family.planLimit(header, nowEpochSeconds)
+
+    /** Why the place cannot send. An expired token beside its refresh token needs only its command run: Claude Code
+     *  renews it there, and splice never does (it owns no rotating refresh token). Only a place with nothing to renew
+     *  from needs a new sign-in. */
+    private fun refusal(observed: NativeAccessToken?): String = when {
+        renews(observed) -> "Access token expired. Run ${place.command} once and Claude Code renews it."
+        observed?.expiresAt?.let { it <= clock() } == true ->
+            "Access token expired. Sign in again: run ${place.command} and use /login."
+        else -> "No usable access token. Sign in again: run ${place.command} and use /login."
+    }
+
+    private fun renews(observed: NativeAccessToken?): Boolean =
+        observed?.expiresAt?.let { it <= clock() } == true && !observed?.refreshToken.isNullOrBlank()
 
     private fun usable(token: NativeAccessToken): Boolean =
         !token.accessToken.isNullOrBlank() && token.expiresAt?.let { it > clock() } == true

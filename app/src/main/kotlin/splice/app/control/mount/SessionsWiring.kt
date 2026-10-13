@@ -12,6 +12,8 @@ import splice.app.control.SessionPerfFacts
 import splice.app.control.TranscriptLimitEnding
 import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
+import splice.client.transcript.CapturedRequest
+import splice.client.transcript.CapturedTranscripts
 import splice.client.transcript.MovedTranscripts
 import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
@@ -22,6 +24,8 @@ import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
 import splice.core.retired.RetiredHeads
 import splice.core.util.LogSink
+import splice.head.trace.TraceDirPort
+import splice.head.trace.TraceSessionSent
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.LaunchedTerminal
@@ -116,10 +120,16 @@ internal class SessionsWiring(
         val dir = config.statePaths.stateDir.resolve(SEEN_SESSIONS_DIR)
         RecordedSessions(it, SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }))
     }
+    private val traceSent = TraceSessionSent(TraceDirPort { ports.traceDir })
     val routes: SessionsRoutes? = listed?.let {
         SessionsRoutes(
             it,
-            MovedTranscripts(TranscriptReader(), moves),
+            // a session whose transcript file is gone reads from the request the trace kept for it (gap 423)
+            CapturedTranscripts(MovedTranscripts(TranscriptReader(), moves)) { id ->
+                it.read().firstOrNull { record -> record.sessionId == id }?.head
+                    ?.let { head -> traceSent.newest(head, id) }
+                    ?.let { sent -> CapturedRequest(sent.turnId, sent.body) }
+            },
             TranscriptRoots(sessionHeads),
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },

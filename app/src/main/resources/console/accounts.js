@@ -917,11 +917,6 @@ async function refresh(grow = null) {
 }
 
 // ---------- adding an account, inside the tile ----------
-// A new Claude account belongs to the command it was added on; any other provider's goes to every command sharing the file.
-function addAccount(pid, cmd) {
-  const { c } = findCmd(cmd);
-  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head });
-}
 // A typed name is kept against the ref the new login proves once it lands (AccountNameRoute.kt); Enter alone signs in
 // with no chosen name, and the login reads splice's default for its plan (Marlin, Oct 12). The sign-in itself still mints
 // its own folder label, which stays the pool selector.

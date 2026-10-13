@@ -61,7 +61,7 @@ function advancedHtml(id) {
 }
 
 // A figure not read yet is undefined and draws "Reading"; one asked for and not answered is null and draws "Not read", its reason warned to the console.
-const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
+const ui = { adv: {}, said: {}, capture: {}, week: {}, ver: undefined, run: null, headRows: [], saving: null, held: {}, open: "busy", shown: false, q: "", armed: null, bad: {}, ask: null, heads: [], hist: undefined, stores: undefined, kept: {}, peaks: undefined, mcp: undefined, mtest: {}, mtestAt: {}, topo: undefined, mmem: undefined, shareSaving: false, shareSaid: null, exSaid: {}, accts: undefined, projects: undefined, addPath: null, checking: false, checkSaid: null, restarting: false, restartSaid: null, restartWait: 0, err: null };
 const READING = `<span class="none">Reading</span>`;
 let drawLater = 0;
 /** Many answers arrive in a burst; one drawing a moment later takes them all. */
@@ -698,7 +698,7 @@ function mcpNow() {
   if (held) tiles.push(statTile(mbWord(held), "Memory in use", note(sessions ? `${fmt(sessions)} ${sessions === 1 ? "session" : "sessions"}` : "")));
   const lines = [];
   // the one fact the settings above cannot fix: a server that failed, named with what it said
-  up.filter(([, s]) => s.last_error).forEach(([n, s]) => lines.push(`<span class="fig">${srvChip(n)} <span class="state limit">${esc(s.last_error)}</span></span>`));
+  live.filter(([, s]) => s.last_error).forEach(([n, s]) => lines.push(`<span class="fig">${srvChip(n)} <span class="state limit">${esc(s.last_error)}</span></span>`));
   return `<div class="thead"><h3>Right now</h3>${zeros.length ? `<span class="zeros">${zeros.join('<span class="dot">·</span>')}</span>` : ""}</div>`
     + (tiles.length ? `<div class="figs3 n${tiles.length}">${tiles.join("")}</div>` : "")
     + (lines.length ? `<div class="zeros under">${lines.join('<span class="dot">·</span>')}</div>` : "");
@@ -805,10 +805,11 @@ function serverRow(s, dim) {
   if (!s.shared) {
     const m = MCP_STATE[s.state];
     const cmd = m?.cmd && s.cmd ? cmdChip(s.cmd) : "", code = m && s.value && s.state !== "added_in" ? `<code>${esc(homeWord(s.value))}</code>` : "";
-    // a row with a why has no switch, just the word; one the person set keeps a switch reading Not shared, which this
-    // page cannot flip yet, and a row with no word reads only its state
+    // a row with a why has no switch, just the word; one the person set reads Not shared with Share beside it, which
+    // takes it off mcp_hosting_exclude, and a row with no word reads only its state
     const why = m ? `<div class="why"><span class="w">${esc(m.word)}${cmd}${code}</span>${m.line ? `<span class="wl">${esc(m.line)}</span>` : ""}</div>` : "<span></span>";
-    const state = !m || s.state === "excluded" ? `<span class="acts"><span class="always">Not shared</span></span>` : "<span></span>";
+    const state = s.state === "excluded" ? `<span class="acts">${exAct(s.name, false)}<span class="always">Not shared</span></span>`
+      : !m ? `<span class="acts"><span class="always">Not shared</span></span>` : "<span></span>";
     return `<div class="srv out"><span class="lamp ended" aria-hidden="true"><i></i></span>${name}${why}${state}</div>`;
   }
   // a command whose own copy of the config is older joins at its next session, which rewrites the copy (fin, Oct 12)
@@ -817,7 +818,7 @@ function serverRow(s, dim) {
   const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
   return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
     + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.started ? `Started ${esc(atWord(s.started))}` : ""}${s.started && s.last ? " · " : ""}${s.last ? `Last call ${esc(atWord(s.last))}` : ""}${s.err ? ` <span class="state limit">${esc(s.err)}</span>` : ""}</span>`
-    + `<span class="acts">${test}<span class="always">Shared</span></span></div>`;
+    + `<span class="acts">${test}${exAct(s.name, true)}<span class="always">Shared</span></span></div>`;
 }
 const mcpServersHtml = () => {
   const m = ui.mcp;
@@ -867,6 +868,32 @@ async function setShare(on) {
     return;
   }
   ui.shareSaid = { word: r.body.restart_required ? "After a restart" : "New sessions" };
+  await rereadMcp();
+}
+/** Share, or stop sharing, one server: Don't share adds it to [daemon] mcp_hosting_exclude, Share takes it off. */
+const exAct = (name, shared) => {
+  const said = ui.exSaid[name], busy = said === "saving";
+  const word = said && !busy ? `<span class="said${said.bad ? " limit" : ""}">${esc(said.word)}</span>` : "";
+  return `${word}<button class="act quiet small" data-act="mexclude" data-name="${esc(name)}" data-v="${shared}"${busy ? " disabled" : ""}>${shared ? "Don't share" : "Share"}</button>`;
+};
+async function setExcluded(name, out) {
+  if (!ui.topo) return;
+  const t = structuredClone(ui.topo.topology ?? {});
+  const now = (t.daemon?.mcp_hosting_exclude ?? []).filter((x) => x !== name);
+  t.daemon = { ...(t.daemon ?? {}), mcp_hosting_exclude: out ? [...now, name] : now };
+  ui.exSaid[name] = "saving"; render();
+  const r = await API.put("/api/topology", { topology: t });
+  if (!r.ok || !r.body?.ok) {
+    const found = r.body?.findings ?? [];
+    if (found.length) console.warn(`settings: saving mcp_hosting_exclude refused: ${found.map((x) => x.message).join("; ")}`);
+    ui.exSaid[name] = { word: found.length ? "Config error" : "Not saved", bad: true };
+    render();
+    return;
+  }
+  ui.exSaid[name] = { word: r.body.restart_required ? "After a restart" : "New sessions" };
+  await rereadMcp();
+}
+async function rereadMcp() {
   const [topo, mcp, mem] = await Promise.all([API.get("/api/topology"), API.get("/api/mcp"), API.get("/api/mcp/memory")]);
   ui.topo = topo.ok ? topo.body : ui.topo;
   ui.mcp = mcp.ok ? mcp.body : mcp.status === 404 ? false : null;
@@ -1381,6 +1408,7 @@ document.addEventListener("click", (e) => {
     case "restart": pressRestart(); return;
     case "restart-now": ui.armed = null; restartSplice(); return;
     case "mtest": testServer(d.name); return;
+    case "mexclude": setExcluded(d.name, d.v === "true"); return;
     case "mshare": setShare(d.v === "true"); return;
     case "adv": ui.adv[d.id] = !ui.adv[d.id]; break;
     case "runlog": ui.runLog = !ui.runLog; render(); return;

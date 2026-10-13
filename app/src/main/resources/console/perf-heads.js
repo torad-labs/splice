@@ -58,10 +58,11 @@ const PERF_HEADS = (() => {
     { label: "Cache hit", has: (h) => h.cache_hit_ratio != null, cell: (h) => pct(h.cache_hit_ratio) ?? none("Not reported") },
     { label: "Cold cache", has: (h) => h.cache_cold > 0, cell: (h) => count(h.cache_cold) },
     { label: "Most at once", has: (h) => h.peak_inflight > 0, cell: (h) => count(h.peak_inflight) },
-    // The spec's count in its own words (§3, "telemetry dropped"): requests during which splice dropped some of the
-    // records it keeps on this disk. The lost writes are other records, never the row that counts them, so no Requests
-    // row carries a mark (marlin, gap 410). Shown only above zero; "Not measured" where no row carried the counter.
-    { label: "Telemetry dropped", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
+    // The spec's count (§3), shown as "Record gaps" by a recorded Deviation: requests during which splice dropped some
+    // of the records it keeps on this disk. Telemetry reads as data leaving the machine, and these are local writes. The
+    // lost writes are other records, never the row that counts them, so no Requests row carries a mark (marlin, gap
+    // 410). Shown only above zero; "Not measured" where no row carried the counter.
+    { label: "Record gaps", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
   ];
   const head = (c) => `${c.label}${c.key ? KEY : ""}`;
 

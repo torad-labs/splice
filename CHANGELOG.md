@@ -20,7 +20,8 @@
   report token usage, so Claude Code auto-compacts, and their errors say what happened.
 - **Requests and replies stay on your disk for your history window.** Left unset, trace follows
   `historyRetentionDays`; `traceRetentionDays` sets its own. Sign-in headers are removed, and only you can read
-  them. A capture change applies from the next request; turning capture off stops new writes and deletes nothing.
+  them. A capture change applies from the next request; turning capture off stops new writes, and the next daemon start
+  deletes that head's kept trace days.
 - **One-command setup.** `splice add codex`, or `grok`, `kimi`, `muse`, `deepseek`, `openrouter`,
   `claude` or `local`, signs in where the service needs it, saves the head and installs its command. An optional turn checks
   that command; a failed check leaves the head saved.
@@ -338,7 +339,7 @@ origin.
 - **The control API sets capture, budgets and webhook alerts, and sends a playground prompt.**
   Body capture is on by default and can be turned off per head. `GET`/`PUT /api/heads/{head}/capture`
   reports and changes capture per head, applying from the next request. Turning capture off stops
-  new writes; days already kept stay until retention removes them.
+  new writes, and the next daemon start deletes that head's kept trace days.
   `GET`/`PUT /api/budgets` holds per-head daily USD budgets with a `warn`/`block` action, defaulting
   the action from the new `budgetDefaultAction` knob when a row omits one. `GET`/`PUT /api/alerts`
   holds a desktop-notification flag and one webhook URL, and `POST /api/alerts/test` posts one test to the saved webhook URL, never an unsaved draft.
@@ -1580,7 +1581,7 @@ origin.
   `traceRetentionDays` are deleted once you set it, shorter or longer than your history window (left unset,
   trace follows `historyRetentionDays`), and a body past `traceMaxBodyChars` is cut and flagged.
   `PUT /api/heads/{head}/capture` also turns a head's trace off, from the next request. Turning it off
-  keeps the days already written; kept data can be deleted separately.
+  stops new writes, and the next daemon start deletes that head's kept days; kept data can also be deleted separately.
   `splice doctor` names heads whose trace is off.
   To opt out, use the head's existing key in place of `example`, then restart:
 

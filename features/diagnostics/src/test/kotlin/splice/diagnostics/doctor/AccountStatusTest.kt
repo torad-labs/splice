@@ -31,6 +31,8 @@ import java.util.TimeZone
 
 class AccountStatusTest {
 
+    private val lastLeft = "one login left; the next plan limit has no fallback"
+
     private val body = """
         {"claudex":{"kind":"chatgpt-oauth","login":"automated","present":true,
           "account_pool":{"selected_label":"work","accounts":[
@@ -66,14 +68,15 @@ class AccountStatusTest {
     }
 
     @Test
-    fun `status names the account, the open count, the windows and the last switch`() {
+    fun `status names the account, the open count, the last login left, the windows and the last switch`() {
         val view = AccountPoolProjection().parse(body).getValue("claudex")
         val text = AccountPoolText { 1_000_000L + 3 * 60_000L }
         assertEquals(
-            "on work (1 of 2 open) · 5h 12% · 7d 40%; switched from primary to work 3m ago: 7d window exhausted",
+            "on work (1 of 2 open) · $lastLeft · 5h 12% · 7d 40%; switched from primary to work 3m ago: " +
+                "7d window exhausted",
             text.summary(view),
         )
-        assertEquals(CheckStatus.OK, text.check("claudex", view).status)
+        assertEquals(CheckStatus.INFO, text.check("claudex", view).status)
     }
 
     private fun withPin(label: String): String =
@@ -84,7 +87,7 @@ class AccountStatusTest {
         val text = AccountPoolText { 1_000_000L + 3 * 60_000L }
         assertTrue(
             text.summary(AccountPoolProjection().parse(withPin("work")).getValue("claudex"))
-                .startsWith("on work (1 of 2 open) · pinned to work · 5h 12%"),
+                .startsWith("on work (1 of 2 open) · $lastLeft · pinned to work · 5h 12%"),
         )
         val hostile = AccountPoolProjection().parse(withPin("a b;rm")).getValue("claudex")
         assertFalse(text.summary(hostile).contains("pinned"))
@@ -93,7 +96,7 @@ class AccountStatusTest {
     @Test
     fun `status names the selected native login and counts its real roster`() {
         val view = nativeView()
-        assertEquals("on claude's login (1 of 2 open)", AccountPoolText { 0L }.summary(view))
+        assertEquals("on claude's login (1 of 2 open) · $lastLeft", AccountPoolText { 0L }.summary(view))
     }
 
     @Test
@@ -114,8 +117,8 @@ class AccountStatusTest {
     @Test
     fun `doctor does not erase the native logins that Accounts offers`() {
         val check = AccountPoolText { 0L }.check("claude-splice", nativeView())
-        assertEquals(CheckStatus.OK, check.status)
-        assertEquals("on claude's login (1 of 2 open)", check.detail)
+        assertEquals(CheckStatus.INFO, check.status)
+        assertEquals("on claude's login (1 of 2 open) · $lastLeft", check.detail)
     }
 
     @Test

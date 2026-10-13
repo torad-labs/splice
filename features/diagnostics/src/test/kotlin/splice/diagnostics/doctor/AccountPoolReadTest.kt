@@ -118,7 +118,10 @@ class AccountPoolReadTest {
         val read = assertInstanceOf(AccountPoolsRead.Read::class.java, JdkAccountPoolRead()(port, env(true, port)))
         val view = read.pools.getValue("claude-splice")
         assertEquals(listOf("native:claude", "native:claude-splice"), view.accounts.map { it.label })
-        assertEquals("on claude's login (1 of 2 open)", AccountPoolText().summary(view))
+        assertEquals(
+            "on claude's login (1 of 2 open) · $lastLeft",
+            AccountPoolText().summary(view),
+        )
     }
 
     @Test
@@ -327,6 +330,8 @@ class AccountPoolReadTest {
             """.trimIndent(),
         )
     }
+
+    private val lastLeft = "one login left; the next plan limit has no fallback"
 
     private val nativeRoster = """
         {"accounts":[

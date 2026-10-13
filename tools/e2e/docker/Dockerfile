@@ -7,9 +7,11 @@
 # the wrapper move goes to the two in-container mock upstreams, or the run fails.
 FROM eclipse-temurin:21-jre-noble AS fresh
 
-# Every input is pinned so two builds a month apart prove the same machine (review of #116):
-# Node from the official tarball, verified against its published sha256; Claude Code at an exact
-# version (run.sh passes Versions.kt's TESTED_CLAUDE_CODE value explicitly).
+# What splice is tested against is pinned so two builds a month apart prove the same machine (review of #116):
+# Node from the official tarball, verified against its published sha256; Bun the same way; Claude Code at an exact
+# version (run.sh passes Versions.kt's TESTED_CLAUDE_CODE value explicitly). The base image is a tag and the apt
+# packages carry no versions, so a rebuild can take a newer JRE and newer system tools: no PASS receipt records the
+# base image's digest to pin it to.
 ARG NODE_VERSION=24.20.0
 ARG NODE_SHA256=2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2
 ARG CLAUDE_CODE_VERSION=2.1.296

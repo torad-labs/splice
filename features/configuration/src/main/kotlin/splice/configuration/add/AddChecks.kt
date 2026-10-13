@@ -102,7 +102,7 @@ internal class AddChecks(
             credential(c, env),
             reachable(c.provider.baseUrl),
             modelsListed(c.models, listed, c.resolved.policy.listAuthoritative),
-            modelWindows(c.provider.models, listed.withServed(runtime.windows)),
+            modelWindows(c.provider.models, listed.withServed(runtime.windows), runtime.unchecked),
         ) + listOfNotNull(
             refused.ifEmpty { null }?.let { AddCheck("local runtime", false, "the runtime refuses $it") },
             runtime.unchecked?.let { AddCheck("local runtime", true, "rows not checked: $it") },
@@ -228,14 +228,15 @@ internal class AddChecks(
             }
         }
 
-    /** Check advertised limits and name every declared row whose limit could not be checked. */
-    fun modelWindows(models: List<ModelEntry>, listed: ListedModels): AddCheck {
+    /** Check advertised limits and name every declared row whose limit could not be checked: by the local runtime's
+     *  [unchecked] reason when it never answered, never as the provider listing no size (splice-usage, Oct 13). */
+    fun modelWindows(models: List<ModelEntry>, listed: ListedModels, unchecked: String? = null): AddCheck {
         val windows = (listed as? ListedModels.Listed)?.windows.orEmpty()
         val oversized = models.any { row -> windows[row.id]?.let { row.contextWindow > it } == true }
         val detail = models.joinToString("; ") { row ->
             val served = windows[row.id]
             when {
-                served == null -> "${row.id} unchecked: provider lists no window size"
+                served == null -> "${row.id} unchecked: ${unchecked ?: "provider lists no window size"}"
                 row.contextWindow > served -> "${row.id} declares ${row.contextWindow}, provider serves $served"
                 else -> "${row.id} fits: declares ${row.contextWindow}, provider serves $served"
             }

@@ -59,6 +59,7 @@
 .legend { display: flex; flex-wrap: wrap; gap: .6rem 1.4rem; margin: 3rem 0 0 5.4rem; }
 .legend .key { display: inline-flex; align-items: center; gap: .5rem; font: 500 .98rem/1 var(--font-data); color: var(--text-body); }
 .legend .key i, .tip p i { width: .85rem; height: .85rem; border-radius: .2rem; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
+.legend .key.fail i { width: .45rem; height: .45rem; margin: 0 .2rem; border-radius: 50%; background: var(--limit); box-shadow: none; }  /* the mark under a bar */
 .tip {
   position: absolute; top: 0; z-index: 5; min-width: 19rem; padding: .9rem 1.1rem; transform: translateX(1.4rem); pointer-events: none;
   background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);

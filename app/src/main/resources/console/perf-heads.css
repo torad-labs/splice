@@ -41,6 +41,7 @@
 .prow.msub .cmd { align-self: baseline; padding-left: 1rem; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); }
 .prow.msub .bad { color: var(--limit); font-weight: 600; }
 .prow.msub.more { padding-bottom: .8rem; }
+.prow.msub.more .act { white-space: nowrap; }  /* "4 more models" broke into two lines in the narrow model column at 1440 */
 
 /* too narrow for every column: each figure says its own label, the command's chip leads its row */
 @container perf (max-width: 58rem) {

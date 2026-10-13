@@ -390,7 +390,9 @@ function chartHtml() {
     + x.vals.map(([head, v]) => `<a class="${alt.has(head) ? "alt" : ""}" href="${reqUrl({ cmd: cmdOf(head), from: x.from, to: x.to })}" style="--c:${colorOf(providerOfHead(head))};flex:${((v / x.total) * 1000).toFixed(2)} 1 0" aria-label="${esc(cmdOf(head))}"></a>`).join("")
     + `</div>${x.failed ? `<a class="fails" href="${reqUrl({ from: x.from, to: x.to, outcome: "fail" })}" aria-label="${failWords(x)}" title="${failWords(x)}"></a>` : ""}<span class="x">${x.label}</span></div>`).join("");
   const grid = [1, .5].map((f) => `<div class="gl" style="bottom:${f * 100}%"><span>${measureText(top * f)}</span></div>`).join("");
-  const legend = `<div class="legend">${shown.map((h) => `<span class="key">${swatch(h)}${esc(cmdOf(h))}</span>`).join("")}</div>`;
+  // the dot under a bar is said in the legend too, where a first look finds it, not only in its hover (V4-444 walk)
+  const failKey = sl.some((x) => x.failed) ? `<span class="key fail"><i aria-hidden="true"></i>Failed requests</span>` : "";
+  const legend = `<div class="legend">${shown.map((h) => `<span class="key">${swatch(h)}${esc(cmdOf(h))}</span>`).join("")}${failKey}</div>`;
   const sw = `<div class="switch" role="group" aria-label="Measure">${[["tokens", "Tokens"], ["cost", "Cost"]].map(([v, t]) => `<button data-act="measure" data-v="${v}" aria-pressed="${ui.measure === v}">${t}</button>`).join("")}</div>`;
   const tip = ui.hover != null ? tipHtml(sl[ui.hover], sl.length) : "";
   return `<section class="chart card"><header>${sw}</header><div class="plot">${grid}<div class="cols" style="--n:${sl.length}">${bars}</div>${tip}</div>${legend}</section>`;

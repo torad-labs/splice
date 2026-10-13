@@ -55,7 +55,7 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `GET /api/perf/summary?window=1h,24h,7d` | per head: windowed summary (v0.4.0); `last_ts` was removed 2026-10-12, since no reader took it | none |
 | `GET /api/economics` | per head: hourly buckets of what Accounts reads, cost and rate-limited turns (v0.4.0); since 2026-10-12 the token, byte and tool sums stay on disk and are no longer served | burn page |
 | `GET /api/auth` | per head: present, verdict, display name, refusal, the key's variable and masked key, a read failure in fixed words, plus the account pool (v0.4.0); kind, login, account ref, last refresh and the other provider fields were removed 2026-10-12, since no reader took them | Compare, Teams, Accounts, doctor |
-| `POST /api/auth/{head}/{refresh,login}` | refresh a token; login is "manual" for OAuth kinds | refresh button |
+| `POST /api/auth/{head}/{refresh,login}` | refresh a token; login is "manual" for OAuth kinds | none: the refresh button is not on today's console, removed with console-next on Oct 7, 2026 (6a8342d4e); the route stays for scripts |
 | `GET /api/compact` | outcome totals and event tail | compaction page |
 | `GET /api/sessions` | Claude Code session registry joined to heads (v0.4.0) | none |
 | `GET /api/logs/{head}?tail=` | log tail | logs page |
@@ -471,7 +471,7 @@ expect it; **only here** means no competing console can offer it.
 |---|---|---|---|
 | Catalog per head | Rows with id, label, description, slot, context window, rates, pinned. The tiers Claude Code will and will not get on this head, and what degrades when a tier is undeclared. | route | table stakes |
 | Windows | Extra windows and window rules, the forced head-wide window, the live window each session reports. | route | daemon |
-| Add model | The `add-model` flow as a form. | route | daemon |
+| Add model | The `add-model` flow as a form. Not on today's console: removed with console-next on Oct 7, 2026 (6a8342d4e). `GET` and `POST /api/add-model` stay for scripts, and the form comes back only as page work. | route only | daemon |
 
 ### 4.9 Logs
 

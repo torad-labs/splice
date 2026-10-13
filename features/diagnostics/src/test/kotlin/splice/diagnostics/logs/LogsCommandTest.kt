@@ -226,7 +226,7 @@ class LogsFollowDeltaTest {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "seed\n")
         val baseline = Files.size(log)
-        val giant = "x".repeat(1024 * 1024 + 10) // one line, longer than the whole read window
+        val giant = "x".repeat(LOG_TAIL_BYTES + 10) // one line, longer than the whole read window
         Files.writeString(log, giant + "\nafter the giant\n", java.nio.file.StandardOpenOption.APPEND)
 
         val (next, out) = pollCapture {

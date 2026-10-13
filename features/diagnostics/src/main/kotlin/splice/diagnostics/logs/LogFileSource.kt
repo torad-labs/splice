@@ -158,7 +158,7 @@ internal data class LogRebase(val text: String, val offset: Long)
 // why: the bytes one tail or follow read takes from the end of daemon.log, its own window rather than the control
 // plane's shared ?tail cap: enough for LOG_MAX_LINES lines of ordinary length, so a head-filtered tail still finds its
 // lines among every other head's.
-private const val LOG_TAIL_BYTES = 4 * 1024 * 1024
+internal const val LOG_TAIL_BYTES = 4 * 1024 * 1024
 
 /** The most lines one log read returns; /api/logs clamps its ?tail by this, not by the perf route's cap. */
 public const val LOG_MAX_LINES: Int = 10_000

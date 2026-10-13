@@ -396,6 +396,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     // A day file's second roll in one UTC day moves the old .1 to the next free number before JsonlSink replaces it.
     "core/src/main/kotlin/splice/core/storage/DayGenerations.kt" to mapOf("Files.move(" to 1),
+    // A store's empty-store marker, split from ActivityDays (12fc612ac), in the README row for the .deleted markers.
+    "core/src/main/kotlin/splice/core/storage/DayFiles.kt" to mapOf("writeAtomic0600(" to 1),
     // V4-457: stable directory and store locks exclude publication, eviction, purge and retention.
     "core/src/main/kotlin/splice/core/storage/DayMutationLock.kt" to mapOf("FileChannel.open(" to 1),
     // V4-457: one content-addressed binary body pack accompanies both JSONL generations of a UTC trace day.

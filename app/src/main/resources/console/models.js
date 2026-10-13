@@ -425,10 +425,10 @@ function paneHtml() {
   const calm = ["Applied", "Saved", "Restarting"].includes(ui.said);
   const saidHtml = ui.said ? `<span class="said${calm ? "" : " limit"}">${ui.said === "Restarting" ? ICON.wait : ""}${esc(ui.said)}</span>` : "";
   const restart = ui.said === "Saved" && ui.pending ? restartBtn() : "";
-  const form = `<section class="form">`
+  const form = `<section class="form" style="--edge:${colorOf(c.family)}">`
     + addedHtml(c)
     + '<h3 class="gh">Where it goes</h3>'
-    + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to">`
+    + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url${dirt(d.url !== c.url)}" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to">`
     + `${st.url.ok ? "" : `<span class="said limit">Not an address</span>`}${sharedHtml(c)}</div>`
     + whereHtml(c, d, st.own)
     + signInHtml(c, d, st.own)
@@ -556,7 +556,7 @@ function nowRow(c) {
 }
 
 // ---------- a command's own fields, edited in place (gaps 461/462; marlin's four groups) ----------
-// Where it goes and Running write the command's own table; Sign-in, Runs on this machine and the quirks write its provider's,
+// Where it goes and Running write the command's own table; Sign-in, Runs on this computer and the quirks write its provider's,
 // which every command on the provider shares, so those rows name the others (sharedHtml). Prices write the command's own
 // card per model, [heads.KEY.rates], which wins over the provider's row. Every value reaches the daemon in the one Save.
 const MASKED = "********"; // GET /api/topology serves each extra_headers value as this; sent back, it keeps the stored one
@@ -569,7 +569,7 @@ function fieldsOf(c) {
     port: numText(h.port), prefix: h.discovery_prefix ?? "", kind: p.auth?.kind ?? "", env: p.auth?.env ?? "",
     headers: Object.entries(p.extra_headers ?? {}).map(([name, value]) => ({ name, value })),
     local: p.local ?? null, isolate: [...(h.claude?.isolate ?? [])],
-    rates: Object.fromEntries(c.models.map((m) => [m.id, { i: numText(m.rates?.input), o: numText(m.rates?.output) }])),
+    rates: Object.fromEntries(c.models.map((m) => [m.id, { i: numText(m.rates?.input), o: numText(m.rates?.output), c: null }])),
     quirks: { ...(p.quirks ?? {}) },
   };
 }
@@ -593,8 +593,8 @@ function ownState(c, d) {
   const names = d.headers.map((x) => x.name.trim());
   const header = d.headers.map((x, i) => (x.fresh && !names[i] && !x.value) || (HEADER_NAME.test(names[i]) && names.indexOf(names[i]) === i && x.value !== ""));
   const rate = Object.fromEntries(Object.entries(d.rates).map(([id, x]) => {
-    const w = was.rates[id], moved = x.i !== w?.i || x.o !== w?.o;
-    return [id, { i: !moved || priceOk(x.i), o: !moved || priceOk(x.o) }];
+    const w = was.rates[id], moved = x.i !== w?.i || x.o !== w?.o || x.c !== w?.c;
+    return [id, { i: !moved || priceOk(x.i), o: !moved || priceOk(x.o), c: !moved || !cacheShown(c, id, x) || priceOk(x.c ?? x.i) }];
   }));
   const quirk = Object.fromEntries(quirksOf(c).map((q) => [q.name, quirkOk(q, d.quirks[q.name])]));
   const s = {
@@ -606,8 +606,8 @@ function ownState(c, d) {
 }
 const bad = (ok, word) => (ok ? "" : `<span class="said limit">${word}</span>`);
 function whereHtml(c, d, s) {
-  return `<span class="lbl">Port</span><div class="ctl"><input class="field num" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port">${bad(s.port, "Not a port")}</div>`
-    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}</div>`;
+  return `<span class="lbl">Port</span><div class="ctl"><input class="field num${dirt(d.port !== fieldsOf(c).port)}" id="h-port" value="${esc(d.port)}" inputmode="numeric" spellcheck="false" autocomplete="off" aria-label="Port">${bad(s.port, "Not a port")}</div>`
+    + `<span class="lbl">Model prefix</span><div class="ctl"><input class="field mono${dirt(d.prefix !== fieldsOf(c).prefix)}" id="h-prefix" value="${esc(d.prefix)}" spellcheck="false" autocomplete="off" aria-label="Model prefix">${bad(s.prefix, "Needs a prefix")}</div>`;
 }
 // the names of what a command can share with your own Claude Code, by the item splice.toml spells (claude.share, isolate)
 const SHARE_NAME = { settings: "Settings", mcps: "MCP servers", skills: "Skills", hooks: "Hooks", agents: "Agents", commands: "Commands",
@@ -618,42 +618,67 @@ function signInHtml(c, d, s) {
   const kinds = vocab().auth_kinds ?? [];
   const items = kinds.map((x) => `<button role="menuitem" data-act="kind" data-v="${esc(x.kind)}"><span>${esc(x.label)}</span><span class="mmeta">${esc(x.kind)}</span></button>`).join("");
   const env = d.kind === "api-key"
-    ? `<span class="lbl">Key variable</span><div class="ctl"><input class="field mono" id="h-env" value="${esc(d.env)}" placeholder="${esc(`${c.provKey.toUpperCase()}_API_KEY`)}" spellcheck="false" autocomplete="off" aria-label="Key variable">${bad(s.env, "Not a variable name")}</div>` : "";
+    ? `<span class="lbl">Key variable</span><div class="ctl"><input class="field mono${dirt(d.env !== fieldsOf(c).env)}" id="h-env" value="${esc(d.env)}" placeholder="${esc(`${c.provKey.toUpperCase()}_API_KEY`)}" spellcheck="false" autocomplete="off" aria-label="Key variable">${bad(s.env, "Not a variable name")}</div>` : "";
   const rows = d.headers.map((x, i) => `<div class="hdr">${x.fresh ? `<input class="field mono" id="hn-${i}" data-hn="${i}" value="${esc(x.name)}" placeholder="Name" spellcheck="false" autocomplete="off" aria-label="Header name">` : `<span class="hname">${esc(x.name)}</span>`}`
-    + `<input class="field mono" type="password" id="hv-${i}" data-hv="${i}" value="${x.value === MASKED ? "" : esc(x.value)}" placeholder="${x.value === MASKED ? "Kept" : "Value"}" autocomplete="off" aria-label="${esc(x.name || "Header")} value">`
+    + `<input class="field mono${dirt(x.fresh || x.value !== MASKED)}" type="password" id="hv-${i}" data-hv="${i}" value="${x.value === MASKED ? "" : esc(x.value)}" placeholder="${x.value === MASKED ? "Kept" : "Value"}" autocomplete="off" aria-label="${esc(x.name || "Header")} value">`
     + `<button class="icon" data-act="hdr-rm" data-i="${i}" aria-label="Remove">${GL.close}</button>${bad(s.header[i], "Needs a name and a value")}</div>`).join("");
   return '<h3 class="gh">Sign-in</h3>'
     + `<span class="lbl">Signs in with</span><div class="ctl menuwrap"><button class="pickbtn" data-act="kindpick">${esc(kindName(d.kind))}${ICON.caret}</button>${ui.pick === "kind" ? `<div class="menu">${items}</div>` : ""}${sharedHtml(c)}</div>`
     + env
     + `<span class="lbl">Headers</span><div class="ctl col">${rows}<button class="act quiet" data-act="hdr-add">Add header</button></div>`;
 }
+// a model priced nowhere has no cache price either: once its row is priced, Cache read shows beside it, filled with the In
+// price splice charges a cache read at until a real one is typed (marlin, Oct 13: overcount, but never hide it)
+const unpriced = (c, id) => !c.models.find((m) => m.id === id)?.rates && !topology().heads?.[c.key]?.rates?.[id];
+const cacheShown = (c, id, x) => unpriced(c, id) && Boolean(x.i || x.o || x.c);
 function pricesHtml(c, d, s) {
   if (!c.models.length) return "";
-  const cell = (id, k) => `<td class="num"><input class="field price" id="pr-${k}-${esc(id)}" data-rate="${esc(id)}" data-rk="${k}" value="${esc(d.rates[id][k])}" placeholder="No price" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="${k === "i" ? "In" : "Out"} per 1M tokens">${bad(s.rate[id][k], "Not a price")}</td>`;
-  const body = c.models.map((m) => `<tr><td class="mname">${esc(m.label)}</td>${cell(m.id, "i")}${cell(m.id, "o")}</tr>`).join("");
+  const was = fieldsOf(c).rates;
+  const cell = (id, k) => `<td class="num"><input class="field price${dirt(d.rates[id][k] !== was[id][k])}" id="pr-${k}-${esc(id)}" data-rate="${esc(id)}" data-rk="${k}" value="${esc(d.rates[id][k])}" placeholder="No price" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="${k === "i" ? "In" : "Out"} per 1M tokens">${bad(s.rate[id][k], "Not a price")}</td>`;
+  const shown = c.models.some((m) => cacheShown(c, m.id, d.rates[m.id]));
+  const cache = (id) => (!shown ? "" : !cacheShown(c, id, d.rates[id]) ? '<td class="num"></td>'
+    : `<td class="num"><input class="field price dirty" id="pr-c-${esc(id)}" data-rate="${esc(id)}" data-rk="c" value="${esc(d.rates[id].c ?? d.rates[id].i)}" inputmode="decimal" spellcheck="false" autocomplete="off" aria-label="Cache read per 1M tokens">${bad(s.rate[id].c, "Not a price")}</td>`);
+  const body = c.models.map((m) => `<tr><td class="mname">${esc(m.label)}</td>${cell(m.id, "i")}${cell(m.id, "o")}${cache(m.id)}</tr>`).join("");
   return '<h3 class="gh">Prices</h3>'
-    + `<div class="ctl wide"><table class="every prices"><thead><tr><th>Model</th><th class="num">In per 1M</th><th class="num">Out per 1M</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    + `<div class="ctl wide"><table class="every prices"><thead><tr><th>Model</th><th class="num">In per 1M</th><th class="num">Out per 1M</th>${shown ? '<th class="num">Cache read per 1M</th>' : ""}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 // the items a command shares with your own Claude Code: every item splice shares, each one this command keeps its own of unpressed
 function runningHtml(c, d, s) {
   const local = cmdDialect(c) === "openai-chat" ? (() => {
     const on = d.local ?? autoLocal(c);
-    return `<span class="lbl">Runs on this machine</span><div class="ctl"><div class="switch" role="group" aria-label="Runs on this machine">`
+    return `<span class="lbl">Runs on this computer</span><div class="ctl"><div class="switch" role="group" aria-label="Runs on this computer">`
       + `<button data-act="local" data-v="yes" aria-pressed="${on}">Yes</button><button data-act="local" data-v="no" aria-pressed="${!on}">No</button></div>${sharedHtml(c)}</div>`;
   })() : "";
   const items = vocab().share ?? [];
   const share = items.length ? `<span class="lbl">Shares with Claude Code</span><div class="ctl"><div class="switch multi" role="group" aria-label="Shares with Claude Code">${items.map((x) => `<button data-act="share" data-v="${esc(x)}" aria-pressed="${!d.isolate.includes(x)}">${esc(shareName(x))}</button>`).join("")}</div></div>` : "";
-  const quirks = quirksOf(c).map((q) => `<span class="lbl mono">${esc(q.name)}</span><div class="ctl">${quirkCtl(q, d.quirks[q.name])}${bad(s.quirk[q.name], "Not a value")}</div>`).join("");
+  const was = fieldsOf(c).quirks;
+  const quirks = quirksOf(c).map((q) => `<span class="lbl" title="${esc(q.name)}">${esc(quirkName(q.name))}</span><div class="ctl">${quirkCtl(q, d.quirks[q.name], JSON.stringify(was[q.name]) !== JSON.stringify(d.quirks[q.name]))}${QUIRK_UNIT[q.name] ? `<span class="unit">${QUIRK_UNIT[q.name]}</span>` : ""}${bad(s.quirk[q.name], "Not a value")}</div>`).join("");
   return '<h3 class="gh">Running</h3>' + local + share + quirks;
 }
-function quirkCtl(q, v) {
+const dirt = (on) => (on ? " dirty" : "");
+// fin's name for each quirk, from its doc comment in QuirksConfig.kt; a key with none reads as itself
+const QUIRK_NAME = {
+  store: "Provider keeps responses", account_id_header: "Send account ID", cache_key: "Prompt cache key",
+  summary_field: "Ask for reasoning summaries", tool_choice: "Send tool choice", reasoning_cache: "Keep reasoning between tool calls",
+  parallel_tool_calls: "Parallel tool calls", websocket: "Use WebSocket", summary_delivery: "How summaries stream",
+  tool_surface: "Load tools on demand", code_mode: "Code mode", code_mode_workers: "Code mode workers",
+  code_mode_timeout_ms: "Code mode step timeout", code_mode_heap: "Memory per worker", code_mode_memory_mb: "Code mode memory in all",
+  code_mode_models: "Code mode models", reasoning_effort: "Send reasoning effort", chat_effort_vocabulary: "Provider's effort words",
+  stream_usage: "Ask for token usage", slot_affinity: "One slot per conversation", mfjs: "Kimi tool schemas",
+  block_allowlist: "Block types allowed", strip_cache_control: "Remove cache markers", synthesize_signatures: "Sign thinking blocks",
+  map_thinking_adaptive: "Map thinking to Kimi's effort", strip_sampling_params: "Remove sampling settings",
+  reanchor_prefill: "Resume a broken stream", tool_name_cap: "Longest tool name", zstd_request_body: "Compress requests",
+};
+const QUIRK_UNIT = { code_mode_timeout_ms: "ms", code_mode_heap: "MB", code_mode_memory_mb: "MB" };
+const quirkName = (k) => QUIRK_NAME[k] ?? k;
+function quirkCtl(q, v, moved) {
   const opt = (val, word) => `<button data-act="quirk" data-q="${esc(q.name)}" data-v="${esc(val === undefined ? "" : JSON.stringify(val))}" aria-pressed="${JSON.stringify(v) === JSON.stringify(val)}">${esc(word)}</button>`;
   const sw = (opts) => `<div class="switch" role="group" aria-label="${esc(q.name)}">${opt(undefined, "Provider's own")}${opts}</div>`;
   if (q.kind === "bool") return sw(opt(true, "On") + opt(false, "Off"));
   if (q.words) return sw(q.words.map((w) => opt(w, w)).join(""));
-  if (q.kind === "list") return `<input class="field mono" id="q-${esc(q.name)}" data-ql="${esc(q.name)}" value="${esc((v ?? []).join(", "))}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(q.name)}">`;
+  if (q.kind === "list") return `<input class="field mono${dirt(moved)}" id="q-${esc(q.name)}" data-ql="${esc(q.name)}" value="${esc((v ?? []).join(", "))}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(q.name)}">`;
   if (q.kind === "table") return `<span class="fig mono">${v === undefined ? "Provider's own" : esc(JSON.stringify(v))}</span>`;
-  return `<input class="field mono${q.kind === "int" ? " num" : ""}" id="q-${esc(q.name)}" data-q="${esc(q.name)}" data-qk="${q.kind}" value="${esc(v ?? "")}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(q.name)}">`;
+  return `<input class="field mono${q.kind === "int" ? " num" : ""}${dirt(moved)}" id="q-${esc(q.name)}" data-q="${esc(q.name)}" data-qk="${q.kind}" value="${esc(v ?? "")}" placeholder="Provider's own" spellcheck="false" autocomplete="off" aria-label="${esc(q.name)}">`;
 }
 function ownInput(t, d) {
   if (t.id === "h-port") d.port = t.value;
@@ -661,7 +686,7 @@ function ownInput(t, d) {
   else if (t.id === "h-env") d.env = t.value.trim();
   else if (t.dataset.hn) d.headers[+t.dataset.hn].name = t.value;
   else if (t.dataset.hv) { const x = d.headers[+t.dataset.hv]; x.value = t.value || (x.fresh ? "" : MASKED); }
-  else if (t.dataset.rate) d.rates[t.dataset.rate][t.dataset.rk] = t.value.trim();
+  else if (t.dataset.rate) d.rates[t.dataset.rate][t.dataset.rk] = t.dataset.rk === "c" && !t.value.trim() ? null : t.value.trim();
   else if (t.dataset.ql) { const v = t.value.split(",").map((x) => x.trim()).filter(Boolean); d.quirks[t.dataset.ql] = v.length ? v : undefined; }
   else if (t.dataset.q) {
     const v = t.value.trim();
@@ -696,14 +721,15 @@ function changesOf(c) {
     add(`Prompt in ${nameOfRoot(root)}`, a.per[root] ? clip(a.per[root].file || a.per[root].text) || "Set" : "None", d.per[root] ? clip(d.per[root].file || d.per[root].text) || "Set" : "None");
   }
   const yn = (v) => (v ? "Yes" : "No");
-  add("Runs on this machine", yn(a.local ?? autoLocal(c)), yn(d.local ?? autoLocal(c)));
+  add("Runs on this computer", yn(a.local ?? autoLocal(c)), yn(d.local ?? autoLocal(c)));
   for (const x of vocab().share ?? []) add(`Shares ${shareName(x)}`, yn(!a.isolate.includes(x)), yn(!d.isolate.includes(x)));
   for (const m of c.models) {
     add(`${m.label} in`, a.rates[m.id].i || "No price", d.rates[m.id].i || "No price");
     add(`${m.label} out`, a.rates[m.id].o || "No price", d.rates[m.id].o || "No price");
+    if (cacheShown(c, m.id, d.rates[m.id])) add(`${m.label} cache read`, "No price", d.rates[m.id].c ?? d.rates[m.id].i);
   }
   const qv = (v) => (v === undefined ? "Provider's own" : Array.isArray(v) ? v.join(", ") : String(v));
-  for (const q of quirksOf(c)) add(q.name, qv(a.quirks[q.name]), qv(d.quirks[q.name]));
+  for (const q of quirksOf(c)) add(quirkName(q.name), qv(a.quirks[q.name]), qv(d.quirks[q.name]));
   return out;
 }
 function saveRowHtml(c, st, saidHtml, restart) {
@@ -713,7 +739,7 @@ function saveRowHtml(c, st, saidHtml, restart) {
   return `${n ? `<ul class="changes">${rows}</ul>` : ""}<div class="foot">${acts}${saidHtml}${restart}</div>`;
 }
 // a model's own price card: the card it has, else the one it is priced at now, whole, with the cell's new number in it
-function cardOf(h, m, i, o) {
+function cardOf(h, m, i, o, cache) {
   const was = h.rates?.[m.id], r = m.rates;
   const lc = r?.long_context;
   const card = was ? { ...was } : r ? {
@@ -724,7 +750,7 @@ function cardOf(h, m, i, o) {
   } : {};
   card.input = Number(i); card.output = Number(o);
   // a model with no price has no cache price either: a cache read is priced as an input token until one is set
-  card.cache_read ??= card.input;
+  card.cache_read ??= cache != null && cache !== "" ? Number(cache) : card.input;
   return card;
 }
 function applyOwn(t, c, d) {
@@ -738,9 +764,9 @@ function applyOwn(t, c, d) {
   }
   for (const m of c.models) {
     const x = d.rates[m.id], w = a.rates[m.id];
-    if (x.i === w.i && x.o === w.o) continue;
+    if (x.i === w.i && x.o === w.o && x.c === w.c) continue;
     head.rates ??= {};
-    head.rates[m.id] = cardOf(head, m, x.i, x.o);
+    head.rates[m.id] = cardOf(head, m, x.i, x.o, x.c);
   }
   if (!prov) return;
   if (d.kind !== a.kind || d.env !== a.env) {

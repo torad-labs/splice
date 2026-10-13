@@ -393,8 +393,16 @@ function sessionTiles() {
 }
 // headless runs never register, so the list says so under its cards rather than count them (§4 Resolved)
 const HEADLESS = `<p class="headless">Runs started with claude -p never appear here</p>`;
+// WHILE THE FIRST READ IS OUT the list draws its own cards hollow, as Requests does (requests.js GHOST_SLIPS): a name and
+// a command chip, the meta line and the last line, striped and fading down the page, so the sessions land where the eye
+// already is (splice-lead, gap 384b; the bare word Reading read as an empty page).
+const GHOST_CARDS = [[12, 5, 16, 22], [9, 6, 13, 18], [14, 5, 18, 26], [10, 6, 12, 20], [11, 5, 15, 16]];
+const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">`
+  + GHOST_CARDS.map(([name, chip, meta, last], i) => `<article class="card s ghosted" style="--i:${i}" aria-hidden="true">`
+    + `<span class="lamp"></span><div class="top">${GHOST.bar(name, "nm")}${GHOST.bar(chip, "chip")}</div>`
+    + `<div class="meta">${GHOST.bar(meta)}</div>${GHOST.lines([last])}</article>`).join("") + "</div>";
 function listHtml() {
-  if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
+  if (state.loading) return ghostListHtml();
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   const list = sorted(); ui.order = list.map((s) => s.id);
   const ended = state.rows.filter((s) => s.state === "ended" && !stranded(s) && matches(s) && inPick(s)).sort((a, b) => b.at - a.at);

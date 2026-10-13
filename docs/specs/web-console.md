@@ -52,8 +52,8 @@ Source: `gateway/control/src/main/kotlin/splice/control/ControlServer.kt` on `fe
 | `PATCH /api/config` | hot-apply runtime knobs, persist to state file | config page |
 | `GET /api/usage` | per head: 5h output tokens, ratelimit headers, quota windows (plan, 5h, 7d), warn level; every `usage.quota.<window>` and `usage.ratelimit` carries `observed_at` (epoch seconds, the `resets_at` encoding, null when unrecorded; added 2026-09-24) | fleet meter |
 | `GET /api/perf?tail=` | per head: p50, p95, max per perf field | none |
-| `GET /api/perf/summary?window=1h,24h,7d` | per head: windowed summary (v0.4.0), plus `last_ts`: the `ts` of the head's newest perf row whatever the window (epoch ms, the `/api/perf/turns` row encoding, null when none; added 2026-09-24) | none |
-| `GET /api/economics` | per head: hourly buckets of tokens, bytes, tool partition, rate limits (v0.4.0) | burn page |
+| `GET /api/perf/summary?window=1h,24h,7d` | per head: windowed summary (v0.4.0); `last_ts` was removed 2026-10-12, since no reader took it | none |
+| `GET /api/economics` | per head: hourly buckets of what Accounts reads, cost and rate-limited turns (v0.4.0); since 2026-10-12 the token, byte and tool sums stay on disk and are no longer served | burn page |
 | `GET /api/auth` | per head: kind, present, masked account, last refresh, plus the account pool (v0.4.0) | auth cards, pool not shown |
 | `POST /api/auth/{head}/{refresh,login}` | refresh a token; login is "manual" for OAuth kinds | refresh button |
 | `GET /api/compact` | outcome totals and event tail | compaction page |
@@ -245,10 +245,10 @@ Sources: `control/api/UsagePayloads.kt`, `app/quota/QuotaProbes.kt`, `control/ap
   Kimi a weekly quota plus a five-hour rate window; Grok a weekly credit period; Muse a weekly
   window inferred from headers. API-key providers and the Claude passthrough report nothing and
   must read "not reported by provider", never zero.
-- Economics: hourly buckets per head over a retention window with turns, `in_tokens`,
-  `cached_tokens`, `cache_write_tokens`, `out_tokens`, request bytes, upstream bytes, eager and
-  deferred tool counts, deferral turns, rate-limited turns, and the provider ceiling when known.
-  Sums only; every rate is derived in the console so it stays recomputable per window.
+- Economics: hourly buckets per head over a retention window. The store keeps turns, token sums,
+  request and upstream bytes, eager and deferred tool counts, deferral turns and rate-limited turns
+  on disk. Since 2026-10-12 the route serves only what Accounts reads, the cost inputs and
+  rate-limited turns. Sums only; every rate is derived in the console.
 - Session cost: `control/SessionCost.kt` prices a session's buckets with the head's declared
   rates and falls back to the client's own `total_cost_usd` when no rates are declared.
 
@@ -567,7 +567,7 @@ Small, mostly read-only, all under the existing bearer guard.
 
 | Route | Purpose | Server-side today |
 |---|---|---|
-| `GET /api/perf/turns?head=&n=&since=` | per-turn rows for the turn list, waterfall, session detail, chart click-through; every row carries `head` (the per-head perf files do not record it; the aggregating route adds it from the file it read); an unknown head answers 400 with `error.message` naming the head, never 404 (the console reads 404 on this path as "route not built yet") | `PerfStats.tailNumeric` exists; needs the non-numeric fields (model, outcome, session, account) |
+| `GET /api/perf/turns?head=&n=&since=` | per-turn rows for the turn list, waterfall, session detail, chart click-through, grouped by head; an unknown head answers 400 with `error` naming the head, never 404 (the console reads 404 on this path as "route not built yet") | `PerfStats.tailNumeric` exists; needs the non-numeric fields (model, outcome, session, account) |
 | `GET /api/models` | catalog per head. A row is section 4.8's columns: id, label, `slot`, context window (resolved rows), rates (input, output and a long-context tier; the cache rates feed billing, not the page), pinned, plus `provider: string`, the registry's provider key for the head (decided 2026-09-18 with the daemon lead, V4-127: the models page groups by provider). `slot` is the DECLARED tier from `HeadConfig.models`, joined onto the resolved catalog, and the join is reported in both directions because 4.8's column is literally "the tiers Claude Code will and will not get on this head": a resolved model that was never declared carries `slot: null`, and a declared slot that resolved to nothing is its OWN row with `resolved: false` and a reason, never dropped. A console that silently omits the tier the operator is missing is the one thing this page must not do. The console reads no window provenance field: the row's served window, published maximum and Default mark already say whether a number is the provider's word or a guess (marlin, Oct 12, 2026). The origin of the entry needs no field today: clarified 2026-09-18 for V4-127, the catalog is declared models only (see the end of this section), so every row is declared; add an origin field in the same change that adds the remote provider catalog listing, never before. | `ModelCatalog`, `Topology` |
 | `GET /api/doctor` | the `doctor --json` report | `DoctorCommand` |
 | `GET /api/topology`, `PUT /api/topology` | read and validated write of `splice.toml`, backup first, structure-preserving | the `add-model` TOML writer, `TopologySchema` |

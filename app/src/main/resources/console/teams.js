@@ -606,7 +606,7 @@ function chatHtml(tm) {
   return keptHtml(panel) + lead + msgs.map((m) => {
     const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
     const body = m.text?.trim() ? `<div class="body">${md(m.text)}</div>` : "";
-    return `<div class="tm${from ? "" : " outside"}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
+    return `<div class="tm${from ? "" : " outside"}${body ? "" : " bare"}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
       `<div class="who">${party(tm, m.from_slot, m.from)}${GLYPH.msg}${party(tm, m.to_slot, m.to)}<time>${hhmm(m.at)}</time></div>${body}</div>`;
   }).join("");
 }

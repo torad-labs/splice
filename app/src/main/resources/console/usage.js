@@ -115,9 +115,10 @@ function turnsUrl(head, held, f, label) {
 const labelsOf = (f) => (f.account ? f.account.split("|").slice(1).join("|").split(SEP) : [null]);
 const headsFor = (f) => S.heads.filter((h) => !f.account || f.account.split("|")[0] === h.key);
 
-const ZERO = () => ({ requests: 0, in: 0, cached: 0, out: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0, failed: 0, limited: 0 });
+const ZERO = () => ({ requests: 0, in: 0, cached: 0, write: 0, out: 0, noIn: 0, noOut: 0, cost: null, plan: 0, planValue: null, uncounted: 0, undeclared: 0, local: 0, unanswered: 0, failed: 0, limited: 0 });
 function fold(into, g) {
   into.requests += g.requests ?? 0; into.in += g.input_tokens ?? 0; into.cached += g.cached_tokens ?? 0; into.out += g.output_tokens ?? 0;
+  into.write += g.cache_write_tokens ?? 0; into.noIn += g.missing_input_requests ?? 0; into.noOut += g.missing_output_requests ?? 0; // a request with no count adds nothing, and is counted apart
   if (g.cost_usd != null) into.cost = (into.cost ?? 0) + g.cost_usd;
   into.plan += g.plan_requests ?? 0;
   if (g.plan_value_usd != null) into.planValue = (into.planValue ?? 0) + g.plan_value_usd;
@@ -128,7 +129,7 @@ function fold(into, g) {
 }
 /** The window's totals across every command that answered: per account, model, session and day, as the daemon folded them. */
 function foldWindow(reads, heads) {
-  const w = { total: ZERO(), accounts: new Map(), models: new Map(), sessions: new Map(), days: new Map(), slices: new Map(), errors: [], pending: false, reading: new Set() };
+  const w = { total: ZERO(), byHead: new Map(), accounts: new Map(), models: new Map(), sessions: new Map(), days: new Map(), slices: new Map(), errors: [], pending: false, reading: new Set() };
   heads.forEach((head, i) => {
     const answer = (reads[i].body?.heads || []).find((x) => x.key === head.key);
     if (!reads[i].ok || !answer || answer.error) { w.errors.push(head.command); console.warn(`${head.command}: ${answer?.error ?? reads[i].status}`); return; }
@@ -136,6 +137,7 @@ function foldWindow(reads, heads) {
     const u = answer.usage;
     if (!u) return;
     fold(w.total, u.totals);
+    w.byHead.set(head.key, fold(w.byHead.get(head.key) ?? ZERO(), u.totals));
     const cols = (answer.asks || []).map((a) => fold(ZERO(), a.usage?.totals ?? {})), had = w.slices.get(head.key);
     w.slices.set(head.key, had ? had.map((c, i) => fold2(c, cols[i] ?? ZERO())) : cols);
     const into = (map, key, g, extra) => { const e = map.get(key) ?? { ...ZERO(), ...extra, heads: new Set() }; fold(e, g); e.heads.add(head.key); map.set(key, e); };
@@ -267,6 +269,7 @@ const sumOf = (entries) => entries.reduce((t, e) => fold2(t, e), ZERO());
 function fold2(t, e) {
   t.requests += e.requests; t.in += e.in; t.cached += e.cached; t.out += e.out; t.plan += e.plan; t.uncounted += e.uncounted; t.undeclared += e.undeclared; t.local += e.local; t.unanswered += e.unanswered;
   t.failed += e.failed ?? 0; t.limited += e.limited ?? 0;
+  t.write += e.write ?? 0; t.noIn += e.noIn ?? 0; t.noOut += e.noOut ?? 0;
   if (e.cost != null) t.cost = (t.cost ?? 0) + e.cost;
   if (e.planValue != null) t.planValue = (t.planValue ?? 0) + e.planValue;
   return t;
@@ -432,6 +435,26 @@ function byHtml() {
   return `<section class="by card"><header>${sw}<div class="fchips">${filterChips()}</div>${back}${open}</header>${list.length ? head + shown.map(row).join("") + more : `<p class="empty">No requests</p>`}</section>`;
 }
 
+// ---------- each command's tokens over the window, split as its provider counted them ----------
+// Input holds what was read from the cache and what was written to it, as every provider here reports it. A figure no request
+// reported reads "Not reported", never 0: a provider that never reports a cache write (OpenAI's Responses) sends 0 on every
+// request, so a window of input with no write at all is that silence. Requests that carried no count are said under the command.
+const NOT_REPORTED = `<span class="nr">Not reported</span>`;
+function tokensHtml() {
+  // a command still being read keeps its row, its figures to come, so a half-read window never reads as "No requests"
+  const w = D.scoped, rd = D.reading ?? new Set(), list = headsOrder().map((h) => [h, w.byHead.get(h)]).filter(([h, s]) => rd.has(h) || s?.requests > 0);
+  const cell = (missing, v, sub = "") => `<span class="num">${missing ? NOT_REPORTED : `${tokWord(v)}${sub}`}</span>`;
+  const row = ([h, s]) => {
+    if (rd.has(h)) return `<div class="trow"><div class="who">${chip(h)}<span class="sb">Not counted yet</span></div>${`<span class="num">${GHOST.bar(5)}</span>`.repeat(4)}</div>`;
+    const noIn = s.noIn >= s.requests, gap = Math.max(s.noIn, s.noOut);
+    const share = (v) => (s.in > 0 ? `<i class="of">${Math.round((100 * v) / s.in)}% of input</i>` : "");
+    return `<div class="trow"><div class="who">${chip(h)}${gap && !noIn ? `<span class="sb">${n0(gap)} of ${n0(s.requests)} requests carried no count</span>` : ""}</div>`
+      + cell(noIn, s.in) + cell(noIn, s.cached, share(s.cached)) + cell(noIn || (s.write === 0 && s.in > 0), s.write, share(s.write)) + cell(s.noOut >= s.requests, s.out) + `</div>`;
+  };
+  const head = `<div class="trow thead"><span>Command</span><span class="num">Input</span><span class="num">Cached</span><span class="num">Written to cache</span><span class="num">Output</span></div>`;
+  return `<section class="tokens"><header><h2>Tokens</h2><span class="tsub">As each provider counted them</span></header><div class="card">${list.length ? head + list.map(row).join("") : `<p class="empty">No requests</p>`}</div></section>`;
+}
+
 // Slow or failing today, and since when, against the command's own week: slow is a trailing run of today's requests, most
 // over 1.6 times the typical whole request before today; failing is a burst of today's failures within 5 minutes of each
 // other, at least three, a spent plan window aside (Plans shows that). Since is the run's first request.
@@ -491,7 +514,7 @@ function render() {
   const waiting = reading();
   const money = plansHtml() + keysHtml();
   const note = waiting ? "" : (D.errors.length ? notReadHtml() : "") + (D.pending ? readingHtml() : "");
-  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${PERF_HEADS.html()}</div>`;
+  root.innerHTML = `${note}<div class="money-band">${money || (waiting ? GHOST.card([9, 22, 16]) : "")}</div>${waiting ? GHOST.chart([34, 52, 41, 68, 47, 80, 58, 44, 63, 38, 55, 72, 49, 61]) : chartHtml()}<div class="lower"><div class="lcol"><section class="breakdown"><header><h2>Breakdown</h2></header>${waiting ? GHOST.card([10, 18, 14, 16, 11], 0, "by") : byHtml()}</section>${waiting ? "" : tokensHtml()}</div>${PERF_HEADS.html()}</div>`;
 }
 // the figures on screen belong to the window and filters they were read under: a new one reads again and says so, never
 // drawing the old figures under the new heading

@@ -160,3 +160,19 @@
 .reading { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.4rem; margin: 0 0 1.4rem; font: 500 1rem/1.3 var(--font-name); color: var(--text-mute); }
 .reading .rd { display: inline-flex; align-items: center; gap: .6rem; }
 .col .fails { position: absolute; top: calc(100% + .2rem); left: 50%; width: .45rem; height: .45rem; margin-left: -.225rem; border-radius: 50%; background: var(--limit); }  /* the slice had failed requests: opens them on Requests */
+
+/* ---------- each command's tokens, under the breakdown: input, cached, written to cache, output ---------- */
+.lcol { display: flex; flex-direction: column; gap: 3.2rem; min-width: 0; }
+.tokens > header .tsub { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
+.tokens .card { padding: .4rem 1.5rem .6rem; }
+.trow {
+  display: grid; grid-template-columns: minmax(12rem, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 1.2rem; align-items: baseline;
+  padding: 1rem 0; border-top: .12rem solid var(--track); font: 500 1.05rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text);
+}
+.trow.thead { border-top: 0; padding: .8rem 0 .7rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.trow .num { text-align: right; min-width: 0; }
+.trow .num i.of { display: block; margin-top: .25rem; font: 500 .85rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
+.trow .nr { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.trow .who { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; min-width: 0; }
+.trow .sb { font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); }
+.tokens .empty { margin: 1rem 0; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }

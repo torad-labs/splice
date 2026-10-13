@@ -34,14 +34,6 @@ import splice.sessions.registry.SessionSource
 
 internal const val EDGES_UNWIRED = "the activity stores are not wired into this control plane"
 
-// why: what a row's missing `edges` summary means when the store IS wired and on — the read refused,
-// and the refusal's own words follow this. The store's state is reported separately and stays true.
-internal const val EDGES_UNREAD = "the message edges could not be read: "
-
-/** What one read of the edge store came back with. [summaries] is null when the store gave no counts, and then
- *  [reason] says why in the words the console shows. Both null is not a state: a store that answered has summaries. */
-internal data class EdgeRead(val summaries: EdgeSummaries?, val reason: String?)
-
 /** The only two durable activity stores this control plane may list or delete. */
 public enum class KeptActivity { EDGES, LABELS }
 
@@ -155,35 +147,10 @@ public class ActivityRoutes(
         return JsonReply(HttpStatusCode.OK, body.toString())
     }
 
-    /** The store's explicit state accompanies empty reads; null means unwired, not off. */
-    internal fun state(): KeptState? = source()?.edgeState()
-
     /** One read of the edge store, resolved against [records]: only the edges [interest] names, read from the day files
      *  and not held, so the window can be longer than the row cache could keep. Null when the stores are unwired. */
     internal fun index(records: List<SessionRecord>, interest: EdgeInterest): EdgeIndex? =
         source()?.let { EdgeIndex(it.edges.scan(interest), records) }
-
-    /**
-     * One read of the edge store that CANNOT FAIL THE CALLER. [EdgeRead.summaries] is null when the stores
-     * are unwired or when this read did not come back, and [EdgeRead.reason] says which.
-     *
-     * A HINT THAT CANNOT BE READ IS A MISSING HINT, NOT A MISSING PAGE. Reading the edges opens the
-     * day files and parses their small metadata under a heap allowance, and any of that can refuse:
-     * the allowance is spent (MessageEdgeCache.ensure, 16 MiB, which a long-running desk reaches and
-     * never comes back from, because the day files only grow), a day file went away mid-walk, a
-     * directory the daemon cannot enter. Letting it escape took `GET /api/sessions` to a 500 on the
-     * everyday daemon for nearly three hours on Oct 10, so every console page that names a session
-     * fell back to its id and Requests read "Session 8cb8a71d" on every row. The edges are a summary
-     * ON a row. The listing IS the page. This is the same lesson as the resumable hint (cac62c805),
-     * found the second time because the first fix was made where it was found rather than as a rule.
-     */
-    internal fun read(): EdgeRead {
-        val stores = source() ?: return EdgeRead(null, EDGES_UNWIRED)
-        return Cancellables.runCatchingCancellable { EdgeSummaries(stores.edges.totals()) }.fold(
-            onSuccess = { EdgeRead(it, null) },
-            onFailure = { failure -> EdgeRead(null, EDGES_UNREAD + SafeFailureText.render(failure)) },
-        )
-    }
 
     private fun unwired(): JsonReply =
         JsonReply(HttpStatusCode.ServiceUnavailable, buildJsonObject { put("error", EDGES_UNWIRED) }.toString())

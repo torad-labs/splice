@@ -2,14 +2,10 @@
 package splice.sessions.http
 
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.sessions.activity.EdgeTotals
 import splice.sessions.activity.EdgeWanted
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRecord
@@ -25,19 +21,6 @@ internal class Addresses(records: List<SessionRecord>) {
      *  address where the registry knows it. A session's address is its own; a name is not (V4-252). */
     fun reported(edge: MessageEdge): MessageEdge =
         edge.toSession?.let(ofSession::get)?.let { edge.copy(to = it) } ?: edge
-}
-
-/** The `edges` summary on a session row, `{sent, received, last_at | null}`, from the store's counts. One snapshot
- *  serves every row of a listing, so two rows cannot disagree about the same conversation. */
-internal class EdgeSummaries(private val totals: EdgeTotals) {
-    fun summary(sessionId: String, address: String?): JsonObject {
-        val counts = totals.of(sessionId, address)
-        return buildJsonObject {
-            put("sent", counts.sent)
-            put("received", counts.received)
-            put("last_at", counts.lastAt?.let(::JsonPrimitive) ?: JsonNull)
-        }
-    }
 }
 
 /** The edges that touch [sessions], by their ids and by the addresses a legacy edge names: the filter a scan of the day files

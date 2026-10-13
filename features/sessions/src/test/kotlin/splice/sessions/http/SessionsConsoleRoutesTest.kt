@@ -99,9 +99,6 @@ class SessionsConsoleRoutesTest {
         )
         assertFalse(rows.getValue(GAMMA).containsKey("repo"), "no cwd, no repo key")
         rows.values.forEach { assertEquals("null", it["team"].toString(), "team is null until V4-131") }
-        assertEquals(json("""{"sent":1,"received":1,"last_at":${NOW - 20}}"""), rows.getValue(ALPHA)["edges"])
-        assertEquals(json("""{"sent":1,"received":1,"last_at":${NOW - 20}}"""), rows.getValue(BETA)["edges"])
-        assertEquals(json("""{"sent":1,"received":0,"last_at":${NOW - 10}}"""), rows.getValue(GAMMA)["edges"])
     }
 
     @Test
@@ -148,9 +145,6 @@ class SessionsConsoleRoutesTest {
             roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
             activity = ActivitySource { stores },
         )
-        val rows = rowsOf(routes)
-        assertEquals(json("""{"sent":0,"received":1,"last_at":${NOW - 5}}"""), rows.getValue(BETA)["edges"])
-        assertEquals(json("""{"sent":0,"received":0,"last_at":null}"""), rows.getValue(ALPHA)["edges"])
         assertEquals(
             json(
                 """{"session_id":"$BETA","state":"on","edges":[""" +

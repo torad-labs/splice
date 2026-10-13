@@ -2,7 +2,6 @@ package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -43,20 +42,12 @@ class MessageEdgesSwitchRoutesTest {
         val source = ActivitySource { stores }
         val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }
         val edges = ActivityRoutes(rig.registry, source, text)
-        val sessions = SessionsRoutes(rig.registry, TestTranscripts(), activity = source)
         val teams = TeamReads(TeamSource { rig.store }, rig.registry, source, text, WallClock { AT })
         val json = Json
         fun state(body: String) = json.parseToJsonElement(body).jsonObject.getValue("state").jsonPrimitive.content
         assertEquals("off", state(edges.edges(LEAD).body))
         assertEquals("off", state(edges.boardEdges().body))
         assertEquals("edges off", field(edges.boardEdges().body, "reason"))
-        val listing = json.parseToJsonElement(sessions.sessionsJson()).jsonObject
-        assertEquals("off", listing.getValue("edges_state").jsonPrimitive.content)
-        assertTrue(
-            listing.getValue("sessions").jsonArray.all { row ->
-                row.jsonObject.getValue("edges_state").jsonPrimitive.content == "off"
-            },
-        )
         assertEquals("off", state(teams.edges(team.id).body))
         assertEquals("off", state(teams.chat(team.id, null).body))
     }

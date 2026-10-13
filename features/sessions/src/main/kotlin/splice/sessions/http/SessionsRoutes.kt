@@ -8,8 +8,6 @@
 //   team   the id of the first unarchived team the session is bound in, by created time then id
 //          (V4-131, TeamStore.bindingsOf), or null when it is bound in none or the team store is
 //          unwired. Always present, so the console groups every row.
-//   edges  `{sent, received, last_at}` from the message edge store (ActivityRoutes), left off every
-//          row when the stores are unwired, never reported as zero sends nobody watched.
 //   route  `head` | `direct` | `unknown`: the registry's SessionRoute, decided where the process
 //          environment is read. `head` itself is unchanged and still folds the last two into
 //          "unknown head".
@@ -34,7 +32,6 @@ package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -155,14 +152,9 @@ public class SessionsRoutes(
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
         val rowFacts = facts.forRecords(listing.sessions)
-        // A read that refused leaves the rows without their edges summary and says so once, beside the
-        // store's own state: the edges are a hint ON a row and the listing is the page.
-        val edgeRead = edgeRoutes.read()
-        val edges = edgeRead.summaries
         // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
         val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
         val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
-        addEdgeState(this, edgeRead.reason)
         // whether splice reads the conversations: off, the console shows no question a session waits on (Marlin, p180)
         put("reading", viewEnabled())
         put("note", HEADLESS_NOTE)
@@ -172,7 +164,7 @@ public class SessionsRoutes(
         listing.error?.let { put("error", it) }
         put(
             "sessions",
-            buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable, rowFacts)) } },
+            buildJsonArray { listing.sessions.forEach { add(row(it, resumable, rowFacts)) } },
         )
     }.toString()
 
@@ -201,29 +193,19 @@ public class SessionsRoutes(
     }
 
     /** The exact same row projection for a durable-history entry after the live overlay. */
-    public fun historyRow(record: SessionRecord): JsonObject = row(record, null, Resumability(null))
+    public fun historyRow(record: SessionRecord): JsonObject = row(record, Resumability(null))
 
     /** History pages snapshot only their selected records, never shared mutable per-listing state. */
     public val historyRows: SessionHistoryRowOf = object : SessionHistoryRowOf {
         override fun invoke(record: SessionRecord): JsonObject = historyRow(record)
         override fun forRecords(records: List<SessionRecord>): SessionHistoryRowOf {
             val snapped = facts.forRecords(records)
-            return SessionHistoryRowOf { row(it, null, Resumability(null), snapped) }
+            return SessionHistoryRowOf { row(it, Resumability(null), snapped) }
         }
-    }
-
-    /** The edge store's own state, and why a row carries no edges. [unread] is the refusal of THIS
-     *  read, which is a different fact from the store being off or deleted and does not replace it:
-     *  a store that is on and could not be read reports both, so neither reading is a lie. */
-    private fun addEdgeState(body: JsonObjectBuilder, unread: String? = null) {
-        val state = edgeRoutes.state() ?: return
-        body.put("edges_state", state.wire)
-        (unread ?: state.reason("edges"))?.let { body.put("edges_reason", it) }
     }
 
     private fun row(
         s: SessionRecord,
-        edges: EdgeSummaries?,
         resumable: Resumability,
         rowFacts: SessionRowFacts = facts,
     ): JsonObject = buildJsonObject {
@@ -258,9 +240,6 @@ public class SessionsRoutes(
         // the card names the team a person reads, never its id: `team` stays the id other readers join on
         put("team_name", bound?.name)
         rowFacts.write(s, this)
-        val id = s.sessionId
-        addEdgeState(this)
-        if (edges != null && id != null) put("edges", edges.summary(id, s.address))
     }
 
     /** The wire name of the route the registry carried: `head` beside a real `head` key, `direct` for a

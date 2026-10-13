@@ -75,6 +75,21 @@ const PERF_HEADS = (() => {
     const compactions = n > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(n)} ${n === 1 ? "compaction" : "compactions"}</a>` : "";
     return compactions + (q > 0 ? `<span class="m">${n0(q)} ${q === 1 ? "status label" : "status labels"} splice wrote · $0</span>` : "");
   }
+  /** Each model a command answered with, where it used more than one, so a slow or failing model is named: its
+   *  requests, its typical whole request and its failed share (v0.4.0 §3, model attribution; PerfSummary.byModel). A
+   *  row with one model already says it in its figures. Plain text: Requests filters by command, not by model here. */
+  function models(h) {
+    const ms = Object.entries(h.models || {});
+    if (ms.length < 2) return "";
+    // a request that named no model failed before one answered, so its time is no model's and is left out; a failed
+    // share prints from 1% up, as the failure reasons do
+    return ms.sort((x, y) => y[1].count - x[1].count).map(([id, m]) => {
+      const named = id !== "?", name = named ? modelName(S.labels, id) ?? id : "No model named";
+      const typical = named && m.total_ms?.p50 != null ? ` · ${secs(m.total_ms.p50)} typical` : "";
+      const failed = m.failure_share >= 0.005 ? ` · ${pct(m.failure_share)} failed` : "";
+      return `<span class="m">${esc(name)} · ${n0(m.count)}${typical}${failed}</span>`;
+    }).join("");
+  }
   /** What the record behind a row could not cover, in the fewest words; the cause goes to the console. */
   function gaps(h) {
     const out = [];
@@ -93,10 +108,10 @@ const PERF_HEADS = (() => {
     return f ? flagHtml(h.key, f) : "";
   }
   function row(h, cols) {
-    const below = flag(h) + kinds(h) + sorts(h) + gaps(h);
+    const below = flag(h) + kinds(h) + sorts(h) + gaps(h), mods = models(h);
     return `<div class="prow" role="row" style="--c:${colorOf(providerOfHead(h.key))}"><span class="pf cmd">${chip(h.key)}</span>`
       + cols.map((c) => `<span class="pf"><em>${head(c)}</em>${c.cell(h)}</span>`).join("")
-      + (below ? `<p class="below">${below}</p>` : "") + `</div>`;
+      + (below ? `<p class="below">${below}</p>` : "") + (mods ? `<p class="below mods">${mods}</p>` : "") + `</div>`;
   }
 
   function html() {

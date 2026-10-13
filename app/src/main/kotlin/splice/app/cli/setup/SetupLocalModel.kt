@@ -27,10 +27,16 @@ import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** What happens, in the words the question and the Summary both use. */
+/** The systemd user unit rig writes for the model, under ~/.config/systemd/user. */
+private const val RIG_UNIT = "rig-$RIG_HEAD.service"
+
+/** What happens, in the words the question and the Summary both use: the President's ruling for Marcos on the rig
+ *  handoff (v0.4.0.md section 10, 82ba06219) keeps it on condition that it says, before a yes, that it installs rig,
+ *  downloads about 9 GB, writes a systemd user unit and starts the runtime. */
 private const val WHAT_HAPPENS =
-    "rig installs into ~/.local/share/rig, downloads $RIG_HEAD and its engine " +
-        "(about 9 GB; about 18 GB of disk in all) and serves it on this machine"
+    "splice installs rig into ~/.local/share/rig, which downloads $RIG_HEAD and its engine " +
+        "(about 9 GB; about 18 GB of disk in all), writes the systemd user unit $RIG_UNIT and starts it, " +
+        "so the model keeps serving on this machine"
 
 private const val RETRY = "retry by hand: rig up $RIG_HEAD, then splice setup again"
 
@@ -121,6 +127,14 @@ internal class SetupLocalModel(
         }
         val run = spun(label, "$RIG_HEAD is serving on this machine") { rig.up(RIG_HEAD, progress) }
         if (run.exit != 0) return stopped(refusals.up(run))
+        // The ruling's second condition: once it runs, say how to stop it and remove what rig set up. Said here, as
+        // soon as it serves, so a later step that fails still leaves the person these lines.
+        out.line("  to stop it: systemctl --user disable --now $RIG_UNIT")
+        out.line(
+            "  to remove what rig set up: systemctl --user disable --now $RIG_UNIT; " +
+                "rm ~/.config/systemd/user/$RIG_UNIT; rm -rf ~/.local/share/rig; " +
+                "systemctl --user daemon-reload; then Remove $LOCAL_COMMAND on the console's Models page",
+        )
         // Only an explicit false: null means logind was unreadable and rig already said so on stderr.
         if (reports.lingerOff(run.stdout)) {
             out.line("  note: $RIG_HEAD stops when you log out; keep it running: sudo loginctl enable-linger \$USER")
@@ -133,7 +147,7 @@ internal class SetupLocalModel(
         val head = described() ?: return false
         val ok = add(head)
         if (!ok) {
-            val stop = "systemctl --user stop rig-$RIG_HEAD.service"
+            val stop = "systemctl --user stop $RIG_UNIT"
             out.line("  $RIG_HEAD keeps serving at ${head.baseUrl}; stop it with: $stop")
         }
         return ok

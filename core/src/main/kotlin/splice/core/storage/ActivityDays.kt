@@ -84,7 +84,7 @@ private const val DAY_MAX_BYTES = 512L shl 20
 
 /** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
 private const val ROLLED_SUFFIX = ".1"
-private val DAY_SIBLINGS = listOf(
+internal val daySiblings = listOf(
     "",
     ".lock",
     ROLLED_SUFFIX,
@@ -420,7 +420,7 @@ public class DayFiles @JvmOverloads constructor(
     /** Deletes the day file and the siblings JsonlSink writes beside it; answers each one still on
      *  disk, with why its delete failed. */
     private fun deleteDay(file: Path): Map<Path, Throwable> =
-        DAY_SIBLINGS.map { suffix -> file.resolveSibling("${file.fileName}$suffix") }
+        daySiblings.map { suffix -> file.resolveSibling("${file.fileName}$suffix") }
             .mapNotNull { sibling ->
                 Cancellables.runCatchingCancellable { removal.remove(sibling) }
                     .exceptionOrNull()?.let { sibling to it }

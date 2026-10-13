@@ -74,8 +74,9 @@ internal class TraceBodies(
                     encodeReferences(replace(record) { resolution.unavailable(capacity.reason) })
                 }
             }
-            // The index obeys the bodies' free-space floor too: below it the record is dropped, said once per day.
-            budget.indexRefusal(day, line.size.toLong())?.let { reason ->
+            // The index obeys the bodies' free-space floor and its own shared cap, which drops the oldest completed day
+            // first: a record refused by either is dropped, said once per day.
+            budget.admitIndex(day, line.size.toLong())?.let { reason ->
                 indexFullLog.full(day, reason)
                 throw DayBodyCapacityException(reason)
             }

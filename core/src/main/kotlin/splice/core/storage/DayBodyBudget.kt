@@ -19,6 +19,10 @@ import java.time.ZoneOffset
 /** Rolling compressed body capacity shared by every head in a trace directory. */
 public const val TRACE_BODY_MAX_BYTES: Long = 32L shl 30
 
+/** Rolling JSONL index capacity shared by every head in a trace directory: past it the oldest completed day goes whole
+ *  (splice-lead, Oct 12). The history window still bounds both; this keeps a busy window inside the disk. */
+public const val TRACE_INDEX_MAX_BYTES: Long = 16L shl 30
+
 /** Trace bodies never consume the volume's last 64 GiB of usable space. */
 internal const val TRACE_BODY_MIN_FREE_BYTES: Long = 64L shl 30
 
@@ -29,6 +33,8 @@ public const val BODY_BUDGET_EVICTED_REASON: String = "evicted by the body budge
 
 /** Why a write was refused below the free-space floor: a body, or the index line beside it. */
 private const val FLOOR_REACHED = "trace volume free-space floor reached"
+
+private const val INDEX_CAP_REACHED = "shared trace index budget exhausted by the day being written"
 
 /** The usable bytes on the volume containing a trace directory. */
 public fun interface DayVolumeSpace {
@@ -45,6 +51,7 @@ public class DayBodyBudget(
     private val space: DayVolumeSpace = DayVolumeSpace { Files.getFileStore(it).usableSpace },
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val force: JsonlForce = JsonlForce { _, channel -> channel.force(true) },
+    private val indexMaxBytes: Long = TRACE_INDEX_MAX_BYTES,
 ) {
     init {
         require(maxBytes > 0)
@@ -74,10 +81,39 @@ public class DayBodyBudget(
     public fun evicted(day: Path): Boolean =
         Files.isRegularFile(marker(day), NOFOLLOW_LINKS)
 
-    /** The index line a day file takes obeys the bodies' free-space floor: null when [bytes] fit above it, else why
-     *  not. It has no share of [maxBytes]: the day window bounds the index, and only the volume can run out. */
-    public fun indexRefusal(day: Path, bytes: Long): String? =
-        space.available(day.parent).takeIf { it < minFreeBytes || bytes > it - minFreeBytes }?.let { FLOOR_REACHED }
+    /** The index line [bytes] long that [day] takes. Below the bodies' free-space floor it is refused. Past the shared
+     *  index cap the oldest completed UTC day goes whole, across every head (its index, its rolled half and its bodies),
+     *  never today nor the day being written. Null when the line may be written, else why not. Call under [withLock]. */
+    public fun admitIndex(day: Path, bytes: Long): String? {
+        val available = space.available(day.parent)
+        if (available < minFreeBytes || bytes > available - minFreeBytes) return FLOOR_REACHED
+        val today = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
+        val active = dateOf(day)
+        var days = indexDays(day.parent)
+        while (days.sumOf { it.second } > indexMaxBytes - bytes) {
+            val oldest = days.map { it.first }.filter { it.isBefore(today) && it != active }.minOrNull()
+                ?: return INDEX_CAP_REACHED
+            removeDay(day.parent, oldest)
+            days = indexDays(day.parent)
+        }
+        return null
+    }
+
+    /** Each JSONL index file's day and size, a rolled half included; body packs and markers are not the index. */
+    private fun indexDays(dir: Path): List<Pair<LocalDate, Long>> =
+        DirectoryEntries.of(dir).mapNotNull { file ->
+            val date = dateOf(file) ?: return@mapNotNull null
+            val attributes = Files.readAttributes(file, "basic:size,isRegularFile", NOFOLLOW_LINKS)
+            if (attributes["isRegularFile"] == true) date to attributes["size"] as Long else null
+        }
+
+    /** Deletes every head's files of one day: the index, its rolled half, its lock, its bodies and their markers. */
+    private fun removeDay(dir: Path, date: LocalDate) {
+        DirectoryEntries.of(dir).filter { file ->
+            val name = file.fileName.toString()
+            daySiblings.any { suffix -> name.endsWith("-$date.jsonl$suffix") }
+        }.forEach { Files.deleteIfExists(it) }
+    }
 
     private fun fits(dir: Path, stored: Long, growth: Long): Boolean =
         growth <= maxBytes && stored <= maxBytes - growth &&

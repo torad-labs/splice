@@ -189,7 +189,8 @@ async function load({ asks = true } = {}) {
           staleAt: [...windows, ...models].some((w) => w.stale) && row.observed_at_epoch_seconds ? row.observed_at_epoch_seconds * 1000 : null,
           // an expired token its own command renews on its next run is not a sign-out: the card keeps its readings
           renews: !!row.token_renews,
-          out: !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal),
+          // a login held at its limit carries the limit's own sentence as its refusal, and it is held, not signed out
+          out: !row.token_renews && (!row.credential_present || row.auth_exclusion_reason === "credential_missing" || (!!row.refusal && !windows.some(atLimit))),
           canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
           // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
           noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,

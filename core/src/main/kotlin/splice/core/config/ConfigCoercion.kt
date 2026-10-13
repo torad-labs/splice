@@ -118,7 +118,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
         out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
         // DR-150: this said `default = 2L` — the PRE-G4b number, left behind when Knob's default
-        // moved to 4. It is unreachable in production (mergedRaw seeds every knob with its
+        // moved to 4. It is unreachable in production (getConfig seeds every knob with its
         // Knob.default before normalize runs, so the key is never absent here), which is exactly
         // why it rotted unnoticed: a reader comparing the two sites learns the wrong number, and
         // any future caller that normalizes an unseeded map silently gets half the retries the

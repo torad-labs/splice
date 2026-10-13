@@ -10,7 +10,7 @@
 // (which carries those invariants in its own header), the typed accessor view -> SpliceConfig.kt,
 // the two return DTOs -> ConfigResults.kt. What stays here is one thing: the precedence order, and
 // the mutable state that order is read through. The three couplings that must NOT be split are
-// named at their sites below — layers()/mergedRaw (one precedence order expressed twice),
+// named at their sites below — layers()/layeredRaw (one precedence order expressed twice),
 // patch()/persistApplied (a concurrency contract over runtimeLayer + the fileCache invalidation),
 // and readFileLayer + MTIME_RESOLUTION_WINDOW_MS (one torn-read defence).
 package splice.core.config
@@ -90,8 +90,13 @@ public class ConfigService(
     /** Effective config. [headKey] folds that head's [heads.<key>.overrides] in above the global
      *  TOML layer — an unknown/absent key is simply the global view, so callers never branch. */
     @JvmOverloads
-    public fun getConfig(headKey: String? = null): SpliceConfig =
-        SpliceConfig(coercion.normalize(mergedRaw(headKey)), FreshConfig { getConfig(headKey) })
+    public fun getConfig(headKey: String? = null): SpliceConfig {
+        val layered = layeredRaw(headKey)
+        val merged = LinkedHashMap<String, Any?>()
+        Knob.entries.forEach { merged[it.key] = it.default }
+        merged.putAll(layered)
+        return SpliceConfig(coercion.normalize(merged), FreshConfig { getConfig(headKey) }, layered.keys)
+    }
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },
@@ -99,7 +104,7 @@ public class ConfigService(
         file = fileLayer().filterKeys { it !in headOnlyKnobKeys },
         env = envLayer(),
         runtime = synchronized(runtimeLock) { runtimeLayer.toMap() },
-        // JW-06: [heads.<key>.overrides] folds into mergedRaw but was invisible here — the
+        // JW-06: [heads.<key>.overrides] folds into layeredRaw but was invisible here — the
         // dashboard's provenance feature was silently wrong for exactly the heads that were
         // tuned. Heads with no overrides are absent (the webui renders only what differs).
         perHead = headLayer.all().filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v).accepted },
@@ -137,9 +142,10 @@ public class ConfigService(
         return PatchResult(applied, rejected, restartRequired, getConfig(), notPersisted)
     }
 
-    private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
+    /** Every value a layer set, in precedence order, without the defaults beneath them: [getConfig] seeds those, and
+     *  hands the keys set here on, so a reader can tell a knob someone chose from its default. */
+    private fun layeredRaw(headKey: String? = null): Map<String, Any?> {
         val merged = LinkedHashMap<String, Any?>()
-        Knob.entries.forEach { merged[it.key] = it.default }
         // A head-only knob (Knob.headOnly) is taken from [heads.KEY.overrides] alone: the global TOML
         // and the state file drop it here, it has no env alias, and PATCH refuses it.
         coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }

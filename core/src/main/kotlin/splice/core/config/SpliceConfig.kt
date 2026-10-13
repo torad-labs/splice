@@ -43,6 +43,8 @@ public fun interface ProgressLineOn {
 public class SpliceConfig internal constructor(
     private val m: Map<String, Any?>,
     private val fresh: FreshConfig,
+    /** The keys a layer set (TOML, a command's own, env, Settings), as opposed to those at their default. */
+    private val chosen: Set<String> = emptySet(),
 ) {
     /** This view's own effective config read again now: a value a change must reach without a restart is read
      *  through it, where the view held at boot keeps the answer it had. */
@@ -160,18 +162,15 @@ public class SpliceConfig internal constructor(
 
     /**
      * How many UTC days of saved prompts and answers this head keeps NOW, read through [current] by whoever
-     * must follow a change without a restart. They follow the one history window (Marlin, Oct 10, 2026), so
-     * Requests cannot read "Older than 7 days" while Settings says forever. An upgrade never shortens what
-     * someone has: a trace window longer than the default was chosen on purpose, and the longer of it and the
-     * history window is kept. Forever keeps every day; a window of zero keeps the day that is running.
+     * must follow a change without a restart. "Keep prompts and answers for" governs when someone set it, shorter
+     * or longer than the history window (splice-lead, Oct 12). Unset, they follow the one history window, which
+     * keeps both of Marlin's Oct 10 reasons: Requests reads this same number, so it never says "Older than 7
+     * days" while Settings says forever, and an upgrade shortens nothing an install never chose. Forever keeps
+     * every day; a window of zero keeps the day that is running.
      */
     public val traceKeptDays: Int
-        get() {
-            val window = historyWindow.days ?: return Int.MAX_VALUE
-            val chosen = traceRetentionDays
-            val kept = if (chosen > Knob.TRACE_RETENTION_DAYS.count()) maxOf(chosen, window) else window
-            return kept.coerceAtLeast(1)
-        }
+        get() = traceRetentionDays.takeIf { Knob.TRACE_RETENTION_DAYS.key in chosen }
+            ?: (historyWindow.days ?: return Int.MAX_VALUE).coerceAtLeast(1)
 
     /** How many UTC days of message edges are kept, at least one; read at every write and sweep of the edge store. */
     public val activityRetentionDays: Int get() = long(Knob.ACTIVITY_RETENTION_DAYS).toInt().coerceAtLeast(1)

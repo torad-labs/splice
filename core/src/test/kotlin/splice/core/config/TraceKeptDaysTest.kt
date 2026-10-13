@@ -1,5 +1,5 @@
-// NEW: Oct 10, 2026 — saved prompts and answers follow the one history window, and an install that chose a longer
-// trace window of its own keeps it.
+// NEW: Oct 10, 2026 — saved prompts and answers follow the one history window until someone sets "Keep prompts and
+// answers for", which then governs, shorter or longer (splice-lead, Oct 12).
 package splice.core.config
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -25,15 +25,17 @@ class TraceKeptDaysTest {
     }
 
     @Test
-    fun `a trace window the install chose that is longer than the history window is kept`() {
-        val chosen = written("historyRetentionDays" to "30", "traceRetentionDays" to "60")
-        assertEquals(60, chosen.traceKeptDays, "an upgrade never shortens what someone has")
-        assertEquals(90, written("historyRetentionDays" to "90", "traceRetentionDays" to "60").traceKeptDays)
+    fun `a knob someone set governs prompts and answers, shorter or longer than the window`() {
+        assertEquals(60, written("historyRetentionDays" to "30", "traceRetentionDays" to "60").traceKeptDays)
+        assertEquals(60, written("historyRetentionDays" to "90", "traceRetentionDays" to "60").traceKeptDays)
+        assertEquals(3, written("historyRetentionDays" to "35", "traceRetentionDays" to "3").traceKeptDays)
+        assertEquals(3, written("historyRetentionDays" to "forever", "traceRetentionDays" to "3").traceKeptDays)
+        val week = written("historyRetentionDays" to "35", "traceRetentionDays" to "7")
+        assertEquals(7, week.traceKeptDays, "a knob set to its default value is still set")
     }
 
     @Test
-    fun `a shorter or default trace window does not hold the history window down`() {
-        assertEquals(35, written("historyRetentionDays" to "35", "traceRetentionDays" to "3").traceKeptDays)
+    fun `an unset knob follows the window, so an upgrade shortens nothing`() {
         assertEquals(35, written("historyRetentionDays" to "35").traceKeptDays)
     }
 }

@@ -121,17 +121,20 @@ internal class ActivityLabel {
     private fun generic(name: String): String =
         if (name.startsWith(MCP_PREFIX)) "Calling ${name.substringAfterLast("__")}" else "Using $name"
 
-    private fun isPrelude(token: String): Boolean = token == "sudo" || token == "env" || token.contains('=')
+    private fun isPrelude(token: String): Boolean = token in COMMAND_PREFIXES || token.contains('=')
 
     private fun str(input: JsonObject, key: String): String? =
         (input[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
     /** The first real command's program and first argument — "git status", "gradlew test": past the
-     *  `cd`/`export`/assignment prelude, before any `| tail` behind it. */
+     *  `cd`/`export`/assignment prelude and the shell's own words (a `for` header, the `do` before a loop's body),
+     *  before any `| tail` behind it. A line continued with a backslash is one line, so its flags are never a head. */
     private fun commandHead(command: String?): String? {
-        val words = command.orEmpty().split(SEGMENT_SPLIT).asSequence()
+        val words = command.orEmpty().replace(LINE_CONTINUATION, " ").split(SEGMENT_SPLIT).asSequence()
             .map { segment -> segment.trim().split(WHITESPACE).filter { it.isNotEmpty() }.dropWhile { isPrelude(it) } }
-            .firstOrNull { it.isNotEmpty() && it.first() !in SHELL_PRELUDE }
+            .firstOrNull { segment ->
+                segment.firstOrNull()?.let { it !in NOT_A_COMMAND && !it.startsWith('-') } == true
+            }
             .orEmpty()
             .take(2)
             .map { it.substringAfterLast('/') }
@@ -178,6 +181,16 @@ private val FIXED_LABELS = mapOf(
     "SendMessage" to "Messaging a peer session",
 )
 private val SHELL_PRELUDE = setOf("cd", "pushd", "popd", "export", "set", "source", ".", "echo")
+
+/** Words that lead into a command without being it: privilege and environment, and the shell keywords before a
+ *  condition or a body (`if grep -q`, `do git add`) or alone on their segment (`done`, `fi`). */
+private val SHELL_KEYWORDS = setOf("if", "elif", "while", "until", "then", "else", "do", "done", "fi", "esac", "{", "}")
+private val COMMAND_PREFIXES = setOf("sudo", "env", "time", "!") + SHELL_KEYWORDS
+
+/** A segment led by one of these is no command to name: the prelude, or a header whose words are names (`for k in`). */
+private val NOT_A_COMMAND = SHELL_PRELUDE + setOf("for", "select", "case")
+
+private val LINE_CONTINUATION = Regex("\\\\\r?\n")
 
 private val SEGMENT_SPLIT = Regex("&&|\\|\\||[;|\\n]")
 private val WHITESPACE = Regex("\\s+")

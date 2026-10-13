@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.app.control.McpLaunchFolders
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpRoutes
+import splice.control.mcp.hub.McpHubRoutes
 
 /** The /mcp/{name} rows are the only ones that also admit the MCP access key ([Door.MCP]). The host's sweeper
  *  and its open sessions belong to this mount: the server starts and stops them through [start] and [stop]. */
@@ -22,6 +23,7 @@ internal class McpMount(
     private val plans: McpLaunchFolders,
 ) : ControlMount, BoundResource {
     private val routes = McpRoutes(host)
+    private val hub = host.hub?.let(::McpHubRoutes)
 
     override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, status()) } }
@@ -29,6 +31,12 @@ internal class McpMount(
             guard.guarded(call) {
                 ControlReplies.respond(call, host.probe.test(call.parameters["name"].orEmpty()).json())
             }
+        }
+        // MCP hub steps 3 and 4: the front's three calls, management key only.
+        hub?.let { front ->
+            route.post("/api/mcp/hub/resolve") { guard.guarded(call) { front.resolve(call) } }
+            route.post("/api/mcp/hub/start") { guard.guarded(call) { front.start(call) } }
+            route.post("/api/mcp/hub/listing") { guard.guarded(call) { front.listing(call) } }
         }
         route.post("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.post(call) } }
         route.get("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.stream(call) } }

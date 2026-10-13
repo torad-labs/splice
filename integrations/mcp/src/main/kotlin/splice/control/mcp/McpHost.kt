@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpSharing
+import splice.control.mcp.hub.McpHub
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -58,6 +59,9 @@ public class McpHost(
     /** V4-146: the five-kind census; null keeps today's `/api/mcp` shape exactly (every existing
      *  caller that builds an McpHost without one — every test fixture included). */
     inventory: McpInventory? = null,
+    /** MCP hub steps 3 and 4: the daemon half the hub front calls (resolve, start, listing); null when the daemon
+     *  serves no front. Its per-session holders are stopped by this host's sweep once their session ends. */
+    public val hub: McpHub? = null,
 ) {
     private val codec = JsonRpcCodec()
 
@@ -173,6 +177,7 @@ public class McpHost(
         val limit = config.idleTimeout().inWholeMilliseconds
         // The registry checks liveness and unbinds under the same lock used to acquire request leases.
         servers.sweep(now, limit)
+        hub?.sweep()
     }
 
     /** `/api/mcp`. */

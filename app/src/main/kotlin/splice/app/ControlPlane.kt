@@ -431,7 +431,11 @@ internal class ControlPlane(
         val globalRead = McpGlobalRead(home, log)
         val inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory
         mcpInventory = inventory
-        return McpHost(sharing, globalRead, config = mcpHostConfig(), log = log, inventory = inventory)
+        val config = mcpHostConfig()
+        // MCP hub steps 3 and 4: the daemon half the hub front calls; the host's sweep stops ended sessions' copies.
+        val hub = McpHubWiring(globalRead, statePaths.stateDir)
+            .hub(sharing, config.initializeTimeout, ProcessDispatchers().io(), log)
+        return McpHost(sharing, globalRead, config = config, log = log, inventory = inventory, hub = hub)
     }
 
     /** V4-110: the shared MCP host's four lifecycle values, each a READER over the knob layer (daemon-global)

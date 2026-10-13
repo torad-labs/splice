@@ -70,6 +70,7 @@ internal class UpgradeCommand(
 
     fun upgrade(args: List<String>): Boolean {
         val parsed = parser.parse(args) ?: return parser.usage()
+        if (parsed.check) return check()
         val answer = if (parsed.rollback && parsed.to != null) {
             Upgraded.Refused("--rollback takes no --to: it repoints at the previous release only")
         } else {
@@ -83,6 +84,26 @@ internal class UpgradeCommand(
                 false
             }
         }
+    }
+
+    /** `--check` (spec §5): the newest published release beside the installed one, read the way the console's Check
+     *  reads it (UpgradeChecks), with nothing staged, activated or restarted. False when the release could not be read. */
+    private fun check(): Boolean {
+        val installed = layout.installedVersion()
+        val snapshot = (UpgradeChecks(env).check() as? UpgradeCheckOutcome.Done)?.snapshot
+        val latest = snapshot?.latest
+        if (latest == null) {
+            output.line("splice upgrade --check: the newest release was not read (${snapshot?.reason ?: "no answer"})")
+            return false
+        }
+        output.line(
+            if (ReleaseOrder(latest) > ReleaseOrder(installed)) {
+                "$latest is newer than the installed $installed; run: splice upgrade"
+            } else {
+                "$installed is installed, and the newest release is $latest"
+            },
+        )
+        return true
     }
 
     private fun upgradeTo(a: UpgradeArgs): Upgraded<Boolean> {

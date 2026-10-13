@@ -1683,8 +1683,8 @@ origin.
 - **A key ledger splice cannot read is kept beside the new one,** never written over. The README names the unreadable
   copy.
 - **Teams says what its request counts cover:** since joining on a slot, since members joined on the team.
-- **Requests names a key by its provider,** "OpenRouter" and not `OPENROUTER_API_KEY`, the name Continue on uses; two
-  entries that read the same are told apart as "OpenRouter 1" and "OpenRouter 2", and an account from before splice
+- **Requests names a key by its provider,** "OpenRouter", and adds the variable, such as `OPENROUTER_API_KEY`, only
+  when two keys feed the same command, so the row says which one it sent; two menu entries that read the same are told apart as "OpenRouter 1" and "OpenRouter 2", and an account from before splice
   tracked keys reads "OpenRouter, before key tracking". A door to one request opens it, and Requests' search keeps its
   filters.
 - **An open Settings card taller than its pane says "More below"** on its lower edge until the scroll reaches the end, and

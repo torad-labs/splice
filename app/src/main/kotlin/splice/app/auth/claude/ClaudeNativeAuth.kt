@@ -74,12 +74,14 @@ internal class ClaudeNativeAuth(
 
     override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 
-    override fun credentialEvidence(): CredentialEvidence =
-        if (observe()?.let(::usable) == true) {
+    override fun credentialEvidence(): CredentialEvidence {
+        val observed = observe()
+        return if (observed?.let(::usable) == true) {
             CredentialFileEvidenceReader.read(directory.resolve(CREDENTIALS_JSON))
         } else {
-            CredentialEvidence(null, CredentialPresence.MISSING)
+            CredentialEvidence(null, CredentialPresence.MISSING, renewable = renews(observed))
         }
+    }
 
     override suspend fun describe(): AuthDescription {
         val observed = observe()

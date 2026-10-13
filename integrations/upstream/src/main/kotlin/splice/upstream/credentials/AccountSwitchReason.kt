@@ -15,6 +15,9 @@ public object AccountSwitchReason {
     internal const val ACCOUNT_UNAVAILABLE_REASON = "account unavailable"
     internal const val SIGN_IN_NEEDED = "previous login needs sign-in"
 
+    /** An expired token its own command renews: the switch is right, and nobody needs to sign in. */
+    internal const val TOKEN_EXPIRED = "previous login's token expired"
+
     private val reasons = setOf(
         PINNED,
         ORDERED,
@@ -27,6 +30,7 @@ public object AccountSwitchReason {
         USAGE_READING_FULL,
         ACCOUNT_UNAVAILABLE_REASON,
         SIGN_IN_NEEDED,
+        TOKEN_EXPIRED,
         planLimit("5-hour"),
         planLimit("7-day"),
         "7d window exhausted",

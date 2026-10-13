@@ -51,6 +51,7 @@ internal class AccountCredentialEligibility(
             selectable = current.credentialPresent && !holdActive && current.probeToken == null,
             excludedUntilEpochMillis = current.excludedUntilEpochMillis.takeIf { holdActive },
             reason = reason,
+            renewable = !current.credentialPresent && current.renewable,
         )
     }
 
@@ -160,6 +161,8 @@ internal class AccountCredentialEligibility(
         val selectable: Boolean,
         val excludedUntilEpochMillis: Long?,
         val reason: String?,
+        /** Not present, and its own command renews it (CredentialEvidence.renewable): no sign-in is needed. */
+        val renewable: Boolean = false,
     )
 
     private class CredentialEvidence(
@@ -170,7 +173,8 @@ internal class AccountCredentialEligibility(
 
         fun initialState(): State {
             val observed = observe()
-            return State(observed.identity, observed.initialPresence(configuredCredentialPresent), 0, null, null, 0L)
+            val present = observed.initialPresence(configuredCredentialPresent)
+            return State(observed.identity, present, 0, null, null, 0L, renewable = !present && observed.renewable)
         }
 
         fun observe(): Observation {
@@ -178,6 +182,7 @@ internal class AccountCredentialEligibility(
             return Observation(
                 observed?.identity,
                 observed?.presence ?: AccountCredentialIdentitySource.CredentialPresence.UNKNOWN,
+                observed?.renewable == true,
             )
         }
     }
@@ -185,6 +190,7 @@ internal class AccountCredentialEligibility(
     private data class Observation(
         val identity: CredentialFileIdentity?,
         val presence: AccountCredentialIdentitySource.CredentialPresence,
+        val renewable: Boolean,
     ) {
         fun initialPresence(configured: Boolean): Boolean = when {
             identity != null -> true
@@ -196,12 +202,14 @@ internal class AccountCredentialEligibility(
         fun reconciled(current: State): State = when {
             identity != null -> current.observeIdentity(identity)
             presence == AccountCredentialIdentitySource.CredentialPresence.PRESENT -> current.observePresent()
-            presence == AccountCredentialIdentitySource.CredentialPresence.MISSING -> current.observeMissing()
+            presence == AccountCredentialIdentitySource.CredentialPresence.MISSING ->
+                current.observeMissing().copy(renewable = renewable)
             else -> current
         }
 
         fun refreshed(current: State): State = when (presence) {
-            AccountCredentialIdentitySource.CredentialPresence.MISSING -> current.observeMissing()
+            AccountCredentialIdentitySource.CredentialPresence.MISSING ->
+                current.observeMissing().copy(renewable = renewable)
             AccountCredentialIdentitySource.CredentialPresence.PRESENT,
             AccountCredentialIdentitySource.CredentialPresence.UNKNOWN,
             -> current.recovered(identity)
@@ -215,6 +223,7 @@ internal class AccountCredentialEligibility(
         val excludedUntilEpochMillis: Long?,
         val probeToken: Long?,
         val generation: Long,
+        val renewable: Boolean = false,
     ) {
         fun observeIdentity(observed: CredentialFileIdentity): State = when {
             !credentialPresent -> recovered(observed)
@@ -241,6 +250,7 @@ internal class AccountCredentialEligibility(
         fun recovered(observed: CredentialFileIdentity?): State = copy(
             identity = observed ?: identity,
             credentialPresent = true,
+            renewable = false,
             failureCount = 0,
             excludedUntilEpochMillis = null,
             probeToken = null,

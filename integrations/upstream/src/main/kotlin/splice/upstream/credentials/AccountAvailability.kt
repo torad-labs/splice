@@ -51,20 +51,28 @@ internal object AccountAvailability {
         exhausted(it.fiveHour, at) || exhausted(it.sevenDay, at)
     } == true
 
-    /** Why [account] stopped serving: a login that is signed out or rejected first, since only the person can fix
-     *  it, then the plan the provider named spent. */
+    /** Why [account] stopped serving: its credential first, then the plan the provider named spent. A rejected or
+     *  signed-out login needs the person; an expired token its own command renews says only that it expired, never
+     *  that a sign-in is needed (the field audit, Oct 13: 3,743 such lines after one token expired). */
     fun limitReason(account: PoolAccount, at: Long): String {
         val plan = account.cooldown.planHold.live()
-        val credential = account.credentialStatus(at)
-        val signedOut = !credential.credentialPresent || credential.excludedUntilEpochMillis != null
+        val credential = credentialReason(account.credentialStatus(at))
         return when {
-            signedOut -> AccountSwitchReason.SIGN_IN_NEEDED
+            credential != null -> credential
             plan != null -> AccountSwitchReason.planLimit(plan.windowWords)
             account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L ->
                 AccountSwitchReason.PROVIDER_LIMIT
             account.cooldown.unavailableForMs() > 0L -> AccountSwitchReason.WAIT_BUDGET
             else -> AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
         }
+    }
+
+    /** The credential's half of [limitReason], or null when the credential can send. */
+    private fun credentialReason(credential: AccountCredentialEligibility.Status): String? = when {
+        credential.excludedUntilEpochMillis != null -> AccountSwitchReason.SIGN_IN_NEEDED
+        credential.renewable -> AccountSwitchReason.TOKEN_EXPIRED
+        !credential.credentialPresent -> AccountSwitchReason.SIGN_IN_NEEDED
+        else -> null
     }
 
     fun resetOrder(at: Long): Comparator<PoolAccount> =

@@ -32,14 +32,18 @@ public fun interface AccountCredentialIdentitySource {
         UNKNOWN,
     }
 
+    /** [renewable]: a MISSING credential its own command renews when it next runs, such as an expired native token
+     *  beside its refresh token. It still cannot send, but nobody needs to sign in again, and a switch says so. */
     public data class CredentialEvidence(
         public val identity: CredentialFileIdentity?,
         public val presence: CredentialPresence,
+        public val renewable: Boolean = false,
     ) {
         init {
             require(identity == null || presence == CredentialPresence.PRESENT) {
                 "credential identity requires present evidence"
             }
+            require(!renewable || presence == CredentialPresence.MISSING) { "only a missing credential renews" }
         }
     }
 

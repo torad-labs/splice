@@ -555,9 +555,10 @@ function everyHtml() {
 // opts out of every wider one), or given text, inline or from a file. The whole topology goes back through PUT
 // /api/topology with only [compaction] changed; a compaction-only edit serves the next compaction with no restart.
 const CX_MODES = { inherit: "Inherit", off: "Claude Code's", text: "Text", file: "File" };
-// each choice says what it does here, the text and the file too (marlin, Oct 12: an empty box said nothing)
+// each choice says what it does here; a text or a file says only that it replaces the wider rule, the one fact its box
+// cannot show, and on Everywhere, with no rule above, says nothing (fin, Oct 12)
 const CX_HINT = { inherit: "Takes the rule above", off: "Claude Code compacts with its own instructions",
-  text: "Compacts with these instructions, in place of any rule above", file: "Compacts with this file's instructions, in place of any rule above" };
+  text: "Replaces the rule above", file: "Replaces the rule above" };
 const samePath = (written, root) => written === root || written === homeRel(root) || written === `${homeRel(root)}/`;
 function cxEntries(t, root, model) {
   const cx = t.compaction ?? {};
@@ -586,7 +587,7 @@ function compEditHtml(p, c) {
     const body = st.mode === "text" ? `<textarea class="field ptext" id="cx-${k}" data-cx="${k}" rows="3" aria-label="Compaction instructions">${esc(st.text)}</textarea>`
       : st.mode === "file" ? `<input class="field" id="cxf-${k}" data-cxf="${k}" value="${esc(st.file)}" placeholder="~/notes/compact.md" spellcheck="false" autocomplete="off" aria-label="Instructions file">`
       : "";
-    return `<div class="crow"><div class="cwho">${who[k]}</div>${sw}<span class="chint">${CX_HINT[st.mode]}</span>${body}</div>`;
+    return `<div class="crow"><div class="cwho">${who[k]}</div>${sw}${k === "g" && (st.mode === "text" || st.mode === "file") ? "" : `<span class="chint">${CX_HINT[st.mode]}</span>`}${body}</div>`;
   };
   const keys = cx.model ? ["g", "m", "p", "pm"] : ["g", "p"];
   const said = cx.said ? `<span class="said limit">${esc(cx.said)}</span>` : "";

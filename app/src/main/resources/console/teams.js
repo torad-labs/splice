@@ -261,14 +261,12 @@ const liveNow = (session) => Boolean(session) && session.availability === "live"
   (session.status === "working" || session.status === "busy");
 
 // ---------- the figures: turns, tokens and dollars, and the turns no rate card priced ----------
-/** Checks keeps its column on the card with the honest empty and the sentence naming its source (web-console.md:709):
- *  the value when the team's economics row carries one, else its checks_source or the absence itself. Packet has no
- *  column: the message is the unit, and the chat shows it (marlin, Oct 13). Named apart from the panels' keptHtml. */
+/** A member's checks, drawn only when the team's economics row carries a value: a member with none draws nothing,
+ *  since a source sentence on every idle card is plumbing (marlin, Oct 13). Packet has no column at all: the message is
+ *  the unit, and the chat shows it. Named apart from the panels' keptHtml. */
 function checksHtml(tm, slotId) {
   const row = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId);
-  const checks = row?.checks ? esc(row.checks)
-    : `No checks · ${esc(row?.checks_source || "nothing on the wire fills them yet")}`;
-  return `<div class="meta"><span>${checks}</span></div>`;
+  return row?.checks ? `<div class="meta"><span>${esc(row.checks)}</span></div>` : "";
 }
 
 function useOf(tm, slotId) {

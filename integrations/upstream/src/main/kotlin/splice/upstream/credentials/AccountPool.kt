@@ -272,6 +272,26 @@ public class AccountPool(
         return AccountAvailability.upNext(order, now()).firstOrNull()?.label
     }
 
+    /** Session listings read every listed session through ONE membership read. A property, not a function: the class
+     *  is at detekt's 15-function ceiling. */
+    public val listed: SessionListing = SessionListing()
+
+    /** [view] reconciles membership and re-reads every login's credentials on each call, so a listing that asked it per
+     *  row read the logins hundreds of times. [choices] reconciles once and reads only the per-session state. */
+    public inner class SessionListing internal constructor() {
+        public fun choices(sessionIds: Collection<String>): Map<String, AccountSessionChoice> {
+            val known = liveMembership.byLabel
+            val held = synchronized(sessions) { sessionIds.associateWith(sessions::get) }
+            return held.mapValues { (id, session) ->
+                AccountSessionChoice(
+                    selectedLabel = session?.label?.takeIf(known::containsKey),
+                    pinnedLabel = pins.forSession(id)?.takeIf(known::containsKey),
+                    lastSwitch = session?.lastSwitch,
+                )
+            }
+        }
+    }
+
     /** One order for selection and its preview. A session stays on its free login in either mode, until a limit
      *  (Marcos, Oct 3: "a session stays put until a limit"); where it moves next is the quota that resets soonest, or
      *  the person's saved order, which also places a session that has no login yet. */

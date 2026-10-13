@@ -1,7 +1,9 @@
 // NEW: Oct 12, 2026 — which login each session's requests carry, out of SessionsWiring for the concentration law.
 package splice.app.control
 
-import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountSessionChoice
+import splice.accounts.pool.HeadAccountSessionSource
+import splice.accounts.pool.HeadAccountSessions
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CLIENT_AUTH_KIND
@@ -25,7 +27,8 @@ internal class SessionAccountLabels(
     private val ports: ConsolePorts,
 ) : SessionAccountOf {
     override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
-        val saved = records.groupBy { it.head }.mapNotNull { (head, sessions) ->
+        val byHead = records.groupBy { it.head }
+        val saved = byHead.mapNotNull { (head, sessions) ->
             val managed = heads[head] ?: return@mapNotNull null
             if (managed.authSurface.authKind != CLIENT_AUTH_KIND) return@mapNotNull null
             val source = managed.sources.perfRows as? PerfRowsFileSource ?: return@mapNotNull null
@@ -34,12 +37,15 @@ internal class SessionAccountLabels(
             if (ids.isEmpty()) return@mapNotNull null
             requireNotNull(head) to source.sessionAccounts(ids)
         }.toMap()
-        return snapshot(saved)
+        val ids = byHead.mapNotNull { (head, sessions) ->
+            head?.let { it to sessions.mapNotNull(SessionRecord::sessionId).distinct() }
+        }.toMap()
+        return ListingViews(saved, ids)
     }
 
     override fun label(head: String?, sessionId: String): String? = head?.let {
         val surface = heads[it]?.authSurface?.takeUnless { auth -> auth.authKind == CLIENT_AUTH_KIND }
-        account(it, sessionId, null, surface?.accountPool?.view(sessionId))
+        account(it, sessionId, null, surface?.accountPool?.view(sessionId)?.selectedLabel)
     }
 
     override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
@@ -49,29 +55,44 @@ internal class SessionAccountLabels(
     override fun switchOf(head: String?, sessionId: String): SessionAccountSwitch? = lastSwitch(head, sessionId)
 
     /** The labels as [forRecords] read them, with the accounts the perf rows saved for the sessions in view. One
-     *  listing reads each pool view once: a view re-reads every login's credentials, and a row asked for up to four of
-     *  them, so 590 rows read the logins thousands of times and /api/sessions took 23.5 s on a cold daemon
-     *  (splice-usage, Oct 13). */
-    private fun snapshot(saved: Map<String, PerfSessionAccountIndex.Snapshot>): SessionAccountOf = ListingViews(saved)
-
+     *  listing reads each head's pool once for all its sessions ([ids]). A pool view re-reads every login's
+     *  credentials: asked per row, 590 rows took /api/sessions to 23.5 s on a cold daemon (splice-usage, Oct 13), and
+     *  one view per session still left 1.1 s of a 1.6 s warm listing there (splice-sessions, Oct 13). */
     private inner class ListingViews(
         private val saved: Map<String, PerfSessionAccountIndex.Snapshot>,
+        private val ids: Map<String, List<String>>,
     ) : SessionAccountOf {
-        private val views = HashMap<Pair<String, String?>, HeadAccountPoolView?>()
+        private val pools = HashMap<String, HeadAccountSessions?>()
 
-        private fun viewOf(head: String?, session: String?): HeadAccountPoolView? = head?.let { key ->
-            views.getOrPut(key to session) { heads[key]?.authSurface?.accountPool?.view(session) }
+        private fun poolOf(head: String?): HeadAccountSessions? = head?.let { key ->
+            if (key !in pools) pools[key] = read(key)
+            pools[key]
         }
 
+        /** A pool that cannot read a listing at once (a test double) is asked per session, as before. */
+        private fun read(head: String): HeadAccountSessions? {
+            val pool = heads[head]?.authSurface?.accountPool ?: return null
+            val sessions = ids[head].orEmpty()
+            return (pool as? HeadAccountSessionSource)?.sessions(sessions) ?: HeadAccountSessions(
+                headPinnedLabel = pool.view(null).pinnedLabel,
+                bySession = sessions.associateWith { id ->
+                    pool.view(id).let { HeadAccountSessionChoice(it.selectedLabel, it.pinnedLabel, it.lastSwitch) }
+                },
+            )
+        }
+
+        private fun choiceOf(head: String?, session: String): HeadAccountSessionChoice? =
+            poolOf(head)?.bySession?.get(session)
+
         override fun label(head: String?, sessionId: String): String? =
-            head?.let { account(it, sessionId, saved[it], viewOf(it, sessionId)) }
+            head?.let { account(it, sessionId, saved[it], choiceOf(it, sessionId)?.selectedLabel) }
 
-        override fun pin(head: String?, sessionId: String): String? = viewOf(head, sessionId)?.pinnedLabel
+        override fun pin(head: String?, sessionId: String): String? = choiceOf(head, sessionId)?.pinnedLabel
 
-        override fun headPin(head: String?): String? = viewOf(head, null)?.pinnedLabel
+        override fun headPin(head: String?): String? = poolOf(head)?.headPinnedLabel
 
         override fun switchOf(head: String?, sessionId: String): SessionAccountSwitch? =
-            viewOf(head, sessionId)?.lastSwitch
+            choiceOf(head, sessionId)?.lastSwitch
                 ?.let { SessionAccountSwitch(it.from, it.to, it.reason, it.atEpochMillis) }
     }
 
@@ -91,13 +112,13 @@ internal class SessionAccountLabels(
         head: String,
         session: String,
         saved: PerfSessionAccountIndex.Snapshot?,
-        view: HeadAccountPoolView?,
+        selected: String?,
     ): String? {
         val managed = heads[head] ?: return null
         val pool = managed.authSurface.accountPool
         return when {
             managed.authSurface.authKind == CLIENT_AUTH_KIND -> clientAccount(head, session, saved)
-            pool != null -> view?.selectedLabel
+            pool != null -> selected
             AuthKindRegistry.isOAuth(managed.authSurface.authKind) -> SINGLE_LOGIN_LABEL
             else -> null
         }

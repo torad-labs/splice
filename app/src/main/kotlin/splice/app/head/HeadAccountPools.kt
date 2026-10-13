@@ -9,6 +9,9 @@ import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountQuota
+import splice.accounts.pool.HeadAccountSessionChoice
+import splice.accounts.pool.HeadAccountSessionSource
+import splice.accounts.pool.HeadAccountSessions
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.accounts.pool.HeadAccountWindow
@@ -147,8 +150,19 @@ internal class HeadAccountPools {
         private val pool: AccountPool,
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
-    ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource {
+    ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource, HeadAccountSessionSource {
         override val active: Boolean get() = pool.active
+
+        override fun sessions(sessionIds: Collection<String>): HeadAccountSessions = HeadAccountSessions(
+            headPinnedLabel = pool.pinned(null),
+            bySession = pool.listed.choices(sessionIds).mapValues { (_, choice) ->
+                HeadAccountSessionChoice(
+                    choice.selectedLabel,
+                    choice.pinnedLabel,
+                    choice.lastSwitch?.let { HeadAccountSwitchView(it.from, it.to, it.reason, it.atEpochMillis) },
+                )
+            },
+        )
 
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
             pinnedLabel = pool.pinned(sessionId),

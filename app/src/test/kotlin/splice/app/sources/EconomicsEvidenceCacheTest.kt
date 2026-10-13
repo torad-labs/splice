@@ -30,7 +30,11 @@ class EconomicsEvidenceCacheTest {
                 assertEquals(expected.probes, evidence.probes, "probe facts must survive every cache shape")
                 assertEquals(0, evidence.work.skipped, "a rejected pre-window row must not poison economics")
                 assertNull(evidence.work.readError)
-                assertEquals(evidence, source.economicsEvidence(100), "an unchanged poll must keep the same evidence")
+                assertEquals(
+                    read(evidence),
+                    read(source.economicsEvidence(100)),
+                    "an unchanged poll must keep the same evidence",
+                )
             }
         }
     }
@@ -80,6 +84,13 @@ class EconomicsEvidenceCacheTest {
         val refused = (again as? ProbeDeduction.Unavailable)?.gap == ProbeGap.UNREADABLE
         assertTrue(!refused, "a mended log is not refused for the old tear")
     }
+
+    /** The evidence as the hourly totals read it: a row's time is its own, so the compact cache keeps no `ts` among
+     *  its numeric fields while a fresh decode still carries one, and no reader looks a row's time up there. */
+    private fun read(evidence: EconomicsPerfEvidence) = evidence.copy(
+        work = evidence.work.copy(rows = evidence.work.rows.map { it.copy(fields = it.fields - "ts") }),
+        probes = evidence.probes.map { it.copy(fields = it.fields - "ts") },
+    )
 
     private fun write(file: Path) {
         val rows = buildList {

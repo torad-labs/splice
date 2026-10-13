@@ -47,10 +47,10 @@ internal class ControlMcpWiring(
 
     /** Whether the MCP hub runs, decided once as [host] builds it; /health reports it for doctor. */
     var hub: McpHubVerdict? = null
+        private set
 
     /** The hub is live only on a verdict that says on: no verdict, as when MCP is not hosted, is off. */
     val hubLive = McpHubLive { hub?.let { it.offReason == null } == true }
-        private set
 
     /** The daemon's one MCP sharing planner. §8 8c: a server seen asking for roots stays per-session after a restart,
      *  so no session loses it mid-work; the verdicts live in the state dir. */

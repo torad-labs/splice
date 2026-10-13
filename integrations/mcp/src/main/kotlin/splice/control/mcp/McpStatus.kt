@@ -25,8 +25,8 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: the status line prints sizes in KiB.
-private const val BYTES_PER_KB = 1024L
+// why: the status line prints sizes in KiB, and McpDarwinBound reads ps's KiB with the same factor.
+internal const val BYTES_PER_KB = 1024L
 
 /** The live hosted process for a server name, or null when none is running. */
 internal fun interface HostedServerLookup {

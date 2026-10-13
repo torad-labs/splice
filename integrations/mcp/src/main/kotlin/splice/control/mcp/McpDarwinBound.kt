@@ -23,17 +23,14 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-// why: ps's resident size is in KiB.
-private const val KIB = 1024L
-
-// why: the log names sizes in MiB, the unit a person reads memory in.
-private const val MIB = 1024L * 1024L
+// why: the log names sizes in MiB, the unit a person reads memory in; ps's KiB use BYTES_PER_KB (McpStatus.kt).
+private const val BYTES_PER_MIB = BYTES_PER_KB * BYTES_PER_KB
 
 // why: a hosted server may hold at most this share of physical memory with its descendants (a quarter, see the header).
 private const val SHARE = 4L
 
 // why: the bound when the JVM cannot say how much memory the machine has, a size no working MCP server reaches.
-private const val FALLBACK_BOUND_BYTES = 4L * 1024L * MIB
+private const val FALLBACK_BOUND_BYTES = 4L * BYTES_PER_KB * BYTES_PER_MIB
 
 // why: how often the children are measured; a runaway grows for at most this long past the bound before it is stopped.
 private const val BOUND_INTERVAL_MS = 5_000L
@@ -66,7 +63,9 @@ internal class PsResidentMemory : ResidentMemory {
     private fun parse(out: String): Map<Long, Long> = out.lineSequence()
         .map { it.trim().split(blank) }
         .filter { it.size == 2 }
-        .mapNotNull { (pid, kib) -> pid.toLongOrNull()?.let { p -> kib.toLongOrNull()?.let { p to it * KIB } } }
+        .mapNotNull { (pid, kib) ->
+            pid.toLongOrNull()?.let { p -> kib.toLongOrNull()?.let { p to it * BYTES_PER_KB } }
+        }
         .toMap()
 }
 
@@ -84,8 +83,8 @@ internal class McpDarwinBound(
     fun watch(name: String, process: Process) {
         watched[process] = name
         if (!started.compareAndSet(false, true)) return
-        val bound = (boundBytes / MIB).toString()
-        val every = (BOUND_INTERVAL_MS / MS_PER_S).toString()
+        val bound = (boundBytes / BYTES_PER_MIB).toString()
+        val every = TimeUnit.MILLISECONDS.toSeconds(BOUND_INTERVAL_MS).toString()
         log(
             "[mcp-host] macOS has no slice to cap hosted MCP servers, so each is bounded at " +
                 "${LogSafe.str(bound)} MiB with its children, measured every ${LogSafe.str(every)} s, " +
@@ -93,7 +92,7 @@ internal class McpDarwinBound(
         )
         Executors.defaultThreadFactory().newThread(::loop).apply {
             isDaemon = true
-            name = "mcp-host-bound"
+            this.name = "mcp-host-bound"
         }.start()
     }
 
@@ -113,8 +112,8 @@ internal class McpDarwinBound(
         watched.remove(process)
         process.descendants().forEach { it.destroyForcibly() }
         process.destroyForcibly()
-        val held = (bytes / MIB).toString()
-        val bound = (boundBytes / MIB).toString()
+        val held = (bytes / BYTES_PER_MIB).toString()
+        val bound = (boundBytes / BYTES_PER_MIB).toString()
         log(
             "[mcp-host] ${LogSafe.str(name)}: held ${LogSafe.str(held)} MiB with its children, past the " +
                 "${LogSafe.str(bound)} MiB a hosted server may hold on macOS, so splice stopped it; the next call " +
@@ -133,6 +132,3 @@ internal class McpDarwinBound(
         }
     }
 }
-
-// why: the log names the interval in seconds.
-private const val MS_PER_S = 1_000L

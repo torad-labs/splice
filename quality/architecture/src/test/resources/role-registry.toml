@@ -729,3 +729,13 @@ names = [
     "SessionAccountPlans",
 ]
 reason = """Three seams for ONE plan question and one unrelated question, all over a nullable name. AccountOnPlan (the hourly rollup), BudgetPlans (the budget ledger) and SessionAccountPlans (the Teams and Projects tallies) each ask of an ACCOUNT label whether a plan covers the requests it carried. They are three ports because the modules that own them have no edge to each other, and each is wired from the one AccountPlanLookup answer in app. The fourth is a different question. AccountOnPlan asks of an ACCOUNT label whether a plan covers the requests it carried, so the hourly rollup files a request as a plan's or a key's at the moment it is recorded. KeptModel asks of a MODEL id whether a resumed session keeps the assistant row it came from. Handing KeptModel an account, or a plan seam a model id, would answer a question about a model with a fact about a billing account, or file a request under a plan because a model id happened to be known, and either would compile and run."""
+
+# ── 2 names, (String) -> JsonObject? ─────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(String)->JsonObject?"
+dated = "2026-10-13"
+names = [
+    "OllamaModelCard",
+    "ReasoningEnvelopeDecoder",
+]
+reason = """Two unrelated reads that both answer a JSON object for a string. OllamaModelCard asks a local Ollama runtime's /api/show for one MODEL NAME and answers its card, modelfile parameters and capabilities, so the local probe can read a served window; it is private to LocalRuntimeProbe.kt. ReasoningEnvelopeDecoder opens a `redacted_thinking` ENVELOPE from the client's history back into the reasoning item it carried, in the OpenAI Responses dialect. A model name handed to the decoder, or an envelope handed to a runtime, would fail closed (null), but would read as a model with no card or a turn with no reasoning to replay, which is why the two stay separate types."""

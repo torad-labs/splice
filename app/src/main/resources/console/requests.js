@@ -361,7 +361,7 @@ function turnsPath(head, filtered, win = ui.win, held = MAX_HELD, project = ui.p
     if (ROW_TEST[ui.why]) p.set("test", ROW_TEST[ui.why]);
     // a named stretch begins at the daemon too, or a cap on the newest rows would cut the stretch's start off
     if (ui.from) p.set("from", String(+ui.from + 1));
-  }
+  } else p.set("usage", "names"); // the menus list names only: the daemon skips the priced fold (TurnNames.kt); an older one ignores it
   return `/api/perf/turns?${p}`;
 }
 

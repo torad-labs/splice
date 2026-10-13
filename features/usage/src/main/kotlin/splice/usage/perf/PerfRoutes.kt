@@ -65,7 +65,16 @@ private const val MAX_TURNS = 2_000
 
 /** Which whole-window figures the answer carries beside its rows. [peak] is the most requests held at once over
  *  EVERY matching row, not the clamped newest. */
-private data class AskedFigures(val usage: Boolean = true, val peak: Boolean = false)
+private data class AskedFigures(val usage: Boolean = true, val peak: Boolean = false, val names: Boolean = false) {
+    /** The usage block this read asked for: `usage=names` is the menus' read, the names alone without the priced fold
+     *  (TurnNames); `usage=0` leaves the block out. */
+    fun usageJson(matching: List<PerfRow>, gaps: TurnPriceGap, zone: ZoneId, reading: AccountReading): JsonObject? =
+        when {
+            names -> TurnNames(matching, reading).json()
+            usage -> TurnUsage(matching, gaps, zone, reading).json()
+            else -> null
+        }
+}
 
 /** `?order=`: the n rows a clamp keeps. `price` ranks the WHOLE matching window by what each request costs at the
  *  head's published API rates (a key's cost_usd, a plan's plan_value_usd), unpriced requests last, ties newest first. */
@@ -216,7 +225,8 @@ public class PerfRoutes(
             if (orderText == null) TurnsOrder.NEWEST else TurnsOrder.entries.firstOrNull { it.wire == orderText }
         val window = rowsAsked(nText)?.let { n ->
             filter?.takeIf { order != null }?.let {
-                val figures = AskedFigures(params["usage"] != "0", params["peak"] == "1")
+                val usage = params["usage"]
+                val figures = AskedFigures(usage != "0", params["peak"] == "1", usage == "names")
                 AskedWindow(since, AskedRows(n, order ?: TurnsOrder.NEWEST), it, zone, figures, tags = tags)
             }
         }
@@ -299,7 +309,8 @@ public class PerfRoutes(
             if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             // `usage=0` leaves the block out: it is a fold over every matching row, and a caller that reads only
             // `count` and `rows` (Settings asks about a hundred such counts) must not pay for figures it drops.
-            if (asked.figures.usage) put("usage", TurnUsage(matching, gaps, asked.zone, reading).json())
+            val usage = asked.figures.usageJson(matching, gaps, asked.zone, reading)
+            if (usage != null) put("usage", usage)
             // Over every row of the window the filters matched, never the newest n: a busy command's day is more than n rows.
             if (asked.figures.peak) put("at_once", PerfPeak(matching).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps, asked.tags, reading)) } }

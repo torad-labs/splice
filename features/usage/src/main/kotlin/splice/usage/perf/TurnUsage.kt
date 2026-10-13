@@ -219,4 +219,4 @@ internal class AccountPlans(head: UsageHead, billing: UsageBilling? = null) {
 
 // why: Compare models sends carry no session; Usage's by-project view reads its per-session buckets, so the sends fold
 // into one bucket of their own that the console names as a group, instead of the null key it leaves out.
-private const val COMPARE_BUCKET = "compare"
+internal const val COMPARE_BUCKET = "compare"

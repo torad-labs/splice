@@ -30,7 +30,7 @@ internal class PerfSessionAccountIndex(
     private val scanBytes: Long = PERF_CACHE_BYTES,
     private val scanGenerations: Int = ACCOUNT_SOURCE_GENERATIONS,
 ) {
-    data class Snapshot(val accounts: Map<String, String>, val complete: Boolean, val indexed: Set<String>)
+    data class Snapshot(val accounts: Map<String, String>)
     private data class Known(val ts: Long, val account: String?, val priority: Int)
 
     private val latest = LinkedHashMap<String, Known>()
@@ -39,7 +39,6 @@ internal class PerfSessionAccountIndex(
     private var requestedBytes = 0L
     private var archiveDigest: ByteArray? = null
     private var live = emptyList<Generation>()
-    private var complete = true
     private var priority = 0
     private val rows = PerfAccountRows(scanBytes)
 
@@ -67,7 +66,6 @@ internal class PerfSessionAccountIndex(
             } catch (_: IOException) {
                 // Unreadable or racing history cannot authorize either an identity or an absence claim.
                 clear()
-                complete = false
             }
         }
         return snapshot()
@@ -94,11 +92,8 @@ internal class PerfSessionAccountIndex(
         }
     }
 
-    private fun snapshot(): Snapshot = Snapshot(
-        latest.mapNotNull { (id, known) -> known.account?.let { id to it } }.toMap(),
-        complete,
-        requested,
-    )
+    private fun snapshot(): Snapshot =
+        Snapshot(latest.mapNotNull { (id, known) -> known.account?.let { id to it } }.toMap())
 
     private fun refresh(archives: List<Path>, current: List<Path>, decode: PerfLineDecode) {
         val archived = rows.fingerprint(archives)
@@ -138,13 +133,9 @@ internal class PerfSessionAccountIndex(
         ordered.forEachIndexed { index, source ->
             priority = index
             val size = source.version?.size ?: return@forEachIndexed
-            if (opened >= scanGenerations || remaining == 0L) {
-                if (size > 0L) complete = false
-                return@forEachIndexed
-            }
+            if (opened >= scanGenerations || remaining == 0L) return@forEachIndexed
             val span = minOf(size, remaining)
             val start = size - span
-            if (start > 0L) complete = false
             val cursor = rows.scan(source, null, start, decode)
             if (next.any { it.path == source.path }) scanned[source.path] = cursor
             remaining -= span
@@ -169,7 +160,6 @@ internal class PerfSessionAccountIndex(
         val fits = retainedBytes - prior + charge <= limitBytes
         latest[session] = Known(row.ts, account.takeIf { fits }, priority)
         entryBytes += (if (fits) charge else base) - prior
-        if (!fits) complete = false
     }
 
     private fun older(previous: Known, row: PerfRow): Boolean =
@@ -180,6 +170,5 @@ internal class PerfSessionAccountIndex(
         entryBytes = 0L
         archiveDigest = null
         live = emptyList()
-        complete = true
     }
 }

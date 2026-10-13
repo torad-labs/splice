@@ -165,13 +165,11 @@ class PerfSessionAccountIndexTest {
         val ids = setOf("older", "recent", "absent")
         val snapshot = index.accounts(ids, listOf(archived), listOf(current), decode)
         assertEquals(mapOf("recent" to "recent-account"), snapshot.accounts)
-        assertEquals(false, snapshot.complete)
         assertTrue(decodedBytes <= Files.size(current), "the admission ceiling is decoded source bytes")
         val before = decodedBytes
         assertEquals(snapshot, index.accounts(ids, listOf(archived), listOf(current), decode))
         assertEquals(before, decodedBytes, "even unresolved older sessions do not trigger a second seed")
         val full = PerfSessionAccountIndex().accounts(setOf("absent"), listOf(archived), listOf(current), decode)
-        assertTrue(full.complete)
         assertTrue(full.accounts.isEmpty())
     }
 

@@ -25,7 +25,19 @@ internal class UpgradeWrapper(private val output: TerminalOutput, private val pr
         val previous = keep(live, pristine, keepEditAt)
         replace(live, release)
         report(live, release, pristine, previous)
+        keptEdit(live, release)
         return previous
+    }
+
+    /** The release coming back kept an edit of its shim when it was left (on a host that patches the launcher,
+     *  that patch): its pristine copy now runs, so the edit is named for the operator to put back. */
+    private fun keptEdit(live: Path, release: Path) {
+        val edited = release.resolveSibling(EDITED_SHIM)
+        if (!Files.exists(edited)) return
+        val label = "wrapper".padEnd(UPGRADE_PAD)
+        output.line("  $YELLOW!$RESET $label this release's shim was edited when it was left;")
+        val indent = "".padEnd(UPGRADE_PAD)
+        output.line("  $indent   that edit is not active, and is kept at $edited (copy it over $live to restore it)")
     }
 
     private fun keep(live: Path, pristine: Path?, keepEditAt: Path): Path? {

@@ -87,7 +87,13 @@ internal class AddCommand(
                 output.line("  $RED✗$RESET $label ${c.file.path} ${texts.cliStale(written)}")
             }
             AddWritten.Written -> true.also {
-                output.line("  $GREEN✓$RESET $label ${c.file.path} (+[providers.${c.key}], +[heads.${c.key}])")
+                // a second command on a provider the file holds appends only its head (AddPrepare.sharedProvider)
+                val tables = if (c.providerKey == c.key) {
+                    "+[providers.${c.key}], +[heads.${c.key}]"
+                } else {
+                    "+[heads.${c.key}] on [providers.${c.providerKey}]"
+                }
+                output.line("  $GREEN✓$RESET $label ${c.file.path} ($tables)")
             }
         }
     }

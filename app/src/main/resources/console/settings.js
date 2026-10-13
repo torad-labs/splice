@@ -354,8 +354,10 @@ const traceSetDays = (head) => {
 function traceKeepWords() {
   const w = ui.hist.window, windowDays = w.forever ? Infinity : w.nothing ? 0 : w.days;
   const days = ui.heads.map((h, i) => {
-    const said = ui.kept.trace?.[i]?.kept_days;
-    return Number.isInteger(said) ? said : traceSetDays(h) ?? windowDays;
+    const body = ui.kept.trace?.[i];
+    // the route's kept_days (227e4e5bb): null keeps every day; a body without the field is an older daemon
+    if (body && "kept_days" in body) return body.kept_days === null ? Infinity : body.kept_days;
+    return traceSetDays(h) ?? windowDays;
   });
   const n = days.length ? Math.max(...days) : windowDays;
   if (n === Infinity) return "Until its size caps, oldest day first";

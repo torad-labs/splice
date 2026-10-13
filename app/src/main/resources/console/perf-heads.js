@@ -116,7 +116,9 @@ const PERF_HEADS = (() => {
    *  model every request to failed never answered, so neither prints one. A failed share prints from 1% up. */
   const SHOWN_MODELS = 3;
   // a model id carrying its release date (claude-haiku-4-5-20251001) reads by its name, never the date (marlin)
-  const modelWord = (id) => (id === "?" ? "No model named" : modelName(S.labels, id.replace(/-\d{8}$/, "")) ?? id);
+  // a request with no model ended before splice picked one, cut by a restart or refused first (no_request rows; live
+  // Oct 13, claudex's 23 were all error:restarted), so its row says that and never reads as a model of that name
+  const modelWord = (id) => (id === "?" ? "Ended before a model was picked" :modelName(S.labels, id.replace(/-\d{8}$/, "")) ?? id);
   const answered = (id, m) => id !== "?" && m.failure_share < 1 && m.total_ms?.p50 != null;
   const byCount = (h) => Object.entries(h.models || {}).sort((x, y) => y[1].count - x[1].count);
   function modelLine(h) {

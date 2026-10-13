@@ -349,6 +349,21 @@ function rowLook(row, turn, reanchorMs) {
 /** How urgent a session is, in the cards' rank: waiting on him, stalled, working, the rest. */
 const rankOf = (s) => (s.state === "needs" || gaveUpNeeds(s) ? 0 : stalled(s) ? 1 : s.state === "working" ? 2 : 3);
 const rowAt = (row) => +new Date(row.updated_at || row.status_updated_at || row.started_at || 0);
+/** How long a live turn has been held since the gate admitted it (age_ms, splice-turns d42eeda99), counted up from
+ *  when it was read: seconds, then minutes (fin). */
+const heldFor = (t) => {
+  const secs = Math.floor(Math.max(0, t.age_ms + (t.readAt ? Date.now() - t.readAt : 0)) / 1000);
+  return secs < 60 ? `${secs} s` : `${Math.floor(secs / 60)} min`;
+};
+/** A working session in its gate's words (fin, Oct 13): the turn's time rides the word, a compaction reads Compacting,
+ *  and a turn whose request is sent with no first byte back says No output yet beside it. A turn the gate holds no
+ *  slot for reads Working, as before. */
+function workingLook(s) {
+  const t = s.turn;
+  if (t?.phase == null) return { cls: "working", lamp: ICON.trace, word: "Working" };
+  const word = `${t.compact ? "Compacting" : "Working"} · <span data-held="${esc(s.id)}">${heldFor(t)}</span>`;
+  return { cls: "working", lamp: ICON.trace, word, detail: t.phase === "connect" ? `<span class="detail">No output yet</span>` : "" };
+}
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
   if (gaveUp(s)) {
@@ -375,7 +390,7 @@ function look(s) {
     if (k === "signout") return { cls: "stalled", lamp, word: "Signed out", detail: fix };
     return { cls: "stalled", lamp, word: "Stalled", detail };
   }
-  if (s.state === "working") return { cls: "working", lamp: ICON.trace, word: "Working" };
+  if (s.state === "working") return workingLook(s);
   if (s.state === "stopped") return { cls: "stopped", lamp: "<i></i>", word: "Stopped" };
   if (s.state === "ended") return { cls: "ended", lamp: "<i></i>", word: "Ended" };
   return { cls: "idle", lamp: "<i></i>", word: "Idle" };
@@ -416,6 +431,24 @@ const PAGES = [
 // A page with nothing saved keeps the night its HTML opens in.
 const THEME_KEY = "splice-console-theme";
 try { const saved = localStorage.getItem(THEME_KEY); if (saved === "day" || saved === "night") document.documentElement.dataset.theme = saved; } catch { /* storage off: the page keeps its own theme */ }
+// A PRESS THAT CUTS OR MOVES SOMEONE ASKS ONCE (Marlin, Oct 13, from Settings' Restart splice, Oct 12): the first press
+// reads which sessions have a request in flight on the commands it touches, off each command's live turns the way
+// Sessions reads them. None, and the press acts at once; some, and it arms with their names, each a chip that opens its
+// session, and the second press acts. [heads] null is every command splice runs.
+async function midRequest(heads = null) {
+  const keys = heads ?? ((await API.get("/api/heads")).body?.heads || []).map((h) => h.key);
+  const [lives, sessions] = await Promise.all([
+    Promise.all(keys.map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/turns/live`))),
+    API.get("/api/sessions"),
+  ]);
+  const names = new Map((sessions.body?.sessions || []).map((x) => [x.session_id, x.name || x.title]));
+  const ids = [...new Set(lives.flatMap((r) => (r.body?.turns || []).filter((t) => t.session && !t.stopped).map((t) => t.session)))];
+  return ids.map((id) => ({ id, name: names.get(id) }));
+}
+/** The armed question: what the act does to them, their chips, then the act and the way out (both already drawn). */
+const armedAsk = (said, cut, act, keep, tail = "") => `<span class="armed cutask"><span class="said">${esc(said)}</span>`
+  + cut.map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}"><i aria-hidden="true"></i>${esc(x.name || x.id.slice(0, 8))}</a>`).join("")
+  + `${tail}${act}${keep}</span>`;
 function toggleTheme() {
   const h = document.documentElement;
   h.dataset.theme = h.dataset.theme === "day" ? "night" : "day";

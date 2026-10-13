@@ -338,7 +338,7 @@ function histBar(h) {
 const keptDays = () => {
   const w = ui.hist?.window;
   if (ks.cfg?.knobs?.historyRetentionDays?.scope !== "default" || !w) return val("historyRetentionDays");
-  return w.forever ? null : w.nothing ? 0 : w.days;
+  return w.forever ? "forever" : w.nothing ? 0 : w.days;
 };
 function histRow(r) {
   if (ui.hist === undefined) return drow({ name: r.name, door: r.door, amount: READING });
@@ -782,7 +782,7 @@ function mcpServerRows(m) {
     const project = projectOf(at);
     return { name, from: fromWord(at), project, shared, web, address: web ? addressOf(value) : "", state, value,
       cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
-      cmds: live?.commands || [], stale, last: live?.last_activity || 0,
+      cmds: live?.commands || [], stale, last: live?.last_activity || 0, err: live?.last_error || "",
       // the one process splice runs for it now and what it holds, read from /proc by the daemon (McpStatus.kt hosted)
       hosted: !!live?.hosted, rss: live?.rss_bytes ?? null };
   }).sort((a, b) => Number(b.shared) - Number(a.shared) || a.name.localeCompare(b.name));
@@ -816,7 +816,7 @@ function serverRow(s, dim) {
   const used = s.cmds.length || soon ? `<span class="used">Used by${s.cmds.map((c) => cmdChip(c)).join("")}${soon}</span>` : "";
   const test = `${testSaid(s.name)}<button class="act quiet small" data-act="mtest" data-name="${esc(s.name)}"${ui.mtest[s.name] === "running" ? " disabled" : ""}>Test</button>`;
   return `<div class="srv"><span class="lamp working" aria-hidden="true">${ICON.trace}</span>${name}`
-    + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}</span>`
+    + `<span class="fig uses">${used}</span><span class="fig mem">${memWord(s)}</span><span class="fig">${s.last ? `Last call ${esc(atWord(s.last))}` : ""}${s.err ? ` <span class="state limit">${esc(s.err)}</span>` : ""}</span>`
     + `<span class="acts">${test}<span class="always">Shared</span></span></div>`;
 }
 const mcpServersHtml = () => {
@@ -1061,9 +1061,9 @@ function runHtml(run, back) {
  *  the same as one that hung. */
 function restartAct(going) {
   if (ui.armed === "restart" && !ui.restarting) {
-    const chips = (ui.cut || []).map((x) => `<a class="chip" href="sessions.html#${encodeURIComponent(x.id)}"><i aria-hidden="true"></i>${esc(x.name || x.id.slice(0, 8))}</a>`).join("");
     const then = ui.drainMs ? `<span class="said then">· ${KNOBS.dur(ui.drainMs)} to finish, then cut</span>` : "";
-    return `<span class="armed"><span class="said">Mid-request</span>${chips}${then}<button class="act danger" data-act="restart-now">Restart splice</button><button class="act quiet" data-act="disarm">Keep running</button></span>`;
+    return armedAsk("Mid-request", ui.cut || [], '<button class="act danger" data-act="restart-now">Restart splice</button>',
+      '<button class="act quiet" data-act="disarm">Keep running</button>', then);
   }
   const wait = ui.restartWait;
   const word = !ui.restarting ? "Restart splice"
@@ -1117,17 +1117,11 @@ const upgrade = () => startRun("up", ui.ver?.latest, { to: ui.ver?.latest });
 async function pressRestart() {
   if (ui.restarting || ui.restartArming) return;
   ui.restartArming = true; render();
-  const [lives, sessions, phase] = await Promise.all([
-    Promise.all((ui.heads || []).map((h) => API.get(`/api/heads/${encodeURIComponent(h)}/turns/live`))),
-    API.get("/api/sessions"),
-    API.get("/api/daemon/restart"),
-  ]);
+  const [cut, phase] = await Promise.all([midRequest(ui.heads || []), API.get("/api/daemon/restart")]);
   ui.restartArming = false;
   ui.drainMs = phase.body?.drain_ms ?? null;
-  const names = new Map((sessions.body?.sessions || []).map((x) => [x.session_id, x.name || x.title]));
-  const ids = [...new Set(lives.flatMap((r) => (r.body?.turns || []).filter((t) => t.session && !t.stopped).map((t) => t.session)))];
-  if (!ids.length) { restartSplice(); return; }
-  ui.cut = ids.map((id) => ({ id, name: names.get(id) }));
+  if (!cut.length) { restartSplice(); return; }
+  ui.cut = cut;
   ui.armed = "restart";
   render();
 }
@@ -1318,7 +1312,7 @@ window.addEventListener("resize", moreBelow);
 // A shorter history window that would delete turns waits for the yes; the daemon says what the cut would take.
 ks.onAsk = (id, days) => {
   ui.ask = { v: days, h: null };
-  API.get(`/api/history?days=${days === null ? "forever" : days}`).then(async (r) => {
+  API.get(`/api/history?days=${days ?? "forever"}`).then(async (r) => {
     if (!ui.ask || ui.ask.v !== days) return;
     if (!r.ok || !r.body) { ui.ask = null; ks.bad[id] = "Not saved"; render(); return; }
     if (!r.body.cut || !r.body.cut.turns) { ui.ask = null; await KNOBS.patch(id, days, true); await refresh(); return; } // nothing held goes: it applies at once

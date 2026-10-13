@@ -204,6 +204,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .card .slot { margin-left: auto; display: flex; align-items: center; gap: .6rem; flex: none; }  /* its buttons keep their words on one line; a rename field gives first */
 
 /* the command that this account serves: it rides the account, and moves when the account is held */
+.cutask { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }  /* a press that cuts or moves sessions names each one, so its row wraps */
 .chip {  /* one chip on every page: a page never resizes it (the convergence pass, Oct 9) */
   display: inline-flex; align-items: center; gap: .55rem; padding: .32rem .55rem;
   font: 500 .92rem/1 var(--font-data); color: var(--text); white-space: nowrap;

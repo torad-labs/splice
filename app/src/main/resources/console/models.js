@@ -385,7 +385,7 @@ function paneHtml() {
   const addPer = free.length ? `<div class="menuwrap"><button class="act quiet" data-act="perpick">Add project</button>${ui.pick === "per" ? `<div class="menu">${free.map((p) => `<button data-act="per" data-p="${esc(p.root)}">${esc(p.name)}</button>`).join("")}</div>` : ""}</div>` : "";
   const calm = ["Applied", "Saved", "Restarting"].includes(ui.said);
   const saidHtml = ui.said ? `<span class="said${calm ? "" : " limit"}">${ui.said === "Restarting" ? ICON.wait : ""}${esc(ui.said)}</span>` : "";
-  const restart = ui.said === "Saved" && ui.pending ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
+  const restart = ui.said === "Saved" && ui.pending ? restartBtn() : "";
   const form = `<section class="form">`
     + addedHtml(c)
     + `<span class="lbl">Sends to</span><div class="ctl"><input class="field url" id="h-url" value="${esc(d.url)}" spellcheck="false" autocomplete="off" aria-label="Sends to">`
@@ -518,6 +518,16 @@ async function save() {
   ui.said = ui.pending ? "Saved" : "Applied";
   await readAll();
   render();
+}
+/** Restart splice, or, armed, the sessions it would cut with the act and the way out (kit.js's midRequest). */
+const restartBtn = () => (ui.cut
+  ? armedAsk("Mid-request", ui.cut, '<button class="act danger" data-act="restart-now">Restart splice</button>',
+    '<button class="act quiet" data-act="keep-running">Keep running</button>')
+  : '<button class="act" data-act="restart-splice">Restart splice</button>');
+async function pressRestart() {
+  const cut = await midRequest(data.heads.map((h) => h.key));
+  if (!cut.length) { restartSplice(); return; }
+  ui.cut = cut; render();
 }
 async function restartSplice() {
   ui.said = "Restarting"; render();
@@ -705,14 +715,16 @@ function projectsHtml() {
 // ---------- claude: plain `claude`, through splice or direct ----------
 function claudeHtml() {
   const m = data.claude?.mode;
-  if (!data.claude) return ui.restartDue ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
+  if (!data.claude) return ui.restartDue ? restartBtn() : "";
   const through = m === "wrapped";
   const can = Boolean(data.claude.shim_path);
-  const due = ui.restartDue ? `<button class="act" data-act="restart-splice">Restart splice</button>` : "";
+  const due = ui.restartDue ? restartBtn() : "";
   const said = ui.claudeSaid ? `<span class="said limit">${esc(ui.claudeSaid)}</span>` : "";
+  const to = data.claude.resolves_to;
+  const runs = to ? `<span class="said" title="${esc(to)}">Runs <bdo dir="ltr">${esc(homeRel(to))}</bdo></span>` : `<span class="said limit">No claude on your PATH</span>`;
   return `<span class="clabel">Your claude command</span><div class="switch" role="group">`
     + `<button data-act="claude" data-v="wrap" aria-pressed="${through}"${can ? "" : " disabled"}>Through splice</button>`
-    + `<button data-act="claude" data-v="unwrap" aria-pressed="${!through}"${can ? "" : " disabled"}>Straight to Anthropic</button></div>${said}${due}`;
+    + `<button data-act="claude" data-v="unwrap" aria-pressed="${!through}"${can ? "" : " disabled"}>Straight to Anthropic</button></div>${runs}${said}${due}`;
 }
 async function setClaude(v) {
   const res = await API.post(`/api/claude-head/${v}`);
@@ -794,7 +806,7 @@ function addPaneHtml() {
   // saved: splice restarts to start the command, and the pane says so until the restarted daemon lists it and its own
   // pane opens (marlin's desk A look, Oct 12: "Adding" sat still through the restart, and only a reload showed the pane)
   const foot = a.stalled
-    ? `<div class="foot"><button class="act" data-act="restart-splice">Restart splice</button><span class="said limit">Saved; splice did not come back with it</span></div>`
+    ? `<div class="foot">${restartBtn()}<span class="said limit">Saved; splice did not come back with it</span></div>`
     : a.saved
     ? `<div class="foot"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Restarting</span></span><span class="said">Saved. Restarting splice to start ${esc(a.savedCmd || "it")}</span></div>`
     : `<div class="foot"><button class="act primary" data-act="add"${ready && !a.busy ? "" : " disabled"}>${a.busy ? "Adding" : "Add"}</button><button class="act quiet" data-act="cancel-add">Cancel</button>${said}</div>`;
@@ -1010,7 +1022,9 @@ function onClick(e) {
     case "per": ui.draft.per[d.p] = { mode: "append", text: "", file: "" }; ui.pick = null; ui.said = null; render(); break;
     case "unper": delete ui.draft.per[d.p]; ui.said = null; render(); break;
     case "save": save(); break;
-    case "restart-splice": restartSplice(); break;
+    case "restart-splice": pressRestart(); break;
+    case "restart-now": ui.cut = null; restartSplice(); break;
+    case "keep-running": ui.cut = null; render(); break;
     case "clearq": ui.q = ""; render(); break;
     case "proj": ui.proj = d.p; ui.file = null; ui.comp = null; render(); break;
     case "projcmd": ui.projCmd = d.h; ui.comp = null; render(); break;
@@ -1051,6 +1065,7 @@ function onInput(e) {
 root.addEventListener("click", onClick);
 root.addEventListener("input", onInput);
 document.getElementById("claude").addEventListener("click", onClick);
+document.querySelector('.foot [data-act="theme"]')?.addEventListener("click", toggleTheme);
 
 async function init() {
   render();

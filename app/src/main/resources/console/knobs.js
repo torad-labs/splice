@@ -73,7 +73,7 @@ const KNOBS = (() => {
     K("foldMaxContinue", "up to", { k: "count", opts: [1, 2, 3, 5, 8], unit: "times" }, 3,
       { home: "reasoning", also: "keep thinking at most continue" }),
     // a request too large for splice gets a 413 before any turn exists (AdmissionResponses.kt:34)
-    K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 8 * MB, { home: "busy", also: "too large image size 413" }),
+    K("maxRequestBytes", "Largest request", { k: "count", opts: [8 * MB, 16 * MB, 32 * MB, 64 * MB], unit: "MB", per: MB }, 32 * MB, { home: "busy", also: "too large image size 413" }),
     // how long the daemon waits for a client to send a request body (RequestReadBudgetMs)
     K("requestReadTimeoutMs", "Longest wait for a request to arrive", { k: "dur", opts: [10 * SEC, 30 * SEC, 60 * SEC, 2 * MIN, 5 * MIN], unit: "s" }, 30 * SEC, { adv: "busy", also: "slow client body timeout" }),
     // 0 is the daemon working the budget out from its own heap (Knob.kt:434-444), as maxInflight's 0 is Unlimited
@@ -86,10 +86,11 @@ const KNOBS = (() => {
     K("traceMaxBodyChars", "Longest saved prompt", { k: "count", opts: [4 * MB, 8 * MB, 16 * MB, 32 * MB], unit: "M characters", per: MB }, 16 * MB, { home: "data" }),
     // one setting for the usage and request history (the hourly totals and the request records), what Usage and
     // Requests can look back on: 35 days on a fresh install, Forever a real choice (Marlin, Oct 10, from Marcos: "it
-    // should keep as much as the user wants it to keep"). Forever is null, and Today only is 0, a choice never typed:
+    // should keep as much as the user wants it to keep"). Forever is the daemon's word "forever" (null would delete the setting and bring the 35 days
+    // back), and Today only is 0, a choice never typed:
     // a daily budget needs today's spend, so it keeps today and drops it at midnight. A Custom field takes whole days
     // from 1. A shorter window waits for the page's yes (ask), since it deletes what falls outside it.
-    K("historyRetentionDays", "Keep usage and request history for", { k: "count", opts: [0, 7, 14, 35, 90, 365, null], unit: "days", none: "Forever", zero: "Today only", min: 1 }, 35,
+    K("historyRetentionDays", "Keep usage and request history for", { k: "count", opts: [0, 7, 14, 35, 90, 365, "forever"], unit: "days", none: "Forever", zero: "Today only", min: 1 }, 35,
       { home: "data", ask: true, also: "history retention disk space forever usage requests records month year" }),
     K("activityRetentionDays", "Keep what each agent was doing for", { k: "count", opts: [7, 30, 90, 180, 365], unit: "days", min: 1 }, 90, { home: "data", also: "activity labels teams agents file names commands" }),
     K("messageEdges", "Save who messaged whom", { k: "flag" }, true, { home: "data" }),
@@ -151,10 +152,11 @@ const KNOBS = (() => {
 
   // the effective value and the scope that set it, as the daemon's knobs block says (spec 9)
   const SOURCE = { runtime: "here", env: "env", file: "file", toml: "toml" };
+  const defOf = (k) => layer("defaults")[k.key] ?? k.def;
   function valueOf(k) {
     const knob = st.cfg?.knobs?.[k.key];
     const src = SOURCE[knob?.scope];
-    return src ? { v: knob.value, src, name: k.key } : { v: knob?.value ?? k.def, src: "default" };
+    return src ? { v: knob.value, src, name: k.key } : { v: knob?.value ?? defOf(k), src: "default" };
   }
   const val = (key) => valueOf(KNOB[key]).v;
   // A models setting is a comma list of the ids a command serves; the page names each by the label GET /api/models gives it.
@@ -165,7 +167,7 @@ const KNOBS = (() => {
     const c = k.c;
     if (c.k === "dur") return v === 0 && c.none ? c.none : dur(Number(v));
     if (c.k === "count") {
-      const n = v === null ? null : Number(v);
+      const n = v === null || v === "forever" ? null : Number(v);
       return n === 0 && c.zero ? c.zero : (n === 0 || n === null) && c.none ? c.none : n === 1 && c.unit === "days" ? "1 day"
         : c.tok ? `${tok(n)} ${c.unit}` : `${c.pre || ""}${fmt(n / (c.per || 1))}${c.unit ? (c.unit === "%" ? "%" : ` ${c.unit}`) : ""}`;
     }
@@ -188,11 +190,11 @@ const KNOBS = (() => {
       if (st.custom === id) { // Custom: a field in the preset's unit, saved on Enter
         const unit = c.k === "dur" ? c.unit : c.unit || "";
         const shown = c.k === "dur" ? Number(v) / (unit === "min" ? MIN : SEC) : Number(v) / (c.per || 1);
-        const empty = v === null || v === undefined || (Number(v) === 0 && c.zero);
+        const empty = v === null || v === undefined || v === "forever" || (Number(v) === 0 && c.zero);
         return `<span class="custom"><input class="field" inputmode="decimal" data-kcustom="${id}" value="${empty ? "" : esc(String(+shown.toFixed(2)))}" aria-label="${esc(k.label)}"${bad}><em>${esc(unit)}</em></span>`;
       }
       const opts = c.k === "pick" ? c.opts : c.opts.map((o) => [o, word(k, o)]);
-      const items = opts.map(([o, w]) => [o, w, String(o) === String(v) ? "now" : String(o) === String(k.def) ? "splice's default" : ""]);
+      const items = opts.map(([o, w]) => [o, w, String(o) === String(v) ? "now" : String(o) === String(defOf(k)) ? "splice's default" : ""]);
       if (c.k !== "pick" && !opts.some(([o]) => String(o) === String(v))) items.unshift([v, word(k, v), "now"]);
       if (c.k !== "pick") items.push(["__custom", "Custom…", ""]);
       return `<span class="menuwrap"><button class="pickbtn" data-kmenu="pick:${id}" aria-expanded="${open}"${bad}>${esc(word(k, v))}${ICON.caret}</button>${open ? menuHtml(id, items) : ""}</span>`;
@@ -215,6 +217,8 @@ const KNOBS = (() => {
     // saved to splice.toml, read by the running splice only once it restarts: the act that brings it in sits beside it
     if (st.restart[id]) {
       return st.restarting ? `<span class="said">${ICON.wait}Restarting</span>`
+        : st.cut ? armedAsk("Mid-request", st.cut, '<button class="act danger small" data-kact="restart-now">Restart splice</button>',
+          '<button class="act quiet small" data-kact="keep-running">Keep running</button>')
         : `<span class="said ok">Saved</span><button class="act quiet small" data-kact="restart">Restart splice</button>`;
     }
     if (st.slow[id]) return `<span class="said">${ICON.wait}${esc(st.slow[id])}</span>`; // in flight: the wait ring and the word, like Starting
@@ -323,6 +327,15 @@ const KNOBS = (() => {
     }
     return { ok: true, restart, persisted: body.persisted ?? null };
   }
+  /** The first press: nothing in flight restarts at once, else the rows arm with the sessions it would cut (kit.js). */
+  async function armRestart(render) {
+    if (st.restarting || st.arming) return;
+    st.arming = true;
+    const cut = await midRequest();
+    st.arming = false;
+    if (!cut.length) { restart(render); return; }
+    st.cut = cut; render();
+  }
   /** Restart splice for the rows saved under it, then read the values it came back with: those rows read Applied. */
   async function restart(render) {
     if (st.restarting) return;
@@ -346,7 +359,7 @@ const KNOBS = (() => {
   }
   function fromField(id, raw) {
     const [key] = id.split("@"), c = KNOB[key].c, s = String(raw).trim();
-    if (s === "") return c.none && !c.min ? 0 : KNOB[key].def;
+    if (s === "") return c.none && !c.min ? 0 : defOf(KNOB[key]);
     const n = Number(s.replace(/,/g, ""));
     if (!Number.isFinite(n) || n < 0 || (c.min && n < c.min)) return NaN;
     if (c.k === "dur") return n * (c.unit === "min" ? MIN : SEC);
@@ -386,7 +399,9 @@ const KNOBS = (() => {
       else sent(id, null, render);
       return true;
     }
-    if (d.kact === "restart") { restart(render); return true; }
+    if (d.kact === "restart") { armRestart(render); return true; }
+    if (d.kact === "restart-now") { st.cut = null; restart(render); return true; }
+    if (d.kact === "keep-running") { st.cut = null; return true; }
     return true;
   }
   /** Sends the change and redraws when the daemon answers; the row says "Saving" with the wait ring while it is out. */

@@ -615,7 +615,12 @@ function slotHtml(p, c, a, serves) {
   if (a.renews) return `<span class="state">Token expired</span>`;
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
   if (held(a)) return `${pin}${locked()}`;
-  if (p.kind === "plan") return `${chips}<button class="act quiet" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
+  const use = (cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
+  const mv = ui.moving;
+  if (p.kind === "plan" && mv && mv.a === a.id && mv.c === c.cmd) {
+    return chips + armedAsk("Moves at its next request", mv.cut, use("danger"), '<button class="act quiet" data-act="keep-use">Cancel</button>');
+  }
+  if (p.kind === "plan") return `${chips}${use("quiet")}`;
   return "";
 }
 // A key in the environment or a key file shadows the stored copy (KeyRoutes.kt:7-9): saving one there changes nothing.
@@ -1119,7 +1124,14 @@ document.addEventListener("click", async (e) => {
     }
     // Use now pins the account on that command: it serves from the next request, the rule stays, and the pin undoes it
     // (SwitchRoute.kt).
-    case "use": k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) }); await refresh(); break;
+    case "keep-use": ui.moving = null; render(); break;
+    case "use": {
+      const armed = ui.moving?.a === a.id && ui.moving?.c === k.cmd;
+      ui.moving = null;
+      const cut = armed ? [] : await midRequest([k.head]);
+      if (cut.length) { ui.moving = { a: a.id, c: k.cmd, cut }; render(); break; }
+      k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) }); await refresh(); break;
+    }
     case "unpin": k.pin = null; render({ flip: true }); await API.del(headPath(k, "switch")); await refresh(); break;
     case "lane": ui.lane[p.id] = k.cmd; closeAll(); render({ flip: true }); break; // the rail shows that command's order
     case "add": closeAll(); ui.naming = { cmd: k.cmd, draft: "" }; render(); board.querySelector(".add-name")?.focus(); break;

@@ -59,6 +59,8 @@ internal class ResponsesReanchorPolicy(
     // dispatched call. Tool rounds fall back to the honest error either way.
     private fun eligible(round: ReanchorRound, partial: TurnOutcome.PartialRound): Boolean = when {
         round.attempt >= maxContinuations -> false
+        // A permanent failure that still carried a partial is an unknown vendor code: one re-send, no more.
+        round.failure.traits.permanent && round.attempt >= 1 -> false
         round.failure.type !in RETRYABLE -> false
         partial.toolTearOpen || partial.hasToolUse -> false
         else -> true

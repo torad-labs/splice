@@ -29,7 +29,15 @@ public data class ClassifiedFailure(
      *  direction that matters (a policy refusal and a malformed request are both INVALID_REQUEST).
      *  Required, with no default: a new branch that forgets it does not compile. */
     val cause: FailureCause,
-)
+    /** A status-less failure whose vendor code is on neither the retryable list nor the deterministic one: an
+     *  unknown, which splice re-sends once before the client is told, never [transient]'s full curve and never
+     *  the client's own re-send loop. Retry default is total: an unknown is not written off, and not looped. */
+    val retryOnce: Boolean = false,
+) {
+    /** Whether splice re-sends this failure itself: on [transient]'s curve, or once for an unknown code. */
+    val resends: Boolean
+        get() = transient || retryOnce
+}
 
 /**
  * Which leg produced the failure, so a status-code rejection is tellable from one that arrived

@@ -283,6 +283,10 @@ public object UpstreamFailureClassifier {
             transient = statuslessTransience(code, msg),
             // No status at all — the in-band case, and the one the row's brief did not name.
             cause = FailureCause.UPSTREAM_REPORTED,
+            // A code on neither list is unknown: one re-send, then the honest message. A deterministic code
+            // never re-sends, and no code at all is judged by the text heuristics above.
+            retryOnce = code.isNotBlank() &&
+                code.lowercase().let { it !in RETRYABLE_CODES && it !in DETERMINISTIC_CODES },
         )
     }
 
@@ -341,6 +345,39 @@ public object UpstreamFailureClassifier {
         "request_timeout",
         "service_unavailable",
         "temporarily_unavailable",
+    )
+
+    // The exact codes a status-less failure is never re-sent on: the request itself is wrong, so the identical
+    // bytes get the identical answer (DR-10: an `invalid_parameter` whose message says "try again" was re-POSTed).
+    // The OpenAI API's parameter and model codes, and the Responses API's ResponseError image codes. A code on
+    // this list, POLICY_REFUSAL_CODES or RETRYABLE_CODES is known; any other is unknown and re-sent once.
+    private val DETERMINISTIC_CODES = setOf(
+        "invalid_parameter",
+        "invalid_request_error",
+        "invalid_value",
+        "invalid_type",
+        "missing_required_parameter",
+        "unknown_parameter",
+        "unsupported_parameter",
+        "unsupported_value",
+        "string_above_max_length",
+        "array_above_max_length",
+        "model_not_found",
+        "context_length_exceeded",
+        "invalid_api_key",
+        "invalid_image",
+        "invalid_image_format",
+        "invalid_base64_image",
+        "invalid_image_url",
+        "invalid_image_mode",
+        "image_too_large",
+        "image_too_small",
+        "image_parse_error",
+        "image_file_too_large",
+        "image_file_not_found",
+        "unsupported_image_media_type",
+        "empty_image_file",
+        "failed_to_download_image",
     )
 
     // The backend's two capacity codes by name (codex-rs PR #31058); `slow_down` does not spell

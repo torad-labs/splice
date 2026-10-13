@@ -64,7 +64,9 @@ internal class ResponsesTerminalDecision(
                     // out labelled retryable and the client re-sent it — see PreContentWireType.
                     permanent = !it.transient,
                 ),
-                partial = if (it.transient) payload.partialOrNull(state) else null,
+                // A vendor code on no list (retryOnce) carries the partial too, so splice re-sends it once; it
+                // stays permanent on the wire, so the client is told honestly instead of re-sending it in a loop.
+                partial = if (it.resends) payload.partialOrNull(state) else null,
                 // V4-117: the classifier's OWN cause, since it is the one holding the status, the
                 // vendor code and the body text. An earlier draft of this line re-derived the cause
                 // here from `it.status` alone — and that was WRONG in a way two tests caught: on the

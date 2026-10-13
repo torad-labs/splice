@@ -1,11 +1,11 @@
 // NEW: `splice setup`'s optional local-model step. On a Linux x86_64 machine with an NVIDIA card it
 // offers to hand the card to rig — rig installs itself into ~/.local/share/rig, downloads
-// bonsai-2-27b (about 8 GB), builds the engine and serves it on 127.0.0.1 — and then adds a `bonsai`
+// bonsai-2-27b (about 9 GB), builds the engine and serves it on 127.0.0.1 — and then adds a `bonsai`
 // head that points at what rig DESCRIBES. splice itself still never downloads a model or manages a
 // runtime; rig does, and the wizard only asks it.
 //
 // THE OFFER IS NARROW ON PURPOSE. It is asked only with someone watching (the non-TTY path takes
-// every default and must never start an 8 GB download), only where rig ships (Linux x86_64), only
+// every default and must never start a 9 GB download), only where rig ships (Linux x86_64), only
 // with an NVIDIA card nvidia-smi can name, and only when no `bonsai` is configured yet. Default NO.
 //
 // IT NEVER FAILS THE SETUP. The heads and wrappers are already installed when it runs; anything that

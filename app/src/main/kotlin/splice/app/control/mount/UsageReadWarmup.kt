@@ -64,10 +64,13 @@ internal class UsageReadWarmup(
         }
     }
 
-    /** Reads a prepared head's hourly totals again, so the hours since the last read are held before anyone asks. */
+    /** Reads a prepared head's hourly totals again, so the hours since the last read are held before anyone asks. It
+     *  waits only for the totals' first read, never for the request window that loads after it: a tick in that window's
+     *  load was skipped, so on a slow box the totals went a whole KEEP_WARM_MS unread (ColdUsageReadRouteTest, the
+     *  8bcddc559 pre-push under build-gate memory pressure). The re-read is the store's own, safe beside the load. */
     private suspend fun keepWarm(head: UsageHead) {
         val state = states[head.key] ?: return
-        if (synchronized(state) { !state.economicsReady || state.loading }) return
+        if (synchronized(state) { !state.economicsReady }) return
         admission.withPermit {
             val read = Cancellables.runCatchingBestEffort { head.sinks.economics?.read() }
             Cancellables.discard(read, KEEP_WARM_BEST_EFFORT)

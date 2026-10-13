@@ -8,6 +8,10 @@
 // drop-in.
 // Oct 13 (splice-lead): `splice upgrade` reloads a running front onto the programs it swapped in under the same
 // rule; over units anyone else placed it prints the reload for their owner (reloadFront).
+// Oct 13 (hostshield-lead's ruling, its manifest's splice-mcp-front-continuity layer): hostshield owns only the units'
+// bytes and containment, and the front's programs and their upgrade are splice's. So reloadFront also reloads the
+// canonical unit hostshield wrote, through that unit's own ExecReload (USR2, the in-place re-exec), never a restart, and
+// it still only prints the command over a unit whose bytes are not the canonical ones.
 package splice.lifecycle.hub
 
 import splice.core.terminal.TerminalOutput
@@ -61,10 +65,11 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
     }
 
     /** After `splice upgrade` swapped the hub's programs: a running front takes the new one by reload, never a
-     *  restart, when every hub unit is splice's own. Over units splice did not write, it touches nothing and prints
-     *  the command for their owner to apply. Where no front unit is loaded at all, it says nothing. */
+     *  restart, when every hub unit is splice's own or the front service systemd loads is the canonical unit. Over any
+     *  other unit it touches nothing and prints the command for its owner to apply. Where no front unit is loaded at
+     *  all, it says nothing. */
     public fun reloadFront() {
-        if (!UNITS.all(::ours)) {
+        if (!UNITS.all(::ours) && !canonical(SERVICE)) {
             if (systemctl(LOAD_STATE + SERVICE) != LOAD_STATE_NOT_FOUND) {
                 output.line(
                     "splice: the MCP hub's units here were not written by splice, so their owner reloads the front " +
@@ -90,8 +95,18 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
         if (Files.exists(unitDir.resolve("$name.d"), LinkOption.NOFOLLOW_LINKS)) return false
         val hash = Cancellables.runCatchingBestEffort { sha256(Files.readAllBytes(file)) }.getOrNull()
         return hash != null && hash == recorded()[name] && hash == template(name)?.let(::sha256) &&
-            systemctl(listOf("show", "-p", "FragmentPath", "--value", name)) == file.toString() &&
-            systemctl(listOf("show", "-p", "DropInPaths", "--value", name)) == ""
+            shown("FragmentPath", name) == file.toString() &&
+            shown("DropInPaths", name) == ""
+    }
+
+    /** The unit systemd loads for [name] is the canonical one byte for byte, with no drop-in, whoever placed it: its
+     *  ExecReload is then the USR2 in-place reload, never a restart. */
+    private fun canonical(name: String): Boolean {
+        val loaded = shown("FragmentPath", name)?.takeIf { it.isNotEmpty() }
+            ?: return false
+        val hash = Cancellables.runCatchingBestEffort { sha256(Files.readAllBytes(Path.of(loaded))) }.getOrNull()
+        return hash != null && hash == template(name)?.let(::sha256) &&
+            shown("DropInPaths", name) == ""
     }
 
     /** Unit name to the SHA-256 splice recorded on writing it; empty when nothing is recorded or it is unreadable. */
@@ -120,6 +135,10 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
             Files.write(unitDir.resolve(name), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
         }.isSuccess
     }
+
+    /** One property of the unit systemd loads for [name], as `systemctl show` prints its value. */
+    private fun shown(property: String, name: String): String? =
+        systemctl(listOf("show", "-p", property, "--value", name))
 
     /** The command's trimmed stdout when it exits 0 within the bound; null for any other outcome. */
     private fun systemctl(args: List<String>): String? = Cancellables.runCatchingBestEffort {

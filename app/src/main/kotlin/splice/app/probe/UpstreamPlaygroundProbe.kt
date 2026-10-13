@@ -44,12 +44,10 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.parse.AnthropicParse
-import splice.core.perf.OutcomeTag
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
-import splice.core.wire.HttpStatus
 import splice.diagnostics.playground.PlaygroundBlocked
 import splice.diagnostics.playground.PlaygroundFailure
 import splice.diagnostics.playground.PlaygroundHead
@@ -171,7 +169,7 @@ internal class UpstreamPlaygroundProbe(
                 response(provider, sender, turn, replySender, Sent(url, sent, startedAt))
             }
         }.getOrElse {
-            record(sender, model, startedAt, ReadSend(null, OutcomeTag.UPSTREAM_FAILED.wire))
+            record(sender, model, startedAt, usage.unanswered())
             PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}")
         }
     }
@@ -196,7 +194,8 @@ internal class UpstreamPlaygroundProbe(
         if (!sent.status.isSuccess()) {
             sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders, bodyText), replySender)
         }
-        record(sender, turn.meta.route.upstreamModel, posted.startedAt, readOf(provider, turn, sent, whole))
+        val read = usage.of(provider, turn, sent.status.value, sent.status.isSuccess(), whole)
+        record(sender, turn.meta.route.upstreamModel, posted.startedAt, read)
         val requestJson = buildJsonObject {
             sender.login?.let { put("account", it.label) }
             put("url", url)
@@ -210,14 +209,6 @@ internal class UpstreamPlaygroundProbe(
         }
         return PlaygroundResult(requestJson, responseJson)
     }
-
-    /** What the send was: a failed answer is a failed send; a good one is read by the head's own translator. */
-    private suspend fun readOf(provider: Provider, turn: BuiltTurn, sent: HttpResponse, whole: String): ReadSend =
-        when {
-            sent.status.isSuccess() -> usage.read(provider, turn, whole)
-            sent.status.value == HttpStatus.TOO_MANY_REQUESTS -> ReadSend(null, OutcomeTag.RATE_LIMITED.wire)
-            else -> ReadSend(null, OutcomeTag.UPSTREAM_FAILED.wire)
-        }
 
     private fun record(sender: Sender, model: String, startedAt: Long, read: ReadSend) {
         sender.sends?.answered(CompareAnswer(model, sender.login?.label, read.outcome, clock() - startedAt, read.usage))

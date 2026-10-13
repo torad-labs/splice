@@ -10,6 +10,7 @@ import splice.core.perf.OutcomeTag
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.Cancellables
+import splice.core.wire.HttpStatus
 import splice.upstream.BuiltTurn
 import splice.upstream.ClientGone
 import splice.upstream.Provider
@@ -21,6 +22,18 @@ import splice.upstream.sse.SseReader
 internal data class ReadSend(val usage: Usage?, val outcome: String)
 
 internal class PlaygroundUsage {
+    /** What the send was: a failed answer is a failed send ([status] 429 a rate-limited one), and a good one is read
+     *  by the head's own translator. */
+    suspend fun of(provider: Provider, turn: BuiltTurn, status: Int, succeeded: Boolean, whole: String): ReadSend =
+        when {
+            succeeded -> read(provider, turn, whole)
+            status == HttpStatus.TOO_MANY_REQUESTS -> ReadSend(null, OutcomeTag.RATE_LIMITED.wire)
+            else -> unanswered()
+        }
+
+    /** A send that got no answer to read. */
+    fun unanswered(): ReadSend = ReadSend(null, OutcomeTag.UPSTREAM_FAILED.wire)
+
     /** [stream] is the whole body of a successful send. A translator that throws is a send whose tokens are unknown:
      *  its row is written without them and says the upstream failed, since nothing it said could be read. */
     suspend fun read(provider: Provider, turn: BuiltTurn, stream: String): ReadSend {

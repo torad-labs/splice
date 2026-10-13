@@ -41,6 +41,7 @@ import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
 import splice.app.sources.PerfSourceFiles
 import splice.client.ClaudeConfigMaterializer
+import splice.client.mcp.ClaudeCodeVersionsDir
 import splice.client.mcp.HostedMcpOverlay
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpHubFront
@@ -49,7 +50,10 @@ import splice.client.mcp.McpInventory
 import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
+import splice.client.mcp.PluginFlagChecks
 import splice.client.mcp.PluginFlagGate
+import splice.client.mcp.PluginFlagHolds
+import splice.client.mcp.PluginFlagVerdicts
 import splice.client.resume.AuthHeaderFile
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumeHookTarget
@@ -158,6 +162,11 @@ internal class ControlPlane(
     internal val buildInputs = HeadBuildInputs(config, signInPlanner, modelRosters)
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
 
+    /** MCP hub step 6: each installed Claude Code version's --plugin-dir-no-mcp verdict, and the background check
+     *  that records it. Daemon asks for a pass at start; a launch on a version with no verdict asks again. */
+    private val pluginFlags = PluginFlagVerdicts(statePaths.stateDir, ClaudeCodeVersionsDir(UserHome.dir()).path())
+    internal val pluginFlagChecks = PluginFlagChecks(pluginFlags, log, probeScope, ProcessDispatchers().io())
+
     /** The daemon's one record of failed limits reads: each login's poller writes it, /api/accounts reads it. */
     internal val quotaReadFailures = QuotaReadFailures()
 
@@ -259,7 +268,15 @@ internal class ControlPlane(
                 McpAccessKey(mgmtKey::get),
                 McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub")),
                 log,
-                PluginFlagGate(TESTED_CLAUDE_CODE),
+                // A version with no verdict yet launches without the flag and asks for its check, which runs apart.
+                PluginFlagGate(
+                    TESTED_CLAUDE_CODE,
+                    PluginFlagHolds { version ->
+                        pluginFlags.holds(version).also { held ->
+                            if (!held && version !in pluginFlags.all()) pluginFlagChecks.request()
+                        }
+                    },
+                ),
                 overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log),
             )
         }

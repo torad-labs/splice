@@ -718,12 +718,18 @@ const HOME = /^\/(?:home|Users)\/[^/]+/;
 const homeWord = (p) => String(p || "").replace(HOME, "~");
 // a command's own copy of the config lives in ~/.claude-<key>/.claude.json
 const copyOf = (file) => /\/\.claude-([^/]+)\/\.claude\.json$/.exec(file || "")?.[1] ?? null;
+// a plugin copy Claude Code cloned to a temp folder while installing, left in its cache
+const TEMP_CLONE = /\/temp_[a-z]+_\d+[^/]*\//;
 const fromWord = (e) => {
   if (!e) return "";
   if (e.kind === "plugin_mcp_json" || e.kind === "plugin_inline") {
-    // a plugin's own manifest sits in <plugin>/<version>/.claude-plugin/, so its name is the folder above the version
-    const dirs = String(e.source_file || "").split("/").slice(0, -1);
-    if (dirs.at(-1) === ".claude-plugin") dirs.splice(-2);
+    // Claude Code caches a plugin as <plugin>/<version>/, its manifest under .claude-plugin/, so its name is the folder
+    // above both; a temp_subdir_ or temp_git_ clone it left mid-install carries no name at all (the live daemon, Oct 13)
+    const file = String(e.source_file || "");
+    if (TEMP_CLONE.test(file)) return "a plugin";
+    const dirs = file.split("/").slice(0, -1);
+    if (dirs.at(-1) === ".claude-plugin") dirs.pop();
+    if (/^\d+(\.\d+)+/.test(dirs.at(-1) ?? "")) dirs.pop();
     const dir = dirs.pop();
     return dir ? `${dir} plugin` : "a plugin";
   }
@@ -744,7 +750,9 @@ function mcpServerRows(m) {
   const names = new Set([...found.keys(), ...Object.keys(m.servers || {})]);
   return [...names].map((name) => {
     const live = m.servers?.[name] || null, entries = found.get(name) || [];
-    const own = entries.find((e) => !copyOf(e.source_file)) || entries[0];
+    // a server declared in a real place speaks for its row before a temp clone of a plugin does
+    const own = entries.find((e) => !copyOf(e.source_file) && !TEMP_CLONE.test(e.source_file || ""))
+      || entries.find((e) => !copyOf(e.source_file)) || entries[0];
     const stale = [...new Set(entries.filter((e) => e.why === "until_restart").map((e) => e.value || copyOf(e.source_file)).filter(Boolean))];
     const added = entries.find((e) => e.why === "added_in");
     const why = live && !live.eligible ? live.why : !live ? (own?.why ?? added?.why) : null;

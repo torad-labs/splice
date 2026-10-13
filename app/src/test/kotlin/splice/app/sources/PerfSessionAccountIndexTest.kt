@@ -15,6 +15,9 @@ class PerfSessionAccountIndexTest {
     @TempDir
     lateinit var home: Path
 
+    /** The account one session ran on, read the way the Sessions page reads a batch of them. */
+    private fun PerfRowsFileSource.account(session: String): String? = sessionAccounts(setOf(session)).accounts[session]
+
     private fun row(ts: Long, session: String, account: String): String =
         """{"ts":$ts,"outcome":"ok","session_id":"$session","account":"$account"}"""
 
@@ -36,14 +39,14 @@ class PerfSessionAccountIndexTest {
             ).joinToString("\n", postfix = "\n"),
         )
         val source = PerfRowsFileSource(file)
-        assertEquals("newest", source.sessionAccount("shared-prefix-a"))
-        assertEquals("other", source.sessionAccount("shared-prefix-b"))
-        assertNull(source.sessionAccount("shared-prefix"))
-        assertNull(source.sessionAccount("absent"))
+        assertEquals("newest", source.account("shared-prefix-a"))
+        assertEquals("other", source.account("shared-prefix-b"))
+        assertNull(source.account("shared-prefix"))
+        assertNull(source.account("absent"))
         val decoded = source.parsedLines
         repeat(20) {
-            assertEquals("newest", source.sessionAccount("shared-prefix-a"))
-            assertNull(source.sessionAccount("absent"))
+            assertEquals("newest", source.account("shared-prefix-a"))
+            assertNull(source.account("absent"))
         }
         assertEquals(decoded, source.parsedLines, "unchanged listings never decode history again")
     }
@@ -56,7 +59,7 @@ class PerfSessionAccountIndexTest {
                 writer.append(row(i.toLong(), "session-$i", "account-$i")).append('\n')
             }
         }
-        assertEquals("account-0", PerfRowsFileSource(file).sessionAccount("session-0"))
+        assertEquals("account-0", PerfRowsFileSource(file).account("session-0"))
     }
 
     @Test
@@ -68,9 +71,9 @@ class PerfSessionAccountIndexTest {
             row(10, "session", "first-current") + "\n" + row(10, "session", "last-current") + "\n",
         )
         val source = PerfRowsFileSource(file)
-        assertEquals("last-current", source.sessionAccount("session"))
+        assertEquals("last-current", source.account("session"))
         JsonlSink.appendLine(file, row(10, "session", "appended-current"))
-        assertEquals("appended-current", source.sessionAccount("session"))
+        assertEquals("appended-current", source.account("session"))
     }
 
     @Test
@@ -79,15 +82,15 @@ class PerfSessionAccountIndexTest {
         repeat(200) { JsonlSink.appendLine(file, row(it.toLong(), "session", "initial")) }
         assertTrue(AsyncFileIo.awaitFile(file))
         val source = PerfRowsFileSource(file)
-        assertEquals("initial", source.sessionAccount("session"))
+        assertEquals("initial", source.account("session"))
         val seeded = source.parsedLines
         JsonlSink.appendLine(file, row(300, "session", "changed"))
         assertTrue(AsyncFileIo.awaitFile(file))
-        assertEquals("changed", source.sessionAccount("session"))
+        assertEquals("changed", source.account("session"))
         assertEquals(seeded + 1, source.parsedLines, "the product receipt authorizes only the new row")
         JsonlSink.appendLine(file, row(250, "session", "delayed"))
         assertTrue(AsyncFileIo.awaitFile(file))
-        assertEquals("changed", source.sessionAccount("session"))
+        assertEquals("changed", source.account("session"))
         assertEquals(seeded + 2, source.parsedLines)
     }
 
@@ -96,18 +99,18 @@ class PerfSessionAccountIndexTest {
         val file = home.resolve("perf.jsonl")
         Files.writeString(file, row(10, "session", "before") + "\n")
         val source = PerfRowsFileSource(file)
-        assertEquals("before", source.sessionAccount("session"))
+        assertEquals("before", source.account("session"))
         val stamp = Files.getLastModifiedTime(file)
         Files.writeString(file, row(10, "session", "after!") + "\n")
         Files.setLastModifiedTime(file, stamp)
-        assertEquals("after!", source.sessionAccount("session"), "stamp restoration is not an append proof")
+        assertEquals("after!", source.account("session"), "stamp restoration is not an append proof")
         Files.move(file, file.resolveSibling("perf.jsonl.1"))
         Files.writeString(file, row(20, "session", "rotated") + "\n")
-        assertEquals("rotated", source.sessionAccount("session"))
+        assertEquals("rotated", source.account("session"))
         val other = home.resolve("other-perf.jsonl")
         Files.writeString(other, row(30, "session", "different-head") + "\n")
-        assertEquals("different-head", PerfRowsFileSource(other).sessionAccount("session"))
-        assertEquals("rotated", source.sessionAccount("session"))
+        assertEquals("different-head", PerfRowsFileSource(other).account("session"))
+        assertEquals("rotated", source.account("session"))
     }
 
     @Test
@@ -115,9 +118,9 @@ class PerfSessionAccountIndexTest {
         val file = home.resolve("perf.jsonl")
         Files.writeString(file, row(10, "session", "complete") + "\n" + row(20, "session", "partial"))
         val source = PerfRowsFileSource(file)
-        assertEquals("partial", source.sessionAccount("session"))
+        assertEquals("partial", source.account("session"))
         Files.writeString(file, "garbage", java.nio.file.StandardOpenOption.APPEND)
-        assertEquals("complete", source.sessionAccount("session"))
+        assertEquals("complete", source.account("session"))
     }
 
     @Test

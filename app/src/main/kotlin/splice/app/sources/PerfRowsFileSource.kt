@@ -74,9 +74,6 @@ public class PerfRowsFileSource internal constructor(
 
     /** Full session identity, never the shortened cost tag. Unchanged reads reuse a bounded latest-known index. */
     @Synchronized
-    internal fun sessionAccount(session: String): String? = sessionAccounts(setOf(session)).accounts[session]
-
-    @Synchronized
     internal fun sessionAccounts(sessions: Set<String>): PerfSessionAccountIndex.Snapshot {
         val scan = Scan(0L, PerfSelection.WORK, cache)
         val archives = files.archived(scan.errors).map { it.first }

@@ -69,6 +69,7 @@ async function readAll() {
   if (!local.ok && local.status !== 0) console.warn(`models: /api/models/local answered ${local.status}`);
   data.local = local.ok ? local.body?.providers ?? [] : [];
   KNOBS.st.cmds = data.heads.map((h) => h.key);
+  KNOBS.st.commandOf = Object.fromEntries(data.heads.map((h) => [h.key, h.label || h.key]));
   KNOBS.st.providerOf = Object.fromEntries(data.heads.map((h) => [h.key, topology().heads?.[h.key]?.provider ?? ""]));
   data.knobsErr = await KNOBS.load();
 }

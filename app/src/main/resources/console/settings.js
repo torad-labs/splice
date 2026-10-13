@@ -113,6 +113,7 @@ async function readBase() {
   // the commands whose provider splice resumes mid-answer report a finite resume tier on their gate
   KNOB.stallReanchorMs.only = (heads.body?.heads || []).filter((h) => typeof h.gate?.stall_reanchor_ms === "number").map((h) => h.key);
   ks.cmds = ui.heads;
+  ks.commandOf = Object.fromEntries(ui.headRows.map((h) => [h.key, h.command]));
   ks.providerOf = Object.fromEntries((models.body?.heads || []).map((r) => [r.head, r.provider]));
   // the fold set is ChatGPT models, so only the commands that reach that provider offer theirs
   ks.models = [...new Map((models.body?.heads || []).filter((r) => r.provider === "codex").flatMap((r) => r.models || []).map((m) => [m.id, { id: m.id, label: m.label || m.id }])).values()];

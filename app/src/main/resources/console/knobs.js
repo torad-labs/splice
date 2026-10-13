@@ -124,7 +124,7 @@ const KNOBS = (() => {
   // `providerOf` maps a command to its provider, which is all kit.js knows a colour by; a page fills it from GET /api/models.
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
-    cfg: null, models: [], providerOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
+    cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
     said: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
@@ -176,7 +176,9 @@ const KNOBS = (() => {
   }
 
   // ---------- controls ----------
-  const cmdChip = (c, hl = esc) => `<span class="chip" style="--c:${colorOf(st.providerOf[c])}">${hl(c)}</span>`;
+  // a chip names the command a person types, claude-openrouter, never the head key splice files it under (`commandOf`,
+  // filled from GET /api/heads' label; marlin, Oct 12: Today read openrouter and side-project)
+  const cmdChip = (c, hl = esc) => `<span class="chip" style="--c:${colorOf(st.providerOf[c])}">${hl(st.commandOf[c] || c)}</span>`;
   function menuHtml(id, items) { // items: [value, word, meta]; "now" marks the value it holds
     return `<div class="menu" role="menu">${items.map(([o, w, m]) => `<button role="menuitem" data-kpick="${id}" data-v='${esc(JSON.stringify(o))}' aria-current="${m === "now"}">${esc(w)}${m && m !== "now" ? `<span class="mmeta">${esc(m)}</span>` : ""}</button>`).join("")}</div>`;
   }
@@ -256,7 +258,7 @@ const KNOBS = (() => {
     const left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
     const lines = owners.map((c) => overHtml(k, c, hl)).join("");
     const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
-      + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(c)}</button>`).join("")}</div>` : "") + "</span>" : "";
+      + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(st.commandOf[c] || c)}</button>`).join("")}</div>` : "") + "</span>" : "";
     const only = k.only ? `<span class="only">${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     // THE SLOT UNDER A CONTROL HOLDS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the page passes what it already
     // knows — the last read, the mark on a bar, the providers reporting nothing, how many servers run — and passes

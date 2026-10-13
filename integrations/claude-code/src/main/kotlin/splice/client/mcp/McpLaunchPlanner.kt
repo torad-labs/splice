@@ -58,7 +58,8 @@ public class McpLaunchPlanner(
         val (approved, waiting) = repoServers(here).partition { approval.verdict(it.name) == RepoVerdict.APPROVED }
         val user = servers(McpPlanScope.USER, stateFile, state)
         val scoped = (user + approved + servers(McpPlanScope.LOCAL, stateFile, record)).associateBy { it.name }
-        val plugins = McpPluginServers(configDir.resolve(PLUGINS_DIR), json).servers(enabledPlugins(settings), project)
+        val plugins = McpPluginServers(configDir.resolve(PLUGINS_DIR), json)
+            .servers(enabledPlugins(settings), project, here)
         val (copies, own) = plugins.partition { plugin -> original(scoped.values, plugin) != null }
         val off = entries.names(record, PLAN_FOLDER_DISABLED)
         val (shut, loaded) = (scoped.values + own).sortedBy { it.name }.partition { it.name in off }

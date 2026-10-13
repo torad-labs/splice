@@ -3,7 +3,11 @@
 // config home's `plugins/installed_plugins.json` records for it: the local or project install made for this
 // project, else the user install. Its servers are its root's `.mcp.json` and the `mcpServers` its
 // `.claude-plugin/plugin.json` declares (an object, a file beside it, or a list of either), named the way Claude
-// Code names them, `plugin_<plugin>_<server>` (proof a), with `${CLAUDE_PLUGIN_ROOT}` filled in as the install path.
+// Code names them, `plugin_<plugin>_<server>` (proof a). Three placeholders are filled as the client fills them (its
+// bundle fn lce): `${CLAUDE_PLUGIN_ROOT}` with the install path, `${CLAUDE_PROJECT_DIR}` with the launch folder, and
+// `${CLAUDE_PLUGIN_DATA}` with `plugins/data/<id>`, the id spelled with every character outside letters, digits, `-`
+// and `_` as `-` (fn wh; the folders on disk read `desktop-commander-claude-plugins-official`). The client makes
+// that folder when it fills the name; the plan only reads, so whatever starts the server makes it.
 package splice.client.mcp
 
 import kotlinx.serialization.json.JsonArray
@@ -21,17 +25,22 @@ private const val INSTALL_SCOPE_KEY = "scope"
 private const val INSTALL_PROJECT_KEY = "projectPath"
 private const val USER_INSTALL_SCOPE = "user"
 private const val PLUGIN_ROOT_VARIABLE = "\${CLAUDE_PLUGIN_ROOT}"
+private const val PROJECT_DIR_VARIABLE = "\${CLAUDE_PROJECT_DIR}"
+private const val PLUGIN_DATA_VARIABLE = "\${CLAUDE_PLUGIN_DATA}"
+private const val PLUGIN_DATA_DIR = "data"
 private const val PLUGIN_SERVER_PREFIX = "plugin_"
 private const val PLUGIN_ID_SEPARATOR = '@'
 
 /** [pluginsDir] is the config home's `plugins` folder. */
 internal class McpPluginServers(private val pluginsDir: Path, private val json: SourceJson) {
-    /** Every server of every plugin [enabled] turns on, for a launch whose project is [project]. */
-    fun servers(enabled: Map<String, Boolean>, project: Path): List<McpPlannedServer> {
+    private val unsafeInData = Regex("[^A-Za-z0-9_-]")
+
+    /** Every server of every plugin [enabled] turns on, for a launch in [folder] whose project is [project]. */
+    fun servers(enabled: Map<String, Boolean>, project: Path, folder: Path): List<McpPlannedServer> {
         val installs = json.topLevel(pluginsDir.resolve(INSTALLED_PLUGINS_FILE))[INSTALLED_PLUGINS_KEY] as? JsonObject
         return enabled.filterValues { it }.keys.sorted().flatMap { id ->
             val root = (installs?.get(id) as? JsonArray)?.let { install(it, project) }
-            root?.let { pluginServers(id.substringBefore(PLUGIN_ID_SEPARATOR), it) }.orEmpty()
+            root?.let { pluginServers(id, it, folder) }.orEmpty()
         }
     }
 
@@ -45,13 +54,19 @@ internal class McpPluginServers(private val pluginsDir: Path, private val json: 
 
     private fun projectOf(record: JsonObject): Path? = text(record, INSTALL_PROJECT_KEY)?.let { Path.of(it) }
 
-    private fun pluginServers(plugin: String, root: Path): List<McpPlannedServer> {
+    private fun pluginServers(id: String, root: Path, folder: Path): List<McpPlannedServer> {
+        val plugin = id.substringBefore(PLUGIN_ID_SEPARATOR)
+        val fills = mapOf(
+            PLUGIN_ROOT_VARIABLE to root.toString(),
+            PROJECT_DIR_VARIABLE to folder.toString(),
+            PLUGIN_DATA_VARIABLE to pluginsDir.resolve(PLUGIN_DATA_DIR, id.replace(unsafeInData, "-")).toString(),
+        )
         val mcpJson = root.resolve(MCP_JSON_FILE)
         val manifest = root.resolve(CLAUDE_PLUGIN_DIR).resolve(PLUGIN_JSON_FILE)
         val declared = json.mcpServers(mcpJson).map { (name, entry) -> PluginDeclared(name, entry, mcpJson) } +
             manifestServers(json.topLevel(manifest)[Keys.MCP_SERVERS], root, manifest)
         return declared.mapNotNull { (name, entry, source) ->
-            (expanded(entry, root.toString()) as? JsonObject)?.let {
+            (expanded(entry, fills) as? JsonObject)?.let {
                 McpPlannedServer("$PLUGIN_SERVER_PREFIX${plugin}_$name", McpPlanScope.PLUGIN, source, it)
             }
         }
@@ -67,12 +82,12 @@ internal class McpPluginServers(private val pluginsDir: Path, private val json: 
         else -> emptyList()
     }
 
-    /** [element] with every `${CLAUDE_PLUGIN_ROOT}` in its strings replaced by [root]. */
-    private fun expanded(element: JsonElement, root: String): JsonElement = when (element) {
-        is JsonObject -> JsonObject(element.mapValues { (_, value) -> expanded(value, root) })
-        is JsonArray -> JsonArray(element.map { expanded(it, root) })
+    /** [element] with each placeholder of [fills] in its strings replaced by its value. */
+    private fun expanded(element: JsonElement, fills: Map<String, String>): JsonElement = when (element) {
+        is JsonObject -> JsonObject(element.mapValues { (_, value) -> expanded(value, fills) })
+        is JsonArray -> JsonArray(element.map { expanded(it, fills) })
         is JsonPrimitive -> element.takeUnless { it.isString }
-            ?: JsonPrimitive(element.content.replace(PLUGIN_ROOT_VARIABLE, root))
+            ?: JsonPrimitive(fills.entries.fold(element.content) { text, (name, value) -> text.replace(name, value) })
     }
 
     private fun text(record: JsonObject, key: String): String? = (record[key] as? JsonPrimitive)?.contentOrNull

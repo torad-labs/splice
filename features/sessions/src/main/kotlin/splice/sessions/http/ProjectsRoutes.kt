@@ -8,13 +8,6 @@
 // sessions as well as registry rows (using the Sessions route's RepoResolver: trusted roots only,
 // worktrees folded into their repo), plus each team's declared repo after its sessions have ended.
 //
-// TODAY IS THE UTC DAY, and the row says where it started (day_start) rather than letting the console
-// guess a boundary. turns_today and cost_today_usd join the perf rows of every head on the 8-character
-// session tag, over the repo's registry sessions and every session its teams' slots ever held. The
-// dollars are the priced turns' (PerfTally's V4-221 rule), and unpriced_turns_today counts the turns
-// no card priced beside them; the dollars are null only when there are turns and none was priced,
-// never zero for "unknown" (V4-269).
-//
 // WHAT GOVERNS THE REPO (FEATURES.md 4.14, "its compaction scope and the effective instructions, the
 // statusline roots entry"). `compaction` is core's own answer for this root —
 // CompactionInstructions.rulesFor, the rules a compaction here can resolve to in resolve's precedence,
@@ -43,9 +36,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.ProjectFolderCheck
-import splice.core.util.WallClock
 import splice.http.JsonReply
-import splice.sessions.projects.ProjectEconomics
 import splice.sessions.projects.ProjectFiles
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.ProjectRef
@@ -58,7 +49,6 @@ public class ProjectsRoutes(
     private val heads: Map<String, SessionHead>,
     private val lookup: ProjectLookup,
     private val teams: TeamSource,
-    private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val statuslineRoot: StatuslineRootOf = StatuslineRootOf { _, _ -> null },
     private val compaction: CompactionSource = CompactionSource { null },
 ) {
@@ -95,24 +85,20 @@ public class ProjectsRoutes(
         return JsonReply(HttpStatusCode.NotFound, body.toString())
     }
 
-    /** One read of the registry, the teams and today's perf rows, shared by every row of a request. */
+    /** One read of the registry and the teams, shared by every row of a request. */
     private inner class ProjectView {
         private val records = registry?.read().orEmpty()
         private val allTeams = teams()?.teams().orEmpty()
         private val placed = records.mapNotNull { record -> lookup.of(record)?.let { it to record } }
-        private val byRoot = placed.groupBy({ it.first.id }, { it.second })
         private val teamProject =
             allTeams.associateWith { team -> team.repo.takeIf { it.isNotBlank() }?.let { lookup.at(it) } }
         private val refs: Map<String, ProjectRef> =
             (placed.map { it.first } + teamProject.values.filterNotNull()).associateBy { it.id }
-        private val economics = ProjectEconomics(heads, clock())
         private val table = compaction()
         val roots: List<String> =
             refs.keys.sorted()
 
         fun row(root: String): JsonObject {
-            val sessions = byRoot[root].orEmpty()
-            val repoTeams = allTeams.filter { teamProject[it]?.id == root }
             return buildJsonObject {
                 put("id", root)
                 refs[root]?.let {
@@ -124,7 +110,6 @@ public class ProjectsRoutes(
                 }
                 put("root", root)
                 RepoOrigin.of(root)?.let { put("remote", it) }
-                economics.row(sessions, repoTeams).forEach { (key, value) -> put(key, value) }
                 put("compaction", compactionOf(root))
                 put("statusline_roots", statuslineRootsOf(root))
             }

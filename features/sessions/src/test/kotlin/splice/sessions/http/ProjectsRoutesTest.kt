@@ -1,13 +1,10 @@
 // NEW: V4-131 — the project routes' payloads on ProjectsRoutes directly, and the sessions rows'
 // `team` key. A project is a git root seen through the sessions' repos or a team's declared repo;
-// today's counts cover the UTC day the row names; files are read only for a root the list reports.
+// files are read only for a root the list reports.
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.double
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -21,13 +18,8 @@ import splice.core.compaction.CompactionProjectConfig
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
-import splice.core.model.TurnBill
-import splice.core.perf.PerfKeys
-import splice.core.turn.noRequestUsage
 import splice.core.util.EnvReader
-import splice.core.util.WallClock
 import splice.sessions.query.SessionHead
-import splice.sessions.registry.SessionAvailability
 import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,7 +45,6 @@ class ProjectsRoutesTest {
             heads,
             ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) }),
             teams,
-            WallClock { AT },
         )
     }
 
@@ -81,116 +72,15 @@ class ProjectsRoutesTest {
     }
 
     @Test
-    fun `a stale registration still counts as a running project session while its pid lives`() {
-        val repo = rig.repo
-        val file = tmp.resolve("sessions/2.json")
-        val original = Files.readString(file)
-        Files.writeString(file, original.replace("\"updatedAt\":${AT + 2}", "\"updatedAt\":${AT - 31 * 60_000}"))
-        assertEquals(
-            SessionAvailability.STALE,
-            rig.registry.read().single { it.sessionId == BUILDER }.availability,
-            "precondition: this process lives but its registry has not refreshed",
-        )
-        val project = rig.json(routes(emptyMap()).project(repo.toString()).body)
-        assertEquals("2", project.getValue("live_sessions").jsonPrimitive.content)
-    }
-
-    @Test
-    fun `each root is a row with its live sessions, teams and today's turns and dollars`() {
-        rig.team()
-        val atlas = rig.store.teams().single()
-        // The archived copy keeps its history but binds no session: one session is on one active team.
-        val unbound = atlas.slots.map { it.copy(session = null) }
-        val archived = rig.store.upsert(atlas.copy(id = "", name = "old", slots = unbound))
-        rig.store.archive(archived.id)
-        val codex = rig.head(
-            "codex",
-            listOf(
-                rig.row(AT, BUILDER, input = 1_000_000),
-                rig.row(AT, OLD_BUILDER, input = 1_000_000, out = 0),
-                rig.row(DAY_START - 1, BUILDER, input = 9),
-                rig.row(AT, OUTSIDER, input = 1),
-            ),
-        )
-        val body = rig.json(routes(mapOf("codex" to codex)).list().body)
-        val rows = body.getValue("projects").jsonArray.map { it.jsonObject }
-        val roots = listOf(rig.repo.toString())
+    fun `each git root a session runs in is a row, and an unseen root is a 404`() {
+        val rows = rig.json(routes(emptyMap()).list().body).getValue("projects").jsonArray.map { it.jsonObject }
         assertFalse(rows.single().containsKey("remote"), "no origin is absent, never an invented remote")
         assertEquals(
-            roots,
+            listOf(rig.repo.toString()),
             rows.map { it.getValue("id").jsonPrimitive.content },
             "a registry cwd outside git does not make a project",
         )
-        val repo = rows.single { it.getValue("id").jsonPrimitive.content == rig.repo.toString() }
-        assertEquals(
-            rig.json(
-                """{"id":"${rig.repo}","root":"${rig.repo}","live_sessions":2,"teams":1,"turns_today":2,""" +
-                    """"unpriced_turns_today":0,"plan_turns_today":0,"plan_value_today_usd":null,""" +
-                    """"unreported_usage_turns_today":0,""" +
-                    """"day_start":$DAY_START,"last_activity":${AT + 2}}""",
-            ),
-            JsonObject(
-                repo - "cost_today_usd" - "compaction" - "statusline_roots" - "name" - "label" - "source" - "folder",
-            ),
-            "yesterday's row and the outsider's are not this repo's today; the archived team is not counted",
-        )
-        // 2M input at 1.0 and 10 output at 2.0, per million.
-        assertEquals(2.00002, repo.getValue("cost_today_usd").jsonPrimitive.double, 1e-9)
-        val unpriced = rig.head("codex", listOf(rig.row(AT, BUILDER, input = 5)), rates = null)
-        val row = rig.json(routes(mapOf("codex" to unpriced)).project(rig.repo.toString()).body)
-        assertEquals("null", row.getValue("cost_today_usd").toString(), "no rate card is no dollar figure, never zero")
-        assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
         assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).project("/nowhere").status)
-    }
-
-    @Test
-    fun `a local refusal has exact zero project cost without unreported usage`() {
-        val refusal = rig.row(AT, BUILDER, input = 0).copy(
-            outcome = "error:local-refusal",
-            fields = TurnBill.counters(noRequestUsage) + (PerfKeys.ATTEMPTS to 0L),
-        )
-        val head = rig.head("codex", listOf(refusal))
-        val project = rig.json(routes(mapOf("codex" to head)).project(rig.repo.toString()).body)
-        assertEquals("1", project.getValue("turns_today").jsonPrimitive.content)
-        assertEquals("0", project.getValue("unreported_usage_turns_today").jsonPrimitive.content)
-        assertEquals("0", project.getValue("unpriced_turns_today").jsonPrimitive.content)
-        assertEquals(0.0, project.getValue("cost_today_usd").jsonPrimitive.double)
-    }
-
-    @Test
-    fun `a refusal-only project has exact zero even when its model has no card`() {
-        val refusal = rig.row(AT, BUILDER, input = 0).copy(fields = TurnBill.counters(noRequestUsage))
-        val head = rig.head("codex", listOf(refusal), rates = null)
-        val project = rig.json(routes(mapOf("codex" to head)).project(rig.repo.toString()).body)
-        assertEquals("1", project.getValue("turns_today").jsonPrimitive.content)
-        assertEquals("0", project.getValue("unpriced_turns_today").jsonPrimitive.content)
-        assertEquals("0", project.getValue("unreported_usage_turns_today").jsonPrimitive.content)
-        assertEquals(0.0, project.getValue("cost_today_usd").jsonPrimitive.double)
-    }
-
-    @Test
-    fun `a project counts upstream turns, not code-mode steps served without upstream`() {
-        val turn = rig.row(AT, BUILDER, input = 1_000_000)
-        val step = rig.row(AT + 1, BUILDER, input = 0).copy(fields = mapOf(PerfKeys.LOCAL_STEP to 1L))
-        val codex = rig.head("codex", listOf(turn, step))
-        val row = rig.json(routes(mapOf("codex" to codex)).project(rig.repo.toString()).body)
-
-        assertEquals("1", row.getValue("turns_today").jsonPrimitive.content)
-        assertEquals(1.00002, row.getValue("cost_today_usd").jsonPrimitive.double, 1e-9)
-    }
-
-    // V4-269: a recorded team run's repo read a dash for the day because the lead ran one turn on a
-    // model with no card, while every other turn was priced.
-    @Test
-    fun `a turn with no card is counted beside the priced dollars, never a dash over them`() {
-        rig.team()
-        val codex = rig.head("codex", listOf(rig.row(AT, BUILDER, input = 1_000_000)))
-        val claude = rig.head("claude", listOf(rig.row(AT, LEAD, input = 3)), rates = null)
-        val row = rig.json(routes(mapOf("codex" to codex, "claude" to claude)).project(rig.repo.toString()).body)
-        // 1M input at 1.0 and 10 output at 2.0, per million: the codex turn alone.
-        assertEquals(1.00002, row.getValue("cost_today_usd").jsonPrimitive.doubleOrNull ?: Double.NaN, 1e-9)
-        assertEquals("2", row.getValue("turns_today").jsonPrimitive.content)
-        assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
     }
 
     private fun sessionRoutes(heads: Map<String, SessionHead>, config: ConfigService) = SessionsRoutes(
@@ -232,7 +122,6 @@ class ProjectsRoutesTest {
             heads,
             ProjectLookup(ProjectOf(sessions.projects::of), ProjectAt { sessions.projects.at(it, null) }),
             TeamSource { rig.store },
-            WallClock { AT },
             StatuslineRootOf(sessions::statuslineRootOf),
             CompactionSource { wired },
         )
@@ -420,7 +309,6 @@ class ProjectsRoutesTest {
             emptyMap(),
             lookupOf(sessions),
             TeamSource { rig.store },
-            WallClock { AT },
         )
         val listed = rig.json(projects.list().body).getValue("projects").jsonArray.map { it.jsonObject }
         assertEquals(

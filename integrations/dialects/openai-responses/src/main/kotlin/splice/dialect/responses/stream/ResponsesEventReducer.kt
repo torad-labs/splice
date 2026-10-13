@@ -3,6 +3,7 @@
 // drives it and reads the accumulated state to render the terminal outcome.
 package splice.dialect.responses.stream
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ResponsesTurnState
@@ -14,6 +15,7 @@ import splice.upstream.sse.WireSink
 private const val INCOMPLETE_REASON_MAX_TOKENS = "max_output_tokens"
 private const val KEY_RESPONSE = "response"
 private const val KEY_ERROR = "error"
+private const val REASONING_ITEM = "reasoning"
 
 /**
  * Folds the upstream SSE event stream into per-turn buffers/flags via its collaborating folds. One
@@ -74,8 +76,21 @@ internal class ResponsesEventReducer(
             // max_output_tokens is the honest "ran out of room" stop; any other reason
             // (content_filter, etc.) is a censored generation, never a clean incomplete.
             if (reason.isNotEmpty() && reason != INCOMPLETE_REASON_MAX_TOKENS) state.contentFiltered = true
+        } else if (endedInReasoning(resp)) {
+            state.messageClosed = true
         }
         accumulateUsage(resp)
+    }
+
+    /** A completed response whose whole output is reasoning is the model ending its answer with nothing to say, as
+     *  codex-rs reads it: no tool call, so no follow-up, and the turn ends with no message. Claude Code's
+     *  prompt-suggestion request asks for exactly that silence, and Muse answers it this way (50 empty_model turns on
+     *  Oct 12, each re-sent by splice and then by the client). An empty output, or an item type this dialect never
+     *  renders, stays the empty-turn error. */
+    private fun endedInReasoning(resp: JsonObject): Boolean {
+        if (JsonScalars.strOrEmpty(resp["status"]) != "completed") return false
+        val output = (resp["output"] as? JsonArray)?.map { (it as? JsonObject)?.get("type") }.orEmpty()
+        return output.isNotEmpty() && output.all { JsonScalars.strOrEmpty(it) == REASONING_ITEM }
     }
 
     private fun onFailure(evt: JsonObject) {

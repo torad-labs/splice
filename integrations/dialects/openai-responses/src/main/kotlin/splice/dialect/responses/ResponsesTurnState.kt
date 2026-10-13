@@ -59,7 +59,8 @@ internal class ResponsesTurnState {
      *  honesty gate must still call empty. */
     var emittedThinking = false
 
-    /** A `message` item reached output_item.done this round (text or not) — see
+    /** A `message` item reached output_item.done this round (text or not), or the response completed with only
+     *  reasoning in its output (ResponsesEventReducer.endedInReasoning). See
      *  [splice.core.turn.TurnOutcome.Success.messageClosed]. */
     var messageClosed = false
     var incomplete = false

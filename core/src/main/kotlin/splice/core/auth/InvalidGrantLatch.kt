@@ -1,10 +1,10 @@
 // NEW: (G15) terminal invalid_grant latch — a dead refresh token was re-POSTed on every single
 // turn (one wasted network hop + one log line per request) because nothing remembered "the last
-// confirmed invalid_grant we saw was against THIS exact file state." Keyed on the auth file's mtime
-// rather than a boolean: mtime IS the auto-clear (a re-login rewrites the file, mtime changes,
-// isLatched naturally goes false everywhere) — no explicit clear() method, and a latch keyed on an
-// unreadable mtime (null) fails OPEN (never suppresses), since a null mtime is not evidence the
-// file is unchanged.
+// confirmed invalid_grant we saw was against THIS exact file state." Keyed on the auth file's identity
+// (CredentialFileIdentity: its mtime, its size and a SHA-256 of its bytes) rather than a boolean: the
+// identity IS the auto-clear (a re-login rewrites the file, its bytes change, isLatched naturally goes
+// false everywhere), so there is no explicit clear() method, and an identity that could not be read
+// (null) fails OPEN (never suppresses), since it is not evidence the file is unchanged.
 package splice.core.auth
 
 import java.nio.file.Files

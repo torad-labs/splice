@@ -132,7 +132,12 @@ public object SecureFile {
         Files.createDirectories(parent)
         val tmp = ownerOnlyTemp(parent)
         Cancellables.runCatchingCancellable {
-            Files.writeString(tmp, content)
+            // The bytes reach the disk before the name moves, so a power cut leaves the old file or the new one, never an
+            // empty one (splice-config, Oct 13: a cut during splice add could leave an empty splice.toml).
+            FileChannel.open(tmp, StandardOpenOption.WRITE).use { channel ->
+                channel.write(ByteBuffer.wrap(content.toByteArray(Charsets.UTF_8)))
+                channel.force(true)
+            }
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(

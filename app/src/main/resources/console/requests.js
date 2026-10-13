@@ -546,7 +546,7 @@ function mapHit(head, hit) {
     ts: hit.ts, total: hit.total, first_byte: hit.first_byte, first_delta: hit.first_delta, admit_held_ms: hit.admit_held_ms ?? undefined,
     in_tokens: hit.in_tokens, out_tokens: hit.out_tokens, cached_tokens: hit.cached_tokens, cache_write_tokens: hit.cache_write_tokens,
     outcome: hit.outcome ?? "ok", model: hit.model, session: hit.session, compact: hit.compact, attempts: hit.attempts,
-    turn: hit.turn, cost_usd: hit.cost_usd, cost_reason: hit.cost_usd == null ? "uncounted" : null,
+    source_attempts: hit.source_attempts ?? undefined, turn: hit.turn, cost_usd: hit.cost_usd, cost_reason: hit.cost_usd == null ? "uncounted" : null,
   };
   return { ...mapRow(head, row), said: { where: hit.where, text: oneLine(hit.text) } };
 }

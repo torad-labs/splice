@@ -4,6 +4,7 @@
 # starter with no provider or head instead. Adding a provider/head requires a daemon restart.
 # Context windows are the exception: the running daemon re-reads a context_window edit (model rows,
 # extra_windows, window_rules, default_context_window, a head's context_window) with no restart.
+# So are [daemon] mcp_share and the [compaction] tables.
 #
 # The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
 # Kimi, or Muse subscription.
@@ -11,6 +12,8 @@
 
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
+# state_dir = "/mnt/fast/splice-state"   # where the daemon keeps its lock, per-head state and traces (default
+#                                        # ~/.splice); read at boot, so restart. Write it absolute: ~ is not expanded here
 
 # Reasoning display — edit here and restart the daemon, or PATCH the HOT keys and the next turn obeys. No code change.
 # Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.
@@ -28,6 +31,8 @@ mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtim
 # mcp_hosting = false            # every session launches its own servers, as before
 # mcp_hosting_exclude = ["name"] # keep these servers per session even when eligible; hosted servers
 #                                # run in your home directory, so list any that reads its cwd unnamed
+# mcp_share = true               # setup asks once and writes this: true (absent reads as true) runs one shared
+#                                # copy of each server, false one copy per session; the daemon re-reads it live
 
 # ── compaction instructions: your text after Claude Code's own summarizer prompt ──
 # Most specific scope wins and REPLACES the others (project+model > project > model > global);
@@ -166,6 +171,8 @@ defer = ["LSP"]
 id = "gpt-6-sol"
 label = "Codex 6 Sol"
 context_window = 272000
+# compaction_reserve_tokens = 20000   # tokens held back before compaction for this row; replaces the bundled
+#                                     # calibration (compaction-reserve.tsv) rather than adding to it
 [[providers.codex.models]]
 id = "gpt-6-astra"
 label = "Codex 6 Astra"
@@ -225,12 +232,14 @@ context_window = 256000
 # A runtime on a rented GPU reached through an SSH tunnel answers on loopback too, so no address tells it from one on
 # this machine: `discovery = { family = "vast" }` on its provider groups it as vast.ai in the console instead of This
 # computer (discovery is where splice finds and places a provider: its models and its machine family).
-# A loopback base_url is local by default (local = true|false overrides). splice never downloads a
-# model or starts the runtime; at boot and in `splice doctor` it asks the runtime what it serves and
-# REFUSES a row the runtime does not list or that declares more context than the runtime serves
-# (the refused head is DEGRADED, the rest of the daemon serves). Ollama: /api/ps reports the window
+# A loopback base_url on the openai-chat dialect is local by default (local = true|false overrides).
+# splice never downloads a model or starts the runtime; at boot and in `splice doctor` it asks the
+# runtime what it serves and REFUSES a row the runtime does not list, that declares more context than
+# the runtime serves, or whose model cannot call tools. A refusal stops boot and is listed with the
+# file's other findings; a runtime that is down does not block boot. Ollama: /api/ps reports the window
 # a LOADED model was given (the model card is only a ceiling); LM Studio: loaded_context_length;
-# vLLM: max_model_len. `splice doctor --live` proves streaming + one tool call per listed model.
+# vLLM: max_model_len. `splice doctor --live` proves streaming + one tool call per configured model
+# the runtime lists.
 # The key env is unused by these runtimes but the api-key kind needs a name; any value works.
 # A local head also ASKS FOR TOKEN COUNTS: usage frames are opt-in on this dialect
 # (stream_options.include_usage), and a head that never asks reports zero tokens per turn, so Claude
@@ -251,6 +260,8 @@ context_window = 256000
 # id = "qwen3:4b"                          # exactly as `ollama list` / /v1/models spells it
 # label = "Qwen3 4B (local)"
 # context_window = 32768                   # at or under what the runtime serves for this model
+# client_model = "claude-sonnet-4-6"      # the Claude model name Claude Code sees for this row (must start with
+#                                          # claude-, one row per name); the wire still sends id
 # [heads.ollama]
 # provider = "ollama"
 # port = 3105
@@ -560,6 +571,7 @@ models = [{ id = "gpt-6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "s
 context_window = 272000
 [heads.claudex.claude]
 command = "claudex"
+# config_dir = "~/claude-accounts/claudex"   # this head's Claude Code config folder; default ~/.claude-<head key>
 [heads.claudex.overrides]
 maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
 # progressLine (bool, default true, HOT) is the other knob worth knowing on THIS head. A wire
@@ -683,6 +695,11 @@ strip_cache_control = true
 id = "deepseek-flash"
 label = "DeepSeek V4.1 Flash"
 context_window = 1000000
+# rates = { input = 0.15, cache_read = 0.003, output = 0.6 }   # USD per million tokens for the cost
+#   segment, budgets and day totals. input, cache_read and output are required; cache_write and
+#   cache_write_1h are optional; long_context_over_input_tokens, long_context_input,
+#   long_context_cache_read and long_context_output come as a set or not at all. Absent, a known
+#   vendor id takes the shipped published card.
 [[providers.deepseek.models]]
 id = "deepseek-v4-pro"
 label = "DeepSeek V4 Pro"
@@ -700,6 +717,8 @@ models = [{ id = "deepseek-flash", slot = "opus" }, { id = "deepseek-v4-pro", sl
 context_window = 1000000
 [heads.claude-deepseek.claude]
 command = "claude-deepseek"
+# [heads.claude-deepseek.rates]   # this head's own card, by exact row id; wins over the provider's row
+# deepseek-flash = { input = 0.20, cache_read = 0.004, output = 0.80 }
 
 # ── Claude on the CLIENT's OWN login (the "no shortcuts" head) ───────────────────
 # The only head whose upstream is Anthropic itself, and the only one where splice holds NO

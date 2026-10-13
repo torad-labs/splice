@@ -25,6 +25,7 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.ConcurrentHashMap
 
 /** The folder under the state directory the record lives in, which Your data counts as [SEEN_SESSIONS_KEY]. */
 public const val SEEN_SESSIONS_DIR: String = "sessions-seen"
@@ -56,16 +57,19 @@ public class SeenSessions(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // What was last written per session, so a listing read every few seconds writes only what changed.
-    private val written = HashMap<String, SeenSession>()
+    // What each record file holds, by session id, as this process last read or wrote it. Only this class writes the
+    // files and the history window only deletes them, so a listing reads the folder once and a file only the first
+    // time it sees it: 650 ended sessions cost one directory read every five seconds, not 650 file reads and parses
+    // (splice-sessions, Oct 13). A listing also writes only what changed against it.
+    private val held = ConcurrentHashMap<String, SeenSession>()
 
     /** Records [records] that name a session, writing a file only when what it keeps changed. A record that cannot
      *  be written is skipped: the listing it came from is still served whole. */
     @Synchronized
     internal fun note(records: List<SessionRecord>) {
         records.mapNotNull(::seen).forEach { seen ->
-            if (written[seen.sessionId] == seen) return@forEach
-            Cancellables.runCatchingCancellable { write(seen) }.onSuccess { written[seen.sessionId] = seen }
+            if (held[seen.sessionId] == seen) return@forEach
+            Cancellables.runCatchingCancellable { write(seen) }.onSuccess { held[seen.sessionId] = seen }
         }
     }
 
@@ -73,15 +77,19 @@ public class SeenSessions(
     internal fun headOf(sessionId: String): String? {
         if (!SESSION_ID.matches(sessionId)) return null
         val cutoff = kept.now().cutoffMs(clock()) ?: Long.MIN_VALUE
-        return read(dir.resolve("$sessionId.json"))?.takeIf { it.lastActivityMs >= cutoff }?.head
+        val file = dir.resolve("$sessionId.json")
+        // one stat: a held record whose file Your data deleted names no head
+        return (held[sessionId]?.takeIf { Files.exists(file) } ?: recorded(sessionId))
+            ?.takeIf { it.lastActivityMs >= cutoff }?.head
     }
 
     /** The sessions recorded that [present] does not hold and the window still keeps, newest first. */
     internal fun absent(present: Set<String>): List<SeenSession> {
         val cutoff = kept.now().cutoffMs(clock()) ?: Long.MIN_VALUE
         return files().asSequence()
-            .filter { it.fileName.toString().removeSuffix(".json") !in present }
-            .mapNotNull(::read)
+            .map { it.fileName.toString().removeSuffix(".json") }
+            .filter { it !in present && SESSION_ID.matches(it) }
+            .mapNotNull { held[it] ?: recorded(it) }
             .filter { it.lastActivityMs >= cutoff }
             .sortedByDescending { it.lastActivityMs }
             .toList()
@@ -91,7 +99,7 @@ public class SeenSessions(
         val id = record.sessionId?.takeIf(SESSION_ID::matches) ?: return null
         val at = listOfNotNull(record.process.updatedAt, record.status.updatedAt, record.process.startedAt).maxOrNull()
             ?: return null
-        val earlier = written[id] ?: read(dir.resolve("$id.json"))
+        val earlier = held[id] ?: recorded(id)
         return SeenSession(
             sessionId = id,
             name = record.name ?: earlier?.name,
@@ -114,6 +122,10 @@ public class SeenSessions(
         // The file's own time is its last activity, which is what the history window ages it by.
         Files.setLastModifiedTime(file, FileTime.fromMillis(seen.lastActivityMs))
     }
+
+    /** [sessionId]'s record read from its file, and held for the next listing. */
+    private fun recorded(sessionId: String): SeenSession? =
+        read(dir.resolve("$sessionId.json"))?.also { held[sessionId] = it }
 
     private fun read(file: Path): SeenSession? {
         val obj = text(file)?.let { JsonScalars.objectOrNull(json, it) } ?: return null

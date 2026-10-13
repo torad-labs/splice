@@ -120,9 +120,12 @@ public class ModelMoves(private val dir: Path) {
 
     /** The moves recorded for [sessionId], oldest first; none for a session that was never moved. */
     public fun of(sessionId: String): List<ModelMove> {
-        if (!sessionIdShape.matches(sessionId)) return emptyList()
+        val file = dir.resolve("$sessionId.json")
+        // A session never moved has no file, and /api/sessions asks this twice for every row: one stat answers it, where a
+        // read that failed built a NoSuchFileException each time (splice-sessions, Oct 13).
+        if (!sessionIdShape.matches(sessionId) || !Files.exists(file)) return emptyList()
         val text = try {
-            Files.readString(dir.resolve("$sessionId.json"))
+            Files.readString(file)
         } catch (_: NoSuchFileException) {
             return emptyList()
         } catch (failure: IOException) {

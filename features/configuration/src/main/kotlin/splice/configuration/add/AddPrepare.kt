@@ -232,9 +232,9 @@ internal class AddPrepare(
         output.line("splice add: which profile? one of:")
         profiles.describe().forEach { output.line("  $it") }
         output.line(
-            "  usage: splice add <profile> [--name KEY] [--base-url URL] [--model ID:WINDOW ...] [--command NAME]",
+            "  usage: splice add <profile> [--name NAME] [--base-url URL] [--model ID[:WINDOW]]... [--command CMD]",
         )
-        output.line("         [--live] [--yes]")
+        output.line("         [--key provider|new] [--live] [--yes]")
         return null
     }
 

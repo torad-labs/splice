@@ -123,7 +123,8 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
     ),
     "setup" to CommandRegistration("", CommandFactory.Alone(Command.Setup)),
     "add" to CommandRegistration(
-        "<profile> [--name NAME] [--base-url URL] [--model ID]... [--command CMD] [--live] [--yes]",
+        "<profile> [--name NAME] [--base-url URL] [--model ID[:WINDOW]]... [--command CMD] " +
+            "[--key provider|new] [--live] [--yes]",
         CommandFactory { a -> Command.Add(a.drop(1)) },
     ),
     // V4-34 shipped AddModelVerb and Command.AddModel but never reached this table, so `splice

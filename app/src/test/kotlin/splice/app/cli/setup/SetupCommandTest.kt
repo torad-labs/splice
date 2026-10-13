@@ -55,8 +55,8 @@ class SetupCommandTest {
                     prompts = SetupPrompts(
                         frame = WizardFrame(
                             out = StringBuilder(),
-                            ask = ConfirmPrompt { _, _ ->
-                                asked += 1
+                            ask = ConfirmPrompt { question, _ ->
+                                if (question == "Install now?") asked += 1
                                 false
                             },
                         ),

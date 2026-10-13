@@ -59,6 +59,7 @@ internal class SetupCommand(
 ) {
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
+    private val mcpShare = SetupMcpShare(frame)
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead, env)
@@ -85,10 +86,12 @@ internal class SetupCommand(
         val heads = picker.offer(facts, path)
         val lane = lanes.ask(heads)
         val local = localModel.offer(path)
-        val summary = menu.summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) + localModel.summary(local)
+        val share = mcpShare.ask(path)
+        val summary = menu.summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) + localModel.summary(local) +
+            mcpShare.summary(share)
         frame.note("Summary", summary)
         if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
-        return WizardAnswer.Plan(path, lanes, lane, picker, heads, local)
+        return WizardAnswer.Plan(path, lanes, lane, picker, heads, local, share)
     }
 
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
@@ -103,6 +106,7 @@ internal class SetupCommand(
         plan.lanes.apply(plan.lane, plan.picker.addAll(plan.heads))?.let { println(it) }
         localModel.install(plan.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
+        mcpShare.save(plan.path, plan.share)
         val ok = signIn.signInPendingHeads(topology)
         signIn.printNextSteps(topology)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
@@ -130,5 +134,7 @@ private sealed class WizardAnswer {
         val picker: SetupHeads,
         val heads: List<String>,
         val local: Boolean,
+        /** [daemon] mcp_share to write, or null when splice.toml already held an answer. */
+        val share: Boolean?,
     ) : WizardAnswer()
 }

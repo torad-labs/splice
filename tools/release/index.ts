@@ -9,6 +9,7 @@
 // (tools/gate/src/lib/status.ts).
 import { layout } from "../gate/src/lib/repo.ts";
 import { accept, usage as acceptUsage } from "./src/commands/accept.ts";
+import { beta, usage as betaUsage } from "./src/commands/beta.ts";
 import { notes, usage as notesUsage } from "./src/commands/notes.ts";
 import { promote, usage as promoteUsage } from "./src/commands/promote.ts";
 import { verify, usage as verifyUsage } from "./src/commands/verify.ts";
@@ -17,6 +18,7 @@ const { repoRoot } = layout();
 
 const VERBS = {
   accept: { usage: acceptUsage, exec: (argv: string[]) => accept(argv, repoRoot) },
+  beta: { usage: betaUsage, exec: (argv: string[]) => beta(argv, repoRoot) },
   notes: { usage: notesUsage, exec: (argv: string[]) => notes(argv, repoRoot) },
   promote: { usage: promoteUsage, exec: (argv: string[]) => promote(argv, repoRoot) },
   verify: { usage: verifyUsage, exec: (argv: string[]) => verify(argv, repoRoot) },

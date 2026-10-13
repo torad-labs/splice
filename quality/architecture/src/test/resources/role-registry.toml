@@ -152,7 +152,6 @@ names = [
     "StderrEcho",
     "TerminalSeen",
     "TopologyStale",
-    "TranscriptReadBudget",
     "WatchdogTripped",
 ]
 reason = """THE CANONICAL GROUP, documented in kt-no-lambda-seam.yml's own header. ClientGone (the \
@@ -179,9 +178,6 @@ SessionTranscriptViewEnabled (V4-354, 2026-09-27) reads the live global transcri
 before either the sessions or turns route opens a Claude Code transcript; one port owned by \
 sessions serves both routes, and confusing it with a client disconnect or daemon-state probe \
 would silently expose private conversation text or hide it despite the operator's switch. \
-TranscriptReadBudget (2026-10-04) asks whether this request has time left across every root and \
-metadata chunk, not whether private transcript viewing is enabled or a client has disconnected. \
-Swapping those roles could scan past the deadline, stop a healthy read, or bypass its view guard. \
 CopyingOriginals, KeepingRecordings and CodeModeJournaling (2026-10-11) are the three live prompt-store \
 switches: each is asked at the moment its writer is about to put the user's prompts on disk (a moved \
 transcript's original, a parked compaction answer, a code-mode journal save), and each answers the \

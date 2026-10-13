@@ -12,12 +12,6 @@ internal const val DEFAULT_TRANSCRIPT_PAGE: Int = 100
 // and hold an entire multi-thousand-turn transcript.
 public const val MAX_TRANSCRIPT_PAGE: Int = 500
 
-// why: request detail must end a slow whole-conversation read and leave the session's paged view available.
-public const val CONVERSATION_READ_TIMEOUT_MS: Long = 10_000L
-
-public const val CONVERSATION_READ_UNAVAILABLE: String =
-    "Reading this conversation took too long. Open the session to read its transcript in pages."
-
 /** The skipped-record kinds the page publishes as their own counts, apart from the per-kind map. */
 public const val SKIPPED_UNPARSEABLE: String = "unparseable"
 public const val SKIPPED_SIDECHAIN: String = "sidechain"
@@ -107,31 +101,6 @@ public sealed class TranscriptLookup {
     public data class Refused(val reason: String) : TranscriptLookup()
 }
 
-/** The redacted context of one response id from a client's local transcript, never raw request bytes.
- *  [earlier] counts messages before this bounded window so the console never claims it holds every
- *  message from a very large transcript (V4-354). */
-public sealed class MessageConversation {
-    public data class Found(
-        val sessionId: String,
-        val responseId: String,
-        val messages: List<TranscriptMessage>,
-        val earlier: Long,
-    ) : MessageConversation()
-
-    public data class Missing(val reason: String) : MessageConversation()
-
-    /** The source could not complete this read; it does not claim the reply is absent. */
-    public data class Unavailable(val reason: String) : MessageConversation()
-
-    public data class Refused(val reason: String) : MessageConversation()
-}
-
-/** An exact response-id lookup against Claude Code's own local transcript, in caller-supplied root
- *  priority. The implementation returns only redacted conversation messages, no headers or bodies. */
-public fun interface TranscriptMessageSource {
-    public fun lookup(sessionId: String, roots: List<Path>, responseId: String): MessageConversation
-}
-
 /** What [SessionTranscripts.sentTexts] found. */
 public data class SentTexts(
     val path: String?,
@@ -139,11 +108,6 @@ public data class SentTexts(
     val missing: Set<String>,
     val searched: List<String> = emptyList(),
 )
-
-/** The request's remaining read budget, shared across every root and every indexing chunk. */
-public fun interface TranscriptReadBudget {
-    public fun hasTime(): Boolean
-}
 
 /** What a session with no name of its own is called: the first line of its first message, or null when it has a name, the
  *  view is off, or no message of the person's is readable. The one answer session rows and request rows share. */
@@ -201,16 +165,6 @@ public interface SessionTranscripts {
         atMs: Long,
         limit: Int,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source cannot open at a moment")
-
-    /** An indexed response and at most [context] earlier messages. Null means this port does not support indexed
-     *  lookup; the caller may use its forward pages. A supported port reports absence or a spent [budget] explicitly. */
-    public fun response(
-        sessionId: String,
-        roots: List<Path>,
-        responseId: String,
-        context: Int,
-        budget: TranscriptReadBudget,
-    ): MessageConversation? = null
 
     public fun sentTexts(
         sessionId: String,

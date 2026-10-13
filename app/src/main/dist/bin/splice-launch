@@ -677,7 +677,21 @@ drop_own_token() {
 
 # Reads LAUNCH_RECIPE into the environment (exports and unsets, by name) and the positional parameters (the argv), and
 # runs it: a function's positional parameters are its own, so the argv has to be exec'd from in here.
+# Claude Code's own subcommands, as `claude --help` lists them under Commands on 2.1.296. One of these as the first
+# argument is a command, not a prompt: the recipe's flags in front of it make "agents" a prompt and its own options hit
+# the root parser (`claude agents --json`: "error: unknown option '--json'", the Temple's 10 s poll, Oct 13).
+native_subcommand() {
+  case ${1-} in
+    agents | attach | auth | auto-mode | doctor | gateway | import | install | logs | mcp | plugin | plugins | purge | \
+      respawn | rm | setup-token | stop | kill | ultrareview | update | upgrade) return 0 ;;
+  esac
+  return 1
+}
+
 # A name that is not a bare identifier is not an environment variable: it is rejected here, never handed on.
+# A subcommand (native_subcommand) takes the recipe's environment, so it reads the head's config and reaches the head,
+# and runs the recipe's Claude Code binary with the caller's arguments exactly as given: none of the recipe's flags go
+# in front of it, and it is not recorded as a session.
 # MAX_THINKING_TOKENS the caller set rides over the recipe's default (splice-lead, Oct 13): a headless caller that bounds
 # its thinking keeps that bound, and a launch with none set gets the recipe's value.
 apply_recipe() {
@@ -686,7 +700,8 @@ apply_recipe() {
   ar_argc=0
   ar_warning=""
   ar_end=0
-  set --
+  ar_bin=""
+  if native_subcommand "${1-}"; then ar_native=1; else ar_native=0; set --; fi
   while IFS= read -r ar_line; do
     case $ar_line in
       "splice-launch 1") ;;
@@ -708,7 +723,11 @@ apply_recipe() {
         ;;
       "A "*)
         unescape "${ar_line#A }"
-        set -- "$@" "$UNESCAPED"
+        if [ "$ar_native" = 1 ]; then
+          [ "$ar_argc" -gt 0 ] || ar_bin=$UNESCAPED
+        else
+          set -- "$@" "$UNESCAPED"
+        fi
         ar_argc=$((ar_argc + 1))
         ;;
       "W "*) unescape "${ar_line#W }"; ar_warning=$UNESCAPED ;;
@@ -719,6 +738,7 @@ $LAUNCH_RECIPE
 EOF
   [ "$ar_end" -eq 1 ] && [ "$ar_argc" -gt 0 ] || fail "splice: launch failed: the recipe from the daemon is cut short"
   [ -z "$ar_warning" ] || warn "splice: $ar_warning"
+  [ "$ar_native" = 1 ] && exec_argv "$ar_bin" "$@"
   record_launch "$HEAD" "${ANTHROPIC_BASE_URL-}" session
   exec_argv "$@"
 }
@@ -833,7 +853,7 @@ main() {
   handshake
   warnings
   request_launch "$@"
-  apply_recipe
+  apply_recipe "$@"
 }
 
 # A test sources this file for its functions and runs none of it.

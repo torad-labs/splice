@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -95,16 +96,23 @@ class SharedTranscriptsResumeTest {
         // compaction follows the session too: no registry entry, resolved from the global transcript
         val project = SessionProject(home.resolve(".claude/sessions"), global).projectFor(sessionId)
         assertEquals(cwd.toAbsolutePath().normalize(), project)
-        // `-r SESSION_ID` on head B finds it in its own (shared) tree: nothing is copied, and (V4-169)
-        // the assistant rows are moved onto head B's model WHERE THEY LIE, so Claude Code's restore
-        // check finds a model this head serves. Same file, same inode, one row changed.
-        service.launchOutcome(
-            spec(headB, "b", sharing, listOf(headA)),
-            listOf("-r", sessionId),
-            dangerouslySkipPermissions = false,
-        )
-        assertEquals(headModel, modelOf(Files.readString(onB)), "moved onto the resuming head's model in place")
-        assertEquals(onA.toRealPath(), onB.toRealPath(), "still the one shared file")
+        // `-r SESSION_ID` on head B finds it in its own (shared) tree, and (V4-169, as the President ruled it on Oct 13)
+        // goes on as a copy beside it under a new id, with its assistant rows on head B's model, so Claude Code's
+        // restore check finds a model this head serves. The client resumes the copy; head A's session is untouched.
+        val written = Files.readAllBytes(onA)
+        val recipe = (
+            service.launchOutcome(
+                spec(headB, "b", sharing, listOf(headA)),
+                listOf("-r", sessionId),
+                dangerouslySkipPermissions = false,
+            ) as LaunchOutcome.Ready
+            ).recipe
+        assertArrayEquals(written, Files.readAllBytes(onA), "the session head A wrote is left as it was")
+        val copyId = recipe.argv.last()
+        assertNotEquals(sessionId, copyId, "the client resumes the copy")
+        val copy = onB.resolveSibling("$copyId.jsonl")
+        assertEquals(headModel, modelOf(Files.readString(copy)), "the copy is on the resuming head's model")
+        assertEquals(copy.toRealPath(), global.resolve(encodedCwd(cwd)).resolve("$copyId.jsonl").toRealPath())
     }
 
     // The migration case, which is EVERY head on the operator machine after V4-115: projects/ is a

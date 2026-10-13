@@ -2,11 +2,13 @@
 //
 //   POST /api/sessions/{id}/continue   {"head": "<key>", "model": "<id>"}   go on under that command's model
 //
-// WHAT A MOVE IS. The same session id and transcript go on under another head: Claude Code is ended where it runs and
-// started again on the chosen command with `-r <id>`, and that launch's cross-head resume copies the transcript into
-// the head's tree and moves its rows onto the head's model (ResumeAcrossHeads, TranscriptModelRewrite), recording the
-// joint the page draws (ModelMoves). A move between heads is that explicit `-r` copy and nothing else (head
-// isolation). Nothing is sent for the person: his next message runs on the new model (the mock, hitstop).
+// WHAT A MOVE IS. The session goes on under another head: Claude Code is ended where it runs and started again on the
+// chosen command with `-r <id>`, and that launch's cross-head resume makes a copy of the session beside it under a new
+// id, with its rows on the head's model (ResumeAcrossHeads, TranscriptModelRewrite), recording the joint the page
+// draws (ModelMoves). The original is left as it was (the President's ruling on V4-169, Oct 13). A move between heads
+// is that explicit `-r` copy and nothing else (head isolation); the answer names the copy's id, which the page opens.
+// A move to another model on the same command, whose rows all stay, goes on as the same session. Nothing is sent for
+// the person: his next message runs on the new model (the mock, hitstop).
 //
 // WHAT IS KEPT. A move that came back is handed to [MoveLedger] with what it left, the command and the model it ran on
 // before he pressed, and that moment, so the transcript's mark reads "Continued on [to] · from [from]" (fin, hitstop).

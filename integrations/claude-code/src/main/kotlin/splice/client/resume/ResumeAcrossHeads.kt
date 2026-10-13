@@ -19,9 +19,12 @@
 //     the OTHER heads' projects trees, copies SESSION_ID.jsonl and its SESSION_ID/ subdir into the
 //     calling head's tree, and launches. It is a COPY — never a link, never a move, and the source
 //     is left byte-identical — so the two heads never share an inode, an append, or a deletion.
-// (C) MODEL FOLLOWS THE HEAD. On that copy — and, since V4-169, IN PLACE on a session the calling
-//     head already sees through the shared tree (V4-168) — every assistant row's `message.model` is
-//     rewritten to the calling head's pinned model (TranscriptModelRewrite, shared with the resume hook). Claude Code restores a resumed session's model from the
+// (C) MODEL FOLLOWS THE HEAD. On that copy every assistant row's `message.model` is rewritten to the calling head's
+//     pinned model (TranscriptModelRewrite, shared with the resume hook). A session the calling head already sees
+//     through the shared tree (V4-168) whose rows would move is never rewritten where it lies (the President's
+//     ruling on V4-169, Oct 13): it resumes as its copy beside it under a new session id, its rows retagged to that
+//     id (SessionIdRetag), and the original stays as its head wrote it. One whose rows all stay resumes as it is.
+//     Claude Code restores a resumed session's model from the
 //     transcript and refuses one the head does not serve — the reason string it prints with
 //     "Session model <X> could not be restored" is "is not in the availableModels allowlist"
 //     (verified in the 2.1.257 binary, strings around tengu_resume_model_restore). The materializer
@@ -59,6 +62,7 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.util.UUID
 
 /** A Claude Code session id, and the only shape allowed to become a path component or a message. */
 private val SESSION_ID_SHAPE = Regex("[A-Za-z0-9_-]{1,128}")
@@ -107,6 +111,16 @@ public sealed class SessionAdoption {
      *  moved onto the head's model in place (V4-169); [modelsRewritten] is 0 when they already named it,
      *  or when the rewrite failed, which is logged and never blocks the launch. */
     public data class HeadOwned(public val transcript: Path, public val modelsRewritten: Int = 0) : SessionAdoption()
+
+    /** A session this head sees through the shared tree but did not write, resumed as its copy [copyId] beside it with
+     *  [modelsRewritten] assistant rows on this head's model; the original is left byte for byte (the head-isolation
+     *  law's explicit `-r` copy). The launch resumes [copyId]. */
+    public data class Copied(
+        public val sessionId: String,
+        public val copyId: String,
+        public val into: Path,
+        public val modelsRewritten: Int,
+    ) : SessionAdoption()
 
     /** A foreign transcript was copied in, and its assistant rows were rewritten to the head's model. */
     public data class Adopted(
@@ -182,7 +196,7 @@ public class ResumeAcrossHeads(
             is ResumePlan.Absent -> SessionAdoption.Absent(plan.sessionId, plan.searchedHeads)
             is ResumePlan.Empty -> SessionAdoption.Empty(plan.sessionId, plan.transcript)
             is ResumePlan.Owned ->
-                SessionAdoption.HeadOwned(plan.transcript, rewriteInPlace(plan.transcript, roster, log))
+                resumeSeen(plan.transcript, sessionId, roster, log)
             is ResumePlan.Copy -> copyIn(callingConfigDir, plan, sessionId, roster, log)
         }
     }
@@ -217,19 +231,72 @@ public class ResumeAcrossHeads(
         }
     }
 
-    /** V4-169: a session this head already sees — its own, or any head's through the shared tree — is
-     *  moved onto this head's model where it lies. Nothing else is at stake in a failure here (the
-     *  session still resumes, on the head's default, with Claude Code's one-line notice), so it is
-     *  said in the log and the launch goes on. */
-    private fun rewriteInPlace(transcript: Path, roster: CallingRoster, log: LogSink): Int {
-        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, roster) }
-        outcome.exceptionOrNull()?.let { cause ->
+    /** V4-169 as the President ruled it (Oct 13): a session this head sees through the shared tree resumes where it
+     *  lies when none of its rows has to move, and otherwise as a copy beside it ([copyAside]), so the original is
+     *  never written. One that cannot be read resumes as it is: Claude Code's one-line restore notice, nothing lost. */
+    private fun resumeSeen(transcript: Path, sessionId: String, roster: CallingRoster, log: LogSink): SessionAdoption {
+        val pending = Cancellables.runCatchingCancellable { rewriter.pending(transcript, roster) }.getOrElse { cause ->
             log(
-                "[resume] $transcript could not be moved onto ${roster.pinned} (${SafeFailureText.render(cause)}); " +
-                    "the session resumes on this head's default model after Claude Code's restore notice\n",
+                "[resume] session $sessionId could not be read for its models (${SafeFailureText.render(cause)}); " +
+                    "it resumes as it is, after Claude Code's restore notice\n",
             )
+            return SessionAdoption.HeadOwned(transcript)
         }
-        return outcome.getOrDefault(0)
+        if (pending == 0) return SessionAdoption.HeadOwned(transcript)
+        return copyAside(transcript, sessionId, roster, log)
+    }
+
+    /** The copy, its subdir, the retag and the model move are one act: a copy that fails partway is removed, and the
+     *  original, read only, resumes as it is. */
+    private fun copyAside(transcript: Path, sessionId: String, roster: CallingRoster, log: LogSink): SessionAdoption {
+        val copyId = UUID.randomUUID().toString()
+        val target = transcript.resolveSibling(copyId + TRANSCRIPT_SUFFIX)
+        val targetSubdir = transcript.resolveSibling(copyId)
+        val retag = SessionIdRetag(sessionId, copyId)
+        val made = Cancellables.runCatchingCancellable {
+            retag.copy(transcript, target)
+            val sourceSubdir = transcript.resolveSibling(sessionId)
+            if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) {
+                copyTree(sourceSubdir, targetSubdir, log)
+                retagUnder(targetSubdir, retag)
+            }
+            rewriter.rewriteCopy(target, roster)
+        }
+        val rewritten = made.getOrElse { cause ->
+            discardCopy(target, targetSubdir)
+            return SessionAdoption.Refused(sessionId, transcript.parent, SafeFailureText.render(cause))
+        }
+        log(
+            "[resume] session $sessionId goes on as its copy $copyId ($rewritten assistant rows on " +
+                "${roster.pinned}); the original is untouched\n",
+        )
+        return SessionAdoption.Copied(sessionId, copyId, target, rewritten)
+    }
+
+    /** Every jsonl the copy's subdir holds (its subagents' transcripts) retagged in place: each is splice's copy. */
+    private fun retagUnder(dir: Path, retag: SessionIdRetag) {
+        val files = Files.walk(dir).use { stream ->
+            stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }.toList()
+        }
+        files.forEach { file ->
+            val staged = file.resolveSibling(".${file.fileName}.retag")
+            retag.copy(file, staged)
+            Files.move(staged, file, REPLACE_EXISTING)
+        }
+    }
+
+    private fun discardCopy(target: Path, targetSubdir: Path) {
+        Cancellables.discard(
+            Cancellables.runCatchingBestEffort {
+                val _ = Files.deleteIfExists(target)
+                if (Files.isDirectory(targetSubdir, NOFOLLOW_LINKS)) {
+                    Files.walk(targetSubdir).use { stream ->
+                        stream.sorted(Comparator.reverseOrder()).forEach { val _ = Files.deleteIfExists(it) }
+                    }
+                }
+            },
+            "a half-made copy is removed best-effort; the launch resumes the untouched original either way",
+        )
     }
 
     /** A config dir as the operator names it in a message: the directory itself, never a guess. */
@@ -299,7 +366,7 @@ public class ResumeAcrossHeads(
             Files.copy(plan.from, target, REPLACE_EXISTING)
             val sourceSubdir = plan.from.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
-            rewriter.rewrite(target, roster)
+            rewriter.rewriteCopy(target, roster)
         }
         val rewritten = copied.getOrElse { cause ->
             return SessionAdoption.Refused(sessionId, plan.fromHead, SafeFailureText.render(cause))

@@ -48,6 +48,13 @@ internal data class Move(
     val working: Boolean,
 )
 
+/** How an attempt ended: the session that came up (the moved one, or the launch's copy of it), or why none did. */
+private sealed class Landing {
+    data class Up(val session: String) : Landing()
+
+    data class Missed(val reason: String) : Landing()
+}
+
 /** The terminal an attempt runs in, and whether splice opened it for the attempt (else it is his own shell). */
 internal data class Attempt(val pane: SessionPane, val opened: Boolean)
 
@@ -64,40 +71,51 @@ internal class MoveArrival(
     /** The argv as a line he would type: each word as a POSIX shell reads it back. */
     fun line(argv: List<String>): String = argv.joinToString(" ", transform = ::shellWord)
 
-    /** Wait for [move] to come back in [attempt]; when it does not, the session goes on where it was. */
+    /** Wait for [move] to come back in [attempt]; when it does not, the session goes on where it was. A move between
+     *  heads goes on as the launch's copy of the session, under its own id (ResumeAcrossHeads, the President's ruling
+     *  on V4-169), and the answer names that id so the page follows it. */
     suspend fun await(driving: SessionDriver, attempt: Attempt, move: Move): JsonReply {
-        val missed = missed(driving, attempt.pane, move.session, move.head, move.pid)
-        if (missed != null) return back(driving, attempt, move, missed)
-        ledger?.arrived(move.session)
-        return JsonReply(HttpStatusCode.OK, "{}")
+        val arrived = when (val landing = land(driving, attempt.pane, move.session, move.head, move.pid)) {
+            is Landing.Missed -> return back(driving, attempt, move, landing.reason)
+            is Landing.Up -> landing.session
+        }
+        if (arrived != move.session) driving.panes.remember(arrived, attempt.pane)
+        ledger?.arrived(move.session, arrived)
+        val body = if (arrived == move.session) "{}" else buildJsonObject { put("session_id", arrived) }.toString()
+        return JsonReply(HttpStatusCode.OK, body)
     }
 
-    /** Null once [session] runs on [head], or under a new client in [pane]: a launch that could not record its
-     *  command leaves the registry no head to name, and it is still the move. Else why not: the terminal closed, or
-     *  time ran out. */
-    private suspend fun missed(
+    /** Up once [session] runs on [head], or a new client runs in [pane]: a launch that could not record its command
+     *  leaves the registry no head to name, and one that resumed a copy names the copy; either is the move. Else why
+     *  not: the terminal closed, or time ran out. */
+    private suspend fun land(
         driving: SessionDriver,
         pane: SessionPane,
         session: String,
         head: String,
         left: Long?,
-    ): String? {
+    ): Landing {
         var waited = 0L
-        while (waited < ARRIVAL_SECONDS) {
-            if (handover.cameOn(session, head, ARRIVAL_SLICE_SECONDS) || upIn(driving, pane, session, left)) return null
-            if (!driving.terminal.isOpen(pane)) return MISSED_NO_START
+        var landing: Landing? = null
+        while (landing == null && waited < ARRIVAL_SECONDS) {
+            landing = if (handover.cameOn(session, head, ARRIVAL_SLICE_SECONDS)) {
+                Landing.Up(session)
+            } else {
+                upIn(driving, pane, left)?.let { Landing.Up(it) }
+                    ?: Landing.Missed(MISSED_NO_START).takeUnless { driving.terminal.isOpen(pane) }
+            }
             waited += ARRIVAL_SLICE_SECONDS
         }
-        return MISSED_NO_ANSWER
+        return landing ?: Landing.Missed(MISSED_NO_ANSWER)
     }
 
-    /** Whether [session] runs in [pane] under a client other than the one the move ended ([left]). */
-    private fun upIn(driving: SessionDriver, pane: SessionPane, session: String, left: Long?): Boolean =
-        registry?.read().orEmpty().any { record ->
+    /** The session a client other than the one the move ended ([left]) runs live in [pane], or null. */
+    private fun upIn(driving: SessionDriver, pane: SessionPane, left: Long?): String? =
+        registry?.read().orEmpty().firstOrNull { record ->
             val pid = record.process.pid
-            record.sessionId == session && record.availability == SessionAvailability.LIVE &&
+            record.sessionId != null && record.availability == SessionAvailability.LIVE &&
                 pid != null && pid != left && driving.terminal.hosts(pane, pid)
-        }
+        }?.sessionId
 
     /** Close the attempt and resume the session on the command it left, when it was running before the move. */
     private suspend fun back(driving: SessionDriver, attempt: Attempt, move: Move, missed: String): JsonReply {
@@ -128,7 +146,7 @@ internal class MoveArrival(
         val ready = commands.forHead(move.from) as? StartCommand.Ready
         if (ready == null || move.pid == null) return null
         return reopen(driving, attempt, move, ready.argv + resume)
-            ?.takeIf { missed(driving, it, move.session, move.from, move.pid) == null }
+            ?.takeIf { land(driving, it, move.session, move.from, move.pid) is Landing.Up }
     }
 
     /** The command he types to resume it: the name the command is linked as, else its head's key. */
@@ -184,8 +202,9 @@ public interface MoveLedger {
     /** [record] is about to move onto command [to] and [model]: what it leaves is read now, before it leaves. */
     public fun leaving(record: SessionRecord, to: String, model: String?)
 
-    /** [session] came back on the command it left for: the move read at [leaving] is kept. */
-    public fun arrived(session: String)
+    /** [session] came back on the command it left for, as [arrivedAs] (itself, or the launch's copy of it when the
+     *  move crossed heads): the move read at [leaving] is kept on the session that came back. */
+    public fun arrived(session: String, arrivedAs: String = session)
 
     /** [session] did not come back: the move read at [leaving] is dropped, and the model it left is answered, so it
      *  goes on where it was on that model (null when its row named none). */

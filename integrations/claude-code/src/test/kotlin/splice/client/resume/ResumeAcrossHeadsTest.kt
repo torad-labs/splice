@@ -117,21 +117,29 @@ class ResumeAcrossHeadsTest {
         assertEquals(theirsText, Files.readString(theirs), "an unadopted head's transcript is not touched")
     }
 
-    // V4-169: on the shared tree (V4-168) every head's -r SESSION_ID finds the session in its OWN tree,
-    // whichever head wrote it — so HeadOwned is exactly where a foreign model id now gets moved, in
-    // place. Mutant: HeadOwned(own.transcript) with no rewrite — the count and the row both go red.
+    // V4-169 as the President ruled it (Oct 13): on the shared tree (V4-168) every head's -r SESSION_ID finds the
+    // session in its OWN tree, whichever head wrote it, and one whose rows would move goes on as a copy beside it under
+    // a new id, its rows naming that id. The original and its subdir stay byte for byte, for any other head.
     @Test
-    fun `a session this head already sees is moved onto its model in place`(@TempDir home: Path) {
+    fun `a session another head wrote goes on as a copy beside it, and the original is untouched`(@TempDir home: Path) {
         val calling = headConfig(home, "codex")
-        val mine = register(home, "codex", encodedCwd("repo"), "abc-123", model = "k3-256k")
-        val subdir = mine.resolveSibling("abc-123").resolve("subagents")
-        write(subdir.resolve("agent-1.jsonl"), transcript("abc-123", "k3-256k"))
+        val original = register(home, "codex", encodedCwd("repo"), "abc-123", model = "k3-256k")
+        write(original.resolveSibling("abc-123").resolve("subagents/agent-1.jsonl"), transcript("abc-123", "k3-256k"))
+        val before = files(home)
 
-        val adoption = adoption(calling, emptyList(), "abc-123")
+        val copied = adoption(calling, emptyList(), "abc-123") as SessionAdoption.Copied
 
-        assertEquals(2, (adoption as SessionAdoption.HeadOwned).modelsRewritten, "the transcript and its subdir")
-        assertEquals(pinned, modelOf(lines(Files.readString(mine))[1]), "moved where it lies, no copy")
-        assertEquals("k3-256k", modelOf(lines(Files.readString(mine))[2]), "a non-assistant row keeps its model")
+        assertEquals(2, copied.modelsRewritten, "the transcript and its subdir")
+        assertEquals(before, files(home).filterKeys { it in before }, "the original and its subdir are untouched")
+        assertEquals(original.resolveSibling("${copied.copyId}.jsonl"), copied.into, "beside the original")
+        val rows = lines(Files.readString(copied.into)).filter { it.isNotBlank() }
+        assertEquals(pinned, modelOf(rows[1]), "moved onto this head's model")
+        assertEquals("k3-256k", modelOf(rows[2]), "a non-assistant row keeps its model")
+        val named = "\"sessionId\":\"${copied.copyId}\""
+        assertTrue(rows.all { named in it }, "every row names the copy")
+        val agent = copied.into.resolveSibling(copied.copyId).resolve("subagents/agent-1.jsonl")
+        assertEquals(pinned, modelOf(lines(Files.readString(agent))[1]), "the subagent's rows move too")
+        assertTrue(named in Files.readString(agent), "and name the copy")
     }
 
     @Test

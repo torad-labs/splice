@@ -170,7 +170,8 @@ public class LaunchService(
             addAll(hub.args)
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
-            addAll(bounded.args)
+            // V4-169 (the President, Oct 13): a session another head wrote goes on as the copy the client resumes.
+            addAll(headBoundedContinue.resumingAs(bounded.args, (adoption as? SessionAdoption.Copied)?.copyId))
         }
         val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning, hub.warning)
         return LaunchOutcome.Ready(environment.recipe(argv, warning))
@@ -254,6 +255,9 @@ public class LaunchService(
     private fun adoptionWarning(adoption: SessionAdoption?): String? = when (adoption) {
         null, is SessionAdoption.HeadOwned ->
             null
+        is SessionAdoption.Copied ->
+            "session ${adoption.sessionId} goes on here as its copy ${adoption.copyId}, with " +
+                "${adoption.modelsRewritten} assistant rows on this head's model; the original is left as it was"
         is SessionAdoption.Adopted ->
             "resumed session ${adoption.sessionId} copied into this head from ${adoption.from}, and " +
                 "${adoption.modelsRewritten} assistant rows now name this head's model"

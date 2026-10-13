@@ -62,6 +62,22 @@ public class HeadBoundedContinue {
         return value.takeIf { it.isNotEmpty() && !it.startsWith("-") }
     }
 
+    /** [args] with the session id its named resume carries replaced by [id], in the spelling it was given: what the
+     *  client is handed when the resume goes on as a copy (ResumeAcrossHeads). With no [id], or with [args] naming no
+     *  session, [args] are as given. */
+    public fun resumingAs(args: List<String>, id: String?): List<String> {
+        val index = args.indexOfFirst(::namesResume)
+        if (id == null || requestedSessionId(args) == null) return args // a named resume has its index
+        val arg = args[index]
+        val replaced = args.toMutableList()
+        when {
+            arg == "-r" || arg == RESUME_LONG -> replaced[index + 1] = id
+            "=" in arg -> replaced[index] = arg.substringBefore('=') + "=" + id
+            else -> replaced[index] = "-r$id"
+        }
+        return replaced
+    }
+
     /** The session id a resume spelling carries: the NEXT argument for the spaced forms, after `=` for the equals
      *  forms, and `substring(2)` for the glued `-r<id>` form only. */
     private fun resumeValue(arg: String, next: String?): String = when {

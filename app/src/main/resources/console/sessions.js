@@ -726,7 +726,8 @@ async function endSession(s, confirm) {
 }
 
 // ---------- Continue on ----------
-// The session goes on under another command's model: the same id and transcript, resumed there (POST .../continue,
+// The session goes on under another command's model: on another command as its copy under a new id, the original left
+// as it was (the President's ruling on V4-169), and on the same command as itself (POST .../continue,
 // SessionContinue). A session waiting on an answer can't move, since the move types into its prompt; one splice can't
 // reach can't either, except one whose client already exited, which goes on in a new terminal.
 const movable = (s) => s.state !== "needs" && (s.state === "ended" || drivable(s)) && state.heads.some((h) => h.key !== s.head);
@@ -802,7 +803,8 @@ async function continueOn(s, head, model, label, clear = false) {
     return;
   }
   delete ui.held[s.id];
-  if (res.ok) ui.focusSay = true;
+  // a move between commands goes on as its copy, under its own id (SessionContinue): the open pane follows it there
+  if (res.ok) { ui.focusSay = true; if (res.body?.session_id && ui.open === s.id) ui.open = res.body.session_id; }
   // a move that did not come back went on where it was (MoveArrival): its card says so, with Try again
   else if (res.body?.moved === false) ui.failed.set(s.id, { ...res.body, unmoved: true, to: head, model, label: label || head, was: s.head, wasModel: s.model });
   else ui.failed.set(s.id, refusalOf(res, "It could not be moved"));

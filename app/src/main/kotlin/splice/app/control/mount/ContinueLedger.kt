@@ -43,9 +43,10 @@ internal class ContinueLedger(
         record.process.cwd?.let { moving.granted(id, Path.of(it), now) }
     }
 
-    override fun arrived(session: String) {
+    override fun arrived(session: String, arrivedAs: String) {
         moving.done(session)
-        pending.remove(session)?.let { moves.moved(session, it) }
+        // the mark goes on the session that came back: the launch's copy when the move crossed heads
+        pending.remove(session)?.let { moves.moved(arrivedAs, it) }
     }
 
     override fun failed(session: String): String? {

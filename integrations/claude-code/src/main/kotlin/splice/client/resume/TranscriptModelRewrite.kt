@@ -114,27 +114,46 @@ public class TranscriptModelRewrite(
         rewrite(transcript, CallingRoster(pinnedModel, served))
 
     /** [rewrite] with the calling head's [roster] deciding which rows stay and which model a moved row takes. */
-    public fun rewrite(transcript: Path, roster: CallingRoster): Int {
-        val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
-        val children = if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) jsonlUnder(subdir) else emptyList()
-        val files = listOf(transcript) + children
-        val kept = roster.kept()
-        val surveys = files.map { survey(it, kept) }
-        val policy = RowPolicy(roster.target(surveys.first().newestClaude), kept)
+    public fun rewrite(transcript: Path, roster: CallingRoster): Int = apply(transcript, roster, keepOriginal = true)
+
+    /** [rewrite] on a copy splice has just made of another session (ResumeAcrossHeads, the cross-head `-r` copy): the
+     *  session it was copied from is left as it was, so it is its own original and none is kept. */
+    public fun rewriteCopy(transcript: Path, roster: CallingRoster): Int =
+        apply(transcript, roster, keepOriginal = false)
+
+    /** How many rows [rewrite] would change, read only: nothing is written, kept or recorded. */
+    public fun pending(transcript: Path, roster: CallingRoster): Int {
+        val (surveys, policy) = surveyed(transcript, roster)
+        return surveys.sumOf { it.changed(policy) }
+    }
+
+    private fun apply(transcript: Path, roster: CallingRoster, keepOriginal: Boolean): Int {
+        val (surveys, policy) = surveyed(transcript, roster)
         val rewritten = surveys.sumOf { it.changed(policy) }
         if (rewritten == 0) {
-            originals.rememberIfKept(transcript)
+            if (keepOriginal) originals.rememberIfKept(transcript)
             return 0
         }
-        // A subagent file this move leaves as it is gets no copy: the live file is still its original, and a later move
-        // that changes it copies it first.
-        val changing = surveys.drop(1).filter { it.changed(policy) > 0 }.map { it.path }
-        originals.preserve(transcript, listOf(transcript) + changing)
-        val preservedChanged = "Transcript changed while preserving its original; nothing was rewritten"
-        surveys.forEach { ensureUnchanged(it, preservedChanged) }
+        if (keepOriginal) {
+            // A subagent file this move leaves as it is gets no copy: the live file is still its original, and a later
+            // move that changes it copies it first.
+            val changing = surveys.drop(1).filter { it.changed(policy) > 0 }.map { it.path }
+            originals.preserve(transcript, listOf(transcript) + changing)
+            val preservedChanged = "Transcript changed while preserving its original; nothing was rewritten"
+            surveys.forEach { ensureUnchanged(it, preservedChanged) }
+        }
         surveys.forEach { publish(it, policy) }
         recordMove(transcript, surveys.first(), policy, roster, dropped = surveys.any { it.strips > 0 })
         return rewritten
+    }
+
+    /** [transcript] and every jsonl under its `<id>/` subdir, surveyed, and the policy [roster] makes of them. */
+    private fun surveyed(transcript: Path, roster: CallingRoster): Pair<List<Survey>, RowPolicy> {
+        val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
+        val children = if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) jsonlUnder(subdir) else emptyList()
+        val kept = roster.kept()
+        val surveys = (listOf(transcript) + children).map { survey(it, kept) }
+        return surveys to RowPolicy(roster.target(surveys.first().newestClaude), kept)
     }
 
     /** One pass over a file, as counts: how many rows a move takes and how many of those hold thinking, the last

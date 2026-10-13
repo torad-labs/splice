@@ -65,8 +65,8 @@ class SessionContinueTest {
                     leaving = ModelMove(null, model.orEmpty(), to, 1L, record.head, "claude-fable-5-1")
                 }
 
-                override fun arrived(session: String) {
-                    kept += session to checkNotNull(leaving)
+                override fun arrived(session: String, arrivedAs: String) {
+                    kept += arrivedAs to checkNotNull(leaving)
                 }
 
                 override fun failed(session: String): String? = leaving?.fromModel.also { leaving = null }

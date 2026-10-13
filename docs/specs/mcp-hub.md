@@ -153,3 +153,12 @@ plan, census and launch, with splice-platform's launch module), and hostshield-l
 - **(f) A plugin with its MCP off for one launch:** to run before step 6. The plugin stays enabled
   with its skills and commands, its own server doesn't start, and the hub's same-named entry takes
   the calls.
+- **The front and holders across updates, passed (splice-config, Oct 12).** A 2.4 MB Kotlin/Native
+  front on a systemd-held socket in app-mcp.slice served a real Claude Code 2.1.296 session, with a
+  stateful counter under a holder. The session kept its tool, with no /mcp, through three updates:
+  - a daemon swap: same server pid, count continued;
+  - a front restart under the held socket: 35 ms, 1 of 239 probe calls reset, a kept-alive
+    connection that the old front closed;
+  - an in-place front upgrade, binary moved over and SIGUSR2, exec in the same pid: 0 of 250 calls
+    failed.
+  The handover gap is under 0.1 s. An ordinary front update is a reload (USR2), never a restart.

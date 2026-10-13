@@ -423,7 +423,6 @@ function freeHtml(dels) {
 // agree. Six words are tested on the daemon over every row (TurnsTest.kt), never over the newest 2,000 the route would send.
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const SEC = 1000, MIN = 60000;
-const MAX_ROWS = 2000; // PerfRoutes.kt MAX_TURNS
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return +d; };
 const reqUrl = (f) => `requests.html?${new URLSearchParams(f)}`;
 const rowId = (head, row) => `${head}:${row.turn || row.turn_id || row.ts}`;

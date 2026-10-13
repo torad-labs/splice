@@ -3,6 +3,7 @@ package splice.lifecycle.restart
 
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.FileTightening
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -40,17 +41,22 @@ public class DetachedDaemonSuccessor(
             val _ = SecureFile.ownerOnlyDirectory(logs)
             // The boot log is held owner-only before the successor appends to it, as daemon.log is.
             val bootLog = logs.resolve("daemon-boot.log")
-            // Best effort: a boot log another start made meanwhile is tightened on the next line instead.
+            // Best effort: a boot log another start made meanwhile is tightened after the start below instead.
             val _ = Cancellables.runCatchingBestEffort {
                 if (!Files.exists(bootLog)) SecureFile.createNew0600(bootLog, ByteArray(0))
             }
-            val _ = SecureFile.ownerOnlyFile(bootLog)
             val builder = ProcessBuilder(command(jar))
                 .directory(install.home.toFile())
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(bootLog.toFile()))
                 .redirectErrorStream(true)
             builder.environment().putAll(selectors(jar))
-            builder.start()
+            val _ = builder.start()
+            // Tightened once the start has opened it, so a boot log the append had to create itself (the create above
+            // failed) is held too; the successor writes nothing until this daemon has exited. One that cannot be held
+            // is said, never dropped.
+            (SecureFile.ownerOnlyFile(bootLog) as? FileTightening.Open)?.let { open ->
+                log("[control] restart: daemon-boot.log is not owner-only (${LogSafe.str(open.why)})\n")
+            }
         }.fold(
             onSuccess = { true },
             onFailure = { failure ->

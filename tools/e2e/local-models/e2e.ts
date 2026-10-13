@@ -39,9 +39,10 @@
  *    value semantics — ordered keys, int/float distinction — and JSON.parse would silently reorder
  *    integer-like keys and collapse the number forms the receipt records.
  *
- *    THE RECEIPT IS A PYTHON json.dumps ARTIFACT. Receipts from the two runtimes are committed and
- *    were reviewed against each other, so key ORDER and indent=2 are part of the artifact. It is
- *    built as an ordered pair list and emitted through python-json's dumpsIndent, not JSON.stringify.
+ *    THE RECEIPT IS A PYTHON json.dumps ARTIFACT. Receipts from the two runtimes were reviewed against
+ *    each other, so key ORDER and indent=2 are part of the artifact. Receipts stay on this machine under
+ *    tools/e2e/receipts/, which git ignores: none is committed. It is built as an ordered pair list and
+ *    emitted through python-json's dumpsIndent, not JSON.stringify.
  *
  *    `print(f"runtime: {receipt['runtime']}")` IS str() OF A DICT — Python renders that with single
  *    quotes and repr()d members, not as JSON. pyStr reproduces it.

@@ -156,6 +156,10 @@ internal class ClaudeAccountSignIn(
                 val said = "that account is already on this command as '${landed.label}'"
                 it.failed(LoginFailure.ALREADY_ADDED, said).copy(label = landed.label)
             }
+            is ClaudeAccountLanding.LabelTaken -> cell.updateAndGet {
+                val said = "'${landed.label}' already holds another account on this command; sign in under a new label"
+                it.failed(LoginFailure.CONFIG, said).copy(label = landed.label)
+            }
             is ClaudeAccountLanding.Unreadable -> failed(cell, LoginFailure.NOT_COMPLETED, landed.why)
         }
     }

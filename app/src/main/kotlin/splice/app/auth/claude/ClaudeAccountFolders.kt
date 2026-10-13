@@ -106,6 +106,9 @@ internal sealed class ClaudeAccountLanding {
     /** This head's pool already holds that account, under [label]; nothing was written. */
     data class AlreadyAdded(val label: String) : ClaudeAccountLanding()
 
+    /** [label] already holds another readable account on this head; nothing was written over it. */
+    data class LabelTaken(val label: String) : ClaudeAccountLanding()
+
     /** The sign-in left no readable account, so there is no identity to file it under. */
     data class Unreadable(val why: String) : ClaudeAccountLanding()
 }
@@ -202,11 +205,15 @@ internal class ClaudeAccountFolders(
     }
 
     /** The proven half of [land]: this head's pool either already holds [identity] under another label, or the
-     *  sign-in becomes [ClaudePendingAccount.label]'s own folder. A label signed in again keeps its original time. */
+     *  label already holds another readable account, which a sign-in never writes over (sessions' README read, Oct 13:
+     *  "never replacing another login"), or the sign-in becomes [ClaudePendingAccount.label]'s own folder. A label
+     *  signed in again keeps its original time, and one whose folder is unreadable is signed in again over it. */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
         val added = accounts(pending.head)
         val held = added.firstOrNull { it.identity?.uuid == identity.uuid }
         if (held != null && held.label != pending.label) return ClaudeAccountLanding.AlreadyAdded(held.label)
+        val other = added.firstOrNull { it.label == pending.label }?.identity
+        if (other != null && other.uuid != identity.uuid) return ClaudeAccountLanding.LabelTaken(pending.label)
         move(pending, addedAt = held?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))
         return ClaudeAccountLanding.Added(pending.label, changes?.publish(pending.head) == true)
     }

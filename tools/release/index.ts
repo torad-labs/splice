@@ -12,6 +12,7 @@ import { accept, usage as acceptUsage } from "./src/commands/accept.ts";
 import { beta, usage as betaUsage } from "./src/commands/beta.ts";
 import { notes, usage as notesUsage } from "./src/commands/notes.ts";
 import { promote, usage as promoteUsage } from "./src/commands/promote.ts";
+import { train, usage as trainUsage } from "./src/commands/train.ts";
 import { verify, usage as verifyUsage } from "./src/commands/verify.ts";
 
 const { repoRoot } = layout();
@@ -21,6 +22,7 @@ const VERBS = {
   beta: { usage: betaUsage, exec: (argv: string[]) => beta(argv, repoRoot) },
   notes: { usage: notesUsage, exec: (argv: string[]) => notes(argv, repoRoot) },
   promote: { usage: promoteUsage, exec: (argv: string[]) => promote(argv, repoRoot) },
+  train: { usage: trainUsage, exec: (argv: string[]) => train(argv, repoRoot) },
   verify: { usage: verifyUsage, exec: (argv: string[]) => verify(argv, repoRoot) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;
 

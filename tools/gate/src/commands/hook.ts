@@ -502,6 +502,12 @@ export async function preCommit(lay: Layout, lint?: StagedLint): Promise<number>
 /** The pre-push judgement of the pushed tip against the worktree. [stdin] is git's ref list:
  *  `<local ref> <local sha> <remote ref> <remote sha>`. */
 export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}, remoteName: string = "origin"): Promise<number> {
+  // The release train (after 0.4.0; `bun tools/release train`): checks run in the train's rolling check, so pre-push
+  // judges nothing once this checkout's `git config splice.train` is "on". Unset it and pre-push judges again.
+  if (git(lay.repoRoot, ["config", "--get", "splice.train"]).stdout.toString().trim() === "on") {
+    console.error("pre-push: the release train checks this branch (bun tools/release train); nothing to judge here");
+    return 0;
+  }
   const started = performance.now();
   const refs = pushedRefs(stdin);
   if (refs.length === 0) {

@@ -261,7 +261,7 @@ const KNOBS = (() => {
   function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false, el = "" } = {}) {
     const s = valueOf(k);
     if (s.src === "env") { // set in the person's shell: read here, changed there
-      return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">Set in your shell, <code>${esc(k.key)}</code></span></div>`;
+      return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">Set in your shell, ${(st.cfg?.knobs?.[k.key]?.env_names ?? [k.key]).map((n) => `<code>${esc(n)}</code>`).join(" or ")}</span></div>`;
     }
     const owners = [...ownersOf(k.key), ...(st.adding[k.key] ?? []).filter((c) => !ownersOf(k.key).includes(c))];
     const left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;

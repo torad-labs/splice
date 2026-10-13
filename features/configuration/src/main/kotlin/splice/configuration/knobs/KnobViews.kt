@@ -4,8 +4,10 @@ package splice.configuration.knobs
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigLayers
 import splice.core.config.Knob
@@ -36,7 +38,10 @@ internal class KnobViews {
         Knob.entries.forEach { knob ->
             putJsonObject(knob.key) {
                 put(VALUE, effective[knob.key] ?: JsonNull)
-                put("scope", SCOPES_BY_PRECEDENCE.last { scope -> knob.key in byScope.getValue(scope) })
+                val scope = SCOPES_BY_PRECEDENCE.last { s -> knob.key in byScope.getValue(s) }
+                put("scope", scope)
+                // a value set in the shell names the variables it is read from, so the row can say which to change
+                if (scope == "env") putJsonArray("env_names") { knob.envNames.forEach { add(it) } }
                 put("disposition", if (knob.restartRequired) "restart" else "live")
                 val readOnlyReason = PINNED_REASONS[knob]
                     ?: "set only in [heads.<key>.overrides], never by PATCH".takeIf { knob.headOnly }

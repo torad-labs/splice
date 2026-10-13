@@ -60,6 +60,7 @@ import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumeHookTarget
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.CopyingOriginals
+import splice.client.resume.originals.OriginalsCutoff
 import splice.client.resume.originals.TranscriptOriginals
 import splice.client.wrap.WrappedHead
 import splice.configuration.topology.TopologyStale
@@ -249,7 +250,9 @@ internal class ControlPlane(
     private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
         val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
-        val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths, keeping = copying))
+        val window = OriginalsCutoff { config.getConfig().historyWindow.cutoffMs(System.currentTimeMillis()) }
+        val originals = TranscriptOriginals(statePaths, keeping = copying, cutoff = window, log = log)
+        val rewriter = TranscriptModelRewrite(originals = originals)
         val wrap = WrappedHead(home)
         val arm = ClaudeLoginWiring(
             statePaths,

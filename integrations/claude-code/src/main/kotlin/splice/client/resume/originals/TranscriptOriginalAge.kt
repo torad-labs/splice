@@ -8,6 +8,8 @@ package splice.client.resume.originals
 
 import kotlinx.serialization.json.Json
 import splice.client.resume.TRANSCRIPT_SUFFIX
+import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
@@ -40,6 +42,14 @@ internal class TranscriptOriginalAge(private val root: Path) {
             removeEmpty(session)
         }
         return OriginalsHeld(bytes, removed)
+    }
+
+    /** The copies of sessions last used before [momentMs] go, as a history cut takes them; a null moment keeps them
+     *  all. A cut that fails is said in [log] and leaves them for the next one. */
+    fun cut(momentMs: Long?, log: LogSink) {
+        if (momentMs == null) return
+        Cancellables.runCatchingCancellable { delete(momentMs) }.exceptionOrNull()
+            ?.let { log("[resume] older transcript copies stay: ${SafeFailureText.render(it)}\n") }
     }
 
     /** Every session older than [momentMs], with the regular files that are its copy. */

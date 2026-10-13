@@ -39,11 +39,19 @@ public fun interface CopyingOriginals {
     public fun now(): Boolean
 }
 
+/** Where the person's history window begins now, which Settings shows as how long transcript copies are kept; null
+ *  keeps every copy. Asked each time a copy is made, so the store never grows past the window it says it keeps. */
+public fun interface OriginalsCutoff {
+    public fun now(): Long?
+}
+
 /** Immutable originals plus their live source locations, all under the selected state root. */
 public class TranscriptOriginals(
     paths: StatePaths,
     private val copier: TranscriptOriginalCopy = ForcedTranscriptOriginalCopy,
     private val keeping: CopyingOriginals = CopyingOriginals { true },
+    private val cutoff: OriginalsCutoff = OriginalsCutoff { null },
+    private val log: LogSink = LogSink { },
 ) {
     private val root = paths.transcriptOriginalsDir
 
@@ -55,6 +63,8 @@ public class TranscriptOriginals(
         if (!keeping.now()) return@withLock
         openLock().use { channel ->
             channel.lock().use {
+                // the copies of sessions last used before the window go first; a failed cut never stops this copy
+                TranscriptOriginalAge(root).cut(cutoff.now(), log)
                 val project = transcript.toAbsolutePath().normalize().parent
                 val into = root.resolve(project.toRealPath().fileName.toString())
                 directory(into)

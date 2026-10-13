@@ -126,7 +126,10 @@ public class TranscriptModelRewrite(
             originals.rememberIfKept(transcript)
             return 0
         }
-        originals.preserve(transcript, files)
+        // A subagent file this move leaves as it is gets no copy: the live file is still its original, and a later move
+        // that changes it copies it first.
+        val changing = surveys.drop(1).filter { it.changed(policy) > 0 }.map { it.path }
+        originals.preserve(transcript, listOf(transcript) + changing)
         val preservedChanged = "Transcript changed while preserving its original; nothing was rewritten"
         surveys.forEach { ensureUnchanged(it, preservedChanged) }
         surveys.forEach { publish(it, policy) }

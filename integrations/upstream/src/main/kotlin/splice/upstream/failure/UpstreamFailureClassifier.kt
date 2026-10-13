@@ -119,9 +119,15 @@ public object UpstreamFailureClassifier {
             message = JsonScalars.str(err, "message")
                 ?: JsonScalars.str(j, "message")
                 ?: raw
-            code = JsonScalars.str(err, "type")
-                ?: JsonScalars.str(err, "code")
-                ?: ""
+            // A STRING code is the vendor's verdict (cyber_policy, server_is_overloaded) and outranks the category
+            // in `type`, as the in-stream readers take it: read type-first, a cyber_policy 400 under an
+            // invalid_request type missed the policy rule and was re-sent on the generic curve. A NUMERIC code is
+            // llama-server's status, never a kind, so its `type` still names it.
+            code = listOfNotNull(
+                JsonScalars.strIfString(err?.get("code")).takeIf(String::isNotBlank),
+                JsonScalars.str(err, "type"),
+                JsonScalars.str(err, "code"),
+            ).firstOrNull().orEmpty()
             // Keep the fields that tell the operator WHAT TO DO. The bare `message` alone reads
             // "The usage limit has been reached" with no hint the ChatGPT Pro quota is six days
             // out (2026-07-26: the reset was 142h away and nothing on the wire said so).

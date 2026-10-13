@@ -45,6 +45,7 @@ import splice.upstream.Ticker
 import splice.upstream.WsPathPulse
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
+import splice.upstream.transport.KEEPALIVE_DEAD_PEER_S
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
@@ -79,8 +80,9 @@ public sealed class WatchdogFired {
  *  for that transport "last ping" is a real, dated event. [OPEN_CONNECTION] is the SSE body: it has
  *  no heartbeat of its own, so the only evidence available is that the upstream connection is still
  *  open and has not errored — which the transport's TCP keepalive turns from an assumption into a
- *  bounded claim, since a peer that stops answering probes has its socket error out within about a
- *  minute. Naming WHICH evidence held a round is what keeps the turn line from reporting a ping on
+ *  bounded claim, since a peer that stops answering probes has its socket error out within
+ *  KEEPALIVE_DEAD_PEER_S (25 s), while a live peer's kernel answers every probe however long its model
+ *  is silent. Naming WHICH evidence held a round is what keeps the turn line from reporting a ping on
  *  a transport that has none (V4-125). */
 public enum class PathEvidence { SERVER_PING, OPEN_CONNECTION }
 
@@ -89,10 +91,11 @@ public enum class PathEvidence { SERVER_PING, OPEN_CONNECTION }
  *
  * Why it is needed at all, given [PathEvidence.OPEN_CONNECTION]: a half-open TCP connection reads
  * exactly like an idle one, so "the body channel is still open" is a claim about what the kernel has
- * told us, not about whether anyone is listening. The preferred answer is TCP keepalive, which makes
- * the kernel find out and error the socket — but that needs a socket-level seam the JDK engine does
- * not expose (JDK-8338681), and the engine that does expose one could not be resolved offline. So the
- * question is asked out of band instead: is this provider reachable from here, right now?
+ * told us, not about whether anyone is listening. The first answer is TCP keepalive, which makes the
+ * kernel find out and error the socket: V4-141 moved the engine to OkHttp for its socket seam, and
+ * KeepaliveSocketFactory arms every upstream socket to call a silent peer dead within 25 s. This probe
+ * is the second, out-of-band answer, for the path keepalive cannot see past (a proxy or edge that
+ * still answers for an origin that is gone): is this provider reachable from here, right now?
  *
  * WHAT IT PROVES AND WHAT IT DOES NOT, because the difference decides how a false answer should be
  * treated: a probe proves the PATH, never THIS call. A refusal is real evidence that the round cannot
@@ -226,7 +229,7 @@ public class TurnWatchdog(
      * the idle tier was a verdict on a transport that had no way to answer it. An SSE body carries no
      * heartbeat, so its evidence is [PathEvidence.OPEN_CONNECTION] — the connection is still open and
      * has not errored — which the transport's TCP keepalive makes a bounded claim rather than an
-     * assumption: a peer that stops answering probes has its socket error out in about a minute, and
+     * assumption: a peer that stops answering probes has its socket error out within 25 s, and
      * that read error is what ends the round (as a tear the re-anchor machinery already owns), never
      * this tier. The tier asks; the path answers; only a path that cannot answer is reaped.
      */
@@ -301,7 +304,8 @@ public class TurnWatchdog(
 
     private fun proof(evidence: PathEvidence, pingAgoMs: Long): String = when (evidence) {
         PathEvidence.SERVER_PING -> "last server ping ${pingAgoMs / MS_PER_S}s ago"
-        PathEvidence.OPEN_CONNECTION -> "upstream connection open, no read error"
+        PathEvidence.OPEN_CONNECTION ->
+            "upstream connection open, no read error; keepalive ends a dead peer within ${KEEPALIVE_DEAD_PEER_S}s"
     }
 
     /** Whether the open round's path is alive past the protocol-progress cap, so the cap holds and the client's own

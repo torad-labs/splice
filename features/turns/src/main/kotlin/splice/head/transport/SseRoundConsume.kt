@@ -91,7 +91,7 @@ internal class SseRoundConsume(
             // a client-visible error. An SSE body has no heartbeat to date, so the evidence is the
             // connection itself: still open and un-errored reads as alive, and the round is HELD.
             // Nothing is lost by holding, because a genuinely dead peer is not discovered here —
-            // the transport's TCP keepalive errors the socket out in about a minute and the read
+            // the transport's TCP keepalive errors the socket out within 25 s and the read
             // failure tears the round, which the re-anchor machinery already owns and acts on at
             // once. The whole-turn cap remains the only wall.
             PathLiveness(
@@ -99,9 +99,9 @@ internal class SseRoundConsume(
                 PathEvidence.OPEN_CONNECTION,
                 // V4-125 fallback: the socket reading above says "still open", which is a claim about what
                 // the kernel has told us rather than about whether anyone is listening — a half-open
-                // connection reads exactly like an idle one. TCP keepalive would make the kernel find out
-                // and error the socket, but the engine that exposes a socket seam could not be resolved
-                // offline (V4-141 carries it), so the question is asked out of band instead. It can only
+                // connection reads exactly like an idle one. TCP keepalive makes the kernel find out and
+                // error the socket (V4-141's KeepaliveSocketFactory, 25 s), but it sees only the TCP peer,
+                // so a proxy or edge still answering for a dead origin is asked out of band too. It can only
                 // ever SHORTEN a wait the socket alone would have held: a refusal ends the round, an
                 // inconclusive probe holds it.
                 UpstreamTransport().reachabilityProbe(provider.upstreamUrl),

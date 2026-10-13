@@ -364,9 +364,9 @@ private val nodelayLogged = AtomicBoolean(false)
 // the whole point: it works on a connection whose application layer is silent, which is exactly the
 // case that cannot be told apart from a dead one any other way.
 //
-// THE THREE TIMINGS are the ones the evaluation measured (30s idle, 10s between probes, 3 probes):
-// a dead peer is declared within 60s of the last byte, and a live-but-quiet SSE hold costs one
-// empty segment every 30s. They are jdk.net.ExtendedSocketOptions, which the JDK supports on Linux
+// THE THREE TIMINGS (10s idle, 5s between probes, 3 probes; named and reasoned at their constants below):
+// a dead peer is declared within 25s of the last byte, and a live-but-quiet SSE hold costs one
+// empty segment every 10s. They are jdk.net.ExtendedSocketOptions, which the JDK supports on Linux
 // and macOS and only partly on Windows; an unsupported one is SKIPPED, not thrown, because
 // SO_KEEPALIVE itself is universal and a probe on the OS's own schedule (Linux: 2h) is still a
 // bound, where the alternative is a client that refuses to connect at all.
@@ -435,9 +435,18 @@ internal class UpstreamSockets(
         SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }.socketFactory
 }
 
-// The three keepalive timings, 30 + 3 x 10: a dead peer is known within 60s of its last byte, and a
-// live-but-quiet SSE hold costs one empty segment every 30s. Chosen to sit well under the idle tier
-// Watchdog parks a round at, so the socket answers "dead" before the watchdog has to guess.
-internal const val KEEPALIVE_IDLE_S: Int = 30 // why: seconds of silence before the first probe
-internal const val KEEPALIVE_INTERVAL_S: Int = 10 // why: seconds between unanswered probes
+// The three keepalive timings, 10 + 3 x 5: a dead peer is known within 25s of its last byte (Oct 12, splice-lead:
+// the SSE path probe as strong as the transport allows). The client is HTTP/1.1 only (one stream per connection),
+// so there is no HTTP/2 PING to send and TCP keepalive is the strongest probe this stack has. It cannot reap a model
+// thinking in silence: the probe is answered by the peer's KERNEL, so a live upstream whose application has said
+// nothing for ten minutes answers every probe and the round stays held, as ruled. Only a peer that is gone (a dead
+// host, a NAT or proxy that dropped the flow) leaves probes unanswered, and then the socket errors, the read fails,
+// and the tear goes to the re-anchor machinery. The idle bound is 10s because a held SSE round is silent for minutes
+// while a model thinks, so probing after 10s costs one empty segment per 10s. The interval is 5s because, with 3
+// probes, a live path survives a 15s total blackout (a Wi-Fi roam, a route change) before it is called dead.
+internal const val KEEPALIVE_IDLE_S: Int = 10 // why: seconds of silence before the first probe
+internal const val KEEPALIVE_INTERVAL_S: Int = 5 // why: seconds between unanswered probes
 internal const val KEEPALIVE_PROBES: Int = 3 // why: unanswered probes before the kernel declares the peer dead
+
+// Seconds from a dead peer's last byte to the socket erroring, for the line that holds a round on an open connection.
+internal const val KEEPALIVE_DEAD_PEER_S: Int = KEEPALIVE_IDLE_S + KEEPALIVE_INTERVAL_S * KEEPALIVE_PROBES // why: 25s

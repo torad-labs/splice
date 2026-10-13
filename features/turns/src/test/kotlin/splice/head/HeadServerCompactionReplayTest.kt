@@ -186,6 +186,10 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
                 socket.close()
                 assertTrue(waitFor { logged("compaction continues detached", mark) })
                 val recording = runningRecording()
+                // Detach can be noticed on an earlier frame's write while the parked "held" delta is still on its
+                // way to the recording; reserving the heap before it lands refuses the drive's own append, and then
+                // nothing is held.
+                assertTrue(waitFor { recording.frames().any { it.contains("\"held\"") } }, "the held delta is recorded")
                 val framesBefore = recording.size
                 val held = checkNotNull(heap.reserve(heap.available.value))
                 try {

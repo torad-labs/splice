@@ -49,6 +49,8 @@ internal class CodexCodeModeMachine(
     internal val started: MutableMap<String, Long> = ConcurrentHashMap()
     private val workerRecovery = CodeModeWorkerRecovery(registry)
 
+    private val oversized = CodeModeOversizedCalls(config, validation)
+
     suspend fun advance(request: CodeModeAdvanceRequest): TurnOutcome {
         val record = request.record
         val source = request.source
@@ -245,6 +247,14 @@ internal class CodexCodeModeMachine(
         cell: CodeModeCell,
         calls: List<CodeModeCall>,
     ): TurnOutcome {
+        // The empty answer is a second oversized batch from the same script, which ends it (CodeModeOversizedCalls).
+        oversized.refused(request.record, calls)?.let { refused ->
+            return if (refused.isEmpty()) {
+                poison(request.record, OVERSIZED_AGAIN)
+            } else {
+                dispatchStep(request, cell, cell.advance(refused))
+            }
+        }
         validation.calls(request.record, request.turn.tools, calls)?.let { return poison(request.record, it) }
         val pending = calls.mapIndexed { index, call ->
             CodeModePending(
@@ -285,3 +295,5 @@ internal class CodexCodeModeMachine(
 }
 
 internal const val CODE_MODE_CLIENT_ID_PREFIX = "toolu_splice_"
+
+private const val OVERSIZED_AGAIN: String = "code-mode tool arguments exceed the size limit again after one refusal"

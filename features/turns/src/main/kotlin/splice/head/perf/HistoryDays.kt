@@ -21,8 +21,8 @@
 // read sees what is there now, which is also what makes a second cut count from what the first left.
 //
 // EVERY LINE IS CHARGED, including one whose timestamp cannot be read. A row splice cannot place in
-// a minute still occupies the disk, so its bytes are in the total and its turn is reported apart
-// (unknownTurns). It is never counted into a cut: splice does not promise to delete a row it could
+// a minute still occupies the disk, so its bytes are in the total and its turn is in the count.
+// It is never counted into a cut: splice does not promise to delete a row it could
 // not date. A figure that silently dropped those rows would tell a person they free less than they
 // do, and one that cut them would delete more than the number that was on the screen.
 package splice.head.perf
@@ -51,8 +51,8 @@ private const val LOCAL_STEP_KEY = "\"${PerfKeys.LOCAL_STEP}\":1"
 // why: a record is charged to the minute it was written in; the header says why not the day.
 private val RECORD_MINUTE_MS = 1.minutes.inWholeMilliseconds
 
-/** One day of held records: when it starts, how many turns it holds, and the bytes they occupy. */
-internal data class HistoryDay(val startMs: Long, val turns: Long, val bytes: Long)
+/** One day of held records: when it starts, and the bytes they occupy. */
+internal data class HistoryDay(val startMs: Long, val bytes: Long)
 
 /** What a window cutting at [cutoffMs] would delete. */
 internal data class HistoryCut(val cutoffMs: Long, val turns: Long, val bytes: Long)
@@ -68,8 +68,6 @@ internal class HistoryHeld(
     val days: List<HistoryDay>,
     val turns: Long,
     val bytes: Long,
-    /** Turns on disk with no readable timestamp. Counted in [turns], never in a cut. */
-    val unknownTurns: Long,
     /** The oldest record's own minute, which is where the bar begins and what "Since" names. */
     val oldestMs: Long?,
     /** Why this reading is partial, when it is. A partial reading never authorizes a deletion. */
@@ -99,7 +97,6 @@ public class HistoryDays(private val zone: ZoneId = ZoneId.systemDefault()) {
             days = minutes.days(zone),
             turns = minutes.turns + minutes.unknownTurns,
             bytes = minutes.bytes + minutes.unknownBytes,
-            unknownTurns = minutes.unknownTurns,
             oldestMs = minutes.oldestMs,
             readError = failures.firstOrNull(),
             minutes = minutes,
@@ -220,13 +217,12 @@ internal class MinuteTally(
         for (index in at.indices) {
             val start = Instant.ofEpochMilli(at[index]).atZone(zone).toLocalDate()
                 .atStartOfDay(zone).toInstant().toEpochMilli()
-            val turns = turnsUpTo[index + 1] - turnsUpTo[index]
             val bytes = bytesUpTo[index + 1] - bytesUpTo[index]
             val last = out.lastOrNull()
             if (last != null && last.startMs == start) {
-                out[out.size - 1] = last.copy(turns = last.turns + turns, bytes = last.bytes + bytes)
+                out[out.size - 1] = last.copy(bytes = last.bytes + bytes)
             } else {
-                out += HistoryDay(start, turns, bytes)
+                out += HistoryDay(start, bytes)
             }
         }
         return out

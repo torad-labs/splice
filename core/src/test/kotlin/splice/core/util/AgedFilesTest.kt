@@ -1,4 +1,4 @@
-// NEW: Oct 10, 2026 — AgedFiles counts and removes what a store holds from before a moment, by last write.
+// NEW: Oct 10, 2026 — AgedFiles removes what a store holds from before a moment, by last write.
 package splice.core.util
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -29,17 +29,15 @@ class AgedFilesTest {
         val fresh = file("fresh.jsonl", 7, 5_000)
         val aged = AgedFiles(dir)
 
-        assertEquals(15L, aged.bytesBefore(2_000))
-        assertEquals(15L, aged.deleteBefore(2_000), "it frees what it counted")
+        assertEquals(15L, aged.deleteBefore(2_000), "it frees the bytes of what it removed")
         assertTrue(Files.notExists(old) && Files.notExists(nested))
         assertTrue(Files.exists(fresh))
-        assertEquals(0L, aged.bytesBefore(2_000))
+        assertEquals(7L, aged.census().bytes)
     }
 
     @Test
     fun `a directory that was never written is zero bytes, not a failure`() {
         val aged = AgedFiles(dir.resolve("never"))
-        assertEquals(0L, aged.bytesBefore(Long.MAX_VALUE))
         assertEquals(0L, aged.deleteBefore(Long.MAX_VALUE))
     }
 
@@ -58,6 +56,6 @@ class AgedFilesTest {
     fun `a stamp other than the last write decides what is old`() {
         file("x", 4, 9_000)
         val aged = AgedFiles(dir) { 1L }
-        assertEquals(4L, aged.bytesBefore(2))
+        assertEquals(4L, aged.deleteBefore(2))
     }
 }

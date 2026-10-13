@@ -5,9 +5,10 @@
 //  · GET /api/history — the saved window, what is held (turns, bytes, the oldest moment), the days
 //    the bar is drawn from, and the rate the row reads as "About N MB a month".
 //  · GET /api/history?days=N — the same, with `window` describing the window the person is NOW
-//    CHOOSING (the saved one is still there as `saved`), plus `cut`: what picking it would delete.
+//    CHOOSING, plus `cut`: what picking it would delete.
 //  · PUT /api/history {days, delete_before_epoch_ms} — saves N and deletes exactly the records
-//    before the moment that was on the screen.
+//    before the moment that was on the screen. It answers only a store it could not trim (`not_deleted`):
+//    the console reads the history again to redraw.
 //
 // THE MOMENT IS THE CONTRACT. `delete_before_epoch_ms` is not advice, it is the promise the person
 // said yes to: the number under "Delete N turns" was counted at that moment, so the deletion is made
@@ -32,7 +33,6 @@ package splice.head.perf
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -63,8 +63,6 @@ private val RATE_WINDOW_MS = 168.hours.inWholeMilliseconds
 private val RATE_MONTH_MS = 30.days.inWholeMilliseconds
 
 private const val BYTES = "bytes"
-
-private val NO_STORES = HeldStores(emptyList(), null)
 
 // why: one sentence for a reading that is not whole, said by the figure that is partial and by the
 // refusal that will not delete on it, so a person reads the same cause in both places.
@@ -97,24 +95,7 @@ public fun interface HistoryWindowStore {
  */
 public fun interface HistoryStores {
     public fun trimBefore(momentMs: Long): String?
-
-    /** What these stores hold from before [momentMs], measured when asked and never from a figure kept. Stores
-     *  that are not counted say nothing, which is what a caller that only trims gets. */
-    public fun heldBefore(momentMs: Long): HeldStores = HeldStores(emptyList(), null)
-
-    /** Every compaction summary held, whatever its age: a two-hour parking spot has no days to draw, so the page
-     *  shows the total apart from the band. A save clears the ones the cut reaches, with the other stores. */
-    public fun summariesHeld(): HeldStores = HeldStores(emptyList(), null)
 }
-
-/** One store a cut reaches, and what it holds before the cut. [key] is a name the page owns the words for. */
-public data class HeldStore(val key: String, val bytes: Long, val files: Int? = null)
-
-/** What the stores a cut reaches hold before it: reasoning kept between turns, code mode work, and the rest of what
- *  Your data lists but the records do not count. Only stores holding something are listed, and a store that was
- *  measured and holds nothing is absent, never a zero entry. [unreadable] says why a store could not be counted,
- *  so a total is never taken from a count that was not whole. */
-public data class HeldStores(val held: List<HeldStore>, val unreadable: String?)
 
 /** The history row's reads and its one save. */
 public class HistoryRoutes(
@@ -139,9 +120,7 @@ public class HistoryRoutes(
         return Cancellables.runCatchingCancellable {
             val held = inventory.held(source.stateDir, source.perfArchiveDir)
             val cut = proposed?.let { pick -> cutoff(pick)?.let(held::before) }
-            // Measured as the read is drawn: a figure kept from an earlier read would offer a deletion of a size
-            // the files no longer have.
-            body(window, proposed, held, cut?.let { Cutting(it, others.heldBefore(it.cutoffMs)) })
+            body(proposed ?: window, held, cut)
         }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, it) },
             onFailure = {
@@ -175,19 +154,13 @@ public class HistoryRoutes(
         val refused = refusal(window, held, moment)
             ?: saved.save(window.text)?.let { refuse(HttpStatusCode.BadRequest, "not saved: $it") }
         if (refused != null) return refused
-        // The stores are counted BEFORE they are trimmed, so the answer says what this save took and not what is left.
-        val stores = moment?.let { others.heldBefore(it) }
-        val taken = moment?.let { HistoryPrune(log).before(it, source.stateDir, source.perfArchiveDir) }
+        moment?.let { HistoryPrune(log).before(it, source.stateDir, source.perfArchiveDir) }
         // The records and everything else history covers are cut at ONE moment, the one the person
         // was shown. A store that could not be trimmed is named in the answer rather than passed
         // over: the records are already gone, so silence here would read as "all of it went".
         val missed = moment?.let { others.trimBefore(it) }
-        val after = inventory.held(source.stateDir, source.perfArchiveDir)
-        val cut = taken?.let { Cutting(HistoryCut(checkNotNull(moment), it.turns, it.bytes), stores ?: NO_STORES) }
-        return JsonReply(
-            HttpStatusCode.OK,
-            body(window, proposed = null, held = after, cutting = cut, missed = missed),
-        )
+        // The console redraws from a fresh read, so the save answers only what it could not do.
+        return JsonReply(HttpStatusCode.OK, JsonWire.string(buildJsonObject { missed?.let { put("not_deleted", it) } }))
     }
 
     /** Why this save cannot delete what it was asked to, or null when it can. */
@@ -224,72 +197,35 @@ public class HistoryRoutes(
         )
     }
 
-    private fun body(
-        window: HistoryWindow,
-        proposed: HistoryWindow?,
-        held: HistoryHeld,
-        cutting: Cutting?,
-        missed: String? = null,
-    ): String =
+    /** [window] is the one being chosen when a read proposes one, else the one in force. */
+    private fun body(window: HistoryWindow, held: HistoryHeld, cut: HistoryCut?): String =
         JsonWire.string(
             buildJsonObject {
-                put("window", spelled(proposed ?: window))
-                if (proposed != null) put("saved", spelled(window))
+                put("window", spelled(window))
                 putJsonObject("held") {
                     put("turns", held.turns)
                     put(BYTES, held.bytes)
                     put("oldest_epoch_ms", held.oldestMs)
-                    put("unknown_turns", held.unknownTurns)
                 }
-                putJsonArray("days") { held.days.forEach { day -> add(spelled(day)) } }
+                putJsonArray("days") { held.days.forEach { day -> add(buildJsonObject { put(BYTES, day.bytes) }) } }
                 put("rate_bytes_per_month", rate(held))
-                cutting?.let { put("cut", spelled(it.cut, it.stores)) }
-                summaries(this)
+                cut?.let { put("cut", spelled(it)) }
                 // Said where every figure above it is: a reading that is not whole cannot be read as
                 // a total, and it is the same sentence that refuses a deletion counted on it.
                 held.readError?.let { put("reason", NOT_WHOLE + it) }
-                missed?.let { put("not_deleted", it) }
             },
         )
 
-    /** The compaction summaries held, which belong to no day and so sit beside the band, not in it. */
-    private fun summaries(into: JsonObjectBuilder) {
-        val held = others.summariesHeld()
-        held.held.singleOrNull()?.let { into.putJsonObject("compaction_summaries") { put(BYTES, it.bytes) } }
-        held.unreadable?.let { into.put("compaction_summaries_reason", it) }
-    }
-
     private fun spelled(window: HistoryWindow): JsonObject = buildJsonObject {
-        put("text", window.text)
         put("days", window.days)
-        put("cutoff_epoch_ms", cutoff(window))
         put("forever", window.forever)
         put("nothing", window.nothing)
     }
 
-    private fun spelled(day: HistoryDay): JsonObject = buildJsonObject {
-        put("start_epoch_ms", day.startMs)
-        put("turns", day.turns)
-        put(BYTES, day.bytes)
-    }
-
-    private fun spelled(cut: HistoryCut, stores: HeldStores): JsonObject = buildJsonObject {
+    private fun spelled(cut: HistoryCut): JsonObject = buildJsonObject {
         put("cutoff_epoch_ms", cut.cutoffMs)
         put("turns", cut.turns)
         put(BYTES, cut.bytes)
-        // No entry is written for a store that holds nothing before the cut.
-        putJsonArray("stores") {
-            for (store in stores.held.filter { it.bytes > 0 }) {
-                add(
-                    buildJsonObject {
-                        put("key", store.key)
-                        put(BYTES, store.bytes)
-                        store.files?.let { put("files", it) }
-                    },
-                )
-            }
-        }
-        stores.unreadable?.let { put("stores_reason", it) }
     }
 
     /** Where this window cuts. On the hour, because the window says so and every reader of it gets
@@ -306,9 +242,6 @@ public class HistoryRoutes(
 
     private fun refuse(status: HttpStatusCode, why: String): JsonReply =
         JsonReply(status, JsonWire.string(buildJsonObject { put("error", why) }))
-
-    /** A cut and what the other stores held from before it, which are one fact and travel as one. */
-    private data class Cutting(val cut: HistoryCut, val stores: HeldStores)
 
     private data class Asked(val window: HistoryWindow?, val deleteBefore: Long?, val word: String)
 }

@@ -42,9 +42,6 @@ public class AgedFiles(
     /** What [census] counts. */
     public data class Census(val files: Long, val bytes: Long, val oldestMs: Long?)
 
-    /** Bytes held in files last written before [momentMs]. */
-    public fun bytesBefore(momentMs: Long): Long = older(momentMs).sumOf { Files.size(it) }
-
     /** Removes every file last written before [momentMs] and returns the bytes it freed. A file that is gone by
      *  the time it is reached is already what was asked for, so it is not a failure. */
     public fun deleteBefore(momentMs: Long): Long {

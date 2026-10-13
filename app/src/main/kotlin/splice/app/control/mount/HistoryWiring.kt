@@ -29,8 +29,6 @@ import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import splice.head.perf.HeldStore
-import splice.head.perf.HeldStores
 import splice.head.perf.HistoryDays
 import splice.head.perf.HistoryRoutes
 import splice.head.perf.HistoryStores
@@ -65,28 +63,8 @@ internal class HistoryWiring(
     // Everything else the window covers, cut at the same moment as the records, and the FIRST store
     // that could not be is named: a save that did not do all of what it said has to say so rather
     // than report a clean "Applied".
-    private val stores = object : HistoryStores {
-        override fun trimBefore(momentMs: Long): String? =
-            hours(momentMs) ?: sessions(momentMs) ?: edges(momentMs) ?: kept()?.trimBefore(momentMs)
-
-        override fun summariesHeld(): HeldStores = kept()?.summariesHeld() ?: HeldStores(emptyList(), null)
-
-        // What the cut would take from the stores that are not turn records, measured as the read is drawn.
-        override fun heldBefore(momentMs: Long): HeldStores {
-            val kept = kept()?.heldBefore(momentMs) ?: HeldStores(emptyList(), null)
-            val edges = edgesHeld(momentMs) ?: return kept
-            val reasons = listOfNotNull(kept.unreadable, edges.unreadable)
-            return HeldStores(kept.held + edges.held, reasons.joinToString("; ").ifEmpty { null })
-        }
-    }
-
-    /** What the message edges would lose to the cut, which the record side of the page does not count. */
-    private fun edgesHeld(momentMs: Long): HeldStores? {
-        val store = ports.activity?.edges ?: return null
-        return Cancellables.runCatchingCancellable { store.bytesBefore(momentMs, spared()) }.fold(
-            { HeldStores(listOf(HeldStore("message_edges", it)), null) },
-            { HeldStores(emptyList(), "message_edges: ${SafeFailureText.render(it)}") },
-        )
+    private val stores = HistoryStores { momentMs ->
+        hours(momentMs) ?: sessions(momentMs) ?: edges(momentMs) ?: kept()?.trimBefore(momentMs)
     }
 
     /** Each head's session totals, read from the live map so a head that joined after mount is counted. */

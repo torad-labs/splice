@@ -4,7 +4,6 @@
 package splice.head.perf
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -37,6 +36,5 @@ class HistoryLocalStepsTest {
         val cut = held.before(FIRST_MS + 10 * A_MINUTE_MS)
         assertEquals(2, cut.turns, "a cut announces the requests it deletes")
         assertEquals(lines.sumOf { it.toByteArray().size + 1L }, cut.bytes, "and still frees every byte on disk")
-        assertTrue(held.days.sumOf { it.turns } == 2L)
     }
 }

@@ -48,21 +48,15 @@ private const val PRUNE_WAIT_MS = 120_000L
 // therefore atomic. The suffix cannot parse as a record name, so a concurrent read never counts it.
 private const val PRUNING_SUFFIX = ".tmp"
 
-/** What a prune took: the records deleted and their bytes. */
-internal data class HistoryPruned(
-    val turns: Long,
-    val bytes: Long,
-)
-
 /** Deletes the request records written before a moment, exactly and on the file lane. */
 internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)) {
     private val record = RecordLine()
 
     /** Delete every dated record written before [momentMs] under [stateDir] and its [archiveDir]. */
-    fun before(momentMs: Long, stateDir: Path, archiveDir: Path): HistoryPruned {
+    fun before(momentMs: Long, stateDir: Path, archiveDir: Path) {
         if (!AsyncFileIo.awaitDirectory(stateDir)) stop("pending turn-statistics writes did not settle")
         val ready = CountDownLatch(1)
-        val result = AtomicReference<Result<HistoryPruned>?>(null)
+        val result = AtomicReference<Result<Unit>?>(null)
         val queued = AsyncFileIo.submit {
             try {
                 result.set(Cancellables.runCatchingCancellable { sweep(momentMs, stateDir, archiveDir) })
@@ -74,14 +68,14 @@ internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)
         if (!ready.await(PRUNE_WAIT_MS, TimeUnit.MILLISECONDS)) {
             stop("the history prune is still running; read the history again before retrying")
         }
-        return checkNotNull(result.get()).getOrThrow()
+        checkNotNull(result.get()).getOrThrow()
     }
 
     /** Each of these is a different cause with the same answer: nothing was deleted, and the reason
      *  reaches the person as the refusal the route writes. */
     private fun stop(why: String): Nothing = throw IOException(why)
 
-    private fun sweep(momentMs: Long, stateDir: Path, archiveDir: Path): HistoryPruned {
+    private fun sweep(momentMs: Long, stateDir: Path, archiveDir: Path) {
         var turns = 0L
         var bytes = 0L
         var deleted = 0
@@ -94,7 +88,6 @@ internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)
             if (taken.wholeFile) deleted += 1 else rewritten += 1
         }
         log("[history] pruned $turns turn(s), $bytes byte(s): $deleted file(s) deleted, $rewritten rewritten\n")
-        return HistoryPruned(turns, bytes)
     }
 
     /** What one file loses to a cut at [momentMs], taken from it before this returns. */

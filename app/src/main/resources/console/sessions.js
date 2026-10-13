@@ -129,7 +129,8 @@ function sessionOf(row) {
   // the one reading Teams and Requests rank projects by (kit rowLook)
   const { state: st, stall } = rowLook(row, turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs);
   return {
-    id: row.session_id, row, name: row.name || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
+    // a linked worktree is named by its own folder, never its whole path, which ran past the card's edge (splice-usage, Oct 13)
+    id: row.session_id, row, name: row.name || null, first: row.title || null, repo: folderOf(row), wt: row.repo?.worktree?.split("/").filter(Boolean).pop() || null,
     project: row.project ?? null, // as the daemon resolved it (ProjectWire); absent is "No project", never a guess here
     head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
     model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it

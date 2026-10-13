@@ -18,7 +18,7 @@
 // in the gateway module, which this module cannot import), over EVERY session a slot ever held
 // (TeamSlot.sessionsHistory): a rebind must not erase a slot's past cost, which is the "never on the
 // live registry" rule of 4.13. Rows on the team's heads that carry no session tag cannot belong to
-// anyone and are COUNTED as unattributed_turns rather than dropped; the oldest turn the perf files
+// anyone and are left out; the oldest turn the perf files
 // still hold is named, because the files rotate and a lifetime total reaches only as far back as they
 // do. The lifetime starts at the team's creation (TeamsEconomics.tally), and an archived generation
 // that ended before it is not opened, so the named oldest can be that generation's rotation second:

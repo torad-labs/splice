@@ -50,7 +50,6 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
         .toMap()
     private val bySlot = team.slots.associate { it.id to PerfTally() }
     private val byRole = team.slots.map { it.role }.distinct().associateWith { PerfTally() }
-    private var unattributed = 0
     private var oldest: Long? = null
 
     fun json(): JsonObject {
@@ -58,7 +57,6 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
         read.forEach { tally(heads.getValue(it)) }
         return buildJsonObject {
             put(TEAM_ID, team.id)
-            put("unattributed_turns", unattributed)
             put("oldest_turn_epoch_millis", oldest)
             put("roles", buildJsonArray { byRole.forEach { (role, tally) -> add(tally.json { it.put(ROLE, role) }) } })
             put(
@@ -98,7 +96,6 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
         oldest = listOfNotNull(oldest, window.oldestHeldTs ?: window.rows.minOfOrNull { it.ts }).minOrNull()
         for (row in window.rows) {
             if (row.fields[PerfKeys.LOCAL_STEP] == 1L) continue // No upstream turn to attribute to this team.
-            if (row.session == null) unattributed += 1
             row.session?.let(slotOfTag::get)?.let { slot ->
                 bySlot.getValue(slot.id).add(row, head.catalog, head.plans)
                 byRole.getValue(slot.role).add(row, head.catalog, head.plans)

@@ -335,7 +335,7 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `economics joins every held session's tag, counts the untagged, and prices only what has a card`() {
+    fun `economics joins every held session's tag and prices only what has a card`() {
         val id = rig.team().id
         val codex = rig.head(
             "codex",
@@ -350,7 +350,6 @@ class TeamsRoutesTest {
         )
         val claude = rig.head("claude", listOf(rig.row(AT, LEAD, input = 3)), rates = null)
         val body = rig.json(routes(heads = mapOf("codex" to codex, "claude" to claude)).economics(id).body)
-        assertEquals("1", body.getValue("unattributed_turns").jsonPrimitive.content)
         assertEquals(
             (AT - 5 * DAY).toString(),
             body.getValue("oldest_turn_epoch_millis").jsonPrimitive.content,

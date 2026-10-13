@@ -61,9 +61,6 @@ class TeamsEconomicsChecksTest {
         val afterFailure = leadSlot(listOf(row(CHECKS_AT - 1, OutcomeTag.UNEXPECTED.wire), step))
         assertEquals("1", afterFailure.getValue("turns").jsonPrimitive.content)
         assertEquals("fail", afterFailure.getValue("checks").jsonPrimitive.content)
-        val unknown = step.copy(session = null)
-        val team = TeamEconomics(team(), mapOf("claude" to rig.head("claude", listOf(unknown)))).json()
-        assertEquals("0", team.getValue("unattributed_turns").jsonPrimitive.content)
     }
 
     @Test

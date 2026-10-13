@@ -66,7 +66,7 @@ class SessionsTranscriptCompositionTest {
         val own = tmp.resolve(".claude-codex")
         val vanilla = tmp.resolve(".claude")
         write(vanilla, "the vanilla copy")
-        val file = write(own, "the head's copy")
+        write(own, "the head's copy")
         val routes = SessionsRoutes(
             registry(),
             TranscriptReader(),
@@ -77,8 +77,8 @@ class SessionsTranscriptCompositionTest {
         assertEquals(HttpStatusCode.OK, reply.status)
         assertEquals(
             json(
-                """{"session_id":"$HEADED","path":"$file","messages":[""" +
-                    """{"index":0,"role":"user","text":"the head's copy"}],"next":null,""" +
+                """{"messages":[""" +
+                    """{"index":0,"role":"user","text":"the head's copy"}],""" +
                     """"moves":[],"unmoved":[],"unparseable_lines":1}""",
             ),
             json(reply.body),

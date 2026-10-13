@@ -152,8 +152,8 @@ class SessionsConsoleRoutesTest {
         assertEquals(HttpStatusCode.OK, reply.status)
         assertEquals(
             json(
-                """{"session_id":"$ALPHA","path":"$file","messages":[""" +
-                    """{"index":0,"role":"user","text":"the head's copy"}],"next":null,""" +
+                """{"messages":[""" +
+                    """{"index":0,"role":"user","text":"the head's copy"}],""" +
                     """"moves":[],"unmoved":[],"unparseable_lines":1}""",
             ),
             json(reply.body),
@@ -285,7 +285,7 @@ class SessionsConsoleRoutesTest {
     }
 
     @Test
-    fun `the transcript page names each assistant message and where the session moved to another model`() {
+    fun `the transcript page says where the session moved to another model`() {
         val reply = TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "hi", messageId = "m1")
         val transcripts = object : SessionTranscripts {
             override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
@@ -303,11 +303,9 @@ class SessionsConsoleRoutesTest {
         }
         val routes = SessionsRoutes(registry(), transcripts, roots = TranscriptRoots(vanilla = tmp.resolve(".claude")))
         val body = json(routes.transcript(ALPHA, null, null).body)
-        val message = body.getValue("messages").jsonArray.single().jsonObject
-        assertEquals("m1", message.getValue("message_id").jsonPrimitive.content)
         assertEquals(
             kotlinx.serialization.json.Json.parseToJsonElement(
-                """[{"message_id":"m1","model":"gpt-6.1","command":"gpt","moved_at":5,"from_command":"claude",""" +
+                """[{"model":"gpt-6.1","command":"gpt","moved_at":5,"from_command":"claude",""" +
                     """"from_model":"claude-fable-5-1","thinking_dropped":true}]""",
             ),
             body.getValue("moves"),

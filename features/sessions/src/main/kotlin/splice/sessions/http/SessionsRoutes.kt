@@ -61,22 +61,18 @@ internal const val UNKNOWN_HEAD = "unknown head"
 private object MessageWire {
     fun json(m: TranscriptMessage): JsonObject = buildJsonObject {
         put("index", m.index)
-        m.messageId?.let { put("message_id", it) }
         put("role", m.role.name.lowercase())
         m.ts?.let { put("ts", it) }
         put("text", m.text)
         m.toolUse.name?.let { put("tool", it) }
-        m.toolUse.result?.let { put("result", it) }
         m.toolUse.id?.let { put("tool_use_id", it) }
         m.source.kind?.let { put("kind", it) }
         m.source.from?.let { put("from", it) }
-        m.source.model?.let { put("model", it) }
     }
 }
 
 private object MoveWire {
     fun json(move: ModelMove): JsonObject = buildJsonObject {
-        move.messageId?.let { put("message_id", it) }
         put("model", move.model)
         move.command?.let { put("command", it) }
         put("moved_at", move.movedAt)
@@ -262,10 +258,7 @@ public class SessionsRoutes(
     }
 
     private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {
-        put("session_id", page.sessionId)
-        put("path", page.path)
         put("messages", buildJsonArray { page.messages.forEach { add(MessageWire.json(it)) } })
-        put("next", page.next)
         if (fromEnd) put("earlier", page.earlier)
         put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
         // a move that did not come back leaves no mark, but splice ended the client for it: when he pressed

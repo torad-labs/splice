@@ -615,6 +615,133 @@ function feedHtml(tm) {
   }).join("")}</ol>`;
 }
 
+// ---------- the views: one team read four ways (web-console §4.13 "Team board"; marlin, Oct 13) ----------
+// Board is the walked default. By command racks the members under the command each runs on, with the day's hand-offs
+// between commands under the bays. By role racks them by role, the lead's first, with the day's hand-offs as marks on a
+// time rule. Timeline runs the day down the page, one column per member: what each did, and each message drawn from
+// its sender's column to its receiver's at its time, with each member's requests and cost at the column's head. Chat
+// and Activity stay beside every view. The choice is kept per team in this browser.
+const VIEWS = [["board", "Board"], ["command", "By command"], ["role", "By role"], ["timeline", "Timeline"]];
+const VIEW_STORE = "splice-teams-view:";
+const viewChoice = new Map();
+function viewOf(tm) {
+  if (!viewChoice.has(tm.id)) {
+    let v = null;
+    try { v = localStorage.getItem(VIEW_STORE + tm.id); } catch { /* storage off: Board */ }
+    viewChoice.set(tm.id, VIEWS.some(([k]) => k === v) ? v : "board");
+  }
+  return viewChoice.get(tm.id);
+}
+function setView(tm, v) {
+  viewChoice.set(tm.id, v);
+  try { localStorage.setItem(VIEW_STORE + tm.id, v); } catch { /* storage off: the choice holds until the page reloads */ }
+}
+const viewsHtml = (tm) => `<nav class="views" aria-label="Views">${VIEWS.map(([k, w]) =>
+  `<button class="view" data-act="view" data-v="${k}" aria-pressed="${viewOf(tm) === k}">${w}</button>`).join("")}</nav>`;
+
+/** The day's messages from one member to another, oldest first: the hand-offs the views draw. */
+const handoffs = () => (state.chat?.messages || []).filter((m) => m.from_slot && m.to_slot && m.from_slot !== m.to_slot);
+/** A day panel still being read, or one the history no longer holds, in the words the chat uses for it. */
+const panelWord = (panel) => (!panel ? GHOST.lines([16, 20]) : gone(panel) ? keptHtml(panel) : null);
+
+function baysHtml(tm, groups) {
+  return groups.map(({ name, color, slots }) =>
+    `<section class="bay"${color ? ` style="--c:${color}"` : ""}><h3 class="bayname">${color ? `<i aria-hidden="true"></i>` : ""}${esc(name)}` +
+    `<span class="bcount">${slots.length} ${slots.length === 1 ? "member" : "members"}</span></h3>` +
+    `${slots.map((s) => memberHtml(tm, s)).join("")}</section>`).join("");
+}
+const handoffsHtml = (body) => `<section class="handoffs"><h3>Hand-offs<span class="dname">${dayName(ui.day)}</span></h3>${body}</section>`;
+
+function byCommandHtml(tm) {
+  const heads = [...new Set(tm.slots.map((s) => s.head))];
+  const bays = baysHtml(tm, heads.map((h) => ({ name: commandOf(h) || h, color: headColor(h), slots: tm.slots.filter((s) => s.head === h) })));
+  const between = new Map();
+  for (const m of handoffs()) {
+    const a = slotOf(tm, m.from_slot)?.head, b = slotOf(tm, m.to_slot)?.head;
+    if (!a || !b) continue;
+    const k = `${a} ${b}`;
+    between.set(k, { a, b, n: (between.get(k)?.n || 0) + 1, last: m.at });
+  }
+  const cmd = (h) => `<span class="party" style="--c:${headColor(h)}"><i></i>${esc(commandOf(h) || h)}</span>`;
+  const rows = [...between.values()].sort((x, y) => y.n - x.n || y.last - x.last);
+  const body = panelWord(state.chat) ?? (rows.length
+    ? `<ul class="pairs">${rows.map((r) => `<li>${cmd(r.a)}${GLYPH.msg}${cmd(r.b)}<span class="n">${r.n} ${r.n === 1 ? "message" : "messages"}</span>` +
+      `<time>last ${hhmm(r.last)}</time></li>`).join("")}</ul>`
+    : `<p class="empty">No messages between members</p>`);
+  return `<div class="mcol"><div class="members bays">${bays}</div>${handoffsHtml(body)}</div>`;
+}
+
+function byRoleHtml(tm) {
+  const key = (s) => (s.role || s.id).trim().toLowerCase();
+  const order = [...new Set([...tm.slots.filter((s) => s.lead), ...tm.slots].map(key))];
+  const bays = baysHtml(tm, order.map((k) => {
+    const slots = tm.slots.filter((s) => key(s) === k);
+    return { name: slots[0].role || slots[0].id, color: null, slots };
+  }));
+  const { from, to } = dayWindow(ui.day);
+  const span = Math.max(1, to - from);
+  const at = (t) => `${Math.min(100, Math.max(0, ((t - from) / span) * 100)).toFixed(2)}%`;
+  const all = handoffs();
+  const ticks = all.map((m) => {
+    const a = slotOf(tm, m.from_slot), b = slotOf(tm, m.to_slot);
+    return `<i style="left:${at(m.at)};--c:${headColor(a?.head)}" title="${esc(`${hhmm(m.at)} ${a?.role || m.from_slot} to ${b?.role || m.to_slot}`)}"></i>`;
+  }).join("");
+  const hours = [0, 1, 2, 3, 4].map((q) => { const t = from + (q * span) / 4; return `<span style="left:${at(t)}">${hhmm(t)}</span>`; }).join("");
+  const body = panelWord(state.chat) ?? (all.length
+    ? `<div class="timerule" role="img" aria-label="${all.length} messages between members">${ticks}</div><div class="hours">${hours}</div>` +
+      `<p class="note">${all.length} ${all.length === 1 ? "message" : "messages"} between members, each a mark at its time in its sender's colour</p>`
+    : `<p class="empty">No messages between members</p>`);
+  return `<div class="mcol"><div class="members bays">${bays}</div>${handoffsHtml(body)}</div>`;
+}
+
+// a day of activity samples is hundreds of rows; the timeline draws the latest this many and says how many it left out
+const TIMELINE_ROWS = 400;
+const costLine = (u) => [`${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}`,
+  ...(u.usd != null && u.priced > 0 ? [`${dollars(u.usd)}${u.unpriced ? ` for ${u.priced.toLocaleString("en-US")}` : ""}`] : [])].join(" · ");
+
+function timelineHtml(tm) {
+  const cols = tm.slots;
+  const col = (id) => cols.findIndex((s) => s.id === id);
+  const heads = cols.map((s, i) => { const u = useOf(tm, s.id);
+    return `<div class="tlhead" style="grid-column:${i + 2};--c:${headColor(s.head)}"><span class="party"><i></i>${esc(s.role)}</span>` +
+      `${u ? `<span class="tlcost">${costLine(u)}</span>` : ""}</div>`; }).join("");
+  const waiting = panelWord(state.chat) && panelWord(state.activity);
+  const events = [
+    ...(state.chat && !gone(state.chat) ? state.chat.messages || [] : []).filter((m) => col(m.from_slot) >= 0 || col(m.to_slot) >= 0).map((m) => ({ at: m.at, m })),
+    ...activityRows().filter((a) => a.tool && col(a.slot) >= 0).map((a) => ({ at: a.at, a })),
+  ].sort((x, y) => x.at - y.at);
+  const shown = events.slice(-TIMELINE_ROWS);
+  const rows = shown.map((e, r) => {
+    const row = `grid-row:${r + 2}`;
+    const time = `<time style="${row}">${hhmm(e.at)}</time>`;
+    if (e.a) {
+      const i = col(e.a.slot);
+      return `${time}<div class="tlact" style="${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}">${activityHtml(e.a)}</div>`;
+    }
+    const f = col(e.m.from_slot), t = col(e.m.to_slot), tip = esc((e.m.text || "").slice(0, 160));
+    if (f >= 0 && t >= 0) {
+      const lo = Math.min(f, t), hi = Math.max(f, t);
+      return `${time}<div class="tlmsg${t < f ? " back" : ""}" style="${row};grid-column:${lo + 2} / ${hi + 3};--c:${headColor(cols[f].head)}" title="${tip}"></div>`;
+    }
+    const i = f >= 0 ? f : t;
+    const other = partyName(f >= 0 ? e.m.to : e.m.from) || "Outside";
+    return `${time}<div class="tlnote" style="${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}" title="${tip}">${GLYPH.msg}<span>${f >= 0 ? "to" : "from"} ${esc(other)}</span></div>`;
+  }).join("");
+  const cut = events.length > shown.length ? `<p class="cut"><span>The latest ${shown.length} of ${events.length}</span></p>` : "";
+  const empty = waiting || (!events.length ? `<p class="empty">Nothing on ${ui.day === 0 ? "this day yet" : "this day"}</p>` : "");
+  return `<div class="mcol tlcol"><p class="note">Time runs down the page. Each column is a member, headed by its requests and cost since joining.</p>${cut}` +
+    `<div class="tl" style="--n:${cols.length}">${heads}${rows}</div>${empty}</div>`;
+}
+
+/** The members as the chosen view draws them; Board keeps the walked markup as it was. */
+function membersHtml(tm) {
+  const view = viewOf(tm);
+  if (view === "command") return byCommandHtml(tm);
+  if (view === "role") return byRoleHtml(tm);
+  if (view === "timeline") return timelineHtml(tm);
+  return `<div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}</div>`;
+}
+
 function boardHtml(tm) {
   const T = totals(tm);
   const ro = tm.archived;
@@ -638,7 +765,8 @@ function boardHtml(tm) {
     `<header class="team-head"><div class="who"><h2>${esc(tm.name)}</h2>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
     `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm), "since members joined") : ""}</div></div>` +
     `<div class="acts">${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
-    `<div class="room"><div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}</div>` +
+    viewsHtml(tm) +
+    `<div class="room${viewOf(tm) === "timeline" ? " tlroom" : ""}">${membersHtml(tm)}` +
     `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +
     `<section class="feed"><header><h3>Activity</h3><span class="dname">${dayName(ui.day)}</span></header>` +
     `<div class="flow">${feedHtml(tm)}</div></section></div></section>`;
@@ -1006,6 +1134,7 @@ document.addEventListener("click", async (e) => {
     case "pickproj": { const was = ui.team; ui.project = b.dataset.p || null; ui.pmenu = false; PICK.set(ui.project);
       Object.assign(ui, { menu: null, pick: null }); render(); if (ui.team !== was) { ui.day = 0; await readTeam(); } break; }
     case "archived": ui.archived = !ui.archived; render(); break;
+    case "view": if (tm) { setView(tm, b.dataset.v); render(); } break;
     case "new": Object.assign(ui, { compose: composeFrom(null), menu: null, pick: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
     case "edit": Object.assign(ui, { compose: composeFrom(tm), menu: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
     case "more": ui.menu = ui.menu === "more" ? null : "more"; render(); break;

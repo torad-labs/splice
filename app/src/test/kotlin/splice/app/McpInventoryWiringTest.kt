@@ -13,7 +13,6 @@ import splice.client.ClaudePolicy
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpDisposition
 import splice.client.mcp.McpSharing
-import splice.client.mcp.McpSourceKind
 import splice.client.mcp.McpWhy
 import splice.core.util.LogSink
 import splice.launch.HeadTrees
@@ -43,7 +42,6 @@ class McpInventoryWiringTest {
         val report = McpInventoryWiring(home, sharing(), McpGlobalRead(home), emptyList()).inventory.census()
         val d = report.dispositioned.single { it.registration.name == "exa" }
         assertEquals(McpDisposition.MIGRATED, d.disposition)
-        assertEquals(McpSourceKind.entries.toSet(), report.kinds.map { it.kind }.toSet())
     }
 
     @Test

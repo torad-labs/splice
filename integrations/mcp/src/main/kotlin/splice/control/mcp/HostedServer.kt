@@ -67,9 +67,6 @@ internal class HostedServer(
     @Volatile var lastError: String? = null
         private set
 
-    val startedAt: Long get() = history.startedAt
-    val restarts: Int get() = history.restarts
-
     val alive: Boolean get() = process?.isAlive == true && initResult != null
 
     /** The launch tuple this process serves; the registry keys reservations by it. */

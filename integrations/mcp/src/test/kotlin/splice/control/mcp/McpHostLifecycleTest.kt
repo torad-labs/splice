@@ -169,7 +169,6 @@ class McpHostLifecycleTest : McpHostFixture() {
         for (streaming in listOf(false, true)) {
             val session = init()
             val stream = if (streaming) checkNotNull(host.openStream("fake", session)) else null
-            assertEquals(if (streaming) 1 else 0, status("fake")["streams"]!!.jsonPrimitive.content.toInt())
             call(session, 8, "overflow")
             assertEquals(404, host.post("fake", session, MCP_HOST_LIST).status)
             if (stream != null) {
@@ -177,7 +176,6 @@ class McpHostLifecycleTest : McpHostFixture() {
                 assertTrue(withTimeout(MCP_HOST_STREAM_WAIT_MS) { stream.receiveCatching() }.isClosed)
                 host.closeStream("fake", session)
             }
-            assertEquals(0, status("fake")["streams"]!!.jsonPrimitive.content.toInt())
         }
         init("fake2")
         assertFalse(hosted("fake"), "a closed overflowed pump cannot prevent capacity eviction")
@@ -205,9 +203,9 @@ class McpHostLifecycleTest : McpHostFixture() {
     @Test
     fun `shutdown signals stubborn children together within one grace period`() = runBlocking {
         boot()
-        init("fake2")
-        init("fake3")
-        val pids = listOf("fake2", "fake3").map { status(it)["pid"]!!.jsonPrimitive.content.toLong() }
+        val pids = listOf("fake2", "fake3").map { name ->
+            text(call(init(name), 1, "echo", "x", name = name)).substringBefore(" ").toLong()
+        }
         val start = System.nanoTime()
         host.stop()
         val elapsed = (System.nanoTime() - start) / 1_000_000L
@@ -302,7 +300,6 @@ class McpHostLifecycleTest : McpHostFixture() {
         assertTrue(err["error"]!!.jsonObject["message"]!!.jsonPrimitive.content.contains("exited"), crashed.body)
         val again = text(call(b, 2, "echo", "y")).substringBefore(" ")
         assertNotEquals(first, again, "respawned under a new pid")
-        assertTrue(status("fake")["restarts"]!!.jsonPrimitive.content.toInt() >= 1)
     }
 
     @Test
@@ -314,9 +311,8 @@ class McpHostLifecycleTest : McpHostFixture() {
             a,
             """{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"echo","arguments":{"op":"crash"}}}""",
         )
-        // a replayed crash would kill the replacement too: the call below would fail and the count would be two
+        // a replayed crash would kill the replacement too, and the call below would fail
         assertTrue(text(call(a, 2, "echo", "after")).endsWith("echo=after"))
-        assertEquals("1", status("fake")["restarts"]!!.jsonPrimitive.content, "the crash ran once and was not repeated")
     }
 
     @Test

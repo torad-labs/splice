@@ -45,7 +45,6 @@ class McpHostTest : McpHostFixture() {
         val sessions = (1..6).map { async { init() } }.awaitAll()
         val pids = sessions.mapIndexed { i, s -> text(call(s, i, "echo", "x")).substringBefore(" ") }.toSet()
         assertEquals(1, pids.size, "one child for six sessions, got $pids")
-        assertEquals(0, status("fake")["restarts"]!!.jsonPrimitive.content.toInt())
         assertEquals(6, status("fake")["sessions"]!!.jsonPrimitive.content.toInt())
     }
 
@@ -61,7 +60,6 @@ class McpHostTest : McpHostFixture() {
             val pidC = text(call(c, 1, "echo", "c", name = "fake2")).substringBefore(" ")
             assertEquals(pidA, pidB, "one process for two names with the same tuple")
             assertNotEquals(pidA, pidC, "a different env is a different process")
-            assertEquals(status("fake")["pid"], status("alias")["pid"])
         }
 
     @Test

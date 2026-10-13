@@ -35,16 +35,7 @@ public data class McpDispositioned(
     val shareClass: McpShareClass? = null,
 )
 
-/** One kind's shape in the report — sizes only; McpStatus renders these onto the wire. */
-public data class McpKindCensus(
-    val kind: McpSourceKind,
-    val rootsScanned: Int,
-    val filesScanned: Int,
-    val registrations: Int,
-)
-
 public data class McpCensusReport(
-    val kinds: List<McpKindCensus>,
     val dispositioned: List<McpDispositioned>,
 )
 
@@ -80,11 +71,8 @@ public class McpInventory(
     public fun census(): McpCensusReport {
         val scans = McpSourceKind.entries.map { kind -> readers.getValue(kind)() }
         val plan = canonicalPlan()
-        val kinds = scans.map { s ->
-            McpKindCensus(s.kind, s.rootsScanned.size, s.filesScanned.size, s.registrations.size)
-        }
         val dispositioned = scans.flatMap { scan -> scan.registrations.map { disposition(it, plan) } }
-        return McpCensusReport(kinds, dispositioned)
+        return McpCensusReport(dispositioned)
     }
 
     private fun disposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when (reg.kind) {

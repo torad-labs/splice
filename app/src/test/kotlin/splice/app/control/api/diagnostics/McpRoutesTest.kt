@@ -152,7 +152,6 @@ class McpRoutesTest {
         // V4-146: the census section rides along on the same never-cached /api/mcp payload,
         // additive to the "hosting"/"servers" shape FEATURES.md §6 already documents.
         val sources = json.parseToJsonElement(status).jsonObject["sources"]!!.jsonObject
-        assertTrue(sources["kinds"]!!.jsonObject.keys.containsAll(EXPECTED_KIND_KEYS), sources.toString())
         assertTrue(
             sources["servers"]!!.toString().contains("\"name\":\"fake\""),
             "the canonical home's own server should show up dispositioned in the census: $sources",
@@ -227,7 +226,6 @@ class McpRoutesTest {
     }
 }
 
-private val EXPECTED_KIND_KEYS = setOf("global", "project", "repo", "plugin_mcp_json", "plugin_inline")
 private const val STREAM_WAIT_MS = 5_000L
 private const val MAX_SSE_LINES = 6
 private const val INITIALIZED_MSG = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""

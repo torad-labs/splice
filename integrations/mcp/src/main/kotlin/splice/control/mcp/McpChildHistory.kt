@@ -29,12 +29,9 @@ internal class McpChildHistory(private val clock: HostClock, private val name: S
     @Volatile var startedAt: Long = 0L
         private set
 
-    @Volatile var restarts: Int = 0
-        private set
-
     /** A crash loop (the last child died young, and so did the one before) waits before the next spawn: 5 s, 10 s, ... 60 s;
      *  calls in between fail in words instead of respawning at once. One crash still respawns immediately: a single failure is
-     *  not a loop (review 2026-09-14). Null admits the spawn, and counts it as a restart when a child ran before. */
+     *  not a loop (review 2026-09-14). Null admits the spawn. */
     fun admit(): McpResult.Refused? {
         val loop = if (exitedAt > 0L && exitedAt - startedAt < CRASH_LOOP_MS) crashes + 1 else 0
         val sinceExit = clock.millis() - exitedAt
@@ -47,7 +44,6 @@ internal class McpChildHistory(private val clock: HostClock, private val name: S
             return McpResult.Refused(message)
         }
         crashes = loop
-        if (startedAt > 0L) restarts += 1
         return null
     }
 

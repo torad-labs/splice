@@ -159,11 +159,4 @@ class McpInventoryTest {
         assertEquals(McpDisposition.EXCLUDED, byKind.getValue(McpSourceKind.PLUGIN_INLINE).disposition)
         byKind.values.forEach { assertTrue(it.reason.isNotBlank(), "${it.registration.kind} has no written reason") }
     }
-
-    @Test
-    fun `the census reports all five kinds even when several are empty`() {
-        val report = inventory().census()
-        assertEquals(McpSourceKind.entries.toSet(), report.kinds.map { it.kind }.toSet())
-        assertTrue(report.kinds.all { it.rootsScanned > 0 }, "every stub kind was given a root; none should read 0")
-    }
 }

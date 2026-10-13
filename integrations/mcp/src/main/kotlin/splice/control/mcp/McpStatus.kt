@@ -18,8 +18,6 @@ import kotlinx.serialization.json.putJsonObject
 import splice.client.mcp.McpCensusReport
 import splice.client.mcp.McpDispositioned
 import splice.client.mcp.McpInventory
-import splice.client.mcp.McpKindCensus
-import splice.client.mcp.McpShareClass
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
 import splice.client.mcp.McpWhy
@@ -51,7 +49,6 @@ internal class McpStatus(
                 plan.passthrough.forEach { (name, reason) ->
                     putJsonObject(name) {
                         put("eligible", false)
-                        put("class", plan.classOf(name).wire)
                         put("reason", reason)
                         plan.why[name]?.let { why(this, it) }
                     }
@@ -68,16 +65,7 @@ internal class McpStatus(
     }
 
     private fun sources(out: JsonObjectBuilder, report: McpCensusReport) {
-        out.putJsonObject("kinds") { report.kinds.forEach { kind(this, it) } }
         out.putJsonArray("servers") { report.dispositioned.forEach { addJsonObject { server(this, it) } } }
-    }
-
-    private fun kind(out: JsonObjectBuilder, census: McpKindCensus) {
-        out.putJsonObject(wireKind(census.kind)) {
-            put("roots_scanned", census.rootsScanned)
-            put("files_scanned", census.filesScanned)
-            put("registrations", census.registrations)
-        }
     }
 
     private fun server(out: JsonObjectBuilder, d: McpDispositioned) {
@@ -88,7 +76,6 @@ internal class McpStatus(
         out.put("disposition", d.disposition.name.lowercase())
         out.put("reason", d.reason)
         d.why?.let { why(out, it) }
-        d.shareClass?.let { out.put("class", it.wire) }
     }
 
     /** The reason as a stable key the console words, with the value it names (the variable, path, cwd or URL). */
@@ -121,19 +108,14 @@ internal class McpStatus(
 
     private fun hosted(out: JsonObjectBuilder, name: String) {
         out.put("eligible", true)
-        out.put("class", McpShareClass.SHARED.wire)
         val server = server(name)
         out.put("hosted", server?.alive == true)
-        server?.pid?.let { out.put("pid", it) }
         server?.pid?.let(::residentBytes)?.let { out.put("rss_bytes", it) }
         val live = sessions.forServer(name)
         out.put("sessions", live.size)
         val commands = live.mapNotNull { it.head }.distinct().sorted()
         out.putJsonArray("commands") { commands.forEach { add(JsonPrimitive(it)) } }
-        out.put("streams", live.sumOf { it.openStreams.get() })
-        server?.startedAt?.takeIf { it > 0 }?.let { out.put("started_at", it) }
         live.maxOfOrNull { it.lastActivity }?.let { out.put("last_activity", it) }
-        out.put("restarts", server?.restarts ?: 0)
         server?.lastError?.let { out.put("last_error", it) }
     }
 }

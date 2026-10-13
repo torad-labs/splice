@@ -15,13 +15,9 @@ import splice.core.wire.AnthropicRequest
 private class Edges : HeadEvents {
     val sent = mutableListOf<String>()
 
-    override fun lifecycle(state: HeadLifecycle): Unit = Unit
-
     override fun turnStarted(session: String?): Unit = Unit
 
     override fun turnEnded(perfRowId: String, outcome: String, session: String?): Unit = Unit
-
-    override fun accountSwitched(from: String?, to: String): Unit = Unit
 
     override fun messageSent(session: String, to: String, toolUseId: String) {
         sent += "$session $to $toolUseId"

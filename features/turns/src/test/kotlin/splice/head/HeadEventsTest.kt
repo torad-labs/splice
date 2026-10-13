@@ -4,8 +4,7 @@
 //
 // NOT "something was emitted". Every assertion compares the event to the thing it claims to point
 // at: turn.end's perfRowId and outcome against the perf row the head actually wrote, turn.start's
-// session against the header the client sent, account.switch against the account the pool actually
-// moved to. A producer that emitted the wrong row's key, a stale outcome or the wrong account fails
+// session against the header the client sent. A producer that emitted the wrong row's key or a stale outcome fails
 // here, not only one that emitted nothing.
 //
 // THIS IS ALSO THE PIN for the defaulted seams. HeadSeams.events and TurnTelemetry's events both
@@ -74,20 +73,12 @@ private const val POLL_MS = 20L
 private class RecordingEvents : HeadEvents {
     val calls = CopyOnWriteArrayList<String>()
 
-    override fun lifecycle(state: HeadLifecycle) {
-        calls.add("lifecycle ${state.wire}")
-    }
-
     override fun turnStarted(session: String?) {
         calls.add("start $session")
     }
 
     override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
         calls.add("end $perfRowId $outcome $session")
-    }
-
-    override fun accountSwitched(from: String?, to: String) {
-        calls.add("switch $from $to")
     }
 
     override fun messageSent(session: String, to: String, toolUseId: String) {
@@ -102,27 +93,10 @@ private class RecordingEvents : HeadEvents {
         calls.add("upstream $session")
     }
 
-    fun turnCalls(): List<String> = calls.filterNot { it.startsWith("lifecycle") }
+    fun turnCalls(): List<String> = calls.toList()
 }
 
 class HeadEventsTest(@param:TempDir private val root: Path) {
-
-    @Test
-    fun `a head reports its lifecycle once per real transition, draining before stopped`() = runBlocking {
-        val rig = Rig(root)
-        try {
-            rig.start()
-            rig.head.stop()
-            // A second stop of a head that is already down is not a transition: nothing to report.
-            rig.head.stop()
-            assertEquals(
-                listOf("lifecycle started", "lifecycle draining", "lifecycle stopped"),
-                rig.events.calls.filter { it.startsWith("lifecycle") },
-            )
-        } finally {
-            rig.close()
-        }
-    }
 
     @Test
     fun `a served turn is announced with its session and ends with its own perf row's key and outcome`() =
@@ -142,31 +116,6 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                 rig.close()
             }
         }
-
-    @Test
-    fun `a switch to another account is reported with the accounts the pool actually used`() = runBlocking {
-        val rig = Rig(root)
-        try {
-            rig.start()
-            rig.turn()
-            rig.exhaustPrimary()
-            rig.turn()
-            val rows = rig.perfRows(2)
-            assertEquals(
-                listOf(
-                    "start $SESSION",
-                    "end ${rows[0].first} ${rows[0].second} $SESSION",
-                    "start $SESSION",
-                    "switch primary backup",
-                    "end ${rows[1].first} ${rows[1].second} $SESSION",
-                ),
-                rig.events.turnCalls(),
-            )
-            assertEquals("backup", rig.selectedAccount(), "the switch event must name the account now selected")
-        } finally {
-            rig.close()
-        }
-    }
 
     @Test
     fun `a turn refused locally still starts and ends, keyed by its refusal row`() = runBlocking {
@@ -280,16 +229,10 @@ private class Rig(root: Path) {
         }.bodyAsText()
     }
 
-    fun exhaustPrimary() {
-        primaryQuota.record(quota(100.0))
-    }
-
     fun exhaustAll() {
         // Only an explicit provider pushback refuses admission; percentages are ordering hints.
         pool.members.forEach { it.cooldown.markUnavailable(60_000L) }
     }
-
-    fun selectedAccount(): String? = pool.view(SESSION).selectedLabel
 
     /** The perf rows of TURNS the head wrote, as (ts, outcome), once [count] of them have landed. The head's own
      *  answer to the activity side query leaves a row too, marked a local step, and is no turn. The append is

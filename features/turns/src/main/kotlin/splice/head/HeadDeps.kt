@@ -199,7 +199,7 @@ public data class HeadDeps(
         val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
         val clientVersions: ClientVersionTracker = ClientVersionTracker(),
         val session: SessionSeams = SessionSeams(),
-        /** V4-134: where this head reports lifecycle, turn and account events for the console. The
+        /** V4-134: where this head reports its turns, messages and label queries for the console. The
          *  default reports to nobody, like every seam in this bundle; HeadServerFactory gives every
          *  production head a real one, and HeadEventsTest fails if a served turn stops reaching it. */
         val events: HeadEvents = NoHeadEvents,
@@ -236,44 +236,26 @@ public data class HeadDeps(
     )
 }
 
-// V4-134, FEATURES.md §6 — HeadEvents: what a head tells the console, at the seams that already hold each
-// fact. :daemon-head cannot see :daemon-control's EventBus (its build depends on :core and :upstream only),
-// so a head reports through this interface and :app adapts it to the bus, once, in
-// ConsoleEventPublisher. Nothing here is a new probe: every call site is a line that already knew
-// the fact — the head lifecycle mutex, the ready turn's admission, the one perf-row emitter.
+// V4-134, FEATURES.md §6 — HeadEvents: what a head tells the console's stores, at the seams that already hold each
+// fact. A head reports through this interface and :app records it, once, in ConsoleEventPublisher. Nothing here
+// is a new probe: every call site is a line that already knew the fact — the ready turn's admission, the one
+// perf-row emitter, the request that carries a SendMessage or a label query.
 //
 // ONE INSTANCE PER HEAD, keyed by :app when it builds that head's HeadSeams, so no call site passes
 // its head key and none can pass the wrong one.
 //
 // EVERY METHOD MUST RETURN AT ONCE AND NEVER THROW: they run on the turn path and inside the
 // lifecycle lock, and the console is an observer — a slow or broken observer must lose events, never
-// stall a turn or a restart. The bus behind the production implementation drops rather than waits
-// (EventBus.publish).
+// stall a turn or a restart.
 //
 // V4-130 ADDED THREE METHODS, ALL ABSTRACT: messageSent, activityLabel, labelQueryUpstream. None has a
-// default no-op body, on purpose: a defaulted method is how a producer forgets a family. The V4-126
-// EventBus default was exactly that (a family nobody produced, silently), and V4-134 removed it; an
+// default no-op body, on purpose: a defaulted method is how a producer forgets a family; an
 // implementer of this interface must now say what it does with each fact, even if that is nothing.
 //
 // WHY IN THIS FILE: HeadSeams.events is the interface's only holder, and every other seam a head is
 // built with is declared here; the seam's type sits beside the field that carries it.
 
-/** The head lifecycle states the console shows (`head.state`'s `state` field). */
-public enum class HeadLifecycle(public val wire: String) {
-    /** The engine is bound and admission is open. */
-    STARTED("started"),
-
-    /** Admission is closed and in-flight turns are draining; the engine is still up. */
-    DRAINING("draining"),
-
-    /** The engine is down. */
-    STOPPED("stopped"),
-}
-
 public interface HeadEvents {
-    /** The head moved to [state]. */
-    public fun lifecycle(state: HeadLifecycle)
-
     /** A turn was admitted and is about to be served or refused with a perf row. Fired for exactly
      *  the turns that end in [turnEnded], so a console can pair the two. [session] is the client's
      *  full session id, or null for a request that carried none. */
@@ -284,10 +266,6 @@ public interface HeadEvents {
      *  session [turnStarted] named for the same turn, so a console hears from a session when its turn
      *  ends as well as when it starts. */
     public fun turnEnded(perfRowId: String, outcome: String, session: String?)
-
-    /** The account pool moved this turn to another account. [from] is null when the pool had no
-     *  previous choice for the session. */
-    public fun accountSwitched(from: String?, to: String)
 
     /** V4-130: [session] called SendMessage addressed to [to] (an address or a name, verbatim from the
      *  tool_use input). [toolUseId] is that block's id, unique per call. Reported once per call, from
@@ -307,13 +285,9 @@ public interface HeadEvents {
 /** The head that reports to nobody: a head built without a console (tests, tools). Production heads
  *  get a real one from HeadServerFactory, and HeadEventsTest fails if a turn stops reaching it. */
 public object NoHeadEvents : HeadEvents {
-    override fun lifecycle(state: HeadLifecycle): Unit = Unit
-
     override fun turnStarted(session: String?): Unit = Unit
 
     override fun turnEnded(perfRowId: String, outcome: String, session: String?): Unit = Unit
-
-    override fun accountSwitched(from: String?, to: String): Unit = Unit
 
     override fun messageSent(session: String, to: String, toolUseId: String): Unit = Unit
 

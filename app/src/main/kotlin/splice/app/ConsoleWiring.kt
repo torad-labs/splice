@@ -43,7 +43,6 @@ import splice.core.util.WallClock
 import splice.diagnostics.doctor.DoctorReport
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.head.HeadEvents
-import splice.head.HeadLifecycle
 import splice.head.turn.LiveTurnsByHead
 import splice.head.wire.WireTaps
 import splice.lifecycle.upgrade.ConsoleUpgradeStatus
@@ -288,9 +287,6 @@ internal class ConsoleEventPublisher(
     internal fun forHead(head: String): HeadEvents = HeadPublisher(head)
 
     private inner class HeadPublisher(private val head: String) : HeadEvents {
-        /** Nothing reads a head's lifecycle or an account switch here since the live stream went (Oct 12). */
-        override fun lifecycle(state: HeadLifecycle) = Unit
-
         /** Remembers which head [session]'s turn arrived on, for the registry's heard-from time and the listing's
          *  head join. */
         override fun turnStarted(session: String?) {
@@ -300,8 +296,6 @@ internal class ConsoleEventPublisher(
         override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
             if (session != null) ended(session)
         }
-
-        override fun accountSwitched(from: String?, to: String) = Unit
 
         override fun messageSent(session: String, to: String, toolUseId: String) {
             val at = clock()

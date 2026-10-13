@@ -130,10 +130,10 @@ public class HeadServer(
 
     private val lifecycle = Mutex()
 
-    /** What [drainLocked] left behind for [closeLocked]: whether this head was running when the drain
-     *  began, and that the drain is already spent, so a [stop] after a [drain] closes the engine at once
-     *  instead of waiting out a second drain budget on turns the first one already gave up on. */
-    private var drainedWasRunning: Boolean? = null
+    /** What [drainLocked] left behind for [closeLocked]: that the drain is already spent, so a [stop] after a
+     *  [drain] closes the engine at once instead of waiting out a second drain budget on turns the first one
+     *  already gave up on. */
+    private var drained = false
 
     override val key: String get() = provider.key
     override val label: String get() = provider.label
@@ -190,7 +190,7 @@ public class HeadServer(
     private suspend fun startLocked() {
         if (engine.isRunning) return
         // A head that is up again has no spent drain behind it: the next stop drains afresh.
-        drainedWasRunning = null
+        drained = false
         // G20 contract: a control-plane restart promises a fresh diagnostic baseline; the counters
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
@@ -201,7 +201,6 @@ public class HeadServer(
         deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
-        deps.seams.events.lifecycle(HeadLifecycle.STARTED)
     }
 
     private suspend fun stopLocked() {
@@ -213,15 +212,11 @@ public class HeadServer(
      *  retries) while the running ones finish, so nothing is ever answered with a refused connection
      *  by a head that is still up. Idempotent — a stop after a drain closes without draining twice. */
     private suspend fun drainLocked() {
-        if (drainedWasRunning != null) return
+        if (drained) return
         // Refuse new turns FIRST so the drain can actually converge, then drain in-flight turns
         // so clients get honest terminals (driveSealingCancellation's cancellation seal) before
         // Netty tears the engine. Bounded wait — never block restart forever.
         engine.closeAdmission(window)
-        // V4-134: reported only when there was something running to drain, so a stop of a head
-        // that never started does not tell the console it went down.
-        val wasRunning = engine.isRunning
-        if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.DRAINING)
         val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(deps.policy.stopDrainMs)
         var inflight = gate.snapshot().inflight
         while (inflight > 0 && System.nanoTime() < deadlineNs) {
@@ -239,22 +234,19 @@ public class HeadServer(
         driver.stopDetached()
         val sealDeadlineNs = System.nanoTime() + STOP_SEAL_NS
         StopSeal(gate, engine, deps.seams.waiter).settle(sealDeadlineNs)
-        drainedWasRunning = wasRunning
+        drained = true
     }
 
     /** The half that closes the port and settles this head's books. Everything here is what a client
      *  can no longer be served through, so it runs as late as the daemon's stop can leave it. */
     private fun closeLocked() {
-        val wasRunning = drainedWasRunning == true
         engine.stop()
         provider.onHeadStop()
         driver.flushHeldRows()
         deps.stores.usageStore.flushNow()
         deps.stores.economicsStore?.flushNow()
         deps.stores.perfStats.totals?.flushNow()
-        if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.STOPPED)
-        // Spent: a second stop of a head that is already down drains an engine that is no longer
-        // running, finds nothing that was running to report, and so is not a transition twice over.
-        drainedWasRunning = null
+        // Spent: a head that starts again, or is stopped again, drains afresh.
+        drained = false
     }
 }

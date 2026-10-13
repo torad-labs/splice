@@ -179,7 +179,6 @@ internal class TurnTelemetry(
         )
         account?.switch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
-            events.accountSwitched(switched.from, switched.to)
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.

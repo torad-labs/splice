@@ -207,10 +207,4 @@ class UpstreamFailureClassifierTest {
         val r = sse("x".repeat(5000))
         assertEquals(2000, r.message.length)
     }
-
-    @Test
-    fun `502 maps out as 529`() {
-        assertEquals(529, UpstreamFailureClassifier.mapOutStatus(502))
-        assertEquals(500, UpstreamFailureClassifier.mapOutStatus(500))
-    }
 }

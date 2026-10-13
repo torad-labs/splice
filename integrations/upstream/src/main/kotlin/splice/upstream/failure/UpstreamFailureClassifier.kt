@@ -290,10 +290,6 @@ public object UpstreamFailureClassifier {
         )
     }
 
-    /** 502 from the ChatGPT gateway is transient — surface as 529 so Claude Code retries. */
-    internal fun mapOutStatus(status: Int): Int =
-        if (status == HttpStatus.BAD_GATEWAY) HttpStatus.OVERLOADED else status
-
     private sealed class ExtractResult {
         data class Fields(val message: String, val code: String) : ExtractResult() {
             /** Overload: a 502 from the gateway, or capacity by CODE SHAPE on a status-less (in-stream)

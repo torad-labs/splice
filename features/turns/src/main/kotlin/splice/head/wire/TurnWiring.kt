@@ -12,13 +12,18 @@ import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.head.usage.TurnUsage
 import splice.head.usage.UsageHud
+import java.util.concurrent.ConcurrentHashMap
 
 /** A collaborator (not TurnDriver members) because TurnDriver already sits at its function-count
- *  budget. No instance state beyond the injected log. */
+ *  budget. Its one state is which scale lines it has already said. */
 internal class TurnWiring(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val hud = UsageHud()
+
+    // Each distinct scale line once, not once per turn: per turn it was 106,386 lines in 7 days, about 5% of
+    // the journal (splice-usage's sweep, Oct 12). A row whose factor or window changes says the new one.
+    private val saidScales: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
      *  collector so both report tokens identically. */
@@ -32,7 +37,6 @@ internal class TurnWiring(
         originalModel: String,
         sessionWindow: Long? = null,
     ): UsagePayloadBuilder {
-        var factorLogged = false
         return { usage ->
             // Claude Code reads every assistant message's usage as the context total, zeros included,
             // so a usage that measured no input reports the context it carries for the client: a
@@ -66,20 +70,13 @@ internal class TurnWiring(
             // out of the blob Claude Code pipes back, which is Claude Code's record of THIS payload, so
             // on a scaled row both of its context numbers are in client units. Its cache-hit segment is
             // unaffected — read/(input+read+cache_creation) is scale-invariant when every term carries
-            // the same factor. The factor is LOGGED once per turn (DR-18) so a wrong one leaves a
-            // breadcrumb even though every displayed surface stays self-consistent. Non-launched
+            // the same factor. The factor is LOGGED once per distinct factor and window (DR-18), so a wrong
+            // one leaves a breadcrumb even though every displayed surface stays self-consistent. Non-launched
             // clients (the e2e probe, a bare curl) receive scaled counts against a window they never
             // declared — by design; the raw truth lives in splice's own accounting above.
             val clientWindow = catalog.clientContextWindowFor(originalModel, sessionWindow)
             val scale = catalog.usageScale(originalModel, sessionWindow)
-            if (scale != 1.0 && !factorLogged) {
-                factorLogged = true
-                log(
-                    "[usage] row '$originalModel' reports client-scaled tokens " +
-                        "(factor $scale, client window $clientWindow" +
-                        "${if (sessionWindow != null) ", the session's own" else ", the launch env"})\n",
-                )
-            }
+            if (scale != 1.0) sayScale(originalModel, scale, clientWindow, sessionWindow)
             hud.buildUsagePayload(
                 TurnUsage(
                     scale(nonCachedInput, scale),
@@ -92,7 +89,19 @@ internal class TurnWiring(
         }
     }
 
+    /** The scale line, said the first time this factor and window are seen for the row. */
+    private fun sayScale(originalModel: String, scale: Double, clientWindow: Long, sessionWindow: Long?) {
+        val source = if (sessionWindow != null) "the session's own" else "the launch env"
+        val line = "[usage] row '$originalModel' reports client-scaled tokens " +
+            "(factor $scale, client window $clientWindow, $source)\n"
+        if (saidScales.size >= MAX_SAID_SCALES) saidScales.clear()
+        if (saidScales.add(line)) log(line)
+    }
+
     /** Exact when the row agrees with the client, which keeps every normal head byte-identical. */
     private fun scale(tokens: Long, factor: Double): Long =
         if (factor == 1.0) tokens else (tokens * factor).toLong()
 }
+
+// why: how many distinct scale lines are remembered before the set starts over; a row has a handful of windows.
+private const val MAX_SAID_SCALES = 256

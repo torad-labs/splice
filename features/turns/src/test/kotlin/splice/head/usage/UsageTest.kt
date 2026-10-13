@@ -532,12 +532,15 @@ class UsageScalingTest {
     }
 
     @Test
-    fun `a scaled row logs its factor once per turn and an exact row logs nothing`() {
+    fun `a scaled row logs its factor once across turns and an exact row logs nothing`() {
         val logged = mutableListOf<String>()
-        val builder = TurnWiring(LogSink { logged += it }).usagePayloadBuilder(xai, meta("grok-4.6[500k]"))
-        builder(Usage(1_000, 7, 200))
-        builder(Usage(2_000, 7, 200))
-        assertEquals(1, logged.count { it.contains("client-scaled") }, "one factor line per turn, got $logged")
+        val wiring = TurnWiring(LogSink { logged += it })
+        repeat(2) {
+            val builder = wiring.usagePayloadBuilder(xai, meta("grok-4.6[500k]"))
+            builder(Usage(1_000, 7, 200))
+            builder(Usage(2_000, 7, 200))
+        }
+        assertEquals(1, logged.count { it.contains("client-scaled") }, "one line per factor, got $logged")
         assertTrue(logged.single().contains("grok-4.6[500k]"), "the line names the row: $logged")
 
         val exact = mutableListOf<String>()

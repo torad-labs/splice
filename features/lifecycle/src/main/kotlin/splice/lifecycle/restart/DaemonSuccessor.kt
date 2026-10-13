@@ -38,9 +38,16 @@ public class DetachedDaemonSuccessor(
         }
         return Cancellables.runCatchingCancellable {
             val _ = SecureFile.ownerOnlyDirectory(logs)
+            // The boot log is held owner-only before the successor appends to it, as daemon.log is.
+            val bootLog = logs.resolve("daemon-boot.log")
+            // Best effort: a boot log another start made meanwhile is tightened on the next line instead.
+            val _ = Cancellables.runCatchingBestEffort {
+                if (!Files.exists(bootLog)) SecureFile.createNew0600(bootLog, ByteArray(0))
+            }
+            val _ = SecureFile.ownerOnlyFile(bootLog)
             val builder = ProcessBuilder(command(jar))
                 .directory(install.home.toFile())
-                .redirectOutput(ProcessBuilder.Redirect.appendTo(logs.resolve("daemon-boot.log").toFile()))
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(bootLog.toFile()))
                 .redirectErrorStream(true)
             builder.environment().putAll(selectors(jar))
             builder.start()

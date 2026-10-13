@@ -9,8 +9,9 @@
 // output, the pid of the shell that runs it and, once it ends, its exit code, so the daemon that comes
 // back on the new jar reports the run the old one started.
 //
-// THE CONSOLE NEVER SENDS --now. The run waits for every turn, then for a compaction that started while
-// the release activated (UpgradeDaemon.restart): an upgrade from the console never costs a compaction.
+// THE CONSOLE NEVER SENDS --now. The run waits for every turn, then, before the stop, for each compaction
+// already running when that wait reads /api/heads, up to the daemon's turn cap (UpgradeDaemon.restart,
+// CompactionWait). A compaction that starts after that read gets only the stop's 45 s drain, like any turn.
 package splice.lifecycle.upgrade
 
 import kotlinx.serialization.json.Json

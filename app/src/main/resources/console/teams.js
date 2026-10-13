@@ -914,7 +914,7 @@ function render() {
     : state.loading
       ? `<div class="ghost-teams" aria-busy="true" aria-label="Reading teams">${[[11, 26, 18], [9, 22, 15], [12, 24, 17]].map((w, i) => GHOST.card(w, i)).join("")}</div>`
       : !state.teams.length
-        ? `<div class="no-teams"><p>No teams</p><button class="act primary" data-act="new">New team</button></div>`
+        ? `<div class="no-teams"><div class="say"><p>No teams</p><p class="what">A team is a few sessions working toward one goal, each with its own role and model.</p></div><button class="act primary" data-act="new">New team</button></div>`
         : (state.stale ? `<p class="why limit stale">${esc(state.stale)}${state.readAt ? ` · Last read ${hhmm(state.readAt)}` : ""}</p>` : "")
           + pickLineHtml(groupsNow(), picked(), ui.pmenu, teamCount()) + tabsHtml() + (tm ? boardHtml(tm) : "");
   sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";

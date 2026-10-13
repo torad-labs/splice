@@ -320,3 +320,6 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .armed.end .chip i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--track-line); }
 .armed.end .chip.live i { background: var(--live); }
 .act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }
+/* an empty page says what a team is before it offers one (splice-usage's walk, Oct 13) */
+.no-teams .say { display: flex; flex-direction: column; gap: .5rem; }
+.no-teams .say .what { font: 400 1.05rem/1.45 var(--font-name); color: var(--text-mute); }

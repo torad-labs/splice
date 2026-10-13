@@ -143,9 +143,20 @@ function sessionOf(row) {
   };
 }
 
+// A READ ALREADY ON ITS WAY IS NEVER ASKED AGAIN. The browser holds six connections to splice; every 5 s tick fired the
+// whole page's reads again while the last were still waiting on a slow /api/sessions, so they queued without end and
+// an opened conversation sat on Reading for 98 and 126 s behind them (splice-usage's walk, Oct 13).
+const inFlight = new Set();
+async function alone(key, read) {
+  if (inFlight.has(key)) return;
+  inFlight.add(key);
+  try { await read(); } finally { inFlight.delete(key); }
+}
+
 const NOT_READ = "Not read";
 /** The conversation, from its newest messages; Show earlier reads the page before. */
-async function readLog(s, before = "end") {
+const readLog = (s, before = "end") => alone(`log ${s.id} ${before}`, () => readLogNow(s, before));
+async function readLogNow(s, before) {
   const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?before=${encodeURIComponent(before)}&limit=200`);
   const held = state.logs[s.id];
   if (!res.ok) {
@@ -324,7 +335,7 @@ const groupKey = (s) => (ui.by === "head" ? (s.head ? `h:${s.head}` : NO_PROJECT
   : ui.by === "team" ? (s.team ? `t:${s.team}` : NO_PROJECT) : projKey(s));
 const groupName = (s) => (ui.by === "head" ? (s.head ? s.cmd || s.head : "No command")
   : ui.by === "team" ? s.team || "No team" : projName(s));
-const byHtml = () => `<span class="by" role="group" aria-label="Group by">${BY.map((b) => `<button class="act quiet small${ui.by === b ? " on" : ""}" data-act="by" data-by="${b}" aria-pressed="${ui.by === b}">${BY_WORDS[b]}</button>`).join("")}</span>`;
+const byHtml = () => `<span class="by" role="group" aria-label="Group by"><span class="what" aria-hidden="true">Group by</span>${BY.map((b) => `<button class="act quiet small${ui.by === b ? " on" : ""}" data-act="by" data-by="${b}" aria-pressed="${ui.by === b}">${BY_WORDS[b]}</button>`).join("")}</span>`;
 /** Two groups is what makes a list a grouped list: a first-time user with one project keeps the flat page. Read off
  *  every live session and never off the search, so a search that happens to land inside one project keeps the
  *  headers it had: it hides the groups it does not match, it does not undo the grouping (Marlin). */
@@ -726,7 +737,8 @@ async function pinLogin(s, label) {
 }
 /** What the session used today, on every command it ran on: the same per-session totals Requests sums
  *  (GET /api/perf/turns?session=), from local midnight. Null until read, and kept null when no command answered. */
-async function readUsage(s) {
+const readUsage = (s) => alone(`usage ${s.id}`, () => readUsageNow(s));
+async function readUsageNow(s) {
   const from = new Date(); from.setHours(0, 0, 0, 0);
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const heads = [...state.heads, ...state.retired]; // a removed command's requests today are still the session's
@@ -1133,7 +1145,7 @@ read().then(async () => {
 });
 // what a session is doing changes on its own clock: the list is read again while the page is open
 // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
-setInterval(() => { if (!document.hidden && !document.body.classList.contains("locked")) reload(); }, 5000);
+setInterval(() => { if (!document.hidden && !document.body.classList.contains("locked")) alone("reload", reload); }, 5000);
 // the silence counter and the resume countdown move each second between reads, from when the turn was read
 setInterval(() => {
   for (const el of root.querySelectorAll("[data-silent], [data-resume]")) {

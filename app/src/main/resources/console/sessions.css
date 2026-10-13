@@ -365,3 +365,6 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .sendto .cmd + .act { flex: none; }
 /* a note handed over: said beside the field until it clears, since the client gives no receipt */
 .composer .noted { flex: none; font-size: 1rem; color: var(--text-mute); }
+/* the grouping switch says what it does: Project, Command and Team alone read as filters (splice-usage's walk, Oct 13) */
+.lhead .by { display: inline-flex; align-items: center; gap: .4rem; }
+.lhead .by .what { margin-right: .3rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }

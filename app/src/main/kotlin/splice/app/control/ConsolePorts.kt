@@ -5,6 +5,7 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.ConsoleAccounts
+import splice.client.mcp.McpInventory
 import splice.configuration.add.AddConsole
 import splice.core.client.ForegroundToolActivity
 import splice.core.compaction.CompactionInstructions
@@ -139,6 +140,10 @@ public class ConsolePorts {
 
     /** The same per-head ledgers turn admission and accounting use, never per-account spend. */
     public var budgetSpending: BudgetEnforcement? = null
+
+    /** The census of every MCP server Claude Code loads, the one the host reports, assigned by ControlPlane. GET
+     *  /api/mcp/memory reads it to name the copies it measures; null measures no server. */
+    public var mcpInventory: McpInventory? = null
 
     /** V4-133: the daemon's ONE alert-settings store, assigned like [budgets]. Null answers
      *  GET/PUT /api/alerts and POST /api/alerts/test with a named 503. */

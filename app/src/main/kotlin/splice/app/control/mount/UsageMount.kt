@@ -13,6 +13,8 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.app.sources.mcp.McpMemory
+import splice.app.sources.mcp.McpSignatures
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
@@ -52,7 +54,14 @@ internal class UsageMount(
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
-    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, log)
+    private val usageReads = UsageReadRoutes(
+        usageHeads,
+        usageLookup,
+        fileIo,
+        guard,
+        log,
+        McpMemory(McpSignatures { ports.mcpInventory?.census() }),
+    )
 
     // Settings > Your data's one window, with its own wiring: see HistoryWiring.
     private val history = HistoryWiring(ports, config, guard, fileIo, heads)

@@ -8,6 +8,7 @@ import io.ktor.server.routing.get
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import splice.app.sources.mcp.McpMemory
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.usage.USAGE_READ_PENDING_HEADER
@@ -25,6 +26,8 @@ internal class UsageReadRoutes(
     private val io: CoroutineDispatcher,
     private val guard: ControlGuard,
     private val log: LogSink? = null,
+    /** What MCP servers cost this machine now and shared (docs/specs/mcp-hub.md step 5); null answers no route. */
+    private val mcp: McpMemory? = null,
 ) {
     private val economics = EconomicsPayloads(heads, lookup = lookup)
     private val perf = PerfRoutes(lookup)
@@ -54,6 +57,11 @@ internal class UsageReadRoutes(
         }
         route.get("/api/perf/price") {
             guard.guarded(call) { withContext(io) { perf.price(call) } }
+        }
+        mcp?.let { memory ->
+            route.get("/api/mcp/memory") {
+                guard.guarded(call) { ControlReplies.respond(call, withContext(io) { memory.json() }) }
+            }
         }
         route.get("/api/economics") {
             guard.guarded(call) {

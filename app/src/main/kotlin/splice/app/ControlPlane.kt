@@ -43,6 +43,7 @@ import splice.app.sources.PerfSourceFiles
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.HostedMcpOverlay
 import splice.client.mcp.McpAccessKey
+import splice.client.mcp.McpInventory
 import splice.client.mcp.McpRootsVerdicts
 import splice.client.mcp.McpSharing
 import splice.client.resume.AuthHeaderFile
@@ -133,6 +134,9 @@ internal class ControlPlane(
     // V4-410 follow-on: the add and remove of a Claude head's subscriptions, read by the accounts port's
     // `client` arm (ClaudeAccountsArm). Null until a Claude head's login machinery is built.
     private var claudeAccounts: ClaudeAccountsPort? = null
+
+    // The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it.
+    private var mcpInventory: McpInventory? = null
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
@@ -367,6 +371,7 @@ internal class ControlPlane(
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
         providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets
+        srv.ports.mcpInventory = mcpInventory
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.events = console.bus
         srv.ports.activity = console.stores
@@ -424,13 +429,9 @@ internal class ControlPlane(
      *  changes what [sharing] rewrites (see McpHostingWiring.kt's header). */
     private fun mcpHost(home: Path, sharing: McpSharing, launchSpecs: List<LaunchSpec>): McpHost {
         val globalRead = McpGlobalRead(home, log)
-        return McpHost(
-            sharing,
-            globalRead,
-            config = mcpHostConfig(),
-            log = log,
-            inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory,
-        )
+        val inventory = McpInventoryWiring(home, sharing, globalRead, launchSpecs).inventory
+        mcpInventory = inventory
+        return McpHost(sharing, globalRead, config = mcpHostConfig(), log = log, inventory = inventory)
     }
 
     /** V4-110: the shared MCP host's four lifecycle values, each a READER over the knob layer (daemon-global)

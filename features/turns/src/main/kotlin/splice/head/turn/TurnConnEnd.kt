@@ -33,10 +33,21 @@ internal class TurnConnEnd(
     private val failures: TurnFailures,
     private val health: HeadHealthCounters,
 ) {
-    /** True when [e] is a raw connection-class failure this surface owns: a socket failure past the handoff. */
+    /** True when [e] is a raw connection-class failure this surface owns: a socket failure past the handoff.
+     *
+     *  A client that already left is a client abort, not a connection reset (splice-providers, Oct 12): a write to
+     *  its closed socket throws the JDK's bare IOException("Stream closed"), and in codex code mode that write
+     *  happens outside the translator (the held writes drained into a new step's sink), so the raw IOException
+     *  reaches here with ClientChannel's clientGone already set. It is sealed as CancellationSeal seals one:
+     *  nothing on the wire, a client_abort row, and no conn-reset count against the head. */
     suspend fun tryEmit(drive: TurnDrive, e: Throwable): Boolean {
         if (e !is IOException) return false
-        emitConn(drive, e)
+        if (drive.channel.clientGone.get()) {
+            drive.emitter.abandon()
+            telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+        } else {
+            emitConn(drive, e)
+        }
         return true
     }
 

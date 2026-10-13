@@ -9,10 +9,13 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import kotlinx.coroutines.withContext
 import splice.accounts.claude.ClaudeLoginPlacesSource
+import splice.app.ConsoleWiring
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.app.sources.mcp.McpAttached
+import splice.app.sources.mcp.McpHolders
 import splice.app.sources.mcp.McpMemory
 import splice.app.sources.mcp.McpSignatures
 import splice.control.mcp.APP_MCP_SLICE
@@ -66,6 +69,10 @@ internal class UsageMount(
             McpSignatures({ ports.mcpInventory?.census() }, { ports.mcpSharing }),
             // the same slice the host spawns holders in (ControlPlane.mcpHostConfig); a restart-only knob, read once
             (config.getConfig().asMap()[Knob.MCP_SLICE.key] as? String)?.takeIf { it.isNotBlank() } ?: APP_MCP_SLICE,
+            McpHolders(
+                McpAttached { ports.mcpAttached?.sessions().orEmpty() },
+                ConsoleWiring.sessionsByPid(config.statePaths),
+            ),
         ),
     )
 

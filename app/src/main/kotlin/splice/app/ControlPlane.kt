@@ -41,6 +41,7 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
 import splice.app.sources.PerfSourceFiles
+import splice.app.sources.mcp.McpAttached
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.ClaudeCodeVersionsDir
 import splice.client.mcp.HostedMcpOverlay
@@ -153,6 +154,9 @@ internal class ControlPlane(
     // The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it.
     private var mcpInventory: McpInventory? = null
     private var mcpSharing: McpSharing? = null
+
+    // The sessions the hub binds to each server, kept for GET /api/mcp/memory beside the census.
+    private var mcpAttached: McpAttached? = null
 
     /** Whether the MCP hub runs, decided once as [mcpHost] builds it; /health reports it for doctor. */
     private var mcpHub: McpHubVerdict? = null
@@ -414,6 +418,7 @@ internal class ControlPlane(
         srv.ports.budgetSpending = console.budgets
         srv.ports.mcpInventory = mcpInventory
         srv.ports.mcpSharing = mcpSharing
+        srv.ports.mcpAttached = mcpAttached
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.activity = console.stores
         srv.ports.teams = teams
@@ -485,6 +490,7 @@ internal class ControlPlane(
             McpAccessKey(mgmtKey::get),
         )
         mcpHub = McpHubVerdict(wiring.offReason)
+        mcpAttached = McpAttached { hub.attached() }
         return McpHost(sharing, globalRead, config = config, log = log, inventory = inventory, hub = hub)
     }
 

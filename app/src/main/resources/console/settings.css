@@ -197,6 +197,11 @@ button.count:hover { color: var(--text); }
 .mrow:first-child { border-top: 0; }
 .mrow .nm { font: 500 1.1rem/1.2 var(--font-name); color: var(--text); overflow-wrap: anywhere; }
 .mrow .fig { text-align: right; }
+/* the sessions holding a server, under its reason where it has one: "Used now by" and each chip stay whole, the row wraps between */
+.mrow .mwhat { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
+.mrow .held { display: flex; flex-wrap: wrap; align-items: center; row-gap: .5rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.mrow .held .chip { margin-left: .6rem; white-space: nowrap; text-decoration: none; }
+.mrow .held .more { margin-left: .6rem; color: var(--text-mute); }
 .srvs { display: flex; flex-direction: column; }
 .srv { display: grid; grid-template-columns: 2.6rem minmax(18rem, 1.4fr) 20rem 8rem 12rem minmax(0, 2fr); column-gap: 1.4rem; align-items: center; padding: 1rem 0; border-top: .12rem solid var(--track); }
 .srv:first-child { border-top: 0; }

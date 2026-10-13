@@ -25,6 +25,8 @@ import splice.app.auth.ConsoleAccountsImpl
 import splice.app.console.DrainingRestartAdapter
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
+import splice.app.sources.mcp.McpSessionRef
+import splice.app.sources.mcp.McpSessionsByPid
 import splice.core.config.ConfigService
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
@@ -59,6 +61,7 @@ import splice.sessions.prompt.SessionAddress
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.HeadOfSession
 import splice.sessions.registry.RouteOfPid
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionsHeard
@@ -223,6 +226,18 @@ internal object ConsoleWiring {
     /** V4-252: a SendMessage name to the session holding it, over the same registry, asked as its edge
      *  is stored. */
     internal fun nameHolders(statePaths: StatePaths): NameHolders = NameHolders(sessionRegistry(statePaths))
+
+    /** Oct 13: each live session by its Claude Code pid, over the same registry, for Settings › MCP to name the
+     *  sessions holding each server. An ended session's pid is left out: it holds nothing. */
+    internal fun sessionsByPid(statePaths: StatePaths): McpSessionsByPid {
+        val registry = sessionRegistry(statePaths)
+        return McpSessionsByPid {
+            registry.read()
+                .filter { it.availability != SessionAvailability.GONE }
+                .mapNotNull { r -> r.process.pid?.let { pid -> r.sessionId?.let { pid to McpSessionRef(it, r.name) } } }
+                .toMap()
+        }
+    }
 
     private fun sessionRegistry(statePaths: StatePaths): SessionRegistry {
         val home = statePaths.rootDir.parent ?: statePaths.rootDir

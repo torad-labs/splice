@@ -5,6 +5,7 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.ConsoleAccounts
+import splice.app.sources.mcp.McpAttached
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpSharing
 import splice.configuration.add.AddConsole
@@ -133,6 +134,10 @@ public class ConsolePorts {
 
     /** The host's sharing plan, assigned with [mcpInventory]: it classes every server the measurement names. */
     public var mcpSharing: McpSharing? = null
+
+    /** The sessions the hub's front has bound to each server, assigned with the hub. GET /api/mcp/memory names them
+     *  beside the sessions whose own copies it measures; null names only those, as on a daemon with the hub off. */
+    public var mcpAttached: McpAttached? = null
 
     /** V4-133: the daemon's ONE alert-settings store, assigned like [budgets]. Null answers
      *  GET/PUT /api/alerts and POST /api/alerts/test with a named 503. */

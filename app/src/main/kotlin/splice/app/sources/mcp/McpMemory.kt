@@ -42,6 +42,8 @@ internal class McpMemory(
     private val signatures: McpSignatures,
     /** The MCP slice the hub's holders run in (the mcpSlice knob). */
     private val slice: String,
+    /** The hub's bound sessions and the registry's, read once per measurement to name who holds each server. */
+    private val holders: McpHolders,
     private val daemon: Long = ProcessHandle.current().pid(),
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
@@ -57,11 +59,13 @@ internal class McpMemory(
         val holders = held.filter { table.parentOf(it) !in held && table.parentOf(it) != daemon }
         val copies = (claudes + daemon).flatMap { owner -> copiesUnder(table, owner, owners) } +
             holders.mapNotNull { copyOf(table, it, daemon, owners) }
+        val heldBy = McpHeldBy(holders.attached, holders.sessions)
         // one server can be declared in several files; the one a plan decides speaks for it
         val servers = declared.groupBy { it.name }
             .map { (name, sigs) ->
                 val decided = sigs.firstOrNull { it.shareClass != null } ?: sigs.first()
-                McpServerMemory(decided, copies.filter { it.server == name })
+                val own = copies.filter { it.server == name }
+                McpServerMemory(decided, own, heldBy.of(name, own.filterNot { it.hosted }.map { it.owner }))
             }
             .sortedByDescending { it.bytesNow }
         return buildJsonObject {

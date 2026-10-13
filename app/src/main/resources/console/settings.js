@@ -93,7 +93,7 @@ function readKept() {
   get("/api/mcp", (r) => { ui.mcp = r.ok ? r.body : r.status === 404 ? false : null; });
   // the sharing choice ([daemon] mcp_share) and what every copy on this machine holds against one copy each
   get("/api/topology", (r) => { ui.topo = r.ok ? r.body : null; });
-  get("/api/mcp/memory", (r) => { ui.mmem = r.ok ? r.body : null; });
+  get("/api/mcp/memory", (r) => { ui.mmem = r.ok ? r.body : null; nameHolders(); });
   // the plan windows Accounts draws, read here for the highest of each against the warn line these settings set
   get("/api/accounts", (r) => { ui.accts = r.ok ? (r.body?.accounts ?? []) : null; });
   // the projects the saved folders actually make, and whether each folder is still on disk (ProjectsRoutes.kt): the
@@ -871,6 +871,7 @@ async function setShare(on) {
   ui.topo = topo.ok ? topo.body : ui.topo;
   ui.mcp = mcp.ok ? mcp.body : mcp.status === 404 ? false : null;
   ui.mmem = mem.ok ? mem.body : null;
+  nameHolders();
   render();
 }
 // A server sharing would serve with one copy: one the hub shares now, or one it runs per session only because sharing
@@ -889,7 +890,27 @@ const copiesWord = (n) => `${fmt(n)} ${n === 1 ? "copy" : "copies"}`;
 const memName = (s) => `<div class="sname"><span class="nm">${esc(s.label ?? s.name)}</span>${s.source_file ? fromHtml({ from: fromWord(s), project: projectOf(s) }) : ""}</div>`;
 // a server with no copy says why it has no figure: one at a web address has no process here, any other runs none now
 const idle = (s) => (s.web ? "At a web address" : `<span class="state">Not running</span>`);
-const memRow = (s, what, shared) => `<div class="mrow">${memName(s)}${what}`
+// the sessions holding a server now, its own copy or the hub's, each a door to it on Sessions (spec §8: ownership visible
+// per session). A session with no name reads as Sessions titles it, once /api/sessions has answered for it
+const HELD_SHOWN = 4;
+const heldName = (h) => h.name || ui.snames?.get(h.session_id) || "Unnamed session";
+const heldHtml = (s) => {
+  const held = s.held_by || [];
+  if (!held.length) return "";
+  const shown = held.slice(0, HELD_SHOWN).map((h) => `<a class="chip sess" href="sessions.html#${esc(h.session_id)}">${esc(heldName(h))}</a>`);
+  const rest = held.length - HELD_SHOWN;
+  return `<span class="held">Used now by${shown.join("")}${rest > 0 ? `<span class="more">+${fmt(rest)}</span>` : ""}</span>`;
+};
+/** Titles for the holding sessions that carry no name, read only when one of them has none. */
+async function nameHolders() {
+  const held = (ui.mmem?.servers || []).flatMap((s) => s.held_by || []);
+  if (!held.some((h) => !h.name)) return;
+  const r = await API.get("/api/sessions");
+  if (!r.ok) { whyNot("/api/sessions", r); return; }
+  ui.snames = new Map((r.body?.sessions || []).map((x) => [x.session_id, x.name || x.title]));
+  later();
+}
+const memRow = (s, what, shared) => `<div class="mrow">${memName(s)}<div class="mwhat">${what}${heldHtml(s)}</div>`
   + `<span class="fig">${s.copies ? copiesWord(s.copies) : idle(s)}</span><span class="fig">${s.copies ? `<b>${esc(mbWord(s.bytes_now))}</b> now` : ""}</span>`
   + `<span class="fig">${shared}</span></div>`;
 const whyCell = (s) => {

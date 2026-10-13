@@ -2,9 +2,16 @@
 package splice.app.sources.mcp
 
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
-internal class McpServerMemory(private val server: McpServerSignature, private val copies: List<McpCopy>) {
+/** [held] is the sessions holding the server, whoever runs its copy (McpHeldBy). */
+internal class McpServerMemory(
+    private val server: McpServerSignature,
+    private val copies: List<McpCopy>,
+    private val held: List<McpSessionRef>,
+) {
     private val hosted = copies.filter { it.hosted }
 
     val bytesNow: Long = copies.sumOf { it.bytes }
@@ -44,5 +51,14 @@ internal class McpServerMemory(private val server: McpServerSignature, private v
             else -> "median_copy"
         }
         out.put("shared_basis", basis)
+        // each session holding it, its own copy or the hub's, named as the registry names it (spec §8)
+        out.putJsonArray("held_by") {
+            held.forEach { ref ->
+                addJsonObject {
+                    put("session_id", ref.id)
+                    put("name", ref.name)
+                }
+            }
+        }
     }
 }

@@ -112,7 +112,6 @@ class TeamsRoutesWiringTest {
                 Triple(HttpMethod.Get, "/api/teams/$id/activity?day=2026-09-18", null),
                 Triple(HttpMethod.Get, "/api/teams/$id/economics", null),
                 Triple(HttpMethod.Get, "/api/projects", null),
-                Triple(HttpMethod.Get, project, null),
                 Triple(HttpMethod.Get, "$project/files", null),
                 Triple(HttpMethod.Post, "/api/teams/$id/archive", null),
             )
@@ -121,8 +120,6 @@ class TeamsRoutesWiringTest {
                 assertEquals(200, reply.status.value, "${method.value} $path: ${reply.bodyAsText()}")
                 assertEquals(401, call(method, path, body, false).status.value, "${method.value} $path is guarded")
             }
-            val row = rig.json(call(HttpMethod.Get, project, null, true).bodyAsText())
-            assertEquals(projectId, row.getValue("id").jsonPrimitive.content, "an encoded id decodes")
             val composite = call(HttpMethod.Get, "/api/teams/$id", null, true)
             assertEquals(404, composite.status.value, "no composite team read (6.1)")
         }

@@ -62,12 +62,10 @@ class HistoryProjectRoutesTest {
             .jsonArray.map { it.jsonObject.getValue("root").jsonPrimitive.content }
         assertTrue(repo.toString() in rootsSeen, "the Sessions listing names a repo missing from Projects")
         assertTrue(outside.toString() !in rootsSeen, "a cwd outside git is not a project root")
-        assertEquals(HttpStatusCode.OK, projects.project(repo.toString()).status)
         val files = projects.files(repo.toString())
         assertEquals(HttpStatusCode.OK, files.status)
         assertTrue(files.body.contains("repo instructions"))
         assertEquals(HttpStatusCode.NotFound, projects.files(outside.toString()).status)
-        assertEquals(HttpStatusCode.NotFound, projects.project(tmp.resolve("unseen").toString()).status)
     }
 
     private fun historySource(roots: List<SessionHistoryRoot>, id: String, nested: Path, outside: Path) =

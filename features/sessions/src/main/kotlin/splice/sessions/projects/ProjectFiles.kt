@@ -27,11 +27,7 @@ internal class ProjectFiles(private val heads: Map<String, SessionHead>) {
         }
         val files = INSTRUCTION_FILES.mapNotNull { file(root.resolve(it), "instructions", null) } +
             memoryDirs.flatMap { (name, dir) -> memoryFiles(dir).mapNotNull { file(it, "memory", name) } }
-        val body = buildJsonObject {
-            put("id", id)
-            put("files", buildJsonArray { files.forEach(::add) })
-        }
-        return body
+        return buildJsonObject { put("files", buildJsonArray { files.forEach(::add) }) }
     }
 
     private fun file(path: Path, kind: String, head: String?): JsonObject? {

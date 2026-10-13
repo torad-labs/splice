@@ -42,7 +42,6 @@ internal class ProjectsMount(
     fun register(route: Route) {
         projects?.let { read ->
             route.get("/api/projects") { guard.guarded(call) { read.list().send(call) } }
-            route.get("/api/projects/{id}") { guard.guarded(call) { read.project(id(call)).send(call) } }
             route.get("/api/projects/{id}/files") { guard.guarded(call) { read.files(id(call)).send(call) } }
         }
     }

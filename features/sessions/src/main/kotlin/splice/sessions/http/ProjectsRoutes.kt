@@ -1,8 +1,7 @@
 // NEW: V4-131, FEATURES.md 4.14 and 6 — the project routes, a view per git repo:
 //
-//   GET /api/projects              {projects: ProjectRow[]}
-//   GET /api/projects/{id}         one ProjectRow
-//   GET /api/projects/{id}/files   {id, files}
+//   GET /api/projects              {projects: ProjectRow[], folders}
+//   GET /api/projects/{id}/files   {files}
 //
 // A PROJECT IS A GIT ROOT and its id is that root. The roots include durable transcript/history
 // sessions as well as registry rows (using the Sessions route's RepoResolver: trusted roots only,
@@ -60,12 +59,6 @@ public class ProjectsRoutes(
             )
         }
         return JsonReply(HttpStatusCode.OK, body.toString())
-    }
-
-    public fun project(id: String): JsonReply {
-        val view = ProjectView()
-        if (id !in view.roots) return unknown(id)
-        return JsonReply(HttpStatusCode.OK, view.row(id).toString())
     }
 
     public fun files(id: String): JsonReply {

@@ -55,7 +55,7 @@ class ProjectsRoutesTest {
             rows.map { it.getValue("id").jsonPrimitive.content },
             "a registry cwd outside git does not make a project",
         )
-        assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).project("/nowhere").status)
+        assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).files("/nowhere").status)
     }
 
     private fun sessionRoutes(heads: Map<String, SessionHead>, config: ConfigService) = SessionsRoutes(
@@ -96,19 +96,21 @@ class ProjectsRoutesTest {
             CompactionSource { wired },
         )
         val repo = rig.repo.toRealPath().toString()
-        val row = rig.json(routes(table).project(rig.repo.toString()).body)
+        fun listed(served: ProjectsRoutes, id: String) = rig.json(served.list().body).getValue("projects").jsonArray
+            .map { it.jsonObject }.single { it.getValue("id").jsonPrimitive.content == id }
+        val row = listed(routes(table), rig.repo.toString())
         assertEquals(
             Json.parseToJsonElement("""[{"scope":"project","source":"project:$repo","chars":9}]"""),
             row.getValue("compaction"),
             "the repo's project rule shadows the global one, and its length is live",
         )
-        val elsewhere = rig.json(routes(table).project(tmp.resolve("elsewhere").toString()).body)
+        val elsewhere = listed(routes(table), tmp.resolve("elsewhere").toString())
         assertEquals(
             Json.parseToJsonElement("""[{"scope":"global","source":"global","chars":11}]"""),
             elsewhere.getValue("compaction"),
             "outside every project rule the global one is what a compaction resolves to",
         )
-        val unwired = rig.json(routes(null).project(rig.repo.toString()).body)
+        val unwired = listed(routes(null), rig.repo.toString())
         assertEquals("null", unwired.getValue("compaction").toString(), "a table never wired is null, never []")
     }
 
@@ -130,7 +132,7 @@ class ProjectsRoutesTest {
         val body = rig.json(routes(heads).files(rig.repo.toString()).body)
         assertEquals(
             rig.json(
-                """{"id":"${rig.repo}","files":[""" +
+                """{"files":[""" +
                     """{"kind":"instructions","path":"${rig.repo}/CLAUDE.md","head":null,"text":"claude rules"},""" +
                     """{"kind":"instructions","path":"${rig.repo}/AGENTS.md","head":null,"text":"agent rules"},""" +
                     """{"kind":"memory","path":"$memory/MEMORY.md","head":"codex","text":"remember this"}]}""",

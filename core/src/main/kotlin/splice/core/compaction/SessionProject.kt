@@ -10,6 +10,12 @@
 // tree is walked once by its real path, so a symlinked head's tree and the vanilla one are one walk. The first tree holding the transcript wins; the cwd a transcript records is the
 // same in every copy of one session, so the order decides only how soon the lookup ends, never the
 // answer. Reading only: nothing here writes into any tree (HEAD ISOLATION).
+//
+// THE LIVE REGISTRY IS A LIST TOO (spec §13, Oct 13). Claude Code registers a running session under its own
+// CLAUDE_CONFIG_DIR/sessions (SessionRegistryLink's header: it lists that folder to find its peers), so a head that
+// isolates sessions registers only in its own folder. Each head's sessions folder, beside its projects tree, is read
+// before the vanilla [sessionsDir], each once by its real path: on a head whose sessions folder links to the vanilla
+// one, as every head's does on the operator's machine, that is one read. The transcript stays the fallback.
 package splice.core.compaction
 
 import kotlinx.serialization.json.Json
@@ -28,6 +34,9 @@ import java.util.concurrent.ConcurrentHashMap
 private const val PROJECT_MISS_TTL_MS = 5_000L
 private const val MAX_PROJECT_MISSES = 1_024
 
+/** Claude Code's live-session registry folder inside a CLAUDE_CONFIG_DIR, beside its projects tree. */
+private const val SESSIONS = "sessions"
+
 /** Maps Claude Code's session id to its working directory. The live registry wins; headless runs
  *  fall back to the transcript whose directory encodes the cwd and whose rows retain it exactly. */
 public class SessionProject(
@@ -38,6 +47,7 @@ public class SessionProject(
 ) {
     // listOf(projectsDir), never `+ projectsDir`: a Path is an Iterable of its own name elements.
     private val projectsDirs: List<Path> = headProjectsDirs + listOf(projectsDir)
+    private val sessionsDirs: List<Path> = headProjectsDirs.map { it.resolveSibling(SESSIONS) } + listOf(sessionsDir)
 
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = ConcurrentHashMap<String, Path>()
@@ -72,13 +82,17 @@ public class SessionProject(
         }
     }
 
-    private fun registryProject(sessionId: String): Path? = directoryEntries(sessionsDir)
-        .asSequence()
-        .filter { it.fileName.toString().endsWith(".json") }
-        .mapNotNull(::readJson)
-        .firstOrNull { JsonScalars.str(it, "sessionId") == sessionId }
-        ?.let { JsonScalars.str(it, "cwd") }
-        ?.let(::absolutePath)
+    private fun registryProject(sessionId: String): Path? {
+        val read = HashSet<Path>()
+        return sessionsDirs.asSequence()
+            .filter { read.add(realPath(it)) }
+            .flatMap { directoryEntries(it).asSequence() }
+            .filter { it.fileName.toString().endsWith(".json") }
+            .mapNotNull(::readJson)
+            .firstOrNull { JsonScalars.str(it, "sessionId") == sessionId }
+            ?.let { JsonScalars.str(it, "cwd") }
+            ?.let(::absolutePath)
+    }
 
     private fun transcriptProject(sessionId: String): Path? {
         val fileName = "$sessionId.jsonl"

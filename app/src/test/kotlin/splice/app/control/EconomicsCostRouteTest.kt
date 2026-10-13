@@ -185,7 +185,6 @@ class EconomicsCostRouteTest {
         assertEquals(haiku + fable, bucket.getValue("cost_usd").jsonPrimitive.double, 1e-9, "$bucket")
         assertEquals(1L, bucket.getValue("unpriced_turns").jsonPrimitive.long, "$bucket")
         assertEquals(3L, bucket.getValue("turns").jsonPrimitive.long, "$bucket")
-        assertEquals(1L, bucket.getValue("local_steps").jsonPrimitive.long, "$bucket")
     }
 
     @Test
@@ -205,15 +204,11 @@ class EconomicsCostRouteTest {
         }
 
     @Test
-    fun `unknown usage reaches the API as an additive count without erasing known sums`() = runBlocking<Unit> {
+    fun `a turn with unknown usage is unpriced and keeps the known cost`() = runBlocking<Unit> {
         awaitPort()
         val bucket = bucketOf("unknown")
-        assertEquals(1L, bucket.getValue("unreported_usage_turns").jsonPrimitive.long)
         assertEquals(1L, bucket.getValue("unpriced_turns").jsonPrimitive.long)
-        assertEquals(100L, bucket.getValue("in_tokens").jsonPrimitive.long)
-        assertEquals(7L, bucket.getValue("out_tokens").jsonPrimitive.long)
         assertEquals(0.000135, bucket.getValue("cost_usd").jsonPrimitive.double, 1e-12)
-        assertEquals(0L, bucketOf("legacy").getValue("unreported_usage_turns").jsonPrimitive.long)
     }
 
     private suspend fun bucketOf(head: String): JsonObject {

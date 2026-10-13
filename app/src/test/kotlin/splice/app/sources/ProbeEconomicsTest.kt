@@ -41,7 +41,6 @@ class ProbeEconomicsTest {
         val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson()).jsonObject
         val hour = payload.getValue("heads").jsonArray.single().jsonObject
             .getValue("buckets").jsonArray.single().jsonObject
-        assertEquals("1", hour.getValue("unreported_usage_turns").jsonPrimitive.content)
         assertEquals("1", hour.getValue("turns").jsonPrimitive.content)
     }
 
@@ -273,11 +272,7 @@ class ProbeEconomicsTest {
         assertNull(answering["unavailable"], "the other head is not marked")
         val hour = answering.getValue("buckets").jsonArray.single().jsonObject
         val held = EconomicsStoreSource(healthy).rows().single()
-        assertEquals(
-            held.tokens.inTokens,
-            hour.getValue("in_tokens").jsonPrimitive.long,
-            "the other head's hour, whole",
-        )
+        assertEquals(held.turns, hour.getValue("turns").jsonPrimitive.long, "the other head's hour, whole")
     }
 
     // Each hour is judged on its own evidence: an hour of the rollup that predates the log reads Not read, and the

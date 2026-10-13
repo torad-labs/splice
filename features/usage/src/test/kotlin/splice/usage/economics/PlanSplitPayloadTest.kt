@@ -96,8 +96,7 @@ class PlanSplitPayloadTest {
         assertEquals("1", a.getValue("unpriced_turns").jsonPrimitive.content)
         assertEquals("2", a.getValue("plan_turns").jsonPrimitive.content)
         assertEquals("40.0", a.getValue("plan_value_usd").jsonPrimitive.content)
-        assertEquals("1", a.getValue("plan_unpriced_turns").jsonPrimitive.content)
-        listOf("plan_turns", "plan_value_usd", "plan_unpriced_turns").forEach {
+        listOf("plan_turns", "plan_value_usd").forEach {
             assertEquals(JsonNull, b.getValue(it), "$it is null where the hour was never split")
         }
     }

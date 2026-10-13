@@ -32,11 +32,12 @@ internal class McpMount(
                 ControlReplies.respond(call, host.probe.test(call.parameters["name"].orEmpty()).json())
             }
         }
-        // MCP hub steps 3 and 4: the front's three calls, management key only.
+        // MCP hub steps 3 and 4: the front's calls, management key only.
         hub?.let { front ->
             route.post("/api/mcp/hub/resolve") { guard.guarded(call) { front.resolve(call) } }
             route.post("/api/mcp/hub/start") { guard.guarded(call) { front.start(call) } }
             route.post("/api/mcp/hub/listing") { guard.guarded(call) { front.listing(call) } }
+            route.post("/api/mcp/hub/roots") { guard.guarded(call) { front.roots(call) } }
         }
         route.post("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.post(call) } }
         route.get("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.stream(call) } }

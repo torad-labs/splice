@@ -1,5 +1,5 @@
-// NEW: MCP hub steps 3 and 4 — the ktor face of McpHub: POST /api/mcp/hub/{resolve,start,listing}, each a JSON body
-// answered with JSON (or 204). Everything hub-shaped lives in McpHub; this file only speaks ktor.
+// NEW: MCP hub steps 3 and 4 — the ktor face of McpHub: POST /api/mcp/hub/{resolve,start,listing,roots}, each a JSON
+// body answered with JSON (or 204). Everything hub-shaped lives in McpHub; this file only speaks ktor.
 package splice.control.mcp.hub
 
 import io.ktor.http.ContentType
@@ -20,6 +20,10 @@ public class McpHubRoutes(private val hub: McpHubCalls) {
 
     public suspend fun listing(call: ApplicationCall) {
         answer(call, hub.listing(call.receiveText()))
+    }
+
+    public suspend fun roots(call: ApplicationCall) {
+        answer(call, hub.roots(call.receiveText()))
     }
 
     private suspend fun answer(call: ApplicationCall, reply: McpHubReply) {

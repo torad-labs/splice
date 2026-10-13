@@ -1,12 +1,16 @@
 // Calls in flight between sessions and holders. Every request a session sends gets a front-wide id, so many sessions
 // can share one server, and its answer goes back under the session's own id; a server's own request goes to the
-// session whose call is newest.
+// session whose call is newest. A shared server's roots request is the one exception: it is answered with no roots
+// and reported to the daemon, never sent to one session, whose folder every other session on the copy would get.
 package splice.hub.front
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 
 /** A session's request waiting for its server. */
 data class Pending(
@@ -81,6 +85,18 @@ class Relay(private val sessions: Map<String, Session>, private val routes: Rout
         }
     }
 
+    /** A shared copy (or one no session is bound to yet) asked for roots: no session's folder is the right answer, so
+     *  the front answers none, as the in-process host does, and tells the daemon, which records it so the next
+     *  connection starts its own copy in its own folder (spec step 3). False for a session's own copy, whose one
+     *  session is asked. */
+    private fun sharedRoots(holder: Holder, id: JsonElement): Boolean {
+        val route = sessions.values.firstOrNull { it.route.socket == holder.socket }?.route
+        if (route != null && !route.shared) return false
+        holder.link?.send(Rpc.result(id, buildJsonObject { put("roots", JsonArray(emptyList())) }))
+        route?.let(routes::rootsAsked)
+        return true
+    }
+
     private fun ownKey(asked: JsonElement?, session: Session): String? =
         asked?.let { pending.entries.firstOrNull { it.value.clientId == asked && it.value.session === session }?.key }
 
@@ -96,6 +112,7 @@ class Relay(private val sessions: Map<String, Session>, private val routes: Rout
     /** A request from the server to a client (roots, sampling): to the session whose call is newest, else any session
      *  of this holder with a stream open. */
     private fun asks(holder: Holder, msg: JsonObject, id: JsonElement) {
+        if (Rpc.str(msg, Rpc.METHOD) == ROOTS_LIST && sharedRoots(holder, id)) return
         val newest = pending.values.filter { it.session.route.socket == holder.socket && it.session.stream != null }
             .maxByOrNull { it.at }?.session
         val target = newest ?: sessions.values.firstOrNull { it.route.socket == holder.socket && it.stream != null }
@@ -117,3 +134,4 @@ class Relay(private val sessions: Map<String, Session>, private val routes: Rout
 
 private const val CANCELLED = "notifications/cancelled"
 private const val REQUEST_ID = "requestId"
+private const val ROOTS_LIST = "roots/list"

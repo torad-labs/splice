@@ -25,6 +25,7 @@ class Routes(
     private val changed: () -> Unit,
 ) {
     private val known = HashMap<String, Route>()
+    private val toldRoots = HashSet<String>()
 
     fun of(server: String, launch: String): Route = Route(server, launch).let { known.getOrPut(it.key()) { it } }
 
@@ -79,6 +80,19 @@ class Routes(
             put("tools", tools)
         }
         daemon.call("/api/mcp/hub/listing", Rpc.encode(body)) { _, _ -> }
+    }
+
+    /** Tells the daemon, once per route, that its shared server asked for roots, so the planner records it and the next
+     *  connection starts a per-session copy. A lost call is told again the next time the server asks. */
+    fun rootsAsked(route: Route) {
+        if (!toldRoots.add(route.key())) return
+        val body = buildJsonObject {
+            put(SERVER, route.server)
+            put(LAUNCH, route.launch)
+        }
+        daemon.call("/api/mcp/hub/roots", Rpc.encode(body)) { status, _ ->
+            if (status !in OK..NO_CONTENT) toldRoots.remove(route.key())
+        }
     }
 
     fun restore(saved: JsonObject?) {
@@ -138,3 +152,4 @@ private const val LISTING = "listing"
 private const val RESOLVE_BUDGET = 30_000L
 private const val START_BUDGET = 60_000L
 private const val RETRY = 250L
+private const val NO_CONTENT = 204

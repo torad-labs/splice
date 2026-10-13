@@ -26,6 +26,7 @@ import splice.control.mcp.McpHandshakeBudget
 import splice.control.mcp.McpResult
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import java.nio.file.Path
@@ -99,7 +100,7 @@ public class McpHub(
     /** How long a holder may take to open its socket: the host's handshake budget, read at each start. */
     private val startBound: McpHandshakeBudget,
     io: CoroutineDispatcher,
-    log: LogSink,
+    private val log: LogSink,
 ) : McpHubCalls {
     private val codec = JsonRpcCodec()
     private val tuple = HubTuple(paths.home)
@@ -120,7 +121,11 @@ public class McpHub(
         val run = when {
             target.shared -> tuple.shared(target.spec)
             else -> target.place?.let { tuple.perSession(target.spec, it) }
-                ?: return error(HttpStatus.INTERNAL_SERVER_ERROR, unplaced(target.spec.name))
+                ?: return error(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "'${target.spec.name}' starts one copy per session, in that session's folder, and splice cannot " +
+                        "tell which session this is; start the session with splice",
+                )
         }
         return when (val up = holders.start(HubStart(target.key, target.spec.name, target.launch, run), startBound())) {
             is McpResult.Served -> found(target)
@@ -136,6 +141,21 @@ public class McpHub(
         val initialize = parsed?.get("initialize") as? JsonObject
             ?: return error(HttpStatus.BAD_REQUEST, "the listing names no initialize result")
         listings.keep(target.listing, initialize, parsed["tools"] as? JsonObject)
+        return McpHubReply(HTTP_NO_CONTENT, null)
+    }
+
+    /** `POST /api/mcp/hub/roots`: [body]'s shared server asked its client for roots, which one shared copy cannot
+     *  have (spec step 3). Recorded as the in-process host records it (HostedServers' onRootsAsked), so the planner
+     *  classes the tuple per session: each new connection gets its own copy in its own folder, and the sessions
+     *  already on the shared copy finish there, nothing cut. A server already per session needs nothing. */
+    override fun roots(body: String): McpHubReply {
+        val targeted = target(body)
+        val target = targeted.target ?: return refused(targeted)
+        if (target.shared) {
+            sharing.rootsAsked(target.spec)
+            val name = LogSafe.str(target.spec.name)
+            log("[mcp-hub] $name: asks its client for roots, so each later session starts its own\n")
+        }
         return McpHubReply(HTTP_NO_CONTENT, null)
     }
 
@@ -215,10 +235,6 @@ public class McpHub(
     private fun notHub(plan: McpPlan, server: String): String = plan.passthrough[server]
         ?.let { "'$server' is not started by the hub: $it" }
         ?: "this launch loads no server named '$server'"
-
-    private fun unplaced(server: String): String =
-        "'$server' starts one copy per session, in that session's folder, and splice cannot tell which session " +
-            "this is; start the session with splice"
 
     private fun error(status: Int, words: String) =
         McpHubReply(status, JsonWire.string(buildJsonObject { put("error", words) }))

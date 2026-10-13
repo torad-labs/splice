@@ -18,6 +18,9 @@ public interface McpHubCalls {
     /** `POST /api/mcp/hub/listing`. */
     public fun listing(body: String): McpHubReply
 
+    /** `POST /api/mcp/hub/roots`: a shared server asked its client for roots. */
+    public fun roots(body: String): McpHubReply
+
     /** The host's idle sweep, at [now], with the MCP idle limit [idleMs]. */
     public fun sweep(now: Long, idleMs: Long)
 
@@ -39,6 +42,8 @@ public class McpHubOff(reason: String) : McpHubCalls {
     override suspend fun start(body: String): McpHubReply = reply
 
     override fun listing(body: String): McpHubReply = reply
+
+    override fun roots(body: String): McpHubReply = reply
 
     override fun sweep(now: Long, idleMs: Long) {
         // Nothing to stop: with the hub off, no holder was started.

@@ -46,7 +46,7 @@ const root = document.getElementById("usage");
 const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, keys: [], accounts: [], registry: [], groups: [], error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: {}, failed: {}, errors: [], gen: 0 };
+const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), failed: {}, errors: [], gen: 0 };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;
@@ -161,22 +161,21 @@ async function readWindow() {
   D.scoped = split(scopes[0]);
   D.all = hasFilter() ? split(scopes[1]) : D.scoped;
   D.every = ui.project ? split(wide) : D.all;
-  D.rows = []; D.held = {}; D.errors = [...D.scoped.errors];
+  D.rows = []; D.held = new Set(); D.errors = [...D.scoped.errors];
   let pending = D.scoped.pending || D.all.pending || D.every.pending;
   const reading = new Set([...D.scoped.reading, ...D.all.reading, ...D.every.reading]);
   rowAsks.forEach((a, i) => {
     const answer = (rows[i].body?.heads || []).find((x) => x.key === a.h.key);
     if (!rows[i].ok || !answer || answer.error) { console.warn(`${a.h.command}: ${answer?.error ?? rows[i].status}`); if (!D.errors.includes(a.h.command)) D.errors.push(a.h.command); return; }
     if (answer.read_pending) { pending = true; reading.add(a.h.key); return; }
-    const had = D.held[a.h.key];
-    D.held[a.h.key] = { count: (had?.count ?? 0) + (answer.count ?? 0), returned: (had?.returned ?? 0) + (answer.returned ?? 0), truncated: had?.truncated === true || answer.truncated === true };
+    D.held.add(a.h.key);
     for (const row of answer.rows || []) D.rows.push(mapRow(a.h, row));
   });
   if (rowAsks.length > headsFor(ui.f).length) { // several labels: keep the newest MAX_HELD of what they returned together, so the trail's axis is one reading
     D.rows.sort((x, y) => y.ts - x.ts);
-    for (const [head, h] of Object.entries(D.held)) {
+    for (const head of D.held) {
       const mine = D.rows.filter((r) => r.head === head);
-      if (mine.length > MAX_HELD) { const drop = new Set(mine.slice(MAX_HELD)); D.rows = D.rows.filter((r) => !drop.has(r)); h.returned = MAX_HELD; h.truncated = true; }
+      if (mine.length > MAX_HELD) { const drop = new Set(mine.slice(MAX_HELD)); D.rows = D.rows.filter((r) => !drop.has(r)); }
     }
   }
   D.pending = pending; D.reading = reading; D.loading = false;

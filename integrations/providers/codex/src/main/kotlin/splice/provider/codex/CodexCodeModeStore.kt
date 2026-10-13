@@ -107,9 +107,11 @@ internal class CodexCodeModeStore(
     /** Failed keys outlive their last record, so TTL purges keep retrying until disk agrees. */
     val pendingKeys: Set<String> get() = failedKeys.toSet()
 
-    /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. */
+    /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. While the journal is
+     *  off, a write it owes does not hold disposal: nothing is kept then, and the owed marks wait for it to come back. */
     val settled: Boolean
-        get() = !needsSave && pendingWrites.get() == 0 && failedKeys.isEmpty() && uncertainKeys.isEmpty()
+        get() = pendingWrites.get() == 0 && uncertainKeys.isEmpty() &&
+            (!location.journaling.now() || !needsSave && failedKeys.isEmpty())
 
     /** Drops only in-memory owners. Durable files and escaped graph owners are left intact. */
     fun release(): Boolean {

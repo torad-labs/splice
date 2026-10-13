@@ -1,0 +1,20 @@
+[Unit]
+Description=Splice MCP front independent of daemon restarts
+Requires=splice-mcp-front.socket
+After=splice-mcp-front.socket
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Defaults match this machine's adopted legacy state root.
+# Splice's installer writes its resolved state/control values before activation.
+Environment="SPLICE_MCP_HUB=%h/.claude-codex/state/mcp-hub" "SPLICE_MCP_CONTROL_PORT=3096"
+EnvironmentFile=-%h/.config/splice/mcp-front.env
+ExecStart=%h/.local/share/splice/splice-mcp-front --hub ${SPLICE_MCP_HUB} --control-port ${SPLICE_MCP_CONTROL_PORT}
+ExecReload=/bin/kill -USR2 $MAINPID
+Slice=app-mcp.slice
+MemoryMax=128M
+Restart=always
+RestartSec=1
+UMask=0077
+StandardError=journal

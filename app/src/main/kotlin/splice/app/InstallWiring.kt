@@ -4,16 +4,31 @@
 package splice.app
 
 import splice.app.cli.AdminSupport
+import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.launch.install.InstallCommand
+import splice.lifecycle.hub.HubUnits
 import splice.topology.TopologyLoader
 import java.nio.file.Files
+import java.nio.file.Path
 
 internal object InstallWiring {
     /** The install verbs against the operator's terminal: stdout for progress, stderr for refusals. */
     fun command(): InstallCommand = InstallCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
+
+    /** After `splice install --all` on Linux, with the MCP hub's front installed beside the jar: the hub's systemd units,
+     *  created only where none of that name is installed (HubUnits). */
+    fun hubUnits(target: String?, env: EnvReader) {
+        if (target != null && target != "--all") return
+        if (!System.getProperty("os.name").startsWith("Linux")) return
+        if (!Files.exists(InstallPaths(envReader = env).shareDir.resolve("splice-mcp-front"))) return
+        val config = env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+            ?: UserHome.dir(env).resolve(".config")
+        HubUnits(config.resolve("systemd").resolve("user"), TerminalOutput(::println)).install()
+    }
 
     /** `splice init`: the starter topology the install verbs read, written only when absent, and on Linux the MCP hub
      *  front's environment file, which its unit reads (the hub runs under systemd --user, so nowhere else). */

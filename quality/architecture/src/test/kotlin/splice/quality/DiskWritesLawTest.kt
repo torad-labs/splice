@@ -340,6 +340,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeRelease.kt" to mapOf("Files.write(" to 1),
+    // The MCP hub's units where none is installed, in the systemd/user README row.
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/hub/HubUnits.kt" to mapOf("Files.write(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeRuns.kt" to mapOf("Files.writeString(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeWrapper.kt" to mapOf(
         "Files.copy(" to 2,

@@ -401,6 +401,7 @@ async function readRows(held = MAX_HELD) {
     for (const row of answer.rows || []) rows.push(mapRow(head, row));
   });
   state.rows = linkRetries(linkCuts(rows));
+  state.slowAt = slowLines(state.rows);
   state.matched = matched;
   state.capped = capped;
   state.order = priced ? "price" : "new";
@@ -428,6 +429,22 @@ async function readMenus(gen) {
 
 /** One perf row as this page draws it. A key the writer never put in the row is left null, never zeroed: a provider
  *  that reported no tokens and a request that never got a first byte draw nothing where their figure would be. */
+// SLOW, RETRIED AND FAILED LOOK DIFFERENT (v0.4.0 section 3's acceptance). A failure has its glyph and its red edge. A
+// request that answered after more than one send takes the retries glyph in its lamp and the word Retried. One that
+// answered slower than all but 5% of the same command's same model in this list reads Slow, its duration in the key
+// light: the line is that model's own, never one figure across a fast model and a slow one, and it is drawn only from
+// 20 clean answers up, so a short list marks nothing rather than guessing.
+const SLOW_SHARE = 0.95, SLOW_MIN_ROWS = 20;
+const answered = (r) => !r.compact && outcomeOf(r).cls === "clean";
+function slowLines(rows) {
+  const by = new Map();
+  for (const r of rows) if (answered(r)) { const k = `${r.head}|${r.modelId}`; (by.get(k) ?? by.set(k, []).get(k)).push(r.total); }
+  const lines = new Map();
+  for (const [k, xs] of by) if (xs.length >= SLOW_MIN_ROWS) { xs.sort((a, b) => a - b); lines.set(k, xs[Math.floor(SLOW_SHARE * (xs.length - 1))]); }
+  return lines;
+}
+const isSlow = (r) => answered(r) && r.total > (state.slowAt?.get(`${r.head}|${r.modelId}`) ?? Infinity);
+const isRetried = (r) => answered(r) && r.attempts > 1;
 function mapRow(head, row) {
   const started = row.ts - (row.total ?? 0);
   // THE ONE SILENCE THE ROW RECORDS AS AN INTERVAL: up_gap_max_ms with its own start, which the keys say belong to the
@@ -708,9 +725,10 @@ function filtersHtml() {
 
 // ---------- the list: the newest first, on the rail, an hour mark where the hour turns ----------
 function rowHtml(r) {
-  const o = outcomeOf(r), h = r.said;
-  const lamp = r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : "<i></i>";
-  const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : "") + besideOf(r);
+  const o = outcomeOf(r), h = r.said, slow = isSlow(r), retried = isRetried(r);
+  const lamp = r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : retried ? GLYPH.retries : "<i></i>";
+  const marks = (retried ? `<span class="word marked">Retried</span>` : "") + (slow ? `<span class="word marked">Slow</span>` : "");
+  const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : marks) + besideOf(r);
   // a figure the provider never reported is left out, never printed as 0
   // THE TWO FIGURES TRAVEL TOGETHER. In and out are one reading, and a meta line that wraps between them leaves
   // "4 out" alone under a row whose neighbour kept both ("1.5K out" and "2.2K out", live at 3828 — splice-lead,
@@ -738,9 +756,9 @@ function rowHtml(r) {
     : r.retryOf ? `<button class="tok quiet door" data-open="${esc(r.retryOf)}">Resent after splice restarted</button>` : "";
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
-    + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
+    + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}${retried ? " retried" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
-    + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
+    + `<span class="dur${slow ? " slow" : ""}">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
     + `<div class="meta">${headChip(r)}<span>${esc(r.model ?? "No model")}</span>${r.account ? acctTag(r, ` title="${esc(r.account)}"`) : ""}${toks}${sends}${noReading}${retry}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);

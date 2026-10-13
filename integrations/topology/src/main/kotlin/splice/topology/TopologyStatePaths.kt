@@ -24,13 +24,19 @@ public class TopologyStatePaths(
      *  layout decide. An unusable value keeps the default rather than failing: the key was inert
      *  before V4-109, so a value operators were free to write must not become a failure now that it
      *  means something (NEVER-BELOW-STATUS-QUO); doctor's state_dir row names the dropped value.
-     *  Blank is absent for the same reason. */
+     *  Blank is absent for the same reason. A leading `~/`, or a bare `~`, is this home, as `config_dir` and the
+     *  compaction files read it (splice-turns, Oct 13): Paths.get took it as written, a folder named "~" under the
+     *  daemon's working directory. */
     public fun of(topology: Topology?): StatePaths {
         val declared = topology?.daemon?.stateDir?.takeIf { it.isNotBlank() } ?: return fromEnvironment()
         // The parameter is `_` because the exception is DELIBERATELY unused: an unparseable path is
         // the documented fallback above, not a swallowed failure.
         val path = try {
-            Paths.get(declared)
+            when {
+                declared == "~" -> homeDir
+                declared.startsWith("~/") -> homeDir.resolve(declared.removePrefix("~/"))
+                else -> Paths.get(declared)
+            }
         } catch (_: InvalidPathException) {
             return fromEnvironment()
         }

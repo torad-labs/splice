@@ -13,7 +13,7 @@
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
 # state_dir = "/mnt/fast/splice-state"   # where the daemon keeps its lock, per-head state and traces (default
-#                                        # ~/.splice); read at boot, so restart. Write it absolute: ~ is not expanded here
+#                                        # ~/.splice); read at boot, so restart. A leading ~/ is your home
 
 # Reasoning display — edit here and restart the daemon, or PATCH the HOT keys and the next turn obeys. No code change.
 # Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.

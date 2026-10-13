@@ -171,11 +171,8 @@ origin.
   socket and the daemon serves on the descriptor it was handed, so a client that connects while the daemon restarts
   waits in the kernel's accept queue. `splice capabilities` says whether the native transport loads on this machine,
   so a manager learns a hand-off would be refused before it stops the daemon.
-- **`/api/sessions` rows carry what Claude Code registers about the session.** The peer protocol revision,
-  its advertised features, the bridge session and who set the session's name (`peer_protocol`, `peer_features`,
-  `bridge_session_id`, `name_source`) are read from the registry and returned. A session joins its command by the launch
-  splice made, read from the launch roster; the process environment only tells a session splice never launched
-  (`direct`) from one it cannot place (`unknown head`).
+- **A session joins its command by the launch splice made,** read from the launch roster. The process environment
+  only tells a session splice never launched (`direct`) from one it cannot place (`unknown head`).
 - **A slash command reads as what the person typed.** In a session's conversation `/rename notes` shows as their
   line, its output as a quiet system line, and the reminders Claude Code adds for the model are not shown at all.
 - **One dollar form on every page.** Nothing charged reads `$0`, a charge under a hundredth of a cent reads `<$0.0001`,

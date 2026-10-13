@@ -208,6 +208,8 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 .rawlog summary { cursor: pointer; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
 .rawlog ol { margin-top: .9rem; max-height: 26rem; overflow-y: auto; font-family: var(--font-data); }
 .rawlog li { display: block; content-visibility: auto; contain-intrinsic-size: auto 1.4rem; }  /* thousands of lines: only those on screen are laid out */
+.everyset li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; padding: .2rem 0; }  /* a setting, then its value */
+.everyset .v { font-family: var(--font-data); text-align: right; }
 .rawlog summary .mmeta { margin-left: .8rem; font-family: var(--font-data); }
 .said .wait { width: 1.3rem; height: 1.3rem; vertical-align: middle; margin-right: .5rem; }
 .said .wait circle { stroke: var(--live); }

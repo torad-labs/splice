@@ -43,7 +43,7 @@ KNOBS.wire(root, () => render());
 const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
-  logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
+  eff: {}, effOpen: false, logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
 async function readAll() {
   const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head"];
@@ -447,7 +447,7 @@ function paneHtml() {
     + (why ? `<p class="said limit">${esc(why)}</p>` : "");
   const log = `<section class="hlog">${top}${ev.length ? `<ol>${ev.map((e) => `<li><time>${esc(ampm(e.at))}</time><span>${esc(e.text)}${e.n > 1 ? ` · ${e.n} times` : ""}</span></li>`).join("")}</ol>` : `<p class="none">${q ? "No lines match" : "No events"}</p>`}`
     + `<details class="rawlog"${ui.rawOpen ? " open" : ""}><summary>Raw log<span class="mmeta">${raw.length.toLocaleString("en-US")} ${raw.length === 1 ? "line" : "lines"}</span></summary><ol>${raw.map((l) => `<li><span>${esc(l.raw)}</span></li>`).join("")}</ol></details></section>`;
-  return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${log}</div></div>`;
+  return `<div class="pane" style="--c:${colorOf(c.family)}">${head}<div class="body">${form}${effHtml(c)}${log}</div></div>`;
 }
 // daemon.log lines: "[2026-10-12 04:12:52] [claudex] text"; the log is already this command's, so its tag drops
 function parseLog(lines) {
@@ -512,6 +512,25 @@ function clientRow(c) {
   if (!seen.length) return "";
   const row = (x) => `<span class="fig"><a class="chip" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(x.name || x.title || x.session_id.slice(0, 8))}</a> ${big(x.client_context_window)}</span>`;
   return `<span class="lbl">Claude Code's window</span><div class="ctl col">${seen.map(row).join("")}</div>`;
+}
+// ---------- every setting as this command runs it (gap 459), GET /api/config?head=<key> ----------
+// Read only: the daemon folds this command's own values over the shared ones the way a turn does (ConfigRoutes.kt), and
+// a value this command holds itself carries its chip. Read when the section opens, and again with the pane.
+async function readEff(key) {
+  const res = await API.get(`/api/config?head=${encodeURIComponent(key)}`);
+  ui.eff[key] = res.ok && res.body ? res.body : null;
+  render();
+}
+function effHtml(c) {
+  const p = ui.eff[c.key], own = p?.layers?.perHead?.[c.key] ?? {};
+  const rows = !p ? [] : Object.entries(p.knobs ?? {}).map(([key, kn]) => {
+    const k = KNOBS.KNOB[key], v = kn.value;
+    const shown = k ? KNOBS.word(k, v ?? k.def) : v === null || v === undefined ? "Not set" : String(v);
+    return { name: k ? esc(k.label) : `<code>${esc(key)}</code>`, sort: k ? 0 : 1, shown, own: key in own };
+  }).sort((a, b) => Number(b.own) - Number(a.own) || a.sort - b.sort);
+  const body = ui.eff[c.key] === undefined ? `<p class="none">${ICON.wait}Reading</p>` : !p ? `<p class="said limit">Not read</p>`
+    : `<ol>${rows.map((r) => `<li><span>${r.name}</span><span class="v">${esc(r.shown)}${r.own ? ` <span class="chip">${esc(c.cmd)}</span>` : ""}</span></li>`).join("")}</ol>`;
+  return `<details class="rawlog everyset"${ui.effOpen ? " open" : ""}><summary>Every setting</summary>${ui.effOpen ? body : ""}</details>`;
 }
 /** What the command's gate holds right now and what has failed on it, as GET /api/heads serves them. */
 function nowRow(c) {
@@ -1038,7 +1057,7 @@ function render() {
   KNOBS.save?.();
   const f = document.activeElement, fid = f?.id, pos = f?.selectionStart;
   const body = root.querySelector(".pane .body"), top = body && root.dataset.shown === `${ui.view}:${ui.open}` ? body.scrollTop : 0;
-  const rl = root.querySelector(".rawlog ol"), rawAt = rl && { top: rl.scrollTop, end: rl.scrollTop + rl.clientHeight >= rl.scrollHeight - 4 };
+  const rl = root.querySelector(".hlog .rawlog ol"), rawAt = rl && { top: rl.scrollTop, end: rl.scrollTop + rl.clientHeight >= rl.scrollHeight - 4 };
   document.getElementById("claude").innerHTML = data.loaded ? claudeHtml() : "";
   if (!data.loaded) {
     root.innerHTML = `<p class="none">${esc(data.err ?? "Reading")}</p>`;
@@ -1048,7 +1067,7 @@ function render() {
   root.dataset.shown = `${ui.view}:${ui.open}`;
   const now = root.querySelector(".pane .body");
   if (now) now.scrollTop = top;
-  const rl2 = root.querySelector(".rawlog ol");
+  const rl2 = root.querySelector(".hlog .rawlog ol");
   if (rl2) rl2.scrollTop = !rawAt || rawAt.end ? rl2.scrollHeight : rawAt.top;
   if (fid) {
     const g = document.getElementById(fid);
@@ -1058,6 +1077,7 @@ function render() {
 function openCmd(key) {
   Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null });
   readLog(key);
+  if (ui.effOpen) readEff(key);
 }
 function onClick(e) {
   if (KNOBS.click?.(e, render)) { render(); return; }
@@ -1152,7 +1172,11 @@ function onInput(e) {
 }
 root.addEventListener("click", onClick);
 root.addEventListener("input", onInput);
-root.addEventListener("toggle", (e) => { if (e.target.classList?.contains("rawlog")) ui.rawOpen = e.target.open; }, true);
+root.addEventListener("toggle", (e) => {
+  const t = e.target;
+  if (t.classList?.contains("everyset")) { if (t.open !== ui.effOpen) { ui.effOpen = t.open; if (t.open) readEff(ui.open); } }
+  else if (t.classList?.contains("rawlog")) ui.rawOpen = t.open;
+}, true);
 document.getElementById("claude").addEventListener("click", onClick);
 document.querySelector('.foot [data-act="theme"]')?.addEventListener("click", toggleTheme);
 

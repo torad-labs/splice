@@ -9,7 +9,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.compaction.CompactionConfig
@@ -49,32 +48,8 @@ class ProjectsRoutesTest {
     }
 
     @Test
-    fun `session and project origins lose credentials before crossing the wire`() {
-        val projects = routes(emptyMap())
-        Files.writeString(
-            rig.repo.resolve(".git/config"),
-            "[remote \"origin\"]\n url = https://user:secret@github.com/torad-labs/splice.git\n",
-        )
-        val sessionRoutes = SessionsRoutes(
-            rig.registry,
-            TestTranscripts(),
-            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
-        )
-        val session = rig.find(rig.json(sessionRoutes.sessionsJson()), "sessions", "session_id", BUILDER)
-        assertEquals(
-            "https://github.com/torad-labs/splice.git",
-            session.getValue("repo").jsonObject.getValue("remote").jsonPrimitive.content,
-        )
-        val project = rig.json(projects.project(rig.repo.toString()).body)
-        assertEquals("https://github.com/torad-labs/splice.git", project.getValue("remote").jsonPrimitive.content)
-        assertFalse(project.toString().contains("secret"))
-        assertFalse(session.toString().contains("secret"))
-    }
-
-    @Test
     fun `each git root a session runs in is a row, and an unseen root is a 404`() {
         val rows = rig.json(routes(emptyMap()).list().body).getValue("projects").jsonArray.map { it.jsonObject }
-        assertFalse(rows.single().containsKey("remote"), "no origin is absent, never an invented remote")
         assertEquals(
             listOf(rig.repo.toString()),
             rows.map { it.getValue("id").jsonPrimitive.content },
@@ -147,7 +122,6 @@ class ProjectsRoutesTest {
         val memory = Files.createDirectories(own.resolve("projects/$slug/memory"))
         Files.writeString(memory.resolve("MEMORY.md"), "remember this")
         Files.writeString(memory.resolve("notes.txt"), "not memory")
-        Files.writeString(own.resolve("settings.json"), """{"autoMemoryEnabled":true}""")
         val other = tmp.resolve(".claude-other")
         val heads = mapOf(
             "codex" to rig.head("codex", emptyList(), own = own),
@@ -159,16 +133,10 @@ class ProjectsRoutesTest {
                 """{"id":"${rig.repo}","files":[""" +
                     """{"kind":"instructions","path":"${rig.repo}/CLAUDE.md","head":null,"text":"claude rules"},""" +
                     """{"kind":"instructions","path":"${rig.repo}/AGENTS.md","head":null,"text":"agent rules"},""" +
-                    """{"kind":"memory","path":"$memory/MEMORY.md","head":"codex","text":"remember this"}],""" +
-                    """"looked_in":["${rig.repo}","$memory","${other.resolve("projects/$slug/memory")}"],""" +
-                    """"auto_memory_enabled":true}""",
+                    """{"kind":"memory","path":"$memory/MEMORY.md","head":"codex","text":"remember this"}]}""",
             ),
             body,
         )
-        Files.createDirectories(other)
-        Files.writeString(other.resolve("settings.json"), """{"autoMemoryEnabled":false}""")
-        val disagreeing = routes(heads).files(rig.repo.toString()).body
-        assertFalse(disagreeing.contains("auto_memory_enabled"), "heads that disagree state nothing")
         val refused = routes(heads).files(tmp.toString())
         assertEquals(HttpStatusCode.NotFound, refused.status)
         assertEquals("""{"error":"not a project root splice has seen: $tmp"}""", refused.body)

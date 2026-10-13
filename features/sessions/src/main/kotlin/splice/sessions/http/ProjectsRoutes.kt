@@ -2,7 +2,7 @@
 //
 //   GET /api/projects              {projects: ProjectRow[]}
 //   GET /api/projects/{id}         one ProjectRow
-//   GET /api/projects/{id}/files   {id, files, looked_in, auto_memory_enabled?}
+//   GET /api/projects/{id}/files   {id, files}
 //
 // A PROJECT IS A GIT ROOT and its id is that root. The roots include durable transcript/history
 // sessions as well as registry rows (using the Sessions route's RepoResolver: trusted roots only,
@@ -21,9 +21,7 @@
 // files (CLAUDE.md, AGENTS.md at the root), then each head's client memory at
 // `<head config dir>/projects/<slug>/memory/*.md`, the slug being Claude Code's own (every character
 // outside [A-Za-z0-9] becomes '-', measured against the trees on disk: `.../v0.4.0` is `...-v0-4-0`).
-// Nothing is ever written. looked_in names every directory searched, so an empty list names where it
-// looked. auto_memory_enabled is the heads' `autoMemoryEnabled` setting when every head that states
-// it agrees, and absent when none states it or they disagree, since one boolean cannot carry both.
+// Nothing is ever written.
 package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
@@ -37,7 +35,6 @@ import splice.http.JsonReply
 import splice.sessions.projects.ProjectFiles
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.ProjectRef
-import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.SessionSource
 import java.nio.file.Paths
 
@@ -105,7 +102,6 @@ public class ProjectsRoutes(
                     put("folder", it.folder)
                 }
                 put("root", root)
-                RepoOrigin.of(root)?.let { put("remote", it) }
                 put("compaction", compactionOf(root))
             }
         }

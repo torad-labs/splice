@@ -34,6 +34,8 @@ private const val HUB_FRONT_HOST = "127.0.0.1"
 private const val HUB_FRONT_STATE = "front.json"
 private const val HUB_UNREACHED =
     "this session starts its own MCP servers: the MCP hub is not answering, or its launch file could not be written"
+private const val HUB_UNREACHED_OVERLAY =
+    "this session reaches splice's hosted MCP servers directly and starts the rest itself: the MCP hub is not answering"
 
 // why: the front is a local process on loopback; one that has not accepted in this long is not serving.
 public const val HUB_FRONT_CONNECT_MS: Int = 250
@@ -59,9 +61,20 @@ public fun interface PluginFlagHolds {
     public fun holds(version: String): Boolean
 }
 
+/** Whether the daemon runs the MCP hub now, the verdict /health reports. A front.json left from an earlier run and a
+ *  listener on the port are not a hub: with the hub off, a launch offers no hub address. */
+public fun interface McpHubLive {
+    public fun live(): Boolean
+}
+
 /** The port the hub front listens on, on loopback, and [dir], `<state>/mcp-hub`, where it keeps its state and the
- *  launch files live. [procRoot] says which launches still run. */
-public data class McpHubFront(val port: Int, val dir: Path, val procRoot: Path = Path.of("/proc"))
+ *  launch files live. [procRoot] says which launches still run. [hub] is the daemon's on or off for the hub. */
+public data class McpHubFront(
+    val port: Int,
+    val dir: Path,
+    val procRoot: Path = Path.of("/proc"),
+    val hub: McpHubLive = McpHubLive { true },
+)
 
 /** The Claude Code version proof (f) ran on, where the flag holds with no recorded check, and the recorded checks. */
 public data class PluginFlagGate(val tested: String, val checked: PluginFlagHolds = PluginFlagHolds { false })
@@ -84,7 +97,9 @@ public class McpHubLaunch(
         val hub = hubArgs(launch)
         if (hub.args.isNotEmpty()) return hub
         val fallback = launch.overlayHead?.let { overlay?.args(it) }.orEmpty()
-        return HubLaunchArgs(fallback, hub.warning)
+        // the overlay still sends his hosted user-scope servers to splice, so the line says only what is true of them
+        val warning = hub.warning?.let { if (fallback.isEmpty()) it else HUB_UNREACHED_OVERLAY }
+        return HubLaunchArgs(fallback, warning)
     }
 
     private fun hubArgs(launch: HubLaunchFor): HubLaunchArgs {
@@ -101,7 +116,8 @@ public class McpHubLaunch(
         val plugins = if (flagHolds(launch.claude)) pluginsHeld(plan, runs) else emptyMap()
         val ownPlugin = plan.servers.filter { it.pluginRoot != null && it.pluginRoot !in plugins }.map { it.name }
         val held = runs - ownPlugin.toSet()
-        if (held.isEmpty() || !Files.exists(dir.resolve(HUB_FRONT_STATE))) return HubLaunchArgs(emptyList())
+        val frontRan = front.hub.live() && Files.exists(dir.resolve(HUB_FRONT_STATE))
+        if (held.isEmpty() || !frontRan) return HubLaunchArgs(emptyList())
         val file = (if (frontAnswers()) write(id, held) else null)
             ?: return HubLaunchArgs(emptyList(), HUB_UNREACHED)
         val flags = plugins.values.sorted().flatMap { listOf(HUB_PLUGIN_FLAG, it) }

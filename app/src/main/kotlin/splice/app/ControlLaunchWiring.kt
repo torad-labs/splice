@@ -17,6 +17,7 @@ import splice.client.mcp.HostedMcpOverlay
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpHubFront
 import splice.client.mcp.McpHubLaunch
+import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpLaunchPlanner
 import splice.client.mcp.McpSharing
 import splice.client.mcp.PluginFlagGate
@@ -88,7 +89,7 @@ internal class ControlLaunchWiring(
     /** The one LaunchService, over the daemon's home: its wrap (V4-129) writes and reads the SAME
      *  home the materializer's DR-102 guard protects, so the vanilla dir wrap targets is the one
      *  the guard refuses to every other head. */
-    fun service(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
+    fun service(home: Path, sharing: McpSharing, controlPort: Int, hub: McpHubLive): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
         val copying = CopyingOriginals { config.getConfig().keepTranscriptCopies }
         val window = OriginalsCutoff {
@@ -116,7 +117,7 @@ internal class ControlLaunchWiring(
                 McpLaunchPlanner(home),
                 sharing,
                 McpAccessKey(mgmtKey::get),
-                McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub")),
+                McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
                 log,
                 PluginFlagGate(TESTED_CLAUDE_CODE, pluginFlags),
                 overlay = HostedMcpOverlay(home, sharing, statePaths.stateDir, log),

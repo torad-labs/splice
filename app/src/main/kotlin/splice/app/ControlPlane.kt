@@ -26,6 +26,7 @@ import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
+import splice.client.mcp.McpHubLive
 import splice.core.compaction.CompactionInstructions
 import splice.core.usage.QuotaReadFailures
 import splice.core.version.ClientVersionTracker
@@ -197,7 +198,13 @@ internal class ControlPlane(
             log,
             readings = ControlReadings(health.report(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
-                launchService = launch.service(home, sharing, controlPort),
+                // the hub is live only on a verdict that says on: no verdict, as when MCP is not hosted, is off
+                launchService = launch.service(
+                    home,
+                    sharing,
+                    controlPort,
+                    McpHubLive { mcp.hub?.let { it.offReason == null } == true },
+                ),
                 shutdownDaemon = shutdownDaemon,
                 sessions = sessions,
                 mcpHost = mcpHost,

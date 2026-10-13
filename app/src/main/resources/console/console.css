@@ -161,7 +161,7 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
 .provider > header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.6rem; min-height: 3.4rem; }
 /* the headings: a section under the page title, and a section inside a pane, one size each on every page */
 .provider h2, .usage h2, .compose > h2, .proj h2 { font: 400 2.3rem/1 var(--font-lead); letter-spacing: normal; margin: 0; }
-.sub h3, .dgroup h3, .run h3, .tally h3, .kn.ownsec h3, .hlog h3, .pblock h3, .feed h3, .compose h3, .gearpop h2 { font: 400 1.5rem/1 var(--font-lead); color: var(--text); margin: 0; }
+.sub h3, .dgroup h3, .run h3, .tally h3, .hlog h3, .pblock h3, .feed h3, .compose h3 { font: 400 1.5rem/1 var(--font-lead); color: var(--text); margin: 0; }
 .provider h2 { display: flex; align-items: center; gap: .8rem; }
 .provider h2 .blot { width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .14rem var(--ink); }
 .provider > header .switch { margin-left: auto; }
@@ -343,8 +343,6 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .flip { transition: transform var(--t-move) var(--e-io); }
 .lock-pop { animation: pop 260ms var(--e-out) 1; }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
-.dragging { opacity: .45; }
-.drop-before { box-shadow: 0 -.35rem 0 0 var(--key-light), var(--cast) var(--cast) 0 var(--c); }
 
 /* ---------- the command's day: set into the wall under the provider's name, not standing on it like an account ---------- */
 .meter, .meter.windows {

@@ -56,10 +56,9 @@ internal object HostProtocol {
 
     fun command(type: String): JsonObject = buildJsonObject { put("type", type) }
 
-    fun count(engines: Int, busy: Int = 0): JsonObject = buildJsonObject {
+    fun count(engines: Int): JsonObject = buildJsonObject {
         put("type", "engines")
         put("count", engines)
-        put("busy", busy)
     }
 
     fun capacity(): JsonObject = buildJsonObject {

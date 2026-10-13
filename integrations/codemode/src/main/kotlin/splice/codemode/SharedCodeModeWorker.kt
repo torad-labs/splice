@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-private val CONTROL_FRAMES = setOf("session-open", "session-close", "engines", "close")
+private val CONTROL_FRAMES = setOf("session-open", "session-close", "close")
 
 internal object SharedCodeModeWorker {
     fun run(input: DataInputStream, output: DataOutputStream) {
@@ -96,7 +96,6 @@ internal class HostWorkerDispatcher(
             sessions.closeSession(frame.session)
             HostProtocol.count(sessions.count())
         }
-        "engines" -> HostProtocol.count(sessions.count(), cells.values.count(HostWorkerCell::isRunning))
         else -> {
             val removed: HostWorkerCell? = cells.remove(frame.cell)
             removed?.close()
@@ -137,13 +136,9 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
 
     @Volatile private var session: WorkerSession? = null
 
-    @Volatile var isRunning: Boolean = false
-        private set
-
     fun reply(frame: JsonObject): JsonObject = lock.withLock {
         try {
             check(!closed.get()) { "Code-mode cell is closed" }
-            isRunning = true
             answer(frame)
         } catch (error: CancellationException) {
             throw error
@@ -162,8 +157,6 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
         } catch (failure: VirtualMachineError) {
             // An uncaught error would end the task with no reply and leave the host waiting on this request.
             CodeModeFatalFrame.died(failure)
-        } finally {
-            isRunning = false
         }
     }
 

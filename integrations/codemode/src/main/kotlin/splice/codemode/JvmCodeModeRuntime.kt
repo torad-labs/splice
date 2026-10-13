@@ -171,10 +171,6 @@ public class JvmCodeModeRuntime(
         pool.closeSession(sessionKey)
     }
 
-    internal suspend fun liveEngines(): Int = pool.metric("count")
-
-    internal suspend fun busyCells(): Int = pool.metric("busy")
-
     internal fun liveCells(): Int = cells.count()
 
     override fun close() {

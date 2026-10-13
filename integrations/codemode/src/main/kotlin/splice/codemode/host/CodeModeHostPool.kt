@@ -174,8 +174,6 @@ internal class CodeModeHostPool(
         return true
     }
 
-    suspend fun metric(key: String): Int = metrics.total(lock.locked { hosts.mapNotNull(CodeModePoolHost::boot) }, key)
-
     override fun close() {
         lock.locked {
             closed = true

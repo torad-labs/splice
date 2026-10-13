@@ -276,8 +276,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         mapOf("Files.move(" to 1, "writeAtomic0600(" to 1),
     // The live add check redirects into an owner-only temporary file, removed after each attempt.
     "app/src/main/kotlin/splice/app/AddWiring.kt" to mapOf("Files.createTempFile(" to 1),
+    // Oct 13: the second move rolls a daemon.log an older release wrote aside before the escaping writer's first line.
     "app/src/main/kotlin/splice/app/DaemonBoundary.kt" to mapOf(
-        "Files.move(" to 1,
+        "Files.move(" to 2,
         "Files.newBufferedWriter(" to 1,
         "Files.writeString(" to 1,
     ),
@@ -343,11 +344,12 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.copy(" to 1,
         "Files.move(" to 1,
     ),
+    // Oct 13: the second write and move are RejectedReleases' whole-file replace of upgrade-rejected in the state dir.
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLayout.kt" to mapOf(
         "Files.copy(" to 3,
         "Files.createSymbolicLink(" to 1,
-        "Files.move(" to 1,
-        "Files.writeString(" to 1,
+        "Files.move(" to 2,
+        "Files.writeString(" to 2,
     ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLock.kt" to mapOf("FileChannel.open(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeRelease.kt" to mapOf("Files.write(" to 1),

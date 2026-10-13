@@ -65,6 +65,13 @@
       "command": ["bun", "tools/gate", "no-python"]
     },
     {
+      "task": "moduleLawRead",
+      "inputs": ["**/build.gradle.kts", "settings.gradle.kts", "gradle/module-law.txt", "tools/gate/src/commands/module-law.ts"],
+      "commit": ["**/build.gradle.kts", "settings.gradle.kts", "gradle/module-law.txt"],
+      "why": "The module law read from the build files without gradle, so a forbidden project dependency stops at the seat's own commit. Gradle's configuration enforces the same law (splice.module-law.gradle.kts), but only at pre-push, behind the build gate's line: on Oct 13, 2026 a920eeef1 waited 2,344 s for the build lock and then failed in 15 s on muse depending on the Responses dialect.",
+      "command": ["bun", "tools/gate", "module-law"]
+    },
+    {
       "task": "typescriptTypecheck",
       "inputs": ["**/*.ts","tools/gate/config/typecheck.json","package.json","bun.lock"],
       "commit": ["**/*.ts","tools/gate/config/typecheck.json"],

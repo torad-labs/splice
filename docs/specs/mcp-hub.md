@@ -1,7 +1,8 @@
-# splice as the MCP hub: design for Marcos's review
+# splice as the MCP hub
 
-Status: draft 2 by splice-lead, 2026-10-12, revised to Marcos's answers on draft 1 (through the
-President). Nothing is built until he approves it. beed0812e, which gives plain `claude` the hosted
+Status: approved. Draft 2 by splice-lead, 2026-10-12, was revised to Marcos's answers on draft 1, and
+Marcos approved it on Oct 12, through the President. The build follows the order below. The hub
+binaries go live only on hostshield-lead's go. beed0812e, which gives plain `claude` the hosted
 user-scope servers through `--mcp-config`, ships on its own.
 
 ## What it is for

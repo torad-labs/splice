@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
@@ -75,10 +76,11 @@ class AddListedModelsTest {
     }
 
     @Test
-    fun `a passthrough provider is said to have no credential splice can read its list with`() {
+    fun `a passthrough on the person's own login is said to have no credential to read its list with`() {
         val checks = AddChecks(TerminalOutput { }, AddHttp { _, _, _, _ -> error("nothing may be asked") })
+        val login = provider(Dialect.ANTHROPIC_PASSTHROUGH).copy(auth = AuthConfig(kind = AuthKind.Client.wire))
 
-        val listed = checks.listedModels(provider(Dialect.ANTHROPIC_PASSTHROUGH), "pass", env)
+        val listed = checks.listedModels(login, "pass", env)
         val verdict = checks.modelsListed(listOf("claude-x"), listed)
 
         assertEquals(ListedModels.NoCredential, listed)

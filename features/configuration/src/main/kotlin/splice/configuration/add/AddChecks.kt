@@ -153,14 +153,16 @@ internal class AddChecks(
 
     /** The endpoint's model list where the dialect publishes one and splice can read it: openai-chat and openai-responses
      *  (the Codex backend with its client_version query, or an API-key endpoint), at the one URL `splice models` asks.
-     *  A passthrough head forwards the person's own login, so splice holds nothing to ask with. A list the endpoint
-     *  cannot serve is [ListedModels.Unreadable]; on openai-responses it does not stop the add. */
+     *  A passthrough head on a login forwards the person's own, so splice holds nothing to ask with; one on an API key
+     *  (DeepSeek) is asked with that key. A list the endpoint cannot serve is [ListedModels.Unreadable]; on
+     *  openai-responses it does not stop the add. */
     fun listedModels(provider: ProviderConfig, key: String, env: EnvReader): ListedModels {
-        if (provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH) return ListedModels.NoCredential
+        val passthrough = provider.dialect == Dialect.ANTHROPIC_PASSTHROUGH
+        if (passthrough && provider.auth.kind != API_KEY) return ListedModels.NoCredential
         // A server with no model list is normal, and the person typed the models themselves, so a missing or
-        // unreadable list never stops an add (Marlin's walk, Oct 12). Only a credential the server refuses on an
-        // openai-chat endpoint does: the key would fail the first request too.
-        val refusesCredential = provider.dialect == Dialect.OPENAI_CHAT
+        // unreadable list never stops an add (Marlin's walk, Oct 12). Only a key the server refuses on an openai-chat
+        // or an API-key passthrough endpoint does: the key would fail the first request too.
+        val refusesCredential = provider.dialect == Dialect.OPENAI_CHAT || passthrough
         val url = provider.rosterUrl
         val reply = http("GET", url, credentials.bearer(provider, key, env), null)
         return when {

@@ -216,6 +216,8 @@ internal class AddProfileCatalog {
                 dialect = ANTHROPIC_PASSTHROUGH,
                 authKind = API_KEY,
                 extra = listOf(
+                    "# DeepSeek list their models at the API root, not under the /anthropic base this dials.",
+                    "models_url = \"https://api.deepseek.com/models\"",
                     "[providers.$KEY_SLOT.quirks]",
                     "# Only the blocks DeepSeek's compatibility table marks Supported. redacted_thinking",
                     "# is the one that matters: DR-118 forwards it VERBATIM because Anthropic demands it",

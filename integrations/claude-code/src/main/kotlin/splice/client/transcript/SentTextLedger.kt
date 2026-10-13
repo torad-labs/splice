@@ -6,6 +6,7 @@
 // a replaced, shrunk or same-size rewritten file starts over. A boundary guard detects truncate-and-grow.
 package splice.client.transcript
 
+import splice.client.resume.TRANSCRIPT_SUFFIX
 import splice.core.util.FileIdentity
 import splice.core.util.FileStat
 import splice.sessions.transcript.SentTexts
@@ -21,8 +22,6 @@ private const val HELD_FILES = 1024
 
 // why: where Claude Code writes a session's subagent transcripts, beside the session's own file.
 private const val SUBAGENTS = "subagents"
-
-private const val TRANSCRIPT_SUFFIX = ".jsonl"
 
 // why: a bounded witness of the old EOF distinguishes append from the common truncate-and-grow rewrite.
 private const val GUARD_BYTES = 4_096

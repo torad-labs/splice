@@ -43,6 +43,8 @@ internal class KnobViews {
                 // a value set in the shell names the variables it is read from, so the row can say which to change
                 if (scope == "env") putJsonArray("env_names") { knob.envNames.forEach { add(it) } }
                 put("disposition", if (knob.restartRequired) "restart" else "live")
+                // what the value is, so the page builds its control from the daemon's own answer (gap 458)
+                put("kind", knob.kind.name.lowercase())
                 val readOnlyReason = PINNED_REASONS[knob]
                     ?: "set only in [heads.<key>.overrides], never by PATCH".takeIf { knob.headOnly }
                 put("editable", readOnlyReason == null)

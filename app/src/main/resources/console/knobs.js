@@ -128,7 +128,7 @@ const KNOBS = (() => {
   // `cfg` is null until load() returns: a page draws no value it has not read.
   const st = {
     cfg: null, models: [], providerOf: {}, commandOf: {}, perCommand: true, cmds: [], adding: {}, restart: {}, restarting: false,
-    said: {}, unsaved: {}, undo: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
+    said: {}, unsaved: {}, undo: {}, typing: {}, bad: {}, slow: {}, menu: null, custom: null, onAsk: () => false,
   };
 
   /** GET /api/config, and the commands a per-command value can name. Answers the error text, or null when it read. */
@@ -186,6 +186,15 @@ const KNOBS = (() => {
   }
   function ctlHtml(k, v, cmd = null) {
     const c = k.c, id = cmd ? `${k.key}@${cmd}` : k.key, open = st.menu === `pick:${id}`, bad = st.bad[id] ? ' aria-invalid="true"' : "";
+    if ((c.k === "dur" || c.k === "count") && st.cfg?.knobs?.[k.key]?.kind === "number") {
+      const unit = c.k === "dur" ? c.unit : c.unit || "";
+      const n = Number(v), shown = c.k === "dur" ? n / (unit === "min" ? MIN : SEC) : n / (c.per || 1);
+      const blank = v === null || v === undefined || (n === 0 && (c.none || c.zero));
+      const typed = st.typing[id], text = typed ?? (blank ? "" : String(+shown.toFixed(2)));
+      // an id, so a page's redraw puts the caret back, and the typed text kept, so a redraw mid-word loses nothing
+      return `<span class="custom"><input class="field" id="kf-${esc(id.replace("@", "-"))}" inputmode="decimal" data-kfield="${id}" value="${esc(text)}"`
+        + `${blank && (c.zero || c.none) ? ` placeholder="${esc(c.zero || c.none)}"` : ""} aria-label="${esc(k.label)}"${bad}><em>${esc(unit)}</em></span>`;
+    }
     if (c.k === "dur" || c.k === "count" || (c.k === "pick" && c.opts.length > 3)) {
       if (st.custom === id) { // Custom: a field in the preset's unit, saved on Enter
         const unit = c.k === "dur" ? c.unit : c.unit || "";
@@ -438,6 +447,14 @@ const KNOBS = (() => {
       const d = e.target.dataset;
       if (e.key === "Enter" && d.kcustom) { const id = d.kcustom; st.custom = null; sent(id, fromField(id, e.target.value), render); render(); }
       if (e.key === "Escape" && (d.kcustom || st.menu)) { st.custom = null; st.menu = null; render(); }
+      if (e.key === "Enter" && d.kfield) e.target.blur();
+      if (e.key === "Escape" && d.kfield) { delete st.typing[d.kfield]; e.target.dataset.kfield = ""; render(); }
+    });
+    // a typed field applies when it is left changed; Escape cleared its id above, so leaving it then sends nothing
+    root.addEventListener("input", (e) => { const id = e.target.dataset?.kfield; if (id) st.typing[id] = e.target.value; });
+    root.addEventListener("change", (e) => {
+      const id = e.target.dataset?.kfield;
+      if (id) { delete st.typing[id]; sent(id, fromField(id, e.target.value), render); }
     });
     root.addEventListener("focusout", (e) => { if (e.target.dataset.kcustom && st.custom === e.target.dataset.kcustom) { st.custom = null; setTimeout(render); } });
   }

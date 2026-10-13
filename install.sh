@@ -199,7 +199,9 @@ jar_shim() {
 }
 
 # gh_attestation_gap — empty when gh can verify a build provenance attestation (installed and
-# signed in), else why not: "is not installed" or "is not signed in". Asked once per run.
+# signed in), else why not: "is not installed", "is not signed in", or "did not answer gh auth
+# status within 20 s" when the check timed out (timeout exits 124), which says nothing about
+# sign-in. Asked once per run.
 GH_GAP_KNOWN=0
 GH_GAP=""
 gh_attestation_gap() {
@@ -208,7 +210,13 @@ gh_attestation_gap() {
     if ! command -v gh >/dev/null 2>&1; then
       GH_GAP="is not installed"
     elif command -v timeout >/dev/null 2>&1; then
-      timeout 20 gh auth status >/dev/null 2>&1 || GH_GAP="is not signed in"
+      local rc=0
+      timeout 20 gh auth status >/dev/null 2>&1 || rc=$?
+      case $rc in
+        0) ;;
+        124) GH_GAP="did not answer gh auth status within 20 s" ;;
+        *) GH_GAP="is not signed in" ;;
+      esac
     else
       gh auth status >/dev/null 2>&1 || GH_GAP="is not signed in"
     fi

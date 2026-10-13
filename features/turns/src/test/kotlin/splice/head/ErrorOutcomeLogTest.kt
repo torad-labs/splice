@@ -121,8 +121,8 @@ class ErrorOutcomeLogTest {
     }
 
     @Test
-    fun `a burst 429 retains the recorded upstream-failed outcome`(@TempDir tmp: Path) = runBlocking {
-        FailedHead(tmp, 429, BURST_BODY).assertOutcome("error:upstream-failed")
+    fun `a burst 429 logs the recorded rate-limited outcome`(@TempDir tmp: Path) = runBlocking {
+        FailedHead(tmp, 429, BURST_BODY).assertOutcome("error:rate-limited")
     }
 
     @Test

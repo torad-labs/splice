@@ -233,7 +233,7 @@ class PlanLimitTurnEndingTest {
     }
 
     @Test
-    fun `a burst 429 that names no reset keeps upstream-failed and rate-limited with their sentences`(
+    fun `a burst 429 that names no reset ends rate-limited in the loop and at admission alike`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val head = LimitedHead(tmp, BURST_BODY, retryAfterSeconds = 90)
@@ -246,8 +246,8 @@ class PlanLimitTurnEndingTest {
             head.close()
         }
 
-        assertEquals(listOf("error:upstream-failed", "error:rate-limited"), endings.map { it.outcome() })
-        assertEquals(OutcomeSentences.of("error:upstream-failed"), endings[0].sentence())
+        assertEquals(listOf("error:rate-limited", "error:rate-limited"), endings.map { it.outcome() })
+        assertEquals(OutcomeSentences.of("error:rate-limited"), endings[0].sentence())
         assertEquals(OutcomeSentences.of("error:rate-limited"), endings[1].sentence())
         endings.forEach { ending ->
             assertNull(ending.resetCounted(), "a burst with no reset counts none, so no surface can invent one")

@@ -61,14 +61,14 @@ public class CaptureRoutes(
     private val json = Json { ignoreUnknownKeys = true }
 
     /** GET: the head's EFFECTIVE trace settings, in the layering GET /api/config reports: `trace` from
-     *  that head's overrides only (a head-only knob), retention and the body cap from every layer
+     *  that head's overrides only (a head-only knob), retention from every layer
      *  (env/state/PATCH included) — what the daemon is actually doing right now. */
     public fun read(head: String): JsonReply {
         val found = heads.byName(head).firstOrNull() ?: return unknownHead(head)
         val cfg = config.getConfig(found.key)
         // The switch is what the head is doing right now; the config is only what it booted with.
         val enabled = found.trace?.on ?: cfg.trace
-        val body = captureJson(found.key, enabled, cfg.traceKeptDays, cfg.traceMaxBodyChars.toLong(), false)
+        val body = captureJson(enabled, cfg.traceKeptDays, false)
         return JsonReply(HttpStatusCode.OK, body)
     }
 
@@ -123,9 +123,8 @@ public class CaptureRoutes(
     private fun writtenJson(key: String, parsed: CaptureWrite): String {
         val effective = config.getConfig(key)
         val retentionDays = parsed.retentionDays ?: effective.traceKeptDays
-        val maxBodyChars = parsed.maxBodyChars ?: effective.traceMaxBodyChars.toLong()
         val sizing = parsed.retentionDays != null || parsed.maxBodyChars != null
-        return captureJson(key, parsed.enabled, retentionDays, maxBodyChars, sizing)
+        return captureJson(parsed.enabled, retentionDays, sizing)
     }
 
     private fun refusalMessage(result: TopologyWriteResult.Refused): String =
@@ -138,19 +137,11 @@ public class CaptureRoutes(
 
     private fun unknownHead(name: String) = refuse(HttpStatusCode.BadRequest, "unknown head: $name")
 
-    private fun captureJson(
-        head: String,
-        enabled: Boolean,
-        retentionDays: Int,
-        maxBodyChars: Long,
-        restartRequired: Boolean,
-    ): String =
+    private fun captureJson(enabled: Boolean, retentionDays: Int, restartRequired: Boolean): String =
         JsonWire.string(
             buildJsonObject {
-                put("head", head)
                 put("enabled", enabled)
                 put("retention_days", retentionDays)
-                put("max_body_chars", maxBodyChars)
                 // True only when this write changed a size the store reads at construction (the file header).
                 put("restart_required", restartRequired)
             },

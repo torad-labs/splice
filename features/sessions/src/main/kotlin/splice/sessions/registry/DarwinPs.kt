@@ -14,7 +14,7 @@
 // holding a space followed by NAME= splits there; only an entry starting SPLICE= or CLAUDE_CONFIG_DIR= could then be
 // misread. macOS hides the environment of a hardened binary that lacks the get-task-allow entitlement (Apple
 // StackExchange 439943, Big Sur and later), and ps then prints the arguments alone: that is an empty environment,
-// which ProcessEnvironment already reads as not read (UNKNOWN), never as DIRECT.
+// which ProcessEnvironment reads as not read and then judges by the launch's arguments instead (LaunchMarker).
 //
 // A process's environment and start, as ps reports them, never change after it starts, so each is remembered by pid
 // and ProcessHandle's start instant; a reused pid has another start and is read again.

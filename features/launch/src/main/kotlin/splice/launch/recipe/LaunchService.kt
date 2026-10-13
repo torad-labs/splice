@@ -34,6 +34,7 @@ import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
+import splice.sessions.registry.LaunchMarker
 import java.nio.file.Path
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -164,9 +165,10 @@ public class LaunchService(
             // before this row.
             add(claude)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
-            wrapped?.let {
-                addAll(listOf("--settings", it.settingsOverlay(roster, held.gateway.statuslineCommand)))
-            }
+            // a launch on macOS carries splice's mark in its --settings, the one sign of it a hardened claude's
+            // arguments keep there (LaunchMarker); elsewhere the arguments are as they were
+            val overlay = wrapped?.settingsOverlay(roster, held.gateway.statuslineCommand, LaunchMarker.here)
+            addAll(LaunchMarker.settingsArgs(overlay))
             addAll(hub.args)
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.

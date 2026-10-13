@@ -10,6 +10,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
+import splice.sessions.registry.LaunchMarker
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -88,8 +89,13 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
      *  head's model roster (as an enforced allowlist, so the picker offers what the head serves) and its status
      *  line. The client merges it over the operator's own settings for this run only, so nothing is written to
      *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. A null roster is a
-     *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. */
-    public fun settingsOverlay(availableModelIds: List<String>?, statuslineCommand: String): String =
+     *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. [marked] adds
+     *  splice's launch mark (LaunchMarker), which a launch on macOS carries. */
+    public fun settingsOverlay(
+        availableModelIds: List<String>?,
+        statuslineCommand: String,
+        marked: Boolean = false,
+    ): String =
         buildJsonObject {
             if (availableModelIds != null) {
                 putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
@@ -100,6 +106,7 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
                 put("command", statuslineCommand)
                 put("padding", 0)
             }
+            if (marked) put(LaunchMarker.KEY, true)
         }.toString()
 }
 

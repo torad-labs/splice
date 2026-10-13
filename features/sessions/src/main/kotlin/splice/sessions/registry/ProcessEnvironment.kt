@@ -55,9 +55,14 @@ public class ProcessEnvironment(
     /** No launch record: a session whose environment was read and carries no SPLICE=1 is Direct, and a splice
      *  launch nothing recorded (or one whose environment could not be read) is Unknown. */
     private fun unlaunched(pid: Long): SessionRoute {
-        val read = entries(pid, wanted) ?: return SessionRoute.Unknown
+        val read = entries(pid, wanted) ?: return unreadOnDarwin(pid)
         return if (read[SPLICE_MARKER] == "1") SessionRoute.Unknown else SessionRoute.Direct
     }
+
+    /** An environment not read: on macOS, which hides a hardened binary's, the arguments say it instead (LaunchMarker):
+     *  read without splice's mark is Direct, and with it, or unread, Unknown. Elsewhere it is Unknown, as before. */
+    private fun unreadOnDarwin(pid: Long): SessionRoute =
+        if (darwin.here && LaunchMarker.carriedBy(pid) == false) SessionRoute.Direct else SessionRoute.Unknown
 
     /** The wanted entries, or null when the environment was not READ: the file could not be opened or
      *  failed mid-stream (the entries seen so far are not the environment), or it held no byte at all

@@ -206,11 +206,6 @@ class TranscriptReaderTest {
         val whole = found(reader.page(ID, roots, null, 100)).messages
         val newest = found(reader.pageBefore(ID, roots, null, 100)).messages
         assertEquals(whole.map { it.toolUse.id }, newest.map { it.toolUse.id })
-        val selected = reader.response(ID, roots, "answer", 100) { true }
-        assertTrue(selected is splice.sessions.transcript.MessageConversation.Found)
-        selected as splice.sessions.transcript.MessageConversation.Found
-        assertEquals(whole.map { it.toolUse.id }, selected.messages.map { it.toolUse.id })
-        assertEquals(0L, selected.earlier)
     }
 
     @Test

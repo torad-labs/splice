@@ -74,17 +74,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
 import splice.core.util.JsonScalars
-import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
-import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionTail
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
-import splice.sessions.transcript.TranscriptReadBudget
-import splice.sessions.transcript.TranscriptRole
 import java.io.IOException
 import java.nio.channels.Channels
 import java.nio.file.Files
@@ -107,7 +103,6 @@ public class TranscriptReader(
     },
 ) : SessionTranscripts {
     private val locator = TranscriptLocator()
-    private val replies = TranscriptResponseIndex(opener)
 
     private val sent = SentTextLedger(opener, SentTextCollector(::collect))
 
@@ -178,51 +173,6 @@ public class TranscriptReader(
         val file = locator.locate(roots, sessionId)
             ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
         return back.lookup(file, sessionId, seek.after(file, atMs), limit)
-    }
-
-    override fun response(
-        sessionId: String,
-        roots: List<Path>,
-        responseId: String,
-        context: Int,
-        budget: TranscriptReadBudget,
-    ): MessageConversation {
-        if (!validSessionId.matches(sessionId)) return MessageConversation.Refused(BAD_ID)
-        val file = locator.locate(roots, sessionId)
-            ?: return MessageConversation.Missing("No saved transcript for this session.")
-        return when (val indexed = replies.find(file, responseId, budget)) {
-            is IndexedReply.Found -> if (budget.hasTime()) {
-                val point = indexed.point
-                val page = back.read(file, sessionId, point.end, context + point.messages)
-                selected(page, responseId, point, context)
-            } else {
-                MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
-            }
-            IndexedReply.Missing -> MessageConversation.Missing("No matching reply in this session's saved transcript.")
-            IndexedReply.BudgetSpent -> MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
-        }
-    }
-
-    private fun selected(
-        page: TranscriptPage,
-        responseId: String,
-        point: TranscriptReplyPoint,
-        context: Int,
-    ): MessageConversation {
-        val at = page.messages.indexOfFirst { it.role == TranscriptRole.ASSISTANT && it.messageId == responseId }
-        if (at < 0) return MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
-        val reply = page.messages.drop(at).takeWhile {
-            it.role == TranscriptRole.ASSISTANT && it.messageId == responseId
-        }
-        val complete = reply.size == point.messages && reply.first().index / PER_RECORD == point.start
-        if (!complete) return MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
-        val before = page.messages.take(at).takeLast(context)
-        return MessageConversation.Found(
-            page.sessionId,
-            responseId,
-            before + TranscriptReplyMerger().merge(reply),
-            point.before - before.size,
-        )
     }
 
     /** The `message` of every SendMessage call in [sessionId]'s transcript whose tool_use id is in

@@ -64,11 +64,19 @@ class Relay(private val sessions: Map<String, Session>, private val routes: Rout
         }
     }
 
-    /** Fails, in words, every call in flight to a holder that went away. */
+    /** Fails, in words, every call in flight to a holder that went away. A session's own copy also says its state
+     *  is gone (spec section 8): what that server held for this session alone, open files, a login, a page, died with
+     *  it, and the next call starts a fresh copy, not the same one. A shared server keeps the plain line. */
     fun lost(holder: Holder) {
         pending.entries.filter { it.value.session.route.socket == holder.socket }.toList().forEach { (key, call) ->
             pending.remove(key)
-            val words = "${call.session.route.server} stopped during this call; the next call starts it again"
+            val server = call.session.route.server
+            val words = if (call.session.route.shared) {
+                "$server stopped during this call; the next call starts it again"
+            } else {
+                "$server, this session's own copy, stopped during this call and the state it held for this session " +
+                    "was lost; the next call starts a fresh copy"
+            }
             call.conn.reply(OK, Rpc.error(call.clientId, words))
         }
     }

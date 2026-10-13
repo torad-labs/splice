@@ -28,7 +28,7 @@ const answers: Record<string, unknown> = {
   },
   "/api/kept/edges": { rows: 41_031, bytes: 7 * MiB, oldest: "2026-09-19" },
   "/api/kept/labels": { rows: 16_756, bytes: 2 * MiB, oldest: "2026-10-11" },
-  "/api/kept/turns": { rows: 0, bytes: 0, oldest: null },
+  "/api/kept/turns": {},
   // transcript copies hold files; compaction summaries hold nothing, so that card must say so and claim no share
   "/api/kept/stores": {
     stores: {

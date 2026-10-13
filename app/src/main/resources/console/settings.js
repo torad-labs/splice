@@ -85,7 +85,6 @@ const later = () => { if (!drawLater) drawLater = setTimeout(() => { drawLater =
 function readKept() {
   const get = async (path, then) => { const r = await API.get(path); if (!r.ok) whyNot(path, r); then(r); later(); };
   get("/api/history", (r) => { ui.hist = r.ok ? r.body : null; });
-  get("/api/kept/turns", (r) => { ui.kept.turns = r.ok ? r.body : null; });
   get("/api/kept/edges", (r) => { ui.kept.edges = r.ok ? r.body : null; });
   get("/api/kept/labels", (r) => { ui.kept.labels = r.ok ? r.body : null; });
   get("/api/kept/stores", (r) => { ui.stores = r.ok ? r.body.stores : null; });

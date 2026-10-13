@@ -1,9 +1,6 @@
 package splice.head.perf
 
 import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -54,10 +51,6 @@ class TurnKeptDeleteTest {
 
         val response = TurnKeptRoutes(paths).delete()
         assertEquals(HttpStatusCode.OK, response.status, response.body)
-        val body = Json.parseToJsonElement(response.body).jsonObject
-        assertEquals("deleted", body.getValue("state").jsonPrimitive.content)
-        assertEquals("turns deleted", body.getValue("reason").jsonPrimitive.content)
-        assertEquals("0", body.getValue("rows").jsonPrimitive.content)
         for (file in listOf(live, rolled, archived, totalsFile, link)) {
             assertFalse(Files.exists(file), "still retained: $file")
         }
@@ -68,9 +61,6 @@ class TurnKeptDeleteTest {
         val stats = PerfStats(live, clock = WallClock { next })
         stats.record(PerfRowMeta(MODEL, "ok", compact = false), turn())
         assertTrue(AsyncFileIo.drain(), "the next turn reached disk")
-        val after = Json.parseToJsonElement(TurnKeptRoutes(paths).kept().body).jsonObject
-        assertEquals("on", after.getValue("state").jsonPrimitive.content)
-        assertEquals("1", after.getValue("rows").jsonPrimitive.content)
         assertFalse(Files.exists(paths.stateDir.resolve("turns.deleted")), "a new append clears deletion")
     }
 

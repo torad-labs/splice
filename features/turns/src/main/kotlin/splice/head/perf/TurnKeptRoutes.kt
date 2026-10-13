@@ -1,12 +1,9 @@
-// NEW: V4-381 — the guarded console's source-derived inventory of retained turn statistics.
+// NEW: V4-381 — the guarded console's delete of retained turn statistics. Its inventory (GET /api/kept/turns) is gone:
+// no console page, CLI or tool read a key of it (splice-turns, Oct 12).
 package splice.head.perf
 
 import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.config.StatePaths
 import splice.core.perf.PerfFiles
@@ -14,6 +11,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonWire
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -23,9 +21,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -43,48 +38,21 @@ internal const val TURN_STATS_DELETED_MARKER = "turns.deleted"
 internal class InvalidTurnFile : IOException("not a regular turn file")
 
 private data class KeptTurnFiles(val perf: List<Path>, val totals: List<Path>)
-private data class DeletedTurns(val files: Int, val rows: Long, val body: String)
 
 /** A physical count, not a list of configured heads: removed heads can still have private turns. */
 public class TurnKeptRoutes(
     private val paths: StatePaths?,
     private val liveTotals: Map<String, SessionTotals> = emptyMap(),
     private val log: LogSink = LogSink(DaemonLog::write),
-    private val tallies: TurnTallies = TurnTallies(),
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    /** Inventory live, rolled and archived perf rows; session totals count only toward deletion state. */
-    public fun kept(): JsonReply {
-        val source = paths ?: return refuse(HttpStatusCode.ServiceUnavailable, "turn statistics paths are not wired")
-        return Cancellables.runCatchingCancellable {
-            if (!AsyncFileIo.awaitDirectory(source.stateDir)) {
-                throw IOException("pending turn-statistics writes did not settle")
-            }
-            inventory(source)
-        }.fold(
-            onSuccess = { JsonReply(HttpStatusCode.OK, it) },
-            onFailure = { failure ->
-                val detail = when (failure) {
-                    is InvalidTurnFile -> "not a regular turn file"
-                    else -> SafeFailureText.render(failure)
-                }
-                refuse(
-                    HttpStatusCode.InternalServerError,
-                    "cannot inspect turn statistics: $detail",
-                )
-            },
-        )
-    }
-
     /** Remove all retained turn lines and derived session totals after earlier file-lane appends.
      *  A later successful turn starts a new live file and clears the durable deletion marker. */
     public fun delete(): JsonReply {
         val source = paths ?: return refuse(HttpStatusCode.ServiceUnavailable, "turn statistics paths are not wired")
         return Cancellables.runCatchingCancellable { deleteAfterWrites(source) }.fold(
             onSuccess = { removed ->
-                log("[turn-stats] deleted ${removed.files} file(s), ${removed.rows} row(s)\n")
-                JsonReply(HttpStatusCode.OK, removed.body)
+                log("[turn-stats] deleted ${LogSafe.str(removed.toString())} file(s)\n")
+                JsonReply(HttpStatusCode.OK, "{}")
             },
             onFailure = { failure ->
                 val detail = when (failure) {
@@ -96,9 +64,9 @@ public class TurnKeptRoutes(
         )
     }
 
-    private fun deleteAfterWrites(source: StatePaths): DeletedTurns {
+    private fun deleteAfterWrites(source: StatePaths): Int {
         val ready = CountDownLatch(1)
-        val result = AtomicReference<Result<DeletedTurns>?>(null)
+        val result = AtomicReference<Result<Int>?>(null)
         val queued = AsyncFileIo.submit {
             try {
                 result.set(Cancellables.runCatchingCancellable { remove(source) })
@@ -113,44 +81,13 @@ public class TurnKeptRoutes(
         return checkNotNull(result.get()).getOrThrow()
     }
 
-    private fun inventory(source: StatePaths): String {
+    private fun remove(source: StatePaths): Int {
         val kept = files(source)
-        val tally = tally(kept.perf)
-        val deleted = kept.perf.isEmpty() && kept.totals.isEmpty() &&
-            Files.isRegularFile(source.stateDir.resolve(TURN_STATS_DELETED_MARKER), LinkOption.NOFOLLOW_LINKS)
-        return JsonWire.string(
-            buildJsonObject {
-                put("store", "turns")
-                put("state", if (deleted) "deleted" else "on")
-                if (deleted) {
-                    put("reason", "turns deleted")
-                } else if (tally.unknown > 0) {
-                    put("reason", "${tally.unknown} turn rows have no usable timestamp")
-                }
-                put("days", tally.days.size)
-                put("rows", tally.rows)
-                // What it costs on disk, which a count of rows cannot say: a turn row's length varies by an order of
-                // magnitude. Settings > Your data reports a store's size beside what it holds, so the person deciding
-                // whether to keep it can see what keeping it costs. The derived totals count too: they are kept here
-                // and deleted here. A symlink is measured as the link, never followed, which is the same rule the
-                // tally reads by.
-                put("bytes", bytes(kept.perf + kept.totals))
-                put("oldest", tally.days.minOrNull()?.toString())
-                // Neither a live generation nor an archive is swept on a clock (PerfStats.sweepArchive).
-                put("ages_out", null as String?)
-            },
-        )
-    }
-
-    private fun remove(source: StatePaths): DeletedTurns {
-        val kept = files(source)
-        val before = tally(kept.perf)
         validateTotals(kept.totals)
         val removed = kept.perf.count { Files.deleteIfExists(it) } + deleteTotals(kept.totals)
-        tallies.clear()
         val _ = SecureFile.ownerOnlyDirectory(source.stateDir)
         SecureFile.writeAtomic0600(source.stateDir.resolve(TURN_STATS_DELETED_MARKER), "deleted\n")
-        return DeletedTurns(removed, before.rows, inventory(source))
+        return removed
     }
 
     private fun validateTotals(files: List<Path>) {
@@ -177,25 +114,6 @@ public class TurnKeptRoutes(
         )
     }
 
-    /** The bytes [files] occupy. A file that vanished between the listing and here contributes nothing rather than
-     *  failing the read: an inventory is a reading of a moment, and a rotation is allowed to move under it. */
-    private fun bytes(files: List<Path>): Long = files.sumOf { file ->
-        if (Files.isSymbolicLink(file)) {
-            0L
-        } else {
-            try {
-                Files.size(file)
-            } catch (_: IOException) {
-                0L
-            }
-        }
-    }
-
-    private fun tally(files: List<Path>): TurnTally = TurnTally().also { count ->
-        val day = TurnRowDay { rowDay(it) }
-        files.forEach { file -> if (!Files.isSymbolicLink(file)) count.merge(tallies.of(file, day)) }
-    }
-
     private fun entries(dir: Path): List<Path> {
         if (Files.isSymbolicLink(dir)) throw IOException("turn statistics directory is a symlink: $dir")
         return try {
@@ -204,11 +122,6 @@ public class TurnKeptRoutes(
             emptyList()
         }
     }
-
-    private fun rowDay(line: String): LocalDate? = Cancellables.runCatchingCancellable {
-        val stamp = (json.parseToJsonElement(line).jsonObject["ts"] as? JsonPrimitive)?.longOrNull
-        stamp?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
-    }.fold(onSuccess = { it }, onFailure = { null })
 
     private fun refuse(status: HttpStatusCode, why: String): JsonReply =
         JsonReply(status, JsonWire.string(buildJsonObject { put("error", why) }))

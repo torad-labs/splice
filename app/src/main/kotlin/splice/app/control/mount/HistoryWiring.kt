@@ -36,7 +36,6 @@ import splice.head.perf.HistoryRoutes
 import splice.head.perf.HistoryStores
 import splice.head.perf.HistoryWindowStore
 import splice.head.perf.TurnKeptRoutes
-import splice.head.perf.TurnTallies
 import splice.head.usage.EconomicsStore
 import splice.http.JsonReply
 import splice.sessions.activity.SparedEdges
@@ -57,9 +56,6 @@ internal class HistoryWiring(
     // The scan cache lives here, across calls; the routes are built per call like every other
     // console port, so a port wired after mount is still read.
     private val inventory = HistoryDays()
-
-    // The turn rows each perf file held when last counted, kept across requests so a count reads only what is new.
-    private val turnTallies = TurnTallies()
 
     private val window = HistoryWindowStore { text ->
         val written = config.patch(mapOf(Knob.HISTORY_RETENTION_DAYS.key to text))
@@ -152,15 +148,10 @@ internal class HistoryWiring(
                 withContext(fileIo) { routes().save(asked) }.send(call)
             }
         }
-        route.get("/api/kept/turns") {
-            guard.guarded(call) {
-                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, tallies = turnTallies).kept() }.send(call)
-            }
-        }
         route.delete("/api/kept/turns") {
             guard.guarded(call) {
                 withContext(fileIo) {
-                    TurnKeptRoutes(ports.turnStatistics, liveTotals(), tallies = turnTallies).delete()
+                    TurnKeptRoutes(ports.turnStatistics, liveTotals()).delete()
                 }.send(call)
             }
         }

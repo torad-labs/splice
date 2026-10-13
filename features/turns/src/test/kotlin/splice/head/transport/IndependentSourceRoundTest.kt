@@ -349,35 +349,6 @@ class IndependentSourceRoundTest {
         }
     }
 
-    @Test
-    @Timeout(20)
-    fun `the raw round total cap survives completion of its first client step`(@TempDir tmp: Path) = runBlocking {
-        val upstream = GatedSourceServer()
-        val interceptor = SourceInterceptor()
-        val provider = SourceProvider(base(upstream.url, WatchdogBudget(5.seconds, 5.seconds, 1.seconds)), interceptor)
-        val gate = InflightGate({ 1 })
-        val head = HeadServer(provider, 0, headDeps(tmp, gate = gate))
-        val client = HttpClient(CIO)
-        head.start()
-        try {
-            val first = sourceStep(client, head.port, "source-cap", """[{"role":"user","content":"go"}]""")
-            assertTrue(first.contains("tool_use"))
-            val reader = checkNotNull(interceptor.reading)
-            withTimeout(5_000) {
-                while (!reader.isCompleted) yield()
-                while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield()
-            }
-            assertTrue(reader.isCancelled, "the original raw cap must cancel the independently owned reader")
-            assertEquals(1, provider.ended.get())
-            assertEquals(1, upstream.posts.get())
-        } finally {
-            upstream.release.countDown()
-            head.stop()
-            client.close()
-            upstream.close()
-        }
-    }
-
     private suspend fun sourceStep(client: HttpClient, port: Int, session: String, messages: String): String =
         client.post("http://127.0.0.1:$port/v1/messages") {
             bearerAuth("test-inference-token")

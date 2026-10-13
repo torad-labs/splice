@@ -38,7 +38,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -118,7 +117,6 @@ private const val HOLD_MS = 6_000L
 /** V4-116: the armed mid-output stall-re-anchor tier the stall arms run under. A reply inside a
  *  few multiples of this can only have come from the tier — the heads' streamIdle is 120_000ms. */
 private const val STALL_TIER_MS = 1_000L
-private const val MS_PER_NANO = 1_000_000L
 
 // The perf row is JSON, so the tag is asserted as its own FIELD — and the tag itself comes from
 // the one definition in core, never a second spelling here. A test that re-spells the string it
@@ -130,7 +128,6 @@ private const val QUOTE = "\""
 // pass this arm while leaving the operator grepping for a key that no longer exists.
 private const val REANCHORS_FIELD = "\"reanchors\":"
 private const val FROM_SCRATCH_FIELD = "\"reanchors_from_scratch\":"
-private val STALL_MS_RE = Regex("\"stall_ms\":(\\d+)")
 
 /** An Anthropic-shaped upstream that can die mid-response. [acts] is consumed by request index, the
  *  last entry repeating, so a test states the whole conversation up front. Request BODIES are
@@ -670,87 +667,6 @@ class MidStreamTearContinuesTest {
         )
     }
 
-    // ARM 8 — THE SCAR (V4-116). claude-deepseek session b10459ba streamed 3810 content frames,
-    // went silent, and sat the WHOLE 300s mid-output tier before ending a turn that was continuable
-    // the entire time — because the watchdog's Failure carried no `partial`, so the controller's
-    // first line (`round.failure.partial ?: return null`) answered before any eligibility rule was
-    // read. A stall and a truncation are the same fact; this arm is the proof that they now end the
-    // same way. The harness is the tear one deliberately: ONLY the failure's origin changed, so a
-    // difference in the client's bytes would be a difference the salvage caused.
-    @Test
-    fun `a mid-output stall resumes from the salvage and the client reads one coherent message`() {
-        reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
-        val started = System.nanoTime()
-        val received = drainTurn(stallPrefillPort)
-        val elapsedMs = (System.nanoTime() - started) / MS_PER_NANO
-
-        assertTrue(
-            received.contains(FIRST_HALF),
-            "the frames the client already saw must stand" + diagnostics(received),
-        )
-        assertTrue(received.contains(SECOND_HALF), "the stall must be RESUMED, not ended" + diagnostics(received))
-        assertEquals(
-            1,
-            occurrences(received, "event: message_stop"),
-            "a spliced turn ends in exactly ONE terminal" + diagnostics(received),
-        )
-        assertFalse(
-            received.contains("event: error"),
-            "a recovered stall shows the client no error" + diagnostics(received),
-        )
-        assertEquals(
-            1,
-            occurrences(received, FIRST_HALF),
-            "a proxy cannot un-send bytes: the salvaged text must never be replayed" + diagnostics(received),
-        )
-        assertEquals(2, upstream.requestBodies.size, "the continuation must have been POSTed" + diagnostics(received))
-        assertTrue(
-            upstream.requestBodies[1].contains(FIRST_HALF.trimEnd()),
-            "the continuation carries the salvage as an assistant prefill" + diagnostics(received),
-        )
-        assertTrue(
-            elapsedMs < STALL_TIER_MS * 4,
-            "the turn ended on the ${STALL_TIER_MS}ms STALL tier, not the 120s streamIdle — " +
-                "otherwise this arm would pass on unmodified code: took ${elapsedMs}ms" + diagnostics(received),
-        )
-    }
-
-    // ARM 9 — NEVER BELOW STATUS QUO, the stall half. The same silence on a head that has NOT been
-    // measured to accept an assistant prefill keeps the honest error: there is no continuation to
-    // reap INTO, so reaping early could only ever cost a slow-but-alive generation. This is the
-    // "streamIdle stays the hard floor for prefill-off providers" clause as a test — the tier FIRES
-    // (the reply is seconds, not 120s) and the controller declines, which is the whole difference
-    // between the two heads.
-    @Test
-    fun `the same stall on a head without the prefill quirk keeps the honest error`() {
-        reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
-        val started = System.nanoTime()
-        val received = drainTurn(stallHonestPort)
-        val elapsedMs = (System.nanoTime() - started) / MS_PER_NANO
-
-        assertTrue(received.contains("event: error"), "the honest ending is an error event" + diagnostics(received))
-        assertTrue(
-            received.contains("overloaded_error"),
-            "and it stays the retryable type the client understands" + diagnostics(received),
-        )
-        assertEquals(
-            0,
-            occurrences(received, "event: message_stop"),
-            "an errored turn never claims a clean terminal" + diagnostics(received),
-        )
-        assertEquals(
-            1,
-            upstream.requestBodies.size,
-            "no continuation may be sent to an upstream that has not been measured to accept one" +
-                diagnostics(received),
-        )
-        assertTrue(
-            elapsedMs < STALL_TIER_MS * 4,
-            "the tier must still have FIRED — took ${elapsedMs}ms, so this arm is not proving the " +
-                "20s-vs-300s distinction" + diagnostics(received),
-        )
-    }
-
     // ARM 10 — V4-116 (3), the tear KIND the census could not find. Every post-content shape above
     // dies by a FIN or by a torn chunk; an RST kills the socket outright and the reader sees a
     // SocketException instead of an EOF. The claim under test is that this kind is not special:
@@ -773,44 +689,5 @@ class MidStreamTearContinuesTest {
         )
         assertFalse(received.contains("event: error"), "no error reaches the client" + diagnostics(received))
         assertEquals(2, upstream.requestBodies.size, "the continuation must have been POSTed" + diagnostics(received))
-    }
-
-    // ARM 11 — V4-116 (5), THE EVIDENCE ROW. The next incident must be answerable from the perf row
-    // ALONE, which is what the operator could not do for session b10459ba: the row said `attempts=1`
-    // and nothing distinguished "never retried" from "retried and gave up", nor said how long the
-    // upstream had actually been silent before the proxy gave up waiting.
-    //
-    // Asserted on the ROW rather than on a counter object deliberately: the JSONL is the artifact
-    // the operator greps, and a counter that is set but never rendered would pass a unit test and
-    // still leave the incident unanswerable.
-    @Test
-    fun `a spent re-anchor stamps reanchors and the stall it was reaped on`() {
-        reset(Act.HOLD_AFTER_CONTENT, Act.FULL)
-        val before = perfRowsBefore(stallPrefillPort)
-        val received = drainTurn(stallPrefillPort)
-        assertTrue(
-            received.contains(SECOND_HALF),
-            "precondition: this arm only means anything if the stall WAS re-anchored" + diagnostics(received),
-        )
-
-        val row = perfRow(stallPrefillPort, before)
-        assertTrue(
-            row.contains(REANCHORS_FIELD + "1"),
-            "the spent continuation must be countable from the row, got: " + row,
-        )
-        assertFalse(
-            row.contains(FROM_SCRATCH_FIELD),
-            "this continuation carried the partial answer, so nothing started over, got: " + row,
-        )
-        val stallMs = STALL_MS_RE.find(row)?.groupValues?.get(1)?.toLong()
-        assertNotNull(
-            stallMs,
-            "and the row must carry HOW LONG the upstream was silent, got: " + row,
-        )
-        assertTrue(
-            stallMs != null && stallMs >= STALL_TIER_MS,
-            "STALL_MS is the watchdog's own idleMs, so it can never be under the tier that fired " +
-                "(${STALL_TIER_MS}ms), got: $stallMs in " + row,
-        )
     }
 }

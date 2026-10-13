@@ -7,6 +7,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
+import splice.core.wire.HttpStatus
 import splice.head.HeadHealthCounters
 import splice.head.admission.TurnQuota
 import splice.head.perf.PerfFailure
@@ -115,16 +116,20 @@ internal class TurnKnownEnd(
     /** V4-419: the tag an upstream failure ends the turn on. One caused by a spent plan window ends
      *  [OutcomeTag.PLAN_LIMIT] and speaks the window and its reset on the trace before the record closes (a surface
      *  that spoke first wins over the table's sentence); the provider's own 429 relayed to the client is
-     *  [OutcomeTag.RATE_LIMIT_RELAYED], a rate limit and not a give-up; every other one is
-     *  [OutcomeTag.UPSTREAM_FAILED].
+     *  [OutcomeTag.RATE_LIMIT_RELAYED], a rate limit and not a give-up; any other 429, a burst with no reply to relay
+     *  or the hold armed behind one, is [OutcomeTag.RATE_LIMITED], the tag admission writes for the same hold; every
+     *  other one is [OutcomeTag.UPSTREAM_FAILED].
      *
      *  V4-444: the reset instant is also COUNTED on the row, so a surface reading the perf file alone (the console's
      *  Requests list) can say when the window comes back instead of only that it was spent. Before this it was
      *  recorded on one ending out of three: the one where admission turned the request away with every account spent
      *  ([splice.head.admission.ExhaustedAccountAdmission]). */
     private fun endingTag(drive: TurnDrive, failed: UpstreamFailed): OutcomeTag {
-        val plan = failed.planLimit
-            ?: return if (failed.rateLimitReply != null) OutcomeTag.RATE_LIMIT_RELAYED else OutcomeTag.UPSTREAM_FAILED
+        val plan = failed.planLimit ?: return when {
+            failed.rateLimitReply != null -> OutcomeTag.RATE_LIMIT_RELAYED
+            failed.status == HttpStatus.TOO_MANY_REQUESTS -> OutcomeTag.RATE_LIMITED
+            else -> OutcomeTag.UPSTREAM_FAILED
+        }
         drive.trace?.failureSentence(OutcomeSentences.planLimit(plan))
         drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, plan.resetEpochSeconds)
         // V4-444: and how long the window is, where the upstream said so, so a surface can name the window ("5

@@ -48,8 +48,7 @@ internal fun interface DayPanel {
 /** The team reads over the activity stores. A MEMBER is every session a slot ever held, as in the
  *  economics. CHAT TEXT is read on demand from the SENDER's transcript through [SentTextSource];
  *  the edge store never holds it, and a message whose text was not found carries text null and a
- *  missing_reason distinguishing a missing transcript from a missing call, without paths. `packet` has no wire source, so every
- *  message carries null and the payload says why (6.1: the honest empty, never an invented value).
+ *  missing_reason distinguishing a missing transcript from a missing call, without paths.
  *  A day is the caller's own window when it sends one, `?from=&to=` in epoch millis (V4-249: the
  *  console sends its viewer's local day, so the board turns over at the viewer's midnight, not at
  *  00:00 UTC); else `?day=`, a UTC calendar date, today when the query omits it. Unwired stores

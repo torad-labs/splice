@@ -2,7 +2,6 @@
 // (concentration, 2026-09-18).
 package splice.sessions.http
 
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -46,7 +45,6 @@ internal class TeamEdge(
         put("from_slot", fromSlot?.id)
         put("to", edge.to)
         put("to_slot", toSlot?.id)
-        put("packet", JsonNull)
         HandedText.put(this, edge.id, sent)
     }
 }

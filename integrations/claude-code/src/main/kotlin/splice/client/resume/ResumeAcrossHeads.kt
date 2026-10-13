@@ -10,7 +10,8 @@
 // covers CONFIGURATION, and transcripts are shared session state (ProjectsLink's header). So this
 // class is now the path for a head whose policy ISOLATES projects, and for an id that lives only in
 // another head's private tree: an on-demand act with a moment and an actor. On a head that shares
-// the tree, every foreign id is HeadOwned through the link and nothing here copies.
+// the tree, a foreign id is found through the link, and it goes on as a copy beside it when its rows
+// would move (C).
 //
 // (A) BOUNDED BY HEAD. Nothing here runs unless the launch asked for one specific session id. The
 //     whole point of a head-private tree is that `-c` and the `-r` PICKER see only this head's

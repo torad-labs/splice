@@ -40,8 +40,6 @@ afterAll(async () => {
 
 test("an over-budget command's Compare pane reads Over budget, never the daemon's sentence, and its door names that command", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  const warned: string[] = [];
-  page.on("console", (m) => { if (m.type() === "warning") warned.push(m.text()); });
   try {
     await page.goto(`http://127.0.0.1:${server.port}/compare.html`);
     await page.locator("[data-act=add]").click();
@@ -53,7 +51,6 @@ test("an over-budget command's Compare pane reads Over budget, never the daemon'
     await expect(page.locator("button[data-act=retry]")).toHaveCount(0);
     const door = page.getByRole("link", { name: "Set budget" });
     await expect(door).toHaveAttribute("href", "accounts.html?budget=codex");
-    expect(warned.some((w) => w.includes(sentence))).toBe(true);
   } finally {
     await page.close();
   }

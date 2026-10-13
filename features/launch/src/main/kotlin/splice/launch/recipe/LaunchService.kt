@@ -209,14 +209,14 @@ public class LaunchService(
     private fun movingFolder(extraArgs: List<String>): Path? =
         headBoundedContinue.requestedSessionId(extraArgs)?.let(moving::folderOf)
 
-    /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees (V4-115). Null
+    /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees, then plain claude's (V4-115). Null
      *  when the launch named no id — which is every `-c`, every plain launch, and every `-r` with NO
      *  id: the picker is head-bounded by construction, and this is where that stays true. */
     private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>, cwd: String?): SessionAdoption? {
         val sessionId = headBoundedContinue.requestedSessionId(extraArgs) ?: return null
         return resumeAcrossHeads.adopt(
             spec.trees.own,
-            spec.trees.siblings,
+            spec.trees.siblings + listOfNotNull(spec.trees.vanilla),
             sessionId,
             CallingRoster(
                 spec.models.pinnedModel,

@@ -67,7 +67,11 @@ internal class LaunchSpecFactory(
             .map { (otherKey, other) -> configDirOf(otherKey, other.claude.configDir) }
             .filter { it != configDir }
         return LaunchSpec(
-            trees = HeadTrees(configDir, siblingTrees),
+            trees = HeadTrees(
+                configDir,
+                siblingTrees,
+                UserHome.claudeDir().takeUnless { it == configDir || it in siblingTrees },
+            ),
             models = LaunchModels(
                 pinnedModel = head.pinnedModel,
                 discoveryPrefix = head.discoveryPrefix,

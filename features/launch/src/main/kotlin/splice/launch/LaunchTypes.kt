@@ -29,6 +29,10 @@ private const val PICKER_LABEL = "label"
 public data class HeadTrees(
     val own: Path,
     val siblings: List<Path> = emptyList(),
+    /** Plain Claude Code's own ~/.claude, searched after [siblings] by `-r ID` alone, so a session plain claude wrote
+     *  is found even when no head links to the shared tree. Read only: `-r` copies a session out and never writes
+     *  here. Null when it is this head's own dir or already a sibling (splice-lead, Oct 13). */
+    val vanilla: Path? = null,
 )
 
 /** How a head's models map onto Claude Code's own model names: its tier slots

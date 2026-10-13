@@ -171,11 +171,6 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .msg.his .unsent { display: flex; align-items: center; gap: .8rem; }
 .msg.his.failed .body { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .msg.agent { align-self: flex-start; max-width: 60rem; }
-/* another session's message, a teammate's: an object on the table like his, from the other side, in the sender's colour */
-.msg.mate { align-self: flex-start; align-items: flex-start; max-width: 46rem; width: auto; }
-.msg.mate .from { display: inline-flex; align-items: center; gap: .45rem; margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
-.msg.mate .from i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); }
-.msg.mate .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .8rem 1.1rem; box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink); }
 
 /* a tool call: its name and a line, and the result folded under it */
 .tool {
@@ -261,7 +256,7 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .sessions .msg .body p { margin-bottom: .8rem; }
 .sessions .msg .body p:last-child { margin-bottom: 0; }
 .sessions .msg .body ul { margin: .35rem 0 .8rem; }
-.sessions .msg.his .body, .sessions .msg.mate .body { padding: 1rem 1.35rem; }
+.sessions .msg.his .body { padding: 1rem 1.35rem; }
 .sessions .call { gap: .7rem; }
 .sessions .result { line-height: 1.6; padding: .95rem 1.2rem; }
 .sessions .pane .askbox { padding: 1.5rem 2rem 1.6rem; }

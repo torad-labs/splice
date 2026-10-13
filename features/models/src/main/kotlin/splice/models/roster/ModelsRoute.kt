@@ -103,7 +103,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                 buildJsonObject {
                     put("id", entry.id)
                     put("label", entry.label)
-                    put("description", entry.description)
                     put("context_window", entry.contextWindow)
                     // The largest window the provider itself publishes for this model, absent where it publishes none:
                     // the number the console caps a window field at, and says so where there is none.
@@ -130,8 +129,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                 buildJsonObject {
                     put("id", slot.id)
                     put("label", "")
-                    put("description", "")
-                    put("context_window", windowFor(slot.id, catalog))
                     put("resolved", false)
                     put("slot", slot.slot)
                     put("pinned", false)
@@ -143,15 +140,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
 
     private fun isPinned(catalog: ModelCatalog?, entry: ModelEntry): Boolean =
         catalog?.pinnedModel?.isNotEmpty() == true && catalog.pinnedModel == entry.id
-
-    private fun windowFor(id: String, catalog: ModelCatalog?): Long? = when {
-        catalog == null -> null
-        else -> catalog.models.firstOrNull { it.id == id }?.contextWindow
-            ?: catalog.windows.extraWindows.firstOrNull { it.id == id }?.contextWindow
-            ?: catalog.windows.windowRules.filter { id.startsWith(it.prefix) }
-                .maxByOrNull { it.prefix.length }?.contextWindow
-            ?: catalog.defaultContextWindow
-    }
 
     /** WHY the slot resolved to nothing, in the operator's terms. A missing model and a model that
      *  exists upstream but is absent from the declared catalog are different problems with different
@@ -166,9 +154,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
     private fun ratesJson(rates: ModelRates): JsonObject = buildJsonObject {
         put("input", rates.input)
         put("output", rates.output)
-        put("cache_read", rates.cacheRead)
-        rates.cacheWrite?.let { put("cache_write", it) }
-        rates.cacheWriteHourly?.let { put("cache_write_1h", it) }
         rates.longContext?.let { tier ->
             put(
                 "long_context",
@@ -176,9 +161,6 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
                     put("over_input_tokens", tier.overInputTokens)
                     put("input", tier.input)
                     put("output", tier.output)
-                    put("cache_read", tier.cacheRead)
-                    tier.cacheWrite?.let { put("cache_write", it) }
-                    tier.cacheWriteHourly?.let { put("cache_write_1h", it) }
                 },
             )
         }

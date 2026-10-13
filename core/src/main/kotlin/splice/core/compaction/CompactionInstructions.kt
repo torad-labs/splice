@@ -1,5 +1,6 @@
-// NEW: v0.4.0 FEATURES.md §7 — the boot-time resolver for custom compaction text: global, per-model and
-// per-project rows, chosen per request so a model switch selects the new rule at once.
+// NEW: v0.4.0 FEATURES.md §7 — the resolver for custom compaction text: global, per-model and per-project rows,
+// chosen per request so a model switch selects the new rule at once, and rebuilt when splice.toml's [compaction]
+// table changes, so an edit (the console's or by hand) serves the next compaction without a restart.
 package splice.core.compaction
 
 import splice.core.config.UserHome
@@ -13,8 +14,6 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.attribute.FileTime
 
-/** Immutable boot-time resolver for custom compaction text. Resolution is per request, so a model
- *  switch changes the selected rule immediately without sharing mutable session state. */
 /** Reads one instructions file named by `file =` in the config. */
 public fun interface CompactionFileRead {
     public operator fun invoke(path: Path): String
@@ -42,12 +41,31 @@ public class CompactionInstructions(
         val rule: Rule,
     )
 
-    private val global: Rule?
-    private val models: Map<String, Rule>
-    private val projects: List<ProjectRule>
+    /** One [compaction] table's rules, replaced whole by [reload]. */
+    private data class Table(
+        val config: CompactionConfig,
+        val global: Rule?,
+        val models: Map<String, Rule>,
+        val projects: List<ProjectRule>,
+    )
+
     private val files = HashMap<Path, FileText>()
 
-    init {
+    @Volatile
+    private var table: Table = tableOf(config)
+    private val global: Rule? get() = table.global
+    private val models: Map<String, Rule> get() = table.models
+    private val projects: List<ProjectRule> get() = table.projects
+
+    /** splice.toml's [compaction] table as it now reads: its rules replace the ones in force when it changed, so the
+     *  next compaction resolves against it (§7: the console edits the same table, Oct 12). A table that breaks a rule
+     *  ([tableOf]'s checks) throws IllegalArgumentException and leaves the rules in force. */
+    public fun reload(config: CompactionConfig) {
+        if (config == table.config) return
+        table = tableOf(config)
+    }
+
+    private fun tableOf(config: CompactionConfig): Table {
         require(config.model.all { it.model.isNotBlank() }) { "compaction model must not be blank" }
         require(config.model.map { it.model }.distinct().size == config.model.size) {
             "compaction model entries must be unique"
@@ -66,8 +84,8 @@ public class CompactionInstructions(
             "compaction project entries must be unique by path and model"
         }
 
-        global = ruleFor(config.instructions, config.file, CompactionScope.GLOBAL, "global")
-        models = config.model.mapNotNull { entry ->
+        val global = ruleFor(config.instructions, config.file, CompactionScope.GLOBAL, "global")
+        val models = config.model.mapNotNull { entry ->
             ruleFor(
                 entry.instructions,
                 entry.file,
@@ -75,7 +93,7 @@ public class CompactionInstructions(
                 "model:${entry.model}",
             )?.let { entry.model to it }
         }.toMap()
-        projects = config.project.mapIndexedNotNull { index, entry ->
+        val projects = config.project.mapIndexedNotNull { index, entry ->
             val scope = if (entry.model == null) CompactionScope.PROJECT else CompactionScope.PROJECT_MODEL
             val source = if (entry.model == null) {
                 "project:${normalizedProjects[index]}"
@@ -86,6 +104,7 @@ public class CompactionInstructions(
                 ProjectRule(normalizedProjects[index], entry.model, rule)
             }
         }
+        return Table(config, global, models, projects)
     }
 
     /** project/model > project > model > global. Within either project tier, the longest matching

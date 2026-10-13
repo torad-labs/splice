@@ -107,11 +107,11 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
         val topology = decode(unmasked).getOrThrow()
         val before = decode(stored)
         val unreadable = unreadableInstructions(writer, before.getOrNull(), topology)
-        // V4-162: the running daemon re-reads context windows, so a write that moved nothing else
-        // needs no restart. Compared the way the writer diffs: the file as it stood against what is
+        // V4-162: the running daemon re-reads context windows, and since Oct 12 the [compaction] table (§7), so a write
+        // that moved nothing else needs no restart. Compared the way the writer diffs: the file as it stood against what is
         // written, both holding their real secrets. A file that no longer decodes says restart.
         val restart = before.fold(
-            onSuccess = { it.withoutWindows() != topology.withoutWindows() },
+            onSuccess = { it.withoutLiveKeys() != topology.withoutLiveKeys() },
             onFailure = { true },
         )
         return if (unreadable.isEmpty()) {

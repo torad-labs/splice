@@ -32,6 +32,7 @@ import splice.app.provider.LiveRosterCatalog
 import splice.app.provider.LocalProbeInputs
 import splice.app.provider.LocalRowsCheck
 import splice.app.provider.ProviderBuild
+import splice.core.compaction.CompactionInstructions
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
@@ -106,6 +107,11 @@ internal class TopologyWindows(
          *  every head took its new declaration. */
         val candidate: Boolean = false,
     )
+
+    /** The daemon's one compaction resolver, handed each parsed [compaction] table so an edit serves the next
+     *  compaction (§7, Oct 12). Assigned by the daemon after construction; null in a rig. */
+    @Volatile
+    var compaction: CompactionInstructions? = null
 
     private val heads = ConcurrentHashMap<String, Head>()
     private val lock = Any()
@@ -185,6 +191,14 @@ internal class TopologyWindows(
             }
             return
         }
+        // A table that breaks a rule leaves the rules in force and says why.
+        compaction?.let { rules ->
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { rules.reload(declared.compaction) }
+                    .onFailure { log("[topology] [compaction] unchanged: ${SafeFailureText.render(it)}\n") },
+                "a rejected table is logged here, and the rules in force keep serving",
+            )
+        }
         apply(stamp, digest, declared)
     }
 
@@ -200,7 +214,7 @@ internal class TopologyWindows(
         val fresh = heads.mapValues { (key, head) ->
             declaredCatalog(key, head, declared)?.let(head.boot::withWindowsOf)
         }
-        val candidate = fresh.values.none { it == null } && declared.withoutWindows() == boot.withoutWindows()
+        val candidate = fresh.values.none { it == null } && declared.withoutLiveKeys() == boot.withoutLiveKeys()
         val moved = mutableListOf<String>()
         val asks = synchronized(lock) {
             val now = published.get()

@@ -108,7 +108,7 @@ public class Daemon(
         topologyDigest,
         HeadCatalogs { key, head, provider, legacy -> buildInputs.catalogFor(key, head, provider, legacy) },
         log,
-    )
+    ).also { it.compaction = compactionInstructions }
 
     private val controlPlane = ControlPlane(
         DaemonEnvironment(statePaths, config, mgmtKey, log),

@@ -95,6 +95,11 @@ public data class Topology(
         providers = providers.mapValues { (_, provider) -> provider.withoutWindows() },
         heads = heads.mapValues { (_, head) -> head.copy(contextWindow = null) },
     )
+
+    /** This topology without every key the running daemon re-reads live: the context windows, and since Oct 12 the
+     *  [compaction] table (§7, the console edits it). Two files equal here differ only in what a running daemon
+     *  already applies, so the edit needs no restart and the daemon runs the newer one. */
+    public fun withoutLiveKeys(): Topology = withoutWindows().copy(compaction = CompactionConfig())
 }
 
 @Serializable

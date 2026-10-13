@@ -51,6 +51,9 @@ const PERF_HEADS = (() => {
     { label: "Cache hit", has: (h) => h.cache_hit_ratio != null, cell: (h) => pct(h.cache_hit_ratio) ?? none("Not reported") },
     { label: "Cold cache", has: (h) => h.cache_cold > 0, cell: (h) => count(h.cache_cold) },
     { label: "Most at once", has: (h) => h.peak_inflight > 0, cell: (h) => count(h.peak_inflight) },
+    // The spec's count: requests during which splice dropped some of its own records. Absent when no row carried
+    // the counter, which reads "Not measured", never a zero.
+    { label: "Telemetry dropped", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
   ];
   const head = (c) => `${c.label}${c.key ? KEY : ""}`;
 
@@ -75,7 +78,6 @@ const PERF_HEADS = (() => {
       if (!st.warned.has(said)) st.warned.add(said) && console.warn(`perf ${h.key}: ${h.read_error ?? ""} coverage_known=${h.coverage_known} skipped_lines=${h.skipped_lines ?? 0}`);
     }
     if (h.clamped) out.push(`Last ${h.covers_ms >= 3600e3 ? `${Math.floor(h.covers_ms / 3600e3)} h` : `${Math.max(1, Math.floor(h.covers_ms / 60e3))} min`} only`);
-    if (h.io_drops_in_window > 0) out.push("Partly recorded");
     return out.map((g) => `<span class="gap">${g}</span>`).join("");
   }
   /** Slow or failing today, as the Commands cards said it; only with no pick, since the rows behind it follow the pick. */

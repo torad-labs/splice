@@ -159,13 +159,16 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  wall clock may step), the first one measured against the last row before the cutoff when the
      *  source kept it. A decrease is a restart: the new process's count is taken whole. A restart
      *  whose new count catches the old one up is invisible, so the total is a lower bound. The
-     *  "telemetry dropped" count is the spec's: rows whose own cumulative counter is positive. */
+     *  "telemetry dropped" count is the spec's: rows whose own cumulative counter is positive. A window where no row
+     *  carried the counter says nothing at all, so the console reads "Not measured" and never a zero. */
     private fun ioDrops(rows: List<PerfRow>, dropsBefore: Long?): JsonObject {
         var previous: Long? = dropsBefore
         var writes = 0L
         var droppedRows = 0
+        var measured = false
         rows.forEach { row ->
             val current = row.fields[PerfKeys.ASYNC_IO_DROPS] ?: return@forEach
+            measured = true
             val before = previous
             val lost = when {
                 before == null -> 0L
@@ -176,6 +179,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
             if (current > 0L) droppedRows += 1
             previous = current
         }
+        if (!measured) return buildJsonObject {}
         return buildJsonObject {
             put("io_drops_in_window", writes)
             put("telemetry_dropped", droppedRows)

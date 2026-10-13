@@ -19,22 +19,6 @@ import splice.dialect.responses.websocket.ResponsesConversationIdentity
 class ConversationSummaryPartsTest {
 
     @Test
-    fun `trimming one equal occurrence preserves the surviving item's exact record`() = runTest {
-        val scope = SummaryRoundScope(SharedSummaryParts())
-        val shared = "the same paragraph in two distinct reasoning items"
-        scope.withRound { parts ->
-            assertTrue(parts.markEmitted(0, shared))
-            assertTrue(parts.markEmitted(1, shared))
-            assertTrue(parts.markEmitted(1, "the newest distinct tail paragraph"))
-        }
-        scope.parts.trimToLast(2)
-        scope.withRound { parts ->
-            assertTrue(parts.markEmitted(0, shared), "trimmed item 0 occurrence is re-admittable")
-            assertFalse(parts.markEmitted(1, shared), "surviving item 1 occurrence remains deduped")
-        }
-    }
-
-    @Test
     fun `candidate tracking stops at the live count bound and later items display`() {
         val shared = SharedSummaryParts(maxParts = 2)
         val repeated = "one retained paragraph shared by many active items"

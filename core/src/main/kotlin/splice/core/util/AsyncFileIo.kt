@@ -178,11 +178,6 @@ public object AsyncFileIo {
     /** Total tasks dropped since process start (pending cap exceeded or executor rejection). */
     public fun droppedCount(): Int = dropped.get()
 
-    /** Tasks accepted and not yet finished, delayed ones included: a delayed task holds its slot from
-     *  submit until it runs. The lane is process-wide, so a test reads the slots others hold here
-     *  instead of assuming none (AsyncFileIoTest). */
-    internal fun pendingCount(): Int = pending.get()
-
     /** Where drop episodes are written; null (the start) keeps them counted until a sink is set. */
     public fun reportDropsTo(sink: DropSink?) {
         dropSink = sink

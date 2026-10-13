@@ -2,7 +2,7 @@
 // object) must reject submit() once saturated instead of growing the queue without bound. The
 // single background worker is blocked on a latch so nothing drains mid-test, so the lane must end
 // holding exactly MAX_PENDING_TASKS and reject the rest. The slots held when the test starts are
-// READ (pendingCount), not assumed: the lane is process-wide, and a delayed task another test
+// READ (pendingUnder's count), not assumed: the lane is process-wide, and a delayed task another test
 // scheduled holds a slot until it runs. If the cap check were removed, the lane would end past the
 // cap with nothing rejected, and both assertions below would fail.
 package splice.core.util
@@ -96,7 +96,7 @@ class AsyncFileIoTest {
             // The lane is process-wide: the blocking task holds a slot, and so does any delayed task another
             // test in this JVM scheduled and the blocked worker cannot run yet. CI run 36387318177 counted
             // 2046 for an assumed 2047 on exactly that. So the slots already held are read, never assumed.
-            val held = AsyncFileIo.pendingCount()
+            val held = AsyncFileIo.pendingUnder(Path.of("/")).count
             assertTrue(held >= 1 + heldByOthers, "the blocking task and the other caller's tasks hold slots ($held)")
 
             repeat(MAX_PENDING_TASKS + margin) {
@@ -110,7 +110,7 @@ class AsyncFileIoTest {
             // The cap is exact: the lane holds MAX_PENDING_TASKS, never one more and never one fewer. Only the
             // slots free when the loop began were ours to take; a task another thread submits mid-loop can take
             // one of them, which is why this bounds `accepted` from above instead of pinning it.
-            val saturated = AsyncFileIo.pendingCount()
+            val saturated = AsyncFileIo.pendingUnder(Path.of("/")).count
             assertEquals(MAX_PENDING_TASKS, saturated, "expected the lane to saturate exactly at its cap")
             val free = MAX_PENDING_TASKS - held
             assertTrue(accepted.get() <= free, "accepted ${accepted.get()} past the $free free slots")

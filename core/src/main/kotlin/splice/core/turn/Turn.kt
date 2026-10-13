@@ -165,10 +165,6 @@ public class SharedSummaryParts(
         return retained
     }
 
-    /** Compatibility probe used by registry tests; production recap matching keeps every candidate. */
-    @Synchronized
-    public fun anchorOf(part: String): Int = anchorsOf(part).firstOrNull() ?: -1
-
     /** Records a recap match without extending the logical chain. False means the live cap was hit. */
     @Synchronized
     public fun markRecap(outputIndex: Int, part: String): Boolean {
@@ -191,25 +187,6 @@ public class SharedSummaryParts(
         currentRoundBytes += recorded.bytes
         roundParts.add(recorded)
         return !previousRoundItems.contains(recorded)
-    }
-
-    /** Explicit occurrence-safe count trim for tests and non-registry callers. Production instances
-     *  apply both constructor bounds at every [endRound].
-     *
-     *  PUBLIC ON PURPOSE, and narrowing it to `internal` breaks the build (2026-09-18). The caller
-     *  this exists for is in ANOTHER module — ConversationSummaryPartsTest in :dialects-openai-responses
-     *  — so `internal` makes the declaration unreachable from the only code that uses it. 8a489694
-     *  burned it to `internal` while reducing the public surface and the break did not surface until
-     *  a full `clean check` reached :dialects-openai-responses:compileTestKotlin, because no other leg
-     *  compiles that module's tests. It costs the public-surface ratchet nothing: that wall gates
-     *  declarations with no other-module use, and this one's whole purpose is an other-module use. */
-    @Synchronized
-    public fun trimToLast(n: Int) {
-        finishRoundLocked()
-        retainedParts = trimRecords(retainedParts, minOf(n, maxParts))
-        previousRoundItems = previousRoundItems.mapNotNull { previous ->
-            retainedParts.lastOrNull { it == previous }
-        }.distinct()
     }
 
     private fun finishRoundLocked() {

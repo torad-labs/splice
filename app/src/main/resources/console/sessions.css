@@ -168,8 +168,6 @@ div.ended { display: flex; flex-direction: column; gap: .9rem; }
 .msg time { font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 .msg.his { align-self: flex-end; align-items: flex-end; max-width: 46rem; width: auto; }
 .msg.his .body { background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); padding: .8rem 1.1rem; box-shadow: .3rem .3rem 0 var(--key-light), .3rem .3rem 0 var(--ink-w) var(--ink); }
-.msg.his.landing .body { animation: land var(--t-snap) var(--e-out) 1; }
-@keyframes land { from { transform: translateY(.8rem); opacity: 0; } }
 .msg.his .unsent { display: flex; align-items: center; gap: .8rem; }
 .msg.his.failed .body { box-shadow: .3rem .3rem 0 var(--limit), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .msg.agent { align-self: flex-start; max-width: 60rem; }

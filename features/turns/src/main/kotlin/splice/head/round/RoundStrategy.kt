@@ -53,7 +53,8 @@ internal class RoundStrategy(
         perf: TurnPerf?,
     ): UpstreamEnding? {
         val recovery = observedReanchor(reanchor)
-        val emptyRetry = EmptyAnswerRetry(perf, reanchor)
+        // a request that asked for silence keeps it: its empty round is never carried on into an answer
+        val emptyRetry = EmptyAnswerRetry(perf, reanchor.takeUnless { AskedSilence().of(requestBody) })
         val interceptedPost = PostRound { body ->
             emptyRetry.post(body, PostRound { intercept(it, emitter, postRound, perf) })
         }

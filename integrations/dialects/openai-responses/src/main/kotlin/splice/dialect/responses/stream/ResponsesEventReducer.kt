@@ -78,6 +78,7 @@ internal class ResponsesEventReducer(
             if (reason.isNotEmpty() && reason != INCOMPLETE_REASON_MAX_TOKENS) state.contentFiltered = true
         } else if (endedInReasoning(resp)) {
             state.messageClosed = true
+            state.endedInReasoning = true
         }
         accumulateUsage(resp)
     }

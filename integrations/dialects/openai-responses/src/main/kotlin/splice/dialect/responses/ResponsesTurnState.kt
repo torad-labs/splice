@@ -63,6 +63,9 @@ internal class ResponsesTurnState {
      *  reasoning in its output (ResponsesEventReducer.endedInReasoning). See
      *  [splice.core.turn.TurnOutcome.Success.messageClosed]. */
     var messageClosed = false
+
+    /** The response completed with reasoning alone ([splice.core.turn.ResponseShape.endedInReasoning]). */
+    var endedInReasoning = false
     var incomplete = false
 
     // response.incomplete carrying a non-max_output_tokens reason (content_filter, etc.) — the

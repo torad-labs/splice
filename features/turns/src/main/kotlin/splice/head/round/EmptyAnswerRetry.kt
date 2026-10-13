@@ -26,7 +26,9 @@ import splice.upstream.RoundResult
  * A vendor whose empties repeat for the same bytes carries on instead: when the turn's [reanchor] rule builds a
  * continuation from the empty round (its reasoning, then a request for the answer), that request is the one sent.
  * Muse ended 418 of 3,538 turns empty on 2026-10-13, in runs of up to 25 in one session, and the identical re-send
- * healed 39 of 451, so for it the input has to change.
+ * healed 39 of 451, so for it the input has to change. Its empties complete with reasoning alone, which the Responses
+ * dialect reads as a closed message ([splice.core.turn.ResponseShape.endedInReasoning]), so such a round is offered to
+ * the rule first and ends silent, as before, when the rule has no continuation or the request asked for silence.
  */
 internal class EmptyAnswerRetry(private val perf: TurnPerf?, private val reanchor: ReanchorPolicy? = null) {
     suspend fun post(body: RoundBody, direct: PostRound): RoundResult {
@@ -35,6 +37,8 @@ internal class EmptyAnswerRetry(private val perf: TurnPerf?, private val reancho
         val emptied = emptied(first)
         if (emptied == null || contentFrames() > framesBefore) return first
         val carried = continuation(body, emptied)
+        // reasoning alone is the model's finished silence unless the rule carries it on: never re-sent identically
+        if (carried == null && emptied.shape.endedInReasoning) return first
         perf?.add(if (carried != null) PerfKeys.EMPTY_CONTINUES else PerfKeys.EMPTY_RETRIES, 1)
         return billed(emptied.usage, direct(carried?.let { RoundBody.Tree(it) } ?: body))
     }
@@ -64,7 +68,8 @@ internal class EmptyAnswerRetry(private val perf: TurnPerf?, private val reancho
 
     private fun emptied(result: RoundResult): TurnOutcome.Success? {
         val outcome = (result as? RoundResult.Outcome)?.outcome as? TurnOutcome.Success ?: return null
-        val empty = !outcome.hasToolUse && !outcome.incomplete && !outcome.shape.messageClosed &&
+        val closed = outcome.shape.messageClosed && !outcome.shape.endedInReasoning
+        val empty = !outcome.hasToolUse && !outcome.incomplete && !closed &&
             !shown(outcome.text) && outcome.handoffs.customCalls.isEmpty() && outcome.handoffs.toolSearches.isEmpty()
         return outcome.takeIf { empty }
     }

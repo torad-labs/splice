@@ -34,6 +34,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         ),
         shape = ResponseShape(
             messageClosed = state.messageClosed,
+            endedInReasoning = state.endedInReasoning,
             outputShape = harvest.describeOutput(state.finalResponse, state.streamedItemTypes),
         ),
         handoffs = RoundHandoffs(

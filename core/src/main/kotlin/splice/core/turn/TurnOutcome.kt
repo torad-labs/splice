@@ -198,6 +198,10 @@ public data class ResponseShape(
      *  Evidence only: read by the empty-turn line so a "no content" verdict names the shape
      *  the backend sent instead of asserting an absence nobody can grep. */
     val outputShape: String = "",
+    /** The response completed with reasoning as its whole output: no message item, no text, no tool call. It reads
+     *  as [messageClosed], the model's finished silence, unless the turn's re-anchor rule carries it on
+     *  (ReanchorPolicy.continuationForEmpty); a closed message item never sets this. */
+    val endedInReasoning: Boolean = false,
 )
 
 /** What a round hands on to the gateway's controllers, which forward it without reading it. */

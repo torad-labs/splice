@@ -8,6 +8,19 @@ import splice.client.mcp.ClaudeCodeVersionsDir
 import splice.client.mcp.PluginFlagVerdicts
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.daemonclient.DaemonProbe
+import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.nio.file.Files
+
+// why: the loopback port splice-mcp-front.socket listens on (the hub's unit), which every launch checks the same way.
+private const val HUB_FRONT_PORT = 3095
+
+private const val HUB_ROW = "MCP hub"
+
+// why: the launch's own bound for a front that is serving (McpHubLaunch); one that has not accepted by then is not.
+private const val HUB_FRONT_CONNECT_MS = 250
 
 /** Projects the daemon's aggregate Claude Code drift warning into one doctor row. */
 internal class DoctorClientVersion {
@@ -15,16 +28,44 @@ internal class DoctorClientVersion {
         DoctorCheck("Claude Code", CheckStatus.WARN, warning)
     }
 
-    /** MCP hub step 6: whether the running daemon runs the hub, as its own boot check decided and /health says. Off is
-     *  a note, never a finding: MCP servers are then hosted in the daemon, the supported fallback. No row when the
-     *  daemon is stopped or does not say. */
-    internal fun mcpHub(health: HealthView?): DoctorCheck? = health?.client?.mcpHub?.let { hub ->
+    /** MCP hub step 6: whether the running daemon runs the hub, as its own boot check decided and /health says, and
+     *  whether launches can use it: by the launch's own rule, only once a front has run here (its front.json) and while
+     *  one answers on its port. Off is a note, never a finding: MCP servers are then hosted in the daemon, the
+     *  supported fallback. No row when the daemon is stopped or does not say. */
+    internal fun mcpHub(health: HealthView?, statePaths: StatePaths): DoctorCheck? =
+        health?.client?.mcpHub?.let { hub -> hubRow(hub, statePaths) }
+
+    private fun hubRow(hub: DaemonProbe.HealthMcpHub, statePaths: StatePaths): DoctorCheck =
         if (hub.on) {
-            DoctorCheck("MCP hub", CheckStatus.OK, "on: each session's MCP servers run under the hub")
+            front(statePaths)
         } else {
             val why = "the MCP hub is off on this machine" + (hub.offReason?.let { ": $it" } ?: "")
-            DoctorCheck("MCP hub", CheckStatus.INFO, "$why. MCP servers are hosted in the daemon instead")
+            DoctorCheck(HUB_ROW, CheckStatus.INFO, "$why. MCP servers are hosted in the daemon instead")
         }
+
+    private fun front(statePaths: StatePaths): DoctorCheck = when {
+        !Files.exists(statePaths.stateDir.resolve("mcp-hub").resolve("front.json")) -> DoctorCheck(
+            HUB_ROW,
+            CheckStatus.INFO,
+            "installed, but its front has never run here, so each session starts its own MCP servers",
+            "systemctl --user enable --now splice-mcp-front.socket",
+            fixKind = FixKind.COMMAND,
+        )
+        !frontAnswers() -> DoctorCheck(
+            HUB_ROW,
+            CheckStatus.WARN,
+            "its front is not answering on 127.0.0.1:$HUB_FRONT_PORT, so each new session starts its own MCP servers",
+            "systemctl --user status splice-mcp-front.socket splice-mcp-front.service",
+            fixKind = FixKind.COMMAND,
+        )
+        else -> DoctorCheck(HUB_ROW, CheckStatus.OK, "on: each session's MCP servers run under the hub")
+    }
+
+    private fun frontAnswers(): Boolean = try {
+        Socket().use { it.connect(InetSocketAddress("127.0.0.1", HUB_FRONT_PORT), HUB_FRONT_CONNECT_MS) }
+        true
+    } catch (_: IOException) {
+        false
     }
 
     /** One row per installed version whose plugin flag check failed, read from the verdict file. */

@@ -46,7 +46,7 @@ const root = document.getElementById("usage");
 const S = { heads: [], providerOf: {}, labels: {}, sessions: {}, keys: [], accounts: [], registry: [], groups: [], error: null };
 // one window's reads: the totals the daemon folded, and the newest rows. [all] is the window with the project pick alone
 // (the plan and key cards), [scoped] the same under the filters opened below the cards.
-const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), failed: {}, errors: [], gen: 0 };
+const D = { loading: true, pending: false, every: null, all: null, scoped: null, rows: [], held: new Set(), errors: [], gen: 0 };
 
 const providerOfHead = (key) => S.providerOf[key];
 const cmdOf = (key) => S.heads.find((h) => h.key === key)?.command ?? key;

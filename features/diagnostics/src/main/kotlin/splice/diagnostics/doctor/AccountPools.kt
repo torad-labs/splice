@@ -164,11 +164,9 @@ internal class AccountPoolProjection {
         return JsonScalars.long(a, "auth_excluded_until_epoch_millis") to reason
     }
 
-    /** Older daemons exposed presence only in masked auth; absent on both means legacy-present. */
+    /** Every pool row carries credential_present; a row without it is read as present, as it always was. */
     private fun credentialPresent(a: JsonObject): Boolean =
-        JsonScalars.str(a, "credential_present")?.toBooleanStrictOrNull()
-            ?: (a["auth"] as? JsonObject)?.let { JsonScalars.str(it, "present")?.toBooleanStrictOrNull() }
-            ?: true
+        JsonScalars.str(a, "credential_present")?.toBooleanStrictOrNull() ?: true
 
     private fun switch(s: JsonObject): HeadAccountSwitchView? {
         val from = label(s, "from") ?: return null

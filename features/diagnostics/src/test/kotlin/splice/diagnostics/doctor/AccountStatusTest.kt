@@ -275,12 +275,10 @@ class AccountStatusTest {
     }
 
     @Test
-    fun `credential presence prefers the new field then masked auth then legacy default`() {
+    fun `credential presence is the pool row's own field, and a row without it reads present`() {
         val cases = listOf(
             """, "credential_present":false, "auth":{"present":true}""" to false,
             """, "credential_present":true, "auth":{"present":false}""" to true,
-            """, "auth":{"present":false}""" to false,
-            """, "auth":{"present":true}""" to true,
             "" to true,
         )
         for ((fields, expected) in cases) {

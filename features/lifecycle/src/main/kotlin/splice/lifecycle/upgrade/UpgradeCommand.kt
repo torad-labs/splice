@@ -22,7 +22,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
-private const val STILL_BUSY = "turns still in flight after the wait; rerun with --now to restart anyway"
+// why: the wait for turns is bounded, and the person it gives up on needs both ways forward in one line.
+private const val STILL_BUSY = "turns still in flight after the wait; let them finish and run the same " +
+    "command again, or add --now to restart anyway"
 
 /** `splice upgrade` as app runs it: the local daemon resolved from [env] through the daemon client —
  *  control port and supervisor unit as the daemon itself resolves them, [errors] taking the one

@@ -51,9 +51,11 @@ const PERF_HEADS = (() => {
     { label: "Cache hit", has: (h) => h.cache_hit_ratio != null, cell: (h) => pct(h.cache_hit_ratio) ?? none("Not reported") },
     { label: "Cold cache", has: (h) => h.cache_cold > 0, cell: (h) => count(h.cache_cold) },
     { label: "Most at once", has: (h) => h.peak_inflight > 0, cell: (h) => count(h.peak_inflight) },
-    // The spec's count: requests during which splice dropped some of its own records. Absent when no row carried
+    // The spec's count (§3, "telemetry dropped"): requests during which splice dropped some of the records it keeps on
+    // this disk, so their row is missing some figures. The word telemetry stays off the screen: it reads as
+    // phoning home (marlin). Absent when no row carried
     // the counter, which reads "Not measured", never a zero.
-    { label: "Telemetry dropped", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
+    { label: "Partly recorded", has: (h) => h.telemetry_dropped > 0, cell: (h) => (h.telemetry_dropped == null ? none("Not measured") : n0(h.telemetry_dropped)) },
   ];
   const head = (c) => `${c.label}${c.key ? KEY : ""}`;
 

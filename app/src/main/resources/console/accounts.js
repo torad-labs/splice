@@ -206,9 +206,11 @@ async function load({ asks = true } = {}) {
         const tail = masked && masked.includes("…") ? `…${masked.split("…").pop()}` : null;
         // the day only tells keys apart, so it shows only when the variable has held more than one (fin, Oct 12)
         const twins = (k.replaced || []).length > 0;
-        p.accounts.push({ id: k.name, env: k.name, tail, twins, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: day(k.first_seen_epoch_seconds) });
-        // a key it replaced is its own account, with its own day, marked Replaced
-        for (const r of k.replaced || []) p.accounts.push({ id: `${k.name}#${r.fingerprint}`, env: k.name, twins, has: true, from: "replaced", seen: day(r.first_seen_epoch_seconds) });
+        // heads: the commands that send with THIS key, so a second command with a key of its own rides its own card, never
+        // the provider's first one (marlin's desk A look, Oct 12). The keys it replaced fold into one line on its card
+        // (marlin, Oct 12): their spend stays on Usage and their requests on Requests, and they have nothing to act on.
+        p.accounts.push({ id: k.name, env: k.name, tail, twins, has: from !== "missing" && from !== "unknown", from: from === "missing" || from === "unknown" ? null : from, seen: day(k.first_seen_epoch_seconds),
+          heads: uses.map((u) => u.head), replaced: (k.replaced || []).map((x) => day(x.first_seen_epoch_seconds)) });
       }
     } else {
       for (const c of p.cmds) p.accounts.push({ id: c.head, name: c.cmd, model: pinnedModel.get(c.head) || "", down: down.has(c.head) });
@@ -277,7 +279,7 @@ function ordered(p, c) {
   const list = ruled(p, c), pinned = list.find((a) => a.id === c.pin);
   return pinned && room(pinned) ? [pinned, ...list.filter((a) => a !== pinned)] : list;
 }
-const serving = (p, c) => (p.kind === "plan" ? (c?.serving && p.accounts.find((a) => a.id === c.serving)) || ordered(p, c).find(room) : p.kind === "key" ? p.accounts.find((k) => k.has && k.from !== "replaced") : p.accounts[0]);
+const serving = (p, c) => (p.kind === "plan" ? (c?.serving && p.accounts.find((a) => a.id === c.serving)) || ordered(p, c).find(room) : p.kind === "key" ? p.accounts.find((k) => k.has) : p.accounts[0]);
 // Where the command goes when the account in use runs out, as splice picks it (AccountPool.followingLabel): the next
 // login with room in the same order, or, when every other one is held, the one whose reset is nearest, served at that
 // reset. A command with one account has nowhere to go.
@@ -627,9 +629,9 @@ function menuHtml(p, a, spot) {
     return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}">${esc(text)}</button>`;
   }).join("")}</div>`;
 }
+const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // kit.js's, which this page doesn't load
 function nameHtml(p, a, spot) {
-  // a key is named by its variable and the day splice first saw it; a replaced key is a new account with a new day
-  const dayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // kit.js's, which this page doesn't load
+  // a key is named by its variable and, when it replaced another, the day splice first saw it
   if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.tail ? ` <span class="tail">${esc(a.tail)}</span>` : ""}${a.has && a.seen && a.twins ? ` · ${dayWord(a.seen)}` : ""}</span>`;
   if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
   const err = ui.renameErr;
@@ -674,8 +676,10 @@ function cardHtml(p, c, a, i, serves) {
     body = !a.has ? keyField(false) : ui.replace === spot ? keyField(true)
       : a.from === "environment" ? `<div class="keysrc"><span class="state">From environment</span></div>`
       : a.from === "file" ? `<div class="keysrc"><span class="state">From file</span></div>`
-      // the value splice read before this one: its spend stays on Usage and its requests on Requests
-      : a.from === "replaced" ? `<div class="keysrc"><span class="state mute">Replaced</span></div>` : "";
+      : "";
+    // the keys this one replaced, as one quiet line with the days splice first saw them
+    const n = a.replaced?.length || 0, days = [...new Set((a.replaced || []).filter(Boolean).map(dayWord))];
+    if (n) body += `<div class="keysrc"><span class="state mute">Replaced ${n === 1 ? "an earlier key" : `${n} earlier keys`}${days.length ? ` · ${esc(days.join(", "))}` : ""}</span></div>`;
   } else if (a.out) {
     body = signRow || `<div class="outbox"><button class="act primary" data-act="signin" data-p="${p.id}" data-a="${a.id}">Sign in</button></div>`;
   } else if (p.kind === "plan" && a.noUsage) {
@@ -751,7 +755,9 @@ function providerHtml(p, span = 1) {
     const srv = serving(p), meters = (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p.cmds).map((c) => meterHtml(c)).join("");
     // a model on this computer or a rented GPU bills nothing per token: no Day row, unless he already set a budget on it
     // (Marlin and fin, Oct 10), which keeps its row with no figure and no line
-    return `${head("")}${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, p.kind === "local" ? p.cmds.filter((c) => c.head === a.id) : a === srv ? p.cmds : [])).join("")}</div></section>`;
+    // a key card carries the commands that send with it; a local card its own command
+    const serves = (a) => (p.kind === "local" ? p.cmds.filter((c) => c.head === a.id) : p.kind === "key" ? p.cmds.filter((c) => a.has && (a.heads || []).includes(c.head)) : a === srv ? p.cmds : []);
+    return `${head("")}${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, serves(a))).join("")}</div></section>`;
   }
   const c = laneOf(p), many = p.cmds.length > 1;
   const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("");

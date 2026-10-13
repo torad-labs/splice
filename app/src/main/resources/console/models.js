@@ -516,7 +516,12 @@ async function restartSplice() {
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const up = await API.get("/api/heads");
-    if (up.ok) { ui.pending = false; ui.restartDue = false; ui.gone.clear(); ui.said = "Applied"; ui.draft = null; await readAll(); render(); return; }
+    if (!up.ok) continue;
+    ui.pending = false; ui.restartDue = false; ui.gone.clear(); ui.said = "Applied"; ui.draft = null; await readAll();
+    // an add that was saved while splice did not come back opens its command's pane once it is listed
+    const added = ui.add?.saved && commandsOf().find((c) => c.cmd === ui.add.savedCmd);
+    if (added) { ui.add = null; ui.open = added.key; }
+    render(); return;
   }
   ui.said = "Not restarted"; render();
 }
@@ -683,7 +688,13 @@ function addPaneHtml() {
     + `${sg.url ? `<button class="act" data-act="open-signin">Open sign-in</button>` : ""}<button class="act quiet" data-act="cancel-signin">Cancel</button></div>` : "";
   const said = a.said ? `<span class="said limit">${esc(a.said)}</span>` : "";
   const ready = ((!asks("name") && !second(p)) || a.name.trim()) && (!showsUrl(p, a) || a.url.trim()) && (!asks("models") || a.rows.some((r) => r.id.trim()));
-  const foot = `<div class="foot"><button class="act primary" data-act="add"${ready && !a.busy ? "" : " disabled"}>${a.busy ? "Adding" : "Add"}</button><button class="act quiet" data-act="cancel-add">Cancel</button>${said}</div>`;
+  // saved: splice restarts to start the command, and the pane says so until the restarted daemon lists it and its own
+  // pane opens (marlin's desk A look, Oct 12: "Adding" sat still through the restart, and only a reload showed the pane)
+  const foot = a.stalled
+    ? `<div class="foot"><button class="act" data-act="restart-splice">Restart splice</button><span class="said limit">Saved; splice did not come back with it</span></div>`
+    : a.saved
+    ? `<div class="foot"><span class="waitbox" role="status">${ICON.wait}<span class="sr">Restarting</span></span><span class="said">Saved. Restarting splice to start ${esc(a.savedCmd || "it")}</span></div>`
+    : `<div class="foot"><button class="act primary" data-act="add"${ready && !a.busy ? "" : " disabled"}>${a.busy ? "Adding" : "Add"}</button><button class="act quiet" data-act="cancel-add">Cancel</button>${said}</div>`;
   return `<div class="pane add-pane" style="--c:${colorOf(fam)}">${head}<div class="body">${headRow}${f ? `<section class="form">${f}</section>` : ""}${checks}${sign}${foot}</div></div>`;
 }
 const CHECK_NAME = { credential: "Key", "base url": "URL", models: "Models", windows: "Windows", "live turn": "Live request" };
@@ -765,7 +776,7 @@ async function verifyAndSave() {
   // the save answers with the add's own key and command (AddViews.session); the pane that opens is that command's, once
   // the restarted daemon lists it, never another command on the same profile (marlin p228)
   const key = s.body?.key, cmd = s.body?.command;
-  a.saved = true;
+  a.saved = true; a.savedCmd = cmd; render();
   for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const up = await API.get("/api/heads");
@@ -776,7 +787,8 @@ async function verifyAndSave() {
     ui.add = null; ui.open = added.key; ui.draft = null; ui.added = { key: added.key, live: null }; render();
     return;
   }
-  a.busy = false; a.said = "Not added"; render();
+  // saved, but the restarted daemon never listed it in time: the file holds it, so the words say what to do, not "Not added"
+  a.stalled = true; render();
 }
 function dropAdd() { if (ui.add?.id && !ui.add.saved) API.del(`/api/add/${encodeURIComponent(ui.add.id)}`); }
 

@@ -1266,7 +1266,8 @@ read();
 // five seconds while the page is shown and nothing is being edited; without it Resumes in sat at 0:00 and a turn that
 // had ended stayed Working until he pressed Read again (desk walk, Oct 10).
 setInterval(async () => {
-  if (document.hidden || state.loading || ui.compose || ui.pick || ui.menu) return;
+  // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
+  if (document.hidden || document.body.classList.contains("locked") || state.loading || ui.compose || ui.pick || ui.menu) return;
   const sessions = await API.get("/api/sessions");
   if (sessions.ok) state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
   await readLive();

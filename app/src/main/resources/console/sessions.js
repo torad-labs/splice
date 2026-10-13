@@ -1048,7 +1048,8 @@ read().then(async () => {
   readPast().then(() => render({ stick: false })); // the week's ended agents join the Ended line
 });
 // what a session is doing changes on its own clock: the list is read again while the page is open
-setInterval(() => { if (!document.hidden) reload(); }, 5000);
+// a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
+setInterval(() => { if (!document.hidden && !document.body.classList.contains("locked")) reload(); }, 5000);
 // the silence counter and the resume countdown move each second between reads, from when the turn was read
 setInterval(() => {
   for (const el of root.querySelectorAll("[data-silent], [data-resume]")) {

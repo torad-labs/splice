@@ -10,6 +10,7 @@ import splice.core.util.LogSink
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
 import splice.provider.codex.stream.CodeModeRoundInterceptor
+import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -27,23 +28,6 @@ private const val DEFAULT_MAX_OUTPUT_CHARS: Int = 1_048_576
  *  (its workers are child JVMs), so a restarted head needs a new one (V4-107). */
 public fun interface CodeModeRuntimes {
     public fun open(): CodeModeRuntime
-}
-
-/** The current head run's runtime: opened on the first script after a start, closed at head stop. */
-internal class CodeModeRuntimeRun(private val runtimes: CodeModeRuntimes) {
-    private val monitor = Any()
-    private var current: CodeModeRuntime? = null
-
-    fun runtime(): CodeModeRuntime = synchronized(monitor) { current ?: runtimes.open().also { current = it } }
-
-    fun closeSession(key: String) {
-        synchronized(monitor) { current?.closeSession(key) }
-    }
-
-    fun end() {
-        val ending: CodeModeRuntime? = synchronized(monitor) { current.also { current = null } }
-        ending?.close()
-    }
 }
 
 /** Positive process-liveness evidence for a session. Null means unknown, including headless clients;

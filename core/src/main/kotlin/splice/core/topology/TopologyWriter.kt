@@ -51,6 +51,7 @@ package splice.core.topology
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.compaction.CompactionInstructions
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.HeadDiscoveredModels
@@ -264,7 +265,7 @@ private class TopologyChecks(
     private val quotedPattern = Regex("`[^`]*`")
 
     fun findings(): List<TopologyFinding> =
-        references() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts()
+        references() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts() + compaction()
 
     /** V4-36 and V4-124: a standing prompt the head build would refuse is a finding here, built the way
      *  HeadServerFactory builds it, so a table setting both keys, an unreadable file, a relative project root or a
@@ -288,6 +289,23 @@ private class TopologyChecks(
             listOfNotNull(own?.let { TopologyFinding("projects.$root", it) }) + perHead
         }
         return heads + projects
+    }
+
+    /** Section 7 under the fail-closed law: the [compaction] table built the way the daemon builds it, so a table its
+     *  resolver refuses (both keys, a blank or repeated model, a repeated project) refuses boot with every other
+     *  finding instead of throwing when the daemon starts, and so does a `file =` it cannot read. A running daemon
+     *  whose file goes unreadable later only disables that rule. */
+    private fun compaction(): List<TopologyFinding> {
+        val dir = configDir ?: return emptyList()
+        var built: CompactionInstructions? = null
+        val refused = refusal {
+            CompactionInstructions(topology.compaction, dir, log = LogSink { }).also { built = it }
+        }
+        val unreadable = built?.unreadable().orEmpty().map { source ->
+            "compaction $source; make the file readable, fix the path (a relative one is under splice.toml's " +
+                "directory), or remove the key"
+        }
+        return (listOfNotNull(refused) + unreadable).map { TopologyFinding("compaction", it) }
     }
 
     /** Builds one standing prompt the way the head build does; a refusal throws. */

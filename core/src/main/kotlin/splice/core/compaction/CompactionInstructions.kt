@@ -31,6 +31,8 @@ public class CompactionInstructions(
         val source: String,
         /** The `file =` behind [text], re-read when it changes; null for inline text. */
         val file: Path? = null,
+        /** Its `file =` could not be read when the table was built. */
+        val unreadable: Boolean = false,
     )
 
     private data class FileText(val modified: FileTime?, val text: String?)
@@ -170,6 +172,12 @@ public class CompactionInstructions(
         return (projectModels.map { it.second } + below).map(::effective)
     }
 
+    /** Each rule whose `file =` could not be read when the table was built, by its source
+     *  (`model:x file:/p unreadable`). Boot refuses on them with every other finding (fail-closed law), where a
+     *  running daemon only disables the rule. */
+    public fun unreadable(): List<String> =
+        (projects.map { it.rule } + models.values + listOfNotNull(global)).filter { it.unreadable }.map { it.source }
+
     private fun effective(rule: Rule): EffectiveCompactionInstructions =
         EffectiveCompactionInstructions(currentText(rule), rule.scope, rule.source)
 
@@ -230,7 +238,7 @@ public class CompactionInstructions(
                         "[compaction] $path unreadable (${SafeFailureText.render(failure)}); " +
                             "custom instructions disabled for $source\n",
                     )
-                    Rule(null, scope, "$source file:$path unreadable")
+                    Rule(null, scope, "$source file:$path unreadable", unreadable = true)
                 },
             )
     }

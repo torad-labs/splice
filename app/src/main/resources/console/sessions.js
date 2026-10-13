@@ -162,7 +162,7 @@ async function readLog(s, before = "end") {
   } else {
     const page = res.body;
     const messages = before === "end" || !held?.messages ? page.messages : [...page.messages, ...held.messages];
-    state.logs[s.id] = { messages, earlier: page.earlier ?? null, extended: before !== "end", at: String(before).startsWith("at:") || (held?.at && before !== "end"), moves: page.moves ?? held?.moves ?? [], unmoved: page.unmoved ?? held?.unmoved ?? [],
+    state.logs[s.id] = { messages, path: page.path ?? held?.path ?? null, earlier: page.earlier ?? null, extended: before !== "end", at: String(before).startsWith("at:") || (held?.at && before !== "end"), moves: page.moves ?? held?.moves ?? [], unmoved: page.unmoved ?? held?.unmoved ?? [],
       unreadable: (before === "end" ? 0 : held?.unreadable ?? 0) + (page.unparseable_lines ?? 0) };
   }
   render({ stick: before === "end" || String(before).startsWith("at:") });
@@ -201,8 +201,10 @@ function metaHtml(s, L, inPane) {
   // a registration that stopped refreshing while nothing runs through splice for it: alive, but not heard from (§4)
   const quiet = s.row.availability === "stale" && !s.turn ? `<span>Not heard from since ${backWord(s.at)}</span>` : "";
   // its age, off the registration's start (§4: identity, head/model, age, activity); the open pane has room for it
-  const started = inPane && s.row.started_at ? `<span>Started ${backWord(new Date(s.row.started_at))}</span>` : "";
-  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}${started}`;
+  const started = s.row.started_at ? `<span>Started ${backWord(new Date(s.row.started_at))}</span>` : "";
+  // the Claude Code version the session registered with (SessionsRoutes `version`); the pane has room for it
+  const version = inPane && s.row.version ? `<span>Claude Code ${esc(s.row.version)}</span>` : "";
+  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}${started}${version}`;
   // on a list card everything but the time sits in one row that drops whole parts from its end when it runs out of
   // room, the folder first, then the model, then the team; the open pane has the width and shows every part (hitstop b6bae4e)
   return inPane ? `<div class="meta">${parts}</div>` : `<div class="meta"><span class="parts">${parts}</span>${when}</div>`;
@@ -355,8 +357,14 @@ function groupHtml([key, g], ended) {
     : `<a class="pgo" href="requests.html?project=${encodeURIComponent(key)}">${ICON.door}<span>Open on Requests</span></a>`;
   return `<section class="pgroup${shut ? " shut" : ""}" data-key="g:${esc(key)}" aria-label="${esc(`${projName(g[0])}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(projName(g[0]))}</span></button>`
-    + `<span class="pcounts">${counts.map(bigCount).join("")}<span class="ptotal">${total}</span></span>${go}</header>`
+    + `<span class="pcounts">${counts.map(bigCount).join("")}<span class="ptotal">${total}</span></span>${go}</header>${key === NO_PROJECT ? noProjectWhy(g) : ""}`
     + `${shown.map(cardHtml).join("")}${shut ? "" : restHtml(key, ended)}</section>`;
+}
+/** Under No project, each folder the daemon would not file under one, by its place, with the reason the repo wire
+ *  carries (an untrusted or outside root, gap 421); a session with no reason is simply in no project and says nothing. */
+function noProjectWhy(g) {
+  const why = new Map(g.filter((s) => s.row.repo?.reason).map((s) => [s.row.place || s.row.repo.root, s.row.repo.reason]));
+  return [...why].map(([place, reason]) => `<p class="note">${esc(place)} · ${esc(reason)}</p>`).join("");
 }
 /** Every project in the groups' order, and the ones with someone waiting: what the picker lists and the doors are. */
 function pickOptions() {
@@ -462,6 +470,7 @@ function logHtml(s) {
   const items = [];
   if (held.earlier) items.push(`<button class="act quiet earlier" data-act="earlier" data-s="${esc(s.id)}">Show earlier</button>`);
   if (held.unreadable) items.push(`<p class="note">${held.unreadable} unreadable</p>`);
+  if (held.path) items.push(`<p class="note path">${esc(held.path)}</p>`); // the transcript file it reads (gap 423)
   if (held.error) items.push(`<p class="note">${esc(held.error)}</p>`);
   // A call and what came back are two rows on the wire, the call's (result: false, its input as text) and the
   // result's (role "tool"), joined by tool_use_id: drawn as one call that opens on its result, as the drawing has it.
@@ -549,7 +558,7 @@ function paneHtml() {
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
-    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${sendToHtml(s)}${composerHtml(s)}</section>`;
+    + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${sendToHtml(s)}${resumeHtml(s)}${composerHtml(s)}</section>`;
 }
 
 // A door to a session splice no longer lists, by link or address: its pane says No transcript where the log would be,
@@ -566,6 +575,13 @@ const denyOf = (s) => state.screens[s.id]?.choices?.find((c) => /^no\b/i.test(c.
 // The Message field, only on a session splice can type into. While a permission waits, it is Deny: the refusing choice
 // is pressed, then his words, if any, go in as what to do instead. While a question waits, its options answer it and
 // no field is drawn, since his own words would land in the question's menu rather than as an answer.
+/** The command that resumes this session in a terminal, copyable, whenever its command is known (gap 419). */
+const resumeLine = (s) => (s.cmd && !QUIET.has(s.cmd) ? `${s.cmd} -r ${s.id}` : "");
+function resumeHtml(s) {
+  if (!resumeLine(s)) return "";
+  return `<div class="sendto"><span class="lbl">Resume in a terminal</span><p class="cmd">${esc(resumeLine(s))}</p>`
+    + `<button class="act small" data-act="copy-r" data-s="${esc(s.id)}">Copy</button></div>`;
+}
 function sendToHtml(s) {
   if (!sendTo(s)) return "";
   return `<div class="sendto"><span class="lbl">From another session</span><p class="cmd">${esc(sendLine(s))}</p>`
@@ -661,11 +677,11 @@ async function readUsage(s) {
   const heads = [...state.heads, ...state.retired]; // a removed command's requests today are still the session's
   const reads = await Promise.all(heads.map((h) => API.get(`/api/perf/turns?${new URLSearchParams({
     head: h.key, since: String(+from), time_zone: zone, n: "1", local: "0", session: s.id.slice(0, 8) })}`)));
-  let seen = false; const used = { requests: 0, tin: 0, tout: 0, noIn: 0, noOut: 0, cost: 0, priced: 0, plan: 0, noPrice: 0, from: +from };
+  let seen = false; const used = { requests: 0, tin: 0, tout: 0, cached: 0, noIn: 0, noOut: 0, cost: 0, priced: 0, plan: 0, noPrice: 0, from: +from };
   reads.forEach((r, i) => {
     const t = (r.body?.heads || []).find((x) => x.key === heads[i].key)?.usage?.totals;
     if (!t) return;
-    seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0;
+    seen = true; used.requests += t.requests || 0; used.tin += t.input_tokens || 0; used.tout += t.output_tokens || 0; used.cached += t.cached_tokens || 0;
     used.noIn += t.missing_input_requests || 0; used.noOut += t.missing_output_requests || 0;
     // a request that moved no tokens (refused, cut) is no money fact, and a local model's costs nothing: neither is counted
     const plan = t.unpriced_plan_requests || 0, local = t.unpriced_local_requests || 0;
@@ -687,6 +703,7 @@ function usageHtml(s) {
   const num = (v) => `<span class="num">${v}</span>`;
   const figs = [`${num(u.requests.toLocaleString("en-US"))} ${u.requests === 1 ? "request" : "requests"}`,
     u.noIn < u.requests ? `${num(kTok(u.tin))} tokens in` : "", u.noOut < u.requests ? `${num(kTok(u.tout))} ${u.noIn < u.requests ? "" : "tokens "}out` : "",
+    u.cached ? `${num(kTok(u.cached))} cached` : "",
     ...moneyOf(u)].filter(Boolean);
   return `<a class="today" href="requests.html?${new URLSearchParams({ session: s.id, from: String(u.from) })}"><span class="words">Today · ${figs.join(" · ")}</span>${ICON.door}<span class="go">Open on Requests</span></a>`; // the arrow's words (fin; hitstop 22df5bf)
 }
@@ -999,6 +1016,7 @@ document.addEventListener("click", (e) => {
     case "end-keep": if (s) { ui.armedEnd.delete(s.id); render({ stick: false }); } break;
     case "menu": if (s) openChoices(s); break;
     case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
+    case "copy-r": if (s && resumeLine(s)) { navigator.clipboard?.writeText(resumeLine(s)).catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "copy-send": if (s && sendTo(s)) { navigator.clipboard?.writeText(sendLine(s)).catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "copy-resume": if (s) { navigator.clipboard?.writeText(ui.failed.get(s.id)?.resume ?? "").catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "clear-send": if (s && ui.drafts[s.id]?.trim()) send(s, ui.drafts[s.id].trim(), true); break;

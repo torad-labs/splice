@@ -243,6 +243,8 @@ public class SessionsRoutes(
     private fun repoJson(repo: RepoRoot) = buildJsonObject {
         put("root", repo.root)
         repo.worktree?.let { put("worktree", it) }
+        // why the folder gets no project (an untrusted or outside root), so Sessions can say it under No project
+        repo.reason?.let { put("reason", it) }
     }
 
     private fun resolverFor(head: String?): RepoResolver {
@@ -251,6 +253,7 @@ public class SessionsRoutes(
 
     private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {
         put("messages", buildJsonArray { page.messages.forEach { add(MessageWire.json(it)) } })
+        put("path", page.path) // the transcript file this page was read from, which the pane names under its log
         if (fromEnd) put("earlier", page.earlier)
         put("moves", buildJsonArray { transcripts.moves(page.sessionId).forEach { add(MoveWire.json(it)) } })
         // a move that did not come back leaves no mark, but splice ended the client for it: when he pressed

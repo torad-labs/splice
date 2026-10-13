@@ -8,7 +8,6 @@ import io.ktor.server.routing.get
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import splice.core.perf.KeptHistory
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.usage.USAGE_READ_PENDING_HEADER
@@ -25,10 +24,9 @@ internal class UsageReadRoutes(
     lookup: UsageHeadLookup,
     private val io: CoroutineDispatcher,
     private val guard: ControlGuard,
-    kept: KeptHistory,
     private val log: LogSink? = null,
 ) {
-    private val economics = EconomicsPayloads(heads, lookup = lookup, kept = kept)
+    private val economics = EconomicsPayloads(heads, lookup = lookup)
     private val perf = PerfRoutes(lookup)
 
     /** Which project each request row belongs to, set once the sessions wiring exists. */

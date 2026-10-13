@@ -283,9 +283,9 @@ class WebuiContractTest {
     @Test
     fun `economics payload matches EconomicsPayload plus nested bucket`() = runBlocking {
         val payload = api("/api/economics")
-        assertFields(payload, listOf("retention_hours", "generated_at", HEADS_KEY), "EconomicsPayload")
+        assertFields(payload, listOf("generated_at", HEADS_KEY), "EconomicsPayload")
         val head = payload[HEADS_KEY]!!.jsonArray.first().jsonObject
-        assertFields(head, listOf("key", "label", "ceiling_tokens", "buckets"), "HeadEconomics")
+        assertFields(head, listOf("key", "label", "buckets"), "HeadEconomics")
         assertBijection(
             head["buckets"]!!.jsonArray.first().jsonObject,
             economicsWireNames(),

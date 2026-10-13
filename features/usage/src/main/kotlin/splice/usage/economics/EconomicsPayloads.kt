@@ -4,10 +4,6 @@
 // choice into the contract and make the numbers un-recomputable when the window changes; sums stay
 // mergeable and honest.
 //
-// `ceiling_tokens` is the PROVIDER's own limit when it sends one (x-ratelimit-limit-tokens); null
-// where it does not, and a null ceiling must render as "no ceiling known", never as a guess — an
-// invented denominator is how a quota gauge lies.
-//
 // A head whose rollup cannot be shown honestly answers with no buckets and an `unavailable` sentence, and the
 // other heads still answer: one head's evidence never takes the whole route down.
 //
@@ -16,16 +12,12 @@
 // and the two share no input, no reader and no window.
 package splice.usage.economics
 
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.core.perf.HISTORY_DEFAULT_DAYS
-import splice.core.perf.HistoryWindow
-import splice.core.perf.KeptHistory
 import splice.core.util.WallClock
 import splice.core.wire.ControlFields.HEADS
 import splice.core.wire.ControlFields.KEY
@@ -35,27 +27,16 @@ import splice.usage.UsageHeads
 import splice.usage.UsageReadPreparation
 import splice.usage.perf.HeadPriceGap
 
-// V4-122: this was 192 with a comment claiming it mirrored EconomicsStore's RETENTION_MS — an
-// equality asserted in PROSE, which nothing enforced and which :daemon-control could not import even if it
-// wanted to, having no dependency edge to :daemon-head. Both spellings of the window come from
-// splice.core.perf, the lowest module both reach — and since Oct 10, 2026 the window is the PERSON'S
-// (Settings > Your data), so this route answers the one they set rather than a number splice shipped.
-// `retention_hours` is null when they keep everything: no honest number says `forever`.
-
 public class EconomicsPayloads(
     private val heads: UsageHeads,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     /** Where each command's billing is read, for the reason its turns with no price have none. */
     private val lookup: UsageHeadLookup? = null,
-    /** How far back the person keeps their history: the window these buckets are trimmed against,
-     *  so the console can size a week or a month bar honestly when the hours do not fill it. */
-    private val kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
 ) {
 
     public fun economicsJson(): String = economicsJson(null)
 
     public fun economicsJson(preparation: UsageReadPreparation?): String = buildJsonObject {
-        put("retention_hours", kept.now().hours)
         put("generated_at", clock())
         putJsonArray(HEADS) {
             heads.all().forEach { m ->
@@ -64,8 +45,6 @@ public class EconomicsPayloads(
                     put(LABEL, m.label)
                     HeadPriceGap.wire(lookup, m.key)?.let { put(UNPRICED_REASON, it) }
                     put("all_accounts_on_plan", HeadPriceGap.coversEveryAccount(lookup, m))
-                    val ceiling = m.usage.snapshot().ratelimit?.limitTokens
-                    if (ceiling == null) put("ceiling_tokens", JsonNull) else put("ceiling_tokens", ceiling)
                     if (preparation?.economicsReady(m) == false) {
                         buckets(this, emptyList())
                         put("read_pending", true)

@@ -14,7 +14,6 @@ import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
 import splice.core.config.ConfigService
-import splice.core.perf.KeptHistory
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.upstream.codemode.ProcessDispatchers
@@ -53,8 +52,7 @@ internal class UsageMount(
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
-    private val kept = KeptHistory { config.getConfig().historyWindow }
-    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, kept, log)
+    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, log)
 
     // Settings > Your data's one window, with its own wiring: see HistoryWiring.
     private val history = HistoryWiring(ports, config, guard, fileIo, heads)

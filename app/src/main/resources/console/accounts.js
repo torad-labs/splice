@@ -157,7 +157,7 @@ async function load({ asks = true } = {}) {
       : { allPlan: false, keyUsd: today.usd - today.oldUsd, keyUnpriced: today.unpriced - today.oldUnpriced, plan: today.plan, old: today.old,
         keyPriced: Math.max(0, today.turns - today.old - today.plan - (today.unpriced - today.oldUnpriced) - today.failed) };
     const counted = !unread.has(h.key);
-    p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
+    p.cmds.push({ cmd: h.label || h.key, head: h.key, authKind: h.authKind, spent: b ? b.used_usd : counted ? today.usd : null, unpriced: b ? b.unpriced_turns : today.unpriced,
       unread: b ? null : unread.get(h.key) ?? null,
       failed: b ? b.failed_turns ?? today.failed : today.failed,
       priced: Math.max(0, today.turns - today.unpriced - today.failed),
@@ -951,7 +951,11 @@ function startAdd(p, cmd, field) {
   if (err) { ui.naming = { cmd, draft: v, err }; render(); return; }
   const { c } = findCmd(cmd), before = new Set(p.accounts.map((x) => x.row?.ref).filter(Boolean));
   ui.naming = null;
-  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head, name: v || null, before });
+  // an OAuth command's added login takes a new place in its pool ("auto", OAuthAccountFiles' next free label); sent with no
+  // label it signed the FIRST login in again, over its file, so a second Muse account replaced the spent one rather than
+  // joining beside it (Oct 13, 5:38 AM). The first login of a command has no pool yet and still lands as its first.
+  const pooled = /oauth$/.test(c.authKind ?? "") && p.accounts.some((x) => x.row?.heads?.includes(c.head));
+  startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: pooled ? { label: "auto" } : {}, poll: c.head, name: v || null, before });
 }
 async function nameAdded(how) {
   const added = data.flatMap((p) => p.accounts).find((x) => x.row?.ref && !how.before.has(x.row.ref) && x.row.heads.includes(how.poll));

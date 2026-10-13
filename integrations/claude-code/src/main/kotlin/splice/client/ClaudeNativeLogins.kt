@@ -85,7 +85,7 @@ internal class ClaudeNativeLogins(private val store: LoginStore) {
         store.save(label, live.bytes, live.account)
         owner?.takeIf { it != label && it == prepared.generatedSaveBackLabel }?.let(store::remove)
         store.select(label)
-        return ClaudeLoginResult.Done(Said.refreshed(target.head, label, live.account.shown))
+        return ClaudeLoginResult.Done(Said.refreshed(target.head, label))
     }
 
     private fun owner(records: Map<String, Record>, account: Account): String? =

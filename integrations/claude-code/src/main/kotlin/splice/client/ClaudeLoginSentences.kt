@@ -16,13 +16,13 @@ internal object Refusals {
         "splice cannot tell whose login ${head.key} holds ($why), so it changed nothing. Start ${head.key} " +
             "once so Claude Code records its account, then run this again."
 
-    fun notFiled(head: ClaudeHead, label: String, account: Account?, live: Account): String =
-        "${head.key} is signed in as ${live.shown}, not '$label'${Words.of(account)}, so splice filed nothing " +
+    fun notFiled(head: ClaudeHead, label: String): String =
+        "${head.key} is signed in to another account than '$label', so splice filed nothing " +
             "under '$label' and switched nothing. Save that login under a new label with `splice login " +
             "${head.key} --label <new name>`, or drop it by adding --discard to this command."
 
-    fun unsaved(head: ClaudeHead, shown: String): String =
-        "${head.key} is signed in as $shown, which is saved under no label, so a switch would lose it. Save it " +
+    fun unsaved(head: ClaudeHead): String =
+        "${head.key} is signed in to an account saved under no label, so a switch would lose it. Save it " +
             "with `splice login ${head.key} --label <new name>`, or drop it by adding --discard to this command."
 
     fun nothingLive(head: ClaudeHead, label: String, account: Account?, legacy: Boolean): String {
@@ -31,8 +31,9 @@ internal object Refusals {
         } else {
             "splice put nothing back${Words.stale(label, account, legacy)}. Re-save it from a live login"
         }
-        return "$why: start ${head.key}, sign in${Words.to(account)} with /login, exit, then run `splice login " +
-            "${head.key} --label $label`."
+        val to = Words.to(label, account)
+        return "$why: start ${head.key}, sign in$to with /login, exit, then run `splice login ${head.key} --label " +
+            "$label`."
     }
 
     fun notRecorded(head: ClaudeHead, label: String, why: String): String =
@@ -46,30 +47,30 @@ internal object Refusals {
 
 /** What a completed verb tells the operator: what changed, and what comes next. */
 internal object Said {
-    fun demoted(head: ClaudeHead, label: String, account: Account?): String =
-        "'$label'${Words.of(account)} left ${head.key} without splice saving it first, so its stored copy may be " +
+    fun demoted(head: ClaudeHead, label: String): String =
+        "'$label' left ${head.key} without splice saving it first, so its stored copy may be " +
             "older than its last refresh and will not be put back: re-save it from a live login (sign in to it " +
             "with /login in ${head.key}, then run `splice login ${head.key} --label $label`)."
 
-    fun refreshed(head: ClaudeHead, label: String, shown: String): String =
-        "saved ${head.key}'s login ($shown) as '$label', and selected it."
+    fun refreshed(head: ClaudeHead, label: String): String =
+        "saved ${head.key}'s login as '$label', and selected it."
 
-    fun saved(head: ClaudeHead, label: String, shown: String): String =
-        "saved ${head.key}'s login ($shown) as the new label '$label', and selected it."
+    fun saved(head: ClaudeHead, label: String): String =
+        "saved ${head.key}'s login as the new label '$label', and selected it."
 
-    fun switched(head: ClaudeHead, savedAs: String?, label: String, shown: String): String =
+    fun switched(head: ClaudeHead, savedAs: String?, label: String): String =
         savedAs?.let { "saved ${head.key}'s login as '$it', then " }.orEmpty() +
-            "switched ${head.key} to '$label' ($shown): its next session signs in with it."
+            "switched ${head.key} to '$label': its next session signs in with it."
 
     fun signedOut(head: ClaudeHead, owner: String, label: String, account: Account?, legacy: Boolean): String =
         "saved ${head.key}'s login as '$owner' and signed ${head.key} out, so '$label' can get a fresh login" +
-            "${Words.stale(label, account, legacy)}: start ${head.key}, sign in${Words.to(account)} with /login, " +
-            "exit, then run `splice login ${head.key} --label $label` again. `splice login ${head.key} --label " +
-            "$owner` switches back."
+            "${Words.stale(label, account, legacy)}: start ${head.key}, " +
+            "sign in${Words.to(label, account)} with /login, exit, then run " +
+            "`splice login ${head.key} --label $label` again. `splice login ${head.key} --label $owner` switches back."
 
     fun dropped(head: ClaudeHead, label: String, account: Account?): String =
         "dropped ${head.key}'s login, as --discard asked, and signed ${head.key} out, so '$label' can get a " +
-            "fresh login: start ${head.key}, sign in${Words.to(account)} with /login, exit, then run `splice " +
+            "fresh login: start ${head.key}, sign in${Words.to(label, account)} with /login, exit, then run `splice " +
             "login ${head.key} --label $label` again."
 
     /** A demotion found on the way is said beside whatever the verb then did or refused. */
@@ -90,7 +91,6 @@ internal object Words {
         else -> ""
     }
 
-    fun of(account: Account?): String = account?.let { " (${it.shown})" }.orEmpty()
-
-    fun to(account: Account?): String = account?.let { " to ${it.shown}" }.orEmpty()
+    /** Which account to sign in to, by the label it was saved under: no sentence names an email or account id (§11). */
+    fun to(label: String, account: Account?): String = account?.let { " to the account '$label' holds" }.orEmpty()
 }

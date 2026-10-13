@@ -43,10 +43,8 @@ public sealed class ClaudeNativeLoginPreparation {
     public data class Refused(val reason: String, val inUse: Boolean = false) : ClaudeNativeLoginPreparation()
 }
 
-/** An account as Claude Code names it in oauthAccount; the uuid decides, the email is for display. */
-internal data class Account(val uuid: String, val email: String?) {
-    val shown: String get() = email ?: "an account with no recorded email"
-}
+/** An account as Claude Code names it in oauthAccount; the uuid decides. The email is kept in the record, never said. */
+internal data class Account(val uuid: String, val email: String?)
 
 /** A label's V4-276 record: its account, and whether its copy may be older than the account's last
  *  refresh (its login left the head without a save-back), which is never put back. */

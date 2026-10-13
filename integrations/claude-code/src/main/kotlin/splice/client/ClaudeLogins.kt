@@ -123,14 +123,14 @@ public class ClaudeLogins(
             else -> toFresh(head, label to target?.account, live, owner, discard)
         }
         if (replaced == null) return result
-        return Said.withNote(result, Said.demoted(head, replaced, records[replaced]?.account))
+        return Said.withNote(result, Said.demoted(head, replaced))
     }
 
     /** The live login is this label's account's newest: save it over the copy (clearing a stale mark). */
     private fun refresh(head: ClaudeHead, label: String, held: Live.Held): ClaudeLoginResult {
         store.save(label, held.bytes, held.account)
         store.select(label)
-        return ClaudeLoginResult.Done(Said.refreshed(head, label, held.account.shown))
+        return ClaudeLoginResult.Done(Said.refreshed(head, label))
     }
 
     /** A switch to a saved label whose copy is its account's newest. */
@@ -146,7 +146,7 @@ public class ClaudeLogins(
             store.unselect()
             switchIn(head, target, live, savedAs = owner)
         }
-        live is Live.Held && !discard -> ClaudeLoginResult.Refused(Refusals.unsaved(head, live.account.shown))
+        live is Live.Held && !discard -> ClaudeLoginResult.Refused(Refusals.unsaved(head))
         else -> switchIn(head, target, live, savedAs = null)
     }
 
@@ -174,13 +174,13 @@ public class ClaudeLogins(
             account == null -> {
                 store.save(label, held.bytes, held.account)
                 store.select(label)
-                ClaudeLoginResult.Done(Said.saved(head, label, held.account.shown))
+                ClaudeLoginResult.Done(Said.saved(head, label))
             }
             discard -> {
                 Files.delete(credentials)
                 ClaudeLoginResult.Done(Said.dropped(head, label, account))
             }
-            else -> ClaudeLoginResult.Refused(Refusals.notFiled(head, label, account, held.account))
+            else -> ClaudeLoginResult.Refused(Refusals.notFiled(head, label))
         }
     }
 
@@ -202,7 +202,7 @@ public class ClaudeLogins(
         return recorded.fold(
             onSuccess = {
                 store.select(label)
-                ClaudeLoginResult.Done(Said.switched(head, savedAs, label, account.shown))
+                ClaudeLoginResult.Done(Said.switched(head, savedAs, label))
             },
             onFailure = { failure ->
                 if (live is Live.Held) {

@@ -116,7 +116,7 @@ class ClaudeLoginsTest {
 
         val said = done(login("work"))
 
-        assertTrue(said.contains("a@example.com"), said)
+        assertTrue(said.contains("'work'") && "@" !in said, "names the label, never the email: $said")
         assertEquals("A-gen1", stored("work"))
         assertEquals("A-gen1", live(), "saving never touches the live file")
         assertEquals("work", logins.selected())
@@ -173,7 +173,7 @@ class ClaudeLoginsTest {
 
         val reason = refused(login("work"))
 
-        assertTrue(reason.contains("c@example.com") && reason.contains("a@example.com"), "names both accounts: $reason")
+        assertTrue(reason.contains("another account") && !reason.contains("@example.com"), "no email is said: $reason")
         assertTrue(reason.contains("--label <new name>") && reason.contains("--discard"), "names the remedy: $reason")
         assertEquals("A-gen1", stored("work"))
         refused(login("work"))
@@ -193,7 +193,7 @@ class ClaudeLoginsTest {
         val back = done(login("work"))
 
         assertTrue(liveGone(), "the stale copy never reaches the head: the head is signed out instead")
-        assertTrue(back.contains("never put back") && back.contains("a@example.com"), back)
+        assertTrue("never put back" in back && "the account 'work' holds" in back && "@" !in back, back)
         assertEquals("C-gen1", stored("other"), "the login it replaced was saved first")
         signIn("A-gen9", "uuid-a", "a@example.com")
         done(login("work"))
@@ -260,7 +260,7 @@ class ClaudeLoginsTest {
         signIn("D-gen1", "uuid-d", "d@example.com") // the head's 'home' left without a save-back
 
         val reason = refused(login("work"))
-        assertTrue(reason.contains("d@example.com") && reason.contains("--discard"), reason)
+        assertTrue("saved under no label" in reason && "--discard" in reason && "@" !in reason, reason)
         assertEquals("D-gen1", live())
 
         done(login("work", discard = true))

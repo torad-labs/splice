@@ -55,7 +55,7 @@ async function read() {
   const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
   state.live = {};
   state.heads.forEach((h, i) => {
-    for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) state.live[t.session] = { head: h.key, ...t };
+    for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) state.live[t.session] = { head: h.key, ...t, readAt: Date.now() };
   });
   state.rows = (sessions.body?.sessions || []).filter((s) => s.session_id).map(sessionOf);
   joinPast();
@@ -1055,5 +1055,10 @@ setInterval(() => {
     const gone = Date.now() - st.at, ms = el.dataset.silent ? st.ms + gone : Math.max(0, st.resumeMs - gone);
     el.lastElementChild.textContent = el.dataset.silent ? counter(ms) : `Resumes in ${counter(ms)}`;
     el.querySelector(".hand")?.style.setProperty("transform", `rotate(${Math.floor(ms / 1000) * 6}deg)`);
+  }
+  // a working turn's time since the gate admitted it moves the same way (kit workingLook)
+  for (const el of root.querySelectorAll("[data-held]")) {
+    const t = find(el.dataset.held)?.turn;
+    if (t?.age_ms != null) el.textContent = heldFor(t);
   }
 }, 1000);

@@ -166,7 +166,8 @@ async function load({ asks = true } = {}) {
       split,
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [],
-      moved: au.body?.[h.key]?.account_pool?.last_switch ?? null }); // the command's last move between logins, and why (spec 11h)
+      moved: au.body?.[h.key]?.account_pool?.last_switch ?? null, // the command's last move between logins, and why (spec 11h)
+      lastLeft: lastLeftOf(ac.body?.head_pools?.[h.key]) });
   }
   for (const p of provs.values()) {
     const heads = new Set(p.cmds.map((c) => c.head));
@@ -747,12 +748,26 @@ const MOVED_WHY = { "operator pinned this account": "You pinned it", "operator a
   "7-day quota exhausted": "Weekly limit used up", "quota usage reading full": "Reading was full", "account unavailable": "Login unavailable",
   "previous login needs sign-in": "Needs sign-in" };
 const movedWhy = (r) => MOVED_WHY[r] ?? (r ? r[0].toUpperCase() + r.slice(1) : "");
+// A command whose pool is down to one usable login says the next plan limit has nothing to move to, and until when: the
+// earliest time a held login comes back, from /api/accounts' head_pools, the reading status and doctor use (splice-lead,
+// Oct 13: claude-splice ran on one live login most of the day). Null for a pool of one, which never had a fallback.
+function lastLeftOf(pool) {
+  const all = pool?.account_pool?.accounts ?? [];
+  const open = all.filter((a) => a.available && a.credential_present !== false);
+  if (all.length < 2 || open.length !== 1) return null;
+  const now = Date.now() / 1000;
+  const back = all.filter((a) => !open.includes(a)).map((a) => a.blocked_until_epoch_seconds).filter((s) => s != null && s > now);
+  return { untilMs: back.length ? Math.min(...back) * 1000 : null };
+}
 function movedHtml(p) {
   const nameOn = (c, label) => p.accounts.find((a) => labelOn(a, c.head) === label)?.name ?? label;
-  return p.cmds.filter((c) => c.moved).map((c) => {
-    const m = c.moved, chip = p.cmds.length > 1 ? `<span class="chip">${esc(c.cmd)}</span>` : "";
-    const bits = [`Moved from ${esc(nameOn(c, m.from))} to ${esc(nameOn(c, m.to))}`, m.at_epoch_millis ? backWord(new Date(m.at_epoch_millis)) : "", esc(movedWhy(m.reason))];
-    return `<p class="moved">${chip}${bits.filter(Boolean).join(" · ")}</p>`;
+  return p.cmds.filter((c) => c.moved || c.lastLeft).map((c) => {
+    const chip = p.cmds.length > 1 ? `<span class="chip">${esc(c.cmd)}</span>` : "";
+    const m = c.moved, left = c.lastLeft;
+    const bits = m ? [`Moved from ${esc(nameOn(c, m.from))} to ${esc(nameOn(c, m.to))}`, m.at_epoch_millis ? backWord(new Date(m.at_epoch_millis)) : "", esc(movedWhy(m.reason))] : [];
+    const moved = bits.length ? `<p class="moved">${chip}${bits.filter(Boolean).join(" · ")}</p>` : "";
+    const last = left ? `<p class="moved">${chip}One login left; the next plan limit has no fallback${left.untilMs ? ` until ${at(left.untilMs)}` : ""}</p>` : "";
+    return moved + last;
   }).join("");
 }
 function providerHtml(p, span = 1) {

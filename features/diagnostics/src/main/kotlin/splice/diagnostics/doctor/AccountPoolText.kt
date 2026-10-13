@@ -31,7 +31,8 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val switch = safe.lastSwitch?.let {
             "; switched from ${shown(it.from, names)} to ${shown(it.to, names)} ${ago(it.atEpochMillis)}: ${it.reason}"
         }
-        return listOfNotNull(head, pin, missing, selected?.let(::windows)).joinToString(" · ") + switch.orEmpty()
+        val parts = listOfNotNull(head, lastLeft(safe), pin, missing, selected?.let(::windows))
+        return parts.joinToString(" · ") + switch.orEmpty()
     }
 
     /** Missing primary requires unlabeled login even while a backup is open; exhaustion names a reset. */
@@ -46,7 +47,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             return DoctorCheck(headKey, CheckStatus.WARN, detail, "splice login $headKey", fixKind = FixKind.COMMAND)
         }
         val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credential.present }
-        if (!exhausted) return DoctorCheck(headKey, CheckStatus.OK, detail)
+        if (!exhausted) return DoctorCheck(headKey, openStatus(safe), detail)
         val atMillis = now()
         val reset = safe.accounts.mapNotNull { safe.blockedUntilEpochSecondsByLabel[it.label] }
             .filter { it.seconds > atMillis.milliseconds }.minOrNull()
@@ -82,6 +83,23 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             selectionUnknown = view.selectionUnknown || missingSelection || droppedSelected,
         )
     }
+
+    /** A pool down to its last usable login says so, with the earliest reset among the held ones (splice-lead, Oct 13:
+     *  claude-splice ran on one live login most of the day, and nothing said the next limit had no fallback). Null for
+     *  a pool of one, which never had a fallback, and for a pool with two or more open. */
+    private fun lastLeft(safe: HeadAccountPoolView): String? {
+        val open = safe.accounts.filter { it.available && it.credential.present }
+        if (safe.accounts.size < 2 || open.size != 1) return null
+        val atMillis = now()
+        val reset = safe.accounts.filter { it !in open }.mapNotNull { safe.blockedUntilEpochSecondsByLabel[it.label] }
+            .filter { it.seconds > atMillis.milliseconds }.minOrNull()
+        val until = reset?.let { " until ${AccountResetText.forPerson(it)}" }.orEmpty()
+        return "one login left; the next plan limit has no fallback$until"
+    }
+
+    /** A pool with a login open is fine, and down to its last one it is worth knowing: INFO, never a warning. */
+    private fun openStatus(safe: HeadAccountPoolView): CheckStatus =
+        if (lastLeft(safe) == null) CheckStatus.OK else CheckStatus.INFO
 
     /** A login by its Accounts name when it has one, else by its label. */
     private fun shown(label: String, names: Map<String, String>): String = names[label] ?: name(label)

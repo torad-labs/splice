@@ -6,6 +6,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import splice.app.control.ConsolePorts
+import splice.app.control.projects.RequestProjectTags
 import splice.core.config.ConfigService
 import splice.sessions.http.CompactionSource
 import splice.sessions.http.ProjectAt
@@ -37,6 +38,14 @@ internal class ProjectsMount(
             TeamSource { ports.teams },
             compaction = CompactionSource { ports.compaction },
         )
+    }
+
+    /** What each request row names as its project, through the one resolver the session rows use; null when
+     *  the session routes or the registry are not wired, as with the routes above. */
+    val requestTags: RequestProjectTags? = wiring.routes?.let { routes ->
+        sessions?.let { registry ->
+            RequestProjectTags(wiring.projectSessions(registry, config), TeamSource { ports.teams }, routes)
+        }
     }
 
     fun register(route: Route) {

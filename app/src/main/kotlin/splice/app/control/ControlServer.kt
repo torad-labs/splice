@@ -58,7 +58,6 @@ import splice.app.control.mount.TeamsMount
 import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
-import splice.app.control.projects.RequestProjectTags
 import splice.app.head.HeadRemovalAssembly
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
@@ -67,7 +66,6 @@ import splice.diagnostics.logs.LogFileSource
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
-import splice.sessions.http.TeamSource
 import splice.sessions.registry.SessionSource
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
@@ -143,12 +141,7 @@ internal class ControlServer(
 
     // Every request row names its project through the one resolver the session rows use.
     init {
-        val routes = sessionWiring.routes
-        val registry = sessions
-        if (routes != null && registry != null) {
-            val known = sessionWiring.projectSessions(registry, config)
-            usage.tagProjects(RequestProjectTags(known, TeamSource { ports.teams }, routes))
-        }
+        projects.requestTags?.let(usage::tagProjects)
         // Requests and Usage name a login by the label Accounts shows, never by the email a row recorded.
         usage.nameAccounts(accounts.recordedNames())
     }

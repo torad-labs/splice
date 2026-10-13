@@ -32,7 +32,8 @@ public interface CompareSends {
     /** Null admits the send; a [BudgetBlock] refuses it, and the refusal has left its row before this returns. */
     public fun admit(model: String, account: String?): BudgetBlock?
 
-    /** The send went out and ended as [answer] says: its row, its rollup entry and its spend. */
+    /** The send went out and ended as [answer] says: its row, its rollup entry and its spend. A refusal by [admit]
+     *  never reaches here, and leaves its row alone. */
     public fun answered(answer: CompareAnswer)
 }
 
@@ -59,11 +60,13 @@ internal class HeadCompareSends(private val deps: HeadDeps) : CompareSends {
         write(answer.model, answer.account, answer.outcome, perf.snapshot(), spend = true)
     }
 
+    /** A refused send leaves its row only: no rollup entry and no spend, as a refused turn leaves none, so the live hour
+     *  agrees with the hour EconomicsFromRows rebuilds from the rows, which skips a refusal. */
     private fun write(model: String, account: String?, outcome: String, snap: PerfSnapshot, spend: Boolean) {
         val ts = deps.stores.perfStats.record(
             PerfRowMeta(model, outcome, compact = false, session = null, account = PerfAccount(account)),
             snap,
-            whole = FileIoTask { economics(snap, model, account, outcome) },
+            whole = if (spend) FileIoTask { economics(snap, model, account, outcome) } else FileIoTask { },
         )
         if (spend) {
             Cancellables.discard(

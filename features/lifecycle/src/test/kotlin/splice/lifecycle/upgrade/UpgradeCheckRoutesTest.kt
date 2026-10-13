@@ -2,13 +2,11 @@
 // release assets a tap asks for, and records what was asked.
 package splice.lifecycle.upgrade
 
-import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.ApplicationTestBuilder
@@ -66,7 +64,6 @@ class UpgradeCheckRoutesTest {
         val routes = UpgradeCheckRoutes({ checks }, Dispatchers.IO)
         application {
             routing {
-                get("/api/upgrade/check") { routes.snapshot(call) }
                 post("/api/upgrade/check") { routes.check(call) }
             }
         }
@@ -76,27 +73,14 @@ class UpgradeCheckRoutesTest {
         Json.parseToJsonElement(kotlinx.coroutines.runBlocking { bodyAsText() }).jsonObject
 
     @Test
-    fun `before any tap the snapshot says never checked and nothing was fetched`() = testApplication {
-        mount()
-        val snapshot = client.get("/api/upgrade/check").state()
-        assertEquals("never_checked", snapshot.getValue("state").jsonPrimitive.content)
-        assertEquals(JsonNull, snapshot.getValue("latest"))
-        assertEquals(emptyList<String>(), asked)
-    }
-
-    @Test
-    fun `a tap reads the newest version from the verified release and the snapshot keeps it without fetching again`() =
+    fun `a tap reads the newest version from the verified release`() =
         testApplication {
             mount()
             val tap = client.post("/api/upgrade/check")
             assertEquals(HttpStatusCode.OK, tap.status)
             assertEquals("read", tap.state().getValue("state").jsonPrimitive.content)
             assertEquals("0.4.1", tap.state().getValue("latest").jsonPrimitive.content)
-            val fetches = asked.size
-            val snapshot = client.get("/api/upgrade/check").state()
-            assertEquals("0.4.1", snapshot.getValue("latest").jsonPrimitive.content)
-            assertEquals(now, snapshot.getValue("read_at_epoch_millis").jsonPrimitive.content.toLong())
-            assertEquals(fetches, asked.size, "the GET never fetches")
+            assertEquals(now, tap.state().getValue("read_at_epoch_millis").jsonPrimitive.content.toLong())
             assertTrue(asked.all { it.startsWith("$LATEST_BASE/") }, "only the release assets are asked for: $asked")
         }
 
@@ -109,9 +93,6 @@ class UpgradeCheckRoutesTest {
         val failed = client.post("/api/upgrade/check").state()
         assertEquals("not_read", failed.getValue("state").jsonPrimitive.content)
         assertEquals(JsonNull, failed.getValue("latest"))
-        val snapshot = client.get("/api/upgrade/check").state()
-        assertEquals("not_read", snapshot.getValue("state").jsonPrimitive.content)
-        assertEquals(JsonNull, snapshot.getValue("latest"))
     }
 
     @Test
@@ -158,11 +139,11 @@ class UpgradeCheckRoutesTest {
     fun `the upgrade status reports the version a tap read as measured, and the older guess never`() {
         val status = ConsoleUpgradeStatus(EnvReader { null }, checks)
         val before = Json.parseToJsonElement(status.json()).jsonObject
-        assertEquals("unavailable", before.getValue("latest_basis").jsonPrimitive.content)
+        assertEquals(JsonNull, before.getValue("latest"))
         checks.check()
         val after = Json.parseToJsonElement(status.json()).jsonObject
         assertEquals("0.4.1", after.getValue("latest").jsonPrimitive.content)
-        assertEquals("measured", after.getValue("latest_basis").jsonPrimitive.content)
+        assertEquals(JsonNull, after.getValue("latest_unavailable_reason"))
         assertEquals(now, after.getValue("checked_at_epoch_millis").jsonPrimitive.content.toLong())
     }
 

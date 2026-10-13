@@ -71,7 +71,6 @@ internal class LifecycleMount(
         route.get("/api/upgrade") { guard.guarded(call) { upgradeRoute.upgradeJson(call, ports.lifecycle.upgrade) } }
         route.post("/api/upgrade") { guard.guarded(call) { upgradeRuns.start(call) } }
         route.get("/api/upgrade/run") { guard.guarded(call) { upgradeRuns.status(call) } }
-        route.get("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.snapshot(call) } }
         route.post("/api/upgrade/check") { guard.guarded(call) { upgradeChecks.check(call) } }
     }
 }

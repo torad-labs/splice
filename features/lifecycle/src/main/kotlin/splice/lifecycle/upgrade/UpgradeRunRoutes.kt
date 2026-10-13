@@ -1,6 +1,7 @@
 // NEW: V4-220 item 4 (2026-09-25) — `splice upgrade` and `splice upgrade --rollback` from the console:
 //
-//   POST /api/upgrade       {to?: "v0.4.1", rollback?: true}: 202 once the run has started out of process
+//   POST /api/upgrade       {to?: "v0.4.1", rollback?: true}: 202 with an empty body once the run has started out of
+//                           process; the console reads the run from the GET
 //   GET  /api/upgrade/run   the newest run: its state, its exit code once it ended, and its output so far
 //
 // The run restarts the daemon, so the GET the console polls is answered by whichever daemon is up: the
@@ -46,7 +47,7 @@ public class UpgradeRunRoutes(private val runs: UpgradeRunsSource, private val l
             is UpgradeRunStart.Started -> {
                 val run = started.run
                 log("[control] upgrade: started ${LogSafe.str(run.id)} (${LogSafe.str(run.args.joinToString(" "))})\n")
-                reply(call, buildJsonObject { put("run", view(run)) }, HttpStatusCode.Accepted)
+                reply(call, JsonObject(emptyMap()), HttpStatusCode.Accepted)
             }
             is UpgradeRunStart.Busy -> refuse(call, "An upgrade is already running.", HttpStatusCode.Conflict)
             is UpgradeRunStart.Invalid -> refuse(call, started.reason, HttpStatusCode.BadRequest)
@@ -89,7 +90,6 @@ public class UpgradeRunRoutes(private val runs: UpgradeRunsSource, private val l
     }
 
     private fun view(run: UpgradeRunView): JsonObject = buildJsonObject {
-        put("id", run.id)
         putJsonArray("args") { run.args.forEach { add(JsonPrimitive(it)) } }
         put("state", run.state.wire)
         putJsonArray("output") { run.output.forEach { add(JsonPrimitive(it)) } }

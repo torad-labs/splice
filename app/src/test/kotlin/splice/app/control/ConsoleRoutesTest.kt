@@ -367,15 +367,14 @@ class ConsoleRoutesTest {
     }
 
     @Test
-    fun `a wired upgrade port serves all six states verbatim`() = runBlocking {
+    fun `a wired upgrade port serves its payload verbatim`() = runBlocking {
         awaitPort()
-        // The FULL six-state payload, including the basis fields and the absolute check time, because
-        // the route's one job is to hand the console exactly what the port composed. A serving layer
-        // that defaulted `latest_basis` or dropped the null fields would produce a payload that reads
-        // as measured when nothing looked — the disagreement would appear precisely when it matters.
-        val status = """{"installed":"0.4.0","latest":null,"latest_basis":"unavailable",""" +
+        // The FULL payload, including the reasons and the absolute check time, because the route's one job is to
+        // hand the console exactly what the port composed. A serving layer that dropped the null fields would produce
+        // a payload that reads as current when nothing looked.
+        val status = """{"installed":"0.4.0","latest":null,""" +
             """"latest_unavailable_reason":"no upgrade check has succeeded on this daemon",""" +
-            """"rollback_target":null,"rollback_basis":"measured","rollback_unavailable_reason":null,""" +
+            """"rollback_target":null,"rollback_unavailable_reason":null,""" +
             """"checked_at_epoch_millis":null}"""
         control.ports.lifecycle.upgrade = UpgradeStatus { status }
         val response = get("/api/upgrade")
@@ -385,10 +384,8 @@ class ConsoleRoutesTest {
         val named = setOf(
             "installed",
             "latest",
-            "latest_basis",
             "latest_unavailable_reason",
             "rollback_target",
-            "rollback_basis",
             "rollback_unavailable_reason",
             "checked_at_epoch_millis",
         )

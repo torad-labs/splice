@@ -579,7 +579,7 @@ Small, mostly read-only, all under the existing bearer guard.
 | `POST /api/daemon/restart` | draining restart | V4-74 |
 | `GET /api/upgrade` | installed, latest, rollback available | `upgrade` command |
 | `POST /api/upgrade/check` | one tap reads the newest published release (sums, then launch shim); 409 while a read runs, 429 within 10 s of the last | `upgrade` command |
-| `GET /api/upgrade/check` | the last tap's snapshot: state never_checked / read / not_read, latest, read_at; never fetches | `upgrade` command |
+| ~~`GET /api/upgrade/check`~~ (deleted 2026-10-12: no page read it; the Check tap reads the POST's answer) | nothing | — |
 | `GET /api/sessions/{id}/transcript` | the session's local transcript from its head's `CLAUDE_CONFIG_DIR/projects`, paginated, redacted | `SessionRegistry`, `ProjectsLink` (note: `compaction/SessionProject.kt:24` still hardcodes the vanilla path for its headless fallback; fix in the same campaign) |
 | ~~`GET /api/sessions/{id}/edges`, `GET /api/teams/{id}/edges`~~ (deleted 2026-10-12: no page read them) | the edges stay on the wire observation and in the store; a team's chat is where a person reads them | `/api/teams/{id}/chat` |
 | `GET /api/teams/{id}/chat?day=` | the team's group chat: edges joined to the message text read from each member's transcript on demand | edges plus the transcript reader |

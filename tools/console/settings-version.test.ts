@@ -14,12 +14,10 @@ const consoleDir = join(layout().repoRoot, "app/src/main/resources/console");
 const NEVER_CHECKED = {
   installed: "0.4.0",
   latest: null,
-  latest_basis: "unavailable",
   latest_unavailable_reason:
     "no upgrade check has succeeded on this daemon; splice learns the latest version by fetching and " +
     "verifying a release, which no poll may do",
   rollback_target: null,
-  rollback_basis: "measured",
   rollback_unavailable_reason: null,
   checked_at_epoch_millis: null,
 };
@@ -327,7 +325,6 @@ test("a machine with an earlier release on it shows that version too, with the w
 test("a release the daemon could not read is a card with its reason, not a silent absence", async () => {
   const page = await version({
     ...NEVER_CHECKED,
-    rollback_basis: "unavailable",
     rollback_unavailable_reason: "the release layout could not be read: permission denied",
   });
   try {

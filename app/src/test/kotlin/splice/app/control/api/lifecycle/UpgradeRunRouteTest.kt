@@ -115,12 +115,11 @@ class UpgradeRunRouteTest {
         runBlocking {
             val started = post("/api/upgrade", """{"to":"v9.9.9"}""")
             assertEquals(HttpStatusCode.Accepted, started.status, started.bodyAsText())
-            val run = body(started)["run"]!!.jsonObject
+            val run = body(get("/api/upgrade/run"))["run"]!!.jsonObject
             assertEquals(listOf("upgrade", "--to", "v9.9.9"), strings(run, "args"))
             assertEquals("running", run["state"]!!.jsonPrimitive.content)
             val (dir, args) = launched.single()
             assertEquals(listOf("upgrade", "--to", "v9.9.9"), args)
-            assertEquals(run["id"]!!.jsonPrimitive.content, dir.fileName.toString())
             val line = "[control] upgrade: started ${dir.fileName} (upgrade --to v9.9.9)\n"
             assertEquals(listOf(line), logged.filter { it.startsWith("[control] upgrade") })
 

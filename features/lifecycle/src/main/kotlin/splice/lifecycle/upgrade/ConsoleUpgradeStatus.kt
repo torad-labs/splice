@@ -44,7 +44,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 
-/** The two bases a fact may rest on. A LABEL the console prints when it is not `measured`. */
+/** The two bases a fact may rest on: an `unavailable` one carries its reason. */
 internal const val BASIS_MEASURED = "measured"
 internal const val BASIS_UNAVAILABLE = "unavailable"
 
@@ -57,7 +57,7 @@ internal const val LATEST_NOT_CHECKED =
 public class ConsoleUpgradeStatus(env: EnvReader, private val checks: UpgradeChecks = UpgradeChecks(env)) {
     private val layout = UpgradeLayout(env)
 
-    /** The upgrade bay's payload: the three facts, each with the basis it rests on. */
+    /** The upgrade bay's payload: the three facts, and why latest or the rollback target has none. */
     public fun json(): String {
         val rollback = rollbackTarget()
         return buildJsonObject {
@@ -66,11 +66,9 @@ public class ConsoleUpgradeStatus(env: EnvReader, private val checks: UpgradeChe
 
             val found = checks.snapshot()
             put("latest", found.latest?.let(::JsonPrimitive) ?: JsonNull)
-            put("latest_basis", if (found.state == UpgradeReadState.READ) BASIS_MEASURED else BASIS_UNAVAILABLE)
             put("latest_unavailable_reason", latestReason(found))
 
             put("rollback_target", rollback.value)
-            put("rollback_basis", rollback.basis)
             if (rollback.basis == BASIS_UNAVAILABLE) {
                 put("rollback_unavailable_reason", rollback.reason)
             } else {

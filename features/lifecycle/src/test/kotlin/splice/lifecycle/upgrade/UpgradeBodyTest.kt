@@ -55,7 +55,6 @@ class UpgradeBodyTest {
                 "false negative this payload exists to refuse",
         )
         assertEquals(LATEST_NOT_CHECKED, report["latest_unavailable_reason"]!!.jsonPrimitive.content)
-        assertEquals("unavailable", report["latest_basis"]!!.jsonPrimitive.content)
         // The reason must say WHY, not restate the absence, or an operator reads a bare null as a bug.
         assertTrue(report["latest_unavailable_reason"]!!.jsonPrimitive.content.length > 20)
     }
@@ -63,11 +62,9 @@ class UpgradeBodyTest {
     @Test
     fun `a null rollback target is MEASURED, which is not the same as unable to look`() {
         val report = payload()
-        // The layout read succeeds here, so the basis is measured whatever the value: a null target
-        // then means "no previous release exists", a real answer. Reporting it unavailable would turn
-        // a fact into a shrug; reporting an unreadable layout as measured would do the reverse. Both
-        // halves of that distinction are pinned, here and in the body's rollbackTarget().
-        assertEquals("measured", report["rollback_basis"]!!.jsonPrimitive.content)
+        // The layout read succeeds here, so the target is measured whatever the value: a null target then means
+        // "no previous release exists", a real answer, and carries no reason. Giving it one would turn a fact into a
+        // shrug.
         assertEquals(
             JsonNull,
             report["rollback_unavailable_reason"],

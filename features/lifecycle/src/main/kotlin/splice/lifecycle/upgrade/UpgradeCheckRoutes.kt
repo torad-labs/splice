@@ -2,7 +2,6 @@
 //
 //   POST /api/upgrade/check   reads the newest published release once, answers the snapshot (409 while a read runs,
 //                             429 with Retry-After when the last began under ten seconds ago)
-//   GET  /api/upgrade/check   the last snapshot; never fetches
 //
 // {state: "never_checked" | "read" | "not_read", latest, read_at_epoch_millis, reason}. The read blocks on the network,
 // so it runs on the injected [io] dispatcher and never on a request thread. Unwired answers a named 503, like the rest
@@ -31,11 +30,6 @@ public fun interface UpgradeChecksSource {
 }
 
 public class UpgradeCheckRoutes(private val checks: UpgradeChecksSource, private val io: CoroutineDispatcher) {
-    public suspend fun snapshot(call: ApplicationCall) {
-        val source = checks() ?: return unwired(call)
-        reply(call, view(source.snapshot()), HttpStatusCode.OK)
-    }
-
     public suspend fun check(call: ApplicationCall) {
         val source = checks() ?: return unwired(call)
         when (val outcome = withContext(io) { source.check() }) {

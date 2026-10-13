@@ -122,7 +122,8 @@ internal data class TurnsFilter(
         null -> true
         FAILED -> OutcomeTags.isFailed(tag)
         STOPPED -> OutcomeTags.isStopped(tag)
-        else -> tag == outcome
+        // one reason a person reads can be several tags (Rate limited is three), so a comma list matches any of them
+        else -> tag in outcome.split(',')
     }
 
     private fun attributionMatches(row: PerfRow): Boolean = when (attribution.unattributed) {

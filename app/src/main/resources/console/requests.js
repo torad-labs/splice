@@ -578,7 +578,7 @@ async function readSearch() {
 const hitPasses = (r) => (ui.outcome === "all" || (ui.outcome === "fail" ? outcomeOf(r).cls === "fail" : outcomeOf(r).cls === "stopped"))
   && (!ui.model || (ui.model === "none" ? !r.model : r.model === ui.model)) && !ui.account
   && (!ui.sid || String(r.sid ?? "").startsWith(String(ui.sid).slice(0, 8))) && (!ui.compact || r.compact)
-  && (!ui.to || +r.ts <= ui.to) && (!ui.tag || r.outcome === ui.tag) && !Object.keys(WHY_ASKS[ui.why] || {}).length;
+  && (!ui.to || +r.ts <= ui.to) && (!ui.tag || ui.tag.split(",").includes(r.outcome)) && !Object.keys(WHY_ASKS[ui.why] || {}).length;
 /** The list's rows: the window's requests, with a search's own hits folded in. A hit on a request already in the
  *  window marks that row; a hit on an older one is a row of its own, so a search reaches past what the rows hold. */
 function searched() {
@@ -606,7 +606,7 @@ function searched() {
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
 const narrow = (rows) => rows.filter((r) => inPick(r) && (!ui.repo || r.repo === ui.repo || r.repoRoot === ui.repo)
   && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
-  && (!ui.tag || r.outcome === ui.tag) && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
+  && (!ui.tag || ui.tag.split(",").includes(r.outcome)) && (!ui.why || ROW_TEST[ui.why] || WHY[ui.why].has(r)));
 const filtered = () => narrow(searched());
 
 // AN EMPTY WINDOW WHOSE OLDER ROWS MATCH says how many and widens in one tap, for every door and filter (Marlin, after
@@ -701,7 +701,7 @@ function filtersHtml() {
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(repoName(ui.repo))}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.to && !ui.from ? `<span class="fwrap"><span class="fbtn on">Up to ${dayOf(new Date(ui.to))}${clock(new Date(ui.to))}</span><button class="fclear" data-act="unset" data-m="to" aria-label="Clear">${ICON.close}</button></span>` : "")
-    + (ui.tag ? `<span class="fwrap"><span class="fbtn on">${esc(OUTCOME_WORD[ui.tag] || tagWord(ui.tag) || "Failed")}</span><button class="fclear" data-act="unset" data-m="tag" aria-label="Clear">${ICON.close}</button></span>` : "")
+    + (ui.tag ? `<span class="fwrap"><span class="fbtn on">${esc(OUTCOME_WORD[ui.tag.split(",")[0]] || tagWord(ui.tag.split(",")[0]) || "Failed")}</span><button class="fclear" data-act="unset" data-m="tag" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
     + `${sw}${over}${tog("compact", "Compactions", ui.compact)}${orderHtml()}</div>`;
 }
@@ -1153,7 +1153,8 @@ ui.repo = ADDR.get("repo") ?? ui.repo; // ?project= is the pick (kit PICK), read
 if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +ADDR.get("to") : null; } // no end: through now
 if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");
-if (/^(error|failure):[a-z0-9_-]+$/.test(ADDR.get("tag") ?? "")) ui.tag = ADDR.get("tag"); // one kind of failure, by its outcome tag
+// one kind of failure as a person reads it: its outcome tag, or every tag under one word (Rate limited is three; marlin)
+if (/^(error|failure):[a-z0-9_-]+(,(error|failure):[a-z0-9_-]+)*$/.test(ADDR.get("tag") ?? "")) ui.tag = ADDR.get("tag");
 if (ADDR.get("compact") === "1") ui.compact = true; // Usage's compactions count opens with the Compactions toggle on
 if (ADDR.get("order") === "price") ui.order = "price"; // Usage's Breakdown counts open the highest price first
 if (ADDR.get("q")) { ui.q = ADDR.get("q"); document.getElementById("q").value = ui.q; }

@@ -597,12 +597,15 @@ function chatHtml(tm) {
   if (gone(panel)) return keptHtml(panel);
   const msgs = panel.messages || [];
   if (!msgs.length) return `<p class="empty">No messages</p>`;
-  return keptHtml(panel) + msgs.map((m) => {
+  // A message whose text is not in its sender's transcript is drawn as who and when, with no box; the day says so
+  // once, at its top (marlin, Oct 13). splice keeps no message text of its own: it reads the sender's transcript.
+  const bare = msgs.filter((m) => !m.text?.trim()).length;
+  const said = `${bare === msgs.length ? "These messages show" : `${bare} of these messages show`} who and when: ` +
+    "their text is not in the sender's transcript on this machine";
+  const lead = bare ? `<p class="cut"><span>${said}</span></p>` : "";
+  return keptHtml(panel) + lead + msgs.map((m) => {
     const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
-    // a message whose text was not found says so in two words, never a blank row; the daemon's why is its hover (marlin)
-    const body = !m.text?.trim()
-      ? `<div class="body none" title="${esc(m.missing_reason || "")}">Text not found</div>`
-      : `<div class="body">${md(m.text)}</div>`;
+    const body = m.text?.trim() ? `<div class="body">${md(m.text)}</div>` : "";
     return `<div class="tm${from ? "" : " outside"}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
       `<div class="who">${party(tm, m.from_slot, m.from)}${GLYPH.msg}${party(tm, m.to_slot, m.to)}<time>${hhmm(m.at)}</time></div>${body}</div>`;
   }).join("");
@@ -723,7 +726,7 @@ function byRoleHtml(tm) {
   const hours = [0, 1, 2, 3, 4].map((q) => { const t = from + (q * span) / 4; return `<span style="left:${at(t)}">${hhmm(t)}</span>`; }).join("");
   const body = panelWord(state.chat) ?? (all.length
     ? `<div class="timerule" role="img" aria-label="${all.length} messages between members">${ticks}</div><div class="hours">${hours}</div>` +
-      `<p class="note">${all.length} ${all.length === 1 ? "message" : "messages"} between members, each a mark at its time in its sender's colour</p>`
+      `<p class="note">${all.length} ${all.length === 1 ? "message" : "messages"}</p>`
     : `<p class="empty">No messages between members</p>`);
   return `<div class="mcol"><div class="members bays">${bays}</div>${handoffsHtml(body)}</div>`;
 }

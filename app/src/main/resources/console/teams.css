@@ -70,13 +70,15 @@
 }
 /* from 88rem (1440 is 97) the members column is 3828's own 46rem, so its card is the same card, and the day reads down the
    second column, the talk and under it the activity: a sticky talk there left a 574 x 665 px hole under itself beside a
-   feed cut off at its own edge in the first column (builder3's full day, console-lead, Oct 10) */
+   feed cut off at its own edge in the first column (builder3's full day, console-lead, Oct 10). The
+   members span both rows, so a tall column's extra height goes to the second row only (1fr): shared across two auto
+   rows it opened a hole between the talk and the activity (splice-usage, 1440, Oct 13) */
 @container (min-width: 88rem) {
-  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "members feed"; }
+  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "members feed"; grid-template-rows: auto 1fr; }
   .talk { height: calc(100vh - 31rem); min-height: 40rem; }
 }
 @container (min-width: 128rem) {
-  .room { grid-template-columns: 46rem minmax(0, 1fr) 30rem; grid-template-areas: "members talk feed"; }
+  .room { grid-template-columns: 46rem minmax(0, 1fr) 30rem; grid-template-areas: "members talk feed"; grid-template-rows: auto; }
   .talk { position: sticky; top: 1.6rem; }
   .feed { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); min-height: 40rem; }
 }
@@ -195,10 +197,10 @@
 .tm .body p:last-child { margin-bottom: 0; }
 .tm .body ul { margin: .2rem 0 .5rem; padding-left: 1.3rem; }
 .tm .body code { font: 500 .95em/1 var(--font-data); background: var(--obj-sunk); border-radius: .25rem; padding: .12rem .3rem; }
-.tm .body.none { background: transparent; border: var(--ink-w) dashed var(--track-line); box-shadow: none; color: var(--text-mute); font-size: 1rem; }
 .tm.outside .body { box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .cut { display: flex; align-items: center; gap: .8rem; margin: 0; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); width: 100%; max-width: none; }
 .cut::before, .cut::after { content: ""; flex: 1; height: .12rem; background: var(--track-line); border-radius: .1rem; }
+.cut > span { max-width: 44rem; line-height: 1.4; text-align: center; }
 /* in a wide panel the chat reads like a script down the panel's middle: who spoke to whom and when in the margin,
    what they said in a card as wide as the column */
 .talk { container: talk / inline-size; }

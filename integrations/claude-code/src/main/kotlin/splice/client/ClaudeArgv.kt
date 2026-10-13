@@ -10,9 +10,7 @@
 // 2.1.286, whose --help is byte-identical to 2.1.285, and 2.1.287, which removes --client-data-url;
 // re-read 2026-10-05 on 2.1.289: its option table is unchanged, and only subcommands differ; re-read
 // 2026-10-10 on 2.1.296: the flag set and each flag's argument form match 2.1.289's line for line).
-// That version is
-// [ClaudeArgv.GRAMMAR_FROM], and a test holds it equal to TESTED_CLAUDE_CODE: when V4-256 moves the pin,
-// the table is re-read from the new version's --help before the test goes green again.
+// When V4-256 moves the Claude Code pin, the table is re-read from the new version's --help.
 // A switch takes no value, so the bare word after `-p` is the prompt; `<x>` takes the next word;
 // `[x]` takes the next word unless it is a flag; `<x...>` takes every following word up to the next
 // flag; everything after `--` is positional. A word it cannot place (after a flag the client does not
@@ -20,9 +18,6 @@
 package splice.client
 
 public object ClaudeArgv {
-
-    /** The Claude Code release whose `--help` [OPTIONS] was read from. */
-    public const val GRAMMAR_FROM: String = "2.1.296"
 
     /** [argv] with every prompt's text, and every word it cannot place, replaced by its length. The
      *  program (argv[0]), every flag and every listed option's non-prompt value are kept verbatim, so

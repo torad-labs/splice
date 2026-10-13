@@ -80,7 +80,7 @@ internal class McpPluginServers(private val pluginsDir: Path, private val json: 
             ?.let { file -> json.mcpServers(file).map { (name, entry) -> PluginDeclared(name, entry, file) } }
             .orEmpty()
         is JsonArray -> found.flatMap { manifestServers(it, root, manifest) }
-        else -> emptyList()
+        null -> emptyList()
     }
 
     /** [element] with each placeholder of [fills] in its strings replaced by its value. */

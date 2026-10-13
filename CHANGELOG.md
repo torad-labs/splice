@@ -75,7 +75,7 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
   runs it, otherwise end its process. Then run `splice restart` or launch any head. A fresh key
   is minted and the old key is refused. Then relaunch each session. Its next launch writes the
   current turn key to `turn-auth-header`; a session launched before rotation holds a stale key.
-- **A provider on a loopback `base_url` is now a local runtime.** Ollama, LM Studio and vLLM rows
+- **A provider on a loopback `base_url` with the `openai-chat` dialect is now a local runtime.** Ollama, LM Studio and vLLM rows
   are checked against what the runtime serves at boot: a row it does not list, or a
   `context_window` larger than it reports, is a config finding, so boot refuses and lists it with the file's
   others until it is fixed. A runtime that is down boots as before. `local = false` on the provider keeps the 0.3.x
@@ -1723,7 +1723,7 @@ origin.
   empty day.
 - **A plan request's "≈$X at API prices" sits on the top line before "On your plan"** in Highest price.
 - **A project, head or project-head prompt keeps one place in the input on the OpenAI Responses dialect,** so its
-  tokens hit the prompt cache again on claudex, where a replace-mode system prompt had been moving it between turns.
+  tokens hit the prompt cache again on claudex, where an append-mode system prompt had been moving it to the end of the input each turn.
 - **Usage and Requests load on a week of history.** A read asks the login files once per distinct recorded account,
   not once per row.
 - **Teams' account picker lists your logins,** reading the real shape the accounts route answers.

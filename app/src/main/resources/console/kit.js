@@ -366,9 +366,10 @@ const heldFor = (t) => {
  *  slot for reads Working, as before. */
 function workingLook(s) {
   const t = s.turn;
-  // a turn the gate has queued and not let in yet waits its turn, since it entered the queue (splice-turns cc0181422)
+  // a turn the gate has queued and not let in yet reads In line, as a held request reads Waited in line (fin), counted
+  // since it entered the queue (splice-turns cc0181422)
   if (t?.phase == null && s.wait) {
-    return { cls: "working", lamp: ICON.trace, word: `Waiting · <span data-held="${esc(s.id)}">${heldFor(s.wait)}</span>` };
+    return { cls: "working", lamp: ICON.trace, word: `In line · <span data-held="${esc(s.id)}">${heldFor(s.wait)}</span>` };
   }
   if (t?.phase == null) return { cls: "working", lamp: ICON.trace, word: "Working" };
   const word = `${t.compact ? "Compacting" : "Working"} · <span data-held="${esc(s.id)}">${heldFor(t)}</span>`;

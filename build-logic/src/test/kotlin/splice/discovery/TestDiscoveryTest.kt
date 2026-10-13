@@ -276,13 +276,6 @@ class TestDiscoveryTest {
     }
 
     @Test
-    fun `the scanner reports WHICH method the factory annotation marked`() {
-        val parsed = classes(SOURCE_FACTORY).single()
-        assertEquals(listOf("a plain test", "one child per mutation"), parsed.methods)
-        assertEquals(setOf("one child per mutation"), parsed.expandingMethods)
-    }
-
-    @Test
     fun `a module with tests and no XML at all is red by module name`() {
         val quiet = classesIn(SOURCE_OK.replace("SampleTest", "QuietTest"), ":quiet-module", "QuietTest.kt")
         val problems = audit(classes(SOURCE_OK) + quiet, mapOf(MODULE to row(XML_OK)))

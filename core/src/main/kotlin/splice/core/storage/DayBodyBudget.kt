@@ -82,8 +82,9 @@ public class DayBodyBudget(
         Files.isRegularFile(marker(day), NOFOLLOW_LINKS)
 
     /** The index line [bytes] long that [day] takes. Below the bodies' free-space floor it is refused. Past the shared
-     *  index cap the oldest completed UTC day goes whole, across every head (its index, its rolled half and its bodies),
-     *  never today nor the day being written. Null when the line may be written, else why not. Call under [withLock]. */
+     *  index cap the oldest completed UTC day goes whole, across every head (its index, every rolled generation and
+     *  its bodies), never today nor the day being written. Null when the line may be written, else why not. Call
+     *  under [withLock]. */
     public fun admitIndex(day: Path, bytes: Long): String? {
         val available = space.available(day.parent)
         if (available < minFreeBytes || bytes > available - minFreeBytes) return FLOOR_REACHED
@@ -99,7 +100,8 @@ public class DayBodyBudget(
         return null
     }
 
-    /** Each JSONL index file's day and size, a rolled half included; body packs and markers are not the index. */
+    /** Each JSONL index file's day and size, every rolled generation included; body packs and markers are not
+     *  the index. */
     private fun indexDays(dir: Path): List<Pair<LocalDate, Long>> =
         DirectoryEntries.of(dir).mapNotNull { file ->
             val date = dateOf(file) ?: return@mapNotNull null
@@ -107,11 +109,12 @@ public class DayBodyBudget(
             if (attributes["isRegularFile"] == true) date to attributes["size"] as Long else null
         }
 
-    /** Deletes every head's files of one day: the index, its rolled half, its lock, its bodies and their markers. */
+    /** Deletes every head's files of one day: the index, every rolled generation, its lock, its bodies and
+     *  their markers. */
     private fun removeDay(dir: Path, date: LocalDate) {
         DirectoryEntries.of(dir).filter { file ->
-            val name = file.fileName.toString()
-            daySiblings.any { suffix -> name.endsWith("-$date.jsonl$suffix") }
+            val day = DayGenerations.base(file.fileName.toString())
+            daySiblings.any { suffix -> day.endsWith("-$date.jsonl$suffix") }
         }.forEach { Files.deleteIfExists(it) }
     }
 
@@ -160,14 +163,14 @@ public class DayBodyBudget(
     }
 
     private fun marker(day: Path): Path =
-        day.resolveSibling(day.fileName.toString().removeSuffix(".1") + DAY_BODY_EVICTED_SUFFIX)
+        day.resolveSibling(DayGenerations.base(day.fileName.toString()) + DAY_BODY_EVICTED_SUFFIX)
 
     private fun dayFile(pack: Path): Path = pack.resolveSibling(
         pack.fileName.toString().removeSuffix(DAY_BODY_V2_SUFFIX).removeSuffix(DAY_BODY_SUFFIX),
     )
 
     private fun dateOf(day: Path): LocalDate? {
-        val name = day.fileName.toString().removeSuffix(".1")
+        val name = DayGenerations.base(day.fileName.toString())
         val date = Regex(".+-(\\d{4}-\\d{2}-\\d{2})\\.jsonl").matchEntire(name)?.groupValues?.get(1) ?: return null
         return try {
             LocalDate.parse(date)

@@ -7,17 +7,17 @@
 // best-effort by contract (a full lane drops the row and counts it), which is the right degrade for
 // metadata about a turn that has already been served.
 //
-// DAY_MAX_BYTES IS CHOSEN AGAINST THE ROTATE, per the contract: JsonlSink rolls ONE generation away when
-// a file would pass its maxBytes, and a rolled day is a day lost. The busiest store is the activity
-// label store at about one row per session per 30 s: 100 sessions for 24 h is 288,000 rows, about
-// 45 MB at ~150 bytes a row. 512 MB is over ten times that, so a day is never rolled away short of a
-// runaway writer, which the rotate then bounds.
+// DAY_MAX_BYTES IS CHOSEN AGAINST THE ROTATE: JsonlSink rolls a file over its `.1` when it would pass its
+// maxBytes, and [DayGenerations.keep] moves the `.1` it found to the next number first, so no roll loses a
+// row. The busiest store is the activity label store at about one row per session per 30 s: 100 sessions for
+// 24 h is 288,000 rows, about 45 MB at ~150 bytes a row. 512 MB is over ten times that; the trace store rolls
+// on a busy day, and its index cap (DayBodyBudget) bounds what all its generations hold.
 //
 // UTC DAYS, so a file's name does not depend on the daemon host's timezone or move under a DST change.
 //
 // RETENTION deletes whole day files older than the store's window (message edges: the
 // activityRetentionDays knob, default 90; activity labels: today and yesterday, V4-285; a head's trace days:
-// traceRetentionDays), WITH the day's `.lock`, rolled `.1` generation and trace `.bodies` and `.bodies2` packs.
+// traceRetentionDays), WITH the day's `.lock`, every rolled generation and trace `.bodies` and `.bodies2` packs.
 // One stable `<prefix>.days.lock` excludes appends and purges and is never unlinked by either. Reads
 // ignore files older than the window too, so an unswept file never re-enters a view.
 //
@@ -80,14 +80,12 @@ public const val DAY_BODY_V2_SUFFIX: String = ".bodies2"
 // above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
 private const val DAY_MAX_BYTES = 512L shl 20
 
-/** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
-
-/** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
-private const val ROLLED_SUFFIX = ".1"
+/** A day file's own name, then JsonlSink's lock, its newest rolled generation and the trace body files beside it.
+ *  The older generations are [DayGenerations]'. */
 internal val daySiblings = listOf(
     "",
     ".lock",
-    ROLLED_SUFFIX,
+    NEWEST_ROLLED,
     DAY_BODY_SUFFIX,
     DAY_BODY_V2_SUFFIX,
     DAY_BODY_EVICTED_SUFFIX,
@@ -182,7 +180,7 @@ public class ActivityDays(
                             file,
                             record.encode(file),
                             DAY_MAX_BYTES,
-                            JsonlSink.NO_ARCHIVE,
+                            DayGenerations.keep,
                             JsonlSink.PAGE_CACHE_FORCE,
                         )
                         deleted.clear()
@@ -321,14 +319,14 @@ public class DayFiles @JvmOverloads constructor(
         }
     }
 
-    /** V4-343: every file of every day on disk, the newest day first, each day's live file before its rolled half:
-     *  the files [newestFirst] reads, for a reader that reads each one its own way and when it likes (the trace
-     *  count reads several at once, and only what each gained since it last read it). A rolled half is named
-     *  whether or not it is there. A directory that cannot be listed throws why. */
+    /** V4-343: every file of every day on disk, the newest day first, each day's live file before its rolled
+     *  generations, newest first: the files [newestFirst] reads, for a reader that reads each one its own way and
+     *  when it likes (the trace count reads several at once, and only what each gained since it last read it).
+     *  The `.1` generation is named whether or not it is there. A directory that cannot be listed throws why. */
     @Throws(IOException::class)
     public fun files(oldest: LocalDate = LocalDate.MIN): List<Path> =
         days().filter { (date, _) -> !date.isBefore(oldest) }.asReversed()
-            .flatMap { (_, file) -> listOf(file, file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")) }
+            .flatMap { (_, file) -> listOf(file) + DayGenerations.oldestFirst(file).asReversed() }
             .filter { metadata.regularSize(it) != null || !Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
 
     /** Count actual day files, including an empty base or a rolled half without its base. Symlink targets
@@ -421,6 +419,8 @@ public class DayFiles @JvmOverloads constructor(
      *  disk, with why its delete failed. */
     private fun deleteDay(file: Path): Map<Path, Throwable> =
         daySiblings.map { suffix -> file.resolveSibling("${file.fileName}$suffix") }
+            .plus(DayGenerations.oldestFirst(file))
+            .distinct()
             .mapNotNull { sibling ->
                 Cancellables.runCatchingCancellable { removal.remove(sibling) }
                     .exceptionOrNull()?.let { sibling to it }
@@ -435,9 +435,9 @@ public class DayFiles @JvmOverloads constructor(
             .sortedBy { it.first }
     }
 
-    /** The day's rotated older half, read BEFORE the live file so the day comes back whole and in order
-     *  (v0.4.0 release: the read skipped it, so a day that rotated started halfway, unsaid). */
-    private fun readRolled(file: Path): List<String> = readLines(file.resolveSibling("${file.fileName}$ROLLED_SUFFIX"))
+    /** The day's rolled generations, oldest first, read BEFORE the live file so the day comes
+     *  back whole and in order (v0.4.0 release: the read skipped them, so a day that rotated started halfway). */
+    private fun readRolled(file: Path): List<String> = DayGenerations.oldestFirst(file).flatMap { readLines(it) }
 
     /** [file]'s lines, decoded leniently: a malformed byte reads as U+FFFD and costs only its own line,
      *  as JsonlSink.readTailAt reads. None when the file is not there; any other failure throws. */
@@ -465,7 +465,7 @@ public sealed class DayPurge {
 
 /** A day file's name: its store's prefix, then the UTC day. */
 private val DAY_FILE = Regex(
-    "(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock|\\.bodies2?|\\.bodies-evicted(?:\\.tmp)?)?",
+    "(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.\\d+|\\.lock|\\.bodies2?|\\.bodies-evicted(?:\\.tmp)?)?",
 )
 
 /** V4-260: the [ActivityDays] stores that have day files in [dir], by prefix. For the trace dir that

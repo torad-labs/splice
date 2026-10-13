@@ -16,15 +16,15 @@ internal class DayFileInventory(prefix: String) {
     private val namePattern =
         Regex(
             "${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl" +
-                "(?:\\.lock|\\.1|\\.bodies2?|\\.bodies-evicted(?:\\.tmp)?)?",
+                "(?:\\.lock|\\.\\d+|\\.bodies2?|\\.bodies-evicted(?:\\.tmp)?)?",
         )
     private val packs = listOf(DAY_BODY_SUFFIX, DAY_BODY_V2_SUFFIX)
 
     fun inventory(days: List<Pair<LocalDate, Path>>, retentionDays: Int): DayInventory {
         require(retentionDays > 0)
         val kept = days.mapNotNull { (date, file) ->
-            val siblings = listOf("${file.fileName}.1", "${file.fileName}") + packs.map { "${file.fileName}$it" }
-            val content = siblings.map { file.resolveSibling(it) }
+            val packFiles = packs.map { file.resolveSibling("${file.fileName}$it") }
+            val content = (DayGenerations.oldestFirst(file) + file + packFiles)
                 .mapNotNull { path -> regularSize(path)?.let { path to it } }
             if (content.isEmpty()) null else date to content
         }

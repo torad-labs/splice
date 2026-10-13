@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.storage.DAY_BODY_SUFFIX
 import splice.core.storage.DAY_BODY_V2_SUFFIX
+import splice.core.storage.DayGenerations
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -78,8 +79,8 @@ internal enum class TracePackFormat(
         return if (whole) TracePackEntry(stored, raw, HEX.formatHex(digest)) else null
     }
 
-    /** The file this format keeps [day]'s bodies in; a rolled day shares its day's pack. */
-    fun pack(day: Path): Path = day.resolveSibling(day.fileName.toString().removeSuffix(".1") + suffix)
+    /** The file this format keeps [day]'s bodies in; every rolled generation shares its day's pack. */
+    fun pack(day: Path): Path = day.resolveSibling(DayGenerations.base(day.fileName.toString()) + suffix)
 
     /** Whether [reference] resolves against this store, by its [TRACE_REFERENCE_TAG]. */
     fun names(reference: JsonObject): Boolean = reference[TRACE_REFERENCE_TAG] == JsonPrimitive(version)

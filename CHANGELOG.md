@@ -861,7 +861,10 @@ origin.
   completed UTC day's body packs across heads. The current UTC day's packs are protected, and
   JSONL records survive body eviction. An evicted or refused body is marked unavailable with its reason.
   Existing v1 `.jsonl.bodies` and inline rows remain readable, and retention or purge removes
-  both pack formats with the day.
+  both pack formats with the day. The JSONL index across all heads is capped at 16 GiB: past it, the oldest
+  completed UTC day goes whole (index, every rolled generation and its bodies) across every head. Today and the
+  day being written are never removed, and an index line that would pass the cap with nothing left to remove is
+  refused with its reason, as a line below the free-space floor is.
 - **Trace lists retain metadata, not whole conversations.** Trace API lists and `splice trace`
   tables validate compressed body references in bounded chunks without assembling
   their body text. A single-turn view still reads the stored bodies. Body literals and retained
@@ -1058,6 +1061,30 @@ origin.
   relative project root or a strip pattern that does not compile is a config finding naming its table, listed with every
   other finding, so splice does not start rather than skipping the head. `splice doctor` names the unreadable path before
   a restart.
+- **A `[compaction]` table splice cannot build refuses boot with the other findings.** Both `instructions` and
+  `file` set, a blank or repeated model, or a repeated project stopped the daemon on its own before, so it was never
+  listed beside the file's other findings and the fix session was never offered. A `file =` boot cannot read now
+  refuses boot too, instead of starting with that rule off. A file that goes unreadable while the daemon runs still
+  only turns its rule off.
+- **A day file that rolls twice in one UTC day keeps its first roll.** A day file past 512 MiB rolls to `.1`, and a
+  second roll that day replaced the `.1`, so the day's oldest rows were deleted without a word. The old `.1` now
+  moves to the next free number first: `.2` is the day's first roll, `.3` its second, and `.1` always the newest.
+  Reads, counts, purges, the trace body pack and the 16 GiB index cap take in every generation of a day.
+- **Claude Code's own files say when splice could not read them.** A home folder splice cannot list now logs one
+  line naming it, once until the daemon restarts, instead of every Claude Code identity under it vanishing from the
+  MCP and plugin readers. A head's `settings.json` that does not parse logs one line naming the file before splice
+  rebuilds it, since the rebuild drops the model saved there.
+- **A resume hook whose move fails says why.** "session could not be moved" now carries the failure's class, a
+  filesystem failure's reason without its path, and the line in splice that threw. The message itself stays
+  withheld, since this route reads transcripts.
+- **A resume word that is not a session id is no longer warned away.** Claude Code resumes a session by its name, or
+  opens its picker on a search word, but splice warned any word in no transcript tree as an absent id Claude Code would
+  refuse. The warning now stands only for a UUID, the shape of every session id.
+- **A Bash activity label names the command, never a shell keyword or a flag.** `for k in …; do …` read
+  "Running for k" and a continued line read "Running -g". A `for`, `select` or `case` header is skipped, the keywords
+  that lead into a command are dropped, a backslash continuation joins its line, and a flag never heads the label.
+- **The client-scaled tokens line is logged once per factor, not once per turn.** It filled about 5% of the journal.
+  A row says its factor once, and again only when its factor, window or window source changes.
 - **`splice add` checks what it says it checks.** The live turn runs the first model the person chose, so a head
   whose model is wrong fails the check instead of passing on the default; an OAuth credential counts as usable when it
   is unexpired or refreshable, not merely present; and an openai-responses head's model list is read with the one URL `splice models`
@@ -1400,7 +1427,8 @@ origin.
   WebSocket round is one too. `splice trace <head>` reads the files with no daemon (a table per
   turn; `--turn ID` for one turn in full; `--session`, `--last`, `--json`; `--purge` deletes them
   and says what went). The directory is owner-only, whole day files older than
-  `traceRetentionDays` (7) are deleted, and a body past `traceMaxBodyChars` is cut and flagged.
+  `traceRetentionDays` are deleted once you set it, shorter or longer than your history window (left unset,
+  trace follows `historyRetentionDays`), and a body past `traceMaxBodyChars` is cut and flagged.
   `PUT /api/heads/{head}/capture` also turns a head's trace off after restart. Turning it off
   removes retained days at the next daemon start; kept data can also be deleted separately.
   `splice doctor` names heads whose trace is off or whose changed setting needs a restart.
@@ -1432,7 +1460,7 @@ origin.
 - **A connection that failed is named for what actually failed.** The JDK client wraps every connect failure in the same `ConnectException`, so a host that does not resolve and a host with no route were both told as `connection refused … nothing is listening there` and sent the operator to start a server; each is now named from the link that says what happened (`cannot resolve the host of …`, `could not connect to …: No route to host`), and only the client's real refusal is called one. A connect timeout's detail no longer carries the request's full URL, and the per-attempt retry lines in the log use the same words as the ending instead of an empty message. A 429 whose text mentions tokens (a per-minute token quota) is a rate limit again rather than an overflow: it takes the cooldown, and Claude Code is no longer told to compact a conversation that fits. On the OpenAI chat dialect, an in-band error's own numeric code is no longer read as an HTTP status, and an error the vendor typed or gave a status, which the same bytes reproduce, is no longer advertised to Claude Code as retryable; an in-band error with neither keeps the retryable wire it had.
 - **A local model server's errors say what happened, and an in-band chat error keeps its class.** llama-server's three failures reached Claude Code as the bare text it sent, and the banner printed "API error" over them: a 503 `Loading model` now reads as the local server still loading its weights; `exceed_context_size_error` becomes `prompt is too long: N tokens > M maximum`, rather than an unclassified server failure; and the mid-decode `Context size has been exceeded.` is named as the shared KV pool being full, retried, never reported as an overflow, because the request fits and the other conversations hold the pool. The OpenAI chat dialect's in-band `error` event now goes through the same classifier as every other path instead of being treated as a generic upstream error whatever it said, so overflow and rate-limit events keep their distinct classifications; an event with no recognisable shape keeps the wire it had. In offline tests with Claude Code 2.1.285 and 2.1.286, a `prompt is too long` HTTP 400 after a tool result triggered compaction; a first-exchange refusal and the plain in-band overflow control did not. splice sends that shape for its own early refusal (the measured GPT models on a ChatGPT sign-in, and an OpenAI Responses row that sets `compaction_reserve_tokens`) and for an overflow the provider reports before both the first model frame and splice's own visible progress line; an overflow after either has opened the stream stays in-band. A failed connection names what happened and where instead of `upstream connection failed (no detail)`: the JDK client's refused connect carries no message, so a local server that was simply not running read as nothing at all; it now reads `connection refused by 127.0.0.1:8099: nothing is listening there; the server is down or still starting`, and connect timeouts, DNS failures, read timeouts, TLS failures, resets and early closes are each named with the endpoint's host and port (never its path or query). A context overflow answered with a non-429 4xx is sent upstream once rather than retried: the same bytes overflow the same window, and every re-send only delayed the compaction (on the bonsai head, with retries raised to ten, one 1.4 MB request went out ten times over 43 s). The same offline clients also compacted when a post-tool overflow arrived after splice's visible thinking progress, before any model answer text: the streamed HTTP 200 carried an in-band `invalid_request_error` containing `prompt is too long`, and the next client request was the summary, not a non-stream retry. Both clients recovered even with the fake reporting only 100 input tokens and its token-count endpoint fixed at 100; neither called that endpoint. This recovery was triggered by the overflow, not the reported usage threshold.
 - **Only failures a retry can heal are advertised as retryable.** A failure arriving before any content now reaches Claude Code as the one in-band error it retries (`overloaded_error`) instead of a terminal `api_error` it reads as the end of the session. A failure that an identical re-send reproduces exactly (a model refusal, a content-filtered turn, a vendor `invalid_parameter`, an unparseable base URL) is exempt and keeps its real type: it is not a retry but a bill, up to 300 client re-sends, each spending splice's own upstream retries, four attempts by default. A buffered (`stream:false`) failure is untouched by the rule and keeps its real status: a 429 stays 429 with its rate-limit headers, an api_error stays 502.
-- **A rate limit or spent account can be retried before answer content reaches the client.** A persistent 429 before that point reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer, including cooldown, account pool, classifier and admission, rather than an `invalid_request_error`.
+- **A rate limit or spent account can be retried before answer content reaches the client.** A persistent 429 before that point reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`, except on a native Claude head, which hands Claude Code the provider's own 429 reply with its rate-limit headers once splice's own wait is spent; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer, including cooldown, account pool, classifier and admission, rather than an `invalid_request_error`.
 - **An empty model turn is retried with backoff.** A turn that ends with nothing for the client,
   such as Muse reasoning its whole budget away, ends as `overloaded_error` with the explanation
   kept, so the client backs off and retries instead of stalling. A model that closes an empty

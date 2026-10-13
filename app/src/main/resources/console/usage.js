@@ -227,8 +227,8 @@ const keyRecord = (label) => {
  *  and reads by the label alone. A row without them (a daemon before the label contract) matches by every name it has and reads
  *  as it always did, so the page changes by itself the moment the daemon serves the ref. */
 const planRowOf = (head, label) => S.accounts.find((a) => (a.heads || []).includes(head) && a.kind !== "api-key"
-  && (a.ref ? a.ref === label : [a.account?.email, a.account_labels?.[head], a.selector_key, a.label, a.display_name].some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
-const planName = (row, fallback) => (row.ref ? row.display_name : row.account?.email || row.display_name || fallback || "");
+  && (a.ref ? a.ref === label : [a.account_labels?.[head], a.selector_key, a.label, a.display_name].some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
+const planName = (row, fallback) => (row.ref ? row.display_name : row.display_name || fallback || "");
 /** An account as every page names it: a plan by its name, a key by its variable and the day splice first saw it. */
 function acctLabel(head, label, name) {
   const plan = planRowOf(head, label);
@@ -274,7 +274,7 @@ const DRILLS = () => `<span class="drill">${DIMS[nextBy("account")].word}${DOWN}
 // "Not read yet" is marlin's word for a read in flight, and Usage starts none.
 const limitsWord = (row) => row.no_usage_at_epoch_seconds ? "No limits reported" : "Not read";
 function plansHtml() {
-  const cards = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.account && !row.observed_at_epoch_seconds)).map((row) => {
+  const cards = S.accounts.filter((row) => (row.heads || []).some(isPlanHead) && !(row.login_place && !row.credential_present && !row.observed_at_epoch_seconds)).map((row) => {
     const windows = [windowOf(row.five_hour_used_percent, row.five_hour_reset_epoch_seconds, row.five_hour_window_seconds, "short", row.five_hour_current),
       windowOf(row.seven_day_used_percent, row.seven_day_reset_epoch_seconds, row.seven_day_window_seconds, "long", row.seven_day_current)].filter(Boolean);
     const out = !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal;

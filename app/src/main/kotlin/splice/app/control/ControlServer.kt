@@ -167,7 +167,9 @@ internal class ControlServer(
 
     // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
     // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
-    private val mcp: McpMount? = runtime.mcpHost?.let { McpMount(it, guard, McpLaunchFolders(sessions)) }
+    private val mcp: McpMount? = runtime.mcpHost?.let { host ->
+        McpMount(host, guard, McpLaunchFolders(sessions, McpServerClasses { host.sharing.plan(it) }))
+    }
     private val mounts: List<ControlMount> = listOf(
         ControlMount(fleet::register),
         ControlMount(lifecycle::register),

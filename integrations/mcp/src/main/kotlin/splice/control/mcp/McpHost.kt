@@ -51,7 +51,8 @@ public fun interface GlobalMcpServers {
 }
 
 public class McpHost(
-    sharing: McpSharing,
+    /** How servers are classed for the hub (MCP hub step 3); the plans in /api/mcp class every source with it. */
+    public val sharing: McpSharing,
     global: GlobalMcpServers,
     private val config: McpHostConfig = McpHostConfig(),
     launcher: McpProcessLauncher? = null,

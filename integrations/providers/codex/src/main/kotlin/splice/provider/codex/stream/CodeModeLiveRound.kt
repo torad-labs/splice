@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.HeadStopSignal
@@ -100,9 +101,14 @@ internal class CodeModeLiveRound(
     @Volatile var permanentEnding: TurnOutcome.Failure? = null
         private set
 
+    /** The perf of the turn that posted this source, which counts its upstream tries. */
+    @Volatile var sourcePerf: TurnPerf? = null
+        private set
+
     fun start(scope: CoroutineScope, post: CodeModeRedirectablePost, body: CodeModeBody, end: TurnEnd) {
         check(finished == null)
         billing.start(post.postingRow)
+        sourcePerf = post.perf
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)
             try {

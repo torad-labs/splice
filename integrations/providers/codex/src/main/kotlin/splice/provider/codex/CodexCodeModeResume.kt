@@ -9,6 +9,7 @@ import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeSourceReset
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -150,7 +151,7 @@ internal class CodexCodeModeResume(
                     context.link.sink,
                     driver.streams.find(record),
                 ),
-            )
+            ).also { CodeModeSourceReset.note(driver.streams.find(record), it, context.link.post.perf) }
         }
     }
 

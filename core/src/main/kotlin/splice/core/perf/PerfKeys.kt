@@ -230,6 +230,11 @@ public object PerfKeys {
      *  billed upstream and never reported here. Written only when the turn cut one, so an absent key reads as none. */
     public const val CUT_SOURCE_ROUNDS: String = "cut_source_rounds"
 
+    /** The upstream tries made by the turn that posted a code-mode script's source, on the row of a later client
+     *  step that source's reset ended. That step made no try of its own, so its [ATTEMPTS] stays 0 and this says
+     *  the stream it waited on reset after this many. Written only on such a step, so an absent key reads as none. */
+    public const val SOURCE_ATTEMPTS: String = "source_attempts"
+
     /** The classified failure's retry decision: 1 is permanent, 0 retryable; absent when no decision was observed. */
     public const val FAILURE_PERMANENT: String = "failure_permanent"
 

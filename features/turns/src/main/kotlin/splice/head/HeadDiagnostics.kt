@@ -14,7 +14,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
-import splice.core.head.GateCounts
 import splice.core.head.GateHealth
 import splice.core.head.GateWatchdog
 import splice.core.head.HeadHealth
@@ -55,12 +54,7 @@ internal class HeadDiagnostics(
                 inflight = gateSnap.inflight,
                 queued = gateSnap.queued,
                 limit = gateSnap.limit,
-                counts = GateCounts(
-                    acquired = gateSnap.traffic.acquired,
-                    released = gateSnap.traffic.released,
-                    waited = gateSnap.traffic.waited,
-                    avgWaitMs = gateSnap.traffic.avgWaitMs,
-                ),
+                counts = gateSnap.traffic,
                 live = gateSnap.live,
                 waiting = gateSnap.waiting,
                 // The first-output, idle and re-anchor tiers are live knobs, read as a turn would read them now; the

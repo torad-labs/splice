@@ -22,6 +22,7 @@ package splice.upstream.retry
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import splice.core.head.GateCounts
 import splice.core.head.GatePhase
 import splice.core.head.GateSlot
 import splice.core.head.GateWait
@@ -103,7 +104,7 @@ public class InflightGate(
         val queued: Int,
         val limit: Int,
         /** What the gate has delivered, released and made wait since it was built. */
-        val traffic: GateTraffic,
+        val traffic: GateCounts,
         /** One reading per slot held, oldest first. */
         val live: List<GateSlot>,
         /** One reading per queued waiter, oldest first. */
@@ -116,7 +117,7 @@ public class InflightGate(
             inflight = inflight,
             queued = queue.size,
             limit = maxInflight(),
-            traffic = GateTraffic(
+            traffic = GateCounts(
                 acquired = acquired,
                 released = released,
                 waited = waited,
@@ -447,12 +448,3 @@ public class InflightGate(
         }
     }
 }
-
-/** What an [InflightGate] has delivered since it was built: slots acquired and released, the deliveries that
- *  waited in the queue first, and their mean wait in milliseconds, rounded (0 while none has). */
-public data class GateTraffic(
-    val acquired: Long,
-    val released: Long,
-    val waited: Long,
-    val avgWaitMs: Long,
-)

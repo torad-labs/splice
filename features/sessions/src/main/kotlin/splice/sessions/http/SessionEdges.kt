@@ -2,6 +2,7 @@
 package splice.sessions.http
 
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.put
 import splice.sessions.activity.MessageEdge
 import splice.sessions.registry.SessionRecord
 import splice.sessions.transcript.SentTexts

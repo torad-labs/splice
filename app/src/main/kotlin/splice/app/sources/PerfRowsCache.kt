@@ -82,7 +82,6 @@ internal class PerfRowsCache(
     val retainedBytes: Long
         get() = CACHE_OVERHEAD_BYTES + recordBytes + names.retainedBytes + (codec?.retainedBytes ?: 0L) +
             generations.values.sumOf { it.metadataBytes }
-    val retainedRows: Int get() = recordCount
 
     fun versions(): List<PerfReadVersion> = generations.values.map { state ->
         PerfReadVersion(state.path, state.version, state.receipt, state.complete, state.prefixDigest)

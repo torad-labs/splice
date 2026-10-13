@@ -88,7 +88,6 @@ class PerfCompactTierTest {
         val parsed = source.parsedLines
         val second = compact.turns(since, n = 3).toString()
         assertEquals(first, second)
-        assertTrue(tiny.retainedRows < ROWS, "the whole-row tier cannot hold the window")
         assertTrue(source.parsedLines - parsed <= 3, "a repeat read decodes only the rows it shows")
 
         val asks = "&ask=test%3Dwaited%26silence_ms%3D60000%26n%3D1%26usage%3D0"

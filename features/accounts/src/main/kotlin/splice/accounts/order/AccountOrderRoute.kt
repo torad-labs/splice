@@ -32,7 +32,6 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
                     put("head", head.key)
                     putJsonArray("order") { }
                     putJsonArray("effective_order") { }
-                    put("single_account", true)
                 }.toString(),
             )
         } else {

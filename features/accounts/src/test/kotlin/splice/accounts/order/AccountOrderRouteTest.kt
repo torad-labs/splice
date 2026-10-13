@@ -99,7 +99,6 @@ class AccountOrderRouteTest {
         val answer = client.get("/api/auth/head/order")
         assertEquals(HttpStatusCode.OK, answer.status)
         val payload = Json.parseToJsonElement(answer.bodyAsText()).jsonObject
-        assertEquals("true", payload.getValue("single_account").jsonPrimitive.content)
         assertEquals(
             emptyList<String>(),
             payload.getValue("effective_order").jsonArray.map { it.jsonPrimitive.content },

@@ -737,7 +737,12 @@ async function pinLogin(s, label) {
 }
 /** What the session used today, on every command it ran on: the same per-session totals Requests sums
  *  (GET /api/perf/turns?session=), from local midnight. Null until read, and kept null when no command answered. */
-const readUsage = (s) => alone(`usage ${s.id}`, () => readUsageNow(s));
+const readUsage = (s) => alone(`usage ${s.id}`, () => { usageAt.set(s.id, Date.now()); return readUsageNow(s); });
+// TODAY'S USAGE IS READ AGAIN EVERY 30 S, NOT ON EVERY 5 S RELOAD. It is one /api/perf/turns per command, 11 of them
+// taking up to 1.8 s, and on every reload they held the browser's six connections to splice, so a card clicked then
+// waited behind them: 1.5 s to its first text where a free connection gives 0.2 s (splice-sessions, Oct 13, at 3394).
+const USAGE_EVERY_MS = 30_000;
+const usageAt = new Map();
 async function readUsageNow(s) {
   const from = new Date(); from.setHours(0, 0, 0, 0);
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1123,7 +1128,7 @@ async function reload() {
   render({ stick: false });
   const s = ui.open && find(ui.open);
   if (s && s.state !== "ended" && state.logs[s.id] !== null && !state.logs[s.id]?.extended) readLog(s);
-  if (s && s.state !== "ended") readUsage(s);
+  if (s && s.state !== "ended" && Date.now() - (usageAt.get(s.id) ?? 0) >= USAGE_EVERY_MS) readUsage(s);
 }
 
 // the door's session is taken before the first draw, which writes the address from what is open (nothing yet)

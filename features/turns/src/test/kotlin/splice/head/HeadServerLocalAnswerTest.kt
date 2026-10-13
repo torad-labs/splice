@@ -10,8 +10,10 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
@@ -37,6 +39,7 @@ import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private class LocalAnswerAuth : RefreshableAuthProvider {
@@ -134,9 +137,22 @@ class HeadServerLocalAnswerTest {
     fun `an answered side query leaves a perf row that names its kind and counts as no turn`() = runBlocking {
         post(stream = true)
 
-        assertTrue(AsyncFileIo.drain(), "the row must reach disk before it is read")
-        val row = Files.readAllLines(perfFile).map { Json.parseToJsonElement(it).jsonObject }
-            .single { it["activity_query"] != null }
+        // The head records the row AFTER the answer's last byte has gone out (TurnDriver.answerLocally), and the
+        // write itself is queued on AsyncFileIo, so the client can hold the whole answer before the row is even
+        // queued: drain, then look, until the row is on disk or ten seconds pass.
+        val deadline = System.nanoTime() + 10.seconds.inWholeNanoseconds
+        var rows = emptyList<JsonObject>()
+        while (rows.isEmpty() && System.nanoTime() < deadline) {
+            assertTrue(AsyncFileIo.drain(), "the queued writes must drain")
+            rows = if (Files.exists(perfFile)) {
+                Files.readAllLines(perfFile).map { Json.parseToJsonElement(it).jsonObject }
+                    .filter { it["activity_query"] != null }
+            } else {
+                emptyList()
+            }
+            if (rows.isEmpty()) delay(50.milliseconds)
+        }
+        val row = rows.single()
         assertEquals("1", row.getValue("activity_query").toString(), row.toString())
         assertEquals("1", row.getValue("local_step").toString(), "no turn figure may count the answer: $row")
         assertEquals("ok", row.getValue("outcome").jsonPrimitive.content)

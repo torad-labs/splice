@@ -45,17 +45,6 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
-private enum class PerfSelection { WORK, ECONOMICS }
-
-/** One settled scan supplies the work and probe sides of historical economics reconciliation. [probeTears] holds, for
- *  each line the scan could not read as a row that might still be a legacy liveness probe, its leading timestamp (null
- *  where it names none): a line whose readable start does not show a model, since every probe row carries an empty one. */
-internal data class EconomicsPerfEvidence(
-    val work: PerfRowsWindow,
-    val probes: List<PerfRow>,
-    val probeTears: List<Long?>,
-)
-
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
     /** Where PerfStats archives retired generations; null reads the two live ones only. */

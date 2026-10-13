@@ -70,7 +70,6 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
-import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.UUID
 import kotlin.io.path.isSymbolicLink
@@ -117,38 +116,6 @@ private class MigrationPlan {
             parked.joinToString(", ") { globalProjects.relativize(it).toString() } + "\n"
 }
 
-/** Every file of a shared projects tree copied into a head's own, for [ProjectsLink.ensureOwn]: bytes, never a link,
- *  so nothing this head writes reaches the shared tree. Files.copy takes the kernel's direct copy, which a filesystem
- *  with reflinks may share extents through; ext4, this machine's, copies the bytes. A symlink in the tree (Claude Code
- *  writes subagent transcripts as absolute links into it) is copied as its target's bytes, as ResumeAcrossHeads copies
- *  one; a link to no regular file has none and is named once. The copy is refused before it starts when it would leave
- *  less than a tenth of the disk free: a tree of tens of gigabytes must not fill the disk under every other job. */
-private class OwnTreeCopy(private val log: LogSink) {
-    fun fill(shown: Path, staged: Path) {
-        val bytes = Files.walk(shown).use { tree ->
-            tree.filter { Files.isRegularFile(it) }.mapToLong(Files::size).sum()
-        }
-        val store = Files.getFileStore(staged)
-        if (store.usableSpace - bytes < store.totalSpace / FREE_SHARE) {
-            throw FileSystemException("$shown", null, "a $bytes-byte copy would leave under a tenth of the disk free")
-        }
-        Files.walk(shown).use { tree ->
-            tree.forEach { entry ->
-                val target = staged.resolve(shown.relativize(entry).toString())
-                when {
-                    Files.isDirectory(entry, NOFOLLOW_LINKS) -> Files.createDirectories(target)
-                    Files.isSymbolicLink(entry) && !Files.isRegularFile(entry) ->
-                        log("[projects] skipped $entry: a link to no regular file has no bytes to copy\n")
-                    else -> Files.copy(entry, target, COPY_ATTRIBUTES)
-                }
-            }
-        }
-    }
-}
-
-// why: the share of the disk a private projects tree's copy must leave free, a tenth
-private const val FREE_SHARE = 10L
-
 // The aside tree's name marker: `.projects.migrating-<uuid>` beside the link. A sweep that could not
 // finish leaves it there, and the next launch finds it by this marker.
 private const val ASIDE_MARK = ".migrating-"
@@ -187,20 +154,18 @@ internal class ProjectsLink(
         }
     }
 
-    /** A head that isolates projects but whose [dst] is still a link from when it shared them gets a real tree, as a
-     *  fresh head does, holding a COPY of every file the link showed ([OwnTreeCopy]). Never a hardlink: Claude Code
-     *  appends to a transcript in place, so a shared inode would carry this head's resumed sessions into the shared
-     *  tree, the leak head isolation forbids (splice-lead, Oct 13). The shared tree is read only. The swap is the link's removal and one rename, the window
-     *  [link] accepts. A failure before the swap leaves the link serving; one at the rename puts the link back. Either
-     *  is logged, and the next launch tries again (splice-lead, Oct 13). */
+    /** A head that isolates projects but whose [dst] is still a link from when it shared them gets an EMPTY private
+     *  tree, as a fresh head does, and the shared tree is not touched. Nothing is copied: a session crosses heads the
+     *  one way head isolation allows, an explicit `-r` copy with its model rewritten (ResumeAcrossHeads), so the head
+     *  needs none of the shared transcripts up front (splice-lead, Oct 13). The empty tree is made beside the link and
+     *  renamed over it once the link is removed, so dst is missing only for that instant; a failure puts the link back
+     *  and is logged, and the next launch tries again. */
     private fun ownFromLink(dst: Path, log: LogSink) {
         val staged = dst.resolveSibling(".${dst.fileName}.splice-own-${UUID.randomUUID()}")
         var linkTo: Path? = null
         val made = Cancellables.runCatchingCancellable {
             linkTo = Files.readSymbolicLink(dst)
             Files.createDirectory(staged)
-            PathProbe.resolved(dst)?.takeIf { Files.isDirectory(it, NOFOLLOW_LINKS) }
-                ?.let { shown -> OwnTreeCopy(log).fill(shown, staged) }
             Files.delete(dst)
         }
         val swapped = if (made.isFailure) {
@@ -210,16 +175,19 @@ internal class ProjectsLink(
         }
         val cause = swapped.exceptionOrNull()
         if (cause == null) {
-            log("[projects] $dst was a link although this head isolates projects; it is now a private tree\n")
+            log(
+                "[projects] $dst was a link to the shared transcripts; it is replaced by an empty private tree, " +
+                    "and an older session comes over with -r <session id>\n",
+            )
             return
         }
         val back = linkTo?.takeIf { made.isSuccess }
         Cancellables.discard(
             Cancellables.runCatchingCleanup {
                 back?.let { fs.createSymbolicLink(dst, it) }
-                if (Files.isDirectory(staged, NOFOLLOW_LINKS)) deleteTree(staged)
+                Files.deleteIfExists(staged)
             },
-            "the staged tree holds names only, and the files live on in the tree the link points at",
+            "the link is put back and the empty staged tree removed, best-effort",
         )
         log(
             "[projects] $dst is a link although this head isolates projects, and it could not become a private " +

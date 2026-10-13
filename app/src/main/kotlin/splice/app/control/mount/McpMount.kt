@@ -44,9 +44,14 @@ internal class McpMount(
         route.delete("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.delete(call) } }
     }
 
-    /** The host's status with the plans beside it. */
-    private fun status(): String =
-        JsonObject(Json.parseToJsonElement(host.statusJson()).jsonObject + ("plans" to plans.json())).toString()
+    /** The host's status with the plans beside it, and each census row's place in them (`launches`), read once. */
+    private fun status(): String {
+        val status = Json.parseToJsonElement(host.statusJson()).jsonObject
+        val read = plans.read()
+        val sources = plans.placed(status["sources"] as? JsonObject, read)
+        val placed = listOfNotNull(sources?.let { "sources" to it }, "plans" to plans.json(read))
+        return JsonObject(status + placed).toString()
+    }
 
     override fun start() = host.start()
 

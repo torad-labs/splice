@@ -31,6 +31,8 @@ public data class McpDispositioned(
     val reason: String,
     /** The same reason as a key and value the console words; null for a server that is shared. */
     val why: McpWhy? = null,
+    /** How the hub runs the server (hub step 3), for a server the canonical plan decides; null for one it does not. */
+    val shareClass: McpShareClass? = null,
 )
 
 /** One kind's shape in the report — sizes only; McpStatus renders these onto the wire. */
@@ -116,9 +118,14 @@ public class McpInventory(
 
     private fun canonicalDisposition(reg: McpRegistration, plan: McpPlan): McpDispositioned = when {
         plan.hosted.containsKey(reg.name) ->
-            McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.MIGRATED)
-        plan.passthrough.containsKey(reg.name) ->
-            McpDispositioned(reg, McpDisposition.EXCLUDED, plan.passthrough.getValue(reg.name), plan.why[reg.name])
+            McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.MIGRATED, null, McpShareClass.SHARED)
+        plan.passthrough.containsKey(reg.name) -> McpDispositioned(
+            reg,
+            McpDisposition.EXCLUDED,
+            plan.passthrough.getValue(reg.name),
+            plan.why[reg.name],
+            plan.classOf(reg.name),
+        )
         else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE, McpWhy("race"))
     }
 
@@ -141,13 +148,19 @@ public class McpInventory(
                 McpDispositionReasons.HEAD_COPY_STALE,
                 McpWhy("until_restart"),
             )
-        plan.hosted.containsKey(reg.name) ->
-            McpDispositioned(reg, McpDisposition.MIGRATED, McpDispositionReasons.HEAD_COPY_MIGRATED)
+        plan.hosted.containsKey(reg.name) -> McpDispositioned(
+            reg,
+            McpDisposition.MIGRATED,
+            McpDispositionReasons.HEAD_COPY_MIGRATED,
+            null,
+            McpShareClass.SHARED,
+        )
         plan.passthrough.containsKey(reg.name) -> McpDispositioned(
             reg,
             McpDisposition.EXCLUDED,
             McpDispositionReasons.HEAD_COPY_AS_DECLARED + plan.passthrough.getValue(reg.name),
             plan.why[reg.name],
+            plan.classOf(reg.name),
         )
         else -> McpDispositioned(reg, McpDisposition.EXCLUDED, McpDispositionReasons.RACE, McpWhy("race"))
     }

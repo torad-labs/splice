@@ -19,6 +19,7 @@ import splice.client.mcp.McpCensusReport
 import splice.client.mcp.McpDispositioned
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpKindCensus
+import splice.client.mcp.McpShareClass
 import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
 import splice.client.mcp.McpWhy
@@ -50,6 +51,7 @@ internal class McpStatus(
                 plan.passthrough.forEach { (name, reason) ->
                     putJsonObject(name) {
                         put("eligible", false)
+                        put("class", plan.classOf(name).wire)
                         put("reason", reason)
                         plan.why[name]?.let { why(this, it) }
                     }
@@ -86,6 +88,7 @@ internal class McpStatus(
         out.put("disposition", d.disposition.name.lowercase())
         out.put("reason", d.reason)
         d.why?.let { why(out, it) }
+        d.shareClass?.let { out.put("class", it.wire) }
     }
 
     /** The reason as a stable key the console words, with the value it names (the variable, path, cwd or URL). */
@@ -118,6 +121,7 @@ internal class McpStatus(
 
     private fun hosted(out: JsonObjectBuilder, name: String) {
         out.put("eligible", true)
+        out.put("class", McpShareClass.SHARED.wire)
         val server = server(name)
         out.put("hosted", server?.alive == true)
         server?.pid?.let { out.put("pid", it) }

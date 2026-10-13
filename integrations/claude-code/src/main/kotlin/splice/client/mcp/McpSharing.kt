@@ -14,6 +14,14 @@
 //   - not on the operator's exclude list;
 //   - never seen asking its client for roots: the host offers roots and answers none, so a server that
 //     depends on them shows itself by asking, and from then on its launch tuple launches per session.
+//
+// MCP hub step 3 (docs/specs/mcp-hub.md, splice-lead, Oct 12): every stdio server with a command is now CLASSED,
+// shared or per session, and the class is decided in this order: the setup answer (share by default, yes or no),
+// then evidence that forces per session (a cwd, a ${VAR}, a directory argument, roots asked), then the built-in list
+// of servers known to keep state per process, starting with Desktop Commander. A per-session server keeps its
+// declared tuple in [McpPlan.perSession], so the hub can start one copy per session in that session's folder with
+// that session's environment. Everything else (excluded, unreadable, a web transport, no command) is the server's
+// own, not run by the hub.
 package splice.client.mcp
 
 import kotlinx.serialization.json.JsonArray
@@ -32,7 +40,17 @@ public data class McpServerSpec(
     val command: String,
     val args: List<String>,
     val env: Map<String, String>,
+    /** The entry's own `cwd`, unexpanded; set only on a per-session server, which starts there. */
+    val cwd: String? = null,
 )
+
+/** How the hub runs a server (MCP hub step 3): one copy for every session, one copy per session, or not at all,
+ *  because the server is the operator's own to start (excluded, unreadable, a web transport, no command). */
+public enum class McpShareClass(public val wire: String) {
+    SHARED("shared"),
+    PER_SESSION("per_session"),
+    OWN("own"),
+}
 
 /** A stable key for why a server is not shared, and the value the reason names (the variable, the path, the cwd,
  *  the URL). The sentence beside it is what the CLI and doctor print; the console words the key, so no page parses
@@ -47,10 +65,25 @@ public data class McpPlan(
     val passthrough: Map<String, String>,
     val rewritten: JsonObject,
     val why: Map<String, McpWhy> = emptyMap(),
-)
+    /** The servers the hub starts once per session, each with its declared tuple; also in [passthrough] with its
+     *  reason, because until the strict launch (hub step 6) Claude Code starts them itself. */
+    val perSession: Map<String, McpServerSpec> = emptyMap(),
+) {
+    /** [name]'s class: shared, one per session, or the operator's own. */
+    public fun classOf(name: String): McpShareClass = when (name) {
+        in hosted -> McpShareClass.SHARED
+        in perSession -> McpShareClass.PER_SESSION
+        else -> McpShareClass.OWN
+    }
+}
 
-/** One refusal: the sentence the CLI prints and the key and value the console words. */
-private data class Rejected(val words: String, val why: McpWhy)
+/** One refusal: the sentence the CLI prints and the key and value the console words. [perSession] says the server
+ *  still runs through the hub, one copy per session, rather than not at all. */
+private data class Rejected(val words: String, val why: McpWhy, val perSession: Boolean = false)
+
+// why: servers known to keep state per process (mcp-hub.md step 3): one copy shared by every session would mix
+// their terminals, their config and their history. Matched by package name, with or without a version.
+private val STATEFUL_PACKAGES = setOf("@wonderwhy-er/desktop-commander", "desktop-commander")
 
 /** Answers "is this string an existing directory?" — a seam so eligibility is testable without
  *  a filesystem and so the planner never touches disk in the materializer's abort-free window. */
@@ -88,6 +121,9 @@ public class McpSharing(
     private val isDirectory: DirectoryProbe = DirectoryProbe { Files.isDirectory(Path.of(it)) },
     /** The launch tuples a hosted copy has seen asking its client for roots, kept across restarts by the daemon. */
     private val rootsBound: McpRootsVerdicts = McpRootsVerdicts(),
+    /** The setup answer (hub step 3): true shares every server that can be shared, false starts one copy per
+     *  session. `splice setup` saves it (hub step 5); until then every server that can be shared is. */
+    private val shareByDefault: Boolean = true,
 ) {
     /** A hosted server asked its client for roots, so it depends on them: no later plan shares its launch tuple,
      *  and every session from the next on starts its own copy, as for a server that names a project directory. */
@@ -107,9 +143,10 @@ public class McpSharing(
         val hosted = LinkedHashMap<String, McpServerSpec>()
         val passthrough = LinkedHashMap<String, String>()
         val whys = LinkedHashMap<String, McpWhy>()
+        val perSession = LinkedHashMap<String, McpServerSpec>()
         val rewritten = buildJsonObject {
             global.forEach { (name, entry) ->
-                val spec = eligible(name, entry, passthrough, whys)
+                val spec = eligible(name, entry, Refusals(passthrough, whys, perSession))
                 if (spec == null) {
                     put(name, entry)
                 } else {
@@ -125,7 +162,7 @@ public class McpSharing(
                 }
             }
         }
-        return McpPlan(hosted, passthrough, rewritten, whys)
+        return McpPlan(hosted, passthrough, rewritten, whys, perSession)
     }
 
     /** The materializer-facing seam: the rewritten object, nothing else. */
@@ -134,24 +171,44 @@ public class McpSharing(
     /** The spec for [name] as the operator's file declares it now, or null when it is not hosted. */
     public fun hostedSpec(global: JsonObject, name: String): McpServerSpec? = plan(global).hosted[name]
 
-    private fun eligible(
-        name: String,
-        element: JsonElement,
-        reasons: MutableMap<String, String>,
-        whys: MutableMap<String, McpWhy>,
-    ): McpServerSpec? {
+    /** Where one plan's refusals go: the words, the key and value, and the per-session servers with their tuples. */
+    private data class Refusals(
+        val reasons: MutableMap<String, String>,
+        val whys: MutableMap<String, McpWhy>,
+        val perSession: MutableMap<String, McpServerSpec>,
+    )
+
+    private fun eligible(name: String, element: JsonElement, out: Refusals): McpServerSpec? {
         val entry = Entry(element as? JsonObject)
-        val spec = entry.command?.let { McpServerSpec(name, it, entry.args, entry.env) }
-        val rejection = rejection(name, entry) ?: spec?.takeIf(rootsBound::asked)?.let {
-            Rejected("asks the client for its roots (project-scoped)", McpWhy("roots"))
-        }
+        val spec = entry.command?.let { McpServerSpec(name, it, entry.args, entry.env, entry.cwd) }
+        val rejection = rejection(name, entry) ?: spec?.let(::perProcess)
         return if (rejection == null && spec != null) {
             spec
         } else {
-            reasons[name] = rejection?.words ?: "no command"
-            whys[name] = rejection?.why ?: McpWhy("no_command")
+            out.reasons[name] = rejection?.words ?: "no command"
+            out.whys[name] = rejection?.why ?: McpWhy("no_command")
+            if (rejection?.perSession == true && spec != null) out.perSession[name] = spec
             null
         }
+    }
+
+    /** Evidence the tuple alone cannot show: it asked for roots, or it is a server known to keep state per process. */
+    private fun perProcess(spec: McpServerSpec): Rejected? {
+        val stateful = (listOf(spec.command) + spec.args).map(::packageOf).firstOrNull { it in STATEFUL_PACKAGES }
+        return when {
+            rootsBound.asked(spec) ->
+                Rejected("asks the client for its roots (project-scoped)", McpWhy("roots"), perSession = true)
+            stateful != null ->
+                Rejected("keeps state per process (one copy per session)", McpWhy("stateful", stateful), true)
+            else -> null
+        }
+    }
+
+    /** A token's package name: its last path part, without an `@version` after the name. */
+    private fun packageOf(token: String): String {
+        val versionAt = token.lastIndexOf('@')
+        val bare = if (versionAt > 0) token.substring(0, versionAt) else token
+        return if (bare.startsWith("@")) bare else bare.substringAfterLast('/')
     }
 
     private fun rejection(name: String, entry: Entry): Rejected? = when {
@@ -167,11 +224,13 @@ public class McpSharing(
             McpWhy("transport", entry.url ?: entry.type),
         )
         entry.command == null -> Rejected("no command", McpWhy("no_command"))
+        !shareByDefault -> Rejected("you chose one copy per session", McpWhy("per_session_choice"), perSession = true)
         entry.obj?.containsKey("cwd") == true -> Rejected(
             "has a cwd (session-scoped)",
             McpWhy("cwd", str(entry.obj["cwd"])),
+            perSession = true,
         )
-        else -> valueRejection(listOf(entry.command) + entry.args + entry.env.values)
+        else -> valueRejection(listOf(entry.command) + entry.args + entry.env.values)?.copy(perSession = true)
     }
 
     private fun valueRejection(values: List<String>): Rejected? {
@@ -228,6 +287,7 @@ public class McpSharing(
         val type: String? = obj?.let { str(it["type"]) }
         val command: String? = obj?.let { str(it["command"]) }
         val url: String? = obj?.let { str(it["url"]) }
+        val cwd: String? = obj?.let { str(it["cwd"]) }
         val args: List<String> = (obj?.get("args") as? JsonArray)?.mapNotNull { str(it) } ?: emptyList()
         val env: Map<String, String> =
             (obj?.get("env") as? JsonObject)?.mapNotNull { (k, v) -> str(v)?.let { k to it } }?.toMap() ?: emptyMap()

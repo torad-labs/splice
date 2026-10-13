@@ -363,6 +363,7 @@ internal class ControlPlane(
         srv.ports.claudeLogins = claudeLoginOwner
         srv.ports.quotaReadFailures = quotaReadFailures
         providerAssembly.claudePoolChanges.onJoined = LoginJoined { head -> srv.limitResume?.joined(head) }
+        providerAssembly.claudePoolChanges.watch(probeScope, log)
         srv.ports.budgetSpending = console.budgets
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.events = console.bus

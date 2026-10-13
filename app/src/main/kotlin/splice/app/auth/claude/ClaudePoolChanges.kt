@@ -1,9 +1,20 @@
 // NEW: account mutations publish into the head they belong to, without restarting engines or clearing sessions.
 package splice.app.auth.claude
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import splice.app.provider.WiredAccount
 import splice.app.provider.WiredAccountsRead
+import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.ConcurrentHashMap
+
+// why: a login lands as files, and only a request's admission rereads them; a session stopped at its limit sends
+// none, so the logins are reread this often whether or not anything is in flight (Marcos, Oct 12: within 30 s).
+private const val LOGIN_RECHECK_MS = 30_000L
 
 internal fun interface ClaudePoolChange {
     fun publish()
@@ -45,6 +56,20 @@ internal class ClaudePoolChanges {
         val now = account.credential.account ?: return false
         val previous = proved.put("$head:${account.label}", now)
         return previous != null && previous != now
+    }
+
+    /** Rereads every head's logins every [LOGIN_RECHECK_MS] in [scope], so a login added while every session sits at
+     *  its limit, sending nothing, still joins and wakes them. A head whose reread fails is logged and tried again. */
+    fun watch(scope: CoroutineScope, log: LogSink, ticker: Ticker = ProcessTicker()) {
+        scope.launch {
+            while (ticker.awaitTick(LOGIN_RECHECK_MS)) {
+                heads.forEach { (head, change) ->
+                    Cancellables.runCatchingCancellable { change.publish() }.onFailure {
+                        log("[accounts] $head: logins not reread (${SafeFailureText.render(it)})\n")
+                    }
+                }
+            }
+        }
     }
 
     fun bind(head: String, change: ClaudePoolChange) {

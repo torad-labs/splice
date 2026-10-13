@@ -124,9 +124,10 @@ class HeadOverrideWriteTest {
     @Test
     fun `the answer names a knob read once at start as restart required`() {
         serve { patch, _ ->
-            val reply = json(patch(ROUTE, """{"maxInflight":"3","port":"3103"}""").bodyAsText())
+            // port is the legacy codex port, refused on a head it does not reach (d23baf884), so the knob is one every head reads
+            val reply = json(patch(ROUTE, """{"maxInflight":"3","upstreamTimeoutMs":"120000"}""").bodyAsText())
             val restart = reply.getValue("restart_required").jsonArray.map { it.jsonPrimitive.content }
-            assertTrue("port" in restart, restart.toString())
+            assertTrue("upstreamTimeoutMs" in restart, restart.toString())
         }
     }
 

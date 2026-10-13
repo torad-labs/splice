@@ -703,6 +703,8 @@ function cardHtml(p, c, a, i, serves) {
       : a.from === "environment" ? `<div class="keysrc"><span class="state">From environment</span></div>`
       : a.from === "file" ? `<div class="keysrc"><span class="state">From file</span></div>`
       : "";
+    // a key's provider sends no plan window, so its limits line says that, never an empty bar or a zero (spec section 11)
+    if (a.has) body += `<div class="keysrc"><span class="state mute">Limits not reported by provider</span></div>`;
     // the keys this one replaced, as one quiet line with the days splice first saw them
     const n = a.replaced?.length || 0, days = [...new Set((a.replaced || []).filter(Boolean).map(keyDayWord))];
     if (n) body += `<div class="keysrc"><span class="state mute">Replaced ${n === 1 ? "an earlier key" : `${n} earlier keys`}${days.length ? ` · ${esc(days.join(", "))}` : ""}</span></div>`;

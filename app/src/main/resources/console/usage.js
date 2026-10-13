@@ -309,6 +309,8 @@ function keysHtml() {
       const door = s.requests && !reading() ? ` data-act="pick" data-d="account" data-v="${esc(acctKeyOf(lead.head, lead.label))}" tabindex="0"` : "";
       cards.push({ s, html: `<article class="card kcard" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
         + `<header><span class="nm"><span class="var">${esc(k.name)}</span>${seen ? ` · ${dayWord(new Date(seen * 1000))}` : ""}${replaced ? `<span class="detail">Replaced</span>` : ""}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}</span><span class="cmds">${[...new Set(heads)].map(chip).join("")}</span></header>`
+        // a key's provider sends no plan window: its limits read as not reported, never a zero (spec section 11)
+        + `<p class="nolimit">Limits not reported by provider</p>`
         + (reading() ? `<div class="spent"><span class="label">Cost</span>${GHOST.bar(6, "big")}</div>` : s.requests ? `<div class="spent"><span class="label">Cost</span>${spentOf(s) != null ? `<span class="money">${dollars(spentOf(s))}</span>` : `<span class="none">${s.uncounted ? "Uncounted" : "No price"}</span>`}</div><footer><span class="thru"><span class="ctd">Counted by splice</span>${n0(s.requests)} requests</span>${DRILLS()}</footer>`
           : `<div class="spent"><span class="none">No requests</span></div>`) + `</article>` });
     }

@@ -25,6 +25,7 @@
 .pcard .bar > b { transition: none; }
 .pcard .state { margin: .2rem 0; color: var(--text-mute); }
 .pcard .since { margin: -.2rem 0 0; display: flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--limit); }
+.kcard .nolimit { margin: -.2rem 0 0; font: 400 1rem/1.2 var(--font-name); color: var(--text-mute); }
 .pcard .since svg { width: 1.05rem; height: 1.05rem; }
 .pcard .since a { color: inherit; text-decoration-color: color-mix(in srgb, var(--limit) 50%, transparent); text-underline-offset: .22rem; }
 .pcard .since a:hover { text-decoration-color: var(--limit); }

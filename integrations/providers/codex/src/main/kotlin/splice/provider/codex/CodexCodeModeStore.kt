@@ -144,7 +144,6 @@ internal class CodexCodeModeStore(
         dirtyKeys: Set<String>? = null,
         changedRecord: CodeModeRecord? = null,
     ) {
-        if (!location.journaling.now()) return
         if (retryOnly && !needsSave) return
         needsSave = true
         // The registry lock protects mutable records. Snapshot only changed conversations there;
@@ -153,6 +152,13 @@ internal class CodexCodeModeStore(
             addAll(records.map(CodeModeRecord::key))
             addAll(expired.map(CodeModeExpiredSnapshot::key))
             addAll(kept.keys)
+        }
+        if (!location.journaling.now()) {
+            // What changed while the journal was off is owed to disk once it is back on: marked like a failed write,
+            // the first periodic sweep after the switch writes it. Unmarked, it waited for its own conversation's next
+            // change, and a hard stop before then lost it (§9 audit, Oct 12).
+            failedKeys.addAll(keys)
+            return
         }
         val selected = if (retryOnly) keys.intersect(failedKeys) else keys
         val retryKeys = selected.intersect(failedKeys)

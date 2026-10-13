@@ -6,6 +6,7 @@ import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.SessionAccountOf
+import splice.sessions.http.SessionAccountSwitch
 import splice.sessions.registry.SessionRecord
 
 /** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
@@ -40,6 +41,10 @@ internal class SessionAccountLabels(
 
     override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
 
+    override fun headPin(head: String?): String? = headPinOf(head)
+
+    override fun switchOf(head: String?, sessionId: String): SessionAccountSwitch? = lastSwitch(head, sessionId)
+
     /** The labels as [forRecords] read them, with the accounts the perf rows saved for the sessions in view. */
     private fun snapshot(saved: Map<String, PerfSessionAccountIndex.Snapshot>): SessionAccountOf =
         object : SessionAccountOf {
@@ -47,11 +52,23 @@ internal class SessionAccountLabels(
                 head?.let { account(it, sessionId, saved[it]) }
 
             override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
+
+            override fun headPin(head: String?): String? = headPinOf(head)
+
+            override fun switchOf(head: String?, sessionId: String): SessionAccountSwitch? = lastSwitch(head, sessionId)
         }
 
     /** The label this session is pinned to on its head's pool (its own pin, else the head's), or null. */
     private fun pinOf(head: String?, session: String): String? =
         head?.let { heads[it]?.authSurface?.accountPool?.view(session)?.pinnedLabel }
+
+    private fun headPinOf(head: String?): String? =
+        head?.let { heads[it]?.authSurface?.accountPool?.view(null)?.pinnedLabel }
+
+    /** The session's own last switch on its head's pool (the pool's per-session record), or null. */
+    private fun lastSwitch(head: String?, session: String): SessionAccountSwitch? =
+        head?.let { heads[it]?.authSurface?.accountPool?.view(session)?.lastSwitch }
+            ?.let { SessionAccountSwitch(it.from, it.to, it.reason, it.atEpochMillis) }
 
     private fun account(head: String, session: String, saved: PerfSessionAccountIndex.Snapshot?): String? {
         val managed = heads[head] ?: return null

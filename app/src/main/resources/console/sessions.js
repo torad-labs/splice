@@ -23,7 +23,7 @@
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
 // field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
 const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
-const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(),
+const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(), logins: {}, pinning: null,
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
   shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), by: sessionStorage.getItem("splice.by") || "project", pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
@@ -573,7 +573,7 @@ function paneHtml() {
   const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s, "pane")}</div>` : "";
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
-    + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${usageHtml(s)}</div>`
+    + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}${accountHtml(s)}${usageHtml(s)}</div>`
     + `<div class="acts">${stop}${endHtml(s)}${cont}${close}</div></header>${armedStopHtml(s, false)}${armedEndHtml(s)}${failedHtml(s, failed, true)}${logHtml(s)}${ask}${sendToHtml(s)}${resumeHtml(s)}${composerHtml(s)}</section>`;
 }
 
@@ -684,6 +684,44 @@ function open(id) {
   if (s && !(id in state.logs)) readLog(s); // null: a read at a moment is on its way
   if (s && s.state !== "ended" && !state.screens[id]) readScreen(s);
   if (s && !(id in state.usage)) readUsage(s);
+  if (s?.head && !(s.head in ui.logins)) readLogins(s.head);
+}
+
+// ---------- the login a session is on (spec section 11) ----------
+/** The logins of one command's pool, by the label its pool knows each by, with the name Accounts gives it. A command
+ *  with one login, or with no pool splice switches (its order route refuses), has nothing to switch and keeps an empty list. */
+async function readLogins(head) {
+  ui.logins[head] = null; // read in flight
+  const [res, order] = await Promise.all([API.get("/api/accounts"), API.get(`/api/auth/${encodeURIComponent(head)}/order`)]);
+  const rows = (res.body?.accounts || []).filter((r) => (r.heads || []).includes(head));
+  ui.logins[head] = rows.length > 1 && order.ok ? rows.map((r) => ({ label: r.account_labels?.[head] || r.label, name: r.display_name || r.label, ready: !!r.credential_present && !r.refusal })) : [];
+  render({ stick: false });
+}
+const loginName = (head, label) => (ui.logins[head] || []).find((l) => l.label === label)?.name ?? label;
+/** Which login this session's turns go out on, its own last switch and splice's reason, and, on a command with more
+ *  than one login, Use to pin this session alone to another and Unpin to give it back to the command's rule. */
+function accountHtml(s) {
+  const logins = ui.logins[s.head], r = s.row;
+  if (!logins?.length || !r.account) return "";
+  const pin = r.account_pin, own = Boolean(pin) && pin !== r.account_pin_head;
+  const sw = r.account_switch;
+  const moved = sw ? `<span class="why">Moved from ${esc(loginName(s.head, sw.from))} to ${esc(loginName(s.head, sw.to))} ${backWord(new Date(sw.at_epoch_millis))}: ${esc(sw.reason)}</span>` : "";
+  const busy = ui.pinning === s.id;
+  const others = logins.filter((l) => l.label !== r.account && l.ready && l.label !== pin);
+  const acts = busy ? `<span class="state">${ICON.wait}Switching</span>`
+    : others.map((l) => `<button class="act small" data-act="pin-login" data-s="${esc(s.id)}" data-label="${esc(l.label)}">Use ${esc(l.name)}</button>`).join("")
+      + (own ? `<button class="act quiet small" data-act="unpin-login" data-s="${esc(s.id)}">Unpin</button>` : "");
+  const pinned = own ? `<span class="state">Pinned to this session</span>` : pin ? `<span class="state">Pinned on ${esc(s.cmd)}</span>` : "";
+  return `<div class="acctline"><span class="lbl">On</span><span class="who-login">${esc(loginName(s.head, r.account))}</span>${pinned}${moved}<span class="acts">${acts}</span></div>`;
+}
+/** Pin this session alone to a login, from its next turn; the rest of the command keeps its rule (SwitchRoute). */
+async function pinLogin(s, label) {
+  ui.pinning = s.id; render({ stick: false });
+  const res = label ? await API.post(`/api/auth/${encodeURIComponent(s.head)}/switch`, { label, session: s.id })
+    : await API.del(`/api/auth/${encodeURIComponent(s.head)}/switch?session=${encodeURIComponent(s.id)}`);
+  ui.pinning = null;
+  if (!res.ok) ui.failed.set(s.id, refusalOf(res, label ? "It could not be switched" : "It could not be unpinned"));
+  await reload();
 }
 /** What the session used today, on every command it ran on: the same per-session totals Requests sums
  *  (GET /api/perf/turns?session=), from local midnight. Null until read, and kept null when no command answered. */
@@ -1032,6 +1070,8 @@ document.addEventListener("click", (e) => {
     case "end-now": if (s) endSession(s, true); break;
     case "end-keep": if (s) { ui.armedEnd.delete(s.id); render({ stick: false }); } break;
     case "menu": if (s) openChoices(s); break;
+    case "pin-login": if (s && !ui.pinning) pinLogin(s, el.dataset.label); break;
+    case "unpin-login": if (s && !ui.pinning) pinLogin(s, null); break;
     case "continue": if (s && !ui.moving.has(s.id)) continueOn(s, el.dataset.head, el.dataset.model, el.dataset.label); break;
     case "copy-r": if (s && resumeLine(s)) { navigator.clipboard?.writeText(resumeLine(s)).catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;
     case "copy-send": if (s && sendTo(s)) { navigator.clipboard?.writeText(sendLine(s)).catch(() => {}); el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1600); } break;

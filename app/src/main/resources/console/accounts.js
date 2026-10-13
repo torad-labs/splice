@@ -94,6 +94,8 @@ async function load({ asks = true } = {}) {
   // the sessions running now, each on the login splice proved it uses (/api/sessions account, SessionAccountOf.kt): a
   // login lists them under its card (v0.4.0 section 9: show which account every session is currently on)
   const liveSessions = (ss.body?.sessions || []).filter((x) => x.availability === "live" && x.account && x.head);
+  // each login's name by the label its pool knows it by on a head, so a session's last switch reads in Accounts' names
+  for (const r of ac.body?.accounts || []) for (const h of r.heads || []) LOGIN_NAME.set(`${h}|${r.account_labels?.[h] || r.label}`, r.display_name || r.label);
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
@@ -657,12 +659,22 @@ function nameHtml(p, a, spot) {
 // once, so its spot is the provider and the account.
 // the sessions on a login now, each a door to it on Sessions; past a handful, the rest as a count that opens Sessions
 const SESS_SHOWN = 4;
+const LOGIN_NAME = new Map();
+const loginOf = (head, label) => LOGIN_NAME.get(`${head}|${label}`) ?? label;
+// a session's own last switch and splice's reason, and whether it is pinned to this login alone (spec section 11); its
+// pane on Sessions carries Use and Unpin for it
+function sessWhy(x) {
+  const own = x.account_pin && x.account_pin !== x.account_pin_head ? "Pinned to this login. " : "";
+  const sw = x.account_switch;
+  return own + (sw ? `Moved from ${loginOf(x.head, sw.from)} to ${loginOf(x.head, sw.to)} at ${new Date(sw.at_epoch_millis).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}: ${sw.reason}` : "");
+}
 function sessionsHtml(a) {
   const on = a.sessions || [];
   if (!on.length) return "";
   // each name carries the lamp Sessions gives a running session (kit.js look), so it reads as an agent on this login now
   const lamp = (x) => (/^(working|busy)$/.test(x.status) ? `<span class="lamp working" aria-hidden="true">${ICON.trace}</span>` : `<span class="lamp idle" aria-hidden="true"><i></i></span>`);
-  const door = (x) => `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}">${lamp(x)}<span>${esc(x.name || x.title || String(x.session_id).slice(0, 8))}</span></a>`;
+  const door = (x) => { const why = sessWhy(x), pinned = x.account_pin && x.account_pin !== x.account_pin_head;
+    return `<a class="sdoor" href="sessions.html#${encodeURIComponent(x.session_id)}"${why ? ` title="${esc(why)}"` : ""}>${lamp(x)}<span>${esc(x.name || x.title || String(x.session_id).slice(0, 8))}</span>${pinned ? GLYPH.pin : ""}</a>`; };
   const more = on.length > SESS_SHOWN ? `<a class="sdoor more" href="sessions.html">+${on.length - SESS_SHOWN}</a>` : "";
   return `<div class="onlogin">${on.slice(0, SESS_SHOWN).map(door).join("")}${more}</div>`;
 }

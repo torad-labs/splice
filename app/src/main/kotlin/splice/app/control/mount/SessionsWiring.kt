@@ -6,24 +6,21 @@ package splice.app.control.mount
 import splice.app.control.ConsolePorts
 import splice.app.control.LimitResume
 import splice.app.control.ManagedHead
+import splice.app.control.SessionAccountLabels
 import splice.app.control.SessionHeadAdapter
 import splice.app.control.SessionPerfFacts
 import splice.app.control.TranscriptLimitEnding
-import splice.app.sources.PerfRowsFileSource
-import splice.app.sources.PerfSessionAccountIndex
 import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
 import splice.client.transcript.MovedTranscripts
 import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
-import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
 import splice.core.retired.RetiredHeads
-import splice.core.topology.AuthKindRegistry
 import splice.core.util.LogSink
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
@@ -31,8 +28,6 @@ import splice.sessions.http.LaunchedTerminal
 import splice.sessions.http.LaunchedTerminals
 import splice.sessions.http.MoveLedger
 import splice.sessions.http.ProjectSessions
-import splice.sessions.http.SessionAccountOf
-import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionActed
 import splice.sessions.http.SessionDrive
 import splice.sessions.http.SessionRowFacts
@@ -45,18 +40,12 @@ import splice.sessions.registry.RecordedSessions
 import splice.sessions.registry.SEEN_SESSIONS_DIR
 import splice.sessions.registry.SeenSessions
 import splice.sessions.registry.SessionAvailability
-import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
-
-/** The label a single-login head's one login is filed under: its requests' perf rows (TurnDriveFactory's fallback
- *  account label) and its quota (HeadQuotaPolling) both use it, and the Accounts roster shows that login as the head's
- *  single_login row. */
-private const val SINGLE_LOGIN_LABEL = "primary"
 
 /** [routes] is null when no session registry is wired, and every mount built over it then registers nothing.
  *  [ports] is read at CALL time: ControlPlane assigns the activity and team stores after construction. */
@@ -85,25 +74,7 @@ internal class SessionsWiring(
     )
 
     private val perfFacts = SessionPerfFacts(heads, ports)
-    private val sessionAccounts = object : SessionAccountOf {
-        override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
-            val saved = records.groupBy { it.head }.mapNotNull { (head, sessions) ->
-                val managed = heads[head] ?: return@mapNotNull null
-                if (managed.authSurface.authKind != CLIENT_AUTH_KIND) return@mapNotNull null
-                val source = managed.sources.perfRows as? PerfRowsFileSource ?: return@mapNotNull null
-                val ids = sessions.mapNotNull { it.sessionId }
-                    .filterNot { ports.claudeLogins?.hasCarryingProof(requireNotNull(head), it) == true }.toSet()
-                if (ids.isEmpty()) return@mapNotNull null
-                requireNotNull(head) to source.sessionAccounts(ids)
-            }.toMap()
-            return snapshot(saved)
-        }
-
-        override fun label(head: String?, sessionId: String): String? =
-            head?.let { account(it, sessionId, null) }
-
-        override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
-    }
+    private val sessionAccounts = SessionAccountLabels(heads, ports)
 
     /** The launch records splice-launch writes: a session started from the person's own tmux names its pane there. */
     private val launchOwners = LaunchOwners(StatePaths().stateDir)
@@ -163,48 +134,4 @@ internal class SessionsWiring(
 
     /** Continue on's ledger: what a move leaves behind while it is in flight, and nothing after it (ContinueLedger). */
     val moveLedger: MoveLedger = ContinueLedger(moves, moving, modelOf = { routes?.modelOf(it) })
-
-    /** The stable label of the login [session]'s requests on [head] carry, the one the Accounts roster and the perf
-     *  rows use, so the console names it from the head plus this label. A client session reads the native place or
-     *  added-account label proved by its own newest sent credential, or null when no login matches. Never another
-     *  session's choice, the head's current selection, or a pool decision the request did not use. */
-    private fun snapshot(saved: Map<String, PerfSessionAccountIndex.Snapshot>): SessionAccountOf =
-        object : SessionAccountOf {
-            override fun label(head: String?, sessionId: String): String? =
-                head?.let { account(it, sessionId, saved[it]) }
-
-            override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
-
-            override fun state(head: String?, sessionId: String): SessionAccountState = when {
-                ports.claudeLogins?.hasCarryingProof(head.orEmpty(), sessionId) == true -> SessionAccountState.NONE
-                saved[head]?.let { !it.complete || sessionId !in it.indexed } == true ->
-                    SessionAccountState.HISTORY_LIMITED
-                heads[head]?.authSurface?.authKind == CLIENT_AUTH_KIND && head !in saved ->
-                    SessionAccountState.HISTORY_LIMITED
-                else -> SessionAccountState.NONE
-            }
-        }
-
-    /** The label this session is pinned to on its head's pool (its own pin, else the head's), or null. */
-    private fun pinOf(head: String?, session: String): String? =
-        head?.let { heads[it]?.authSurface?.accountPool?.view(session)?.pinnedLabel }
-
-    private fun account(head: String, session: String, saved: PerfSessionAccountIndex.Snapshot?): String? {
-        val managed = heads[head] ?: return null
-        val pool = managed.authSurface.accountPool
-        return when {
-            managed.authSurface.authKind == CLIENT_AUTH_KIND -> clientAccount(head, session, saved)
-            pool != null -> pool.view(session).selectedLabel
-            AuthKindRegistry.isOAuth(managed.authSurface.authKind) -> SINGLE_LOGIN_LABEL
-            else -> null
-        }
-    }
-
-    private fun clientAccount(head: String, session: String, saved: PerfSessionAccountIndex.Snapshot?): String? {
-        val logins = ports.claudeLogins
-        val live = logins?.carryingAccount(head, session)
-        if (live != null || logins?.hasCarryingProof(head, session) == true) return live
-        val account = saved?.accounts?.get(session) ?: return null
-        return logins?.accountLabel(head, account) ?: account
-    }
 }

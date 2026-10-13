@@ -242,7 +242,4 @@ public class EventBus(
         synchronized(lock) { subscribers.remove(subscription) }
         subscription.close()
     }
-
-    /** How many subscribers currently hold the stream open. */
-    internal val subscriberCount: Int get() = synchronized(lock) { subscribers.size }
 }

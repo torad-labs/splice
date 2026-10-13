@@ -248,7 +248,7 @@ historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
     public fun loadForBoot(path: Path): LoadedTopology {
         val bytes = readOrMaterialize(path, ExclusiveStarterWrite)
         val stateBase = path.toAbsolutePath().parent ?: path
-        return when (val read = ConfigFindings.read(bytes.toString(Charsets.UTF_8), stateBase)) {
+        return when (val read = ConfigFindings.read(bytes.toString(Charsets.UTF_8), stateBase, configDir = stateBase)) {
             is ConfigRead.Ready -> LoadedTopology(read.topology, sha256Hex(bytes))
             is ConfigRead.Refused -> throw TopologyRefusal(read.findings)
         }

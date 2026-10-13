@@ -34,7 +34,9 @@ public sealed class ConfigRead {
  *
  *  [stateBase] only satisfies the knob check's constructor; nothing here reads state. */
 public object ConfigFindings {
-    public fun read(text: String, stateBase: Path): ConfigRead {
+    /** [configDir] is the topology's directory, so a head's relative `system_prompt_file` is read where the daemon
+     *  reads it; null leaves the prompt check out. */
+    public fun read(text: String, stateBase: Path, configDir: Path? = null): ConfigRead {
         // A structural finding is answered BEFORE any decode: a head roster written as an array of strings sends the
         // decoder into the loop the preflight exists to prevent, so the decoder never sees such a file.
         val structural = TomlStructurePreflight.failures(text).map { finding(it) }
@@ -42,7 +44,13 @@ public object ConfigFindings {
         val decoded = decode(text)
         val topology = decoded.getOrNull()
             ?: return refused(undecodable(text, requireNotNull(decoded.exceptionOrNull())))
-        val checks = TopologyFindings.of(topology, HeadDiscoveredModels { emptyList() }, stateBase, rosters = false)
+        val checks = TopologyFindings.of(
+            topology,
+            HeadDiscoveredModels { emptyList() },
+            stateBase,
+            rosters = false,
+            configDir = configDir,
+        )
             .map { it.copy(message = withFix(it), line = lineOf(text, it.path)) }
         return refused(checks, topology)
     }

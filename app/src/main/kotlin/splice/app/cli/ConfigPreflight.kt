@@ -38,7 +38,8 @@ internal class ConfigPreflight(
         } catch (failure: IOException) {
             return unreadable(failure)
         }
-        val read = ConfigFindings.read(text, path.toAbsolutePath().parent ?: path)
+        val dir = path.toAbsolutePath().parent ?: path
+        val read = ConfigFindings.read(text, dir, configDir = dir)
         return if (read is ConfigRead.Refused) refused(read) else 0
     }
 

@@ -32,7 +32,7 @@ internal class ConfigFixOffer(
         } catch (_: java.io.IOException) {
             return null
         }
-        val read = ConfigFindings.read(text, backups) as? ConfigRead.Refused
+        val read = ConfigFindings.read(text, backups, configDir()) as? ConfigRead.Refused
         return read?.let { TopologyRefusal(it.findings) }
     }
 
@@ -45,11 +45,14 @@ internal class ConfigFixOffer(
             file,
             TerminalOutput(System.err::println),
             prompter,
-            { text -> (ConfigFindings.read(text, backups) as? ConfigRead.Refused)?.findings.orEmpty() },
+            { text -> (ConfigFindings.read(text, backups, configDir()) as? ConfigRead.Refused)?.findings.orEmpty() },
             { source -> backup(source) },
         )
         return session.run()
     }
+
+    /** The topology's directory, where a head's relative system_prompt_file is read, as boot reads it. */
+    private fun configDir(): Path = TopologyLoader.configPath(env).toAbsolutePath().let { it.parent ?: it }
 
     private fun backup(source: Path): Path {
         val bytes = Files.readAllBytes(source)

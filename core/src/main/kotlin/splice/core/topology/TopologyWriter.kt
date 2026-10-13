@@ -54,6 +54,8 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.HeadDiscoveredModels
+import splice.core.prompt.HeadSystemPrompt
+import splice.core.prompt.SystemPromptLayers
 import splice.core.util.Cancellables
 import splice.core.util.DirectoryListing
 import splice.core.util.FilesListing
@@ -244,7 +246,8 @@ public object TopologyFindings {
         discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
         stateBase: Path,
         rosters: Boolean = true,
-    ): List<TopologyFinding> = TopologyChecks(topology, discovered, stateBase, rosters).findings()
+        configDir: Path? = null,
+    ): List<TopologyFinding> = TopologyChecks(topology, discovered, stateBase, rosters, configDir).findings()
 }
 
 /** The checks the loader does not make at decode time but the daemon would trip on at boot. */
@@ -253,10 +256,53 @@ private class TopologyChecks(
     private val discovered: HeadDiscoveredModels,
     private val stateBase: Path,
     private val withRosters: Boolean,
+    /** The topology's directory, which a head's relative `system_prompt_file` resolves against; null skips the
+     *  prompt check, since against any other directory it would refuse a file the daemon reads fine. */
+    private val configDir: Path? = null,
 ) {
+    /** A strip pattern the resolver quotes in backticks: the operator's text, which a finding never repeats. */
+    private val quotedPattern = Regex("`[^`]*`")
 
     fun findings(): List<TopologyFinding> =
-        references() + ports() + (if (withRosters) rosters() else statics()) + knobs()
+        references() + ports() + (if (withRosters) rosters() else statics()) + knobs() + prompts()
+
+    /** V4-36 and V4-124: a standing prompt the head build would refuse is a finding here, built the way
+     *  HeadServerFactory builds it, so a table setting both keys, an unreadable file, a relative project root or a
+     *  bad strip pattern refuses boot with every other finding instead of throwing when the head starts. */
+    private fun prompts(): List<TopologyFinding> {
+        val dir = configDir ?: return emptyList()
+        val heads = topology.heads.mapNotNull { (key, head) ->
+            val field = if (head.systemPromptFile != null) "system_prompt_file" else "system_prompt"
+            refusal { head.systemPromptFor(key, dir).resolve() }?.let { TopologyFinding("heads.$key.$field", it) }
+        }
+        val projects = topology.projects.flatMap { (root, project) ->
+            val own = refusal { SystemPromptLayers(HeadSystemPrompt(), mapOf(root to project)) }
+            val perHead = if (own != null) {
+                emptyList()
+            } else {
+                project.heads.keys.mapNotNull { key ->
+                    refusal { SystemPromptLayers(HeadSystemPrompt(), mapOf(root to project), key) }
+                        ?.let { TopologyFinding("projects.$root.heads.$key", it) }
+                }
+            }
+            listOfNotNull(own?.let { TopologyFinding("projects.$root", it) }) + perHead
+        }
+        return heads + projects
+    }
+
+    /** Builds one standing prompt the way the head build does; a refusal throws. */
+    private fun interface PromptBuild {
+        fun build(): Any?
+    }
+
+    /** Why [prompt] refused, in the resolver's own sentence with any quoted pattern left out, or null when it built. */
+    private fun refusal(prompt: PromptBuild): String? = Cancellables.runCatchingCancellable { prompt.build() }.fold(
+        onSuccess = { null },
+        onFailure = { failure ->
+            val said = (failure as? IllegalArgumentException)?.message ?: SafeFailureText.render(failure)
+            "${said.replace(quotedPattern, "a pattern")}; correct the table"
+        },
+    )
 
     private fun references(): List<TopologyFinding> = topology.heads
         .filter { (_, head) -> head.provider !in topology.providers }

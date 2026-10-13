@@ -1051,8 +1051,10 @@ origin.
   marker; prose that merely mentions compaction is an ordinary turn.
 - **A cross-head resume lands in the project the person is standing in.** It prefers the copy under the launch's own
   working directory before any other head's tree.
-- **`splice doctor` fails a project prompt file the daemon cannot read.** The row names the path, so the config
-  error shows before a restart instead of only as a skipped head in the boot log.
+- **A standing prompt the head could not build refuses boot.** Both keys set, a prompt file that cannot be read, a
+  relative project root or a strip pattern that does not compile is a config finding naming its table, listed with every
+  other finding, so splice does not start rather than skipping the head. `splice doctor` names the unreadable path before
+  a restart.
 - **`splice add` checks what it says it checks.** The live turn runs the first model the person chose, so a head
   whose model is wrong fails the check instead of passing on the default; an OAuth credential counts as usable when it
   is unexpired or refreshable, not merely present; and an openai-responses head's model list is read with the one URL `splice models`

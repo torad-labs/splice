@@ -504,7 +504,8 @@ origin.
   and `--with-logs` appends the last 500 daemon events reduced to their structure (timestamp,
   tags, event, key=value pairs) with a count of the lines that were not daemon events; an MCP host
   line keeps its server name when it is a plain, secret-free token and its event head, so a report of a hosting problem
-  carries the hosting lines. A malformed flag prints usage and writes nothing. Nothing is uploaded.
+  carries the hosting lines. `--out` writes the file owner-only (0600) in one atomic step. A malformed flag prints
+  usage and writes nothing. Nothing is uploaded.
   Per-turn daemon log lines keep their `compact=` and `model=` pairs in the report.
   A JSON-quoted credential key (`"refresh_token": "..."`, `"api_key": "..."`) in free text is
   masked like a bare one, with quotes and structure kept.
@@ -1044,8 +1045,9 @@ origin.
   unless the GitHub CLI was installed and signed in. Now the release jar and launch shim are still
   checked against the release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is
   verified whenever `gh` is signed in, and a failed attestation still refuses. Without a signed-in
-  `gh` the install goes ahead and prints the `gh attestation verify` command for each installed
-  file. `splice doctor` reports a missing or signed-out `gh` as information, not a warning.
+  `gh` the install goes ahead and prints the `gh attestation verify` command for each file it downloaded: the jar,
+  the launch shim and, on Linux x86-64, the MCP hub's holder and front.
+  `splice doctor` reports a missing or signed-out `gh` as information, not a warning.
 - **Code mode is out of beta and on by default for ChatGPT.** A `chatgpt-oauth` +
   `openai-responses` provider enables the bundled JavaScript runner and guidance with no config
   line for models marked `code_mode_only` by its backend, plus `code_mode_models`; `code_mode = false` still turns it off, and every other provider shape stays off.
@@ -1156,8 +1158,15 @@ origin.
 - **A daemon that runs out of memory exits** and leaves a heap dump, `splice-oom.hprof` in the state folder, instead
   of running on half alive.
 - **A stop that the halt watchdog had to cut exits with status 70,** not 0, so systemd can tell it from a clean stop.
-- **A stop during startup stays a stop.** A head that had not started stays stopped, and a stop before the control
-  port binds cancels the start.
+- **A stop during startup stays a stop.** A stop signal ends the startup at once, where 0.3.x ran the start to the end
+  first. A head that had not started stays stopped, and a stop before the control port binds cancels the start.
+- **`splice doctor` no longer creates a missing state or logs folder;** on a fresh home it says the folder is not
+  created yet. An empty current state folder no longer wins over a pre-0.4 folder that holds the management key, and
+  doctor warns about the folder it passed over. With `[daemon] state_dir` set, restart, doctor, logs, trace and perf
+  find the key and state files there. Doctor's fix for a missing API key is `splice key set <VAR>` instead of an
+  `export` line.
+- **A launch carries the folder-trust records you already granted** for its folder, so `claudex` after
+  `claude-splice` in one folder shows no folder-trust check.
 - **`splice key set` and `unset` report a refused write** to `keys.toml` in one line and fail, instead of a stack trace.
 - **A logs folder that cannot be created is reported as not created,** with no `daemon.log` kept, and a filesystem
   without POSIX modes no longer stops the logger from starting.
@@ -1426,8 +1435,10 @@ origin.
   `gpt`. splice now records the session that held the name when the message was sent. A message to a
   name that no session held then, or that two sessions held, belongs to no one.
 - **splice keeps less on your disk, and the README lists what it keeps.** `daemon-boot.log` copied
-  every line of `daemon.log` and grew without limit; it now holds only what the daemon writes to
-  stderr itself, such as a startup error. A head's kept files go when their promise ends: an expired
+  every line of `daemon.log` and grew without limit; it now holds what the daemon writes while it boots, a startup
+  error included, and nothing after boot. When the daemon does not come up, the terminal prints that file's last lines
+  under "daemon did not come up", or says it is empty and names `daemon.log`.
+  A head's kept files go when their promise ends: an expired
   compaction answer, a head's code-mode state once code mode is off or the head is removed, and its
   trace files once trace is off are deleted when the daemon starts. Activity day files, which carry file
   names, commands and search patterns, are kept for today and yesterday (UTC) instead of 90 days, the

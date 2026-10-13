@@ -59,7 +59,7 @@
       "params": 21,
       "subsystems": 0
     },
-    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecordSnapshot": {
+    "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodeModeSnapshots.kt CodeModeRecordSnapshot": {
       "params": 22,
       "subsystems": 0
     },

@@ -94,17 +94,20 @@ function commandsOf() {
     const models = (row?.models ?? []).filter((m) => m.resolved).map((m) => ({
       id: m.id, label: nameOf(m), window: window_(m), max: m.max_context_window ?? null, rates: m.rates ?? null, slot: m.slot ?? null,
     }));
+    // a declared model that resolved to nothing keeps its row and its tier, with the route's reason, never dropped
+    // (web-console.md, GET /api/models): the tier the operator is missing is the one thing this page must show
+    const missing = (row?.models ?? []).filter((m) => !m.resolved).map((m) => ({ id: m.id, label: nameOf(m), slot: m.slot ?? null, reason: m.reason ?? "" }));
     const slots = {};
-    for (const m of models) if (m.slot && TIERS.includes(m.slot)) slots[m.slot] = m.id;
+    for (const m of [...models, ...missing]) if (m.slot && TIERS.includes(m.slot)) slots[m.slot] = m.id;
     for (const [slot, id] of Object.entries(cfg.model_slots ?? {})) slots[String(slot).toLowerCase()] ??= id;
     const defaults = defaultTiers(models.map((m) => m.id), row?.pinned_model || null);
-    const first = TIERS.map((s) => slots[s]).find(Boolean) ?? defaults.opus ?? row?.pinned_model ?? models[0]?.id;
+    const first = TIERS.map((s) => slots[s]).find((id) => models.some((m) => m.id === id)) ?? defaults.opus ?? row?.pinned_model ?? models[0]?.id;
     const shown = models.find((m) => m.id === first);
     const family = PROVIDER_FAMILY[provKey] ?? familyByCmd(h.label || cfg.claude?.command || key) ?? provKey;
     const lives = data.sessions.filter((s) => s.head === key && (s.status === "working" || s.status === "busy")).length;
     return {
       key, cmd: h.label || cfg.claude?.command || key, provKey, family, mainId: first ?? null, prov: PROVIDER_NAME[family] ?? runtimeName(provKey) ?? provKey,
-      url: pcfg.base_url ?? "", models, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
+      url: pcfg.base_url ?? "", models, missing, slots, defaults, pinned: row?.pinned_model ?? null, model: shown?.label ?? "None", window: shown?.window ?? 0, running: lives,
       prompt: { mode: cfg.system_prompt_mode ?? "append", text: cfg.system_prompt ?? "", file: cfg.system_prompt_file ?? "" },
       up: h.running && h.healthy, live: h.running, auth: h.authKind ?? "",
     };
@@ -194,8 +197,8 @@ const nameOfRoot = (root) => projectOf(root)?.name ?? root.split("/").filter(Boo
 function draftOf(c) {
   return {
     tiers: Object.fromEntries(TIERS.map((t) => {
-      const row = c.models.find((m) => m.id === c.slots[t]);
-      return [t, { model: row?.id ?? null, win: row ? big(row.window) : "" }];
+      const row = c.models.find((m) => m.id === c.slots[t]), lost = c.missing.find((m) => m.id === c.slots[t]);
+      return [t, { model: row?.id ?? lost?.id ?? null, win: row ? big(row.window) : "" }];
     })),
     // with no tier declared, one window serves every default tier: the head's own, shown as the default model's
     headWin: TIERS.some((t) => c.slots[t]) ? "" : big(c.models.find((m) => m.id === c.defaults.opus)?.window ?? 0),
@@ -216,7 +219,9 @@ function draftState(c) {
   // a window is a number, and no larger than the most the provider publishes for that model, where it publishes one
   const tiers = Object.fromEntries(TIERS.map((t) => {
     const win = parseWindow(d.tiers[t].win), max = c.models.find((m) => m.id === d.tiers[t].model)?.max ?? null;
-    return [t, { ok: !d.tiers[t].model || (Boolean(win) && (max === null || win <= max)), over: Boolean(win) && max !== null && win > max }];
+    // a tier on a model that resolved to nothing has no window to give; it is kept as declared
+    const lost = c.missing.some((m) => m.id === d.tiers[t].model);
+    return [t, { ok: !d.tiers[t].model || lost || (Boolean(win) && (max === null || win <= max)), over: Boolean(win) && max !== null && win > max }];
   }));
   // no tier declared: the one head window, capped at the least the provider publishes for the models those tiers answer with
   const unset = !TIERS.some((t) => d.tiers[t].model);
@@ -353,19 +358,20 @@ function paneHtml() {
   const tierRows = TIERS.map((t) => {
     const sel = d.tiers[t], ts = st.tiers[t];
     const picked = c.models.find((x) => x.id === sel.model), dm = c.models.find((x) => x.id === c.defaults[t]);
-    const asDefault = !picked && unset && dm;
+    const lost = picked ? null : c.missing.find((x) => x.id === sel.model);
+    const asDefault = !picked && !lost && unset && dm;
     // clearing this tier gives its default back when the other three are unset too, else None (a tier left out is a 400)
     const alone = TIERS.every((x) => x === t || !d.tiers[x].model);
     const clear = alone && dm ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "<span>None</span>";
     const items = [`<button role="menuitem" data-act="tier" data-t="${t}" data-v="">${clear}</button>`,
       ...c.models.map((x) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"><span>${esc(x.label)}</span><span class="mmeta">${big(x.window)}</span></button>`)].join("");
-    const face = picked ? esc(picked.label) : asDefault ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "None";
+    const face = picked ? esc(picked.label) : lost ? esc(lost.label) : asDefault ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "None";
     const win = picked ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">`
       : asDefault ? `<input class="field win" id="h-win-${t}" data-hw="1" value="${esc(d.headWin)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
     const bad = picked ? !(ts.ok || ts.over) : asDefault && !st.head.ok && !st.head.over;
     const note = picked ? runtimeNote(c, picked.id, ts.over) ?? limitHtml(picked, sel, ts.over)
-      : asDefault ? runtimeNote(c, dm.id, st.head.over) ?? limitHtml({ max: st.head.max ?? dm.max }, { model: dm.id }, st.head.over) : "";
-    return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${picked ? "" : asDefault ? " dflt-tier" : " empty"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${face}${ICON.caret}</button>`
+      : lost ? notServed(lost) : asDefault ? runtimeNote(c, dm.id, st.head.over) ?? limitHtml({ max: st.head.max ?? dm.max }, { model: dm.id }, st.head.over) : "";
+    return `<span class="lbl">${tierName(t)}</span><div class="ctl menuwrap"><button class="pickbtn${picked || lost ? "" : asDefault ? " dflt-tier" : " empty"}" data-act="tierpick" data-t="${t}" style="--c:${colorOf(c.family)}">${face}${ICON.caret}</button>`
       + `${ui.pick === `tier:${t}` ? `<div class="menu">${items}</div>` : ""}${win}${bad ? `<span class="said limit">Not a window</span>` : ""}${note}${picked ? sharedHtml(c) : ""}</div>`;
   }).join("");
   const per = Object.entries(d.per).map(([root, l]) => `<div class="per"><div class="per-top"><span class="pname">${esc(nameOfRoot(root))}</span>${modeSwitch(`per:${root}`, l.mode)}`
@@ -525,12 +531,16 @@ async function restartSplice() {
   ui.said = "Not restarted"; render();
 }
 
+// a declared model the provider does not serve, in the route's own words (ModelsRoute.unresolvedReason)
+const notServed = (m) => `<span class="said limit">Not served${m.reason ? `: ${esc(m.reason)}` : ""}</span>`;
+
 // ---------- Every model: each command's roster with window and price ----------
 function everyHtml() {
   const q = ui.q.trim().toLowerCase();
   const groups = commandsOf().map((c) => {
-    const rows = c.models.filter((m) => !q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q));
-    if (!rows.length) return "";
+    const hit = (m) => !q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q);
+    const rows = c.models.filter(hit), gone = c.missing.filter(hit);
+    if (!rows.length && !gone.length) return "";
     // each group is one command, already named by its chip: its main model leads, marked in the command's colour at the
     // row's left edge, with no second chip (spec 9h; marlin, Oct 12)
     const main = rows.filter((x) => x.id === c.pinned);
@@ -539,7 +549,7 @@ function everyHtml() {
       const price = r ? `<td class="num">${usd(r.input ?? r.i)}</td><td class="num">${usd(r.output ?? r.o)}</td>` : `<td class="num unpriced" colspan="2">No price</td>`;
       const lc = r?.long_context ? `<tr class="tier"><td></td><td class="num">${big(r.long_context.over_input_tokens)}+</td><td class="num">${usd(r.long_context.input)}</td><td class="num">${usd(r.long_context.output)}</td></tr>` : "";
       return `<tr${x.id === c.pinned ? ' class="main"' : ""}><td class="mname">${esc(x.label)}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
-    }).join("");
+    }).join("") + gone.map((x) => `<tr><td class="mname">${esc(x.label)}</td><td class="unpriced" colspan="3">${notServed(x)}</td></tr>`).join("");
     return `<tbody style="--c:${colorOf(c.family)}"><tr class="grp"><td colspan="4"><span class="chip">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></td></tr>${body}</tbody>`;
   }).join("");
   const table = groups

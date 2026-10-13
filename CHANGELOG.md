@@ -1,5 +1,12 @@
 # Changelog
 
+## splice v0.4.0-beta.1: the first 0.4.0 prerelease, built locally while Actions is locked - 2026-10-13
+
+The first beta of 0.4.0 carries everything on feat/v0.4.0 so far, as the v0.4.0 section below describes.
+
+- **Built on this machine, without attestation.** GitHub Actions is locked, so the jar and its bundle were built locally from the tagged commit by `bun tools/release beta 0.4.0-beta.1`. No Sigstore attestation exists for them. Each asset is bound to the release by sha256sums.txt alone, and PROVENANCE.md says so.
+- **Installing it.** install.sh checks attestation whenever gh is signed in, so it refuses this beta then. Install with gh signed out, or download splice.jar and splice-launch, check them against sha256sums.txt, and run `SPLICE_JAR=./splice.jar ./install.sh`.
+
 ## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-09-24
 
 ### Highlights

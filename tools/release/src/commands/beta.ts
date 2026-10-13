@@ -114,15 +114,11 @@ function provenanceSection(sha: string, version: string): string {
   ].join("\n");
 }
 
+/** The version's own CHANGELOG section under the local-build line. The release tests require that section, so a
+ *  version without one is refused before anything is bumped or pushed. */
 function notesFor(repoRoot: string, version: string, sha: string): string {
-  const changelog = readFileSync(join(repoRoot, "CHANGELOG.md"), "utf8");
-  const own = releaseNotes(changelog, version);
-  const found = own instanceof Error ? releaseNotes(changelog, version.replace(/-.*/, "")) : own;
-  // GitHub refuses a release body over 125,000 characters; v0.4.0's section alone is past it.
-  const link = `https://github.com/torad-labs/splice/blob/${sha}/CHANGELOG.md`;
-  const section = found instanceof Error ? `What is in it: ${link}` : found.length > 100_000
-    ? `${found.split("\n", 1)[0]}\n\nThe section is longer than a release page holds; read it in [CHANGELOG.md](${link}).`
-    : found;
+  const section = releaseNotes(readFileSync(join(repoRoot, "CHANGELOG.md"), "utf8"), version);
+  if (section instanceof Error) throw new Refusal(`release beta: ${section.message}; add it before cutting`);
   return [
     `**Built locally from ${sha} without GitHub attestation, because Actions is locked.** The tag points at that commit.`,
     "`gh attestation verify` fails on these assets, so install.sh refuses them",
@@ -152,6 +148,7 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
       if (!ahead) throw new Refusal(`release beta: ${branch} has diverged from origin; the beta cuts from the pushed tip`);
     }
 
+    notesFor(repoRoot, version, "");
     bump(repoRoot, version);
     const bumpSha = run(["git", "rev-parse", "HEAD"], repoRoot);
     run(["git", "fetch", "origin", branch], repoRoot);

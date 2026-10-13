@@ -2,7 +2,6 @@
 // TranscriptHistoryIndex.kt: what is in each folder, which files are trusted, and what each one holds.
 package splice.client.transcript
 
-import splice.client.resume.ResumableTranscript
 import splice.core.util.SafeFailureText
 import splice.sessions.transcript.SessionHistoryRoot
 import java.io.IOException
@@ -135,7 +134,7 @@ internal class TranscriptTreeReader(
             record(
                 file,
                 Files.getLastModifiedTime(file).toMillis(),
-                factsOf(file, ResumableTranscript.accepts(file)),
+                factsOf(file),
                 head,
             )
         } catch (error: IOException) {

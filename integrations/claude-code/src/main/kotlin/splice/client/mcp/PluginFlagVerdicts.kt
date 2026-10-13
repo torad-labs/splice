@@ -54,7 +54,7 @@ public class PluginFlagVerdicts(stateDir: Path, public val versionsDir: Path) {
             put(VERSIONS_KEY, JsonObject(kept.mapValues { (_, it) -> entry(it) }))
         }
         Files.createDirectories(dir)
-        SecureFile.ownerOnlyDirectory(dir)
+        val _ = SecureFile.ownerOnlyDirectory(dir)
         SecureFile.writeAtomic0600(file, json.encodeToString(JsonObject.serializer(), body) + "\n")
     }
 

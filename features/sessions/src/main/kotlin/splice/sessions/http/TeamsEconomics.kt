@@ -15,7 +15,6 @@ package splice.sessions.http
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -59,7 +58,6 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
         read.forEach { tally(heads.getValue(it)) }
         return buildJsonObject {
             put(TEAM_ID, team.id)
-            put("heads_read", buildJsonArray { read.forEach { add(JsonPrimitive(it)) } })
             put("unattributed_turns", unattributed)
             put("oldest_turn_epoch_millis", oldest)
             put("roles", buildJsonArray { byRole.forEach { (role, tally) -> add(tally.json { it.put(ROLE, role) }) } })

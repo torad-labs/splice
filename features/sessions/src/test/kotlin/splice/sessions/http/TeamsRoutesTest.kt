@@ -356,7 +356,6 @@ class TeamsRoutesTest {
             body.getValue("oldest_turn_epoch_millis").jsonPrimitive.content,
             "the files still reach back before the team, so its lifetime is whole; the row itself is not tallied",
         )
-        assertEquals(listOf("claude", "codex"), body.getValue("heads_read").jsonArray.map { it.jsonPrimitive.content })
         val builder = rig.find(body, "roles", "role", "builder")
         assertEquals(
             rig.json(

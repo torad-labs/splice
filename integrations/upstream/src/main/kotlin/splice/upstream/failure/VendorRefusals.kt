@@ -12,4 +12,9 @@ public data class VendorRefusal(val why: String, val status: Int)
  *  vendor module does not know, which keeps every other plan exactly as it was. */
 public fun interface VendorRefusals {
     public fun refusal(status: Int, body: String): VendorRefusal?
+
+    /** Whether this vendor spells a dead credential with a [status] other than 401, which always is one. xAI answers
+     *  an expired token with 403 `unauthenticated:bad-credentials` (2026-07-18): a 403 is a refresh, and a turn that
+     *  ends on it is told authentication, only when the vendor module says so. A plan or permission 403 never is. */
+    public fun isAuthFailure(status: Int, body: String): Boolean = false
 }

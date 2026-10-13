@@ -211,7 +211,8 @@ internal class UpstreamRequest(
             val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
             recorder?.errorText(text)
             // A refusal the vendor knows keeps its own plan; any other status keeps V4-73's quota reading.
-            val refusal = (ctx.auth as? VendorRefusals)?.refusal(realStatus, text)
+            val vendor = ctx.auth as? VendorRefusals
+            val refusal = vendor?.refusal(realStatus, text)
             val status = refusal?.status ?: quotaExhaustedStatus(realStatus, text, ctx)
             val failed = RetryOutcome.Failed(
                 status,
@@ -237,6 +238,7 @@ internal class UpstreamRequest(
                     null
                 },
                 refusal = refusal,
+                vendorAuth = vendor?.isAuthFailure(status, text) == true,
             )
             ctx.observeQuotaRefusal(realStatus, answeredAt, failed.planLimit)
             WsSizeRefusal.read(ctx, failed)
@@ -253,8 +255,8 @@ internal class UpstreamRequest(
      *  refusal answers with the headers the client's persistent retry reads.
      *
      *  AUTH REFRESH IS NEVER SPENT ON A REWRITTEN FAILURE, structurally rather than by a second
-     *  guard: the refresh decision asks isAuthRefreshableFailure(status, body), which is true only
-     *  for 401 and for 403-with-an-auth-body — and by the time it is asked, the status is 429. An
+     *  guard: the refresh decision asks isAuthRefreshableFailure, which is true only for 401 and for a
+     *  status the vendor named a dead credential, asked of the status after this rewrite: 429. An
      *  UNRECOGNISED 403 keeps its status and therefore keeps V4-38's freshness rule exactly.
      *
      *  The body rides through UNCHANGED: the vendor's own sentence (grok's "run out of credits") is

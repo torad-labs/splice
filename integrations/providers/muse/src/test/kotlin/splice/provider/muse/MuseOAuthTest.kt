@@ -223,15 +223,8 @@ class MuseOAuthTest {
 
     @Test
     fun `plan-tier rejection is a muse-only veto and is not an auth-body failure`() {
-        val samples = splice.upstream.AuthFailureBodies()
         assertTrue(oauth.isPlanTierRejection("plan limit exceeded"))
         assertFalse(oauth.isPlanTierRejection("unauthenticated:bad-credentials"))
-        samples.positives.forEach { body ->
-            assertTrue(oauth.isAuthFailureBody(body), body)
-        }
-        samples.negatives.forEach { body ->
-            assertFalse(oauth.isAuthFailureBody(body), body)
-        }
     }
 }
 

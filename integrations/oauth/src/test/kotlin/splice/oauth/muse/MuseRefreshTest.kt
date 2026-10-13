@@ -116,7 +116,7 @@ class MuseRefreshTest {
     }
 
     @Test
-    fun `401 and auth-body 403 reject the account token without retrying or echoing response`() = runTest {
+    fun `401 rejects the account token without retrying or echoing response`() = runTest {
         var unauthorizedCalls = 0
         val unauthorizedEngine = MockEngine {
             unauthorizedCalls += 1
@@ -128,17 +128,6 @@ class MuseRefreshTest {
             assertFalse(result.toString().contains("private-response"))
         }
         assertEquals(1, unauthorizedCalls)
-
-        var forbiddenCalls = 0
-        val forbiddenEngine = MockEngine {
-            forbiddenCalls += 1
-            respond("unauthenticated:bad-credentials", HttpStatusCode.Forbidden)
-        }
-        HttpClient(forbiddenEngine).use { client ->
-            val result = MuseRefresh().refresh(endpoint, "account-token", MuseMintMode.REFRESH, client)
-            assertTrue(result is MuseMintAttempt.InvalidAccountToken)
-        }
-        assertEquals(1, forbiddenCalls)
     }
 
     @Test

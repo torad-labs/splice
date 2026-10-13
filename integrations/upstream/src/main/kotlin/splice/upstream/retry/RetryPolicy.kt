@@ -118,7 +118,7 @@ internal class RetryRules(private val maxRetries: Int) {
             return RetryPlan(RetryDecision.GIVE_UP, refreshedOnce)
         }
         val refreshable =
-            failureRules.isAuthRefreshableFailure(failed.status, failed.text) &&
+            failureRules.isAuthRefreshableFailure(failed.status, failed.vendorAuth) &&
                 ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
                 !refreshedOnce
         val perf = ctx.observers.perf
@@ -168,7 +168,7 @@ internal class RetryRules(private val maxRetries: Int) {
         failed.rateLimitReply != null -> "is a native refusal owned by the client's retry and fallback"
         // The vendor module named this refusal (VendorRefusals): its own plan, never the generic curve.
         failed.refusal != null -> "is a known refusal (no retry: ${failed.refusal.why})"
-        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
+        nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.vendorAuth) ->
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         // V4-233: the upstream named a PLAN window spent until an instant; a re-send before it meets
         // the same answer. A burst 429 carries no such statement and keeps V4-61's 15s schedule.
@@ -275,9 +275,8 @@ private const val NOT_IMPLEMENTED = 501
 // membership in, so there is no second declaration for HttpStatus to retire.
 private const val SERVER_ERROR_MAX = 599
 
-// FILE SCOPE ON PURPOSE: one IntRange for the process, same reasoning as FailureRules.kt's
-// authBodyRe: allocate it once, not once per RetryRules. Its floor reads the shared HttpStatus
-// member: the bottom of the 5xx window IS 500, so re-typing it here was a second declaration of
+// FILE SCOPE ON PURPOSE: one IntRange for the process: allocate it once, not once per RetryRules.
+// Its floor reads the shared HttpStatus member: the bottom of the 5xx window IS 500, so re-typing it here was a second declaration of
 // the same status code dressed as a range bound.
 private val SERVER_ERRORS = HttpStatus.INTERNAL_SERVER_ERROR..SERVER_ERROR_MAX
 

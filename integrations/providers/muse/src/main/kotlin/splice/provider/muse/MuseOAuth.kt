@@ -7,7 +7,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
-import splice.upstream.failure.FailureRules
 import java.net.URI
 
 public object MuseOAuthEndpoints {
@@ -121,8 +120,6 @@ public class MuseOAuth {
 
     public fun isPlanTierRejection(body: String): Boolean =
         body.lowercase().contains("plan limit")
-
-    public fun isAuthFailureBody(body: String): Boolean = FailureRules().isAuthFailureBody(body)
 
     private fun uriOrNull(text: String): URI? = try {
         URI.create(text)

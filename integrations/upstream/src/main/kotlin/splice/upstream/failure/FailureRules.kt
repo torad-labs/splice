@@ -1,4 +1,4 @@
-// PORT-OF: splice/spi/UpstreamClient.kt (FailureRules + authBodyRe) @ 3879c4c — invariants unchanged: isEncryptedContentError stays PUBLIC and stays the ONE predicate the give-up classification and the RC-4 amend gate both key off (review 2026-07-24).
+// PORT-OF: splice/spi/UpstreamClient.kt (FailureRules) @ 3879c4c — invariants unchanged: isEncryptedContentError stays PUBLIC and stays the ONE predicate the give-up classification and the RC-4 amend gate both key off (review 2026-07-24).
 //
 // The two predicates that read an upstream FAILURE (status + body) and answer a policy question
 // about it. Was UpstreamClient.FailureRules; only the receiver moved.
@@ -15,12 +15,11 @@ import splice.core.util.ERR_SNIPPET
 import splice.core.wire.HttpStatus
 
 public class FailureRules {
-    /** Does this upstream failure warrant the single-flight token refresh? */
-    internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
-        status == HttpStatus.UNAUTHORIZED || (status == HttpStatus.FORBIDDEN && isAuthFailureBody(body))
-
-    /** 403-body classifier (grok 2026-07-18): plan/permission 403s must not look like auth. */
-    public fun isAuthFailureBody(body: String): Boolean = authBodyRe.containsMatchIn(body)
+    /** Does this upstream failure warrant the single-flight token refresh? A 401 always does; any other status only
+     *  when its vendor module named it a dead credential ([vendorAuth], VendorRefusals.isAuthFailure), so a plan or
+     *  permission 403 never spends the single refresh, and no vendor's spelling lives here. */
+    internal fun isAuthRefreshableFailure(status: Int, vendorAuth: Boolean): Boolean =
+        status == HttpStatus.UNAUTHORIZED || vendorAuth
 
     /** V4-73: 402 Payment Required is a quota exhaustion for EVERY provider — deepseek answers
      *  Insufficient Balance as 402, and a spent account is not a malformed request. A vendor-neutral
@@ -85,18 +84,6 @@ public class FailureRules {
             UpstreamFailureClassifier.classify(FailureSource.HTTP, text, status).cause ==
             FailureCause.REQUEST_TOO_LARGE
 }
-
-// xAI reports an expired/revoked OAuth token as 403 `unauthenticated:bad-credentials`,
-// NOT 401 (grok-dead-head incident, 2026-07-18: refresh never fired, the head 403'd every
-// turn until manual re-login). 401 is always refreshable; 403 only when the body says
-// auth — a plan/permission 403 must not spend the single refresh.
-// FILE SCOPE ON PURPOSE: one compiled Regex for the process. As a FailureRules field it would
-// recompile on every construction, and planRetry constructs nothing but reads it per failure.
-private val authBodyRe = Regex(
-    "unauthenticated|bad-credentials|token (is )?(invalid|expired)|" +
-        "(access|oauth2?) token could not be validated",
-    RegexOption.IGNORE_CASE,
-)
 
 // 499 stays local: nothing answers with it, it is only the top of the 4xx window tested above.
 private const val CLIENT_ERROR_MAX = 499

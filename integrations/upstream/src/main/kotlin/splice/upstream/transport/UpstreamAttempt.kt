@@ -153,5 +153,7 @@ internal sealed class RetryOutcome<out T> {
         val rateLimitReply: RateLimitReply? = null,
         /** A refusal the vendor module knows (VendorRefusals): the retry loop gives up on it at once. */
         val refusal: VendorRefusal? = null,
+        /** The vendor module named this status a dead credential (VendorRefusals.isAuthFailure); a 401 needs no name. */
+        val vendorAuth: Boolean = false,
     ) : RetryOutcome<Nothing>()
 }

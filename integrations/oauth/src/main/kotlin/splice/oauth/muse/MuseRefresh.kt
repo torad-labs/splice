@@ -60,8 +60,6 @@ public class MuseRefresh(private val clock: WallClock = WallClock(System::curren
                         ?.coerceAtMost(MAX_MINT_RETRY_AFTER_MS),
                 )
             response.status == HttpStatusCode.Unauthorized -> MuseMintAttempt.InvalidAccountToken
-            response.status == HttpStatusCode.Forbidden && oauth.isAuthFailureBody(body) ->
-                MuseMintAttempt.InvalidAccountToken
             response.status.isSuccess() -> oauth.parseMuseKeyResponse(body)
             else -> MuseMintAttempt.Denied("key mint failed (HTTP ${response.status.value})")
         }

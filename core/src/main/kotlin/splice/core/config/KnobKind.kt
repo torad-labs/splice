@@ -21,7 +21,13 @@ internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }
  *  materializationHeapBytes (the shared ingress and materialization gate), the four MCP host limits (one host for every
  *  head), transcriptView (console routes), budgetDefaultAction (budget PUT), historyRetentionDays (the one history
  *  window), activityRetentionDays, messageEdges and keepTranscriptCopies (daemon-wide stores and moves). Read at start:
- *  debug, controlPort, supervisorUnit, mcpSlice and activityStoreHeads. A knob that gains a per-head reader leaves it. */
+ *  debug, controlPort, supervisorUnit, mcpSlice and activityStoreHeads. A knob that gains a per-head reader leaves it.
+ *
+ *  The history window is the one exception to "no head reads it": historyRetentionDays, and perfArchiveRetentionDays,
+ *  the spelling it replaced, also feed a head's trace days (SpliceConfig.traceKeptDays, read per head). A command's own
+ *  window would reach only that command's saved prompts and split them from the one window every history reader
+ *  keeps (Marlin, Oct 10), so both are refused per command too. Every other restart-only knob outside this list was
+ *  traced to a per-head reader on Oct 12 and stays settable per command. */
 public val daemonWideKnobs: Set<Knob> = setOf(
     Knob.INGRESS_READ_IDLE_MS,
     Knob.MATERIALIZATION_HEAP_BYTES,
@@ -32,6 +38,7 @@ public val daemonWideKnobs: Set<Knob> = setOf(
     Knob.TRANSCRIPT_VIEW,
     Knob.BUDGET_DEFAULT_ACTION,
     Knob.HISTORY_RETENTION_DAYS,
+    Knob.PERF_ARCHIVE_RETENTION_DAYS,
     Knob.ACTIVITY_RETENTION_DAYS,
     Knob.MESSAGE_EDGES,
     Knob.KEEP_TRANSCRIPT_COPIES,

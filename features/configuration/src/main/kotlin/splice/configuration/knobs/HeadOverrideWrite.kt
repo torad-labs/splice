@@ -28,6 +28,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.daemonWideKnobs
 import splice.core.config.knobsByKey
 import splice.core.config.restartRequiredKnobKeys
@@ -46,6 +47,13 @@ private const val NOT_SCALAR = "invalid value (must be a scalar or null)"
 // why: the words a per-command write of a daemon-wide knob is refused with, naming where the value is set instead.
 private const val DAEMON_WIDE =
     "splice reads this setting once for every command, never per command; set it for every command (PATCH /api/config)"
+
+// why: mirrorReasoning is read per command, but ConfigCoercion pins it false on every layer, so a value is ignored.
+private const val PINNED = "pinned false by project rule on every command; ask Marcos to change"
+
+// Each knob a command's own value never reaches, with the words it is refused in.
+private val PER_COMMAND_REFUSALS: Map<Knob, String> =
+    daemonWideKnobs.associateWith { DAEMON_WIDE } + (Knob.MIRROR_REASONING to PINNED)
 private const val HEAD_WRITE_UNWIRED =
     "the topology writer is not wired into this control plane; a command's value cannot be written"
 
@@ -80,7 +88,8 @@ internal class HeadOverrideWrite(
             val knob = knobsByKey[key]
             when {
                 knob == null -> rejected[key] = "unknown key"
-                knob in daemonWideKnobs && value !is JsonNull -> rejected[key] = DAEMON_WIDE
+                knob in PER_COMMAND_REFUSALS && value !is JsonNull ->
+                    rejected[key] = PER_COMMAND_REFUSALS.getValue(knob)
                 value !is JsonPrimitive -> rejected[key] = NOT_SCALAR
                 else -> wanted[key] = value.takeUnless { it is JsonNull }?.content
             }

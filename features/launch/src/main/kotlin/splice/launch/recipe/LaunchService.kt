@@ -77,6 +77,9 @@ public class LaunchService(
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
 
+    // why: the shape of the id Claude Code gives every session; a -r word of another shape is a name or a search
+    private val sessionUuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
     /** The resume hook shares the launch's rewrite and selected original-store root. */
     public val transcriptRewriter: TranscriptModelRewrite
         get() {
@@ -254,11 +257,14 @@ public class LaunchService(
         is SessionAdoption.Adopted ->
             "resumed session ${adoption.sessionId} copied into this head from ${adoption.from}, and " +
                 "${adoption.modelsRewritten} assistant rows now name this head's model"
-        is SessionAdoption.Absent ->
-            "session ${adoption.sessionId} is in no transcript tree: searched " +
-                "${adoption.searchedHeads.size} heads (${adoption.searchedHeads.joinToString(", ")}). " +
+        // Claude Code resumes a session by the name -n gave it, or opens its picker on a search word, so a -r
+        // word that is not an id is its to resolve, never a refusal (Oct 12: "temple-studio" was warned as an id)
+        is SessionAdoption.Absent -> adoption.takeIf { sessionUuid.matches(it.sessionId) }?.let {
+            "session ${it.sessionId} is in no transcript tree: searched " +
+                "${it.searchedHeads.size} heads (${it.searchedHeads.joinToString(", ")}). " +
                 "Nothing was copied, so Claude Code will refuse the id: check the id, or start a new " +
                 "session in this head"
+        }
         is SessionAdoption.Empty ->
             "session ${adoption.sessionId}'s transcript exists but is empty at ${adoption.transcript}. " +
                 "Nothing was copied; choose another session or start a new one"

@@ -60,8 +60,6 @@ internal class FakeTerminal(var openFails: Boolean = false, var screenText: Stri
         closed += pane
     }
 
-    override fun howToOpen(pane: SessionPane): String = "attach ${pane.id}"
-
     override fun isOpen(pane: SessionPane): Boolean = live
 
     /** The pids each pane has in front, as the person's terminal would show them. */
@@ -148,7 +146,6 @@ class TeamStartTest {
             assertEquals(session, slot("b1").session, "bound before the terminal opened")
             assertEquals(listOf(Triple("codex", "Primary", session)), pinned)
             assertEquals(SessionPane("%$session"), panes.paneFor(session))
-            assertEquals("attach %$session", rig.json(reply.body).getValue("how_to_open").jsonPrimitive.content)
         }
 
     @Test

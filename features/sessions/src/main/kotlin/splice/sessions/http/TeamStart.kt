@@ -194,7 +194,7 @@ public class TeamStart(
         pane: SessionPane,
     ): JsonReply {
         repeat(ARRIVAL_SECONDS.toInt()) {
-            if (arrival.arrived(session, 1)) return up(driving, session, pane)
+            if (arrival.arrived(session, 1)) return up(session)
             val asked = Cancellables.runCatchingCleanup { choices.on(driving.terminal.screen(pane)).offering }
             if (asked.getOrDefault(false)) {
                 return JsonReply(
@@ -209,12 +209,9 @@ public class TeamStart(
         return didNotComeUp(store, driving, member, session, pane)
     }
 
-    private fun up(driving: SessionDriver, session: String, pane: SessionPane) = JsonReply(
+    private fun up(session: String) = JsonReply(
         HttpStatusCode.OK,
-        buildJsonObject {
-            put("session_id", session)
-            put("how_to_open", driving.terminal.howToOpen(pane))
-        }.toString(),
+        buildJsonObject { put("session_id", session) }.toString(),
     )
 
     private fun didNotComeUp(

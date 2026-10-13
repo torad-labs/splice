@@ -74,7 +74,6 @@ internal class MoveArrival(
             buildJsonObject {
                 put("session_id", move.session)
                 put("head", move.head)
-                put("how_to_open", driving.terminal.howToOpen(attempt.pane))
             }.toString(),
         )
     }
@@ -121,7 +120,6 @@ internal class MoveArrival(
                 put("back", backOn != null)
                 put("head", move.from)
                 put("resume", "cd " + shellWord(move.folder) + " && " + line(listOf(commandName(move)) + resume))
-                backOn?.let { put("how_to_open", driving.terminal.howToOpen(it)) }
                 if (screen.isNotEmpty()) put("screen", screen)
             }.toString(),
         )

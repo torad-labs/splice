@@ -76,15 +76,12 @@ class TmuxTerminalTest {
     }
 
     @Test
-    fun `a session opens live in its own directory, says how to open it, and closes`() {
+    fun `a session opens live in its own directory and closes`() {
         val pane = open("sh", "-c", "pwd; cat")
 
         assertTrue(terminal.isOpen(pane), "the session splice just opened is live")
         val screen = screenUntil(pane) { it.contains(tmp.toString()) }
         assertTrue(screen.contains(tmp.toString()), "it runs in the directory it was opened in: $screen")
-        val how = terminal.howToOpen(pane)
-        assertTrue(how.startsWith("tmux -S "), "the person is told to attach to the server that holds it: $how")
-        assertTrue(how.contains("attach -t "), how)
 
         terminal.close(pane)
 
@@ -146,7 +143,6 @@ class TmuxTerminalTest {
 
         assertFalse(terminal.isOpen(nonsense), "splice makes no claim about an id that names no pane")
         assertEquals("", terminal.screen(nonsense), "and reads nothing off it")
-        assertEquals("", terminal.howToOpen(nonsense), "and offers no way to attach to it")
         terminal.send(nonsense, "type this")
         terminal.press(nonsense, SessionKey.STOP)
         terminal.close(nonsense)
@@ -162,10 +158,6 @@ class TmuxTerminalTest {
 
         assertFalse(terminal.isOpen(elsewhere), "a server that was never started holds no live pane")
         assertEquals("", terminal.screen(elsewhere), "and there is no screen to read")
-        assertTrue(
-            terminal.howToOpen(elsewhere).contains("never-started.sock"),
-            "the way to attach still names the server that would hold it, because that is what was recorded",
-        )
         terminal.send(elsewhere, "type this")
         terminal.press(elsewhere, SessionKey.STOP)
         terminal.close(elsewhere)

@@ -7,10 +7,9 @@
 // with nothing else to change. A `tmux` string anywhere outside that module is the defect this file exists
 // to prevent.
 //
-// WHY THESE SIX ACTS. They are the table in TMUX.md, each written as what the PERSON does, never as how a
+// WHY THESE FIVE ACTS. They are the table in TMUX.md, each written as what the PERSON does, never as how a
 // terminal does it: [open] a session, [send] them a message, [press] the key that answers what is on the
-// screen, [screen] to read the choices this Claude Code version is actually showing, [close] it, and
-// [howToOpen] so they can sit in front of it themselves. Reading the screen is an act of its own because
+// screen, [screen] to read the choices this Claude Code version is actually showing, and [close] it. Reading the screen is an act of its own because
 // the choices belong to the client's version, never to a list splice keeps.
 //
 // SPLICE DRIVES ONLY WHAT IT OPENED. A [SessionPane] is handed out by [open] or by registering a pane
@@ -49,9 +48,6 @@ public interface SessionTerminal {
 
     /** End the session: let the client exit on its own, and close the terminal if it does not. */
     public fun close(pane: SessionPane)
-
-    /** What the person types to sit in front of this session themselves. Shown, never run by splice. */
-    public fun howToOpen(pane: SessionPane): String
 
     /** Whether [pane] is still live. A pane the person closed is gone, and acting on it is a no-op. */
     public fun isOpen(pane: SessionPane): Boolean

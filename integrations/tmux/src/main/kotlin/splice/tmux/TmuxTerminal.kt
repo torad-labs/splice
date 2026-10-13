@@ -106,11 +106,6 @@ public class TmuxTerminal(
         if (isOpen(pane)) tmux.run(listOf("kill-pane", "-t", at.id), at.socket)
     }
 
-    override fun howToOpen(pane: SessionPane): String {
-        val at = paneOf(pane) ?: return ""
-        return "tmux -S ${quoted(at.socket)} attach -t ${quoted(at.id)}"
-    }
-
     override fun isOpen(pane: SessionPane): Boolean {
         val at = paneOf(pane) ?: return false
         val reply = tmux.run(listOf("display-message", "-p", "-t", at.id, "#{pane_dead}"), at.socket)
@@ -164,9 +159,6 @@ public class TmuxTerminal(
         val socket = pane.id.substringAfter(PANE_AT, missingDelimiterValue = "")
         return if (PANE_ID.matches(id) && socket.startsWith("/")) TmuxPane(id, socket) else null
     }
-
-    /** One shell word, so a socket path with a space in it still pastes into a terminal as one argument. */
-    private fun quoted(word: String): String = "'" + word.replace("'", "'\\''") + "'"
 }
 
 // why: what separates a pane's number from its server's socket in the opaque id. A pane is `%` and digits and

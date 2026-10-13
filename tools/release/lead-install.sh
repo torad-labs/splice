@@ -22,10 +22,11 @@ git worktree add --detach $T $sha
 cd $T
 test -x tools/gate/bin/gradlew || { echo "no gradlew in tree"; exit 2; }
 # The MCP hub's two native binaries ship beside the jar on a sha that carries their module
-# (docs/specs/mcp-hub.md, Linux x86_64 only). They build in the same slot.
-hub=$T/integrations/mcp-hub
+# (docs/specs/mcp-hub.md, Linux x86_64 only). They build in the same slot. Held off by default until hostshield-lead
+# closes its source review and the binaries are qualified (Oct 12): SPLICE_INSTALL_HUB=1 opts in.
+hub=; [ "${SPLICE_INSTALL_HUB:-0}" = 1 ] && [ -d $T/integrations/mcp-hub ] && hub=$T/integrations/mcp-hub
 tasks=(:app:shadowJar)
-[ -d $hub ] && tasks+=(:integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64)
+[ -n "$hub" ] && tasks+=(:integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64 :integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64)
 bun tools/gate slot install-$sha -- "${tasks[@]}"
 echo "slot exit 0 at $(ct)"
 J=$T/app/build/libs/app-all.jar; L=$T/app/src/main/dist/bin/splice-launch
@@ -44,7 +45,7 @@ echo "backup splice.jar.bak-$stamp-pre-$sha"
 cp $J $D/splice.jar.new-$sha && mv $D/splice.jar.new-$sha $D/splice.jar
 cp $L $D/splice-launch.new-$sha && chmod 0755 $D/splice-launch.new-$sha && mv $D/splice-launch.new-$sha $D/splice-launch
 # A running holder or front keeps its own inode through the mv; the new binary serves what starts next.
-if [ -d $hub ]; then
+if [ -n "$hub" ]; then
   for b in holder front; do
     src=$hub/build/bin/linuxX64/${b}ReleaseExecutable/splice-mcp-$b.kexe; dst=$D/splice-mcp-$b
     [ -f $dst ] && cp -p $dst $dst.bak-$stamp-pre-$sha

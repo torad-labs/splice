@@ -62,8 +62,6 @@ public class PerfRowsFileSource internal constructor(
     internal var parsedLines: Long = 0L
         private set
 
-    internal val cachedLines: Int get() = cache.retainedRows
-
     private val archiveName = PerfArchiveName(file.fileName.toString())
 
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)

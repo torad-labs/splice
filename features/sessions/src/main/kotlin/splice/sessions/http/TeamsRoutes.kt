@@ -75,7 +75,7 @@ public class TeamsRoutes(
     registry: SessionSource?,
     activity: ActivitySource,
     texts: SentTextSource,
-    clock: WallClock = WallClock(System::currentTimeMillis),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
     lookup: ProjectLookup = ProjectLookup(ProjectOf { null }, ProjectAt { null }),
 ) {
     private val projects = TeamProjects(

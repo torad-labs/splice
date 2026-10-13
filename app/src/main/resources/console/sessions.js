@@ -53,9 +53,11 @@ async function read() {
   }
   // the turns running now, by session: what Stop ends, and the model a session is on while one runs
   const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
-  state.live = {};
+  state.live = {}; state.waiting = {};
   state.heads.forEach((h, i) => {
     for (const t of lives[i].body?.turns || []) if (t.session && !t.stopped) state.live[t.session] = { head: h.key, ...t, readAt: Date.now() };
+    // turns the gate queued and has not let in: the session's wait, in heldFor's shape (kit workingLook)
+    for (const w of lives[i].body?.waiting || []) if (w.session) state.waiting[w.session] = { age_ms: w.waited_ms, readAt: Date.now() };
   });
   state.rows = (sessions.body?.sessions || []).filter((s) => s.session_id).map(sessionOf);
   joinPast();
@@ -134,7 +136,7 @@ function sessionOf(row) {
     project: row.project ?? null, // as the daemon resolved it (ProjectWire); absent is "No project", never a guess here
     head: row.head, cmd: cmdOf(row), provider: state.providerOf[row.head] ?? null,
     model: modelName(state.modelLabel, turn?.model ?? row.model ?? row.served_model), // a running turn's model is the one in use now; reading off: what splice served it
-    team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: fixOf(stall, row.head),
+    team: row.team_name ?? null, state: st, live: st === "working" && Boolean(turn), turn, wait: state.waiting?.[row.session_id] ?? null, stall: fixOf(stall, row.head),
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(rowAt(row)),
   };
@@ -1058,7 +1060,7 @@ setInterval(() => {
   }
   // a working turn's time since the gate admitted it moves the same way (kit workingLook)
   for (const el of root.querySelectorAll("[data-held]")) {
-    const t = find(el.dataset.held)?.turn;
+    const f = find(el.dataset.held), t = f?.turn?.phase != null ? f.turn : f?.wait;
     if (t?.age_ms != null) el.textContent = heldFor(t);
   }
 }, 1000);

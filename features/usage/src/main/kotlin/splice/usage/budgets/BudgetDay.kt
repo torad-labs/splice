@@ -1,11 +1,12 @@
-// NEW: V4-133 review — one head's spend for one UTC day, and the budget it is weighed against.
+// NEW: V4-133 review — one head's spend for one local day (BudgetLedger.tallyAt rolls it at local midnight),
+// and the budget it is weighed against.
 // BudgetLedger owns the lock both are read and mutated under; neither type locks anything itself.
 package splice.usage.budgets
 
 /** A head's budget as enforcement reads it: only a row with a daily_usd is a budget at all. */
 internal data class Limit(val usd: Double, val action: String)
 
-/** One UTC day's spend on one head: the priced USD, and the turns that had no price. */
+/** One local day's spend on one head: the priced USD, and the turns that had no price. */
 internal class DayTally(val day: Long) {
     var usd: Double = 0.0
         private set

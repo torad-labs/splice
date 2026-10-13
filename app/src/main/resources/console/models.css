@@ -270,3 +270,6 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 .field.prefix { flex: 0 1 20rem; min-width: 10rem; }
 /* Remove deletes the command, so it never looks like Stop or Restart beside it */
 .act.quiet.risky { color: var(--limit); border-color: var(--limit); }
+/* the tier rows' column names, over the picker and the window box they name (walk on 1b40881cf) */
+.ctl.colhead { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); margin-bottom: -.4rem; }
+.ctl.colhead .ch-model { min-width: 19rem; }

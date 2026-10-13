@@ -369,7 +369,10 @@ const READ_WHY = { not_answering: "Provider not answering", refused: "Provider r
 const money = dollars; // priced from the rate card, so an estimate; nothing charged reads "$0" (kit.js)
 const cap = (v) => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 const waiting = () => `<span class="waitbox" role="status">${GLYPH.wait}<span class="sr">Signing in</span></span>`;
-const locked = (pop = false) => `<span class="state limit" role="img" aria-label="At limit"><span class="lockico${pop ? " lock-pop" : ""}">${GLYPH.lock}</span></span>`;
+// the lock says what it means beside it: a bare red lock read as nothing until the footer under the stack (walk, Oct 13)
+const locked = (pop = false, word = "Limit reached") => `<span class="state limit"><span class="lockico${pop ? " lock-pop" : ""}" aria-hidden="true">${GLYPH.lock}</span>${word}</span>`;
+// a held login is held until the last of its windows at their limit resets
+const heldUntil = (a) => { const w = a.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0]; return w?.resetMs != null ? `Limit reached until ${at(w.resetMs)}` : "Limit reached"; };
 
 function ring(w) {
   const C = 2 * Math.PI * 15, f = Math.max(0, Math.min(1, w.left / w.len));
@@ -417,7 +420,7 @@ function windowsHtml(a, next = null) {
   if (a.staleAt != null) rows += `<span class="stale-at">${GLYPH.eye}Read ${at(a.staleAt)}</span>`;
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
     const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
-    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked()}${resets(w)}` : ""}</span>`;
+    rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}${w ? ` <span class="limword">· limit reached</span>` : ""}</span>${w ? `${locked(false, "")}${resets(w)}` : ""}</span>`;
   }
   return `<div class="windows">${rows}</div>`;
 }
@@ -646,7 +649,7 @@ function slotHtml(p, c, a, serves) {
   if (a.out) return `<span class="state">Signed out</span>`;
   if (a.renews) return `<span class="state">Token expired</span>`;
   if (p.kind === "key" && !a.has) return `<span class="state">No key</span>`;
-  if (held(a)) return `${pin}${locked()}`;
+  if (held(a)) return `${pin}${locked(false, heldUntil(a))}`;
   const use = (cls) => `<button class="act ${cls}" data-act="use" data-p="${p.id}" data-c="${c.cmd}" data-a="${a.id}">Use now</button>`;
   const mv = ui.moving;
   if (p.kind === "plan" && mv && mv.a === a.id && mv.c === c.cmd) {

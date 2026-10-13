@@ -452,6 +452,8 @@ function paneHtml() {
     + signInHtml(c, d, st.own)
     + '<h3 class="gh">Models</h3>'
     + runtimeHtml(c)
+    // what each tier row's two controls set, over them: the model, then the context window splice reports for it
+    + (tierRows ? '<span class="lbl"></span><div class="ctl colhead" aria-hidden="true"><span class="ch-model">Model</span><span>Context window</span></div>' : "")
     + tierRows
     + nowRow(c)
     + windowsRow(c)

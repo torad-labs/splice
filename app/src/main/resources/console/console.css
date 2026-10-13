@@ -582,3 +582,5 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
 .card .onlogin .sdoor .lamp.working .beat { stroke-dasharray: 16 64; animation: tlamp-trace 2.2s linear infinite; }
 .card .onlogin .sdoor.more { color: var(--text-mute); }
 .card .onlogin .sdoor > svg { flex: none; width: 1rem; height: 1rem; color: var(--text-mute); }  /* a session pinned to this login alone */
+/* a held next login says so in words beside its name; the lock column keeps only the glyph (walk on db0e2687c) */
+.windows .next .who .limword { color: var(--limit); }

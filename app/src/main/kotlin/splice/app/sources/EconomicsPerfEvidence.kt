@@ -41,11 +41,15 @@ internal class EconomicsEvidenceShare(private val files: PerfReadFiles) {
     }
 
     /** The evidence an earlier ask of the same unchanged files took, its probes and torn lines cut at [sinceMs] as a
-     *  read from [sinceMs] would cut them; null when no open read holds one that reaches back that far. */
+     *  read from [sinceMs] would cut them; null when no open read holds one that reaches back that far, or when the one
+     *  it holds started earlier and holds a torn line with no time. Such a line cannot be cut at [sinceMs], and a read
+     *  from [sinceMs] may never open its file: 944 NUL bytes in claudex's Sep archive, read for the backfill from Sep 8,
+     *  refused every later hour of claudex's hourly history (live, Oct 13). */
     @Synchronized
     fun since(sinceMs: Long): EconomicsPerfEvidence? {
         val earlier = held?.takeIf { reads > 0 && sinceMs >= it.sinceMs && files.unchanged(it.stamp) } ?: return null
         val read = earlier.evidence
+        if (sinceMs > earlier.sinceMs && read.probeTears.any { it == null }) return null
         return read.copy(
             probes = read.probes.filter { it.ts >= sinceMs },
             probeTears = read.probeTears.filter { it == null || it >= sinceMs },

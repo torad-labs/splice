@@ -92,8 +92,10 @@ internal object AddWiring {
 internal class RuntimeRows : LocalRuntimeRows {
     override fun invoke(baseUrl: String, rows: Map<String, Long?>): LocalRowsAnswer {
         val probe = LocalRuntimeProbe(baseUrl, JdkLocalHttp())
-        val runtime = probe.detect() ?: return LocalRowsAnswer()
-        val listed = probe.models(runtime, rows.keys) ?: return LocalRowsAnswer()
+        // Temple notice 7ca59c70c91124ca: a runtime that is not found, or lists nothing, says so beside the add's checks.
+        val runtime = probe.detect() ?: return LocalRowsAnswer(unchecked = "no local runtime answered at $baseUrl")
+        val listed = probe.models(runtime, rows.keys)
+            ?: return LocalRowsAnswer(unchecked = "the runtime at $baseUrl listed no models")
         val windows = rows.keys.mapNotNull { id ->
             val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
             model?.contextLength?.takeIf { it > 0 }?.let { id to it }

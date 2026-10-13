@@ -105,6 +105,7 @@ internal class AddChecks(
             modelWindows(c.provider.models, listed.withServed(runtime.windows)),
         ) + listOfNotNull(
             refused.ifEmpty { null }?.let { AddCheck("local runtime", false, "the runtime refuses $it") },
+            runtime.unchecked?.let { AddCheck("local runtime", true, "rows not checked: $it") },
             if (live) liveTurn(c.provider, c.providerKey, c.models.first(), checkEnv) else null,
         )
     }

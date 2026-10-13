@@ -41,6 +41,8 @@ public fun interface DaemonRestart {
 public data class LocalRowsAnswer(
     public val windows: Map<String, Long> = emptyMap(),
     public val refused: Map<String, String> = emptyMap(),
+    /** Why the runtime could not check the rows at all, such as no runtime answering: said, never skipped in silence. */
+    public val unchecked: String? = null,
 )
 
 /** Asks the runtime at [baseUrl] about [rows], id to the declared window (null when none is declared), the way boot asks

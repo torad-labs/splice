@@ -6,6 +6,8 @@ package splice.dialect.responses.websocket
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
@@ -74,12 +76,24 @@ internal class InboxListener(
         if (last) deliverAssembly()
     }
 
-    /** The late frame's event type when it arrived whole, "fragment" when it did not, and "?" when its type is not a
-     *  short protocol word. */
-    private fun lateType(data: CharSequence, last: Boolean): String {
-        if (!last || assembly.isNotEmpty()) return "fragment"
-        val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(data.toString()).jsonObject }
-        return JsonScalars.str(event.getOrNull()?.get(FIELD_TYPE))?.takeIf(protocolWord::matches) ?: "?"
+    /** The late frame's event type when it arrived whole, "fragment" when it did not, "unparseable" when it is not JSON,
+     *  and "?" when it carries no short protocol word. An `error` event also names its error's type, code and status, the words that say whether it
+     *  belongs to the round that ended or to the socket (56 late `error` frames in 9 hours on Oct 12, each costing a
+     *  socket, and the line could not say which error they were). Never the message. */
+    private fun lateType(data: CharSequence, last: Boolean): String =
+        if (!last || assembly.isNotEmpty()) {
+            "fragment"
+        } else {
+            Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(data.toString()).jsonObject }
+                .fold(onSuccess = ::lateWords, onFailure = { "unparseable" })
+        }
+
+    private fun lateWords(event: JsonObject): String {
+        val error = event[FIELD_ERROR] as? JsonObject
+        val words = listOf(event[FIELD_TYPE], error?.get(FIELD_TYPE), error?.get(FIELD_CODE))
+            .mapNotNull { JsonScalars.str(it)?.takeIf(protocolWord::matches) }
+        val status = (event[FIELD_STATUS] as? JsonPrimitive)?.intOrNull?.let { "status=$it" }
+        return (words + listOfNotNull(status)).joinToString(" ").ifEmpty { "?" }
     }
 
     private val protocolWord = Regex("[a-z_.]{1,64}")
@@ -191,3 +205,8 @@ private const val ABNORMAL_CLOSURE = 1006
 
 // V4-242: what the close line calls an event of the round that carries no type field.
 private const val TYPELESS_EVENT = "untyped"
+
+// The Responses websocket's `error` event: {"type":"error","status":400,"error":{"type":…,"code":…,"message":…}}.
+private const val FIELD_ERROR = "error"
+private const val FIELD_CODE = "code"
+private const val FIELD_STATUS = "status"

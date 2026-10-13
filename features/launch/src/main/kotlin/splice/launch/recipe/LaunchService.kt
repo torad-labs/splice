@@ -253,7 +253,8 @@ public class LaunchService(
     /** THE RETRY LAW: no refusal is bare and none invents a cause. Each sentence says what happened,
      *  what is still true (nothing copied / that tree untouched), and the operator's next action. */
     private fun adoptionWarning(adoption: SessionAdoption?): String? = when (adoption) {
-        null, is SessionAdoption.HeadOwned ->
+        // a word no session id can be (a name with a space, a search word with a dot) is Claude Code's to resolve too
+        null, is SessionAdoption.HeadOwned, is SessionAdoption.Invalid ->
             null
         is SessionAdoption.Copied ->
             "session ${adoption.sessionId} goes on here as its copy ${adoption.copyId}, with " +
@@ -276,9 +277,6 @@ public class LaunchService(
             "session ${adoption.sessionId} could not be copied out of ${adoption.from} " +
                 "(${adoption.cause}). That tree is untouched: retry the launch, or resume the session " +
                 "on the head that owns it"
-        is SessionAdoption.Invalid ->
-            "the -r argument is not a session id (${adoption.cause}); re-run with the UUID Claude Code " +
-                "shows for that session, or with a bare -r to get this head's picker"
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: app/src/main/dist/bin/splice-launch execs

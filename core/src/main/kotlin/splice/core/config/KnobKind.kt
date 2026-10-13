@@ -14,3 +14,30 @@ public val restartRequiredKnobKeys: List<String> = Knob.entries.filter { it.rest
 
 /** Knobs only [heads.KEY.overrides] may set (Knob.headOnly); every global layer drops them. */
 internal val headOnlyKnobKeys: Set<String> = Knob.entries.filter { it.headOnly }.map { it.key }.toSet()
+
+/** Knobs only the daemon-wide value reaches: every reader asks the global view, never a head's own, so a
+ *  [heads.KEY.overrides] value for one of these would be accepted and then ignored. The per-command write refuses them
+ *  by name (HeadOverrideWrite). Each was traced to its reader on Oct 12 (§9 audit). Live: ingressReadIdleMs and
+ *  materializationHeapBytes (the shared ingress and materialization gate), the four MCP host limits (one host for every
+ *  head), transcriptView (console routes), budgetDefaultAction (budget PUT), historyRetentionDays (the one history
+ *  window), activityRetentionDays, messageEdges and keepTranscriptCopies (daemon-wide stores and moves). Read at start:
+ *  debug, controlPort, supervisorUnit, mcpSlice and activityStoreHeads. A knob that gains a per-head reader leaves it. */
+public val daemonWideKnobs: Set<Knob> = setOf(
+    Knob.INGRESS_READ_IDLE_MS,
+    Knob.MATERIALIZATION_HEAP_BYTES,
+    Knob.MCP_IDLE_TIMEOUT_MS,
+    Knob.MCP_MAX_SERVERS,
+    Knob.MCP_REQUEST_TIMEOUT_MS,
+    Knob.MCP_INITIALIZE_TIMEOUT_MS,
+    Knob.TRANSCRIPT_VIEW,
+    Knob.BUDGET_DEFAULT_ACTION,
+    Knob.HISTORY_RETENTION_DAYS,
+    Knob.ACTIVITY_RETENTION_DAYS,
+    Knob.MESSAGE_EDGES,
+    Knob.KEEP_TRANSCRIPT_COPIES,
+    Knob.DEBUG,
+    Knob.CONTROL_PORT,
+    Knob.SUPERVISOR_UNIT,
+    Knob.MCP_SLICE,
+    Knob.ACTIVITY_STORE_HEADS,
+)

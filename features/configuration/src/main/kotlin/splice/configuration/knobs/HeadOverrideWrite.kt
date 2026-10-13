@@ -8,10 +8,13 @@
 // coercion ConfigService applies to the global layers). A refusal writes nothing.
 //
 // A WRITE THAT LANDED ACTS NOW WHERE THE KNOB IS LIVE. The daemon's held per-command layer follows the file
-// ([ConfigService.setHeadOverrides]), so a knob read through the head's config on each request takes the new
+// ([ConfigService.headLayer]), so a knob read through the head's config on each request takes the new
 // value on the next request. A knob the daemon reads once at start is named in `restart_required`, and the
 // response says so instead of claiming it is live. Clearing an override (null) removes the line and the
 // command falls back to the global value, which `effective` shows.
+//
+// A KNOB ONLY THE DAEMON-WIDE VALUE REACHES IS REFUSED (Oct 12, §9 audit): every reader of a daemonWideKnobs entry asks
+// the global view, so a command's own value would be written, answered live and never read. Clearing one is allowed.
 package splice.configuration.knobs
 
 import io.ktor.http.HttpStatusCode
@@ -25,6 +28,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigService
+import splice.core.config.daemonWideKnobs
 import splice.core.config.knobsByKey
 import splice.core.config.restartRequiredKnobKeys
 import splice.core.topology.HeadConfig
@@ -38,6 +42,10 @@ import splice.core.util.SafeFailureText
 import splice.http.JsonReply
 
 private const val NOT_SCALAR = "invalid value (must be a scalar or null)"
+
+// why: the words a per-command write of a daemon-wide knob is refused with, naming where the value is set instead.
+private const val DAEMON_WIDE =
+    "splice reads this setting once for every command, never per command; set it for every command (PATCH /api/config)"
 private const val HEAD_WRITE_UNWIRED =
     "the topology writer is not wired into this control plane; a command's value cannot be written"
 
@@ -69,8 +77,10 @@ internal class HeadOverrideWrite(
         val rejected = LinkedHashMap<String, String>()
         val wanted = LinkedHashMap<String, String?>()
         for ((key, value) in partial) {
+            val knob = knobsByKey[key]
             when {
-                knobsByKey[key] == null -> rejected[key] = "unknown key"
+                knob == null -> rejected[key] = "unknown key"
+                knob in daemonWideKnobs && value !is JsonNull -> rejected[key] = DAEMON_WIDE
                 value !is JsonPrimitive -> rejected[key] = NOT_SCALAR
                 else -> wanted[key] = value.takeUnless { it is JsonNull }?.content
             }

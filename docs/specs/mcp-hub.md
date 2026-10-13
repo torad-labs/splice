@@ -48,6 +48,12 @@ Measured on Oct 12 at 8 PM CT: 51 plain `claude` sessions ran 45 copies of ast-g
 5. **Started when used.** Connecting a session starts nothing. tools/list is answered from the
    listing the same server gave last time, and the server starts on the first tool call. A shared
    server stops after a while with no calls. A per-session copy stops when its session ends.
+6. **Where the hub runs, and the fallback.** The hub runs on Linux x86_64 with systemd --user
+   running, and with both splice-mcp-front and splice-mcp-holder beside splice.jar. The daemon
+   checks all three at boot and logs the result. Anywhere one of them is missing, the daemon keeps
+   hosting MCP in process, as before the hub. The launch offers hub addresses only after a front has
+   run on the machine (its front.json exists) and while a front answers on port 3095. Otherwise
+   Claude Code starts its own servers, and the launch says so in one line.
 
 ## Seamless setup, update and crash: one mechanism
 

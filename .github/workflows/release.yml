@@ -208,6 +208,8 @@ jobs:
             dist/splice.jar
             dist/splice-launch
             dist/install.sh
+            dist/splice-mcp-holder
+            dist/splice-mcp-front
             dist/LICENSE
             dist/THIRD_PARTY_NOTICES.md
             dist/THIRD_PARTY_LICENSES.txt

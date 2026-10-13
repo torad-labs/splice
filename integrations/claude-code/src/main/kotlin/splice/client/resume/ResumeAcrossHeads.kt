@@ -218,11 +218,11 @@ public class ResumeAcrossHeads(
         }
     }
 
-    private fun discardCopy(target: Path, targetSubdir: Path) {
+    private fun discardCopy(target: Path, targetSubdir: Path?) {
         Cancellables.discard(
             Cancellables.runCatchingBestEffort {
                 val _ = Files.deleteIfExists(target)
-                if (Files.isDirectory(targetSubdir, NOFOLLOW_LINKS)) {
+                if (targetSubdir != null && Files.isDirectory(targetSubdir, NOFOLLOW_LINKS)) {
                     Files.walk(targetSubdir).use { stream ->
                         stream.sorted(Comparator.reverseOrder()).forEach { val _ = Files.deleteIfExists(it) }
                     }
@@ -281,7 +281,9 @@ public class ResumeAcrossHeads(
     private fun encodedCwd(cwd: String): String = cwd.replace(NOT_ALPHANUMERIC, "-")
 
     /** The copy, the subdir tree and the model rewrite are ONE transaction: a partial adoption would
-     *  hand Claude Code a transcript that is half another head's. The source is read only. */
+     *  hand Claude Code a transcript that is half another head's. The launch still names the original id, so a copy
+     *  that fails partway is removed, as [copyAside]'s is, and Claude Code finds no half-made session to resume. A
+     *  subdir this head already held is not this copy's to remove. The source is read only. */
     private fun copyIn(
         callingConfigDir: Path,
         plan: ResumePlan.Copy,
@@ -292,6 +294,7 @@ public class ResumeAcrossHeads(
         val target = plan.into
         val targetDir = target.parent
         val targetSubdir = targetDir.resolve(sessionId)
+        val subdirHeld = Files.exists(targetSubdir, NOFOLLOW_LINKS)
         val copied = Cancellables.runCatchingCancellable {
             Files.createDirectories(targetDir)
             // A real byte copy, never a link: a link would put the source head's tree inside the
@@ -302,6 +305,7 @@ public class ResumeAcrossHeads(
             rewriter.rewriteCopy(target, roster)
         }
         val rewritten = copied.getOrElse { cause ->
+            discardCopy(target, targetSubdir.takeUnless { subdirHeld })
             return SessionAdoption.Refused(sessionId, plan.fromHead, SafeFailureText.render(cause))
         }
         log(

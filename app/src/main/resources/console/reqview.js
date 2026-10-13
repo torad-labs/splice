@@ -218,7 +218,7 @@ const REQVIEW = (() => {
       const tabs = bodies ? `<div class="switch tabs" role="tablist">${[["sent", "Sent"], ["attempts", "Attempts"], ["returned", "Returned"]].map(([v, w]) => `<button role="tab" data-act="tab" data-v="${v}" aria-pressed="${s().tab === v}">${w}</button>`).join("")}</div>` : "";
       return `<section class="pane rqpane" style="--c:${colorOf(r.provider)}" aria-label="Request at ${clockS(r.ts)}"><header><span class="lamp ${h.lampCls}" aria-hidden="true">${h.lamp}</span>`
         + `<div class="who"><div class="top"><span class="name">${esc(h.name)}</span><time>${dayOf(r.ts)}${clockS(r.ts)}</time></div>`
-        + `<div class="meta"><span class="chip">${esc(r.cmd)}</span>${h.word}<span>${esc(r.model)}</span>${h.acct ? `<span>${h.acct}</span>` : ""}</div></div>`
+        + `<div class="meta">${h.chip ?? `<span class="chip">${esc(r.cmd)}</span>`}${h.word}<span>${esc(r.model)}</span>${h.acct ? `<span>${h.acct}</span>` : ""}</div></div>`
         + `<div class="acts">${h.acts}</div></header>`
         // h.said: what the provider answered, verbatim and unlabelled, directly under the outcome in the header (fin)
         + `<div class="scroll">${h.said ?? ""}${railHtml(r, bodies ? h.tr() : null)}${figuresHtml(r, h.cells, h.cost, h.costSub)}${tabs}<div class="bodies">${lower}</div></div></section>`;

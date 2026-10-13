@@ -735,7 +735,7 @@ function rowHtml(r) {
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta"><span class="chip">${esc(r.cmd)}</span><span>${esc(r.model ?? "No model")}</span>${r.account ? `<span class="acct" title="${esc(r.account)}">${acctHtml(r)}</span>` : ""}${toks}${noReading}${retry}</div>${match}</article>`;
+    + `<div class="meta">${headChip(r)}<span>${esc(r.model ?? "No model")}</span>${r.account ? acctTag(r, ` title="${esc(r.account)}"`) : ""}${toks}${noReading}${retry}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and
@@ -955,6 +955,15 @@ const recordActs = (r) => (traces.get(r.id)?.body
   ? `<button class="act" data-act="copyrec">Copy JSON</button><button class="act" data-act="saverec">Download</button>` : "");
 const recordJson = () => { const r = state.rows.find((x) => x.id === ui.open); return r ? JSON.stringify(traces.get(r.id)?.body ?? null, null, 2) : null; };
 
+// The command and the login a request names open their own pages: the command on Models (models.js reads ?cmd=), the
+// login on Accounts at that command's card (accounts.js reads ?head=). Plain words where the page is not served.
+const served = (file) => PAGES.some(([f]) => f === file);
+const headChip = (r) => (served("models.html")
+  ? `<a class="chip" href="models.html?${new URLSearchParams({ cmd: r.head })}">${esc(r.cmd)}</a>` : `<span class="chip">${esc(r.cmd)}</span>`);
+const acctTag = (r, attrs = "") => (served("accounts.html")
+  ? `<a class="acct" href="accounts.html?${new URLSearchParams({ head: r.head })}"${attrs}>${acctHtml(r)}</a>`
+  : `<span class="acct"${attrs}>${acctHtml(r)}</span>`);
+
 const openSession = (r) => (r.sid && PAGES.some(([file]) => file === "sessions.html")
   ? `<a class="act" href="sessions.html?at=${+r.ts}#${esc(r.sid)}">Open session</a>` : "");
 
@@ -1004,7 +1013,7 @@ function paneHtml() {
     ? `<p class="upmsg"><span class="who">${esc(who)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
       + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>`
     : unanswered ? `<p class="upmsg"><span class="who">${esc(who)}</span><span class="state">No answer</span></p>` : ""; // fin's words, hitstop f4581a6
-  return RV.paneHtml(r, { said: said + noteHtml(r, who), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
+  return RV.paneHtml(r, { said: said + noteHtml(r, who), lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: r.compare ? COMPARE_LABEL : sessTitle(r.sid), acct: r.account ? acctTag(r) : "", chip: headChip(r),
     acts: `${openSession(r)}${recordActs(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st),
     tr: () => traceOf(r), cells: unbilled ? ["cost", "attempts"] : ["in", "write", "out", "cost", "attempts"], cost: costText(r),

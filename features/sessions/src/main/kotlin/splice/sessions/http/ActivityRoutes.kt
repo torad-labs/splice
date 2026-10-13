@@ -59,16 +59,12 @@ public class ActivityRoutes(private val source: ActivitySource) {
 
     private fun inventoryJson(kind: KeptActivity, inventory: DayInventory, state: KeptState): String = buildJsonObject {
         val store = kind.name.lowercase()
-        put("store", store)
-        put("state", state.wire)
         state.reason(store)?.let { put("reason", it) }
-        put("days", inventory.days)
         put("rows", inventory.rows)
         // What the store costs on disk. The inventory has always measured it (DayInventory.bytes); only the payload
         // left it out, so Settings > Your data had a count with no size beside it.
         put("bytes", inventory.bytes)
         put("oldest", inventory.oldest?.toString())
-        put("ages_out", inventory.agesOut?.toString())
     }.toString()
 
     private fun storageFailure(failure: Throwable): JsonReply = JsonReply(

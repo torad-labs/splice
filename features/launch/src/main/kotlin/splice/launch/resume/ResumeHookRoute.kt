@@ -117,8 +117,9 @@ public class ResumeHookRoute(
         // transcript is a path that does not exist yet (measured: every startup hook since V4-183
         // landed was refused here, one second after its launch, and no head ever owned a session —
         // the bare -c crossing V4-183 was written against stayed live). A startup therefore admits
-        // the not-yet-written file: its DIRECTORY must resolve under the head's tree and its name
-        // must be the hook's own session id. A resume rewrites rows, so it still needs the file.
+        // the not-yet-written file: its DIRECTORY must be a project directory of the head's tree, made
+        // or about to be, and its name must be the hook's own session id. A resume rewrites rows, so it
+        // still needs the file.
         val transcript = transcriptInsideHead(hook.transcriptPath, configDir)
             ?: hook.takeIf { it.source == STARTUP_SOURCE }?.let { unwrittenTranscriptInsideHead(it, configDir) }
             ?: return "the transcript path is not a file under this head's transcript tree"
@@ -175,23 +176,31 @@ public class ResumeHookRoute(
         return if (inside) real else null
     }
 
-    /** A startup's transcript before its first row: the claimed path's PARENT resolved with symlinks
-     *  followed must be a directory under the head's own projects tree, the file name must be
-     *  `<session id>.jsonl` (the id already passed SESSION_ID_SHAPE), and nothing may sit at the
-     *  path yet other than a regular file. The recorded path is the resolved parent plus that name,
-     *  which is exactly what Claude Code creates on the first write. */
+    /** A startup's transcript before its first row: the claimed path's PARENT must be a project directory
+     *  of the head's own projects tree ([projectDir]), the file name must be `<session id>.jsonl` (the id
+     *  already passed SESSION_ID_SHAPE), and nothing may sit at the path yet other than a regular file. The
+     *  recorded path is that directory plus that name, which is exactly what Claude Code creates on the
+     *  first write. */
     private fun unwrittenTranscriptInsideHead(hook: ResumeCall, configDir: Path): Path? {
-        val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let { raw ->
-            spelled(raw)
-        }
+        val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let(::spelled)
         val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + UNWRITTEN_TRANSCRIPT_EXT }
-        val parent = claimed?.parent?.let { dir ->
-            resolved(dir)
-        }
         val tree = resolved(configDir.resolve(PROJECTS_DIR))
-        val dir = parent?.takeIf { tree != null && it.startsWith(tree) && Files.isDirectory(it, NOFOLLOW_LINKS) }
+        val dir = if (tree == null) null else claimed?.parent?.let { projectDir(it, tree) }
         val real = if (name != null && dir != null) dir.resolve(name) else null
         return real?.takeIf { !Files.exists(it, NOFOLLOW_LINKS) || Files.isRegularFile(it, NOFOLLOW_LINKS) }
+    }
+
+    /** [dir] resolved with symlinks followed when it is a directory under [tree]. A folder's first session
+     *  starts before Claude Code makes its project directory (Oct 12: five of the week's seven refused
+     *  startups came the minute their project directory was made), so a directory that does not exist yet
+     *  counts when it is one plain name directly under [tree]. */
+    private fun projectDir(dir: Path, tree: Path): Path? {
+        val made = resolved(dir)
+        if (made != null) return made.takeIf { it.startsWith(tree) && Files.isDirectory(it, NOFOLLOW_LINKS) }
+        val name = dir.fileName?.toString()?.takeUnless { it == "." || it == ".." } ?: return null
+        val unmade = tree.resolve(name)
+        val free = !Files.exists(unmade, NOFOLLOW_LINKS) || Files.isDirectory(unmade, NOFOLLOW_LINKS)
+        return unmade.takeIf { free && dir.parent?.let(::resolved) == tree }
     }
 
     private fun parse(body: String): JsonObject? = try {

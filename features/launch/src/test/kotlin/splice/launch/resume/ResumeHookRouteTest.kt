@@ -205,15 +205,18 @@ class ResumeHookRouteTest {
         assertNull(SessionOwnership(own).newestFor(cwd))
         write(unwritten, FOREIGN_ROW + "\n")
         assertEquals(SESSION, SessionOwnership(own).newestFor(cwd)?.id, "owned from its startup on")
+        // a folder's first session: Claude Code makes its project directory after the hook fires
+        val firstInFolder = shared.resolve("-new-folder").resolve("$SESSION.jsonl")
+        assertNull(route(own).handle("codex", hookJson(SESSION, firstInFolder, "startup", cwd)))
 
         // Still refused on a startup: a name that is not this session's, a directory outside the
-        // tree, and a path whose parent does not exist. A resume of an unwritten file is refused too.
+        // tree, and a path two directories past any that exist. A resume of an unwritten file is refused too.
         val refusal = "the transcript path is not a file under this head's transcript tree"
         val misnamed = dir.resolve("not-$OTHER.jsonl")
         assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, misnamed, "startup", cwd)))
         val outside = Files.createDirectories(home.resolve("elsewhere")).resolve("$OTHER.jsonl")
         assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, outside, "startup", cwd)))
-        val noParent = shared.resolve("-never-made").resolve("$OTHER.jsonl")
+        val noParent = shared.resolve("-never-made").resolve("deeper").resolve("$OTHER.jsonl")
         assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, noParent, "startup", cwd)))
         val unwrittenOther = dir.resolve("$OTHER.jsonl")
         assertEquals(refusal, route(own).handle("codex", hookJson(OTHER, unwrittenOther, "resume", cwd)))

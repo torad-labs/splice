@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.KnobWords
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
@@ -45,7 +46,7 @@ class BudgetPlanSpendTest {
 
     private fun owner(tmp: Path, history: List<PerfRow> = emptyList()): BudgetEnforcement {
         val store = BudgetStore(tmp.resolve("budget.json"), {})
-        store.replace(listOf(Budget("synthetic", 3.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("synthetic", 3.0, KnobWords.BUDGET_BLOCK)))
         val scope = TestScope()
         return BudgetEnforcement(
             store,

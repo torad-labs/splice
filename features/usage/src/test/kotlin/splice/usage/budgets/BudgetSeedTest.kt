@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
+import splice.core.config.KnobWords
 import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -45,7 +46,7 @@ class BudgetSeedTest {
     @Test
     fun `pending history is one flight and admission keeps concurrent live spend`() = runTest {
         val store = BudgetStore(directory.resolve("budgets.json"), {})
-        store.replace(listOf(Budget("head", 5.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("head", 5.0, KnobWords.BUDGET_BLOCK)))
         var reads = 0
         val history = HeadPerfHistory {
             PerfRowsSource {
@@ -111,7 +112,7 @@ class BudgetSeedTest {
     @Test
     fun `a persisted cap is known at construction and PUT publishes before a refresh`() = runTest {
         val file = directory.resolve("budgets.json")
-        BudgetStore(file, {}).replace(listOf(Budget("head", 0.0, BudgetActions.BLOCK)))
+        BudgetStore(file, {}).replace(listOf(Budget("head", 0.0, KnobWords.BUDGET_BLOCK)))
         val store = BudgetStore(file, {})
         val owner = BudgetEnforcement(
             store,
@@ -124,7 +125,7 @@ class BudgetSeedTest {
         )
         val head = owner.forHead("head", null)
         assertNotNull(head.admit(), "not yet refreshed cannot masquerade as no cap at startup")
-        store.replace(listOf(Budget("head", 10.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("head", 10.0, KnobWords.BUDGET_BLOCK)))
         assertNull(head.admit(), "a saved cap is effective without waiting for background work")
     }
 
@@ -132,7 +133,7 @@ class BudgetSeedTest {
     fun `a hand edited cap reaches admission within the declared background refresh bound`() = runTest {
         val file = directory.resolve("budgets.json")
         val store = BudgetStore(file, {})
-        store.replace(listOf(Budget("head", 5.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("head", 5.0, KnobWords.BUDGET_BLOCK)))
         val owner = BudgetEnforcement(
             store,
             BudgetAlert { _, _ -> },
@@ -156,7 +157,7 @@ class BudgetSeedTest {
         val file = directory.resolve("budgets.json")
         val logs = mutableListOf<String>()
         val store = BudgetStore(file, { logs.add(it) })
-        store.replace(listOf(Budget("head", 0.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("head", 0.0, KnobWords.BUDGET_BLOCK)))
         val owner = BudgetEnforcement(
             store,
             BudgetAlert { _, _ -> },
@@ -183,7 +184,7 @@ class BudgetSeedTest {
     @Test
     fun `historical spend reaching a warn cap is announced when its seed lands`() = runTest {
         val store = BudgetStore(directory.resolve("budgets.json"), {})
-        store.replace(listOf(Budget("head", 1.0, BudgetActions.WARN)))
+        store.replace(listOf(Budget("head", 1.0, KnobWords.BUDGET_WARN)))
         val alerts = mutableListOf<String>()
         val history = HeadPerfHistory {
             PerfRowsSource {
@@ -215,7 +216,7 @@ class BudgetSeedTest {
     @Test
     fun `an old pending seed cannot change the next day tally`() = runTest {
         val store = BudgetStore(directory.resolve("budgets.json"), {})
-        store.replace(listOf(Budget("head", 5.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("head", 5.0, KnobWords.BUDGET_BLOCK)))
         var now = SEED_BOOT_MS
         val history = HeadPerfHistory {
             PerfRowsSource {

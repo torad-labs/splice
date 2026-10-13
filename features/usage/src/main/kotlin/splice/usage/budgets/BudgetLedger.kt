@@ -16,6 +16,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
+import splice.core.config.KnobWords
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.OutcomeTags
@@ -62,8 +63,9 @@ internal class BudgetLedger(
         val limit = limit() ?: return null
         val now = context.clock()
         val reached = seededTally(now)?.takeIf { it.usd >= limit.usd } ?: return null
-        if (limit.action == BudgetActions.WARN) warnOnce(now, limit.usd)
-        return reached.takeIf { limit.action == BudgetActions.BLOCK }?.let { BudgetText.refusal(head, it, limit.usd) }
+        if (limit.action == KnobWords.BUDGET_WARN) warnOnce(now, limit.usd)
+        return reached.takeIf { limit.action == KnobWords.BUDGET_BLOCK }
+            ?.let { BudgetText.refusal(head, it, limit.usd) }
     }
 
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = spentOn(null, atMs, model, counters)
@@ -75,7 +77,7 @@ internal class BudgetLedger(
         val limit = limit() ?: return
         val noPrice = usd == null && counters[PerfKeys.LOCAL_STEP] != 1L
         if (noPrice && !OutcomeTags.isFailedWithoutUsage(outcome, counters)) noteUnpriced(atMs, model)
-        if (limit.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
+        if (limit.action == KnobWords.BUDGET_WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
     }
 
     /** Read the exact enforcement ledger, never a second history total or a per-account attribution. */
@@ -132,7 +134,7 @@ internal class BudgetLedger(
                 currentCoroutineContext().ensureActive()
                 synchronized(lock) { unseeded.seed(before) }
                 val limit = limit()
-                if (limit?.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
+                if (limit?.action == KnobWords.BUDGET_WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
             }
         }
         return synchronized(lock) { tallyAt(atMs) }

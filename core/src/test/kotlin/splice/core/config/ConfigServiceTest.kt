@@ -318,9 +318,9 @@ class ConfigServiceTest {
         }
     }
 
-    // Same one-way law for the plan-usage poller: only an exact "off" stops it.
+    // The plan-usage poller takes auto or off, any case; any other word is refused, so the default auto stands.
     @Test
-    fun `quotaPoll knob normalizes to exactly off or auto, never an unrecognized value`() {
+    fun `quotaPoll knob reads off or auto, and an unlisted word leaves the default`() {
         assertEquals("auto", service().getConfig().asMap()["quotaPoll"])
         assertEquals(false, service().getConfig().quotaPollOff)
         listOf("off", "OFF", " off ").forEach { raw ->
@@ -370,16 +370,20 @@ class ConfigServiceTest {
         assertEquals(250, floored.getConfig().streamIdleMs)
     }
 
+    // A word knob takes only its words (KnobWords), any case, and refuses the rest by name: showReasoning's old fold
+    // read "1" or a typo as thinking, which is not even its default (decided Oct 13, gap 458).
     @Test
-    fun `showReasoning folding matches the node table`() {
-        val coercion = ConfigCoercion { null }
-        assertEquals("off", coercion.normalizeShowReasoning("0"))
-        assertEquals("off", coercion.normalizeShowReasoning("none"))
-        assertEquals("off", coercion.normalizeShowReasoning(null))
-        assertEquals("text", coercion.normalizeShowReasoning("mirror"))
-        assertEquals("text", coercion.normalizeShowReasoning("FULL"))
-        assertEquals("thinking", coercion.normalizeShowReasoning("anything-else"))
-        assertEquals("thinking", coercion.normalizeShowReasoning("1"))
+    fun `a word knob takes only its words and refuses the rest by name`() {
+        val svc = service()
+        listOf(
+            "quotaPoll" to "on",
+            "showReasoning" to "mirror",
+            "effort" to "ultra",
+            "summary" to "full",
+            "budgetDefaultAction" to "yell",
+        ).forEach { (key, word) -> assertTrue(key in svc.patch(mapOf(key to word)).rejected, key) }
+        assertEquals("text", svc.getConfig().asMap()["showReasoning"])
+        assertEquals("off", svc.patch(mapOf("showReasoning" to "OFF")).applied["showReasoning"])
     }
 
     @Test

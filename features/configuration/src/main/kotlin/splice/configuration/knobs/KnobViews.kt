@@ -4,6 +4,7 @@ package splice.configuration.knobs
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigLayers
 import splice.core.config.Knob
+import splice.core.config.KnobWords
 import splice.core.config.daemonWideKnobs
 
 /** Where a knob's effective value comes from, lowest precedence first: the layers [splice.core.config.ConfigService]
@@ -26,6 +28,14 @@ private val PINNED_REASONS = mapOf(
 )
 
 internal class KnobViews {
+    /** What the page builds a knob's control from (gap 458): its kind, whether one command may hold its own value
+     *  (every knob a head reads per turn, HeadOverrideWrite), and the words a word-valued knob takes. */
+    private fun shape(out: JsonObjectBuilder, knob: Knob) {
+        out.put("kind", knob.kind.name.lowercase())
+        out.put("per_command", knob !in daemonWideKnobs)
+        KnobWords.of(knob)?.let { words -> out.putJsonArray("words") { words.forEach { add(it) } } }
+    }
+
     /** [effective] is the merged value for [headKey] (or the global view); [layers] says which layer set each key. */
     fun of(effective: JsonObject, layers: ConfigLayers, headKey: String?): JsonObject = buildJsonObject {
         val byScope = mapOf(
@@ -44,10 +54,7 @@ internal class KnobViews {
                 // a value set in the shell names the variables it is read from, so the row can say which to change
                 if (scope == "env") putJsonArray("env_names") { knob.envNames.forEach { add(it) } }
                 put("disposition", if (knob.restartRequired) "restart" else "live")
-                // what the value is, so the page builds its control from the daemon's own answer (gap 458)
-                put("kind", knob.kind.name.lowercase())
-                // whether one command may hold its own value: every knob a head reads per turn (HeadOverrideWrite)
-                put("per_command", knob !in daemonWideKnobs)
+                shape(this, knob)
                 val readOnlyReason = PINNED_REASONS[knob]
                     ?: "set only in [heads.<key>.overrides], never by PATCH".takeIf { knob.headOnly }
                 put("editable", readOnlyReason == null)

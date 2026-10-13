@@ -101,7 +101,7 @@ class TopologyWriterRoundTripTest {
 
     @Test
     fun `an added key lands after the last key of its own table`() {
-        lands(BASE.replace("summary = \"auto\"\n", "summary = \"auto\"\nshow_reasoning = \"raw\"\n"))
+        lands(BASE.replace("summary = \"auto\"\n", "summary = \"auto\"\nshow_reasoning = \"thinking\"\n"))
     }
 
     @Test

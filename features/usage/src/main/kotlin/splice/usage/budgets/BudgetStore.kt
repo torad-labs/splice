@@ -20,6 +20,7 @@ package splice.usage.budgets
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import splice.core.config.KnobWords
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSafe
@@ -48,13 +49,6 @@ private data class BudgetsDocument(val budgets: List<Budget> = emptyList())
 
 /** A write [BudgetStore] refused, with the reason the route reports as a 400. */
 internal class BudgetRefusal(message: String) : IllegalArgumentException(message)
-
-/** The actions a budget may name. [BudgetStore.replace] refuses any other spelling. */
-internal object BudgetActions {
-    public const val WARN: String = "warn"
-    public const val BLOCK: String = "block"
-    public val VALID: Set<String> = setOf(WARN, BLOCK)
-}
 
 /** The budgets as read, and why there are none when the file does not parse ([unreadable], else null). */
 public data class BudgetsRead(val budgets: List<Budget>, val unreadable: String?)
@@ -138,8 +132,8 @@ public class BudgetStore(
     }
 
     private fun requireValidAction(budget: Budget) {
-        if (budget.action in BudgetActions.VALID) return
-        val allowed = BudgetActions.VALID.joinToString(" or ")
+        if (budget.action in KnobWords.BUDGET_ACTIONS) return
+        val allowed = KnobWords.BUDGET_ACTIONS.joinToString(" or ")
         throw BudgetRefusal("The action must be $allowed, not '${budget.action}'.")
     }
 

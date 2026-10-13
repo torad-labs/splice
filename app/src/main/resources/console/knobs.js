@@ -45,21 +45,21 @@ const KNOBS = (() => {
     K("maxInflight", "Requests at once", { k: "count", opts: [4, 8, 12, 16, 24, 32, 100, 0], none: "Unlimited" }, 12, { cmd: true, also: "concurrent parallel per command" }),
     K("maxQueued", "Requests waiting in line", { k: "count", opts: [128, 256, 512, 1024, 0], none: "Unlimited" }, 512, { cmd: true, also: "queue full" }),
     K("upstreamRetries", "Tries before a request fails", { k: "count", opts: [1, 2, 3, 4, 6, 8, 10], unit: "tries" }, 4, { cmd: true, home: "busy", also: "retry retries attempts" }),
-    K("quotaPoll", "Read plan limits", { k: "pick", opts: [["auto", "On"], ["off", "Off"]] }, "auto", { home: "plan", also: "quota" }),
+    K("quotaPoll", "Read plan limits", { k: "pick", names: { auto: "On", off: "Off" } }, "auto", { home: "plan", also: "quota" }),
     K("quotaPollIntervalMs", "Check plan usage every", { k: "dur", opts: [MIN, 2 * MIN, 5 * MIN, 10 * MIN, 15 * MIN], unit: "min" }, 5 * MIN,
       { home: "plan", also: "read plan limits every quota poll" }),
     K("usageWarnPct", "Warn when a plan reaches", { k: "count", opts: [50, 70, 80, 90, 95], unit: "%" }, 80, { home: "plan", also: "warning" }),
     K("usageWarnTokens5h", "5-hour limit if none is reported", { k: "count", opts: [0, 1e6, 5e6, 10e6, 25e6], none: "Off", tok: true, unit: "tokens out" }, 0,
       { home: "plan", also: "warning" }),
-    K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", opts: [["warn", "Warns"], ["block", "Blocks"]] }, "warn",
+    K("budgetDefaultAction", "A new budget, when it's spent", { k: "pick", names: { warn: "Warns", block: "Blocks" } }, "warn",
       { home: "plan", also: "spend money" }),
-    K("effort", "Reasoning effort", { k: "pick", opts: [[null, "Model's own"], ["minimal", "Minimal"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"]] }, null),
+    K("effort", "Reasoning effort", { k: "pick", unset: "Model's own", names: { none: "None", minimal: "Minimal", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" } }, null),
     // A NAME SAYS WHAT THE CONTROL DOES, AND NOTHING UNDER IT EXPLAINS (Marlin, Oct 12, ACCEPTANCE.md): a control he
     // cannot read is renamed first, then shown as an element where the fact exists, and only then given a sentence he
     // approves. The old names stay in `also` so a search for "summaries" still lands on the row that was renamed.
-    K("summary", "Reasoning you see", { k: "pick", opts: [["detailed", "Full"], ["concise", "Short"], ["auto", "Model decides"]] }, "detailed",
+    K("summary", "Reasoning you see", { k: "pick", names: { detailed: "Full", concise: "Short", auto: "Model decides", none: "None" } }, "detailed",
       { home: "reasoning", also: "reasoning summaries thinking summary detailed concise auto" }),
-    K("showReasoning", "Where reasoning shows", { k: "pick", opts: [["text", "In the reply"], ["thinking", "In the thinking block"], ["off", "Nowhere"]] }, "text",
+    K("showReasoning", "Where reasoning shows", { k: "pick", names: { text: "In the reply", thinking: "In the thinking block", off: "Nowhere" } }, "text",
       { home: "reasoning", also: "show reasoning in claude code display thinking as text" }),
     // OFF THE PAGE, NOT OFF THE DAEMON (Marlin, Oct 12): its only measured effect is thinner fresh reasoning
     // (Knob.kt:106-109, ~4x), it is off by default, and it is meant as an environment opt-in, so it serves no job he
@@ -163,6 +163,14 @@ const KNOBS = (() => {
   // `st.models` is every model the commands that take this setting serve, a page fills it from that route.
   const idsOf = (v) => String(v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   const labelOf = (id) => st.models.find((m) => m.id === id)?.label ?? id;
+  // A PICK'S WORDS ARE THE DAEMON'S (gap 458): a knob that sends its words (GET /api/config, KnobWords.kt) offers exactly
+  // those, each by fin's name for it where the page has one and by the word itself where it has none, so a word the
+  // daemon adds shows, and one it drops goes. A pick with no words on the wire keeps the options written here.
+  const pickOpts = (k) => {
+    const words = st.cfg?.knobs?.[k.key]?.words;
+    const listed = words ? words.map((w) => [w, k.c.names?.[w] ?? w]) : k.c.opts ?? [];
+    return k.c.unset ? [[null, k.c.unset], ...listed] : listed;
+  };
   function word(k, v) {
     const c = k.c;
     if (c.k === "dur") return v === 0 && c.none ? c.none : dur(Number(v));
@@ -171,7 +179,7 @@ const KNOBS = (() => {
       return n === 0 && c.zero ? c.zero : (n === 0 || n === null) && c.none ? c.none : n === 1 && c.unit === "days" ? "1 day"
         : c.tok ? `${tok(n)} ${c.unit}` : `${c.pre || ""}${fmt(n / (c.per || 1))}${c.unit ? (c.unit === "%" ? "%" : ` ${c.unit}`) : ""}`;
     }
-    if (c.k === "pick") return (c.opts.find(([o]) => String(o) === String(v)) || [, String(v)])[1];
+    if (c.k === "pick") return (pickOpts(k).find(([o]) => String(o) === String(v)) || [, String(v)])[1];
     if (c.k === "flag") return v === true || v === "true" ? "On" : "Off";
     if (c.k === "models") return idsOf(v).map(labelOf).join(", ");
     return v === null || v === undefined ? (c.none || "") : String(v);
@@ -195,21 +203,21 @@ const KNOBS = (() => {
       return `<span class="custom"><input class="field" id="kf-${esc(id.replace("@", "-"))}" inputmode="decimal" data-kfield="${id}" value="${esc(text)}"`
         + `${blank && (c.zero || c.none) ? ` placeholder="${esc(c.zero || c.none)}"` : ""} aria-label="${esc(k.label)}"${bad}><em>${esc(unit)}</em></span>`;
     }
-    if (c.k === "dur" || c.k === "count" || (c.k === "pick" && c.opts.length > 3)) {
+    if (c.k === "dur" || c.k === "count" || (c.k === "pick" && pickOpts(k).length > 3)) {
       if (st.custom === id) { // Custom: a field in the preset's unit, saved on Enter
         const unit = c.k === "dur" ? c.unit : c.unit || "";
         const shown = c.k === "dur" ? Number(v) / (unit === "min" ? MIN : SEC) : Number(v) / (c.per || 1);
         const empty = v === null || v === undefined || v === "forever" || (Number(v) === 0 && c.zero);
         return `<span class="custom"><input class="field" inputmode="decimal" data-kcustom="${id}" value="${empty ? "" : esc(String(+shown.toFixed(2)))}" aria-label="${esc(k.label)}"${bad}><em>${esc(unit)}</em></span>`;
       }
-      const opts = c.k === "pick" ? c.opts : c.opts.map((o) => [o, word(k, o)]);
+      const opts = c.k === "pick" ? pickOpts(k) : c.opts.map((o) => [o, word(k, o)]);
       const items = opts.map(([o, w]) => [o, w, String(o) === String(v) ? "now" : String(o) === String(defOf(k)) ? "splice's default" : ""]);
       if (c.k !== "pick" && !opts.some(([o]) => String(o) === String(v))) items.unshift([v, word(k, v), "now"]);
       if (c.k !== "pick") items.push(["__custom", "Custom…", ""]);
       return `<span class="menuwrap"><button class="pickbtn" data-kmenu="pick:${id}" aria-expanded="${open}"${bad}>${esc(word(k, v))}${ICON.caret}</button>${open ? menuHtml(id, items) : ""}</span>`;
     }
     if (c.k === "pick" || c.k === "flag") {
-      const opts = c.k === "flag" ? [[true, "On"], [false, "Off"]] : c.opts;
+      const opts = c.k === "flag" ? [[true, "On"], [false, "Off"]] : pickOpts(k);
       const now = c.k === "flag" ? v === true || v === "true" : v;
       return `<span class="switch">${opts.map(([o, w]) => `<button data-kpick="${id}" data-v='${esc(JSON.stringify(o))}' aria-pressed="${String(o) === String(now)}">${esc(w)}</button>`).join("")}</span>`;
     }
@@ -419,7 +427,7 @@ const KNOBS = (() => {
     // "One command": the command gets its line, with its value's menu open, and nothing is saved until a value is picked
     if (d.kact === "over") {
       st.adding[d.key] = [...(st.adding[d.key] ?? []), d.cmd];
-      if (KNOB[d.key].c.k === "dur" || KNOB[d.key].c.k === "count" || KNOB[d.key].c.opts?.length > 3) st.menu = `pick:${d.key}@${d.cmd}`;
+      if (KNOB[d.key].c.k === "dur" || KNOB[d.key].c.k === "count" || pickOpts(KNOB[d.key]).length > 3) st.menu = `pick:${d.key}@${d.cmd}`;
       return true;
     }
     if (d.kact === "back") {

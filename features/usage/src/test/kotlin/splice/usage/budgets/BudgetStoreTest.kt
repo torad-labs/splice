@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
+import splice.core.config.KnobWords
 import splice.core.config.StatePaths
 import splice.core.util.DaemonLog
 import java.nio.file.Files
@@ -25,7 +26,7 @@ class BudgetStoreTest {
         val store = BudgetStore(file)
         assertEquals(emptyList<Budget>(), store.budgets())
 
-        val saved = store.replace(listOf(Budget(head = "claude", dailyUsd = 5.0, action = BudgetActions.WARN)))
+        val saved = store.replace(listOf(Budget(head = "claude", dailyUsd = 5.0, action = KnobWords.BUDGET_WARN)))
         assertEquals(saved, store.budgets())
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file)))
     }
@@ -33,7 +34,7 @@ class BudgetStoreTest {
     @Test
     fun `a null daily_usd is unbudgeted, not zero, and survives a round trip`(@TempDir tmp: Path) {
         val store = BudgetStore(tmp.resolve("budgets.json"))
-        val saved = store.replace(listOf(Budget(head = "codex", dailyUsd = null, action = BudgetActions.BLOCK)))
+        val saved = store.replace(listOf(Budget(head = "codex", dailyUsd = null, action = KnobWords.BUDGET_BLOCK)))
         assertEquals(null, saved.single().dailyUsd)
         assertEquals(null, store.budgets().single().dailyUsd)
     }
@@ -45,14 +46,14 @@ class BudgetStoreTest {
         val file = tmp.resolve("budgets.json")
         val store = BudgetStore(file)
         val cases = listOf(
-            listOf(Budget(head = " ", action = BudgetActions.WARN)) to "Every budget needs a head.",
+            listOf(Budget(head = " ", action = KnobWords.BUDGET_WARN)) to "Every budget needs a head.",
             listOf(Budget(head = "codex", action = "yell")) to
                 "The action must be warn or block, not 'yell'.",
-            listOf(Budget(head = "codex", dailyUsd = -1.0, action = BudgetActions.WARN)) to
+            listOf(Budget(head = "codex", dailyUsd = -1.0, action = KnobWords.BUDGET_WARN)) to
                 "The daily cap can't be negative.",
             listOf(
-                Budget(head = "codex", action = BudgetActions.WARN),
-                Budget(head = "codex", action = BudgetActions.BLOCK),
+                Budget(head = "codex", action = KnobWords.BUDGET_WARN),
+                Budget(head = "codex", action = KnobWords.BUDGET_BLOCK),
             ) to "Each head can have only one budget (more than one for codex).",
         )
         for ((bad, reason) in cases) {
@@ -69,7 +70,7 @@ class BudgetStoreTest {
         val store = BudgetStore(file)
         assertEquals(emptyList<Budget>(), store.budgets(), "GET must always answer something")
 
-        val recovered = store.replace(listOf(Budget(head = "grok", action = BudgetActions.WARN)))
+        val recovered = store.replace(listOf(Budget(head = "grok", action = KnobWords.BUDGET_WARN)))
         assertEquals(recovered, store.budgets())
     }
 
@@ -82,7 +83,7 @@ class BudgetStoreTest {
         DaemonLog.install { seen += it }
         try {
             val store = BudgetStore(file)
-            store.replace(listOf(Budget(head = "claude", dailyUsd = 5.0, action = BudgetActions.BLOCK)))
+            store.replace(listOf(Budget(head = "claude", dailyUsd = 5.0, action = KnobWords.BUDGET_BLOCK)))
             breakOneByte(file, 5_000)
             repeat(3) { assertEquals(emptyList<Budget>(), store.budgets(), "enforcement reads no budgets") }
             val get = BudgetRoutes({ store }, ConfigService(StatePaths(baseOverride = tmp.resolve("state")))).read()
@@ -112,13 +113,13 @@ class BudgetStoreTest {
     ) {
         val file = tmp.resolve("budgets.json")
         val store = BudgetStore(file)
-        store.replace(listOf(Budget(head = "claude", action = BudgetActions.WARN)))
+        store.replace(listOf(Budget(head = "claude", action = KnobWords.BUDGET_WARN)))
         val before = Files.readString(file)
-        store.replace(listOf(Budget(head = "claude", action = BudgetActions.BLOCK)))
+        store.replace(listOf(Budget(head = "claude", action = KnobWords.BUDGET_BLOCK)))
         assertEquals(before, Files.readString(tmp.resolve("budgets.json.bak")))
 
         Files.writeString(file, Files.readString(file).replace("\"block\"", "\"warn\""))
         Files.setLastModifiedTime(file, FileTime.fromMillis(Files.getLastModifiedTime(file).toMillis() + 5_000))
-        assertEquals(BudgetActions.WARN, store.budgets().single().action)
+        assertEquals(KnobWords.BUDGET_WARN, store.budgets().single().action)
     }
 }

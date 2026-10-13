@@ -106,7 +106,7 @@ class ClaudeLivePoolMembershipTest {
         registry: PlaygroundProviders,
         polling: StartQuotaPoller? = null,
     ): ManagedHead {
-        val config = ConfigService(paths, headOverrides = mapOf("quotaPoll" to if (polling == null) "off" else "on"))
+        val config = ConfigService(paths, headOverrides = mapOf("quotaPoll" to if (polling == null) "off" else "auto"))
         val key = MgmtKey(paths)
         val planner = SignInPlanner()
         val assembly = ProviderAssembly(

@@ -30,24 +30,6 @@ private const val MIN_STREAM_IDLE_MS = 30_000L
 private const val TEST_IDLE_FLOOR_MS = 250L
 private const val MIN_AUTH_CACHE_MS = 5_000L
 
-// why: the two actions BudgetStore (:features-usage) accepts, which core cannot import; a third word would be saved and
-// then fail every budget PUT that leaves its action to the default.
-private val BUDGET_ACTIONS = setOf("warn", "block")
-
-// why: the text knobs whose readers take only some words; ConfigCoercion.coerce refuses the rest by name.
-private val CHECKED_TEXT_KNOBS = setOf(Knob.PROJECTS_FOLDERS, Knob.BUDGET_DEFAULT_ACTION)
-
-/** Which words a checked text knob's reader can use: PROJECTS_FOLDERS takes absolute folders, and the other checked
- *  knob, BUDGET_DEFAULT_ACTION, takes a budget action. */
-private object TextKnobWords {
-    fun accepts(knob: Knob, text: String): Boolean =
-        if (knob == Knob.PROJECTS_FOLDERS) {
-            text.split(':').all(ProjectFolderCheck::absolute)
-        } else {
-            text in BUDGET_ACTIONS
-        }
-}
-
 // why: a poll faster than the five-minute cadence would hammer the provider's usage endpoint
 private const val MIN_QUOTA_POLL_INTERVAL_MS = 30_000L
 private const val MAX_PORT = 65_535L
@@ -79,9 +61,7 @@ public object BoolKnobWords {
  * The knob COERCION + NORMALIZATION half of [ConfigService], split out because the class is at the
  * 14-function ceiling and cannot absorb the dissolved companion (Kotlin style law, 2026-08-16 —
  * HD-M8). [ConfigService] holds one instance and reaches them through it. `internal` because
- * nothing outside :core reads them — [normalizeShowReasoning] was `public` only because a top-level
- * function had nowhere narrower to live, and its sole production caller is [normalize] two lines
- * below it.
+ * nothing outside :core reads them.
  *
  * HD-25 (2026-08-18) moved it to this file and made two changes inside it, both behaviour-neutral:
  * the three constant matchers [coerce] used to rebuild on EVERY call are now properties, and
@@ -140,7 +120,6 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         val idleFloor = if (envReader("CODEX_PROXY_TEST") == "1") TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
         out[Knob.STREAM_IDLE_MS.key] = clampLong(out, Knob.STREAM_IDLE_MS, floor = idleFloor)
         out[Knob.AUTH_CACHE_MS.key] = clampLong(out, Knob.AUTH_CACHE_MS, floor = MIN_AUTH_CACHE_MS)
-        out[Knob.SHOW_REASONING.key] = normalizeShowReasoning(str(out, Knob.SHOW_REASONING))
         out[Knob.MIRROR_REASONING.key] = false
         // Summary is operator-controlled (TOML [daemon].summary / env / state). Empty/absent
         // falls through to Knob.SUMMARY default ("detailed"). Do not rewrite concise/auto —
@@ -157,7 +136,6 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // anything that is not exactly "off" is "auto" — an unknown value must never silently arm
         // a feature (the r3 invalid-env-value lesson).
         out[Knob.TOOL_SURFACE.key] = offOrAuto(str(out, Knob.TOOL_SURFACE))
-        out[Knob.QUOTA_POLL.key] = offOrAuto(str(out, Knob.QUOTA_POLL))
         clampPromoted(out)
         clampRetryCurve(out)
         return out
@@ -202,17 +180,8 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         )
     }
 
-    // The one-way kill-switch shape shared by TOOL_SURFACE and QUOTA_POLL.
+    // The one-way kill-switch shape of TOOL_SURFACE.
     private fun offOrAuto(raw: String?): String = if (raw?.trim()?.lowercase() == "off") "off" else "auto"
-
-    fun normalizeShowReasoning(raw: String?): String {
-        val v = raw?.trim()?.lowercase().orEmpty()
-        return when {
-            v.isEmpty() || v in setOf("0", "false", "off", "none") -> "off"
-            v in setOf("text", "mirror", "full", "both", "2") -> "text"
-            else -> "thinking"
-        }
-    }
 
     // JsonNull IS a JsonPrimitive, so its arm must come first: falling through to el.content turned
     // a JSON null into the four-char string "null" — which a STRING knob then APPLIED, e.g.
@@ -236,15 +205,10 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // the same reject log, doctor row and PATCH answer as every other bad knob value, and the
         // window stays whatever it already was.
         knob == Knob.HISTORY_RETENTION_DAYS -> coerceString(raw)?.let { HistoryWindowWords.of(it)?.text }
-        // A text knob whose reader can use only some words refuses the rest by name (the same reject log, doctor row,
-        // PATCH answer and boot finding as every other bad value). A Projects folder is an ABSOLUTE path, since a relative
-        // one names a different folder per process; the budget default is warn or block, since BudgetStore takes nothing
-        // else and a saved typo failed every budget PUT that left its action to the default (Oct 12, §9 audit).
-        knob in CHECKED_TEXT_KNOBS -> coerceString(raw)?.takeIf { TextKnobWords.accepts(knob, it) }
         else -> when (knob.kind) {
             KnobKind.BOOL -> coerceBool(raw)
             KnobKind.NUMBER -> coerceNumber(knob, raw)
-            KnobKind.STRING -> coerceString(raw)
+            KnobKind.STRING -> coerceText(knob, raw)
         }
     }
 
@@ -263,6 +227,17 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     // raw?. not raw. — Kotlin's null.toString() is the same four-char "null" trap (DR-48).
     private fun coerceString(raw: String?): String? = raw?.trim()?.ifEmpty { null }
+
+    /** A text knob whose reader can use only some words refuses the rest by name (the same reject log, doctor row,
+     *  PATCH answer and boot finding as every other bad value). A Projects folder is an ABSOLUTE path, since a relative
+     *  one names a different folder per process (Oct 12, §9 audit). A word-valued knob takes only its list
+     *  ([KnobWords]), any case: no fallback, so a typo is a finding, never another mode (Oct 13). */
+    private fun coerceText(knob: Knob, raw: String?): String? {
+        val text = coerceString(raw)
+        if (knob == Knob.PROJECTS_FOLDERS) return text?.takeIf { it.split(':').all(ProjectFolderCheck::absolute) }
+        val words = KnobWords.of(knob) ?: return text
+        return text?.lowercase()?.takeIf { it in words }
+    }
 
     // Shared reads over the merged map — one place each so `normalize` stays a flat clamp table.
     fun str(out: Map<String, Any?>, k: Knob): String? = out[k.key]?.toString()

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.KnobWords
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -102,7 +103,7 @@ class BudgetEnforcementTest {
         @TempDir tmp: Path,
     ) {
         val rig = Rig(tmp)
-        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        rig.budget("h", 2.0, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", CATALOG)
 
         assertNull(head.admit(), "nothing spent yet")
@@ -119,7 +120,7 @@ class BudgetEnforcementTest {
         @TempDir tmp: Path,
     ) {
         val rig = Rig(tmp)
-        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        rig.budget("h", 2.0, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", CATALOG)
         head.spent(rig.now, MODEL, turnOf(2.5))
 
@@ -140,7 +141,7 @@ class BudgetEnforcementTest {
     fun `the budget day runs midnight to midnight where the daemon runs, not UTC's`(@TempDir tmp: Path) {
         // 05:00 in Chicago on Oct 4, 2024, when Chicago is five hours behind UTC.
         val rig = Rig(tmp, zone = ZoneId.of("America/Chicago"))
-        rig.budget("h", 2.0, BudgetActions.BLOCK)
+        rig.budget("h", 2.0, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", CATALOG)
         head.spent(rig.now, MODEL, turnOf(2.5))
 
@@ -158,12 +159,12 @@ class BudgetEnforcementTest {
             listOf(PerfRow(DAY_START + 1, "ok", turnOf(50.0), facts = PerfTurnFacts(model = MODEL))),
         )
         val rig = Rig(tmp, history)
-        rig.budget("other", 0.0, BudgetActions.BLOCK)
+        rig.budget("other", 0.0, KnobWords.BUDGET_BLOCK)
         val unbudgeted = rig.enforcement.forHead("h", CATALOG)
         unbudgeted.spent(rig.now, MODEL, turnOf(100.0))
         assertNull(unbudgeted.admit(), "a head with no row has no budget")
 
-        rig.budget("h", null, BudgetActions.BLOCK)
+        rig.budget("h", null, KnobWords.BUDGET_BLOCK)
         assertNull(unbudgeted.admit(), "a null daily_usd is no budget, not zero")
         assertEquals(emptyList<Long>(), history.asked.toList(), "an unbudgeted head must never pay for a history read")
     }
@@ -180,7 +181,7 @@ class BudgetEnforcementTest {
             ),
         )
         val rig = Rig(tmp, history, startMs = boot)
-        rig.budget("h", 3.0, BudgetActions.BLOCK)
+        rig.budget("h", 3.0, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", CATALOG)
 
         rig.now = boot + HOUR_MS
@@ -197,7 +198,7 @@ class BudgetEnforcementTest {
         @TempDir tmp: Path,
     ) {
         val rig = Rig(tmp)
-        rig.budget("h", 1.0, BudgetActions.WARN)
+        rig.budget("h", 1.0, KnobWords.BUDGET_WARN)
         val head = rig.enforcement.forHead("h", CATALOG)
 
         head.spent(rig.now, MODEL, turnOf(0.5))
@@ -215,7 +216,7 @@ class BudgetEnforcementTest {
         assertTrue(text.contains("an estimated $1.00 in API cost today"), text)
         assertTrue(rig.logs.any { it.startsWith("[h][budget]") && it.contains("limit_usd=1.00") }, "${rig.logs}")
 
-        rig.budget("h", 2.0, BudgetActions.WARN)
+        rig.budget("h", 2.0, KnobWords.BUDGET_WARN)
         head.spent(rig.now, MODEL, turnOf(0.5))
         assertEquals(2, rig.alerts.size, "a raised limit that is reached again is a new fact: ${rig.alerts}")
 
@@ -229,7 +230,7 @@ class BudgetEnforcementTest {
         @TempDir tmp: Path,
     ) {
         val rig = Rig(tmp)
-        rig.budget("h", 0.25, BudgetActions.BLOCK)
+        rig.budget("h", 0.25, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", CATALOG)
 
         // in_tokens INCLUDES the cached portion (SessionCost.bucketsFor): 2M cached is $0.20, not $2.20.
@@ -274,7 +275,7 @@ class BudgetEnforcementTest {
             ),
         )
         val rig = Rig(tmp)
-        rig.budget("h", 0.25, BudgetActions.BLOCK)
+        rig.budget("h", 0.25, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", catalog)
 
         head.spent(rig.now, "acme/router", turnOf(100.0))
@@ -300,14 +301,14 @@ class BudgetEnforcementTest {
         )
         val catalog = forwarded.catalogFor(HeadConfig("claude-splice", 3098, "claude-splice--", "claude-opus-5-5"))
         val rig = Rig(tmp)
-        rig.budget("h", 0.6, BudgetActions.BLOCK)
+        rig.budget("h", 0.6, KnobWords.BUDGET_BLOCK)
         val head = rig.enforcement.forHead("h", catalog)
 
         head.spent(rig.now, "claude-opus-5-5", writeTurn(tokens = 100_000, hourly = 100_000))
         assertNotNull(head.admit(), "$0.80 of hourly writes reaches a $0.60 budget: the next turn is refused")
 
         val fiveMinute = Rig(tmp.resolve("5m").also { it.toFile().mkdirs() })
-        fiveMinute.budget("h", 0.6, BudgetActions.BLOCK)
+        fiveMinute.budget("h", 0.6, KnobWords.BUDGET_BLOCK)
         val cheaper = fiveMinute.enforcement.forHead("h", catalog)
         cheaper.spent(fiveMinute.now, "claude-opus-5-5", writeTurn(tokens = 100_000, hourly = 0))
         assertNull(cheaper.admit(), "the same tokens written for five minutes are $0.50, which is under it")

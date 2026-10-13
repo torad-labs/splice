@@ -144,7 +144,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
     private fun configuration(probes: QuotaProbes?): ConfigService = ConfigService(
         paths,
         headOverrides = mapOf(
-            "quotaPoll" to if (probes == null) "off" else "on",
+            "quotaPoll" to if (probes == null) "off" else "auto",
             "upstreamRetries" to "0",
         ),
     )

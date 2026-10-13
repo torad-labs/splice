@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
+import splice.core.config.KnobWords
 import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -56,7 +57,7 @@ class BudgetSpendTest {
     @Test
     fun `used and remaining read exactly the admission tally across repeated head wiring and UTC midnight`() {
         val store = BudgetStore(directory.resolve("budgets.json"))
-        store.replace(listOf(Budget("native", 5.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("native", 5.0, KnobWords.BUDGET_BLOCK)))
         var now = SPEND_BOOT_MS
         val before = PerfRow(SPEND_BOOT_MS - 1, "ok", tokens(1), facts = PerfTurnFacts(model = "priced"))
         val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(listOf(before)) } }
@@ -85,7 +86,7 @@ class BudgetSpendTest {
     @Test
     fun `unpriced turns and unreadable history cannot produce exact money amounts`() {
         val store = BudgetStore(directory.resolve("budgets.json"))
-        store.replace(listOf(Budget("head", 5.0, BudgetActions.WARN)))
+        store.replace(listOf(Budget("head", 5.0, KnobWords.BUDGET_WARN)))
         val unreadable = PerfRowsWindow(emptyList(), readError = "fixture unreadable")
         val broken = HeadPerfHistory { PerfRowsSource { unreadable } }
         val owner = BudgetEnforcement(
@@ -110,7 +111,7 @@ class BudgetSpendTest {
     @Test
     fun `a local step with no price is no unpriced request, and a priced one still spends`() {
         val store = BudgetStore(directory.resolve("budgets.json"))
-        store.replace(listOf(Budget("head", 5.0, BudgetActions.WARN)))
+        store.replace(listOf(Budget("head", 5.0, KnobWords.BUDGET_WARN)))
         val ready = PerfRowsWindow(emptyList())
         val owner = BudgetEnforcement(
             store,
@@ -137,7 +138,7 @@ class BudgetSpendTest {
     fun `budget GET includes head-wide amounts and never any account allocation`() {
         val paths = StatePaths(baseOverride = directory.resolve("state"))
         val store = BudgetStore(paths.stateDir.resolve("budgets.json"))
-        store.replace(listOf(Budget("native", 5.0, BudgetActions.WARN)))
+        store.replace(listOf(Budget("native", 5.0, KnobWords.BUDGET_WARN)))
         val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(emptyList()) } }
         val owner = BudgetEnforcement(
             store,
@@ -159,7 +160,7 @@ class BudgetSpendTest {
     @Test
     fun `the budgets reply counts a failed request with no usage as failed, beside the unpriced ones`() {
         val store = BudgetStore(directory.resolve("budgets.json"))
-        store.replace(listOf(Budget("head", 5.0, BudgetActions.BLOCK)))
+        store.replace(listOf(Budget("head", 5.0, KnobWords.BUDGET_BLOCK)))
         val paths = StatePaths(baseOverride = directory.resolve("state"))
         val facts = PerfTurnFacts(model = "priced")
         val failedBeforeBoot = PerfRow(SPEND_BOOT_MS - 2, "error:upstream-failed", emptyMap(), facts = facts)

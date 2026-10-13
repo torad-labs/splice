@@ -223,11 +223,11 @@ button.count:hover { color: var(--text); }
 .srv .fig .next { margin-left: .6rem; color: var(--text-mute); white-space: nowrap; }
 .srv .fig.uses { display: flex; flex-wrap: wrap; align-items: center; row-gap: .5rem; white-space: normal; min-width: 0; }
 .srv .fig .used { display: inline-flex; flex-wrap: wrap; align-items: center; row-gap: .5rem; white-space: nowrap; }  /* "Used by" and each chip stay whole; the row wraps between them */
-.srv .from { display: inline-flex; align-items: center; gap: .6rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
-.srv .from { max-width: 100%; min-width: 0; }
-.srv .from .ft { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }  /* a long path ends in an ellipsis inside its column */
-.srv .from svg { width: 1.1rem; height: 1.1rem; }
-.srv .from code, .srv .why code { font: 500 1rem/1 var(--font-data); color: var(--text-body); }
+.srv .from, .mrow .from { display: inline-flex; align-items: center; gap: .6rem; font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.srv .from, .mrow .from { max-width: 100%; min-width: 0; }
+.srv .from .ft, .mrow .from .ft { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }  /* a long path ends in an ellipsis inside its column */
+.srv .from svg, .mrow .from svg { width: 1.1rem; height: 1.1rem; }
+.srv .from code, .srv .why code, .mrow .from code { font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .srv .nm { font: 500 1.2rem/1 var(--font-name); color: var(--text); }
 .srv .said { display: inline-flex; align-items: center; gap: .5rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
 .srv .said.ok { color: var(--live); }

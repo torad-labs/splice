@@ -30,29 +30,39 @@ internal fun interface McpSharingRead {
     fun sharing(): McpSharing?
 }
 
-/** One declared stdio server under the name Claude Code gives it, the words a copy's command line holds, and how the
- *  hub runs it: [shareClass] is null where nothing classes it, and [why] says why it isn't shared. */
+/** One declared server under the name Claude Code gives it, the words a copy's command line holds, and how the hub
+ *  runs it: [shareClass] is null where nothing classes it, and [why] says why it isn't shared. [reg] is where it is
+ *  declared, which the console names it by as its Servers list does. A server at a web address has no process here:
+ *  its [words] are empty and it matches no copy. */
 internal data class McpServerSignature(
     val name: String,
     val words: List<String>,
     val shareClass: McpShareClass? = null,
     val why: McpWhy? = null,
+    val reg: McpRegistration? = null,
 ) {
-    /** How strongly [line] is this server: the length of the words it holds, or zero when one is missing. */
-    fun strength(line: String): Int = if (words.all(line::contains)) words.sumOf(String::length) else 0
+    val web: Boolean get() = reg != null && JsonScalars.str(reg.entry, "command") == null
+
+    /** How strongly [line] is this server: the length of its words, zero when one is missing or it has none. */
+    fun strength(line: String): Int =
+        if (words.isNotEmpty() && words.all(line::contains)) words.sumOf(String::length) else 0
 }
 
-/** Turns the census into signatures. http, sse and ws servers have no process and are left out. [sharing] is the
+/** Turns the census into signatures. An http, sse or ws server has no process, so it is listed shared and matches no
+ *  copy: it is one server at its address whoever calls it (fin, Oct 12). [sharing] is the
  *  host's own plan: it classes every declared server by the hub's rules, a plugin's or a project's as a
  *  user-scope one, whether or not a session runs in its folder (hub step 3). Null keeps the census's own class, which
  *  covers user-scope servers only. */
 internal class McpSignatures(private val read: McpCensusRead, private val sharing: McpSharingRead) {
     fun all(): List<McpServerSignature> {
-        val stdio = read.census()?.dispositioned.orEmpty()
-            .filter { JsonScalars.str(it.registration.entry, "command") != null }
+        val all = read.census()?.dispositioned.orEmpty()
+        val (stdio, web) = all.partition { JsonScalars.str(it.registration.entry, "command") != null }
         val declared = JsonObject(stdio.associate { nameOf(it.registration) to it.registration.entry })
         val plan = sharing.sharing()?.plan(declared)
-        return stdio.mapNotNull { signature(it, plan) }.distinct()
+        val remote = web.map {
+            McpServerSignature(nameOf(it.registration), emptyList(), McpShareClass.SHARED, reg = it.registration)
+        }
+        return (stdio.mapNotNull { signature(it, plan) } + remote).distinct()
     }
 
     private fun signature(d: McpDispositioned, plan: McpPlan?): McpServerSignature? {
@@ -63,9 +73,9 @@ internal class McpSignatures(private val read: McpCensusRead, private val sharin
         val name = nameOf(reg)
         val matched = words.ifEmpty { literal(command.substringAfterLast('/')) }
         return if (plan == null) {
-            McpServerSignature(name, matched, d.shareClass, d.why)
+            McpServerSignature(name, matched, d.shareClass, d.why, reg)
         } else {
-            McpServerSignature(name, matched, plan.classOf(name), plan.why[name])
+            McpServerSignature(name, matched, plan.classOf(name), plan.why[name], reg)
         }
     }
 

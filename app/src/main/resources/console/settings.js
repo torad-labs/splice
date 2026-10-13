@@ -721,11 +721,18 @@ const copyOf = (file) => /\/\.claude-([^/]+)\/\.claude\.json$/.exec(file || "")?
 const fromWord = (e) => {
   if (!e) return "";
   if (e.kind === "plugin_mcp_json" || e.kind === "plugin_inline") {
-    const dir = String(e.source_file || "").split("/").slice(0, -1).pop();
+    // a plugin's own manifest sits in <plugin>/<version>/.claude-plugin/, so its name is the folder above the version
+    const dirs = String(e.source_file || "").split("/").slice(0, -1);
+    if (dirs.at(-1) === ".claude-plugin") dirs.splice(-2);
+    const dir = dirs.pop();
     return dir ? `${dir} plugin` : "a plugin";
   }
   return homeWord(e.source_file);
 };
+// a project's own entry names its project by the folder it sits in, so a row shows that name and not the config path
+const projectOf = (e) => (e?.kind === "project" ? String(e.scope || "").split("/").filter(Boolean).pop() ?? "" : "");
+// where a server is declared, under its name: its project's chip, else its file or plugin, and a web server's address
+const fromHtml = (s) => `<span class="from">${SV.file}${s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft" title="${esc(s.from)}">${esc(s.from)}</span>`}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
 // a web server's address, without the part of a URL that can carry a credential: the host and path, never a query or a login
 const addressOf = (v) => {
   try { const u = new URL(v); return u.host + (u.pathname === "/" ? "" : u.pathname); } catch { return ""; }
@@ -748,8 +755,7 @@ function mcpServerRows(m) {
     const copy = added || own;
     if (state && !MCP_STATE[state] && !MCP_SILENT.has(state)) console.warn(`mcp: no word for "${state}" on ${name}: ${live?.reason ?? own?.reason ?? ""}`);
     const at = own || added;
-    // a project's own entry names its project by the folder it sits in, so the row shows that name and not the config path
-    const project = at?.kind === "project" ? String(at.scope || "").split("/").filter(Boolean).pop() ?? "" : "";
+    const project = projectOf(at);
     return { name, from: fromWord(at), project, shared, web, address: web ? addressOf(value) : "", state, value,
       cmd: state === "added_in" ? (entries.length && value && why === "added_in" ? value : copyOf(copy?.source_file)) : null,
       cmds: live?.commands || [], stale, last: live?.last_activity || 0,
@@ -771,9 +777,7 @@ const testSaid = (name) => {
 // a server at a web address has no process here, so its cell is empty, never Not running (marlin, Oct 12)
 const memWord = (s) => (s.web ? "" : !s.hosted ? `<span class="state">Not running</span>` : s.rss ? esc(mbWord(s.rss)) : "Running");
 function serverRow(s, dim) {
-  const where = s.project ? `<span class="chip">${esc(s.project)}</span>` : `<span class="ft" title="${esc(s.from)}">${esc(s.from)}</span>`;
-  const from = `<span class="from">${SV.file}${where}${s.address ? `<code>${esc(s.address)}</code>` : ""}</span>`;
-  const name = `<div class="sname"><span class="nm">${esc(s.name)}</span>${from}</div>`;
+  const name = `<div class="sname"><span class="nm">${esc(s.name)}</span>${fromHtml(s)}</div>`;
   if (!s.shared) {
     const m = MCP_STATE[s.state];
     const cmd = m?.cmd && s.cmd ? cmdChip(s.cmd) : "", code = m && s.value && s.state !== "added_in" ? `<code>${esc(homeWord(s.value))}</code>` : "";
@@ -849,8 +853,13 @@ async function setShare(on) {
 // is off. Every other server keeps one copy per session either way and is named below with its reason.
 const shareable = (s) => s.class === "shared" || s.why === "per_session_choice";
 const copiesWord = (n) => `${fmt(n)} ${n === 1 ? "copy" : "copies"}`;
-const memRow = (s, what, shared) => `<div class="mrow"><span class="nm">${esc(s.name)}</span>${what}`
-  + `<span class="fig">${s.copies ? copiesWord(s.copies) : ""}</span><span class="fig">${s.copies ? `<b>${esc(mbWord(s.bytes_now))}</b> now` : ""}</span>`
+// a row names its server as the Servers list below does: Claude Code's own name for it and where it is declared, never
+// the plugin_<plugin>_<server> id the census matches copies by (marlin, desk m, Oct 12)
+const memName = (s) => `<div class="sname"><span class="nm">${esc(s.label ?? s.name)}</span>${s.source_file ? fromHtml({ from: fromWord(s), project: projectOf(s) }) : ""}</div>`;
+// a server with no copy says why it has no figure: one at a web address has no process here, any other runs none now
+const idle = (s) => (s.web ? "At a web address" : `<span class="state">Not running</span>`);
+const memRow = (s, what, shared) => `<div class="mrow">${memName(s)}${what}`
+  + `<span class="fig">${s.copies ? copiesWord(s.copies) : idle(s)}</span><span class="fig">${s.copies ? `<b>${esc(mbWord(s.bytes_now))}</b> now` : ""}</span>`
   + `<span class="fig">${shared}</span></div>`;
 const whyCell = (s) => {
   const m = MCP_STATE[s.why];
@@ -866,7 +875,8 @@ function savingsHtml() {
   // each row carries its class from the host's own sharing plan, a plugin's or a project's server classed as a
   // user-scope one, whether or not a session runs in its folder
   const all = m.servers || [];
-  const share = all.filter((s) => shareable(s) && s.copies);
+  // every server lands in one list, running or not: the figures count the ones with copies (marlin, desk m, Oct 12)
+  const listed = all.filter(shareable), share = listed.filter((s) => s.copies);
   const now = share.reduce((n, s) => n + s.bytes_now, 0), one = share.reduce((n, s) => n + s.bytes_if_shared, 0);
   const copies = share.reduce((n, s) => n + s.copies, 0);
   const tiles = share.length ? [
@@ -875,11 +885,11 @@ function savingsHtml() {
     statTile(mbWord(Math.max(0, now - one)), "Sharing saves"),
   ] : [];
   const head = `<div class="thead"><h3>What sharing saves</h3>${tiles.length ? "" : `<span class="zeros">${zeroFig("copies running")}</span>`}</div>`;
-  const rows = share.map((s) => memRow(s, `<span class="why"></span>`, `<b>${esc(mbWord(s.bytes_if_shared))}</b> shared`));
+  const rows = listed.map((s) => memRow(s, `<span class="why"></span>`, s.copies ? `<b>${esc(mbWord(s.bytes_if_shared))}</b> shared` : ""));
   // the hub keeps these one per session whatever the switch says: each says why, in the words its rows use above
   const kept = all.filter((s) => s.class === "per_session" && s.why !== "per_session_choice");
   // servers no plan decides yet (a project's, a repo's or a plugin's): Claude Code starts them itself, a copy a session
-  const own = all.filter((s) => !shareable(s) && s.class !== "per_session" && s.copies);
+  const own = all.filter((s) => !shareable(s) && s.class !== "per_session");
   const list = (title, xs) => (xs.length ? `<section class="sub"><h3>${title}</h3><div class="mrows">${xs.map((s) => memRow(s, whyCell(s), "")).join("")}</div></section>` : "");
   return `<section class="tally">${head}${tiles.length ? `<div class="figs3 n3">${tiles.join("")}</div>` : ""}`
     + (rows.length ? `<div class="mrows">${rows.join("")}</div>` : "") + `</section>`

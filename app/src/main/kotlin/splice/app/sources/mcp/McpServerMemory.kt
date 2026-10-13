@@ -9,15 +9,25 @@ internal class McpServerMemory(private val server: McpServerSignature, private v
 
     val bytesNow: Long = copies.sumOf { it.bytes }
 
-    /** The hosted copy's RSS where splice hosts the server, else the median copy's: zero with no copy running. */
+    /** The hosted copy's RSS where splice hosts the server, else the median copy's: zero with no copy running.
+     *  Never more than [bytesNow]: one copy shared costs what it costs now, and a copy's RSS counts pages its PSS
+     *  splits with others, so a lone copy read 107.5 MB shared against 98 MB now (marlin, desk m, Oct 12). */
     val bytesIfShared: Long = when {
         hosted.isNotEmpty() -> hosted.sumOf { it.rss }
         copies.isEmpty() -> 0L
         else -> copies.map { it.rss }.sorted()[copies.size / 2]
-    }
+    }.coerceAtMost(bytesNow)
 
     fun into(out: JsonObjectBuilder) {
         out.put("name", server.name)
+        // where it is declared, as GET /api/mcp names a source: the console names the row as its Servers list does
+        server.reg?.let { reg ->
+            out.put("label", reg.name)
+            out.put("kind", reg.kind.name.lowercase())
+            out.put("source_file", reg.sourceFile.toString())
+            reg.scope?.let { out.put("scope", it.toString()) }
+        }
+        out.put("web", server.web)
         // how the hub runs it, as /api/mcp words it: null where no plan decides it yet (a project, repo or plugin
         // server)
         out.put("class", server.shareClass?.wire)

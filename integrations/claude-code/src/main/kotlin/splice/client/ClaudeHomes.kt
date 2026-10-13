@@ -30,7 +30,10 @@ internal class RealPathOrSelf {
  *  is a real, independent file, not a symlink). Named off Keys.VANILLA_DIR, never a `.claude` literal of
  *  its own (kt-no-vanilla-config-dir scopes that wall to this package; the constant is the one
  *  dispositioned spelling). */
-internal class ClaudeHomes(private val homeParent: Path) {
+internal class ClaudeHomes(
+    private val homeParent: Path,
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
     /** Every `.claude*` CLAUDE_CONFIG_DIR, the vanilla `.claude` included — the root each
      *  identity's OWN generated trees (plugins among them) sit under. */
     fun configDirs(): List<Path> {
@@ -38,7 +41,15 @@ internal class ClaudeHomes(private val homeParent: Path) {
             Files.newDirectoryStream(homeParent).use { stream ->
                 stream.filter { Files.isDirectory(it) && it.name.startsWith(Keys.VANILLA_DIR) }
             }
-        }.getOrElse { emptyList() }
+        }.getOrElse { failure ->
+            if (HomeListFailure.said.compareAndSet(false, true)) {
+                log(
+                    "[mcp] the home folder $homeParent could not be listed (${failure::class.simpleName}), so no " +
+                        "Claude Code identity under it is read; said once until the daemon restarts\n",
+                )
+            }
+            emptyList()
+        }
         return siblings.sortedBy { it.toString() }
     }
 
@@ -70,6 +81,10 @@ internal fun interface PluginFileMatch {
 }
 
 /** Whether an unreadable plugins folder has been said yet: one line per daemon, whichever reader met it. */
+private object HomeListFailure {
+    val said = AtomicBoolean(false)
+}
+
 private object PluginWalkFailure {
     val said = AtomicBoolean(false)
 }

@@ -272,7 +272,6 @@ function fold2(t, e) {
   if (e.planValue != null) t.planValue = (t.planValue ?? 0) + e.planValue;
   return t;
 }
-const uncut = (heads) => heads.every((h) => D.held[h] && !D.held[h].truncated);
 const DRILLS = () => `<span class="drill">${DIMS[nextBy("account")].word}${DOWN}</span>`;
 // "No limits reported" only when the provider answered with none (Oct 12). Any other card with no windows is Not read:
 // "Not read yet" is marlin's word for a read in flight, and Usage starts none.

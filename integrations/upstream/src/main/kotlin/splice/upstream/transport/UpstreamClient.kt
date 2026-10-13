@@ -35,8 +35,6 @@
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
-import splice.core.auth.CredentialKey
-import splice.core.auth.Credentials
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
@@ -53,8 +51,6 @@ import splice.upstream.retry.RateLimitTurn
 import splice.upstream.retry.ReissueRules
 import splice.upstream.retry.RetryDecision
 import splice.upstream.retry.RetryPlan
-import splice.upstream.retry.RetryRules
-import splice.upstream.sse.AttemptRecorder
 
 public class UpstreamClient(
     private val totalTimeoutMs: Long,
@@ -154,115 +150,6 @@ public class UpstreamClient(
         return UpstreamPost.Ended(
             state.rules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry, state.refreshedOnce),
         )
-    }
-
-    private enum class RetryKind { ORDINARY, POST_SEND }
-
-    /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
-     *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). [t0] is when the
-     *  post began, the start of its deadline. */
-    private class RetryState(var cooldown: RateLimitCooldown, val t0: Long, val maxRetries: Int) {
-        /** The rules for THIS request's bound. */
-        val rules = RetryRules(maxRetries)
-
-        /** The loop's own give-up: the last failure it saw, with the cooldown armed and followers protected. A pooled
-         *  login's 429 that waiting cannot fix is handed back, so the account handoff moves the turn to another login
-         *  before any byte reaches the client (§11's Oct deviation), for a translated pool as for the native one. */
-        fun gaveUp(ctx: PostContext, rules: RetryRules): LoopStep<Nothing> {
-            val failure = rules.giveUp(lastErr, cooldown, attempt, ctx.onRetry, refreshedOnce)
-            val refused = ctx.pooled && lastErr?.waitCannotHelp == true
-            return LoopStep.Done(if (refused) UpstreamPost.Refused(failure) else UpstreamPost.Ended(failure))
-        }
-
-        /** An armed hold ends the attempt before any request: a pooled login's hold is handed back to switch
-         *  credentials, every other hold ends the call. Null when no hold is armed. */
-        fun held(ctx: PostContext): LoopStep<Nothing>? {
-            val held = cooldown.heldFailure(ctx.onRetry) ?: return null
-            return LoopStep.Done(if (ctx.pooled) UpstreamPost.Refused(held) else UpstreamPost.Ended(held))
-        }
-
-        var attempt: Int = 0
-        var refreshedOnce: Boolean = false
-        var lastErr: RetryOutcome.Failed? = null
-
-        // A retry plan counts only when dispatch survives the next attempt's budget, auth and hold checks.
-        var pendingRetry: RetryKind? = null
-
-        fun markResend(ctx: PostContext) {
-            val retry = pendingRetry ?: return
-            pendingRetry = null
-            ctx.markRetry()
-            if (retry == RetryKind.POST_SEND) ctx.markPostSendRetry()
-        }
-
-        // V4-174: every SEND, whichever budget paid for it (a backoff attempt, the refresh's free
-        // retry, a G5 reissue, the RC-4 amended resend) — the ordinal the wire observer sees.
-        var sent: Int = 0
-
-        // G5: a small budget for re-issuing a stream torn BEFORE the client saw a byte. Spans the
-        // whole turn (declared once here, never reset per handoff) and is deliberately smaller than
-        // and independent of `maxRetries` — re-POSTing after a 2xx is a costlier, riskier act.
-        var streamReissues: Int = 0
-
-        // RC-4: the one-shot body-amendment budget (a deterministic 400 amended twice is a loop).
-        var amendedOnce: Boolean = false
-
-        /** RC-4: the one-shot amendment decision — lives here because it is pure retry-state
-         *  bookkeeping. Budgeted by [amendedOnce] ALONE, never the attempt counter: the amended
-         *  resend replays the failed attempt's slot, so it is guaranteed to go out even when the
-         *  400 lands on the last permitted attempt (review 2026-07-24: an `attempt += 1` here made
-         *  the loop guard eat the resend at the budget boundary — the amend computed a valid body
-         *  and then gave up on the stale pre-amendment error). */
-
-        /** V4-174: one send's recorder, built only when the context carries an observer; [sent]
-         *  counts every send whatever budget paid for it. Here, with [report], because both are
-         *  bookkeeping on this state and [runAttempt] has no complexity to spare. */
-        fun recorderFor(ctx: PostContext, body: RequestBody, clock: ElapsedClock): AttemptRecorder? {
-            sent += 1
-            return ctx.observers.wire?.let { AttemptRecorder(sent, ctx.url, body.json, body.encoding, clock) }
-        }
-
-        /** V4-174: the attempt is reported once, after it ended either way — a thrown transport
-         *  failure and a classified HTTP failure are both endings the trace must show. */
-        fun report(ctx: PostContext, recorder: AttemptRecorder?, failure: Throwable?) {
-            if (recorder != null) ctx.observers.wire?.attempted(recorder.finish(failure))
-        }
-
-        /** Captures one attempt's auth once, so its hold identity and wire headers cannot diverge. */
-        suspend fun credentials(
-            ctx: PostContext,
-            cooldowns: CredentialCooldowns,
-            fallback: RateLimitCooldown,
-        ): AttemptCredentials? {
-            val credentials = ctx.requireAuth() ?: return null
-            // Preserve the request-preparation origin: header resolution belongs to POST wait, not prior round work.
-            val postedAtMs = ctx.observers.perf?.elapsedMs()
-            val headers = ctx.extraHeaders(credentials)
-            val selected = ctx.limits.rateLimitCooldown ?: cooldowns.forHeaders(
-                CredentialKey.headers(credentials, headers),
-                (credentials as? Credentials.ApiKey)?.header,
-            ) ?: fallback
-            cooldown = selected
-            return AttemptCredentials(credentials, headers, postedAtMs, selected)
-        }
-
-        fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
-            if (amendedOnce) return null
-            val amended = ctx.recovery.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
-            amendedOnce = true
-            ctx.onRetry("amending request body after ${outcome.status} and retrying once")
-            return LoopStep.Amend(amended)
-        }
-    }
-
-    private sealed class LoopStep<out T> {
-        data class Done<T>(val result: UpstreamPost<T>) : LoopStep<T>()
-        data class Amend(val bodyJson: String) : LoopStep<Nothing>()
-        data object Continue : LoopStep<Nothing>()
-
-        /** The whole-turn wait budget was already gone: no attempt was made and no upstream
-         *  response exists to classify. [post] lifts this to [UpstreamPost.TurnWaitExhausted]. */
-        data object TurnWaitExhausted : LoopStep<Nothing>()
     }
 
     /** One retry-loop iteration: the cross-attempt checks ([beforeAttempt]), the credentials and the hold they pick

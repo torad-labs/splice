@@ -466,7 +466,7 @@ function mapRow(head, row) {
     // and the open request drew "Cache write 0" over it, which is a measurement nobody made. `cached` keeps its zero:
     // it is never printed, only compared, and it decides whether the "% cached" line is drawn at all.
     cut: row.cut_source_rounds ?? 0,
-    in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? null, out: row.out_tokens ?? null,
+    in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? null, out: row.out_tokens ?? null, inflight: row.inflight ?? null,
     cost: row.cost_usd ?? null, reason: row.cost_reason ?? null,
     // what a request on a plan account would have cost at API prices; the plan paid it, so it is never the cost (TurnUsage.kt)
     planValue: row.plan_value_usd ?? null,
@@ -716,12 +716,18 @@ function rowHtml(r) {
   // "4 out" alone under a row whose neighbour kept both ("1.5K out" and "2.2K out", live at 3828 — splice-lead,
   // Oct 11): the orphan is what reads as sloppy, not the wrap. Held in one group the line can only break BEFORE
   // the pair, so every row that is too long breaks in the same place and no row loses half a reading.
-  const tokens = (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached / r.in >= .5 ? `<em>${Math.round((r.cached / r.in) * 100)}% cached</em>` : ""}</span>` : "")
-    + (r.out != null ? `<span class="tok">${kTok(r.out)} out</span>` : "");
+  const tokens = (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached > 0 ? `<em>${Math.max(1, Math.round((r.cached / r.in) * 100))}% cached</em>` : ""}</span>` : "")
+    + (r.out != null ? `<span class="tok">${kTok(r.out)} out</span>` : "")
+    + (r.write > 0 ? `<span class="tok">${kTok(r.write)} written to cache</span>` : "");
   const earlier = r.cut > 0 && r.in != null
     ? (r.cutId ? `<button class="tok quiet door" data-open="${esc(r.cutId)}">Counts 1 earlier request</button>` : `<span class="tok quiet">Counts ${r.cut} earlier request${r.cut === 1 ? "" : "s"}</span>`)
     : "";
   const toks = tokens ? `<span class="toks">${tokens}${earlier}</span>` : "";
+  // how the send went, the open pane's figures on the row too: the wait for the first byte, every send past the first,
+  // and how many requests the command was running when this one was let in (the gate's count at admission)
+  const sends = (r.ttfb != null ? `<span class="tok">First byte ${secs(r.ttfb)}</span>` : "")
+    + (r.attempts > 1 ? `<span class="tok">${r.attempts} attempts</span>` : "")
+    + (r.inflight != null ? `<span class="tok quiet">${n0(r.inflight)} in flight</span>` : "");
   // a finished request with no tokens says where they went: counted on the request that took them, a door to it when it
   // is in the list; any other has no reading and says so. The request that took them says what its count holds.
   const noReading = r.outcome === "ok" && r.in == null && r.out == null
@@ -735,7 +741,7 @@ function rowHtml(r) {
     + `<span class="lamp ${o.cls}${r.compact ? " compact" : ""}" aria-hidden="true">${lamp}</span>`
     + `<div class="top"><time>${state.order === "price" ? dayOf(r.ts) : ""}${clockS(r.ts)}</time><button class="name" data-open="${esc(r.id)}">${esc(r.compare ? COMPARE_LABEL : sessTitle(r.sid))}</button>${word}`
     + `<span class="dur">${secs(r.total)}</span>${worthHtml(r)}<span class="cost${r.cost == null ? " gap" : ""}">${costText(r)}</span></div>`
-    + `<div class="meta">${headChip(r)}<span>${esc(r.model ?? "No model")}</span>${r.account ? acctTag(r, ` title="${esc(r.account)}"`) : ""}${toks}${noReading}${retry}</div>${match}</article>`;
+    + `<div class="meta">${headChip(r)}<span>${esc(r.model ?? "No model")}</span>${r.account ? acctTag(r, ` title="${esc(r.account)}"`) : ""}${toks}${sends}${noReading}${retry}</div>${match}</article>`;
 }
 const markIn = (t) => RV.markIn(t);
 // A WINDOW CAN HOLD MORE REQUESTS THAN ONE READ CARRIES. The daemon answers with the newest 2,000 of each command and

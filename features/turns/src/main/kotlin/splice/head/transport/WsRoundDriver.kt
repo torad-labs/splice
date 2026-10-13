@@ -24,10 +24,10 @@ import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
+import splice.upstream.PathLiveness
 import splice.upstream.Provider
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
-import splice.upstream.retry.PathLiveness
 import splice.upstream.transport.HeaderRedaction
 
 internal class WsRoundDriver(

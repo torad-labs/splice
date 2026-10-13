@@ -39,6 +39,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.WatchdogBudget
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.PathEvidence
+import splice.upstream.PathLiveness
+import splice.upstream.ProviderProbe
 import splice.upstream.WsPathPulse
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds

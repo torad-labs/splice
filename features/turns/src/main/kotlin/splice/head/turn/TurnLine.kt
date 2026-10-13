@@ -5,8 +5,8 @@ package splice.head.turn
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
+import splice.upstream.WatchdogHeld
 import splice.upstream.retry.WatchdogFired
-import splice.upstream.retry.WatchdogHeld
 
 internal class TurnLine(
     private val headKey: String,

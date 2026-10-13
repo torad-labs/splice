@@ -9,12 +9,12 @@ import splice.core.turn.TurnOutcome
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
 import splice.upstream.NEVER_PINGED_MS
+import splice.upstream.PathEvidence
+import splice.upstream.PathLiveness
 import splice.upstream.Provider
 import splice.upstream.StreamRead
 import splice.upstream.TurnSignals
 import splice.upstream.WsPathPulse
-import splice.upstream.retry.PathEvidence
-import splice.upstream.retry.PathLiveness
 import splice.upstream.transport.UpstreamResponse
 import splice.upstream.transport.UpstreamTransport
 import java.io.IOException

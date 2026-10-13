@@ -38,9 +38,9 @@ import okhttp3.Protocol
 import splice.core.config.Knob
 import splice.core.util.LogSink
 import splice.upstream.DnsBackoff
+import splice.upstream.ProviderProbe
 import splice.upstream.RetryBackoff
 import splice.upstream.Waiter
-import splice.upstream.retry.ProviderProbe
 import java.io.IOException
 import java.net.ConnectException
 import java.net.InetAddress

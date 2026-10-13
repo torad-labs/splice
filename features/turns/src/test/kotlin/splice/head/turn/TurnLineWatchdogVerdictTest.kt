@@ -19,8 +19,8 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
+import splice.upstream.WatchdogHeld
 import splice.upstream.retry.WatchdogFired
-import splice.upstream.retry.WatchdogHeld
 
 private fun meta(compact: Boolean) = TurnMeta(
     compact = compact,

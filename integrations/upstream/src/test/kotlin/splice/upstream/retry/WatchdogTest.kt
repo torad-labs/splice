@@ -43,6 +43,7 @@ import org.junit.jupiter.api.Timeout
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.PathLiveness
 import splice.upstream.Ticker
 import splice.upstream.WsPathPulse
 import java.util.concurrent.atomic.AtomicBoolean

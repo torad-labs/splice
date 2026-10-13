@@ -23,11 +23,18 @@ internal object InstallWiring {
      *  created only where none of that name is installed (HubUnits). */
     fun hubUnits(target: String?, env: EnvReader) {
         if (target != null && target != "--all") return
-        if (!System.getProperty("os.name").startsWith("Linux")) return
-        if (!Files.exists(InstallPaths(envReader = env).shareDir.resolve("splice-mcp-front"))) return
+        units(env)?.install()
+    }
+
+    /** The MCP hub's units in the user's own systemd/user folder, on Linux with the hub's front installed beside the
+     *  jar; null anywhere else. Splice's record of the units it wrote lives in its own state, under mcp-hub. */
+    fun units(env: EnvReader): HubUnits? {
+        if (!System.getProperty("os.name").startsWith("Linux")) return null
+        if (!Files.exists(InstallPaths(envReader = env).shareDir.resolve("splice-mcp-front"))) return null
         val config = env("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
             ?: UserHome.dir(env).resolve(".config")
-        HubUnits(config.resolve("systemd").resolve("user"), TerminalOutput(::println)).install()
+        val record = StatePaths(envReader = env).stateDir.resolve("mcp-hub").resolve("units-written")
+        return HubUnits(config.resolve("systemd").resolve("user"), record, TerminalOutput(::println))
     }
 
     /** `splice init`: the starter topology the install verbs read, written only when absent, and on Linux the MCP hub

@@ -1,15 +1,23 @@
 // NEW: the MCP hub's three systemd units, for a machine hostshield has not given them (hostshield-lead, Oct 12). The
 // bytes under resources/splice/lifecycle/hub are hostshield 88076af5d's canonical units, byte for byte: hostshield's
 // apply owns them wherever it is installed, and this copy only covers a machine without it.
+// Oct 13 (splice-lead, hostshield-lead's carve-out): `splice setup` turns the hub on when its share answer is yes, but
+// only over units splice wrote itself. Splice's bytes are hostshield's byte for byte, so a byte match cannot tell them
+// apart: each unit splice writes is recorded with its SHA-256 in [record], in splice's own state, and a unit counts as
+// splice's only while it is recorded, still hashes to the record, and is what systemd loads, from this folder with no
+// drop-in.
 package splice.lifecycle.hub
 
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
+import splice.core.util.SecureFile
 import splice.lifecycle.start.UserManagerBus
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.concurrent.TimeUnit
 
 /** Creates each unit in [unitDir], the user's own systemd/user directory, only where it is positively absent, and
@@ -19,14 +27,61 @@ import java.util.concurrent.TimeUnit
  *  unit is one), or drop-in directory; and the user manager answering, with exit 0, that the unit's load state is
  *  `not-found`. A systemctl that fails, times out or cannot reach the manager is not an answer, so nothing is
  *  created, and the daemon keeps its in-process MCP path. The write is create-only, so a unit that appears between
- *  the check and the write is kept. Nothing is enabled or started here. */
-public class HubUnits(private val unitDir: Path, private val output: TerminalOutput) {
+ *  the check and the write is kept. Nothing is enabled or started by [install]; [enable] is setup's, over splice's own
+ *  units only. */
+public class HubUnits(private val unitDir: Path, private val record: Path, private val output: TerminalOutput) {
     public fun install() {
         val written = UNITS.filter { name -> absent(name) && create(name) }
         if (written.isEmpty()) return
+        val kept = recorded()
+        val hashes = kept + written.associateWith { template(it)?.let(::sha256).orEmpty() }
+        SecureFile.writeAtomic0600(record, hashes.entries.joinToString("") { "${it.value}  ${it.key}\n" })
         systemctl(listOf("daemon-reload"))
         written.forEach { output.line("splice: wrote $it to $unitDir, since no unit of that name was installed") }
     }
+
+    /** Enables and starts the front's socket when every hub unit is splice's own, and says what it did. Over units
+     *  splice did not write, it touches nothing and prints the command. With no hub unit at all, it says nothing. */
+    public fun enable() {
+        if (UNITS.none { Files.exists(unitDir.resolve(it), LinkOption.NOFOLLOW_LINKS) }) return
+        if (!UNITS.all(::ours)) {
+            output.line(
+                "splice: the MCP hub's units here were not written by splice, so setup leaves them as they are; " +
+                    "to turn the hub on, run: $ENABLE_LINE",
+            )
+            return
+        }
+        if (systemctl(ENABLE) != null) {
+            output.line("splice: turned the MCP hub on (enabled and started $SOCKET)")
+        } else {
+            output.line("splice: the MCP hub's socket did not start; run: $ENABLE_LINE")
+        }
+    }
+
+    /** Splice wrote [name] here, it still holds those bytes, and systemd loads it from this file with no drop-in. */
+    private fun ours(name: String): Boolean {
+        val file = unitDir.resolve(name)
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) return false
+        if (Files.exists(unitDir.resolve("$name.d"), LinkOption.NOFOLLOW_LINKS)) return false
+        val hash = Cancellables.runCatchingBestEffort { sha256(Files.readAllBytes(file)) }.getOrNull()
+        return hash != null && hash == recorded()[name] && hash == template(name)?.let(::sha256) &&
+            systemctl(listOf("show", "-p", "FragmentPath", "--value", name)) == file.toString() &&
+            systemctl(listOf("show", "-p", "DropInPaths", "--value", name)) == ""
+    }
+
+    /** Unit name to the SHA-256 splice recorded on writing it; empty when nothing is recorded or it is unreadable. */
+    private fun recorded(): Map<String, String> = Cancellables.runCatchingBestEffort {
+        if (!Files.exists(record)) return@runCatchingBestEffort emptyMap()
+        Files.readAllLines(record).mapNotNull { line ->
+            line.split("  ", limit = 2).takeIf { it.size == 2 }?.let { (hash, unit) -> unit to hash }
+        }.toMap()
+    }.getOrNull().orEmpty()
+
+    private fun template(name: String): ByteArray? =
+        javaClass.getResourceAsStream("$RESOURCES/$name")?.use { it.readBytes() }
+
+    private fun sha256(bytes: ByteArray): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 
     private fun absent(name: String): Boolean =
         !Files.exists(unitDir.resolve(name), LinkOption.NOFOLLOW_LINKS) &&
@@ -34,7 +89,7 @@ public class HubUnits(private val unitDir: Path, private val output: TerminalOut
             systemctl(listOf("show", "-p", "LoadState", "--value", name)) == NOT_FOUND
 
     private fun create(name: String): Boolean {
-        val bytes = javaClass.getResourceAsStream("$RESOURCES/$name")?.use { it.readBytes() } ?: return false
+        val bytes = template(name) ?: return false
         Files.createDirectories(unitDir)
         return Cancellables.runCatchingBestEffort {
             Files.write(unitDir.resolve(name), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
@@ -57,3 +112,6 @@ private val UNITS = listOf("app-mcp.slice", "splice-mcp-front.socket", "splice-m
 private const val RESOURCES = "/splice/lifecycle/hub"
 private const val NOT_FOUND = "not-found"
 private const val TIMEOUT_MS = 15_000L
+private const val SOCKET = "splice-mcp-front.socket"
+private val ENABLE = listOf("enable", "--now", SOCKET)
+private const val ENABLE_LINE = "systemctl --user enable --now $SOCKET"

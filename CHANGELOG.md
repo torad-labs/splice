@@ -124,10 +124,9 @@ that boundary: transcripts sent to providers, argv other accounts can read, and 
 origin.
 
 ### Known limitations
-- **The MCP hub's socket is not enabled for you.** `splice install --all` writes the hub's systemd units and enables
-  nothing, so on a machine where splice wrote them the hub stays off until you run
-  `systemctl --user enable --now splice-mcp-front.socket`, which `splice doctor` names. Until then each session starts
-  its own MCP servers, as in 0.3.x.
+- **Only `splice setup` turns the MCP hub on.** `splice install --all` writes the hub's systemd units and enables nothing.
+  Until setup turns it on, or you run `systemctl --user enable --now splice-mcp-front.socket`, which `splice doctor`
+  names, each session starts its own MCP servers, as in 0.3.x.
 - **Budget alerts reach the webhook, not the desktop.** A `warn` budget posts to the saved webhook
   and writes the head's log. The `desktop` alert flag is saved, but nothing turns it into a
   desktop notification yet.
@@ -161,7 +160,10 @@ origin.
   When the front does not answer, the launch says "this session starts its own MCP servers" and Claude Code runs its
   own. Anywhere else the daemon hosts MCP in process, as before.
 - **MCP servers shared or one per session, asked once.** A first `splice setup` asks whether MCP servers are shared
-  between sessions and saves the answer as `[daemon] mcp_share`; shared is the default. The console's MCP section
+  between sessions and saves the answer as `[daemon] mcp_share`; shared is the default. With sharing on, setup turns the
+  hub on by enabling and starting `splice-mcp-front.socket`, but only over units splice wrote itself, which it records
+  with their SHA-256 in its own state; units anything else placed are left as they are, and setup prints the command
+  instead. The console's MCP section
   switches it, for new connections with no restart, and shows measured memory against one shared copy
   (`GET /api/mcp/memory`). Servers that keep state per process, such as Desktop Commander, or that need the session's
   folder stay one per session, with the reason.

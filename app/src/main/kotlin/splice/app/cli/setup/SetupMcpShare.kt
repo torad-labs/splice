@@ -3,6 +3,8 @@
 // writes true and no writes false. The hub reads the key live, so the answer applies to the next connection. With no
 // one watching, the default is taken: shared. A write that fails is said in a line and never fails the setup. In its
 // own file because SetupCommand.kt is watched by the concentration wall.
+// Oct 13 (splice-lead, with hostshield-lead's carve-out): a yes turns the MCP hub on, by enabling its front's socket,
+// only over units splice wrote itself (HubUnits.enable). Units anyone else placed are left as they are.
 package splice.app.cli.setup
 
 import splice.core.config.StatePaths
@@ -10,12 +12,14 @@ import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.util.Cancellables
+import splice.lifecycle.hub.HubUnits
 import splice.terminal.WizardFrame
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal class SetupMcpShare(private val frame: WizardFrame) {
+/** [units] are the MCP hub's units on this machine, or null where the hub is not installed. */
+internal class SetupMcpShare(private val frame: WizardFrame, private val units: HubUnits? = null) {
     /** The answer, or null when splice.toml already holds one and nothing is asked. */
     fun ask(path: Path): Boolean? = if (held(path) != null) null else frame.confirm(QUESTION, true)
 
@@ -38,6 +42,11 @@ internal class SetupMcpShare(private val frame: WizardFrame) {
         why?.let {
             System.err.println("splice: the MCP sharing answer was not saved ($it); set [daemon] mcp_share by hand")
         }
+    }
+
+    /** With sharing on, by [answer] or as splice.toml already holds it, turns the hub on over splice's own units. */
+    fun hub(path: Path, answer: Boolean?) {
+        if ((answer ?: held(path)) == true) units?.enable()
     }
 
     private fun held(path: Path): Boolean? =

@@ -59,7 +59,7 @@ internal class SetupCommand(
 ) {
     private val frame = prompts.frame
     private val menu = SetupMenu(frame, profiles)
-    private val mcpShare = SetupMcpShare(frame)
+    private val mcpShare = SetupMcpShare(frame, InstallWiring.units(env))
 
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead, env)
@@ -107,6 +107,7 @@ internal class SetupCommand(
         localModel.install(plan.local)
         val topology = TopologyLoader.loadOrMaterialize(plan.path)
         mcpShare.save(plan.path, plan.share)
+        mcpShare.hub(plan.path, plan.share)
         val ok = signIn.signInPendingHeads(topology)
         signIn.printNextSteps(topology)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're

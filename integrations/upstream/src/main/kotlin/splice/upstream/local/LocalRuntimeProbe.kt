@@ -11,7 +11,12 @@
 //             window the server actually allocated: its own default when num_ctx is unset — measured
 //             2026-09-13 on Ollama 0.30.5: qwen3:4b card 262144, served 32768). A loaded window beats
 //             num_ctx (the server may cap or override it); until the model is loaded num_ctx stands in
-//             and, absent both, only the ceiling can refuse a declared row. Undeclared rows take the card last.
+//             and, absent both, the server's default window stands in when the runtime shows it (below), else only
+//             the ceiling can refuse a declared row. Undeclared rows take the card last.
+//             Ollama's API has no served window for an unloaded model (docs.ollama.com/faq: the default is
+//             OLLAMA_CONTEXT_LENGTH, or Ollama's own pick); it shows it only through a loaded one. A loaded model whose
+//             modelfile sets no num_ctx and that serves less than its card was given exactly the server default, so
+//             that window, capped by each card, is what an unloaded model without num_ctx will be served.
 //   LM Studio GET /api/v0/models -> data[].max_context_length (+ loaded_context_length when loaded)
 //   vLLM      GET /v1/models -> data[].max_model_len
 //   llama     GET /props -> default_generation_settings.n_ctx, else /v1/models -> data[].meta.n_ctx_train
@@ -55,6 +60,9 @@ public data class LocalModel(
      *  LM Studio before 0.4 and vLLM say nothing, so null. A provider that sets `reasoning_effort = true` asks every
      *  row to think. */
     val reasoning: Boolean? = null,
+    /** True when [contextLength] is not this model's own window but the Ollama server's default, read from another
+     *  loaded model: the model is not loaded and its modelfile sets no num_ctx, so that default is what it will get. */
+    val serverDefault: Boolean = false,
 )
 
 /** One declared row against the runtime's answer. */
@@ -121,7 +129,11 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
             }
             LocalRuntimeKind.OLLAMA -> get("$v1/models")?.let { body ->
                 val running = ollamaRunning()
-                data(body).map { m -> ollamaModel(JsonScalars.strOrEmpty(m["id"]), running, only, inferred) }
+                // asked only when a row is neither loaded nor sized by num_ctx, and then once
+                val serverDefault = lazy { shapes.ollamaServerDefault(running, ollamaShow) }
+                data(body).map { m ->
+                    ollamaModel(JsonScalars.strOrEmpty(m["id"]), running, only, inferred, serverDefault)
+                }
             }
             LocalRuntimeKind.VLLM, LocalRuntimeKind.OPENAI_COMPATIBLE -> genericModels(runtime)
         }
@@ -185,7 +197,12 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         val served = model.contextLength
         val ceiling = model.ceiling
         return when {
-            served != null && window > served -> "declares context_window $window, runtime serves $served"
+            served != null && window > served -> if (model.serverDefault) {
+                "declares context_window $window; the model is not loaded and sets no num_ctx, so the runtime will " +
+                    "serve it its default window of $served (read from a loaded model)"
+            } else {
+                "declares context_window $window, runtime serves $served"
+            }
             served == null && ceiling != null && window > ceiling ->
                 "declares context_window $window, the model allows at most $ceiling"
             else -> null
@@ -198,6 +215,8 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
     private fun acceptance(window: Long?, model: LocalModel): String {
         val context = when {
             window == null -> "listed; runtime context window ${model.contextLength ?: "unknown"}"
+            model.contextLength != null && model.serverDefault ->
+                "listed; not loaded, the runtime's default window ${model.contextLength} >= declared $window"
             model.contextLength != null -> "listed; serves ${model.contextLength} >= declared $window"
             model.ceiling != null ->
                 "listed; served window unknown until loaded (at most ${model.ceiling}), $window trusted"
@@ -250,16 +269,22 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         running: Map<String, Long>,
         only: Set<String>?,
         inferred: Set<String>,
+        serverDefault: Lazy<Long?>,
     ): LocalModel {
         // A bare configured id is served under :latest, including its metadata.
         val bare = id.removeSuffix(":latest")
         val spellings = setOf(id, bare)
         if (only != null && spellings.none { it in only }) return LocalModel(id, null)
-        val show = http("POST", "$root/api/show", JsonWire.string(buildJsonObject { put("model", id) }))
+        val served = (running[id] ?: running[bare] ?: running["$id:latest"])?.takeIf { it > 0 }
+        return shapes.ollamaReading(id, ollamaShow.read(id), served, inferred, serverDefault)
+    }
+
+    /** Ollama's `/api/show` for one model: its card, its modelfile parameters and its capabilities. A property
+     *  rather than a function so the probe stays under the function ceiling; it is read only after construction. */
+    private val ollamaShow = OllamaModelCard { id ->
+        http("POST", "$root/api/show", JsonWire.string(buildJsonObject { put("model", id) }))
             ?.takeIf { it.status == HTTP_OK }
             ?.let { parse(it.body) }
-        val served = (running[id] ?: running[bare] ?: running["$id:latest"])?.takeIf { it > 0 }
-        return shapes.ollamaReading(id, show, served, inferred)
     }
 
     private fun get(url: String): JsonObject? =
@@ -276,36 +301,72 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
     }
 }
 
+/** Ollama's `/api/show` answer for one model name, or null when it gives none. */
+private fun interface OllamaModelCard {
+    fun read(id: String): JsonObject?
+}
+
 /** Runtime JSON shapes, separate from the transport and declaration verdicts. */
 private class LocalRuntimeShapes {
     fun lmStudioShaped(body: JsonObject): Boolean =
         (body["data"] as? JsonArray)?.filterIsInstance<JsonObject>()?.any { it["max_context_length"] != null } == true
 
-    fun ollamaReading(id: String, show: JsonObject?, served: Long?, inferred: Set<String>): LocalModel {
-        val info = show?.get("model_info") as? JsonObject
-        val architecture = info?.entries?.firstOrNull { it.key.endsWith(".context_length") }
-        val max = (architecture?.value as? JsonPrimitive)?.longOrNull
-        val numCtx = JsonScalars.str(show, "parameters")
-            ?.lineSequence()
-            ?.firstOrNull { it.trim().startsWith("num_ctx") }
-            ?.substringAfter("num_ctx")?.trim()?.toLongOrNull()
-        val detail = listOfNotNull(
-            max?.let { "model card context_length $it" },
-            numCtx?.let { "num_ctx $it" },
-            served?.let { "loaded with context $it" },
-        ).joinToString(", ")
-        // num_ctx is the best unloaded window. Only an undeclared row falls back to the card.
-        val fallback = numCtx?.takeIf { it > 0 }
+    fun ollamaReading(
+        id: String,
+        show: JsonObject?,
+        served: Long?,
+        inferred: Set<String>,
+        serverDefault: Lazy<Long?>,
+    ): LocalModel {
+        val max = ollamaCard(show)
+        val numCtx = ollamaNumCtx(show)
+        // the window an unloaded model with no num_ctx will be given: the server default, capped by its card
+        val unloaded = serverDefault.takeIf { served == null && numCtx == null }
+            ?.value
+            ?.coerceAtMost(max ?: Long.MAX_VALUE)
+        // num_ctx is the best unloaded window, then the server default. Only an undeclared row falls back to the card.
+        val fallback = numCtx?.takeIf { it > 0 } ?: unloaded
             ?: max.takeIf { id in inferred || id.removeSuffix(":latest") in inferred }
         return LocalModel(
             id,
             served ?: fallback?.takeIf { it > 0 },
-            detail.ifEmpty { null },
+            ollamaDetail(max, numCtx, served, unloaded),
             ceiling = max,
             tools = show?.let { reportsTool(it, "tools") },
             reasoning = show?.let(::reportsThinking),
+            serverDefault = unloaded != null,
         )
     }
+
+    /** What Ollama said about one model's window, in the order the verdict weighs it; null when it said nothing. */
+    fun ollamaDetail(card: Long?, numCtx: Long?, served: Long?, unloaded: Long?): String? = listOfNotNull(
+        card?.let { "model card context_length $it" },
+        numCtx?.let { "num_ctx $it" },
+        served?.let { "loaded with context $it" },
+        unloaded?.let { "not loaded; the server's default window, read from a loaded model, gives it $it" },
+    ).joinToString(", ").ifEmpty { null }
+
+    /** The model card's context_length: the most the model allows, not what it is served. */
+    fun ollamaCard(show: JsonObject?): Long? {
+        val info = show?.get("model_info") as? JsonObject
+        val architecture = info?.entries?.firstOrNull { it.key.endsWith(".context_length") }
+        return (architecture?.value as? JsonPrimitive)?.longOrNull
+    }
+
+    /** The modelfile's num_ctx, which Ollama loads the model with, or null when it sets none. */
+    fun ollamaNumCtx(show: JsonObject?): Long? = JsonScalars.str(show, "parameters")
+        ?.lineSequence()
+        ?.firstOrNull { it.trim().startsWith("num_ctx") }
+        ?.substringAfter("num_ctx")?.trim()?.toLongOrNull()
+
+    /** The server's default window, from the loaded models: one whose modelfile sets no num_ctx and that serves less
+     *  than its card was given exactly that default (Ollama caps a window at the card). Null when none shows it. */
+    fun ollamaServerDefault(running: Map<String, Long>, show: OllamaModelCard): Long? =
+        running.entries.mapNotNull { (name, window) ->
+            val reading = show.read(name) ?: return@mapNotNull null
+            val card = ollamaCard(reading)
+            window.takeIf { ollamaNumCtx(reading) == null && card != null && it in 1 until card }
+        }.maxOrNull()
 
     /**
      * LM Studio's v1 listing (https://lmstudio.ai/docs/developer/rest/list): `models[]`, each with `key` and

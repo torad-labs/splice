@@ -28,13 +28,14 @@ public object KnobWords {
     /** How much of a model's reasoning it summarises back. */
     public val SUMMARY: List<String> = listOf("detailed", "concise", "auto", "none")
 
+    private val BY_KNOB: Map<Knob, List<String>> = mapOf(
+        Knob.QUOTA_POLL to QUOTA_POLL,
+        Knob.SHOW_REASONING to SHOW_REASONING,
+        Knob.BUDGET_DEFAULT_ACTION to BUDGET_ACTIONS,
+        Knob.EFFORT to EFFORT,
+        Knob.SUMMARY to SUMMARY,
+    )
+
     /** The list [knob] takes, or null when it takes any text. */
-    public fun of(knob: Knob): List<String>? = when (knob) {
-        Knob.QUOTA_POLL -> QUOTA_POLL
-        Knob.SHOW_REASONING -> SHOW_REASONING
-        Knob.BUDGET_DEFAULT_ACTION -> BUDGET_ACTIONS
-        Knob.EFFORT -> EFFORT
-        Knob.SUMMARY -> SUMMARY
-        else -> null
-    }
+    public fun of(knob: Knob): List<String>? = BY_KNOB[knob]
 }

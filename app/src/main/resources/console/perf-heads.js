@@ -13,7 +13,7 @@
 
 const PERF_HEADS = (() => {
   const WINDOWS = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
-  const st = { win: "24h", body: null, error: null, reading: false, gen: 0, warned: new Set() };
+  const st = { win: "24h", body: null, error: null, reading: false, gen: 0, warned: new Set(), models: new Set() };
 
   async function read() {
     const gen = ++st.gen;
@@ -60,10 +60,21 @@ const PERF_HEADS = (() => {
   const head = (c) => `${c.label}${c.key ? KEY : ""}`;
 
   /** Failures by kind, the largest share first, in the words every page uses for an outcome; each opens its requests. A
-   *  share is printed only from 1% up: below that the rank says it, not an "under 1%" before every reason (marlin). */
+   *  share is printed only from 1% up: below that the rank says it, not an "under 1%" before every reason (marlin).
+   *  Tags that read as one word are one reason with their shares summed: error:rate-limited, error:rate-limit-relayed
+   *  and failure:rate_limit_error all read "Rate limited" (kit.js OUTCOME_WORD), and a row listed it twice (marlin,
+   *  desk c at 3828, Oct 13). The reason opens every tag under it on Requests, so the click shows all of its share. */
   function kinds(h) {
-    const shares = Object.entries(h.failure_shares || {}).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]);
-    return shares.map(([tag, s]) => `<a class="k" href="${door(h.key, { tag })}">${s >= 0.005 ? `<b>${pct(s)}</b> ` : ""}${esc(countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed")}</a>`).join("");
+    const byWord = new Map();
+    for (const [tag, s] of Object.entries(h.failure_shares || {})) {
+      if (!(s > 0)) continue;
+      const word = countWord(tag) || OUTCOME_WORD[tag] || tagWord(tag) || "Failed";
+      const seen = byWord.get(word);
+      if (!seen) byWord.set(word, { tags: [tag], s });
+      else Object.assign(seen, { tags: [...seen.tags, tag], s: seen.s + s });
+    }
+    return [...byWord].sort((a, b) => b[1].s - a[1].s)
+      .map(([word, { tags, s }]) => `<a class="k" href="${door(h.key, { tag: tags.join(",") })}">${s >= 0.005 ? `<b>${pct(s)}</b> ` : ""}${esc(word)}</a>`).join("");
   }
   /** The compactions among the command's requests, which open on Requests with its Compactions toggle on, and the status
    *  labels splice wrote itself from the last tool call with no model (PerfKeys.ACTIVITY_QUERY, ActivityLabel.kt), so
@@ -75,21 +86,43 @@ const PERF_HEADS = (() => {
     const compactions = n > 0 ? `<a class="m" href="${door(h.key, { compact: "1" })}">${n0(n)} ${n === 1 ? "compaction" : "compactions"}</a>` : "";
     return compactions + (q > 0 ? `<span class="m">${n0(q)} ${q === 1 ? "status label" : "status labels"} splice wrote · $0</span>` : "");
   }
-  /** Each model a command answered with, where it used more than one, so a slow or failing model is named: its
-   *  requests, its typical whole request and its failed share (v0.4.0 §3, model attribution; PerfSummary.byModel). A
-   *  row with one model already says it in its figures. Plain text: Requests filters by command, not by model here. */
-  function models(h) {
-    const ms = Object.entries(h.models || {});
-    if (ms.length < 2) return "";
-    // a time needs an answer: a request that named no model failed before one answered, and a model every request to
-    // failed never answered, so neither prints one (277 ms read fast on a model at 100% failed); a failed share prints
-    // from 1% up, as the failure reasons do
-    return ms.sort((x, y) => y[1].count - x[1].count).map(([id, m]) => {
-      const named = id !== "?", name = named ? modelName(S.labels, id) ?? id : "No model named";
-      const typical = named && m.failure_share < 1 && m.total_ms?.p50 != null ? ` · ${secs(m.total_ms.p50)} typical` : "";
+  /** Each model a command answered with, where it used more than one, so a slow or failing model is named (v0.4.0 §3,
+   *  model attribution; PerfSummary.byModel). Two read as one line under the row. Three or more stand as sub-rows in the
+   *  table's own Requests, Failed and Whole request columns, so they stack and compare at a glance, the three biggest by
+   *  requests shown and the rest behind "N more models" (marlin, desk c at 3828, Oct 13). A row with one model already
+   *  says it in its figures. A time needs an answer: a request that named no model failed before one answered, and a
+   *  model every request to failed never answered, so neither prints one. A failed share prints from 1% up. */
+  const SHOWN_MODELS = 3;
+  // a model id carrying its release date (claude-haiku-4-5-20251001) reads by its name, never the date (marlin)
+  const modelWord = (id) => (id === "?" ? "No model named" : modelName(S.labels, id.replace(/-\d{8}$/, "")) ?? id);
+  const answered = (id, m) => id !== "?" && m.failure_share < 1 && m.total_ms?.p50 != null;
+  const byCount = (h) => Object.entries(h.models || {}).sort((x, y) => y[1].count - x[1].count);
+  function modelLine(h) {
+    const ms = byCount(h);
+    if (ms.length !== 2) return "";
+    return ms.map(([id, m]) => {
+      const typical = answered(id, m) ? ` · ${secs(m.total_ms.p50)} typical` : "";
       const failed = m.failure_share >= 0.005 ? ` · ${pct(m.failure_share)} failed` : "";
-      return `<span class="m">${esc(name)} · ${n0(m.count)}${typical}${failed}</span>`;
+      return `<span class="m">${esc(modelWord(id))} · ${n0(m.count)}${typical}${failed}</span>`;
     }).join("");
+  }
+  /** The model sub-rows under a command with three or more, in the columns the table already shows. */
+  function modelRows(h, cols) {
+    const ms = byCount(h);
+    if (ms.length < 3) return "";
+    const open = st.models.has(h.key), shown = open ? ms : ms.slice(0, SHOWN_MODELS), rest = ms.length - SHOWN_MODELS;
+    const cell = (c, id, m) => {
+      if (c.label === "Requests") return n0(m.count);
+      if (c.label === "Failed") return m.failure_share >= 0.005 ? `<span class="bad">${pct(m.failure_share)}</span>` : "";
+      if (c.label === "Whole request") return answered(id, m) ? time(m.total_ms) : "";
+      return "";
+    };
+    const rows = shown.map(([id, m]) => `<div class="prow msub" role="row"><span class="pf cmd">${esc(modelWord(id))}</span>`
+      + cols.map((c) => { const v = cell(c, id, m); return `<span class="pf">${v ? `<em>${head(c)}</em>${v}` : ""}</span>`; }).join("")
+      + `</div>`).join("");
+    const more = rest > 0 ? `<div class="prow msub more" role="row"><span class="pf cmd"><button class="act quiet small" data-act="perfmods" `
+      + `data-k="${esc(h.key)}">${open ? "Fewer models" : `${n0(rest)} more ${rest === 1 ? "model" : "models"}`}</button></span></div>` : "";
+    return rows + more;
   }
   /** What the record behind a row could not cover, in the fewest words; the cause goes to the console. */
   function gaps(h) {
@@ -109,10 +142,10 @@ const PERF_HEADS = (() => {
     return f ? flagHtml(h.key, f) : "";
   }
   function row(h, cols) {
-    const below = flag(h) + kinds(h) + sorts(h) + gaps(h), mods = models(h);
+    const below = flag(h) + kinds(h) + sorts(h) + gaps(h), mods = modelLine(h);
     return `<div class="prow" role="row" style="--c:${colorOf(providerOfHead(h.key))}"><span class="pf cmd">${chip(h.key)}</span>`
       + cols.map((c) => `<span class="pf"><em>${head(c)}</em>${c.cell(h)}</span>`).join("")
-      + (below ? `<p class="below">${below}</p>` : "") + (mods ? `<p class="below mods">${mods}</p>` : "") + `</div>`;
+      + (below ? `<p class="below">${below}</p>` : "") + (mods ? `<p class="below mods">${mods}</p>` : "") + `</div>` + modelRows(h, cols);
   }
 
   function html() {
@@ -133,6 +166,8 @@ const PERF_HEADS = (() => {
   }
 
   document.addEventListener("click", (e) => {
+    const mo = e.target.closest("[data-act=perfmods]");
+    if (mo) { const k = mo.dataset.k; st.models.has(k) ? st.models.delete(k) : st.models.add(k); render(); return; }
     const el = e.target.closest("[data-act=perfwin]");
     if (!el || el.dataset.v === st.win) return;
     st.win = el.dataset.v; st.body = null; st.error = null; st.reading = false;

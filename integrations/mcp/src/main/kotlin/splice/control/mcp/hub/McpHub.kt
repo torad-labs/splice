@@ -37,6 +37,11 @@ private const val HTTP_NO_CONTENT = 204
 // only once its initialize is answered, so a holder started for a session that is still connecting is never stopped.
 private const val SHARED_GRACE_MS = 300_000L
 
+// why: the words the log gives for each kind of stop.
+private const val ENDED = "its session ended"
+private const val IDLE = "no session called it within the MCP idle limit"
+private const val ORPHANED = "no current plan names it and no live session is bound to it"
+
 /** What a hub call answers: a status and a JSON body, or none for 204. */
 public data class McpHubReply(val status: Int, val body: String?)
 
@@ -58,6 +63,21 @@ private data class HubTarget(
 
 /** A target, or the refusal the front is answered with; exactly one is set. */
 private data class Targeted(val target: HubTarget?, val refusal: McpHubReply?)
+
+/** One sweep's view of the shared holders: the live sessions the front holds (null when it saved nothing readable), the
+ *  sockets a current plan names, each holder's last call, the idle limit, and the sweep's moment. */
+private data class SharedView(
+    val bound: List<HubBinding>?,
+    val current: Set<String>,
+    val lastCalls: Map<String, Long>,
+    val idleMs: Long,
+    val now: Long,
+) {
+    /** Idle once neither a call nor its own start is within the limit: a holder started again after an idle stop still
+     *  carries its old last_call until the front saves its new handshake. */
+    fun idle(record: HubRecord): Boolean =
+        lastCalls[record.socket]?.let { now - maxOf(it, record.recordedAt) >= idleMs } == true
+}
 
 public class McpHub(
     private val sharing: McpSharing,
@@ -107,23 +127,32 @@ public class McpHub(
         return McpHubReply(HTTP_NO_CONTENT, null)
     }
 
-    /** Stops the per-session holders of launches that ended, and the shared holders no current plan names (a tuple
-     *  change left them behind) once the front reports no live session bound to them: a session whose launch ended
-     *  no longer counts. The host's sweep calls it. */
-    public fun sweep() {
-        val bound = front.bindings()?.filter { it.launch.isEmpty() || places.of(it.launch) != null }
-        val current = bound?.let(::currentShared).orEmpty()
+    /** Stops the per-session holders of launches that ended; the shared holders the front reports no call to within
+     *  [idleMs] (the MCP idle limit), since the next call starts one again; and the shared holders no current plan names
+     *  (a tuple change left them behind) once no live session is bound to them, a session whose launch ended no longer
+     *  counting. The host's sweep calls it at [now]. */
+    public fun sweep(now: Long, idleMs: Long) {
+        val report = front.report()
+        val bound = report?.bindings?.filter { it.launch.isEmpty() || places.of(it.launch) != null }
+        val view = SharedView(bound, bound?.let(::currentShared).orEmpty(), report?.lastCalls.orEmpty(), idleMs, now)
         holders.stopUnkept { record ->
-            record.launch?.let { places.of(it) != null } ?: keepsShared(record, bound, current)
+            when (val launch = record.launch) {
+                null -> sharedStop(record, view)
+                else -> ENDED.takeIf { places.of(launch) == null }
+            }
         }
     }
 
-    /** A shared holder stays while the front cannot say who is bound, while a session is bound to it, while a current
-     *  plan names it, and while it may still be starting for a session the front has not saved yet. */
-    private fun keepsShared(record: HubRecord, bound: List<HubBinding>?, current: Set<String>): Boolean = when {
-        bound == null || bound.any { it.socket == record.socket } -> true
-        record.socket in current -> true
-        else -> System.currentTimeMillis() - record.recordedAt < SHARED_GRACE_MS
+    /** Why a shared holder stops, or null while it stays: it stays while the front cannot say who is bound, while a
+     *  session is bound to it or a current plan names it, and while it may still be starting for a session the front
+     *  has not saved yet. */
+    private fun sharedStop(record: HubRecord, view: SharedView): String? = when {
+        view.bound == null -> null
+        view.idle(record) -> IDLE
+        view.bound.any { it.socket == record.socket } -> null
+        record.socket in view.current -> null
+        view.now - record.recordedAt < SHARED_GRACE_MS -> null
+        else -> ORPHANED
     }
 
     /** The sockets of every shared holder a current plan names: the user-scope plan's and each bound launch's. */

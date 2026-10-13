@@ -178,7 +178,7 @@ public class McpHost(
         val limit = config.idleTimeout().inWholeMilliseconds
         // The registry checks liveness and unbinds under the same lock used to acquire request leases.
         servers.sweep(now, limit)
-        hub?.sweep()
+        hub?.sweep(now, limit)
     }
 
     /** `/api/mcp`. */

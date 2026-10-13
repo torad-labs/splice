@@ -57,9 +57,9 @@ internal data class HubStart(val key: String, val server: String, val launch: St
  *  recorded, in epoch milliseconds (0 for a record older than the field). */
 internal data class HubRecord(val launch: String?, val socket: String, val recordedAt: Long)
 
-/** Whether the sweep keeps a recorded holder running. */
+/** Why the sweep stops a recorded holder, in words for the log, or null to keep it running. */
 internal fun interface HubKeep {
-    fun keeps(record: HubRecord): Boolean
+    fun stopReason(record: HubRecord): String?
 }
 
 /** Where the holders live and how they start: [binary] is splice-mcp-holder beside splice.jar; [io] runs the blocking
@@ -96,7 +96,7 @@ internal class HubHolders(
             val launch = JsonScalars.str(body, "launch")?.takeIf { it.isNotEmpty() }
             val socket = record.resolveSibling(record.fileName.toString().removeSuffix(".json") + ".sock")
             val held = HubRecord(launch, socket.toString(), JsonScalars.long(body, "at") ?: 0L)
-            if (!keep.keeps(held)) stop(record, socket, JsonScalars.long(body, "pid"))
+            keep.stopReason(held)?.let { why -> stop(record, socket, JsonScalars.long(body, "pid"), why) }
         }
     }
 
@@ -174,10 +174,10 @@ internal class HubHolders(
         }
     }
 
-    private fun stop(record: Path, socket: Path, pid: Long?) {
+    private fun stop(record: Path, socket: Path, pid: Long?, why: String) {
         pid?.takeIf { holderAlive(it, socket) }?.let { live ->
             ProcessHandle.of(live).ifPresent { it.destroy() }
-            log("[mcp-hub] stopped holder ${LogSafe.str(live.toString())}: no session needs it\n")
+            log("[mcp-hub] stopped holder ${LogSafe.str(live.toString())}: ${LogSafe.str(why)}\n")
         }
         Files.deleteIfExists(record)
         Files.deleteIfExists(socket)

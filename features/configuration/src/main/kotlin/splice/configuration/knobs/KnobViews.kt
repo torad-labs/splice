@@ -11,6 +11,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.config.ConfigLayers
 import splice.core.config.Knob
+import splice.core.config.daemonWideKnobs
 
 /** Where a knob's effective value comes from, lowest precedence first: the layers [splice.core.config.ConfigService]
  *  folds in that order, each later one beating the earlier. */
@@ -45,6 +46,8 @@ internal class KnobViews {
                 put("disposition", if (knob.restartRequired) "restart" else "live")
                 // what the value is, so the page builds its control from the daemon's own answer (gap 458)
                 put("kind", knob.kind.name.lowercase())
+                // whether one command may hold its own value: every knob a head reads per turn (HeadOverrideWrite)
+                put("per_command", knob !in daemonWideKnobs)
                 val readOnlyReason = PINNED_REASONS[knob]
                     ?: "set only in [heads.<key>.overrides], never by PATCH".takeIf { knob.headOnly }
                 put("editable", readOnlyReason == null)

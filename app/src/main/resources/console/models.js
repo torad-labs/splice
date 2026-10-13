@@ -43,7 +43,7 @@ KNOBS.wire(root, () => render());
 const data = { heads: [], topo: null, models: [], local: [], projects: [], sessions: [], doctor: null, claude: null, profiles: [], loaded: false, err: null };
 // What he is doing: the open command and its unsaved draft, a new command in progress, the saved words.
 const ui = { rm: null, gone: new Set(), restartDue: false, sign: null, keyin: null, view: "commands", open: null, add: null, draft: null, said: null, pick: null, saving: false, restart: null,
-  eff: {}, effOpen: false, logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
+  effOpen: false, logs: {}, logPath: {}, logWhy: {}, logq: "", logPaused: false, proj: null, projCmd: null, file: null, files: {}, more: new Set(), q: "", claudeSaid: null, fixing: {}, wide: true };
 
 async function readAll() {
   const paths = ["/api/heads", "/api/topology", "/api/models", "/api/projects", "/api/sessions", "/api/claude-head"];
@@ -513,24 +513,25 @@ function clientRow(c) {
   const row = (x) => `<span class="fig"><a class="chip" href="sessions.html#${encodeURIComponent(x.session_id)}">${esc(x.name || x.title || x.session_id.slice(0, 8))}</a> ${big(x.client_context_window)}</span>`;
   return `<span class="lbl">Claude Code's window</span><div class="ctl col">${seen.map(row).join("")}</div>`;
 }
-// ---------- every setting as this command runs it (gap 459), GET /api/config?head=<key> ----------
-// Read only: the daemon folds this command's own values over the shared ones the way a turn does (ConfigRoutes.kt), and
-// a value this command holds itself carries its chip. Read when the section opens, and again with the pane.
-async function readEff(key) {
-  const res = await API.get(`/api/config?head=${encodeURIComponent(key)}`);
-  ui.eff[key] = res.ok && res.body ? res.body : null;
-  render();
-}
+// ---------- every setting as this command runs it (gaps 459 and 457) ----------
+// Each setting with the value this command runs: its own where it holds one, else the shared one, as the daemon folds
+// them for a turn (ConfigRoutes.kt). One a command may hold for itself is its control, applied like Settings' rows, with
+// the way back to the shared value; Settings' command chips open these same rows. A daemon-wide one shows its value.
 function effHtml(c) {
-  const p = ui.eff[c.key], own = p?.layers?.perHead?.[c.key] ?? {};
-  const rows = !p ? [] : Object.entries(p.knobs ?? {}).map(([key, kn]) => {
-    const k = KNOBS.KNOB[key], v = kn.value;
-    const shown = k ? KNOBS.word(k, v ?? k.def) : v === null || v === undefined ? "Not set" : String(v);
-    return { name: k ? esc(k.label) : `<code>${esc(key)}</code>`, sort: k ? 0 : 1, shown, own: key in own };
-  }).sort((a, b) => Number(b.own) - Number(a.own) || a.sort - b.sort);
-  const body = ui.eff[c.key] === undefined ? `<p class="none">${ICON.wait}Reading</p>` : !p ? `<p class="said limit">Not read</p>`
-    : `<ol>${rows.map((r) => `<li><span>${r.name}</span><span class="v">${esc(r.shown)}${r.own ? ` <span class="chip">${esc(c.cmd)}</span>` : ""}</span></li>`).join("")}</ol>`;
-  return `<details class="rawlog everyset"${ui.effOpen ? " open" : ""}><summary>Every setting</summary>${ui.effOpen ? body : ""}</details>`;
+  if (!ui.effOpen) return `<details class="rawlog everyset"><summary>Every setting</summary></details>`;
+  const K = KNOBS, wire = K.st.cfg?.knobs;
+  if (!wire) return `<details class="rawlog everyset" open><summary>Every setting</summary><p class="said limit">Not read</p></details>`;
+  const keys = [...K.LIST.map((k) => k.key), ...K.others().map((k) => k.key)].filter((key) => wire[key]);
+  const own = (key) => K.ownValue(key, c.key) !== undefined;
+  const row = (key) => {
+    const k = K.KNOB[key], id = `${key}@${c.key}`, mine = own(key);
+    const ctl = wire[key].per_command && wire[key].editable !== false
+      ? `${K.ctlHtml(k, mine ? K.ownValue(key, c.key) : K.valueOf(k).v, c.key)}${K.saidHtml(id)}${mine ? K.backHtml(k, c.key) : ""}`
+      : `<span class="fixed">${esc(K.word(k, K.valueOf(k).v))}</span>`;
+    return `<div class="lbl" data-row="${key}">${esc(k.label)}</div><div class="ctl"><div class="line">${ctl}</div></div>`;
+  };
+  const sorted = [...keys.filter(own), ...keys.filter((key) => !own(key))];
+  return `<details class="rawlog everyset kn" open><summary>Every setting</summary><div class="effgrid">${sorted.map(row).join("")}</div></details>`;
 }
 /** What the command's gate holds right now and what has failed on it, as GET /api/heads serves them. */
 function nowRow(c) {
@@ -1077,7 +1078,6 @@ function render() {
 function openCmd(key) {
   Object.assign(ui, { open: key, add: null, draft: null, said: null, pick: null });
   readLog(key);
-  if (ui.effOpen) readEff(key);
 }
 function onClick(e) {
   if (KNOBS.click?.(e, render)) { render(); return; }
@@ -1174,7 +1174,7 @@ root.addEventListener("click", onClick);
 root.addEventListener("input", onInput);
 root.addEventListener("toggle", (e) => {
   const t = e.target;
-  if (t.classList?.contains("everyset")) { if (t.open !== ui.effOpen) { ui.effOpen = t.open; if (t.open) readEff(ui.open); } }
+  if (t.classList?.contains("everyset")) { if (t.open !== ui.effOpen) { ui.effOpen = t.open; render(); } }
   else if (t.classList?.contains("rawlog")) ui.rawOpen = t.open;
 }, true);
 document.getElementById("claude").addEventListener("click", onClick);
@@ -1187,10 +1187,13 @@ async function init() {
   data.profiles = (profiles.body?.profiles ?? []).filter((p) => p.name !== "nvidia");
   ui.wide = sideBySide();
   const want = new URLSearchParams(location.search).get("cmd");
+  const setting = new URLSearchParams(location.search).get("setting");
+  if (setting) ui.effOpen = true;
   if (want && cmdByKey(want)) openCmd(want);
   else if (ui.wide && !ui.open) { const first = order(commandsOf())[0]; if (first) openCmd(first.key); }
   render();
   if (location.hash === "#log") document.querySelector(".hlog")?.scrollIntoView({ block: "center", behavior: "instant" });
+  if (setting) document.querySelector(`.everyset [data-row="${CSS.escape(setting)}"]`)?.scrollIntoView({ block: "center", behavior: "instant" });
   // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
   const locked = () => document.body.classList.contains("locked");
   setInterval(() => { if (ui.open && !ui.add && !ui.logPaused && !document.hidden && !locked()) readLog(ui.open); }, 5000);

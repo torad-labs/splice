@@ -21,6 +21,8 @@
 .kn .said { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .kn .said .wait { width: 1.1rem; height: 1.1rem; --c: var(--text-body); }
 .kn .said.ok { color: var(--live); }
+.kn .owners { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }  /* the commands holding their own value, which wrap and never truncate */
+.kn .chip.own .v { font-family: var(--font-data); }
 .kn .was { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); text-decoration: line-through; }  /* the value a pick replaced, shown for a few seconds with Undo (gap 458) */
 .kn .said.limit { color: var(--limit); }
 .kn .fixed { font: 500 1.08rem/1 var(--font-data); color: var(--text); display: inline-flex; align-items: center; min-height: var(--ctl-h); }  /* a value with no control stands where one would */

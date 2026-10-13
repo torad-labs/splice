@@ -284,10 +284,16 @@ const KNOBS = (() => {
     }
     const owners = [...ownersOf(k.key), ...(st.adding[k.key] ?? []).filter((c) => !ownersOf(k.key).includes(c))];
     const left = (k.only || st.cmds).filter((c) => !owners.includes(c)), open = st.menu === `over:${k.key}`;
-    const lines = owners.map((c) => overHtml(k, c, hl)).join("");
-    const add = st.perCommand && k.cmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}One command</button>`
+    // A COMMAND'S OWN VALUE IS A CHIP (Marlin, hitstop, Oct 13, gap 457): its value in mono, and a door to that command's
+    // Every setting on Models, where the same value edits. A command being set here keeps its line until the page reloads.
+    const setting = st.adding[k.key] ?? [];
+    const chips = owners.filter((c) => !setting.includes(c)).map((c) => `<a class="chip own" style="--c:${colorOf(st.providerOf[c])}" `
+      + `href="models.html?cmd=${encodeURIComponent(c)}&setting=${encodeURIComponent(k.key)}">${hl(st.commandOf[c] || c)} <span class="v">${esc(word(k, ownValue(k.key, c)))}</span></a>`).join("");
+    const lines = (chips ? `<div class="owners">${chips}</div>` : "") + owners.filter((c) => setting.includes(c)).map((c) => overHtml(k, c, hl)).join("");
+    const perCmd = st.cfg?.knobs?.[k.key]?.per_command ?? Boolean(k.cmd);
+    const add = st.perCommand && perCmd && left.length ? `<span class="menuwrap"><button class="act quiet small one" data-kmenu="over:${k.key}" aria-expanded="${open}">${PLUS}Set for one command</button>`
       + (open ? `<div class="menu" role="menu">${left.map((c) => `<button role="menuitem" data-kact="over" data-key="${k.key}" data-cmd="${c}"><span class="blot" style="--c:${colorOf(st.providerOf[c])}"></span>${esc(st.commandOf[c] || c)}</button>`).join("")}</div>` : "") + "</span>" : "";
-    const only = k.only ? `<span class="only"><span class="word">Only</span>${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && k.cmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
+    const only = k.only ? `<span class="only"><span class="word">Only</span>${k.only.map((c) => cmdChip(c, hl)).join("")}</span>` : (everyCommand && perCmd ? `<span class="only every">${owners.length ? "Every other command" : "Every command"}</span>` : "");
     // THE SLOT UNDER A CONTROL HOLDS AN ELEMENT, NEVER A SENTENCE (Marlin, Oct 12): the page passes what it already
     // knows — the last read, the mark on a bar, the providers reporting nothing, how many servers run — and passes
     // nothing where that fact is not on the wire. A row with no element is its name and its control.
@@ -477,6 +483,6 @@ const KNOBS = (() => {
 
   return {
     fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, needsRestart, ownersOf, ownValue,
-    cmdChip, ctlHtml, saidHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom, others,
+    cmdChip, ctlHtml, saidHtml, backHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom, others,
   };
 })();

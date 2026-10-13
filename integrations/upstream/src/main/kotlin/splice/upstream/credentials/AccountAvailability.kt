@@ -2,12 +2,10 @@
 package splice.upstream.credentials
 
 import splice.core.usage.QuotaWindow
+import java.util.concurrent.TimeUnit
 
 // why: a quota window reports usedPercent on a 0-100 scale, so 100.0 is an exhausted window.
 private const val FULLY_USED = 100.0
-
-// why: vendors stamp a window's reset in epoch seconds while the pool's clock runs in milliseconds.
-internal const val MS_PER_SECOND = 1_000L
 
 /** Pure per-account availability/quota math — every function here takes the [PoolAccount] (and
  *  [at]) it needs and touches no [AccountPool] state, so V4-132 split it out rather than push
@@ -82,13 +80,13 @@ internal object AccountAvailability {
     private fun rankingWindow(account: PoolAccount, window: QuotaWindow?, at: Long): QuotaWindow? =
         window?.takeIf {
             val reset = it.resetsAt
-            available(account, at) && (reset == null || reset > at / MS_PER_SECOND)
+            available(account, at) && (reset == null || reset > TimeUnit.MILLISECONDS.toSeconds(at))
         }
 
     fun exhausted(window: QuotaWindow?, at: Long): Boolean {
         if (window == null || window.usedPercent < FULLY_USED) return false
         val reset = window.resetsAt ?: return false
-        return reset * MS_PER_SECOND > at
+        return TimeUnit.SECONDS.toMillis(reset) > at
     }
 
     fun earliestReset(accounts: List<PoolAccount>, at: Long): Long? =
@@ -101,13 +99,15 @@ internal object AccountAvailability {
         val blocked = listOfNotNull(snapshot?.fiveHour, snapshot?.sevenDay).filter { exhausted(it, at) }
         val quotaReset = blocked.takeIf { account.quotaHeld }?.mapNotNull(QuotaWindow::resetsAt)?.maxOrNull()
         val remaining = account.cooldown.providerUnavailableForMs()
-        val extraSecond = if (remaining % MS_PER_SECOND == 0L) 0L else 1L
-        val cooldownSeconds = remaining / MS_PER_SECOND + extraSecond
-        val epochSeconds = at / MS_PER_SECOND
+        // Vendors stamp a reset in epoch seconds while the pool's clock runs in milliseconds; a part second rounds up.
+        val wholeSeconds = TimeUnit.MILLISECONDS.toSeconds(remaining)
+        val extraSecond = if (TimeUnit.SECONDS.toMillis(wholeSeconds) == remaining) 0L else 1L
+        val cooldownSeconds = wholeSeconds + extraSecond
+        val epochSeconds = TimeUnit.MILLISECONDS.toSeconds(at)
         val cooldownReset = epochSeconds + cooldownSeconds
         val authReset = credential.excludedUntilEpochMillis?.let { millis ->
-            val seconds = millis / MS_PER_SECOND
-            val rounded = millis % MS_PER_SECOND > 0L && seconds < Long.MAX_VALUE
+            val seconds = TimeUnit.MILLISECONDS.toSeconds(millis)
+            val rounded = TimeUnit.SECONDS.toMillis(seconds) < millis && seconds < Long.MAX_VALUE
             seconds + if (rounded) 1L else 0L
         }
         return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset).maxOrNull()

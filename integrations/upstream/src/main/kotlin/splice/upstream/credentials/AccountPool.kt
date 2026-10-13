@@ -4,6 +4,7 @@ package splice.upstream.credentials
 import splice.core.auth.ClientAuthProvider
 import splice.core.util.LruSizing
 import splice.core.util.WallClock
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 private const val MAX_TRACKED_SESSIONS = 4_096
@@ -213,7 +214,7 @@ public class AccountPool(
             }
             if (free) return 0L
             val reset = AccountAvailability.earliestReset(accounts, at) ?: return 0L
-            return (reset * MS_PER_SECOND - at).coerceAtLeast(0L)
+            return (TimeUnit.SECONDS.toMillis(reset) - at).coerceAtLeast(0L)
         }
 
     /** Independent product sends observe the captured login's actual cooldown, never a sibling's. */

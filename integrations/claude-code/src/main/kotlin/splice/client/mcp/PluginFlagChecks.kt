@@ -40,20 +40,29 @@ public class PluginFlagChecks(
     }
 
     private suspend fun sweep() {
-        unchecked().forEach { version ->
-            val verdict = runInterruptible(dispatcher) { check.run(verdicts.versionsDir.resolve(version)) }
-            try {
-                verdicts.record(version, verdict)
-            } catch (error: IOException) {
-                // Unrecorded, the version is checked again on the next pass; its launches go without the flag.
-                log("[mcp-hub] Claude Code $version's plugin flag verdict was not saved (${error::class.simpleName})\n")
-            }
-            if (!verdict.holds) {
-                log(
-                    "[mcp-hub] Claude Code $version does not hold --plugin-dir-no-mcp (${verdict.why}); " +
-                        "its launches keep each plugin's own MCP servers\n",
-                )
-            }
+        unchecked().forEach { version -> checkOne(version) }
+    }
+
+    private suspend fun checkOne(version: String) {
+        val verdict = runInterruptible(dispatcher) { check.run(verdicts.versionsDir.resolve(version)) }
+        if (verdict == null) {
+            // Unrecorded, the version is checked again on the next request; its launches go without the flag.
+            log(
+                "[mcp-hub] Claude Code $version's plugin flag check did not run: a folder above the temp root " +
+                    "holds Claude Code project config\n",
+            )
+            return
+        }
+        try {
+            verdicts.record(version, verdict)
+        } catch (error: IOException) {
+            log("[mcp-hub] Claude Code $version's plugin flag verdict was not saved (${error::class.simpleName})\n")
+        }
+        if (!verdict.holds) {
+            log(
+                "[mcp-hub] Claude Code $version does not hold --plugin-dir-no-mcp (${verdict.why}); " +
+                    "its launches keep each plugin's own MCP servers\n",
+            )
         }
     }
 

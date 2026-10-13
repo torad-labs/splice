@@ -11,6 +11,7 @@ package splice.client.mcp
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import splice.core.config.UserHome
 import splice.core.wire.HttpStatus
 import java.io.File
 import java.io.IOException
@@ -30,6 +31,14 @@ private const val MARKER = "mcp-started"
 private const val RUN_SECONDS = 60L
 private const val REFUSING_PROXY = "http://127.0.0.1:9"
 
+// What Claude Code reads from a folder above its own: repo MCP servers, a project root, and project settings.
+private val PROJECT_CONFIG = listOf(
+    ".mcp.json",
+    ".git",
+    "${UserHome.CLAUDE_DIR}/settings.json",
+    "${UserHome.CLAUDE_DIR}/settings.local.json",
+)
+
 // A refusal the client does not retry (x-should-retry: false below), so one request ends the run.
 private const val REFUSAL = """{"type":"error","error":{"type":"invalid_request_error",""" +
     """"message":"splice's plugin flag check reads one request and ends the run"}}"""
@@ -37,10 +46,14 @@ private const val REFUSAL = """{"type":"error","error":{"type":"invalid_request_
 /** Runs the check against one installed version's binary and says what it found. */
 public class PluginFlagCheck(private val clock: Clock = Clock.systemUTC()) {
 
-    public fun run(binary: Path): PluginFlagVerdict {
+    /** The verdict, or null when the run was not started because a folder above it holds Claude Code project config:
+     *  Claude Code reads every `.mcp.json` from its folder up to the root and starts unapproved ones in print mode,
+     *  and a `.git` above would make that folder the project whose settings (hooks included) it loads. The temp root
+     *  is writable by anyone, so nothing planted there may run under splice's check. No verdict means no flag. */
+    public fun run(binary: Path): PluginFlagVerdict? {
         val root = Files.createTempDirectory("splice-plugin-flag-")
         return try {
-            verdict(binary, root)
+            if (plantedAbove(root)) null else verdict(binary, root)
         } catch (error: IOException) {
             failed("the check could not run: ${error::class.simpleName}")
         } finally {
@@ -67,6 +80,10 @@ public class PluginFlagCheck(private val clock: Clock = Clock.systemUTC()) {
 
     private fun failed(why: String) = PluginFlagVerdict(false, clock.instant().toString(), why)
 
+    private fun plantedAbove(root: Path): Boolean = generateSequence(root.parent) { it.parent }
+        .takeWhile { it.parent != null }
+        .any { folder -> PROJECT_CONFIG.any { Files.exists(folder.resolve(it)) } }
+
     /** The plugin, its skill, and its one server, which only leaves the marker. */
     private fun plugin(root: Path): Path {
         val plugin = root.resolve("plugin").resolve(PLUGIN)
@@ -87,7 +104,6 @@ public class PluginFlagCheck(private val clock: Clock = Clock.systemUTC()) {
 
     /** The binary's exit code, or null when it ran past [RUN_SECONDS] and was stopped. */
     private fun exitOf(binary: Path, root: Path, plugin: Path, port: Int): Int? {
-        val home = Files.createDirectories(root.resolve("home"))
         val work = Files.createDirectories(root.resolve("work"))
         val builder = ProcessBuilder(binary.toString(), "-p", "Say ready.", "--plugin-dir-no-mcp", plugin.toString())
             .directory(work.toFile())
@@ -96,18 +112,23 @@ public class PluginFlagCheck(private val clock: Clock = Clock.systemUTC()) {
             .redirectError(ProcessBuilder.Redirect.DISCARD)
         builder.environment().run {
             clear()
-            putAll(environment(home, port))
+            putAll(environment(root, port))
         }
         val process = builder.start()
         return try {
             if (process.waitFor(RUN_SECONDS, TimeUnit.SECONDS)) process.exitValue() else null
         } finally {
+            // Whatever it started goes with it, so a hung run leaves nothing behind.
+            process.descendants().forEach { it.destroyForcibly() }
             process.destroyForcibly()
         }
     }
 
-    private fun environment(home: Path, port: Int): Map<String, String> = mapOf(
-        "HOME" to home.toString(),
+    /** Only these variables: nothing of the daemon's environment, so no login, key or proxy setting reaches the run.
+     *  Its home and its config folder are both inside [root], which [run] deletes. */
+    private fun environment(root: Path, port: Int): Map<String, String> = mapOf(
+        "HOME" to Files.createDirectories(root.resolve("home")).toString(),
+        "CLAUDE_CONFIG_DIR" to Files.createDirectories(root.resolve("config")).toString(),
         "PATH" to "/usr/bin:/bin",
         "LANG" to "C.UTF-8",
         "TERM" to "dumb",

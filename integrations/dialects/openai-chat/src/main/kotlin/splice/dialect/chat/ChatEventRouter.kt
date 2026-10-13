@@ -31,7 +31,12 @@ internal class ChatEventRouter(
             // V4-167: an error status only — a vendor's own numeric code ("1301") is a kind, and
             // read as a status it would be a 5xx, retried whatever it meant.
             val status = JsonScalars.int(it, "code")?.takeIf { code -> code in HttpStatus.BAD_REQUEST..LAST_STATUS }
-            val kind = JsonScalars.str(it, "type") ?: JsonScalars.str(it, "code").takeIf { status == null }
+            // A STRING code is the vendor's specific verdict (context_length_exceeded, server_is_overloaded) and
+            // outranks the category in `type`, as the Responses reducer reads it; dropping it sent a known code
+            // under an unknown type to the one generic re-send instead of the plan its code names.
+            val stringCode = JsonScalars.strIfString(it["code"]).ifBlank { null }
+            val kind = stringCode ?: JsonScalars.str(it, "type")
+                ?: JsonScalars.str(it, "code").takeIf { status == null }
             terminal.onError(JsonScalars.strOrEmpty(it["message"]).ifEmpty { "error" }, kind.orEmpty(), status)
             return
         }

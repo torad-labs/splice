@@ -39,21 +39,23 @@ The plan's marquee binding is: *for any changed golden, require `sha256(builderO
 receipt.hash`, where the receipt was written by a run that observed `200` on those exact bytes.* That
 turns "golden changed" into un-green-able without a live success.
 
-`bun tools/e2e heads --tier 1` now **emits a receipt** at `checks/e2e/receipts/<head>.json` on a
+`bun tools/e2e heads --tier 1` now **emits a receipt** at `tools/e2e/receipts/<head>.json` on a
 tier-1 `200` (head, model, http_status, observed_at). It is marked `contract_bound: false` because
-the load-bearing field — `sha256` of the exact **upstream** request bytes the head sent — is not
-observable yet:
+the load-bearing field, the `sha256` of the exact **upstream** request bytes the head sent, is not
+read into the receipt yet:
 
 - the golden is `builderOutput` = the request the head's `RequestBuilder` produced for the upstream;
-- the head does **not** currently surface the bytes it sent upstream (only the client→head turn is
-  observable from the probe).
+- the head **does** record the bytes it sent upstream: a head's trace, on by default (the `trace` knob), writes one
+  `attempt` record per upstream send with that send's request body (`TurnTrace.kt`), cut and flagged
+  `truncated` past `traceMaxBodyChars` (16,777,216 characters by default);
+- `e2e heads` reads only the client side of the probe, so it never picks those bytes up.
 
-**The one missing piece:** a head-side *upstream-request tap* — a debug/perf surface that records the
-exact bytes the `UpstreamClient.post` body carried on the turn that got `200`. Once that exists,
-`e2e heads` fills `receipt.hash = sha256(upstream bytes)` and sets `contract_bound: true`, and the
+**The one missing piece:** `e2e heads` reading the `200` attempt's request body from the head's trace for the
+probe turn. Once it does, it fills `receipt.hash = sha256(upstream bytes)` and sets `contract_bound: true`, and the
 `*ContractTest`s gain a check: *a changed golden must match a `contract_bound: true` receipt hash.*
-That is a localized change — the receipt file, its emission point, the goldens, and the byte-identity
-assertions all already exist; only the tap + the two-line receipt-hash check remain.
+That is a localized change: the receipt file, its emission point, the goldens, the byte-identity
+assertions and the trace's per-send body all already exist; only the trace read and the two-line receipt-hash check
+remain. A body the trace cut at `traceMaxBodyChars` cannot be hashed, so that probe stays unbound.
 
 Until then the offline byte-identity half stands on its own: it catches the incident **class**
 (any request-field drift) at unit-test time, which is where both production incidents would have been

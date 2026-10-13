@@ -514,8 +514,10 @@ origin.
   same-kind heads with different credential files do not; the first login stays the primary in the file it always
   had, so nothing migrates. Selection is per turn and sticky per session. A full usage reading
   prefers another free login, but never blocks a turn by itself. If the current login's own
-  credential is rejected or a 429's `Retry-After` exceeds 15 s, the next turn tries a usable account
-  in the saved order, or defaults to the soonest reset in either plan window. Among the preferred
+  credential is rejected, the next turn tries a usable account. A 429 that names a spent plan window or asks to
+  wait more than 15 s hands the same turn to a free login before any byte reaches the client, on the ChatGPT, Grok,
+  Kimi and Muse pools as on a Claude one. Either way the account is taken in the saved order, or by default the
+  soonest reset in either plan window. Among the preferred
   free logins, a manual pin comes first. With no saved order, a session keeps its usable account
   rather than returning to the primary at every reset. A turn
   in flight finishes where it started; the first turn after a switch is accounted as cache-cold and
@@ -624,8 +626,8 @@ origin.
   The boot probe is bounded (2 s to connect, 5 s per request, `/api/show` only for the configured
   rows), so a wedged local runtime cannot hold the daemon's other heads hostage. The rows checked are each head's effective ones (a head `context_window`
   override applied, picker suffixes stripped) and the probe carries the provider's headers and
-  bearer. `splice doctor --live` adds one tiny streamed request with one tool per configured model the runtime lists.
-  `splice status` labels these heads `local runtime`; doctor shows `local:<provider>` with
+  bearer. `splice doctor --live` sends one tiny streamed request for each configured model the runtime lists, each
+  with one tool. `splice status` labels these heads `local runtime (OpenAI-compatible)`; doctor shows `local:<provider>` with
   the runtime's name. Neither implies a subscription or quota. Proven live against Ollama 0.30.5 and LM Studio (llmster 0.0.24), one model each
   (`tools/e2e/local-models/`); vLLM documented.
   A row named without its tag matches the runtime's `:latest` listing (Ollama lists `qwen3:latest`
@@ -670,11 +672,11 @@ origin.
   `splice login codex [--label <name>]` in a terminal keeps the browser flow; Kimi and Muse use the
   device code in both places. A log line for a refused response carries the status and the OAuth error
   code, never the body. Signing the first account in again under its own label replaces it in place.
-- **Two ChatGPT accounts are told apart by who they are.** The account's user id and email, read from its
-  sign-in, appear on its row, masked: neither is ever shown whole.
-- **The first ChatGPT, Grok, Kimi or Muse account can be renamed and removed like the rest.** A rename
-  is stored beside the command's pool and never written into the credential, which can be the vendor
-  CLI's own file; Remove is offered only on splice's own file, and a file shared with the vendor's CLI keeps its refusal.
+- **Two ChatGPT accounts are told apart by a short ref.** The ref is eight hex characters of a hash of the
+  account id, and no page shows an email or an account id.
+- **The first ChatGPT, Grok, Kimi or Muse account can be renamed and removed like the rest.** Rename saves
+  a chosen name in splice's own account-names file and never touches the credential, which can be the vendor
+  CLI's own file. Remove is offered only on splice's own file, and a file shared with the vendor's CLI keeps its refusal.
 - **A pin can name one session.** `POST /api/auth/<head>/switch` takes `"session"` beside `"label"`: that
   session uses the account and the head's pin stays for every other session. `DELETE` with `?session=`
   drops that session's pin; without it, the head's. A session's pin outranks the head's for that session
@@ -704,7 +706,7 @@ origin.
   duration the usage reports (`cache_write` and `cache_write_1h`, with `long_context_cache_write_1h` for a
   long-context tier). A turn on a model the roster does not name takes its published card too, so a Claude
   head whose client picks the model no longer leaves those turns unpriced and out of a budget's sight. The OpenAI
-  gpt-5 family on api.openai.com (gpt-5 to gpt-5.5, with their mini, nano and pro variants) and the xAI grok-4.20
+  gpt-5 family on api.openai.com (gpt-5 to gpt-5.5, with some mini, nano and pro variants) and the xAI grok-4.20
   variants carry their cards too, so a turn on them is priced; the ChatGPT backend lists only its own gpt-6 and
   gpt-5.6 models. GPT-5.6 Sol's price is a promotion that OpenAI says holds through at least November 21, 2026, so
   that row is read again then.
@@ -722,11 +724,11 @@ origin.
   whole hours only; where midnight falls inside an hour (a zone offset by half an hour), the hour holding it is its
   own figure beside the day's and is never guessed into either day.
 - **Accounts reports what a provider says about usage.** A provider that answers with no usage clears the
-  account's bars and the card says "<Provider> doesn't report limits"; a failed probe keeps the last reading
+  account's bars and the card says "No limits reported"; a failed probe keeps the last reading
   with its time. Claude's per-model weekly windows (Opus, Sonnet) appear under the weekly window, each with its own reset,
   and a model week past its own reset is not drawn as a current reading. Each bar is marked stale from its own
   reading, so a fresh five-hour window beside a week that has ended no longer shows that week's spent figure as
-  today's. A window whose reported reset has gone by says "Reset" and that time, with no ring, instead of an empty
+  today's. A window whose reported reset has gone by says "Ended" and that time, with no ring, instead of an empty
   cell beside the ended week's figure; a window that reported no reset keeps the empty cell. When two heads share one login and only one of them pins it, the pin shows on that head alone, so Unpin acts
   on the head that holds it.
 - **A provider can say whose machine runs it.** `discovery = { family = "vast" }` on a provider groups a
@@ -741,7 +743,8 @@ origin.
   would refuse your file. A plain `systemctl restart` cannot be checked first, because systemd stops the unit
   before splice runs.
   Run from a terminal, a `splice` command that hits the refusal offers a fix session, `splice restart` included:
-  for each finding you can remove its line, set a new value, open your editor at that line, or skip it for now.
+  for most findings you can remove its line, set a new value, open your editor at that line, or skip it for now.
+  A model row's line cannot be removed.
   `splice.toml` is backed up before the first change, the file is checked again after every fix, and the command
   runs again only when nothing is left, so `splice restart` repairs the file and then restarts in one go. A value
   you type is not echoed to the screen, since it can be a token. A `splice.toml` that is a link is fixed at the file
@@ -783,10 +786,12 @@ origin.
   that one reads "Not saved", because nothing was saved and nothing was deleted.
 - **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
   totals, separate from the trace deletion capture-off already does.
-- **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries
-  and sends `stream_options.reasoning_summary_delivery`. `tool_name_cap` caps tool-name length on passthrough heads
-  and the cap is restorable.
+- **Two provider quirks.** Setting `summary_delivery` to `off` stops sending
+  `stream_options.reasoning_summary_delivery`, which switches off the cutoff that empties gpt-6.1-sol reasoning
+  summaries. `tool_name_cap` caps tool-name length: Muse caps at 64 by default, and a passthrough head caps only when
+  its quirks table names a length. A capped name is restored on the way back.
 - **Upstream sockets use TCP keepalive,** so a half-open connection no longer reads as healthy for the whole turn cap.
+  A peer that died behind a NAT or a proxy is found within 25 s instead of 60 s.
 - **`splice doctor` and `splice models` honour `NO_COLOR`.** Doctor gives its problems more room than passing
   checks, and each doctor row says whether its fix is a command or advice (`fix_kind`).
 - **Usage rows report each turn's reasoning tokens** and give the reason when a row has no cost.
@@ -821,9 +826,10 @@ origin.
 - **Usage is a page.** Plans show each provider window as Accounts reads it, Keys show a key's spend as money, and a plan's
   requests read "On your plan" with their value at API prices, never as money. Columns cover 7 days from the daemon's day
   totals and the last 5 hours by quarter hour. A breakdown by account, project, agent and model comes from the daemon's own
-  totals over every request, not the newest 2,000. Each command's speed and failures read from its newest requests, and a
-  card says so when it holds more. One plan account under several labels is one row. Every figure opens its requests on
-  Requests with its filters carried, and a new window reads "Reading", never the old figures under the new heading.
+  totals over every request, not the newest 2,000. Each command's speed and failures in the table read every request
+  in the window, and its slow or failing flag reads the newest 2,000. One plan account under several labels is one row.
+  Every figure opens its requests on Requests with its filters carried, and a new window shows placeholders until its
+  figures arrive.
 - **Requests can show the requests that ran in no project.** `GET /api/perf/turns?project=none` lists them, the rows that
   print `project: null`, and Requests' No project pick and its figure ask the daemon for them.
 - **One project pick across Sessions, Teams, Requests and Usage.** One resolver answers "which project is this?" for a
@@ -955,8 +961,8 @@ origin.
 - **Each code-mode conversation owns its engine.** Its scripts use a GraalJS engine,
   isolate, guest heap and collector keyed by session, conversation and model. Host JVMs start only
   when a cell is admitted. `code_mode_workers` defaults to six hosts per head, with at most four
-  session engines in each. A new session goes to the least-loaded eligible host and stays pinned
-  there. The host heap still defaults to 512 MiB, with a separate 384 MiB guest heap per engine.
+  session engines in each. A new session takes an empty host. If none is free, it boots a new host while the host
+  cap and memory budget allow, and otherwise joins the least-loaded host. It stays pinned there. The host heap still defaults to 512 MiB, with a separate 384 MiB guest heap per engine.
   `code_mode_memory_mb` defaults to a 24,576 MiB head-wide admission reservation, not an
   operating-system resident-memory limit. Including collector and native reserves, a default host
   reserves 1,152 MiB and each engine 832 MiB: six hosts and 21 engines reserve 24,384 MiB; a 22nd
@@ -970,14 +976,11 @@ origin.
   record. A timer can reclaim a parked cell whose session remains unknown for 30 minutes;
   known-alive cells are not reclaimed by that idle sweep. A host that dies fails only its own
   cells, including ones waiting for source; their next cells boot a fresh host in the same slot,
-  without rerunning lost source. `Promise.all` and `Promise.allSettled` still dispatch as one batch.
+  without rerunning lost source. `Promise.all` and `Promise.allSettled` over direct tool calls still dispatch as one
+  batch.
   Saved code-mode state accepts additional fields from newer writers. Malformed or incomplete
   records still fail validation.
-- **Claude Code shows a code-mode script as it is written.** While a GPT model writes its `exec`
-  script, Claude Code displays the source in a live thinking block. A tool call dispatched by
-  the script closes and signs that block; remaining script text continues in the next client
-  step. The block carries splice's notice signature and is never sent upstream as model
-  reasoning. Script text held between client steps has a separate byte budget from model output.
+- **Code-mode scripts stay inside splice.** The `exec` script a GPT model writes never reaches Claude Code.
   Completed source usage is counted once. Source replies stopped before completion are counted,
   while their token usage stays unreported when no usage arrived.
 - **The dashboard is replaced by the console.** 0.3.x served a dashboard at `/` and `/dashboard`, and
@@ -1032,12 +1035,16 @@ origin.
 - **Errors the client sees name splice, not another vendor's product.** A stream that ends without
   its completion event, a refused or failed upstream response and a context-overflow refusal used
   to reach Claude Code prefixed `claudex:` or attributed to the `ChatGPT backend`, on every head
-  including the ones that have nothing to do with ChatGPT. They now read `splice:` and `upstream:`.
+  including the ones that have nothing to do with ChatGPT. On the Responses path, a stream that ends early now reads
+  `splice: upstream stream ended` and a model refusal reads `upstream: model refused`. Other dialects keep their own
+  tags. A context overflow reads `prompt is too long: ` followed by the upstream message.
   Saved test expectations use the new error text; recorded traffic is unchanged.
 - **Vendor-specific rules live in each vendor's own module.** Request rules moved out of
-  shared protocol code into the provider adapters. Shared dialects name no vendor.
+  shared protocol code into the provider adapters. The shared Responses dialect still carries Codex's WebSocket
+  header names.
 
-- **Code mode sends the tool surface Codex sends.** A code-mode turn declares one tool, `exec`, the
+- **Code mode sends the tool surface Codex sends.** A code-mode turn declares `exec`, with hosted tools other than
+  `tool_search` beside it, the
   way codex-rs does for a model its catalog marks `code_mode_only`: a freeform tool with Codex's lark
   grammar, whose description is the manual of every fully declared tool rendered as a TypeScript declaration;
   deferred tools appear in `ALL_TOOLS`. Before, every client tool rode beside a small `splice_exec`, and the model called the
@@ -1080,9 +1087,9 @@ origin.
   refreshes incrementally, reading only a transcript that is new or changed.
 - **A chunked request body is admitted with a small charge that grows per chunk,** so four small chunked requests no longer
   fill the budget. One past the size cap or the heap is answered mid-body and its charge returned.
-- **A hold says what happened.** "The provider limited this account, so this gateway is holding new requests for Ns"
-  replaces a sentence that claimed retries which a relayed 429 never made, and a relayed vendor 429 hold waits like any
-  other short hold.
+- **A credential hold says what happened.** With no relayed provider reply to hand back, it reads "The provider
+  limited this account, so this gateway is holding new requests for Ns", not a sentence that claimed retries splice
+  never made. A relayed vendor 429 hold waits like any other short hold.
 - **Compare models sends every model the same system line,** "You are a helpful assistant.", so no answer comes from an
   instruction another model did not get, and each request shows it as its system.
 - **Compare models sends are recorded like any request.** Each send leaves a row on Requests with the tokens its stream
@@ -1147,12 +1154,15 @@ origin.
 - **A refusal or a content filter after the answer began ends in words.** Claude Code never retries once content has
   reached it, so an error frame there read as a lost connection. Every dialect now appends the verdict to the answer, as
   a stall after content already does.
-- **An unknown vendor error code is tried once more, a known one never.** A code on the deterministic list, such as
-  `invalid_parameter`, fails at once with its message. A code on no list is sent again once, then the message.
+- **An unknown vendor error code is tried once more, a known one never.** A stream error with no HTTP status and a
+  vendor code on neither list is sent again once, then its message is shown. A code on the deterministic list, such
+  as `invalid_parameter`, fails at once with its message, and a code on the retryable list follows the normal retry
+  curve. Only the Responses and Chat dialects re-send. A vendor's own code is read before its type, and only a round
+  that showed the client nothing, a tool call included, is re-sent.
 - **A standing prompt the head could not build refuses boot.** Both keys set, a prompt file that cannot be read, a
   relative project root or a strip pattern that does not compile is a config finding naming its table, listed with every
-  other finding, so splice does not start rather than skipping the head. `splice doctor` names the unreadable path before
-  a restart.
+  other finding, so splice does not start rather than skipping the head. `splice doctor` names an unreadable project
+  prompt file before a restart, and `splice check-config` names an unreadable head prompt file.
 - **A `[compaction]` table splice cannot build refuses boot with the other findings.** Both `instructions` and
   `file` set, a blank or repeated model, or a repeated project stopped the daemon on its own before, so it was never
   listed beside the file's other findings and the fix session was never offered. A `file =` boot cannot read now
@@ -1270,7 +1280,8 @@ origin.
   it refuses to start.
 - **A code-mode turn that cannot save its state says why.** When the disk holding splice's state
   filled, every code-mode turn failed as "code-mode state persistence failed", which read as a
-  code-mode bug. The message now says the disk is full, and any other save failure names its cause.
+  code-mode bug. The message now says the disk is full. A file error names its path and reason, and any other save
+  failure is withheld, since its text can quote file bytes.
   As before, the code is never run a second time.
 - **A turn's cache write reaches Claude Code as a cache write.** splice reported the tokens an
   upstream wrote to its prompt cache as plain input and `cache_creation_input_tokens` as 0, so a
@@ -1316,13 +1327,13 @@ origin.
   latest tool call from its own turns, at most once every 30 seconds, and the client's answer to its
   own query counts as the sample when one comes.
 - **Unreported usage stays visible in totals.** A turn whose provider never reported usage is
-  counted as unreported, not as a measured zero. Usage hours, project and team totals, budgets
-  and the status line retain reported token amounts and costs as lower bounds. The status line
+  counted as unreported, not as a measured zero. Budgets and the status line keep the reported
+  spend of an incomplete turn as a lower bound. Usage hours and team totals keep its tokens and
+  count the turn as unpriced. The status line
   marks its cost estimate `≥`. Incomplete reports keep the amounts that did arrive. A request
   splice refused without sending it contributes exact zero cost, even without a model rate card.
   Known priced amounts stay visible when other turns have no price.
-  Wholly unknown costs stay unknown. The projects API retains its priced portion in
-  `cost_today_usd` and counts incomplete prices in `unpriced_turns_today`.
+  Wholly unknown costs stay unknown. The projects API no longer returns cost fields.
 - **The claude profile prices every model it lists.** Only Opus 5.5 carried a rate card, so a turn on
   Fable 5.1, Sonnet 5 or Haiku 4.5, Claude Code's own background Haiku calls among them, counted as
   unpriced. Each now carries its card from Anthropic's pricing page, with cache writes at the 1-hour
@@ -1439,8 +1450,8 @@ origin.
 - **A cancelled code-mode start waits for its worker to release its slot.** A cell
   started the moment another's startup was cancelled could fail with `Code-mode worker capacity
   reached`: the slot came back only when the JDK's process reaper got round to the killed worker.
-  The cancelled start now kills its worker and waits up to 2 seconds for it to exit,
-  off the caller's thread. If it has not exited by then, the slot is released when its exit is seen.
+  The cancelled start now kills its worker off the caller's thread, and the slot is released
+  when the worker's exit is seen.
 - **Code-mode host startup has its own budget.** Starting an on-demand host and opening the
   session's engine have a 30 s startup budget. `code_mode_timeout_ms` remains an accepted positive
   compatibility setting, not a per-script deadline.
@@ -1752,6 +1763,19 @@ origin.
 - **Settings › MCP names a plugin's server by its plugin,** not by its version folder or a half-installed clone,
   and by the place it is really declared when it is declared twice. A server the Servers list keeps one per session
   for its own reason reads under One per session either way with that reason, out of the savings figures.
+- **A Claude reply the model ends empty on purpose ends cleanly.** A message that stopped on `end_turn` or a stop
+  sequence with no content was graded an empty answer, re-sent, and handed to Claude Code as `overloaded_error`.
+  Claude Code's prompt-suggestion requests end that way, so it re-sent each one at about 300k cached tokens. A stream
+  with no `message_stop`, or one stopped at `max_tokens`, is still the empty-turn error.
+- **A Responses answer that holds only reasoning ends cleanly.** A completed response whose output is all reasoning,
+  as Muse sends, was graded an empty answer and failed. It now ends as an empty message, as codex treats it.
+- **A code-mode tool call too large to send goes back to the script as an error,** so the turn continues and the
+  script can try a smaller call. A second oversized batch from the same script ends it.
+- **A refusal the vendor will repeat is not re-sent.** Grok's 400 `invalid_image`, Muse's 403 plan limit and Kimi's
+  plan-tier answer each fail at once in the vendor's words, and Kimi's reaches Claude Code as a 403. A Grok 403 for
+  an expired sign-in that a refresh did not fix is told as an authentication failure.
+- **Requests shows the reset of a 429 whose body echoes `X-RateLimit-Reset`** in epoch milliseconds, as
+  OpenRouter's does.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

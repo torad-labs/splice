@@ -30,7 +30,8 @@ import java.util.Locale
 import java.util.concurrent.CancellationException
 
 /** daemon.log and its one roll-over. Only the file lane's worker thread calls [append], so [writer] and [written]
- *  need no lock. */
+ *  need no lock. Oct 13: the file is held owner-only (0600) each time it is opened, at start and after a roll, so a
+ *  log's safety no longer hangs on its folder alone; the roll keeps that mode. */
 private class DaemonLogFile(private val file: Path, private val rolled: Path, private val maxBytes: Long) {
     private var writer: java.io.Writer? = null
     private var written: Long = Cancellables
@@ -50,7 +51,10 @@ private class DaemonLogFile(private val file: Path, private val rolled: Path, pr
                 writer = null
                 written = 0L
             }
-            val w = writer ?: Files.newBufferedWriter(file, CREATE, APPEND).also { writer = it }
+            val w = writer ?: Files.newBufferedWriter(file, CREATE, APPEND).also {
+                writer = it
+                val _ = SecureFile.ownerOnlyFile(file)
+            }
             w.write(line)
             w.flush()
             written += line.toByteArray(Charsets.UTF_8).size
@@ -132,8 +136,8 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         maxBytes: Long = MAX_LOG_BYTES,
         echoToStderr: StderrEcho = StderrEcho { true },
     ): LogSink {
-        // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory): the dir is
-        // the boundary, so daemon.log and the per-head logs need no mode of their own. A dir left
+        // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory). daemon.log is held 0600 too
+        // (DaemonLogFile), so neither has to stand for the other. A dir left
         // open, or never made, is said in the log itself once the sink below exists.
         val logsProblem = logsDirProblem(logsDir)
         val file = logsDir.resolve("daemon.log")
@@ -265,6 +269,7 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
                 // boot, by persistentLogger's logsDirProblem.
                 val _ = SecureFile.ownerOnlyDirectory(statePaths.logsDir)
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
+                val _ = SecureFile.ownerOnlyFile(statePaths.logsDir.resolve("daemon.log"))
             }
         }
 

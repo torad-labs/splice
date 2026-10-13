@@ -78,7 +78,7 @@ internal class StatusCommand(
         println("  " + palette.paint(palette.quiet, "jar     ${jarLine()}"))
     }
 
-    internal fun clientVersionWarning(health: HealthView?): String? = health?.clientVersionWarning
+    internal fun clientVersionWarning(health: HealthView?): String? = health?.client?.versionWarning
 
     /** DR-86 twin of doctor's jarCheck; lives on StatusExtras, kept here for the permanent arm's callers. */
     internal fun jarLine(): String = extras.jarLine()

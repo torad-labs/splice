@@ -22,6 +22,7 @@ internal class ControlHealthReport(
     private val topologyDigest: TopologyDigest,
     private val topologyStale: TopologyStale,
     private val clientVersions: ClientVersionTracker,
+    private val mcpHub: McpHubVerdict? = null,
 ) {
     /** The /health body, read at the current instant. */
     fun json(): String = json(System.currentTimeMillis())
@@ -55,6 +56,10 @@ internal class ControlHealthReport(
             // version the daemon RUNS, which a window-only edit moves, so it is read per request too.
             put("topologyDigest", topologyDigest())
             put("topologyStale", topologyStale())
+            mcpHub?.let { hub ->
+                put("mcpHub", if (hub.offReason == null) "on" else "off")
+                hub.offReason?.let { put("mcpHubOffReason", it) }
+            }
         }.toString()
     }
 
@@ -80,3 +85,7 @@ internal class ControlHealthReport(
         into.putJsonObject("quotaFull") { full.forEach { (key, reading) -> put(key, signals.quotaFullJson(reading)) } }
     }
 }
+
+/** Whether this daemon runs the MCP hub, as McpHubGate decided at boot: [offReason] is why not, in the words the hub
+ *  routes' 503 gives, or null when it is on. Doctor reads it off /health (`mcpHub`, `mcpHubOffReason`). */
+internal data class McpHubVerdict(val offReason: String?)

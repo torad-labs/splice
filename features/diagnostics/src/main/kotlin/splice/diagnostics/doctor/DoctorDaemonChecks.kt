@@ -77,6 +77,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
         return listOf(daemon) + heads.headChecks(snapshot, topology) +
             listOfNotNull(
                 clientVersion.check(snapshot.health),
+                clientVersion.mcpHub(snapshot.health),
                 heads.topologyFreshness(snapshot, configPath),
                 heads.mgmtKeyCheck(statePaths, snapshot.running),
             ) +

@@ -27,6 +27,7 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.api.McpHubVerdict
 import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
@@ -150,6 +151,9 @@ internal class ControlPlane(
     // The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it.
     private var mcpInventory: McpInventory? = null
     private var mcpSharing: McpSharing? = null
+
+    /** Whether the MCP hub runs, decided once as [mcpHost] builds it; /health reports it for doctor. */
+    private var mcpHub: McpHubVerdict? = null
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
@@ -390,6 +394,7 @@ internal class ControlPlane(
             topologyStale = running?.let { TopologyStale(it::stale) }
                 ?: TopologyStaleness.probe(topology.path, topology.digest),
             clientVersions = clientVersions,
+            mcpHub = mcpHub,
         )
     }
 
@@ -465,8 +470,15 @@ internal class ControlPlane(
         mcpSharing = sharing
         val config = mcpHostConfig()
         // MCP hub steps 3 and 4: the daemon half the hub front calls; the host's sweep stops ended sessions' copies.
-        val hub = McpHubWiring(globalRead, statePaths.stateDir)
-            .hub(sharing, config.initializeTimeout, ProcessDispatchers().io(), log, McpAccessKey(mgmtKey::get))
+        val wiring = McpHubWiring(globalRead, statePaths.stateDir)
+        val hub = wiring.hub(
+            sharing,
+            config.initializeTimeout,
+            ProcessDispatchers().io(),
+            log,
+            McpAccessKey(mgmtKey::get),
+        )
+        mcpHub = McpHubVerdict(wiring.offReason)
         return McpHost(sharing, globalRead, config = config, log = log, inventory = inventory, hub = hub)
     }
 

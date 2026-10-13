@@ -44,10 +44,22 @@ public object DaemonProbe {
         public val heads: HealthHeads,
         public val topology: HealthTopology = HealthTopology(),
         public val turnPathStalled: List<String> = emptyList(),
-        public val clientVersionWarning: String? = null,
+        public val client: HealthClient = HealthClient(),
         /** V4-452: the two quota facts /health names apart, per head. */
         public val quota: HealthQuota = HealthQuota(),
     )
+
+    /** What /health says about the Claude Code sessions the daemon serves: [versionWarning], the aggregate version
+     *  drift (`clientVersionWarning`), and [mcpHub], whether their MCP servers run under the hub. Each is null when
+     *  the daemon does not say. */
+    public data class HealthClient(
+        public val versionWarning: String? = null,
+        public val mcpHub: HealthMcpHub? = null,
+    )
+
+    /** The daemon's boot decision on the MCP hub: [on], or off with [offReason], in the words its hub routes'
+     *  503 gives. */
+    public data class HealthMcpHub(public val on: Boolean, public val offReason: String? = null)
 
     /** What /health counts of the heads: how many are configured, how many are ready and how many failed to boot,
      *  each null when the daemon does not say. [failedReasons] is V4-394: each failed head's key and boot reason;
@@ -164,7 +176,14 @@ public object DaemonProbe {
             turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
                 ?.mapNotNull { JsonScalars.str(it) }
                 .orEmpty(),
-            clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
+            client = HealthClient(
+                versionWarning = JsonScalars.str(obj, "clientVersionWarning"),
+                mcpHub = when (JsonScalars.str(obj, "mcpHub")) {
+                    "on" -> HealthMcpHub(on = true)
+                    "off" -> HealthMcpHub(on = false, offReason = JsonScalars.str(obj, "mcpHubOffReason"))
+                    else -> null
+                },
+            ),
             quota = HealthQuota(
                 refusedUntil = (obj["quotaResetAtEpochSeconds"] as? JsonObject)
                     ?.mapNotNull { (key, reset) -> (reset as? JsonPrimitive)?.longOrNull?.let { key to it } }

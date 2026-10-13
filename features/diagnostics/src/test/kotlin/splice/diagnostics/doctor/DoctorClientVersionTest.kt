@@ -14,7 +14,7 @@ class DoctorClientVersionTest {
     private fun health(warning: String?) = DaemonProbe.HealthView(
         version = "0.4.0",
         heads = DaemonProbe.HealthHeads(total = 1, ready = 1, failed = 0),
-        clientVersionWarning = warning,
+        client = DaemonProbe.HealthClient(versionWarning = warning),
     )
 
     @Test

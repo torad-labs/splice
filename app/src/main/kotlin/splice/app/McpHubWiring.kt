@@ -48,6 +48,10 @@ internal class McpHubWiring(
     private val environment = ProcessEnvironment(procRoot, owners)
     private val planner = McpLaunchPlanner(UserHome.dir())
 
+    /** Why [hub] left the hub off, in the words its routes' 503 gives, or null once it is on; /health reports it. */
+    var offReason: String? = null
+        private set
+
     /** A launch's place: its working folder, and its environment read only when a per-session copy starts. */
     val places: McpLaunchPlaces = McpLaunchPlaces { launch ->
         val pid = launch.toLongOrNull()?.takeIf { owners.read(it) != null }
@@ -78,6 +82,7 @@ internal class McpHubWiring(
     ): McpHubCalls {
         val bin = InstallLayout().shareDir(EnvReader(System::getenv))
         val refusal = McpHubGate(bin).refusal() ?: writeAccess(access)
+        offReason = refusal
         if (refusal != null) {
             log("[mcp-hub] ${LogSafe.str(refusal)}; MCP servers stay hosted in the daemon\n")
             return McpHubOff(refusal)

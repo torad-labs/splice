@@ -1,6 +1,5 @@
 package splice.client.transcript
 
-private val CAPTURE_NUMBER = Regex("-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
 private const val JSON_UNICODE_DIGITS = 4
 private const val JSON_CONTROL_BOUNDARY = ' '
 private const val JSON_START = 0
@@ -8,111 +7,133 @@ private const val JSON_KEY = 1
 private const val JSON_VALUE = 2
 private const val JSON_SEPARATOR = 3
 
-/** Validates skipped JSON without constructing its object tree, copying strings, or recursing on the JVM stack. */
-internal class CapturedJsonValues(private val text: String) {
+/** Validates skipped JSON over a bounded reader without constructing trees or copying strings. */
+internal class CapturedJsonValues(private val text: CapturedText) {
     private data class Frame(val closing: Char, var phase: Int = JSON_START)
+    private var peakDepth = 0
 
-    fun space(from: Int): Int {
-        var at = from
-        while (at < text.length && text[at] in " \t\r\n") at++
-        return at
+    fun space(): Int {
+        while (text.peek()?.let { it in " \t\r\n" } == true) text.take()
+        return text.position
     }
 
-    fun end(from: Int): Int = when (text.getOrNull(from)) {
-        '{', '[' -> containerEnd(from)
-        else -> scalarEnd(from)
+    fun end(): Int {
+        when (text.peek()) {
+            '{', '[' -> container()
+            else -> scalar()
+        }
+        return text.position
     }
 
-    fun stringEnd(from: Int): Int {
-        require(text.getOrNull(from) == '"')
-        var at = from + 1
-        while (at < text.length) {
-            val char = text[at++]
+    fun stringEnd(): Int {
+        require(text.take() == '"')
+        while (true) {
+            val char = text.take()
             require(char >= JSON_CONTROL_BOUNDARY)
-            if (char == '"') return at
-            if (char == '\\') at = escapedEnd(at)
+            if (char == '"') return text.position
+            if (char == '\\') escaped()
         }
-        error("unterminated captured JSON string")
     }
 
-    private fun escapedEnd(from: Int): Int {
-        val escaped = text.getOrNull(from)
-        require(escaped != null)
-        if (escaped != 'u') {
-            require(escaped in "\"\\/bfnrt")
-            return from + 1
-        }
-        val end = from + 1 + JSON_UNICODE_DIGITS
-        require(end <= text.length)
-        for (at in from + 1 until end) require(text[at] in "0123456789abcdefABCDEF")
-        return end
-    }
-
-    private fun scalarEnd(from: Int): Int = when (text.getOrNull(from)) {
-        '"' -> stringEnd(from)
-        't' -> literal(from, "true")
-        'f' -> literal(from, "false")
-        'n' -> literal(from, "null")
-        else -> (CAPTURE_NUMBER.matchAt(text, from)?.range?.last ?: error("invalid captured JSON")) + 1
-    }
-
-    private fun containerEnd(from: Int): Int {
-        val frames = ArrayDeque<Frame>()
-        frames.addLast(frame(text[from]))
-        var at = from + 1
-        while (frames.isNotEmpty()) {
-            at = space(at)
-            val current = frames.last()
-            when (current.phase) {
-                JSON_START -> {
-                    if (text.getOrNull(at) == current.closing) {
-                        frames.removeLast()
-                        at++
-                    } else {
-                        current.phase = firstPhase(current)
-                    }
-                }
-                JSON_KEY -> {
-                    at = space(stringEnd(at))
-                    require(text.getOrNull(at) == ':')
-                    at++
-                    current.phase = JSON_VALUE
-                }
-                JSON_VALUE -> at = valueEnd(frames, current, at)
-                JSON_SEPARATOR -> at = separator(frames, current, at)
-                else -> error("invalid captured JSON parser phase")
-            }
-        }
-        return at
-    }
-
-    private fun valueEnd(frames: ArrayDeque<Frame>, current: Frame, at: Int): Int {
-        current.phase = JSON_SEPARATOR
-        val char = text.getOrNull(at)
-        return if (char == '{' || char == '[') {
-            frames.addLast(frame(char))
-            at + 1
+    private fun escaped() {
+        val escaped = text.take()
+        if (escaped == 'u') {
+            repeat(JSON_UNICODE_DIGITS) { require(text.take() in "0123456789abcdefABCDEF") }
         } else {
-            scalarEnd(at)
+            require(escaped in "\"\\/bfnrt")
         }
     }
 
-    private fun separator(frames: ArrayDeque<Frame>, current: Frame, at: Int): Int {
-        if (text.getOrNull(at) == current.closing) {
+    private fun scalar() {
+        when (text.peek()) {
+            '"' -> stringEnd()
+            't' -> literal("true")
+            'f' -> literal("false")
+            'n' -> literal("null")
+            else -> number()
+        }
+    }
+
+    private fun number() {
+        if (text.peek() == '-') text.take()
+        if (text.peek() == '0') {
+            text.take()
+        } else {
+            require(text.peek()?.let { it in '1'..'9' } == true)
+            digits()
+        }
+        if (text.peek() == '.') {
+            text.take()
+            require(digit())
+            digits()
+        }
+        if (text.peek() == 'e' || text.peek() == 'E') {
+            text.take()
+            if (text.peek() == '+' || text.peek() == '-') text.take()
+            require(digit())
+            digits()
+        }
+    }
+
+    private fun digit(): Boolean = text.peek()?.let { it in '0'..'9' } == true
+
+    private fun digits() {
+        while (digit()) text.take()
+    }
+
+    private fun container() {
+        val frames = ArrayDeque<Frame>()
+        push(frames)
+        while (frames.isNotEmpty()) {
+            space()
+            phase(frames, frames.last())
+        }
+    }
+
+    private fun phase(frames: ArrayDeque<Frame>, current: Frame) {
+        when (current.phase) {
+            JSON_START -> if (text.peek() == current.closing) {
+                text.take()
+                frames.removeLast()
+            } else {
+                current.phase = firstPhase(current)
+            }
+            JSON_KEY -> {
+                stringEnd()
+                space()
+                require(text.take() == ':')
+                current.phase = JSON_VALUE
+            }
+            JSON_VALUE -> {
+                current.phase = JSON_SEPARATOR
+                if (text.peek() == '{' || text.peek() == '[') push(frames) else scalar()
+            }
+            JSON_SEPARATOR -> separator(frames, current)
+            else -> error("invalid captured JSON parser phase")
+        }
+    }
+
+    private fun push(frames: ArrayDeque<Frame>) {
+        if (frames.size >= peakDepth) {
+            peakDepth = frames.size + 1
+            text.nesting(peakDepth)
+        }
+        frames.addLast(Frame(if (text.take() == '{') '}' else ']'))
+    }
+
+    private fun separator(frames: ArrayDeque<Frame>, current: Frame) {
+        if (text.peek() == current.closing) {
+            text.take()
             frames.removeLast()
         } else {
-            require(text.getOrNull(at) == ',')
+            require(text.take() == ',')
             current.phase = firstPhase(current)
         }
-        return at + 1
     }
 
     private fun firstPhase(current: Frame): Int = if (current.closing == '}') JSON_KEY else JSON_VALUE
 
-    private fun frame(opening: Char): Frame = Frame(if (opening == '{') '}' else ']')
-
-    private fun literal(from: Int, value: String): Int {
-        require(text.startsWith(value, from))
-        return from + value.length
+    private fun literal(value: String) {
+        for (char in value) require(text.take() == char)
     }
 }

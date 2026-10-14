@@ -12,7 +12,6 @@ import splice.app.control.SessionPerfFacts
 import splice.app.control.TranscriptLimitEnding
 import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
-import splice.client.transcript.CapturedRequest
 import splice.client.transcript.CapturedTranscripts
 import splice.client.transcript.MovedTranscripts
 import splice.client.transcript.TranscriptHistoryIndex
@@ -48,6 +47,7 @@ import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 
 /** [routes] is null when no session registry is wired, and every mount built over it then registers nothing.
@@ -60,7 +60,7 @@ internal class SessionsWiring(
     log: LogSink,
 ) {
     val sessionHeads = SessionHeadAdapter.adapt(heads)
-    val historyIndex = TranscriptHistoryIndex()
+    val historyIndex = TranscriptHistoryIndex(heap = JvmHeap.budget)
     val historyRoots = listOf(SessionHistoryRoot(null, UserHome.claudeDir())) +
         sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } } +
         // A removed command's sessions stay readable: its config directory is on the retired record.
@@ -112,18 +112,14 @@ internal class SessionsWiring(
     val listed = sessions?.let {
         // the daemon's own state root, never the process default: a daemon on another root keeps its record there
         val dir = config.statePaths.stateDir.resolve(SEEN_SESSIONS_DIR)
-        RecordedSessions(it, SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }))
+        RecordedSessions(it, SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }, heap = JvmHeap.budget))
     }
     private val traceSent = TraceSessionSent(TraceDirPort { ports.traceDir })
     val routes: SessionsRoutes? = listed?.let {
         SessionsRoutes(
             it,
             // a session whose transcript file is gone reads from the request the trace kept for it (gap 423)
-            CapturedTranscripts(MovedTranscripts(TranscriptReader(), moves)) { id ->
-                it.read().firstOrNull { record -> record.sessionId == id }?.head
-                    ?.let { head -> traceSent.newest(head, id) }
-                    ?.let { sent -> CapturedRequest(sent.turnId, sent.body) }
-            },
+            CapturedTranscripts(MovedTranscripts(TranscriptReader(), moves), SessionCaptures(it, traceSent)),
             TranscriptRoots(sessionHeads),
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },

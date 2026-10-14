@@ -14,10 +14,20 @@ internal class CapturedMessageReader {
     private val redaction = TranscriptRedaction()
 
     fun read(body: String, span: CaptureSpan): List<TranscriptMessage> {
-        val message = Json.parseToJsonElement(body.substring(span.start, span.end)) as? JsonObject
-            ?: return emptyList()
+        return decoded(body.substring(span.start, span.end), span.start)
+    }
+
+    fun read(input: CapturedText, span: CaptureSpan): List<TranscriptMessage> {
+        input.seek(span.start)
+        val body = StringBuilder(span.end - span.start)
+        while (input.position < span.end) body.append(input.take())
+        return decoded(body.toString(), span.start)
+    }
+
+    private fun decoded(body: String, start: Int): List<TranscriptMessage> {
+        val message = Json.parseToJsonElement(body) as? JsonObject ?: return emptyList()
         val out = mutableListOf<TranscriptMessage>()
-        add(out, message, span.start.toLong() * PER_RECORD)
+        add(out, message, start.toLong() * PER_RECORD)
         val id = JsonScalars.str(message, "id")?.takeIf { JsonScalars.str(message, "role") == "assistant" }
         return if (id == null) out else out.map { it.copy(messageId = id) }
     }

@@ -48,6 +48,8 @@ internal class TraceChunkRead(
     private var scratchLease: HeapLease? = null
     private var scanned = TRACE_PACK_START_BYTES.toLong()
     private var generation: UUID? = null
+    private val sequential = TraceSequentialEntries(channel, format, file)
+    private val sequentialDecoder = TraceChunkDecoder(TracePackFormat::decode)
 
     init {
         var ready = false
@@ -61,7 +63,22 @@ internal class TraceChunkRead(
         element: JsonElement,
         decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
     ): ByteArray {
-        val stored = stored(reference(element))
+        return decode(stored(reference(element)), decoder)
+    }
+
+    /** A literal stream keeps only its current boundary, even when references reuse earlier entries. */
+    fun decodedSequential(element: JsonElement): ByteArray {
+        val reference = reference(element)
+        bounds(reference.offset, reference.length)
+        if (!sequential.contains(reference.offset)) throw IOException("invalid trace body chunk entry: $file")
+        val header = matching(reference)
+        return decode(
+            StoredChunk(reference.offset, header, TracePackBytes.read(channel, reference.offset, header.stored)),
+            sequentialDecoder,
+        )
+    }
+
+    private fun decode(stored: StoredChunk, decoder: TraceChunkDecoder): ByteArray {
         val bytes = decoder.decode(format, stored.bytes, stored.header.raw)
         if (bytes == null || TracePackBytes.hashOf(bytes) != stored.header.hash) {
             throw IOException("corrupt trace body chunk at byte ${stored.offset}: $file")
@@ -127,12 +144,15 @@ internal class TraceChunkRead(
     }
 
     private fun header(reference: TraceChunkReference): TracePackEntry {
-        val (offset, length, hash) = reference
-        bounds(offset, length)
-        return (if (entry(offset)) format.entry(channel, offset) else null)
-            ?.takeIf { it.raw == length && it.hash == hash }
-            ?: throw IOException("invalid trace body chunk entry at byte $offset: $file")
+        bounds(reference.offset, reference.length)
+        if (!entry(reference.offset)) throw IOException("invalid trace body chunk entry: $file")
+        return matching(reference)
     }
+
+    private fun matching(reference: TraceChunkReference): TracePackEntry =
+        format.entry(channel, reference.offset)
+            ?.takeIf { it.raw == reference.length && it.hash == reference.hash }
+            ?: throw IOException("invalid trace body chunk entry at byte ${reference.offset}: $file")
 
     private fun bounds(offset: Long, length: Int) {
         val first = TRACE_PACK_START_BYTES + format.headerBytes

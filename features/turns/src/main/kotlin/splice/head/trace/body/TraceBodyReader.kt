@@ -18,6 +18,7 @@ import splice.core.util.Cancellables
 import splice.upstream.memory.JvmHeap
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.Reader
 import java.nio.file.Path
 
 // why: growing output bytes, UTF-16 decode buffers and the returned literal coexist during hydration.
@@ -59,6 +60,9 @@ internal class TraceBodyReader(
             return value
         }
     }
+
+    /** No literal cache or boundary collection: one leased, SHA-checked chunk and a persistent UTF-8 decoder. */
+    fun open(parts: JsonArray): Reader = TraceLiteralReader(parts, TraceLiteralChunk(chunks::decodedSequential), heap)
 
     /** Check each bounded chunk without building or caching the multi-megabyte literal. */
     fun validate(

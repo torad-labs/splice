@@ -15,44 +15,45 @@ internal class CapturedPageWindow(private val source: CapturedMessageSpans) {
         if (backwards) before(position, limit) else after(position, limit)
 
     private fun after(position: Int?, limit: Int): CapturedWindow? {
-        val candidates = if (position == null) source.all() else source.all().dropWhile { it.start != position }
-        val iterator = candidates.iterator()
-        if (position != null && !iterator.hasNext()) return null
         val kept = ArrayList<CaptureSpan>()
         var bytes = 0L
         var next: Int? = null
-        while (iterator.hasNext()) {
-            val span = iterator.next()
-            val size = source.bytes(span)
-            if (kept.isNotEmpty() && full(kept.size, bytes + size, limit)) {
-                next = span.start
-                break
+        var boundary = position == null
+        source.scan { span ->
+            if (!boundary) boundary = span.start == position
+            when {
+                !boundary -> true
+                kept.isNotEmpty() && full(kept.size, bytes + span.bytes, limit) -> {
+                    next = span.start
+                    false
+                }
+                else -> {
+                    kept += span
+                    bytes += span.bytes
+                    true
+                }
             }
-            kept += span
-            bytes += size
         }
-        return CapturedWindow(kept, bytes, next, null)
+        return if (boundary) CapturedWindow(kept, bytes, next, null) else null
     }
 
     private fun before(position: Int?, limit: Int): CapturedWindow? {
         val kept = ArrayDeque<CaptureSpan>()
-        val sizes = ArrayDeque<Long>()
         var bytes = 0L
         var earlier: Int? = null
         var boundary = terminal(position)
-        for (span in source.all()) {
+        source.scan { span ->
             if (position != null && span.start >= position) {
                 boundary = span.start == position
-                break
-            }
-            val size = source.bytes(span)
-            kept.addLast(span)
-            sizes.addLast(size)
-            bytes += size
-            while (kept.size > 1 && overBudget(kept.size, bytes, limit)) {
-                kept.removeFirst()
-                bytes -= sizes.removeFirst()
-                earlier = kept.first().start
+                false
+            } else {
+                kept.addLast(span)
+                bytes += span.bytes
+                while (kept.size > 1 && overBudget(kept.size, bytes, limit)) {
+                    bytes -= kept.removeFirst().bytes
+                    earlier = kept.first().start
+                }
+                true
             }
         }
         return if (boundary) CapturedWindow(kept.toList(), bytes, null, earlier) else null

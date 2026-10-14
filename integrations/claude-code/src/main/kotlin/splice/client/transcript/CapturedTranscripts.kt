@@ -13,6 +13,10 @@ public data class CapturedRequest(val turnId: String, val body: String)
 /** The newest captured request of a session, or null when the trace keeps none. */
 public fun interface CapturedSource {
     public fun newest(sessionId: String): CapturedRequest?
+
+    /** Streaming implementations override this; existing full-body providers remain source-compatible. */
+    public fun open(sessionId: String): CapturedRequestReader? =
+        newest(sessionId)?.let(CapturedRequestReader.Inline::of)
 }
 
 public class CapturedTranscripts(
@@ -50,10 +54,9 @@ public class CapturedTranscripts(
     }
 
     private fun readCapture(sessionId: String, cursor: String?, backwards: Boolean, limit: Int): TranscriptLookup? {
-        val sent = Cancellables.runCatchingBestEffort { captured.newest(sessionId) }.getOrNull()
         val unavailable = if (cursor == null) null else TranscriptLookup.Refused(BAD_CURSOR)
-        if (sent == null) return unavailable
-        return Cancellables.runCatchingBestEffort { pages.read(sent, sessionId, cursor, backwards, limit) }
-            .getOrNull() ?: unavailable
+        return Cancellables.runCatchingBestEffort {
+            captured.open(sessionId)?.use { sent -> pages.read(sent, sessionId, cursor, backwards, limit) }
+        }.getOrNull() ?: unavailable
     }
 }

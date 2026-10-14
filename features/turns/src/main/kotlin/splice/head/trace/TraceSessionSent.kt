@@ -4,15 +4,56 @@
 package splice.head.trace
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapReadView
+import splice.core.memory.HeapReservations
+import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.upstream.memory.JvmHeap
+import java.io.Reader
 
 /** One captured request: the turn it was sent on and the body exactly as the client sent it. */
 public data class CapturedSent(val turnId: String, val body: String)
 
+/** Close every opened reader before this source. Each pass verifies the exact stored chunks it consumes. */
+public class CapturedSentReader internal constructor(
+    public val turnId: String,
+    private val source: TraceCaptureRead,
+    private val share: HeapReadView,
+) : AutoCloseable {
+    public val heap: HeapReservations get() = share
+
+    public fun open(): Reader = checkNotNull(source.open()) { "captured trace body is no longer available" }
+
+    override fun close() {
+        Cancellables.withCleanup({ share.close() }) { source.close() }
+    }
+}
+
 /** Reads [dir]'s trace synchronously, off the transcript route's own read; null wherever the trace holds nothing. */
 public class TraceSessionSent(private val dir: TraceDirPort) {
     private val rows = TraceRows()
+
+    /** A repeatable, read-scoped literal source for paging, without materializing any complete packed body. */
+    public fun open(head: String, session: String): CapturedSentReader? {
+        val traceDir = dir() ?: return null
+        val share = JvmHeap.budget.readShare()
+        var sourceReady = false
+        val source = Cancellables.withCleanup({ if (!sourceReady) share.close() }) {
+            TraceCaptureRead(TraceAsk(1, session = session), share).also { sourceReady = true }
+        }
+        var retained = false
+        return Cancellables.withCleanup({
+            if (!retained) Cancellables.withCleanup({ share.close() }) { source.close() }
+        }) {
+            DayFiles(traceDir, head).newestFirst(source)
+            if (!source.available) {
+                null
+            } else {
+                CapturedSentReader(checkNotNull(source.turnId), source, share).also { retained = true }
+            }
+        }
+    }
 
     /** The client body of [session]'s newest captured turn under [head], or null when the trace keeps none. */
     public fun newest(head: String, session: String): CapturedSent? {

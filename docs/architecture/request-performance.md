@@ -9,7 +9,7 @@ This is an execution plan and design contract, not a new enforcement mechanism. 
 ## Current sequence
 
 1. **Completed: source mapping and external research.** Source baseline a37ff412e. The installed baseline bbe7a874c lacks newer trace and account fixes. Source observations identify costs; they do not measure their contribution to live CPU.
-2. **In progress: implement the scopes below.** Both front leads confirmed the assignments: platform owns request/trace work, sessions owns transcripts/project lookup and concurrency, config owns config/account evidence, and usage owns digest reuse and retention instrumentation. Preserve existing edits, finish already-owned trace work, and coordinate shared-file changes through the front leads. Each optimization must remove actual repeated work or unnecessary retention. A candidate that cannot preserve the contract needs a specific source-backed disposition, not a silent omission.
+2. **In progress: finish integrated implementation.** The lead's explicitly authorized workflows implement transferred scopes in the shared checkout. Platform retains its active trace writer/prefix/chunker/index files, capture route and qualified MCP pin. Completed peer digest work is integrated at its committed boundary. Transcript streaming and final composition hooks are still being finished. Each optimization removes repeated work or unnecessary retention while preserving the contracts below. No scope is complete merely because its builder committed.
 3. **Pending: integrate and run the release gate.** One completed candidate, no per-edit suite. Fix gate failures forward without weakening ratchets or changing desired behavior to match obsolete tests.
 4. **Pending: fresh scoped review and representative load check.** Review the implementation delta with the project's fresh reviewer. Reuse the existing desk with stand-in upstreams for one integrated before/after comparison at representative concurrency and history sizes. Measure local CPU, allocated and resident memory, queue/lock waits, latency and complete-record outcomes. Do not use operator tokens, prompts or production load for benchmarking.
 5. **Pending: install the green reviewed candidate and inspect aggregate telemetry.** Back up and verify the running jar as usual. Report measured gains and any unresolved gaps. Completion is not implied by a green test alone or an assigned brief.
@@ -74,3 +74,34 @@ Primary builder: splice-usage. Files: core/perf, features/turns/perf, core/memor
 - Gear acceleration: https://xiunianjun.github.io/2023/12/08/fastcdc/ and https://rickwinfrey.com/assets/papers/cdc/fastcdc-2020-xia.pdf . Check every original eligible boundary and the exact mask/overflow behavior. Published combined speedups are not splice predictions.
 
 No claim of efficient concurrency, complete removal of overhead or a percentage improvement is established by source mapping or these papers. The integrated measurement must establish the actual outcome.
+
+## Implementation receipts and open integration
+
+These are committed source outcomes, not claims of measured improvement.
+
+| Scope | Committed outcome | Revision |
+|---|---|---|
+| Trace search | Per-record decoded-literal retirement, preserving returned String leases and open pack readers | 38cb85c00 |
+| Input identity | Exact-byte unfinished SHA-256 reuse, shared evidence budget, pinned owners and shorter locks | f718e852e, c3b75c383, 35124669f |
+| Request representation | Operation-owned prepared bodies, unchanged-body account handoff reuse and scratch-free exact size counting | 16c08370e, 1e3b38de4 |
+| Configuration | Deeply immutable normalized generations with live freshness, atomic PATCH and paired route provenance | 0f801d993, f834d3dde |
+| Credential evidence | Bounded pre-read-frozen cohorts, publication fencing, cancellation isolation and per-call selection policy | 7c37d2eb3 |
+| Transcript ownership | Streamed history suffix reads, bounded metadata caches, shorter publication locks, fresh project evidence and captured reply-group pages | 4221855af |
+| Message fragments | Privately owned exact-equality reuse across independent dialect message transforms, with process bounds and capacity fallback | 5b51d986e |
+| Charged memory | Unique allocation/owner accounting, fixed-category age coverage, retirement/eviction and separate JVM observations | dff897959 |
+| Uncharged ownership | Zero-admission retained estimates, separated from charged bytes and actual process memory | 6c66d90f8 |
+| Cache and replay attribution | Config/auth/transcript/project observations and categorized code-mode/replay acquisitions | b9efb0c8b, 7c37d2eb3, aec6a4a39, d53291554 |
+| Runtime integration | Ingress/materialization categories, pool-bound asynchronous evidence and file-work outcomes | 08f3a3125 |
+
+Message fragments deliberately leave live reasoning, request-local declaration/deduplication, prompt layering, name-collision state and slot leases outside reusable fragments. See docs/architecture/message-fragments.md. Incoming verification and full outgoing transmission still scale with body size.
+
+Credential cohorts only share observations whose reads begin after all participating callers entered. Sequential observations remain fresh. The injected daemon probe scope is cancelled after head draining at Daemon.kt:292-297; reversible control-plane head stops do not destroy the reusable pool.
+
+No speculative fair scheduler or thread-count increase was made. A runnable/shared bottleneck needs measurement. Existing FIFO outcome and queue/run elapsed counters are being exposed so contention is not inferred from connected sessions.
+
+Open implementation: finish bounded captured-source streaming, bind transcript observations at app composition, finish authenticated aggregate exposure and before-send elapsed brackets, and integrate platform's active trace/prefix/pin/capture work. Retained estimates overlap and must not be summed as process memory. Logical retirement is distinct from collection and from accounting release.
+
+Release checkpoint: one completed candidate through the retained pre-push gate, a fresh independent delta review, then one representative synthetic before/after desk comparison and verified installation. Current partial candidate gates have found and fixed compiler issues. No full green candidate, review, measurement or optimized installation is claimed here.
+
+The existing synthetic desk driver is being adapted in a unique project checkpoint directory. It uses generated session identities and stand-in upstreams, records raw client timings and queried clock-tick frequency, compares full client and upstream body hashes through hydrated traces, and observes file-work terminal outcomes rather than directory-size stability. Baseline bbe7a874c includes fewer correctness fixes, so the comparison measures the combined candidate rather than isolating each optimization. Artifacts and operator-free data stay outside the repository.
+

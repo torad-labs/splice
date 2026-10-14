@@ -456,6 +456,25 @@ function stateOf(r) {
     word: (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : marks) + besideOf(r),
   };
 }
+// THE WATERFALL'S COUNTERS (web-console.md, Turn waterfall): what the bar alone cannot say, each drawn only when it
+// happened, so a clean request draws none (Marcos stopped a walk on walls of figures). Attempts already stands in the
+// figures above, so retries are not said twice. Bytes each way show only on a request that did not answer cleanly,
+// where they say how far it got. async_io_drops is left out: the row carries the head's running total, not this
+// request's (PerfKeys.ASYNC_IO_DROPS), so on one request it would mislead.
+const sizeWord = (b) => (b >= 1e6 ? `${+(b / 1e6).toFixed(b >= 1e7 ? 0 : 1)} MB` : b >= 1e3 ? `${Math.round(b / 1e3)} KB` : `${b} B`);
+function countsOf(row) {
+  const c = [], n = (k) => row[k] ?? 0, tools = n("tools_eager") + n("tools_deferred");
+  if (n("backoff_ms") > 0) c.push(["Waited between sends", secs(n("backoff_ms"))]);
+  if (n("post_send_retries") > 0) c.push(["Sent again after the body went", n0(n("post_send_retries"))]);
+  if (n("refreshes") > 0) c.push(["Sign-ins renewed", n0(n("refreshes"))]);
+  if (n("search_rounds") > 0) c.push(["Tool search rounds", n0(n("search_rounds")), tools ? `${n0(n("tools_deferred"))} of ${n0(tools)} tools deferred` : ""]);
+  if (!isClean(row.outcome) && !STOPPED.has(row.outcome)) {
+    const sent = row.upstream_req_bytes ?? row.req_bytes;
+    if (sent > 0) c.push(["Sent", sizeWord(sent)]);
+    if (row.sse_bytes_in > 0) c.push(["Received", sizeWord(row.sse_bytes_in)]);
+  }
+  return c;
+}
 function mapRow(head, row) {
   const started = row.ts - (row.total ?? 0);
   // THE ONE SILENCE THE ROW RECORDS AS AN INTERVAL: up_gap_max_ms with its own start, which the keys say belong to the
@@ -483,7 +502,7 @@ function mapRow(head, row) {
     ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null, hash: row.messages_hash ?? null,
     model: modelName(state.modelLabel, row.model), modelId: row.model ?? null,
     account: row.account ?? null, acctLabel: row.account_label ?? null, compact: row.compact === true,
-    attempts: row.attempts ?? 0, retries: row.retries ?? 0, sourceAttempts: row.source_attempts ?? null,
+    attempts: row.attempts ?? 0, retries: row.retries ?? 0, counts: countsOf(row), sourceAttempts: row.source_attempts ?? null,
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
     // how long the gate held it behind a full limit, null when it went straight in (a 1 ms pass is not waiting)
     queued: row.admit_held_ms ?? null,

@@ -207,7 +207,9 @@ const REQVIEW = (() => {
       // no token figures at all, not unreported ones and not zeros: Attempts 0 stands alone (fin, Oct 12)
       const shown = r.attempts === 0 ? cells.filter((k) => !tok.includes(k)) : none ? cells.filter((k, i) => !tok.includes(k) || cells.findIndex((c) => tok.includes(c)) === i) : cells;
       if (none) of.in = of.write = of.out = () => cell("Tokens", told(null));
-      return `<div class="figs" style="--n:${shown.length}">${shown.map((k) => of[k]()).join("")}</div>`;
+      // the waterfall's counters, under the figures in the same columns, only those the request has (requests.js countsOf)
+      const counts = r.counts?.length ? `<div class="figs counts" style="--n:${Math.max(shown.length, r.counts.length)}">${r.counts.map(([l, v, s]) => cell(l, v, s)).join("")}</div>` : "";
+      return `<div class="figs" style="--n:${shown.length}">${shown.map((k) => of[k]()).join("")}</div>${counts}`;
     }
     // the open request. h: the head's lamp (cls, glyph), word, name and account, the page's own acts, the trace and its
     // state, the figures with the cost's text, and h.gone: the one line the page says when the records are not here

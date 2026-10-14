@@ -52,6 +52,7 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .fig .v { font: 600 1.4rem/1 var(--font-data); color: var(--text); white-space: nowrap; }
 .fig .v .nr { font: 500 1.1rem/1.27 var(--font-name); color: var(--text-mute); }  /* the provider never sent it */
 .fig .fsub { font: 500 .88rem/1.25 var(--font-data); color: var(--text-mute); }
+.figs.counts { margin-top: 1rem; }  /* the waterfall's counters, a second row in the same columns (requests.js countsOf) */
 
 .tabs { align-self: flex-start; }
 .tabs b { font: 600 .95rem/1 var(--font-data); margin-left: .35rem; }

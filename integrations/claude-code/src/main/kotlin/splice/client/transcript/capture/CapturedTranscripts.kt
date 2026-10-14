@@ -3,6 +3,7 @@
 package splice.client.transcript.capture
 
 import splice.client.transcript.BAD_CURSOR
+import splice.core.memory.HeapCapacityException
 import splice.core.util.Cancellables
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
@@ -58,6 +59,9 @@ public class CapturedTranscripts(
         val unavailable = if (cursor == null) null else TranscriptLookup.Refused(BAD_CURSOR)
         return Cancellables.runCatchingBestEffort {
             captured.open(sessionId)?.use { sent -> pages.read(sent, sessionId, cursor, backwards, limit) }
-        }.getOrNull() ?: unavailable
+        }.getOrElse { failure ->
+            if (failure is HeapCapacityException) throw failure
+            null
+        } ?: unavailable
     }
 }

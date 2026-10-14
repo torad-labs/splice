@@ -30,8 +30,14 @@ public class HeapBudget(
     override fun reserve(bytes: Long, category: HeapCategory, state: HeapOwnerState): HeapLease? =
         ledger.reserve(bytes, category, state)
 
+    override fun observe(estimatedRetainedBytes: Long, category: HeapCategory, state: HeapOwnerState): HeapObservation =
+        ledger.observe(estimatedRetainedBytes, category, state)
+
     /** One process-root snapshot. It contains no owner, payload or content-derived identity. */
     public fun retentionSnapshot(): HeapRetentionSnapshot = ledger.retentionSnapshot()
+
+    /** Separate overlapping owner estimates with no admission charge, including observations from read views. */
+    public fun observationSnapshot(): HeapObservationSnapshot = ledger.observationSnapshot()
 }
 
 /** Saturating byte arithmetic prevents malformed sizes from wrapping into a cheap reservation. */

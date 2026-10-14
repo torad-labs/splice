@@ -53,6 +53,14 @@ internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? 
         HeapLease(this, allocation, state)
     }
 
+    /** Observations do not read or mutate admission availability or closed-view admission state. */
+    fun observe(bytes: Long, category: HeapCategory, state: HeapOwnerState): HeapObservation = synchronized(lock) {
+        require(bytes >= 0L)
+        val allocation = HeapAllocation(bytes, category, state, accounting = HeapAccounting.OBSERVED)
+        retention.acquire(allocation)
+        HeapObservation(HeapLease(this, allocation, state))
+    }
+
     fun share(allocation: HeapAllocation, state: HeapOwnerState): HeapLease = synchronized(lock) {
         check(allocation.owners > 0)
         retention.remove(allocation)
@@ -65,7 +73,7 @@ internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? 
         require(bytes >= 0L)
         check(allocation.owners > 0)
         val growth = bytes - allocation.bytes
-        if (!charge(growth)) return@synchronized false
+        if (allocation.accounting == HeapAccounting.CHARGED && !charge(growth)) return@synchronized false
         retention.remove(allocation)
         if (growth < 0L) retention.shrunk(allocation, -growth)
         allocation.bytes = bytes
@@ -79,7 +87,7 @@ internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? 
         retention.remove(allocation)
         allocation.bytes -= bytes
         retention.record(allocation)
-        val partition = HeapAllocation(bytes, allocation.category, state, allocation.startedAtMs)
+        val partition = HeapAllocation(bytes, allocation.category, state, allocation.startedAtMs, allocation.accounting)
         retention.acquire(partition)
         HeapLease(this, partition, state)
     }
@@ -104,11 +112,13 @@ internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? 
             check(allocation.owners > 0)
             retention.remove(allocation)
             allocation.adjust(state, -1)
-            if (allocation.owners == 0) refund(allocation.bytes)
+            if (allocation.owners == 0 && allocation.accounting == HeapAccounting.CHARGED) refund(allocation.bytes)
             retention.released(allocation, reason)
         }
     }
 
     /** Called on the root so every read-view charge appears exactly once in the process summary. */
     fun retentionSnapshot(): HeapRetentionSnapshot = synchronized(lock) { retention.snapshot(limitBytes) }
+
+    fun observationSnapshot(): HeapObservationSnapshot = synchronized(lock) { retention.observationSnapshot() }
 }

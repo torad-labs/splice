@@ -17,22 +17,21 @@ internal class HeapAges {
     private val started = LongArray(HEAP_AGE_CAPACITY)
     private val free = IntArray(HEAP_AGE_CAPACITY) { it }
     private var freeCount = HEAP_AGE_CAPACITY
-    private val overflows = LongArray(HeapCategory.entries.size)
+    private val overflows = LongArray(HeapAccounting.entries.size * HeapCategory.entries.size)
 
-    fun acquire(category: HeapCategory, startedAtMs: Long): Int {
+    fun acquire(index: Int, startedAtMs: Long): Int {
         if (freeCount == 0) {
-            val index = category.ordinal
             if (overflows[index] < Long.MAX_VALUE) overflows[index]++
             return -1
         }
         val slot = free[--freeCount]
-        categories[slot] = category.ordinal
+        categories[slot] = index
         started[slot] = startedAtMs
         return slot
     }
 
-    fun transfer(slot: Int, category: HeapCategory) {
-        if (slot >= 0) categories[slot] = category.ordinal
+    fun transfer(slot: Int, index: Int) {
+        if (slot >= 0) categories[slot] = index
     }
 
     fun release(slot: Int) {
@@ -43,9 +42,9 @@ internal class HeapAges {
 
     fun snapshot(liveAllocations: LongArray): List<HeapAgeSnapshot> {
         val now = MonoClock.nowMs()
-        val tracked = LongArray(HeapCategory.entries.size)
-        val oldest = LongArray(HeapCategory.entries.size) { -1L }
-        val buckets = LongArray(HeapCategory.entries.size * Bucket.entries.size)
+        val tracked = LongArray(overflows.size)
+        val oldest = LongArray(overflows.size) { -1L }
+        val buckets = LongArray(overflows.size * Bucket.entries.size)
         for (slot in categories.indices) {
             val category = categories[slot]
             if (category < 0) continue
@@ -61,8 +60,7 @@ internal class HeapAges {
             }
             buckets[category * Bucket.entries.size + bucket.ordinal]++
         }
-        return HeapCategory.entries.map { category ->
-            val index = category.ordinal
+        return List(overflows.size) { index ->
             val offset = index * Bucket.entries.size
             HeapAgeSnapshot(
                 tracked[index], liveAllocations[index] - tracked[index], overflows[index],

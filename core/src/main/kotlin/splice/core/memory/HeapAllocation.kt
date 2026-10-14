@@ -9,6 +9,7 @@ internal class HeapAllocation(
     var category: HeapCategory,
     state: HeapOwnerState,
     val startedAtMs: Long = MonoClock.nowMs(),
+    val accounting: HeapAccounting = HeapAccounting.CHARGED,
 ) {
     var owners: Int = 1
         private set

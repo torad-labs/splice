@@ -22,6 +22,24 @@ public object HeapOwners {
         return lease
     }
 
+    /** Bind an uncharged estimate to an escaped owner; the Cleaner retains only its ticket metadata. */
+    public fun <O : Any> observe(
+        owner: O,
+        heap: HeapReservations,
+        estimatedRetainedBytes: Long,
+        category: HeapCategory,
+        state: HeapOwnerState = HeapOwnerState.ACTIVE,
+    ): HeapObservation {
+        val observation = heap.observe(estimatedRetainedBytes, category, state)
+        keep(owner, observation)
+        return observation
+    }
+
+    /** Cleaner registration is not logical completion. Explicit replacement/eviction can close this same ticket. */
+    public fun <O : Any> keep(owner: O, observation: HeapObservation) {
+        val _ = cleaner.register(owner, Runnable { observation.close(HeapRelease.COLLECTED) })
+    }
+
     /** Transfer a shared charge to an escaped container before releasing the previous owner.
      *  Registration does not end logical ownership. The terminal owner explicitly calls ownerFinished().
      */

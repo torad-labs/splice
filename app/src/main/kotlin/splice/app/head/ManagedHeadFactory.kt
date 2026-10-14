@@ -105,11 +105,21 @@ internal class QuotaPollSeams(
     }
 
     /** Account evidence shares the daemon-owned background lifetime, not an individual request. */
+    private val evidenceReaders = java.util.concurrent.ConcurrentLinkedQueue<AccountEvidenceLoads>()
+
     fun evidenceLoads(): AccountEvidenceLoads = AccountEvidenceLoads(
         probeScope,
         ProcessDispatchers().io(),
         heap = splice.upstream.memory.JvmHeap.budget,
-    )
+    ).also(evidenceReaders::add)
+
+    /** Permanent daemon retirement, never a reversible stop of a reusable managed head. */
+    fun closeEvidenceLoads() {
+        while (true) {
+            val reader = evidenceReaders.poll() ?: return
+            reader.close()
+        }
+    }
 
     fun pollingFor(
         ctx: ProviderBuild,
@@ -152,6 +162,9 @@ internal class ManagedHeadFactory(
     private val providerHolds = ProviderHoldFiles(statePaths, log)
     private val traceStores = HeadTraceStores(statePaths)
     private val keptFiles = HeadKeptFiles(statePaths, log)
+
+    /** Pool evidence owns only the daemon lifetime, and is settled after every head has drained. */
+    fun closeEvidenceLoads() = quotaSeams.closeEvidenceLoads()
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {

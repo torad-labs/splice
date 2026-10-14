@@ -297,6 +297,7 @@ public class Daemon(
             // token refresh raised by a turn still streaming inside the 45s drain is cancelled by a
             // job that turn does not own — a foreign CancellationException in a live turn.
             headProbes.stop()
+            managedHeadFactory.closeEvidenceLoads()
             controlPlane.cancelProbes()
             topologyWindows.close()
             stopped = true

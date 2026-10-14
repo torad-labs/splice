@@ -294,7 +294,7 @@ function figures(u, since, scope = "since joining") {
   const spent = u.usd != null && priced > 0 ? [`${dollars(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
   const money = [...spent, ...shares].join(" · ");
   // no requests, no tokens: "0 tokens" beside "0 requests" says nothing more (fin, Oct 12)
-  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"} ${scope}</span>${u.turns ? `<span>${big(u.tokens)} tokens</span>` : ""}${money ? `<span>${money}</span>` : ""}` +
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"} ${scope}</span>${u.turns ? `<span>${u.tokens ? `${big(u.tokens)} tokens` : "Tokens not reported"}</span>` : ""}${money ? `<span>${money}</span>` : ""}` +
     `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
 }
 function totals(tm) {
@@ -333,7 +333,7 @@ function planUseHtml(tm, slotId) {
     // a long window of four weeks or more is the plan's month, as Usage names it
     const named = u.window === "7d" && (plan?.seven_day_window_seconds ?? 0) >= 28 * 86400 ? "month" : word;
     const pct = plan && field && plan[field] != null ? `<span>the plan's ${named} is ${Math.round(plan[field])}% used</span>` : "";
-    return `<p><b>${when}</b><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}, ${big(u.tokens)} tokens on ${esc(plan?.display_name || u.account || "a plan")}</span>${pct}</p>`;
+    return `<p><b>${when}</b><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}, ${u.tokens ? `${big(u.tokens)} tokens` : "tokens not reported"} on ${esc(plan?.display_name || u.account || "a plan")}</span>${pct}</p>`;
   }).join("")}</div>`;
 }
 

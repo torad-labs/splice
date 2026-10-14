@@ -84,7 +84,7 @@ const pending = (what) => !!data.pending?.has(what);
 
 // ---------- the commands: the daemon's heads joined to the topology file and the model roster ----------
 const topology = () => data.topo?.topology ?? {};
-function window_(row) { return row?.context_window ?? 0; }
+function window_(row) { return row?.context_window ?? null; } // null: the provider published none (v0.4.0 section 9: never 0)
 // a command added beside another on one profile (claude-openrouter-side-project) is that profile's provider, though its
 // provider key is the name it was given (marlin p228: its pane read "side-project" where every other names its provider)
 function familyByCmd(cmd) {
@@ -149,7 +149,8 @@ function stateOf(c) {
 const cmdByKey = (k) => commandsOf().find((c) => c.key === k);
 
 // ---------- what a person reads ----------
-function big(n) { // a window: 200K, 256K, 1M, 1.05M
+function big(n) { // a window: 200K, 256K, 1M, 1.05M; none is "", for a draft field left empty
+  if (n == null) return "";
   const k = n / 1024;
   if (Number.isInteger(k) && (k & (k - 1)) === 0) return k >= 1024 ? `${k / 1024}M` : `${k}K`;
   return n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1000)}K`;
@@ -221,7 +222,7 @@ function draftOf(c) {
       return [t, { model: row?.id ?? lost?.id ?? null, win: row ? big(row.window) : "" }];
     })),
     // with no tier declared, one window serves every default tier: the head's own, shown as the default model's
-    headWin: TIERS.some((t) => c.slots[t]) ? "" : big(c.models.find((m) => m.id === c.defaults.opus)?.window ?? 0),
+    headWin: TIERS.some((t) => c.slots[t]) ? "" : big(c.models.find((m) => m.id === c.defaults.opus)?.window ?? null),
     mode: c.prompt.mode, text: c.prompt.text, file: c.prompt.file, per: perOf(c), url: c.url,
     ...fieldsOf(c),
   };
@@ -423,7 +424,7 @@ function paneHtml() {
     const alone = TIERS.every((x) => x === t || !d.tiers[x].model);
     const clear = alone && dm ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "<span>None</span>";
     const items = [`<button role="menuitem" data-act="tier" data-t="${t}" data-v="">${clear}</button>`,
-      ...c.models.map((x) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"><span>${esc(x.label)}</span><span class="mmeta">${big(x.window)}</span></button>`)].join("");
+      ...c.models.map((x) => `<button role="menuitem" data-act="tier" data-t="${t}" data-v="${esc(x.id)}"><span>${esc(x.label)}</span><span class="mmeta">${x.window ? big(x.window) : "Not reported"}</span></button>`)].join("");
     const face = picked ? esc(picked.label) : lost ? esc(lost.label) : asDefault ? `<span>${esc(dm.label)}</span><span class="dflt">Default</span>` : "None";
     const win = picked ? `<input class="field win" id="h-win-${t}" data-t="${t}" value="${esc(sel.win)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">`
       : asDefault ? `<input class="field win" id="h-win-${t}" data-hw="1" value="${esc(d.headWin)}" spellcheck="false" autocomplete="off" aria-label="${tierName(t)} window">` : "";
@@ -930,7 +931,7 @@ function everyHtml() {
       const r = x.rates;
       const price = r ? `<td class="num">${usd(r.input ?? r.i)}</td><td class="num">${usd(r.output ?? r.o)}</td>` : `<td class="num unpriced" colspan="2">No price</td>`;
       const lc = r?.long_context ? `<tr class="tier"><td></td><td class="num">${big(r.long_context.over_input_tokens)}+</td><td class="num">${usd(r.long_context.input)}</td><td class="num">${usd(r.long_context.output)}</td></tr>` : "";
-      return `<tr${x.id === c.pinned ? ' class="main"' : ""}><td class="mname">${esc(x.label)}</td><td class="num">${big(x.window)}</td>${price}</tr>${lc}`;
+      return `<tr${x.id === c.pinned ? ' class="main"' : ""}><td class="mname">${esc(x.label)}</td><td class="num">${x.window ? big(x.window) : `<span class="nr">Not reported</span>`}</td>${price}</tr>${lc}`;
     }).join("") + gone.map((x) => `<tr><td class="mname">${esc(x.label)}</td><td class="unpriced" colspan="3">${notServed(x)}</td></tr>`).join("");
     return `<tbody style="--c:${colorOf(c.family)}"><tr class="grp"><td colspan="4"><span class="chip">${esc(c.cmd)}</span><span class="prov">${esc(c.prov)}</span></td></tr>${body}</tbody>`;
   }).join("");

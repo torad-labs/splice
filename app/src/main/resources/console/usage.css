@@ -179,3 +179,5 @@
 /* an account's cold turns, under its command, the account's name indented in the name face */
 .trow.tacct { border-top: 0; padding: .2rem 0 .8rem; }
 .trow.tacct .an { padding-left: 1rem; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); min-width: 0; overflow-wrap: anywhere; }
+/* a group no request reported tokens for says so where its figure would stand (v0.4.0 section 9: never 0) */
+.brow .share .nr { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }

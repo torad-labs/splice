@@ -200,6 +200,8 @@ function mapRow(head, r) {
 // ---------- how a figure reads ----------
 const tokWord = (n) => (n >= 999.5e6 ? `${+(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} bn` : kTok(n)); // a week of tokens is billions; kTok stops at M
 const tokensOf = (s) => s.in + s.out;
+// no request in the group reported a token count: its figure is missing, never 0 tokens (v0.4.0 section 9)
+const noTokens = (s) => s.requests > 0 && s.noIn >= s.requests && s.noOut >= s.requests;
 // A group whose only unpriced requests failed before any model answered spent $0 on them: the daemon counts those apart
 // (unanswered_requests, TurnPriceGap), so a group of nothing else reads $0, never "No price" (Marlin, p229, Oct 12)
 const spentOf = (s) => s.cost ?? (s.unanswered && !s.plan && !s.uncounted && !s.undeclared && !s.local ? 0 : null);
@@ -297,7 +299,7 @@ function plansHtml() {
     return `<article class="card pcard${held ? " held" : ""}" style="--c:${colorOf(providerOfHead(heads[0]))}"${door}>`
       + `<header><span class="nm">${esc(planName(row))}</span><span class="pv">${esc(PROVIDER_NAME[providerOfHead(heads[0])] ?? "")}${row.plan ? ` · ${esc(row.plan.charAt(0).toUpperCase() + row.plan.slice(1))}` : ""}</span><span class="cmds">${heads.map(chip).join("")}</span></header>`
       + wins + (ranOut ? `<p class="since"><a href="requests.html?win=7d#${encodeURIComponent(ranOut.id)}">Ran out ${dayClock(new Date(ranOut.ts))}</a></p>` : "")
-      + `<footer><span class="thru">${reading() ? `<span class="ctd">Counted by splice</span>${GHOST.bar(16)}` : s.requests ? `<span class="ctd">Counted by splice</span><b>${tokWord(tokensOf(s))}</b> tokens<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
+      + `<footer><span class="thru">${reading() ? `<span class="ctd">Counted by splice</span>${GHOST.bar(16)}` : s.requests ? `<span class="ctd">Counted by splice</span>${noTokens(s) ? "Tokens not reported" : `<b>${tokWord(tokensOf(s))}</b> tokens${s.noIn < s.requests ? `<span class="dot"></span>${Math.round(100 * s.cached / Math.max(1, s.in))}% cached` : ""}`}<span class="dot"></span>${n0(s.requests)} requests` : "No requests"}</span>${lead ? DRILLS() : ""}</footer></article>`;
   });
   return cards.length ? `<section class="plans"><header><h2>Plans</h2></header><div class="grid">${cards.join("")}</div></section>` : "";
 }
@@ -426,7 +428,7 @@ function byHtml() {
     const f = ui.by === "project" ? ui.f : { ...ui.f, [ui.by]: e.k }, extra = ui.by === "project" ? { project: e.k } : {};
     return `<div class="brow" data-act="pick" data-d="${ui.by}" data-v="${esc(e.k)}" style="--c:${colorOf(providerOfHead([...e.heads][0]))}" tabindex="0">`
       + `<div class="who"><span class="nm">${e.label}</span><span class="sb">${e.sub ? `<span class="st">${e.sub}</span>` : ""}${[...e.heads].map(chip).join("")}</span></div>`
-      + `<div class="share"><div class="sbar" style="width:${((tokensOf(e.s) / max) * 100).toFixed(2)}%"></div><span class="num">${tokWord(tokensOf(e.s))}</span></div>`
+      + `<div class="share"><div class="sbar" style="width:${((tokensOf(e.s) / max) * 100).toFixed(2)}%"></div>${noTokens(e.s) ? NOT_REPORTED : `<span class="num">${tokWord(tokensOf(e.s))}</span>`}</div>`
       + `${e.many ? `<span class="num">${n0(e.s.requests)}</span>` : `<a class="num open" href="${reqUrl({ ...extra, order: "price" }, f)}">${n0(e.s.requests)}${OPEN}</a>`}<span class="cost">${costCell(e.s)}</span></div>`;
   };
   const sw = `<div class="switch" role="group" aria-label="Group by">${Object.entries(DIMS).map(([k, v]) => `<button data-act="by" data-v="${k}" aria-pressed="${ui.by === k}">${v.word}</button>`).join("")}</div>`;

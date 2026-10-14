@@ -275,3 +275,5 @@ code.launch { font: 500 1.1rem/1 var(--font-data); color: var(--text); padding: 
 .ctl.colhead .ch-model { min-width: 19rem; }
 /* a session's window figure stands apart from its chip (walk on ea24c63fc) */
 .fig > a.chip { margin-right: .55rem; }
+/* a model whose provider published no window says so, never 0K (v0.4.0 section 9) */
+td.num .nr { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }

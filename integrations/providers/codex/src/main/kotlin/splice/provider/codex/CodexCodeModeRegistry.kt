@@ -21,11 +21,11 @@ import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRecordChanges
-import splice.provider.codex.state.CodeModeRecordList
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
+import splice.provider.codex.state.collection.CodeModeRecordList
 import splice.provider.codex.state.query.CodeModeRecordQueries
 import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeSourceEnds

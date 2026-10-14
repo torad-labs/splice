@@ -1,4 +1,4 @@
-package splice.provider.codex.state
+package splice.provider.codex.state.collection
 
 import splice.provider.codex.CodeModeRecord
 import java.util.IdentityHashMap

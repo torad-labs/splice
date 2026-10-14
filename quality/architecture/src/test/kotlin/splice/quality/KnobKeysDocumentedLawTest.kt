@@ -153,7 +153,10 @@ internal object KnobKeysDocumented {
         if (keys.isEmpty()) return keys to problems
         val code = KotlinText.stripComments(source)
         val explicit = KIND_MENTION.findAll(code).count()
-        val declarations = if (explicit > 0) explicit else DEFAULT_MENTION.findAll(code).count()
+        // Typed defaults declare kinds in entry initializers; Count/Flag casts in enum accessors do not.
+        // Keep the whole-source explicit-kind census so legacy fixtures still reject orphan kind mentions.
+        val defaults = DEFAULT_MENTION.findAll(KotlinText.stripComments(entriesText)).count()
+        val declarations = if (explicit > 0) explicit else defaults
         if (declarations != keys.size) {
             problems += "$label: parsed ${keys.size} enum entries but the file holds $declarations " +
                 "kind declarations — every entry declares exactly one explicit kind or typed default, " +

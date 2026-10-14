@@ -22,6 +22,7 @@ import splice.upstream.transport.PostContext
 import splice.upstream.transport.PostLimits
 import splice.upstream.transport.PostObservers
 import splice.upstream.transport.PostRecovery
+import splice.upstream.transport.PreparedPost
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamPost
 
@@ -64,12 +65,13 @@ internal class SseRoundPost(
     }
 
     suspend fun post(inputs: WsRoundInputs): RoundResult {
+        val prepared = upstream.preparation(inputs.body)
         while (true) {
-            val result = when (val posted = postAccount(inputs)) {
+            val result = when (val posted = postAccount(inputs, prepared)) {
                 is UpstreamPost.Delivered -> RoundResult.Outcome(posted.value)
                 // A refusal the account handoff can answer posts again, on the account it moved to.
                 is UpstreamPost.Refused ->
-                    if (inputs.drive.accountHandoff?.move(inputs.drive) == true) {
+                    if (inputs.drive.accountHandoff?.moveAwaitingEvidence(inputs.drive) == true) {
                         null
                     } else {
                         RoundResult.Ended(posted.failure)
@@ -81,7 +83,7 @@ internal class SseRoundPost(
         }
     }
 
-    private suspend fun postAccount(inputs: WsRoundInputs): UpstreamPost<TurnOutcome> {
+    private suspend fun postAccount(inputs: WsRoundInputs, prepared: PreparedPost): UpstreamPost<TurnOutcome> {
         val drive = inputs.drive
         val selection = drive.account
         val account = selection?.account
@@ -117,7 +119,7 @@ internal class SseRoundPost(
                     drive.upstreamAccepted?.invoke()
                 }
             },
-            inputs.body,
+            prepared,
         ) { resp ->
             provider.observeResponseHeaders(drive.meta, resp)
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node

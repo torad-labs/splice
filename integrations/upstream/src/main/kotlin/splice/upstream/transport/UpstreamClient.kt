@@ -134,15 +134,29 @@ public class UpstreamClient(
         ctx: PostContext,
         round: RoundBody,
         block: UpstreamHandler<T>,
+    ): UpstreamPost<T> = post(ctx, preparation(round), block)
+
+    /** Prepare an unchanged body for account handoffs within one operation, never a client-wide cache.
+     *  A transformed body needs its own preparation. Credentials and eligibility are not retained. */
+    public val preparation: PostPreparation = PostPreparation(this, request)
+
+    /** Reuse the original encoding across account handoffs. Each call still resolves credentials and
+     *  budgets anew; an amendment replaces only this call's body, not the prepared original. */
+    public suspend fun <T> post(
+        ctx: PostContext,
+        prepared: PreparedPost,
+        block: UpstreamHandler<T>,
     ): UpstreamPost<T> {
-        // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
-        var body = request.body(round)
+        var body = prepared.forClient(this, ctx.observers)
         val t0 = clock()
         val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0, pacing.triesFor(maxRetries))
         while (state.attempt < state.maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.result
-                is LoopStep.Amend -> body = request.body(RoundBody.Text(step.bodyJson))
+                is LoopStep.Amend -> {
+                    prepared.amended(body)
+                    body = request.body(RoundBody.Text(step.bodyJson)).also { it.bytes }
+                }
                 LoopStep.Continue -> Unit
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
@@ -152,10 +166,9 @@ public class UpstreamClient(
         )
     }
 
-    /** One retry-loop iteration: the cross-attempt checks ([beforeAttempt]), the credentials and the hold they pick
-     *  ([RetryState.held]), then the request attempt and the retry/backoff decision. Split out of `post()` (same
-     *  as planRetry/statusPlan) so the cross-attempt deadline checks (G4d) don't push `post()` over the complexity
-     *  ceiling. Every ending the loop decides is a returned [LoopStep.Done], never a throw. */
+    /** One retry-loop iteration: the deadline and turn-wait checks, then credentials, the hold they
+     *  pick ([RetryState.held]), and the attempt's retry/backoff decision. Each ending is a returned
+     *  [LoopStep.Done], never a throw. Body preparation remains outside these attempt budgets. */
     private suspend fun <T> runAttempt(
         ctx: PostContext,
         body: RequestBody,
@@ -163,14 +176,6 @@ public class UpstreamClient(
         t0: Long,
         block: UpstreamHandler<T>,
     ): LoopStep<T> {
-        beforeAttempt(ctx, state, t0)?.let { return it }
-        val auth = state.credentials(ctx, credentialCooldowns, cooldown)
-            ?: return LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
-        return state.held(ctx) ?: attempt(ctx, body, state, block, auth)
-    }
-
-    /** The deadline and whole-turn wait checks that run before an attempt is made; null means go ahead. */
-    private fun beforeAttempt(ctx: PostContext, state: RetryState, t0: Long): LoopStep<Nothing>? {
         if (budget.deadlineExceeded(ctx, t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
@@ -178,9 +183,16 @@ public class UpstreamClient(
             )
             return state.gaveUp(ctx, state.rules)
         }
-        if (!budget.turnWaitExhausted(ctx)) return null
-        ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/${state.maxRetries}")
-        return if (state.lastErr != null) state.gaveUp(ctx, state.rules) else LoopStep.TurnWaitExhausted
+        if (budget.turnWaitExhausted(ctx)) {
+            ctx.onRetry("upstream turn wait budget exhausted before attempt ${state.attempt + 1}/${state.maxRetries}")
+            return if (state.lastErr != null) state.gaveUp(ctx, state.rules) else LoopStep.TurnWaitExhausted
+        }
+        val auth = state.credentials(ctx, credentialCooldowns, cooldown)
+        return if (auth == null) {
+            LoopStep.Done(UpstreamPost.Ended(UpstreamAuthMissing()))
+        } else {
+            state.held(ctx) ?: attempt(ctx, body, state, block, auth)
+        }
     }
 
     private suspend fun <T> attempt(

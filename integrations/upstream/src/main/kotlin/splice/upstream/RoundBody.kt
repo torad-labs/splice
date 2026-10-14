@@ -36,9 +36,21 @@ public sealed class RoundBody {
     /** What a runner holds: the request tree it assembled. [element] is readable so an interceptor
      *  that reads the request reads this tree instead of parsing its text back into another one. */
     public class Tree(public val element: JsonElement) : RoundBody() {
-        private val size: Long by lazy { JsonWire.byteSize(element) }
-        override val text: String by lazy { JsonWire.string(element) }
-        override fun bytes(): ByteArray = ExactBytes(size).also { JsonWire.write(element, it) }.filled()
+        private val serialized = lazy { JsonWire.string(element) }
+        private val size: Long by lazy {
+            if (serialized.isInitialized()) JsonWire.byteSize(serialized.value) else JsonWire.byteSize(element)
+        }
+        override val text: String by serialized
+
+        /** Reuse text an interceptor or trace already needed, including its original lone surrogates.
+         *  Otherwise stream the tree directly; neither path retains a mutable byte array. */
+        override fun bytes(): ByteArray =
+            if (serialized.isInitialized()) {
+                TextBytes.encode(serialized.value, size)
+            } else {
+                ExactBytes(size).also { JsonWire.write(element, it) }.filled()
+            }
+
         override fun byteSize(): Long = size
     }
 
@@ -46,11 +58,7 @@ public sealed class RoundBody {
     public class Text(override val text: String) : RoundBody() {
         private val size: Long by lazy { JsonWire.byteSize(text) }
 
-        /** ASCII text is a Latin-1 String, which String.getBytes copies once. Any wider char makes
-         *  getBytes encode through a buffer up to three times the length, so that text is encoded
-         *  straight into the exact array instead. */
-        override fun bytes(): ByteArray =
-            if (size == text.length.toLong()) text.toByteArray(Charsets.UTF_8) else WideText.encode(text, size)
+        override fun bytes(): ByteArray = TextBytes.encode(text, size)
 
         override fun byteSize(): Long = size
     }
@@ -78,10 +86,12 @@ public sealed class RoundBody {
         }
     }
 
-    /** UTF-8 into an exact array. REPLACE writes the encoder's one-byte '?' for a lone surrogate,
-     *  which is what String.getBytes writes and what JsonWire.byteSize counts. */
-    private object WideText {
+    /** ASCII text uses the JDK's single copy. Wider text goes straight into an exact array.
+     *  REPLACE preserves String.getBytes' one-byte '?' for a lone surrogate; decoding those bytes
+     *  back to text would not preserve the original String. */
+    private object TextBytes {
         fun encode(text: String, size: Long): ByteArray {
+            if (size == text.length.toLong()) return text.toByteArray(Charsets.UTF_8)
             val bytes = ByteArray(Math.toIntExact(size))
             val target = ByteBuffer.wrap(bytes)
             val encoder = Charsets.UTF_8.newEncoder()

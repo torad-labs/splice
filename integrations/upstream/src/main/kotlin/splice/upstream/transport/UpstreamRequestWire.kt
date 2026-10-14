@@ -8,6 +8,7 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.upstream.RoundBody
 import splice.upstream.sse.AttemptRecorder
+import java.util.concurrent.atomic.AtomicReference
 
 /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
  *
@@ -22,19 +23,51 @@ import splice.upstream.sse.AttemptRecorder
  *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is
  *  proven only for ChatGPT by its own first-party client — so it is opt-in per provider and
  *  the gzip ban stands untouched. */
-internal data class RequestBody(val body: RoundBody, val zstd: Boolean = false) {
-    /** Encoded ONCE and straight from [body]: a retry resends these bytes and never re-encodes, and a
-     *  round whose text nobody reads never builds one. [RoundBody.bytes] fills one exactly sized array,
-     *  so on a 916,086-byte body this keeps about one body of allocation for a tree or text, where the
-     *  buffered encode it replaced kept 1,853,728 and 2,748,376 (RequestBodyAllocationTest). */
-    val bytes: ByteArray = body.bytes().let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+internal class RequestBody(val body: RoundBody, private val zstd: Boolean = false) {
+    /** Encoded once, before the retry deadline starts. A configured trace reads text first so a tree
+     *  can encode its already-serialized String instead of escaping the same tree again. Untraced
+     *  rounds still stream directly to bytes. Compression retains only the compressed array. */
+    val bytes: ByteArray by lazy {
+        body.bytes().let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+    }
 
-    /** The RC-4 amender's and the trace's view. Materialised on the first read, which on an ordinary
-     *  round never comes: UpstreamClient reads it only inside `ctx.observers.wire?.let` and on a failure. */
+    /** Original text, never decoded from lossy UTF-8 bytes: lone surrogates remain intact for amenders. */
     val json: String get() = body.text
 
     /** The content-encoding the bytes ride under, for the trace; null when they are the JSON itself. */
     val encoding: String? get() = if (zstd) "zstd" else null
+}
+
+/** The client-bound representation factory. It retains no round bodies or account state itself. */
+public class PostPreparation internal constructor(
+    private val owner: UpstreamClient,
+    private val request: UpstreamRequest,
+) {
+    public operator fun invoke(round: RoundBody): PreparedPost = PreparedPost(owner, request, round)
+}
+
+/** One unchanged body's prepared POST representation, scoped to a caller's account-handoff operation.
+ *  It contains no account credentials or headers and belongs to the client whose encoding it uses.
+ *  Callers cannot access its mutable array; transport consumers only read it, as for plain retries. */
+public class PreparedPost internal constructor(
+    private val owner: UpstreamClient,
+    private val request: UpstreamRequest,
+    private val original: RoundBody,
+) {
+    private val cached = AtomicReference<RequestBody?>()
+
+    internal fun forClient(client: UpstreamClient, observers: PostObservers): RequestBody {
+        require(owner === client) { "prepared POST belongs to a different upstream client" }
+        val body = checkNotNull(cached.updateAndGet { it ?: request.body(original) })
+        if (observers.wire != null) body.json
+        return body.also { it.bytes }
+    }
+
+    /** An amendment must not retain the original byte array alongside its replacement. A later
+     *  account still starts from the original body, freshly encoded, rather than amended content. */
+    internal fun amended(body: RequestBody) {
+        cached.compareAndSet(body, null)
+    }
 }
 
 /** The header half of a request: what the credential writes, and the case-insensitive merge

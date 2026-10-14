@@ -84,19 +84,21 @@ public object JsonWire {
         }
     }
 
-    /** Counts the exact streamed bytes without materializing a wire string or byte array. */
+    /** Counts the same escaped spans as the writer, without encoding them into UTF-8 scratch. */
     public fun byteSize(element: JsonElement): Long {
-        val counter = WireByteCount()
-        write(element, counter)
+        val counter = SizeWire()
+        WireTree(counter).tree(element)
         return counter.bytes
     }
 
     /** UTF-8 wire length, including the JVM encoder's single-byte replacement for an unpaired surrogate. */
-    public fun byteSize(text: String): Long {
+    public fun byteSize(text: String): Long = byteSize(text, 0, text.length)
+
+    private fun byteSize(text: String, start: Int, end: Int): Long {
         var bytes = 0L
-        var offset = 0
-        while (offset < text.length) {
-            val point = Character.codePointAt(text, offset)
+        var offset = start
+        while (offset < end) {
+            val point = spanCodePoint(text, offset, end)
             offset += Character.charCount(point)
             bytes += when {
                 point < UTF8_ASCII_CEILING -> 1
@@ -109,16 +111,22 @@ public object JsonWire {
         return bytes
     }
 
-    private class WireByteCount : OutputStream() {
+    /** A pair outside this borrowed span is replaced by the writer, not joined to its next span. */
+    private fun spanCodePoint(text: String, offset: Int, end: Int): Int {
+        val point = Character.codePointAt(text, offset)
+        return if (offset + Character.charCount(point) <= end) point else text[offset].code
+    }
+
+    private class SizeWire : WireText {
         var bytes = 0L
             private set
 
-        override fun write(value: Int) {
-            bytes += 1
+        override fun raw(text: String, start: Int, end: Int) {
+            bytes += byteSize(text, start, end)
         }
 
-        override fun write(buffer: ByteArray, offset: Int, length: Int) {
-            bytes += length
+        override fun ascii(character: Char) {
+            bytes += 1
         }
     }
 

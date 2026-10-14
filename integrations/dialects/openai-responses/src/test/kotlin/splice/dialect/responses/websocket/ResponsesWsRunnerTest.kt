@@ -16,6 +16,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -63,7 +66,7 @@ private fun meta(session: String? = "sess-1", conversation: String? = "splice-ab
 )
 
 /** A scripted socket: every send replies with the frames the script returns for that round. */
-private class Rig(private val script: (Int) -> List<String>) {
+private class Rig(private val webSocketPrefill: Boolean = false, private val script: (Int) -> List<String>) {
     var rounds = 0
     var socket: WebSocket? = null
     var sendFuture: (WebSocket) -> CompletableFuture<WebSocket> = { CompletableFuture.completedFuture(it) }
@@ -84,6 +87,7 @@ private class Rig(private val script: (Int) -> List<String>) {
         session = session,
         wssUrl = "wss://example.invalid/responses",
         handshakeHeaders = { emptyMap() },
+        webSocketPrefill = webSocketPrefill,
         log = LogSink { logs += it },
     )
 
@@ -245,6 +249,46 @@ class ResponsesWsTimingTest {
     private fun assertNoSocketTimes(perf: TurnPerf) {
         assertNull(perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
         assertNull(perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+    }
+}
+
+class ResponsesWsPrefillRunnerTest {
+    @Test
+    fun `warmup is consumed internally and generation chains from only the remaining input`() = runBlocking {
+        val rig = Rig(webSocketPrefill = true) { round ->
+            when (round) {
+                0 -> listOf(
+                    """{"type":"response.created","response":{"id":"resp_warm","status":"in_progress"}}""",
+                    """{"type":"response.completed","response":{"id":"resp_warm","status":"completed",
+                        "output":[]}}""",
+                )
+                else -> listOf(
+                    """{"type":"response.created","response":{"id":"resp_gen","status":"in_progress"}}""",
+                    """{"type":"response.completed","response":{"id":"resp_gen","status":"completed",
+                        "output":[]}}""",
+                )
+            }
+        }
+        val body = """{"model":"gpt-6.1-sol","input":[
+            {"type":"message","role":"developer","content":"guide"},
+            {"type":"additional_tools","tools":[{"name":"exec"}]},
+            {"type":"message","role":"user","content":"task"}
+        ]}"""
+
+        val events = rig.round(body = body)
+
+        assertEquals(2, rig.sent.size)
+        val warm = responsesRequestJson.parseToJsonElement(rig.sent[0]).jsonObject
+        val generated = responsesRequestJson.parseToJsonElement(rig.sent[1]).jsonObject
+        assertEquals(false, warm["generate"]?.jsonPrimitive?.content?.toBoolean())
+        assertEquals(2, warm["input"]!!.jsonArray.size)
+        assertEquals("resp_warm", generated["previous_response_id"]!!.jsonPrimitive.content)
+        assertEquals("task", generated["input"]!!.jsonArray.single().jsonObject["content"]!!.jsonPrimitive.content)
+        assertEquals(
+            listOf("response.created", "response.completed"),
+            events!!.map { it["type"]!!.jsonPrimitive.content },
+        )
+        assertFalse(generated.containsKey("generate"))
     }
 }
 

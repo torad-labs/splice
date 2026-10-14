@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.codemode.host.HostLaunch
+import splice.codemode.wire.CodeModeFrames
 import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep

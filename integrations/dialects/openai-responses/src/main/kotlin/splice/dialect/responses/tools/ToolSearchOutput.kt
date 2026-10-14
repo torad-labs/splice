@@ -23,6 +23,11 @@ import splice.upstream.ToolNameShortener
  */
 internal class ToolSearchOutput(names: ToolNameShortener = ToolNameShortener()) {
 
+    internal object WireFields {
+        const val FIELD_EXECUTION = "execution"
+        const val EXECUTION_CLIENT = "client"
+    }
+
     private val toolWire = ToolWireObjects(names)
 
     fun toolSearchOutputItem(
@@ -35,7 +40,7 @@ internal class ToolSearchOutput(names: ToolNameShortener = ToolNameShortener()) 
         put(FIELD_TYPE, TYPE_TOOL_SEARCH_OUTPUT)
         put(FIELD_CALL_ID, callId)
         put(FIELD_STATUS, STATUS_COMPLETED)
-        put(FIELD_EXECUTION, EXECUTION_CLIENT)
+        put(WireFields.FIELD_EXECUTION, WireFields.EXECUTION_CLIENT)
         put(
             FIELD_TOOLS,
             buildJsonArray {
@@ -48,8 +53,6 @@ internal class ToolSearchOutput(names: ToolNameShortener = ToolNameShortener()) 
 private const val FIELD_TYPE = "type"
 private const val FIELD_CALL_ID = "call_id"
 private const val FIELD_STATUS = "status"
-private const val FIELD_EXECUTION = "execution"
 private const val FIELD_TOOLS = "tools"
 private const val TYPE_TOOL_SEARCH_OUTPUT = "tool_search_output"
 private const val STATUS_COMPLETED = "completed"
-private const val EXECUTION_CLIENT = "client"

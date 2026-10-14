@@ -44,6 +44,7 @@ internal class CodeModeRecordChanges(
         }
         startup.entries.remove(record.id)
         record.progress.output = output
+        record.progress.completionError = null
         record.phase = CodeModePhase.COMPLETED
         record.progress.updatedAt = config.clock.millis()
         cells.remove(record.id)?.close()

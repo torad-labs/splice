@@ -147,10 +147,11 @@ internal class WsRoundDriver(
                 is WsRoundResult.Streamed -> result.outcome
                 is WsRoundResult.NeedsSse -> {
                     ending = result.detail
+                    drive.perf.add(PerfKeys.WS_PRE_OUTPUT_FALLBACKS, 1)
                     // The round's buffered draft belongs to a round the client never saw; SSE answers the turn on
                     // this same sink, so what the websocket round buffered must not be flushed beside that answer.
                     inputs.sink.discard()
-                    bypassToSse(runner, drive, result.detail)
+                    bypassToSse(runner, drive, result.detail, result.reasonCode)
                 }
             }
             reported = true
@@ -195,9 +196,10 @@ internal class WsRoundDriver(
         runner: WsRoundRunner,
         drive: TurnDrive,
         detail: String,
+        reasonCode: String,
     ): TurnOutcome? {
         log(
-            "[${provider.key}] websocket round failed before any client frame " +
+            "[${provider.key}] websocket pre-output fallback code=$reasonCode " +
                 "($detail); serving over SSE\n",
         )
         runner.roundBypassed(drive.meta)

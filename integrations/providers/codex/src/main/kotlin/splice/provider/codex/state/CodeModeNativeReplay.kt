@@ -3,6 +3,7 @@ package splice.provider.codex.state
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.InputDigest
 import splice.core.util.JsonElementInterner.Token
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
@@ -12,7 +13,9 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.provider.codex.state.diagnostics.CodeModeNativeEvidence
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
+import splice.provider.codex.state.diagnostics.CodeModeUnexpectedNativeEvidence
 import splice.provider.codex.state.native.CodeModeCapturedOrder
+import splice.provider.codex.state.replay.CodeModeNativeReplayOffsets
 
 private data class NativeClaim(
     val recordId: String,
@@ -20,6 +23,12 @@ private data class NativeClaim(
     val items: List<JsonElement>,
     val following: Boolean,
     val evidence: CodeModeNativeEvidence? = null,
+)
+
+private data class UnexpectedNative(
+    val segment: ResponsesCodeModeReplay,
+    val allowedCount: Int,
+    val expectedCount: Int,
 )
 
 internal data class CodeModeNativeOrigin(val record: CodeModeRecord, val segment: CodeModeNativeSegment)
@@ -57,11 +66,11 @@ internal class CodeModeNativeReplay(
             }
         }
         val unexpected = unexpectedOffset(records, claims)
-        unexpected?.let { segment ->
-            records.filter { (index.boundary(it) ?: 0) > segment.logicalOffset }.forEach { record ->
+        unexpected?.let { issue ->
+            records.filter { (index.boundary(it) ?: 0) > issue.segment.logicalOffset }.forEach { record ->
                 val parentFailure = generateSequence(record.nativeParent) { it.nativeParent }
                     .firstNotNullOfOrNull { bad[it.id] }
-                bad.putIfAbsent(record.id, parentFailure ?: unexpectedFailure(record, segment, claims))
+                bad.putIfAbsent(record.id, parentFailure ?: unexpectedFailure(record, issue, claims))
             }
         }
         val nodes = ancestors(records)
@@ -77,9 +86,10 @@ internal class CodeModeNativeReplay(
 
     private fun unexpectedFailure(
         record: CodeModeRecord,
-        segment: ResponsesCodeModeReplay,
+        issue: UnexpectedNative,
         claims: List<NativeClaim>,
     ): CodeModeNativeRejection {
+        val segment = issue.segment
         val known = segment.items.map(payloads::token).toSet()
         val matched = claims.filter { claim -> claim.items.any { payloads.token(it) in known } }
         val witness = matched.map(NativeClaim::following).distinct().singleOrNull()
@@ -93,23 +103,50 @@ internal class CodeModeNativeReplay(
         val evidence = matched.map(NativeClaim::evidence).distinct().singleOrNull()
             ?.copy(expectedOccurrences = expected, actualOccurrences = actual)
         // A restored parent may be missing; surviving claims are not a complete history denominator.
-        return CodeModeNativeRejection(witness, CodeModeNativeBranch.UNEXPECTED, evidence)
+        val item = segment.items.single()
+        val type = when (codec.string(item as? JsonObject, "type")) {
+            "tool_search_call" -> "tool_search_call"
+            "tool_search_output" -> "tool_search_output"
+            "reasoning" -> "reasoning"
+            "message" -> "message"
+            else -> "other"
+        }
+        return CodeModeNativeRejection(
+            witness,
+            CodeModeNativeBranch.UNEXPECTED,
+            evidence,
+            CodeModeUnexpectedNativeEvidence(
+                type = type,
+                logicalOffset = segment.logicalOffset,
+                payloadDigest = InputDigest.hex(item),
+                ownerBoundary = index.boundary(record),
+                allowedCount = issue.allowedCount,
+                expectedCount = issue.expectedCount,
+            ),
+        )
     }
 
-    private fun unexpectedOffset(records: List<CodeModeRecord>, claims: List<NativeClaim>): ResponsesCodeModeReplay? {
-        val allowed = mutableMapOf<Int, MutableSet<Token>>()
-        claims.forEach { allowed.getOrPut(it.offset) { mutableSetOf() } += it.items.map(payloads::token) }
+    private fun unexpectedOffset(records: List<CodeModeRecord>, claims: List<NativeClaim>): UnexpectedNative? {
+        val allowed = mutableMapOf<Int, MutableList<JsonElement>>()
+        claims.forEach { allowed.getOrPut(it.offset) { mutableListOf() } += it.items }
         records.forEach { record ->
             val boundary = index.boundary(record)
             if (boundary != null) {
                 record.carry.replay.forEach {
-                    allowed.getOrPut(boundary + it.logicalOffset) { mutableSetOf() } += it.items.map(payloads::token)
+                    allowed.getOrPut(boundary + it.logicalOffset) { mutableListOf() } += it.items
                 }
             }
         }
         return input.nativeSegments.firstNotNullOfOrNull { segment ->
-            segment.items.firstOrNull { payloads.token(it) !in allowed[segment.logicalOffset].orEmpty() }
-                ?.let { segment.copy(items = listOf(it)) }
+            val expected = allowed[segment.logicalOffset].orEmpty()
+            val expectedTokens = expected.map(payloads::token).toSet()
+            segment.items.firstOrNull { payloads.token(it) !in expectedTokens }?.let { item ->
+                UnexpectedNative(
+                    segment = segment.copy(items = listOf(item)),
+                    allowedCount = expectedTokens.size,
+                    expectedCount = expected.size,
+                )
+            }
         }
     }
 
@@ -205,7 +242,10 @@ internal class CodeModeNativeReplay(
             remaining == 0
         }
         kept.takeIf(List<JsonElement>::isNotEmpty)?.let {
-            segment.copy(logicalOffset = offsets[segment.logicalOffset], items = it)
+            segment.copy(
+                logicalOffset = CodeModeNativeReplayOffsets.callbackOffset(codec, input, segment, offsets),
+                items = it,
+            )
         }
     }
 

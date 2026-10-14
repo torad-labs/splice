@@ -11,7 +11,8 @@ import java.nio.file.Path
 
 internal object CodeModeJournalEncoding {
     fun same(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
-        left == right && left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
+        left == right && left?.completionError == right?.completionError &&
+            left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
             left?.conversationId == right?.conversationId &&
             left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors &&
             left?.sourceState == right?.sourceState

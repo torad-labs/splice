@@ -2,6 +2,7 @@
 package splice.codemode
 
 import kotlinx.serialization.json.JsonObject
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCall
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream

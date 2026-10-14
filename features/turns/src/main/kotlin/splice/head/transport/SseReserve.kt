@@ -19,6 +19,8 @@ private val oneLine = Regex("\\s+")
 internal class SseReserve {
     var detail: String? = null
         private set
+    var reasonCode: String? = null
+        private set
 
     /** A failure terminal before any client frame sends the round to SSE; true when [evt] did. A policy refusal is
      *  not re-served: over SSE the identical context met the identical refusal, so the round's translator ends the
@@ -32,6 +34,7 @@ internal class SseReserve {
                 .filter { it.isNotEmpty() }
                 .joinToString(" "),
         )
+        reasonCode = "upstream_failure_terminal"
         return true
     }
 
@@ -40,6 +43,7 @@ internal class SseReserve {
     fun tear(torn: Throwable, inputs: WsRoundInputs): Boolean {
         val words = PreContentTear.words(torn, inputs) ?: return false
         detail = oneLined(words)
+        reasonCode = "pre_output_transport_tear"
         return true
     }
 

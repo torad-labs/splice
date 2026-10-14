@@ -92,6 +92,7 @@ internal object CodeModeNativeCopies {
         record: CodeModeRecordSnapshot,
         segments: List<CodeModeNativeSegment>,
     ): CodeModeRecordSnapshot = record.copy(nativeSegments = segments).also {
+        it.completionError = record.completionError
         it.issued = record.issued
         it.sessionId = record.sessionId
         it.conversationId = record.conversationId

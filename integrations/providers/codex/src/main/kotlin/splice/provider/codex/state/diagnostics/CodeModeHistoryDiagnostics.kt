@@ -32,6 +32,7 @@ internal data class CodeModeNativeRejection(
     val following: Boolean?,
     val branch: CodeModeNativeBranch,
     val evidence: CodeModeNativeEvidence? = null,
+    val unexpected: CodeModeUnexpectedNativeEvidence? = null,
 ) {
     fun logFields(): String {
         val witness = when (following) {
@@ -39,8 +40,25 @@ internal data class CodeModeNativeRejection(
             false -> "absent"
             null -> "unknown"
         }
-        return "native_following=$witness native_branch=${branch.wire}"
+        return "native_following=$witness native_branch=${branch.wire}" +
+            unexpected?.let { " ${it.logFields()}" }.orEmpty()
     }
+}
+
+/** Safe, request-local summary of an unexpected native item. It never retains or logs item content. */
+internal data class CodeModeUnexpectedNativeEvidence(
+    val type: String,
+    val logicalOffset: Int,
+    val payloadDigest: String,
+    val ownerBoundary: Int?,
+    val allowedCount: Int,
+    val expectedCount: Int,
+) {
+    fun logFields(): String =
+        "native_unexpected_type=$type native_unexpected_offset=$logicalOffset " +
+            "native_unexpected_payload_digest=$payloadDigest " +
+            "native_owner_boundary=${ownerBoundary ?: "none"} " +
+            "native_allowed_count=$allowedCount native_expected_count=$expectedCount"
 }
 
 internal data class CodeModeNativePosition(

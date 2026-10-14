@@ -41,6 +41,12 @@ class ResponsesQuirksOverlayTest {
         ConfigService(StatePaths(baseOverride = tmp), envReader = { null }).getConfig(),
     ).reasoning.summaryDelivery
 
+    private fun prefill(quirks: String, tmp: Path): Boolean = QuirksOverlay().responsesQuirks(
+        TopologyLoader.parse(toml(quirks)).providers.getValue("codex"),
+        CodexQuirks().defaultQuirks(),
+        ConfigService(StatePaths(baseOverride = tmp), envReader = { null }).getConfig(),
+    ).backend.webSocketPrefill
+
     @Test
     fun `absent keeps the codex default, off omits it, and the named mode is sent`(@TempDir tmp: Path) {
         assertEquals("sequential_cutoff", delivery("", tmp))
@@ -53,5 +59,11 @@ class ResponsesQuirksOverlayTest {
     @Test
     fun `an unknown summary_delivery fails at load`(@TempDir tmp: Path) {
         assertThrows(Exception::class.java) { delivery("""quirks = { summary_delivery = "sequential" }""", tmp) }
+    }
+
+    @Test
+    fun `codex profile defaults websocket prefill on and topology can disable it`(@TempDir tmp: Path) {
+        assertEquals(true, prefill("", tmp))
+        assertEquals(false, prefill("""quirks = { websocket_prefill = false }""", tmp))
     }
 }

@@ -200,7 +200,7 @@ class WsTearReserveTest(@param:TempDir private val tmp: Path) {
 
     @Test
     fun `a tear before any client frame is re-served over SSE, named by the close beneath it`() = runTest {
-        assertEquals(WsRoundResult.NeedsSse(CLOSE), driven(inputs(this)))
+        assertEquals(WsRoundResult.NeedsSse(CLOSE, "pre_output_transport_tear"), driven(inputs(this)))
     }
 
     @Test

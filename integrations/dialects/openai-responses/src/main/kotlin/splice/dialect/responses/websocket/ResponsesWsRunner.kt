@@ -48,11 +48,21 @@ internal class ResponsesWsRunner(
     private val session: ResponsesWsSession,
     private val wssUrl: String,
     private val handshakeHeaders: HandshakeHeaders,
+    private val webSocketPrefill: Boolean = false,
     private val log: LogSink = LogSink {},
 ) : WsRoundRunner {
 
     private val identity = ResponsesWsIdentity(session, log)
     private val requestMetadata = ResponsesWsRequestMetadata()
+    private val prefiller = ResponsesWsPrefiller(
+        webSocketPrefill,
+        transport,
+        session,
+        identity,
+        requestMetadata,
+        wssUrl,
+        log,
+    )
 
     override suspend fun attempt(
         bodyJson: String,
@@ -73,9 +83,18 @@ internal class ResponsesWsRunner(
         val request = identity.parseRequest(bodyJson)
         val chain = identity.chainKey(meta)
         if (request == null || chain == null) return null
-        val timing = perf?.let(::WsAttemptTiming)
         val headers = handshakeHeaders(creds) + turnHeaders + handshakeOnlyHeaders(turnHeaders)
         val key = identity.connectionKey(chain, meta, headers)
+        val seed = ResponsesWsPrefiller.PrefillSeed(request, chain, key, headers, meta, perf)
+        val prefillContext = prefiller.context(seed)
+        return if (prefillContext == null || prefiller.run(prefillContext)) serve(seed, turnHeaders) else null
+    }
+
+    private suspend fun serve(
+        seed: ResponsesWsPrefiller.PrefillSeed,
+        turnHeaders: Map<String, String>,
+    ): WsRound? {
+        val timing = seed.perf?.let(::WsAttemptTiming)
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
         // determines what the next turn's prefix must be, and only a clean terminal may commit it.
         var pending: ResponsesWsIdentity.PendingCommit? = null
@@ -90,8 +109,8 @@ internal class ResponsesWsRunner(
         // The connection's vital signs, for the line a failed or incomplete round leaves (observeEnding).
         var pulse: WsPulse? = null
         val flow = transport.round(
-            key = key,
-            headers = headers,
+            key = seed.key,
+            headers = seed.headers,
             wssUrl = wssUrl,
             isTerminal = { JsonScalars.str(it[FIELD_TYPE]) in ResponsesRoundEnd.ALL },
         ) { conn ->
@@ -106,11 +125,12 @@ internal class ResponsesWsRunner(
             // window where a concurrent clear bumped the epoch after the frame was built on
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
             // state the clear existed to bar.
-            val metadata = requestMetadata.forTurn(request, turnHeaders, meta.upstreamHeaders.snapshot())
-            val built = session.frameAndEpoch(chain, request, conn.generation, metadata)
-            pending = ResponsesWsIdentity.PendingCommit(request, conn.generation, built.epoch)
-            if (built.frame.chained) log("[ws] ${identity.logKey(key)} chained onto the previous response\n")
-            built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(key)} full send: $it\n") }
+            val metadata = requestMetadata.forTurn(seed.request, turnHeaders, seed.meta.upstreamHeaders.snapshot())
+            val built = session.frameAndEpoch(seed.chain, seed.request, conn.generation, metadata)
+            pending = ResponsesWsIdentity.PendingCommit(seed.request, conn.generation, built.epoch)
+            if (built.frame.chained) log("[ws] ${identity.logKey(seed.key)} chained onto the previous response\n")
+            built.frame.fullSendCode?.let { log("[ws] ${identity.logKey(seed.key)} full send code=$it\n") }
+            built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(seed.key)} full send: $it\n") }
             built.frame.json
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
@@ -122,9 +142,9 @@ internal class ResponsesWsRunner(
         // knows which events are terminal AND owns the chaining state they commit.
         return WsRound(
             events = flow.onEach { event ->
-                requestMetadata.captureEvent(meta, event)
-                identity.observeTerminal(chain, pending, event)
-                pulse?.let { identity.observeEnding(key, event, it) }
+                requestMetadata.captureEvent(seed.meta, event)
+                identity.observeTerminal(seed.chain, pending, event)
+                pulse?.let { identity.observeEnding(seed.key, event, it) }
             },
             abort = abort,
             pathPulse = pathPulse,

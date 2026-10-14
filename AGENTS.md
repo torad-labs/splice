@@ -15,8 +15,10 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
    blocks back into reasoning input items. But it ships **OFF**: measured, replay
    makes the model REUSE its prior thinking instead of re-deriving fresh, which
    suppressed the detailed-reasoning "wall" — output fell ~4× and the reasoning
-   went thin. So the default IS the pure distillation loop — **mirror on (L2),
-   replay off** — and `prompt_cache_key` (keyed on the first user message) warms
+   went thin. **Replay ships off.** Current launch defaults also keep
+   `mirror_reasoning` off under the standing project ruling in `CLAUDE.md`;
+   L2 still pins the mirror's implementation and wire behavior when enabled.
+   `prompt_cache_key` (keyed on the first user message) warms
    the INPUT cache independently of replay (66% hit, up to 99% on continuation,
    with replay off). Opt into replay for extra cache warmth over reasoning depth
    with `CLAUDEX_REPLAY_REASONING=1`.
@@ -117,7 +119,9 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 
 The control plane is centralized. `spliced` (`src/control-server.mjs`, loopback
 `:3096`, `controlPort`) hosts a bearer-guarded `/api/*` that AGGREGATES every head
-(same mgmt-key). It serves no console page: the console UI was removed on Oct 7, 2026. It reads file-based truth
+(same mgmt-key). The console returned on Oct 10, 2026 and is served only by this
+central control plane through `ConsoleMount`; heads still have no `/dashboard`.
+Console assets use the same authenticated `/api/*` surface. It reads file-based truth
 (auth, usage, compact) directly so a DOWN head is still visible, and talks to
 RUNNING heads over `/mgmt` for live status + config.
 

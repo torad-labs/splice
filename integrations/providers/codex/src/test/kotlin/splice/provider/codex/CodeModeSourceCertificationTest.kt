@@ -169,6 +169,27 @@ private class CertificationRuntime : CodeModeRuntime {
 
 class CodeModeSourceCursorCertificationTest {
     @Test
+    fun `available reads wait for terminal certification after item completion`() = runBlocking {
+        val committed = mutableListOf<String>()
+        val source = CodeModeSourceBuffer(CodeModeSourceCommit { committed += it })
+        source.publish("synthetic prefix")
+        val cursor = source.view()
+
+        source.seal()
+
+        assertEquals(null, cursor.readAvailable())
+        assertTrue(committed.isEmpty())
+
+        source.complete("synthetic prefix and certified suffix")
+
+        assertEquals(
+            CodeModeSourcePart.Complete("synthetic prefix and certified suffix"),
+            cursor.readAvailable(),
+        )
+        assertEquals(listOf("synthetic prefix and certified suffix"), committed)
+    }
+
+    @Test
     fun `startup rejection disposes a concurrently returned cell`() {
         val source = CodeModeSourceBuffer()
         var closed = 0

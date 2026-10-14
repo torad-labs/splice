@@ -15,7 +15,6 @@ import org.graalvm.polyglot.io.IOAccess
 import org.graalvm.polyglot.proxy.ProxyExecutable
 import splice.codemode.CodeModeCellLauncher
 import splice.codemode.CodeModeEvalProjection
-import splice.codemode.CodeModeFrames
 import splice.codemode.CodeModeHeap
 import splice.codemode.CodeModeScopeSeal
 import splice.codemode.CodeModeStatementParser
@@ -26,6 +25,7 @@ import splice.codemode.StreamingWorkerSession
 import splice.codemode.WorkerBridge
 import splice.codemode.WorkerReply
 import splice.codemode.WorkerStart
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 
@@ -92,11 +92,13 @@ internal class WorkerSession(
     }
 
     fun advance(results: List<CodeModeResult>): WorkerReply {
-        CodeModeFrames.validateResultSet(pendingCalls, results)
+        CodeModeFrames.validatePartialResultSet(pendingCalls, results)
         val bridge = checkNotNull(bridge)
-        bridge.clearSent(pendingCalls.size)
+        val received = results.map(CodeModeResult::id).toSet()
+        pendingCalls = pendingCalls.filterNot { it.id in received }
         results.forEach { result ->
             checkNotNull(settle).execute(result.id, result.output, result.isError)
+            bridge.settleCall(result.id)
         }
         streaming?.drain()
         return reply()
@@ -120,7 +122,6 @@ internal class WorkerSession(
     }
 
     fun input(frame: JsonObject): WorkerReply {
-        require(pendingCalls.isEmpty()) { "Source input cannot replace pending tool results" }
         StreamingCodeModeWire.append(frame, checkNotNull(streaming))
         return reply()
     }
@@ -131,16 +132,21 @@ internal class WorkerSession(
 
     private fun reply(): WorkerReply {
         val bridge = checkNotNull(bridge)
-        val calls = bridge.calls()
-        pendingCalls = calls
-        if (calls.isNotEmpty()) return WorkerReply(calls = calls, output = null, error = null)
-        bridge.completion()?.let { completion ->
-            return WorkerReply(calls = null, output = completion.output, error = completion.error)
-        }
-        return if (streaming != null) {
-            WorkerReply(null, null, null, waitingForInput = true)
-        } else {
-            WorkerReply(calls = null, output = "", error = IDLE_FAILURE)
+        val completion = bridge.completion()
+        val calls = bridge.takeCalls(completion?.output, completion?.error)
+        pendingCalls = pendingCalls + calls
+        return when {
+            calls.isNotEmpty() -> WorkerReply(calls = calls, output = completion?.output, error = completion?.error)
+            completion != null && pendingCalls.isEmpty() ->
+                WorkerReply(calls = null, output = completion.output, error = completion.error)
+            pendingCalls.isNotEmpty() -> WorkerReply(
+                calls = null,
+                output = completion?.output,
+                error = completion?.error,
+                waitingForResults = true,
+            )
+            streaming != null -> WorkerReply(null, null, null, waitingForInput = true)
+            else -> WorkerReply(calls = null, output = "", error = IDLE_FAILURE)
         }
     }
 }

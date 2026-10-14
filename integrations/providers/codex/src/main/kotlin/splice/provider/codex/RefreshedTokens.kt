@@ -58,6 +58,9 @@ public class CodexQuirks {
             // client_metadata identifies splice on lite turns (session_id, thread_id). Byte-identical
             // to the old dialect default; only this profile carries it.
             sendClientMetadata = true,
+            // Native Codex sends a no-generation prefill on its code-mode WebSocket path. The
+            // Responses runner additionally gates this on code-mode request shape; WS stays opt-in.
+            webSocketPrefill = true,
         ),
     )
 }

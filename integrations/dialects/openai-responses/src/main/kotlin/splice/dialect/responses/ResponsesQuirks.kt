@@ -23,6 +23,9 @@ public data class ResponsesBackendQuirks(
      *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
      *  until an operator opts in, and with it off no WebSocket is ever constructed. */
     val webSocket: Boolean = false,
+    /** Native Codex's no-generation prefix warmup. Independent of [webSocket]: false providers
+     *  never inherit this behavior merely by using the Responses dialect. */
+    val webSocketPrefill: Boolean = false,
 )
 
 /** The responses-lite wire shape: which models speak it and the measured bytes that ride its turns. */
@@ -194,6 +197,9 @@ public data class ResponsesQuirks(
      *  supportsSummary became an unreachable dead lever. */
     public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
         copy(backend = backend.copy(webSocket = webSocket ?: backend.webSocket))
+
+    public fun withWebSocketPrefillToml(webSocketPrefill: Boolean?): ResponsesQuirks =
+        copy(backend = backend.copy(webSocketPrefill = webSocketPrefill ?: backend.webSocketPrefill))
 
     /** The delivery mode sent as stream_options.reasoning_summary_delivery; null omits the field.
      *  The TOML reading (absent keeps the provider default, `off` omits) is the app overlay's, because

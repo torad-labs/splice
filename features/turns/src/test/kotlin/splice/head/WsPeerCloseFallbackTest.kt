@@ -208,8 +208,9 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
         assertEquals(1, run.runner.bypassed.get(), "the round is reported bypassed, so its chain is dropped")
         assertEquals(1, run.httpPosts, "the next attempt went over HTTP, once")
         assertFalse(run.logs.any { "re-anchor" in it }, "no re-anchor: ${run.logs.filter { "re-anchor" in it }}")
-        val bypass = run.logs.single { "websocket round failed before any client frame" in it }
-        assertTrue("status=1011" in bypass, "the bypass line names the close: $bypass")
+        val bypass = run.logs.single { "websocket pre-output fallback" in it }
+        assertTrue("code=pre_output_transport_tear" in bypass, "the bypass line names the fallback reason: $bypass")
+        assertTrue("status=1011" in bypass, "the retained detail names the peer close: $bypass")
         assertTrue("codex.rate_limits, codex.response.metadata" in bypass, "and what came before it: $bypass")
         val close = run.logs.single { it.startsWith(CLOSE_LINE) }
         assertTrue("codex.rate_limits, codex.response.metadata" in close, "the close line lists them: $close")

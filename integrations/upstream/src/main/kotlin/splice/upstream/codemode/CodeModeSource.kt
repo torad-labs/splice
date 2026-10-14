@@ -6,6 +6,9 @@ import java.io.IOException
 /** A live model item. Reading waits for the next source delta without owning a client connection. */
 public fun interface CodeModeSource {
     public suspend fun read(): CodeModeSourcePart
+
+    /** Returns a currently buffered source part, or null without waiting for future model output. */
+    public suspend fun readAvailable(): CodeModeSourcePart? = null
 }
 
 /**

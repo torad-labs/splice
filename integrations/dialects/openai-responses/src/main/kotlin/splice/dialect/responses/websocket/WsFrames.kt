@@ -7,7 +7,13 @@ package splice.dialect.responses.websocket
  *  count that must move when chaining engages, and must NOT when it bails. [fullSendReason] names
  *  a bail worth a log line (today: the server holds a tool call this turn never answers); null for
  *  the silent full sends (no chain yet, a new generation, a rewritten prefix). */
-internal data class WsFrame(val json: String, val chained: Boolean, val fullSendReason: String? = null)
+internal data class WsFrame(
+    val json: String,
+    val chained: Boolean,
+    val fullSendReason: String? = null,
+    /** Stable, content-free reason for a full send. Null only for an incremental frame. */
+    val fullSendCode: String? = null,
+)
 
 /** The frame AND the epoch it was built under, captured under ONE lock acquisition (F7). Two
  *  acquisitions — frameFor then epochOf — left a window where a concurrent [ResponsesWsSession.cleared]

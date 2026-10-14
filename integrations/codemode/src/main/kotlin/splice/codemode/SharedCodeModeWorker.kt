@@ -7,6 +7,7 @@ import org.graalvm.polyglot.Engine
 import org.graalvm.polyglot.PolyglotException
 import splice.codemode.engine.WorkerSession
 import splice.codemode.host.HostWorkerControls
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import java.io.DataInputStream
@@ -162,13 +163,17 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
 
     /** The reply to [frame]. One whose source parse overflowed still answers, inside the frame that retires it. */
     private fun answer(frame: JsonObject): JsonObject {
+        if (CodeModeFields.requiredString(frame, "type") == "results_part") {
+            return step(checkNotNull(session).advance(CodeModeFrames.parseResultsPart(frame)))
+        }
         val reply = step(execute(frame))
         return session?.overflow?.let { CodeModeFatalFrame.died(it, reply) } ?: reply
     }
 
     private fun step(reply: WorkerReply): JsonObject = when {
         reply.waitingForInput -> StreamingCodeModeWire.waitingFrame()
-        reply.calls != null -> CodeModeWire.callsFrame(reply.calls)
+        reply.waitingForResults -> CodeModeWire.waitingResultsFrame(reply.output, reply.error)
+        reply.calls != null -> CodeModeWire.callsFrame(reply.calls, reply.output, reply.error)
         else -> CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
     }
 

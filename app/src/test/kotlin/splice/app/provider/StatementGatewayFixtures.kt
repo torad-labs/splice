@@ -149,6 +149,7 @@ internal class StatementGatewayRuntime(
                 return cell.advance(results).also { step ->
                     when (step) {
                         is CodeModeStep.Calls -> calls.addAll(step.calls)
+                        is CodeModeStep.WaitingForResults -> Unit
                         is CodeModeStep.Completed -> completed.complete(step)
                     }
                 }

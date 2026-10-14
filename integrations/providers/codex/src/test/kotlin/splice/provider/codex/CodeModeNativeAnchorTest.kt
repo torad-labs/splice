@@ -30,6 +30,55 @@ internal class CodeModeNativeAnchorTest {
     private val native = item("""{"type":"reasoning","id":"reason-between","encrypted_content":"synthetic"}""")
     private val preface = item("""{"role":"assistant","phase":"commentary","content":"Synthetic preface"}""")
 
+    private fun record(items: List<JsonElement>, completed: List<CodeModeRecord>, id: String): CodeModeRecord {
+        val baseline = checkNotNull(history.anchoredBoundary(body(items), completed))
+        return CodeModeRecord(
+            id = id,
+            key = "synthetic-conversation",
+            phase = CodeModePhase.ACTIVE,
+            origin = CodeModeOrigin(
+                outer = outer(id),
+                outerCallId = id,
+                source = "return 'synthetic';",
+                baseline = CodeModeBaseline(
+                    inputCount = baseline.fullCount,
+                    inputDigest = baseline.fullDigest,
+                    logicalCount = baseline.logicalCount,
+                    logicalDigest = baseline.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(baseline.nativeSegments, emptyList(), emptyList()),
+        ).also {
+            it.replayAnchors = baseline.replayAnchors
+            it.progress.pending +=
+                CodeModePending("runtime-$id", "callback-$id-0", "Read", JsonObject(emptyMap()), true)
+        }
+    }
+
+    private fun callbacks(id: String, count: Int): List<JsonElement> = (0 until count).flatMap { at ->
+        listOf(
+            item("""{"type":"function_call","call_id":"callback-$id-$at","name":"Read","arguments":"{}"}"""),
+            item("""{"type":"function_call_output","call_id":"callback-$id-$at","output":"synthetic result"}"""),
+        )
+    }
+
+    private fun outer(id: String): JsonObject = item(
+        """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 'synthetic';"}""",
+    ) as JsonObject
+
+    private fun output(id: String): JsonElement =
+        item("""{"type":"custom_tool_call_output","call_id":"$id","output":"done"}""")
+
+    private fun body(items: List<JsonElement>): CodeModeBody =
+        CodeModeBody(RoundBody.Tree(JsonObject(mapOf("input" to JsonArray(items)))), Json)
+
+    private fun input(text: String): List<JsonElement> =
+        ((Json.parseToJsonElement(text) as JsonObject)["input"] as JsonArray).toList()
+
+    private fun item(text: String): JsonElement = Json.parseToJsonElement(text)
+
     @Test
     fun `a missing older opaque anchor does not abandon unchanged native client history`() {
         val baseline = listOf(first, outer("old"), output("old"), native, latest)
@@ -82,7 +131,13 @@ internal class CodeModeNativeAnchorTest {
             "code-mode native discovery history conflicts with its captured position: unexpected-offset",
             restored.error,
         )
-        assertEquals("native_following=present native_branch=unexpected-offset", restored.nativeRejection?.logFields())
+        assertEquals(
+            "native_following=present native_branch=unexpected-offset native_unexpected_type=reasoning " +
+                "native_unexpected_offset=0 native_unexpected_payload_digest=" +
+                "794914a9efb972bcec46e67f09f34dcaafea75c4aab845ae8aa5fc9255db7df8 " +
+                "native_owner_boundary=2 native_allowed_count=0 native_expected_count=0",
+            restored.nativeRejection?.logFields(),
+        )
         assertTrue(active.replayAnchors?.native?.values?.all { it.logicalTail == 0 } == true)
     }
 
@@ -341,8 +396,71 @@ internal class CodeModeNativeAnchorTest {
             "code-mode native discovery history conflicts with its captured position: unexpected-offset",
             restored.error,
         )
-        assertEquals("native_following=unknown native_branch=unexpected-offset", restored.nativeRejection?.logFields())
+        assertEquals(
+            "native_following=unknown native_branch=unexpected-offset native_unexpected_type=reasoning " +
+                "native_unexpected_offset=1 native_unexpected_payload_digest=" +
+                "7145c22170f9aa359006c5bd5e2a8caca25e4bdc77673daebea32c8941abcc7c " +
+                "native_owner_boundary=2 native_allowed_count=1 native_expected_count=1",
+            restored.nativeRejection?.logFields(),
+        )
     }
+}
+
+internal class CodeModeNativeLogTest {
+    private val history = CodexCodeModeHistory(Json)
+    private val first = item("""{"role":"user","content":"first synthetic request"}""")
+    private val latest = item("""{"role":"user","content":"next synthetic request"}""")
+    private val native = item("""{"type":"reasoning","id":"reason-between","encrypted_content":"synthetic"}""")
+    private val preface = item("""{"role":"assistant","phase":"commentary","content":"Synthetic preface"}""")
+
+    private fun record(items: List<JsonElement>, completed: List<CodeModeRecord>, id: String): CodeModeRecord {
+        val baseline = checkNotNull(history.anchoredBoundary(body(items), completed))
+        return CodeModeRecord(
+            id = id,
+            key = "synthetic-conversation",
+            phase = CodeModePhase.ACTIVE,
+            origin = CodeModeOrigin(
+                outer = outer(id),
+                outerCallId = id,
+                source = "return 'synthetic';",
+                baseline = CodeModeBaseline(
+                    inputCount = baseline.fullCount,
+                    inputDigest = baseline.fullDigest,
+                    logicalCount = baseline.logicalCount,
+                    logicalDigest = baseline.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(baseline.nativeSegments, emptyList(), emptyList()),
+        ).also {
+            it.replayAnchors = baseline.replayAnchors
+            it.progress.pending +=
+                CodeModePending("runtime-$id", "callback-$id-0", "Read", JsonObject(emptyMap()), true)
+        }
+    }
+
+    private fun callbacks(id: String, count: Int): List<JsonElement> = (0 until count).flatMap { at ->
+        listOf(
+            item("""{"type":"function_call","call_id":"callback-$id-$at","name":"Read","arguments":"{}"}"""),
+            item("""{"type":"function_call_output","call_id":"callback-$id-$at","output":"synthetic result"}"""),
+        )
+    }
+
+    private fun outer(id: String): JsonObject = item(
+        """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 'synthetic';"}""",
+    ) as JsonObject
+
+    private fun output(id: String): JsonElement =
+        item("""{"type":"custom_tool_call_output","call_id":"$id","output":"done"}""")
+
+    private fun body(items: List<JsonElement>): CodeModeBody =
+        CodeModeBody(RoundBody.Tree(JsonObject(mapOf("input" to JsonArray(items)))), Json)
+
+    private fun input(text: String): List<JsonElement> =
+        ((Json.parseToJsonElement(text) as JsonObject)["input"] as JsonArray).toList()
+
+    private fun item(text: String): JsonElement = Json.parseToJsonElement(text)
 
     @Test
     fun `native rejection logs identify the session witness and actual placement branch`(@TempDir dir: Path) {
@@ -412,53 +530,4 @@ internal class CodeModeNativeAnchorTest {
             bridge.onHeadStop()
         }
     }
-
-    private fun record(items: List<JsonElement>, completed: List<CodeModeRecord>, id: String): CodeModeRecord {
-        val baseline = checkNotNull(history.anchoredBoundary(body(items), completed))
-        return CodeModeRecord(
-            id = id,
-            key = "synthetic-conversation",
-            phase = CodeModePhase.ACTIVE,
-            origin = CodeModeOrigin(
-                outer = outer(id),
-                outerCallId = id,
-                source = "return 'synthetic';",
-                baseline = CodeModeBaseline(
-                    inputCount = baseline.fullCount,
-                    inputDigest = baseline.fullDigest,
-                    logicalCount = baseline.logicalCount,
-                    logicalDigest = baseline.logicalDigest,
-                    metadataVersion = CODE_MODE_METADATA_VERSION,
-                ),
-            ),
-            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
-            carry = CodeModeNativeContinuity(baseline.nativeSegments, emptyList(), emptyList()),
-        ).also {
-            it.replayAnchors = baseline.replayAnchors
-            it.progress.pending +=
-                CodeModePending("runtime-$id", "callback-$id-0", "Read", JsonObject(emptyMap()), true)
-        }
-    }
-
-    private fun callbacks(id: String, count: Int): List<JsonElement> = (0 until count).flatMap { at ->
-        listOf(
-            item("""{"type":"function_call","call_id":"callback-$id-$at","name":"Read","arguments":"{}"}"""),
-            item("""{"type":"function_call_output","call_id":"callback-$id-$at","output":"synthetic result"}"""),
-        )
-    }
-
-    private fun outer(id: String): JsonObject = item(
-        """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 'synthetic';"}""",
-    ) as JsonObject
-
-    private fun output(id: String): JsonElement =
-        item("""{"type":"custom_tool_call_output","call_id":"$id","output":"done"}""")
-
-    private fun body(items: List<JsonElement>): CodeModeBody =
-        CodeModeBody(RoundBody.Tree(JsonObject(mapOf("input" to JsonArray(items)))), Json)
-
-    private fun input(text: String): List<JsonElement> =
-        ((Json.parseToJsonElement(text) as JsonObject)["input"] as JsonArray).toList()
-
-    private fun item(text: String): JsonElement = Json.parseToJsonElement(text)
 }

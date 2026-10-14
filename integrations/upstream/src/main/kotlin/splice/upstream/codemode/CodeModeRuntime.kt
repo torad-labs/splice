@@ -57,6 +57,7 @@ public interface CodeModeRuntime : AutoCloseable {
 
 /** One bounded script; resumption delivers only results of previously yielded client requests. */
 public interface CodeModeCell : AutoCloseable {
+    /** Results may be any nonempty, duplicate-free subset of calls returned earlier by this cell. */
     public suspend fun advance(results: List<CodeModeResult> = emptyList()): CodeModeStep
 }
 
@@ -65,6 +66,14 @@ public data class CodeModeCall(val id: String, val name: String, val arguments: 
 public data class CodeModeResult(val id: String, val output: String, val isError: Boolean = false)
 
 public sealed class CodeModeStep {
-    public data class Calls(val calls: List<CodeModeCall>) : CodeModeStep()
+    /** Newly issued calls may arrive after script completion while older callbacks remain outstanding. */
+    public data class Calls(
+        val calls: List<CodeModeCall>,
+        val output: String? = null,
+        val error: String? = null,
+    ) : CodeModeStep()
+
+    /** No output means the guest is still waiting on a promise; otherwise it completed with callbacks outstanding. */
+    public data class WaitingForResults(val output: String?, val error: String? = null) : CodeModeStep()
     public data class Completed(val output: String, val error: String? = null) : CodeModeStep()
 }

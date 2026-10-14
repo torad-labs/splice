@@ -1,22 +1,12 @@
 # Changelog
 
-## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
-
-- **Less work under Claudex's shared code-mode lock.** Live record membership uses an identity index, expiry-marker comparisons use a set, and conversation queries limit expiry preparation to their own records. These changes address the bookkeeping bottleneck measured in the live JVM profile while preserving recovery, cancellation and request bytes.
-- **Recovery saves reserve for the selected journal operation.** A conversation append admits its changed records first and grows the reservation before a full checkpoint is encoded. This removes an unnecessary whole-conversation encoding reservation that refused Claudex startup on this machine; uncertain state, removed records and journal compaction still require a full checkpoint reservation.
-- **Qualified integration.** The registry fix passed the full gate and five independent code-review passes. Existing recovery and watchdog tests now await the state transitions their assertions require. Live response-time and memory improvements remain to be measured after installation.
-- **Local beta build.** This version is prepared from the reviewed `feat/v0.4.0` candidate for local installation. A public release is a separate promotion through the repository's main-only release path.
-
-## splice v0.4.0-beta.1: the first 0.4.0 prerelease, built locally while Actions is locked - 2026-10-13
-
-The first beta of 0.4.0 carries everything on feat/v0.4.0 so far, as the v0.4.0 section below describes.
-
-- **Built on this machine, without attestation.** GitHub Actions is locked, so the jar and its bundle were built locally from the tagged commit by `bun tools/release beta 0.4.0-beta.1`. No Sigstore attestation exists for them. Each asset is bound to the release by sha256sums.txt alone, and PROVENANCE.md says so.
-- **Installing it.** install.sh checks attestation whenever gh is signed in, so it refuses this beta then. Install with gh signed out, or download splice.jar and splice-launch, check them against sha256sums.txt, and run `SPLICE_JAR=./splice.jar ./install.sh`.
-
-## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-09-24
+## splice v0.4.0: teams across models, resume on another model, and one-command setup - 2026-10-14
 
 ### Highlights
+- **Tool callbacks progress as results arrive.** Code-mode cells can issue up to 32 callbacks while encoded frames remain bounded. A partial result batch settles its ready promises, retains unfinished callbacks and terminal errors for recovery, and continues without waiting on a paused source stream.
+- **Deferred tool history stays attached to its callback.** Canonical history preserves generated declarations beside their relocated function calls, preventing a returned batch from abandoning its running script.
+- **Optional WebSocket prefix preparation.** When the Responses WebSocket transport is explicitly enabled, the Codex profile can prepare the instruction/tool prefix before generation. Continuation state rejects stale responses. WebSockets remain off by default.
+- **Less code-mode registry bookkeeping.** Membership and expiry lookups use indexes, and journal appends reserve for their selected operation before a full checkpoint is encoded. Live response-time and memory effects remain to be measured.
 - **Sessions can run turns without the key that controls splice.** In 0.3.x, sessions other than
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
 - **`splice upgrade`** fetches, verifies and stages a release, waits for in-flight turns, restarts
@@ -1849,6 +1839,20 @@ origin.
   value equal to the shared one says Follow every command.
 - **Your data's Prompts and answers row claims no more than trace keeps:** "Up to N days, sooner past its size caps,
   oldest day first", or "Until its size caps".
+
+## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
+
+- **Less work under Claudex's shared code-mode lock.** Live record membership uses an identity index, expiry-marker comparisons use a set, and conversation queries limit expiry preparation to their own records. These changes address the bookkeeping bottleneck measured in the live JVM profile while preserving recovery, cancellation and request bytes.
+- **Recovery saves reserve for the selected journal operation.** A conversation append admits its changed records first and grows the reservation before a full checkpoint is encoded. This removes an unnecessary whole-conversation encoding reservation that refused Claudex startup on this machine; uncertain state, removed records and journal compaction still require a full checkpoint reservation.
+- **Qualified integration.** The registry fix passed the full gate and five independent code-review passes. Existing recovery and watchdog tests now await the state transitions their assertions require. Live response-time and memory improvements remain to be measured after installation.
+- **Local beta build.** This version is prepared from the reviewed `feat/v0.4.0` candidate for local installation. A public release is a separate promotion through the repository's main-only release path.
+
+## splice v0.4.0-beta.1: the first 0.4.0 prerelease, built locally while Actions is locked - 2026-10-13
+
+The first beta of 0.4.0 carries everything on feat/v0.4.0 so far, as the v0.4.0 section describes.
+
+- **Built on this machine, without attestation.** GitHub Actions is locked, so the jar and its bundle were built locally from the tagged commit by `bun tools/release beta 0.4.0-beta.1`. No Sigstore attestation exists for them. Each asset is bound to the release by sha256sums.txt alone, and PROVENANCE.md says so.
+- **Installing it.** install.sh checks attestation whenever gh is signed in, so it refuses this beta then. Install with gh signed out, or download splice.jar and splice-launch, check them against sha256sums.txt, and run `SPLICE_JAR=./splice.jar ./install.sh`.
 
 ## splice v0.3.2 — code mode keeps its workers and its evidence, and fails in words - 2026-09-07
 

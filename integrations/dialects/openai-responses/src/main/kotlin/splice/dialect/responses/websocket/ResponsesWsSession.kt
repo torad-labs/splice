@@ -106,6 +106,8 @@ internal class ResponsesWsSession(
      *  re-opened exactly the ordering hole the epoch exists to close. */
     fun epochOf(key: String): Long = synchronized(lock) { epochs.getOrPut(key) { ++seq } }
 
+    fun hasChain(key: String): Boolean = synchronized(lock) { chains.containsKey(key) }
+
     /**
      * Build the frame for this round — the incremental one when every chaining precondition holds,
      * else the full frame. [request] is the full request the builder produced.
@@ -144,10 +146,18 @@ internal class ResponsesWsSession(
             // and the round fell back to a cold SSE send that re-read the whole transcript (35%
             // cache); a full send on this socket keeps the prefix cache instead.
             val items = (request[FIELD_INPUT] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
-            val unanswered = chain?.let { unansweredCalls(it.pendingCalls, items) }.orEmpty()
+            val unanswered = chain?.let { WsChainingChecks.unansweredCalls(it.pendingCalls, items) }.orEmpty()
             WsFrame(
                 frame(request, previousResponseId = null, input = null, clientMetadata),
                 chained = false,
+                fullSendCode = chain?.let { held ->
+                    WsFullSendDiagnostic.code(
+                        WsSendExpectation(held.input, held.generation, held.props, held.pendingCalls),
+                        request,
+                        generation,
+                        propsOf(request),
+                    ) { current -> deltaOf(held.input, current, held.evidence) }
+                } ?: "no_prior_chain",
                 fullSendReason = unanswered.takeIf { it.isNotEmpty() }?.let {
                     "the server holds ${it.size} unanswered tool call(s) this turn never answers " +
                         "(${it.joinToString(", ")}); a chained send would be refused"
@@ -177,20 +187,8 @@ internal class ResponsesWsSession(
         return items.takeIf { it.size == array.size }
             ?.let { deltaOf(chain.input, it, chain.evidence) }
             ?.takeIf { it.isNotEmpty() }
-            ?.takeIf { delta -> unansweredCalls(chain.pendingCalls, delta).isEmpty() }
+            ?.takeIf { delta -> WsChainingChecks.unansweredCalls(chain.pendingCalls, delta).isEmpty() }
     }
-
-    /** The held calls [items] carry no answer for. Checked on the DELTA when chaining (the
-     *  server-held prefix ends at the calls themselves, so the delta is the only place an answer
-     *  can be) and on the whole input for the reason line — where the client's echo of the call
-     *  itself (a `*_call` item with the same call_id) is not an answer (review 2026-09-05). */
-    private fun unansweredCalls(pendingCalls: Set<String>, items: List<JsonObject>): List<String> =
-        pendingCalls.filterNot { id ->
-            items.any {
-                JsonScalars.str(it[FIELD_CALL_ID]) == id &&
-                    !JsonScalars.strOrEmpty(it[WS_FIELD_TYPE]).endsWith(CALL_SUFFIX)
-            }
-        }
 
     /** Commit after a clean terminal: the round's FULL logical input becomes the next turn's
      *  prefix (never the delta — the server now holds the chained context PLUS what we sent). */
@@ -207,12 +205,15 @@ internal class ResponsesWsSession(
         val input = request[FIELD_INPUT] as? JsonArray
         // A stale epoch means something invalidated this conversation while the round was in flight.
         val fresh = sent.epoch == (epochs[key] ?: seq)
-        // Unconditional in the old shape too — replacing the key moves it to the LRU tail.
+        // A stale terminal must not remove a newer response committed after this request was sent.
+        if (!fresh) return
         chains.remove(key)?.let { totalBytes -= it.bytes }
         // Two guards rather than one `committable` boolean: the null checks now sit in branches that
         // RETURN, so past them the compiler itself knows `responseId` and `input` are non-null.
-        if (responseId == null || input == null) return
-        if (!fresh) return
+        if (responseId == null || input == null) {
+            epochs[key] = ++seq
+            return
+        }
         val logicalInput = input.map(JsonWire::string)
         val props = propsOf(request)
         val bytes = logicalInput.sumOf(JsonWire::byteSize) +
@@ -226,6 +227,9 @@ internal class ResponsesWsSession(
             it.evidence = evidence
         }
         totalBytes += bytes
+        // Fence other rounds that were built against the prior state. Only a frame built after
+        // this commit may replace it; a late concurrent terminal cannot roll the chain backward.
+        epochs[key] = ++seq
         trimLocked(now)
     }
 
@@ -238,6 +242,18 @@ internal class ResponsesWsSession(
         epochs.remove(key)
         epochs[key] = ++seq
         trimLocked(now)
+    }
+
+    /** Clear only the state this attempt observed; a newer commit owns a newer epoch. */
+    fun clearedIfCurrent(key: String, expectedEpoch: Long): Boolean = synchronized(lock) {
+        if ((epochs[key] ?: seq) != expectedEpoch) return false
+        val now = clock()
+        trimLocked(now)
+        chains.remove(key)?.let { totalBytes -= it.bytes }
+        epochs.remove(key)
+        epochs[key] = ++seq
+        trimLocked(now)
+        true
     }
 
     /** Expire idle chains wholesale, then restore both count and retained-input byte bounds. Order
@@ -285,7 +301,7 @@ internal class ResponsesWsSession(
     }.let(JsonWire::string)
 
     private fun propsOf(request: JsonObject): String =
-        JsonObject(request.filterKeys { it != FIELD_INPUT }).let(JsonWire::string)
+        JsonObject(request.filterKeys { it != FIELD_INPUT && it != FIELD_GENERATE }).let(JsonWire::string)
 
     /**
      * The suffix beyond [previous] that must be sent, or null to bail.
@@ -305,7 +321,7 @@ internal class ResponsesWsSession(
         current: List<JsonObject>,
         evidence: WsServerEvidence,
     ): List<JsonObject>? {
-        if (!extendsPrefix(previous, current)) return null
+        if (!WsChainingChecks.extendsPrefix(previous, current)) return null
         val send = mutableListOf<JsonObject>()
         val matchedCalls = mutableListOf<String>()
         val matchedReasoning = mutableListOf<String>()
@@ -326,10 +342,6 @@ internal class ResponsesWsSession(
         }
         return send.takeIf { verified && evidence.completeEcho(matchedAssistant, matchedCalls, matchedReasoning) }
     }
-
-    private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
-        current.size >= previous.size &&
-            previous.indices.all { previous[it] == JsonWire.string(current[it]) }
 }
 
 /** Suffix shapes are separate from the session's retained connection state. Unknown ones bail. */
@@ -381,9 +393,9 @@ private val OBSERVED_SERVER_ITEMS = setOf(REASONING_ITEM_TYPE, "function_call", 
  *  script's output (V4-446), a message. */
 private val CLIENT_NEW = setOf("function_call_output", "custom_tool_call_output", "message")
 
-private const val FIELD_INPUT = "input"
+internal const val FIELD_INPUT = "input"
+private const val FIELD_GENERATE = "generate"
 internal const val WS_FIELD_TYPE = "type"
 internal const val FIELD_ROLE = "role"
 internal const val FIELD_CALL_ID = "call_id"
-private const val CALL_SUFFIX = "_call"
 private const val MESSAGE = "message"

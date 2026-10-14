@@ -89,7 +89,6 @@ internal class StreamingWorkerSession(
     }
 
     private fun canRunStatement(): Boolean = when {
-        bridge.calls().isNotEmpty() -> false
         bridge.completion() != null -> false
         control.getMember("stopped").execute().asBoolean() -> false
         else -> !control.getMember("running").execute().asBoolean()

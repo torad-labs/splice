@@ -54,6 +54,7 @@ internal data class CodeModeRecordSnapshot(
     val continuityReplay: List<CodeModeNativeSegment> = emptyList(),
 ) {
     /** Kept outside the already-wide constructor; the store compares it explicitly on save. */
+    var completionError: String? = null
     var issued: List<CodeModeIssuedStep> = emptyList()
     var sessionId: String? = null
 

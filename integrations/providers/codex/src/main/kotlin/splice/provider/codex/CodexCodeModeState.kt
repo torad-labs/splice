@@ -19,6 +19,7 @@ import java.lang.ref.WeakReference
 
 /** The detail an abandoned record carries (V4-342: [CodeModeRecord.abandoned] reads it back). */
 internal const val CODE_MODE_ABANDONED: String = "code-mode history no longer places the running script"
+internal const val CODE_MODE_CLIENT_ID_PREFIX: String = "toolu_splice_"
 
 internal data class CodeModeRecord(
     val id: String,
@@ -59,7 +60,9 @@ internal data class CodeModeRecord(
     var heapBudget: HeapReservations? = null
     val heapSnapshots: MutableList<WeakReference<CodeModeRecordSnapshot>> = mutableListOf()
 
-    fun visiblePending(): List<CodeModePending> = progress.pending.filter(CodeModePending::exposed)
+    fun visiblePending(): List<CodeModePending> = progress.pending.filter { pending ->
+        pending.exposed && pending.clientId !in results
+    }
 
     fun clientIds(): Set<String> = (results.keys + progress.pending.map(CodeModePending::clientId)).toSet()
 
@@ -97,6 +100,7 @@ internal data class CodeModeBaseline(
 internal data class CodeModeProgress(
     val pending: MutableList<CodeModePending> = mutableListOf(),
     var output: String? = null,
+    var completionError: String? = null,
     var totalCalls: Int = 0,
     var rounds: Int = 0,
     var updatedAt: Long,

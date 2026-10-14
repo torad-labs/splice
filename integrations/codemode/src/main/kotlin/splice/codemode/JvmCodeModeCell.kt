@@ -9,6 +9,8 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -18,6 +20,7 @@ import splice.upstream.codemode.CodeModeSourcePersistenceException
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeWorkerLostException
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
 
 internal fun interface ReleaseCodeModeCell {
@@ -41,6 +44,7 @@ internal class JvmCodeModeCell(
     private var cachedReply: WorkerReply? = initial
     private var pendingCalls: List<CodeModeCall> = initial.calls.orEmpty()
     private var nextId: Int = pendingCalls.size + 1
+    private var sourceEnded: Boolean = false
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep = advanceLock.withLock {
         checkOpen()
@@ -95,31 +99,70 @@ internal class JvmCodeModeCell(
 
     private suspend fun receiveAfter(results: List<CodeModeResult>): WorkerReply {
         checkOpen()
-        CodeModeFrames.validateResultSet(pendingCalls, results)
-        val reply = CodeModeFrames.parseReply(
-            frame = exchange(CodeModeWire.resultFrame(results)),
-            tools = tools,
-            nextId = nextId,
-        )
-        pendingCalls = reply.calls.orEmpty()
-        nextId += pendingCalls.size
-        return reply
+        CodeModeFrames.validatePartialResultSet(pendingCalls, results)
+        val frames = CodeModeWire.resultsFrames(results)
+        val returnedCalls = mutableListOf<CodeModeCall>()
+        var finalReply: WorkerReply? = null
+        var offset = 0
+        frames.forEach { frame ->
+            val count = if (frame["type"] == JsonPrimitive("results_part")) {
+                CodeModeFrames.parseResultsPart(frame).size
+            } else {
+                CodeModeFrames.parseResults(frame).size
+            }
+            val chunk = results.subList(offset, offset + count)
+            offset += count
+            val reply = CodeModeFrames.parseReply(exchange(frame), tools, nextId)
+            val ids = chunk.map(CodeModeResult::id).toSet()
+            pendingCalls = pendingCalls.filterNot { it.id in ids }
+            reply.calls?.let { calls ->
+                returnedCalls += calls
+                pendingCalls = pendingCalls + calls
+                nextId += calls.size
+            }
+            finalReply = reply
+        }
+        val reply = checkNotNull(finalReply)
+        return if (returnedCalls.isNotEmpty()) reply.copy(calls = returnedCalls) else reply
     }
 
     private suspend fun awaitInput(initial: WorkerReply): WorkerReply {
         var reply = initial
-        while (reply.waitingForInput) {
-            val input = checkNotNull(source) { "Ordinary cell cannot wait for source input" }
-            val part = nextInput(input)
+        while (true) {
+            val part = nextInputPart(reply) ?: break
+            sourceEnded = sourceEnded || part is CodeModeSourcePart.Complete || part is CodeModeSourcePart.Failed
             reply = CodeModeFrames.parseReply(
                 exchange(StreamingCodeModeWire.inputFrame(part)),
                 tools,
                 nextId,
             )
+            reply.calls?.let { calls ->
+                pendingCalls = pendingCalls + calls
+                nextId += calls.size
+            }
         }
-        pendingCalls = reply.calls.orEmpty()
-        if (initial.waitingForInput) nextId += pendingCalls.size
+        if (reply.waitingForInput && sourceEnded) {
+            throw IOException("Code-mode worker requested input after source ended")
+        }
         return reply
+    }
+
+    private suspend fun nextInputPart(reply: WorkerReply): CodeModeSourcePart? = when {
+        reply.waitingForInput -> nextRequiredSourcePart()
+        reply.waitingForResults -> nextAvailableSourcePart(reply)
+        else -> null
+    }
+
+    private suspend fun nextRequiredSourcePart(): CodeModeSourcePart? {
+        if (sourceEnded) return null
+        val input = checkNotNull(source) { "Ordinary cell cannot wait for source input" }
+        return nextInput(input)
+    }
+
+    private suspend fun nextAvailableSourcePart(reply: WorkerReply): CodeModeSourcePart? {
+        if (reply.output != null) return null
+        if (pendingCalls.isEmpty()) return null
+        return if (sourceEnded) null else source?.readAvailable()
     }
 
     private suspend fun nextInput(input: CodeModeSource): CodeModeSourcePart = coroutineScope {
@@ -145,9 +188,13 @@ internal class JvmCodeModeCell(
     }
 
     private fun toStep(reply: WorkerReply): CodeModeStep = reply.calls?.let { calls ->
-        CodeModeStep.Calls(calls)
-    } ?: CodeModeStep.Completed(
-        output = checkNotNull(reply.output),
-        error = reply.error,
-    ).also { close() }
+        CodeModeStep.Calls(calls, reply.output, reply.error)
+    } ?: if (reply.waitingForResults) {
+        CodeModeStep.WaitingForResults(reply.output, reply.error)
+    } else {
+        CodeModeStep.Completed(
+            output = checkNotNull(reply.output),
+            error = reply.error,
+        ).also { close() }
+    }
 }

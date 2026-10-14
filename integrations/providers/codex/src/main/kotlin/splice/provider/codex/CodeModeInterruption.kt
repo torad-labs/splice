@@ -35,6 +35,8 @@ internal object CodeModeInterruption {
         put("status", "interrupted")
         put("sourceRerun", false)
         put("detail", detail)
+        record.progress.output?.let { put("scriptOutput", it) }
+        record.progress.completionError?.let { put("scriptError", it) }
         putJsonArray("results") {
             record.results.forEach { (id, result) ->
                 add(

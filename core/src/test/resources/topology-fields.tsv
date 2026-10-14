@@ -159,6 +159,7 @@ providers.*.quirks.tool_surface.min_deferred
 providers.*.quirks.tool_surface.search_limit	
 providers.*.quirks.tool_surface.search_rounds	
 providers.*.quirks.websocket	
+providers.*.quirks.websocket_prefill	
 providers.*.quirks.zstd_request_body	
 providers.*.window_rules	
 providers.*.window_rules[].context_window	

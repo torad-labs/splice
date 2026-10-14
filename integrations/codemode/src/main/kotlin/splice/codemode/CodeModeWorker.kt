@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.graalvm.polyglot.Source
 import org.graalvm.polyglot.proxy.ProxyExecutable
 import org.graalvm.polyglot.proxy.ProxyObject
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCall
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -43,6 +44,7 @@ internal object CodeModeWorker {
 
 internal class WorkerBridge(private val allowedTools: Set<String>) {
     private val outboundCalls: MutableList<CodeModeCall> = mutableListOf()
+    private val issuedIds: MutableSet<String> = mutableSetOf()
     private val logs: StringBuilder = StringBuilder()
     private var truncatedChars: Int = 0
     private var callCount: Int = 0
@@ -65,14 +67,34 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
         ),
     )
 
-    /** The next batch, oldest first. A call past the batch cap waits for the next batch rather than
+    /** The largest oldest-first batch that fits the count and encoded-frame ceilings. A call past
+     *  either ceiling waits for the next batch rather than
      *  failing: a failed call had already taken its id in the script, so the call after it reached the
      *  parent one id ahead and the cell was poisoned (Oct 1, nine reads under Promise.allSettled). */
-    fun calls(): List<CodeModeCall> = outboundCalls.take(CodeModeWire.maxCallsPerBatch)
+    fun calls(output: String? = null, error: String? = null): List<CodeModeCall> {
+        val count = CodeModeWire.fittingCallPrefix(outboundCalls, output, error)
+        require(outboundCalls.isEmpty() || count > 0) { "Code-mode tool call exceeds the frame size limit" }
+        return outboundCalls.take(count)
+    }
 
     fun clearSent(count: Int) {
         outboundCalls.subList(0, count).clear()
     }
+
+    /** Removes the batch as soon as it is reported; later callbacks can then be reported separately. */
+    fun takeCalls(
+        output: String? = null,
+        error: String? = null,
+    ): List<CodeModeCall> = calls(output, error).also { calls ->
+        clearSent(calls.size)
+        issuedIds.addAll(calls.map(CodeModeCall::id))
+    }
+
+    fun settleCall(id: String) {
+        check(issuedIds.remove(id)) { "Unknown code-mode call id" }
+    }
+
+    fun hasCalls(): Boolean = outboundCalls.isNotEmpty() || issuedIds.isNotEmpty()
 
     fun completion(): WorkerCompletion? = completion
 

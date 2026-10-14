@@ -118,20 +118,39 @@ internal class CodeModeSourceBuffer(
             override suspend fun read(): CodeModeSourcePart {
                 while (true) {
                     val next = state.first { it.terminal != null || (!it.itemComplete && it.text.length > position) }
-                    if (next.terminal is CodeModeSourcePart.Failed) return next.terminal
-                    beforeRead.commit(next.text)
-                    val latest = state.value
-                    val changed = latest !== next
-                    val sealed = latest.itemComplete || latest.terminal != null
-                    if (changed && sealed) continue
-                    val remainder = next.text.substring(position)
-                    position = next.text.length
-                    return if (next.terminal is CodeModeSourcePart.Complete) {
-                        CodeModeSourcePart.Complete(remainder)
-                    } else {
-                        CodeModeSourcePart.Delta(remainder)
-                    }
+                    commitAndReadPart(next)?.let { return it }
                 }
+            }
+
+            override suspend fun readAvailable(): CodeModeSourcePart? {
+                val next = state.value
+                if (!hasAvailablePart(next, position)) return null
+                return commitAndReadPart(next)
+            }
+
+            private fun commitAndReadPart(next: SourceSnapshot): CodeModeSourcePart? {
+                (next.terminal as? CodeModeSourcePart.Failed)?.let { return it }
+                beforeRead.commit(next.text)
+                val latest = state.value
+                if (newerPartFinished(latest, next)) return null
+                val remainder = next.text.substring(position)
+                position = next.text.length
+                return if (next.terminal is CodeModeSourcePart.Complete) {
+                    CodeModeSourcePart.Complete(remainder)
+                } else {
+                    CodeModeSourcePart.Delta(remainder)
+                }
+            }
+
+            private fun hasAvailablePart(snapshot: SourceSnapshot, offset: Int): Boolean {
+                if (snapshot.terminal != null) return true
+                if (snapshot.itemComplete) return false
+                return snapshot.text.length > offset
+            }
+
+            private fun newerPartFinished(latest: SourceSnapshot, next: SourceSnapshot): Boolean {
+                if (latest === next) return false
+                return latest.itemComplete || latest.terminal != null
             }
         }
     }

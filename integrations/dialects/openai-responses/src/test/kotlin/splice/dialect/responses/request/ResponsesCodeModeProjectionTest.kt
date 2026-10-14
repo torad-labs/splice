@@ -2,8 +2,10 @@ package splice.dialect.responses.request
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -29,8 +31,10 @@ class ResponsesCodeModeProjectionTest {
             """[
                 {"role":"user","content":"synthetic request"},
                 {"type":"reasoning","id":"synthetic-reason","encrypted_content":"synthetic"},
-                {"type":"tool_search_call","call_id":"synthetic-search","arguments":"{}"},
-                {"type":"tool_search_output","call_id":"synthetic-search","tools":[{"name":"Read"}]}
+                {"type":"tool_search_call","call_id":"ts_decl_0123456789abcdef01234567",
+                 "execution":"client","arguments":"{}"},
+                {"type":"tool_search_output","call_id":"ts_decl_0123456789abcdef01234567",
+                 "execution":"client","tools":[{"name":"Read"}]}
             ]""",
         ).jsonArray
         val callback = Json.parseToJsonElement(
@@ -58,6 +62,48 @@ class ResponsesCodeModeProjectionTest {
         assertEquals(native.logicalOffset, alias.logicalOffset)
         assertEquals(null, native.callbackId)
         assertEquals("callback", alias.callbackId)
+    }
+
+    @Test
+    fun `client declaration alias recognizes a namespace schema but leaves native searches native`() {
+        val projection = ResponsesCodeModeProjection()
+        val alias = Json.parseToJsonElement(
+            """[
+                {"type":"tool_search_call","call_id":"ts_decl_0123456789abcdef01234567",
+                 "execution":"client","arguments":{"query":"exec"}},
+                {"type":"tool_search_output","call_id":"ts_decl_0123456789abcdef01234567",
+                 "execution":"client","tools":[{"type":"namespace","name":"functions",
+                   "tools":[{"type":"custom","name":"exec"}]}]},
+                {"type":"function_call","call_id":"exec-call","name":"exec","arguments":"{}"}
+            ]""",
+        ).jsonArray
+        val projectedAlias = projection.project(alias)
+        assertEquals(1, projectedAlias.replayItems.size)
+        assertEquals("exec-call", projectedAlias.replayItems.single().callbackId)
+        val qualifiedCall = alias.last().jsonObject.toMutableMap().also {
+            it["name"] = Json.parseToJsonElement("\"functions.exec\"")
+        }
+        assertEquals(
+            "exec-call",
+            projection.project(JsonArray(alias.dropLast(1) + JsonObject(qualifiedCall)))
+                .replayItems.single().callbackId,
+        )
+
+        val native = JsonArray(
+            alias.mapIndexed { index, item ->
+                if (index < 2) {
+                    val obj = item.jsonObject.toMutableMap()
+                    obj["call_id"] = Json.parseToJsonElement("\"server-search\"")
+                    if (index == 0) obj.remove("execution")
+                    JsonObject(obj)
+                } else {
+                    item
+                }
+            },
+        )
+        val projectedNative = projection.project(native)
+        assertEquals(1, projectedNative.nativeSegments.size)
+        assertEquals(null, projectedNative.replayItems.single().callbackId)
     }
 
     @Test

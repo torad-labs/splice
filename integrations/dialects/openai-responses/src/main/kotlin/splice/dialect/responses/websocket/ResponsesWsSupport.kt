@@ -24,7 +24,12 @@ internal class ResponsesWsSupport(
 ) {
     /** Non-null ONLY when the operator opted in AND this provider's upstream was actually
      *  probed. With the quirk off no WsUpstream is constructed. */
-    fun runner(webSocket: Boolean, supportsWebSocket: Boolean, upstreamUrl: String): WsRoundRunner? {
+    fun runner(
+        webSocket: Boolean,
+        supportsWebSocket: Boolean,
+        upstreamUrl: String,
+        webSocketPrefill: Boolean = false,
+    ): WsRoundRunner? {
         if (!webSocket || !supportsWebSocket) return null
         return ResponsesWsRunner(
             transport = WsUpstream(log = log),
@@ -45,6 +50,7 @@ internal class ResponsesWsSupport(
                 }
                 auth + extraHeaders(creds) + mapOf("OpenAI-Beta" to WS_BETA_HEADER)
             },
+            webSocketPrefill = webSocketPrefill,
             log = log,
         )
     }

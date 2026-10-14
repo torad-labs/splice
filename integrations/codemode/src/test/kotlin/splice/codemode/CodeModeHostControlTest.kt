@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeResult
 import java.util.concurrent.TimeUnit
 

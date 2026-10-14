@@ -43,7 +43,6 @@ import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.WireSink
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -299,36 +298,27 @@ class CodeModeBridgeRuntimeTest {
     }
 
     @Test
-    fun `oversized escaped parallel frame leaves results unconsumed and corrected retry works`() = runBlocking {
+    fun `escaped parallel results are partitioned into bounded frames`() = runBlocking {
         runtime().use { runtime ->
             val bridge = bridge(runtime)
             val sink = Sink()
             bridge.interceptor(turn(), disableParallel = false)
                 .interceptOutcome(BRIDGE_BASE_REQUEST, sink) { outer(threeCallsSource()) }
             assertEquals(3, sink.ids.size)
-            val oversized = sink.ids.map { CodeModeResult(it, 0.toChar().toString().repeat(65_536)) }
-            val stateBefore = saved()
-            val rejected = bridge.interceptor(turn().copy(toolResults = oversized), disableParallel = false)
-                .interceptOutcome(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
-            assertTrue(rejected is TurnOutcome.Failure)
-            assertEquals(ErrorType.INVALID_REQUEST, (rejected as TurnOutcome.Failure).type)
-            assertEquals("code-mode result frame exceeds the size limit", rejected.message)
-            assertEquals(stateBefore, saved())
-
-            val corrected = sink.ids.map { CodeModeResult(it, "corrected") }
+            val results = sink.ids.map { CodeModeResult(it, 0.toChar().toString().repeat(65_536)) }
             var upstream = ""
-            val completed = bridge.interceptor(turn().copy(toolResults = corrected), disableParallel = false)
-                .interceptOutcome(requestWithResults(corrected), Sink()) {
+            val completed = bridge.interceptor(turn().copy(toolResults = results), disableParallel = false)
+                .interceptOutcome(requestWithResults(results), Sink()) {
                     upstream = it
                     TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(completed is TurnOutcome.Success)
-            assertEquals("9,9,9", completedOutput(upstream))
+            assertEquals("65536,65536,65536", completedOutput(upstream))
         }
     }
 
     @Test
-    fun `escaped sequential frame includes accepted results before validating next result`() = runBlocking {
+    fun `escaped sequential results are partitioned into bounded frames`() = runBlocking {
         runtime().use { runtime ->
             val bridge = bridge(runtime)
             val initial = Sink()
@@ -344,24 +334,15 @@ class CodeModeBridgeRuntimeTest {
                 assertTrue(exposed is TurnOutcome.Success)
                 nextId = next.ids.single()
             }
-            val stateBefore = saved()
-            val oversized = accepted + CodeModeResult(nextId, 0.toChar().toString().repeat(65_536))
-            val rejected = bridge.interceptor(turn().copy(toolResults = oversized), disableParallel = true)
-                .interceptOutcome(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
-            assertTrue(rejected is TurnOutcome.Failure)
-            assertEquals(ErrorType.INVALID_REQUEST, (rejected as TurnOutcome.Failure).type)
-            assertEquals("code-mode result frame exceeds the size limit", rejected.message)
-            assertEquals(stateBefore, saved())
-
-            val corrected = accepted + CodeModeResult(nextId, "corrected")
+            val complete = accepted + CodeModeResult(nextId, 0.toChar().toString().repeat(65_536))
             var upstream = ""
-            val completed = bridge.interceptor(turn().copy(toolResults = corrected), disableParallel = true)
-                .interceptOutcome(requestWithResults(corrected), Sink()) {
+            val completed = bridge.interceptor(turn().copy(toolResults = complete), disableParallel = true)
+                .interceptOutcome(requestWithResults(complete), Sink()) {
                     upstream = it
                     TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(completed is TurnOutcome.Success)
-            assertEquals("65536,65536,9", completedOutput(upstream))
+            assertEquals("65536,65536,65536", completedOutput(upstream))
         }
     }
 
@@ -454,10 +435,6 @@ class CodeModeBridgeRuntimeTest {
 
     /** Where [bridge] keeps the records it was given [filename] for: one file per conversation (V4-340). */
     private fun savedDir(filename: String = "bridge.json") = tempDir.resolve("$filename.d")
-
-    /** Everything [bridge] has saved: each conversation's file, in name order. */
-    private fun saved(): String =
-        Files.list(savedDir()).use { files -> files.sorted().map(Files::readString).toList() }.joinToString("\n")
 
     private fun turn(id: String? = null, output: String = "") = CodexCodeModeBridge.Turn(
         "session",

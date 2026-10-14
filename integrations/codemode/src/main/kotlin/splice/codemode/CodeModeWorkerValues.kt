@@ -24,4 +24,5 @@ internal data class WorkerReply(
     val output: String?,
     val error: String?,
     val waitingForInput: Boolean = false,
+    val waitingForResults: Boolean = false,
 )

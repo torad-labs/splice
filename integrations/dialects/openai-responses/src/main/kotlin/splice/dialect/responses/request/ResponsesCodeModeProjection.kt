@@ -5,9 +5,16 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.dialect.responses.tools.ToolSearchOutput
 
 /** Separates Responses-only replay items from the client-visible conversation used by code mode. */
 public class ResponsesCodeModeProjection {
+    /** Index of the logical function callback used by callback-scoped replay relocation. */
+    public fun functionCallIndex(items: List<JsonElement>, callbackId: String): Int =
+        items.indexOfFirst { item ->
+            elementType(item) == TYPE_FUNCTION_CALL && elementCallId(item) == callbackId
+        }
+
     public fun project(input: JsonArray): ResponsesCodeModeInput {
         val logical = mutableListOf<JsonElement>()
         val replay = mutableListOf<ResponsesCodeModeReplay>()
@@ -78,14 +85,45 @@ public class ResponsesCodeModeProjection {
     }
 
     private fun declaresNextFunction(input: JsonArray, pairIndex: Int, output: JsonObject): Boolean {
+        val call = input[pairIndex] as? JsonObject ?: return false
+        if (!isClientDeclaration(call, output)) return false
         val next = input.drop(pairIndex + SEARCH_PAIR_SIZE).dropWhile { elementType(it) == TYPE_REASONING }
             .firstOrNull() as? JsonObject
+        return matchesDeclaredFunction(next, output)
+    }
+
+    private fun isClientDeclaration(call: JsonObject, output: JsonObject): Boolean =
+        objectCallId(call).startsWith(TOOL_DECLARATION_ID_PREFIX) &&
+            JsonScalars.str(call, ToolSearchOutput.WireFields.FIELD_EXECUTION) ==
+            ToolSearchOutput.WireFields.EXECUTION_CLIENT &&
+            JsonScalars.str(output, ToolSearchOutput.WireFields.FIELD_EXECUTION) ==
+            ToolSearchOutput.WireFields.EXECUTION_CLIENT
+
+    private fun matchesDeclaredFunction(next: JsonObject?, output: JsonObject): Boolean {
         if (objectType(next) != TYPE_FUNCTION_CALL) return false
         val functionName = JsonScalars.str(next, FIELD_NAME).orEmpty()
         val tools = output[FIELD_TOOLS] as? JsonArray ?: return false
-        return tools.any { tool ->
-            JsonScalars.str(tool as? JsonObject, FIELD_NAME) == functionName
+        return functionName.isNotEmpty() && functionName in declaredFunctionNames(tools)
+    }
+
+    /** Deferred schemas normally arrive flat, but Responses namespace groups are also legal in a
+     *  tool_search_output. Keep both the qualified and leaf spellings: function_call names use the
+     *  leaf for the functions namespace and qualified names for other namespaces. */
+    private fun declaredFunctionNames(tools: JsonArray): Set<String> = buildSet {
+        fun collect(entries: JsonArray, namespace: String?) {
+            entries.forEach { entry ->
+                val tool = entry as? JsonObject ?: return@forEach
+                val name = JsonScalars.str(tool, FIELD_NAME).orEmpty()
+                val nested = tool[FIELD_TOOLS] as? JsonArray
+                if (nested != null) {
+                    collect(nested, name.takeIf { it.isNotEmpty() } ?: namespace)
+                } else if (name.isNotEmpty()) {
+                    add(name)
+                    if (!namespace.isNullOrEmpty()) add("$namespace.$name")
+                }
+            }
         }
+        collect(tools, null)
     }
 
     private fun flush(
@@ -132,6 +170,7 @@ private const val FIELD_CALL_ID = "call_id"
 private const val FIELD_NAME = "name"
 private const val FIELD_TOOLS = "tools"
 private const val FIELD_TYPE = "type"
+private const val TOOL_DECLARATION_ID_PREFIX = "ts_decl_"
 private const val TYPE_FUNCTION_CALL = "function_call"
 private const val TYPE_REASONING = "reasoning"
 private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"

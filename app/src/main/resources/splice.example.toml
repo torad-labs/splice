@@ -95,6 +95,11 @@ summary_field = true
 # With the key false or absent no WebSocket is ever constructed and the request path is
 # byte-identical to a build without the feature.
 websocket = false   # ships off (project law): turning it on is your one-line change here
+# websocket_prefill: when WebSocket is enabled, Codex warms the server with the ordered code-mode
+# instruction/tool prefix before its first generated round. It adds a no-output request. The
+# Responses dialect default is false; the Codex profile enables it. Custom profiles should opt in
+# only when their backend accepts `generate = false`. This setting is inert while websocket is off.
+websocket_prefill = true
 # zstd_request_body (default false): compress request bodies the way codex-cli 0.145.0 does to
 # this endpoint (2.7x measured). Codex ONLY — xAI 400s on a compressed body; never set it elsewhere.
 zstd_request_body = true

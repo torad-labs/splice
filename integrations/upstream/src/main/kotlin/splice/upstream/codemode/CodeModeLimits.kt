@@ -5,6 +5,7 @@ package splice.upstream.codemode
 public object CodeModeLimits {
     public const val MAX_TEXT_BYTES: Int = 65_536
     public const val MAX_FRAME_BYTES: Int = 1_048_576
+    public const val MAX_RESULTS_PER_FRAME: Int = 8
 
     /** Whether [value] fits the worker's UTF-8 text limit, independently of character limits. */
     public fun fitsText(value: String): Boolean = value.encodeToByteArray().size <= MAX_TEXT_BYTES

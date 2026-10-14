@@ -64,6 +64,7 @@ internal class CodeModeRecordRestorer {
         progress = CodeModeProgress(
             pending = saved.pending.toMutableList(),
             output = saved.output,
+            completionError = saved.completionError,
             totalCalls = saved.totalCalls,
             rounds = saved.rounds,
             updatedAt = saved.updatedAt,
@@ -99,6 +100,7 @@ internal object CodeModeRecordSnapshots {
         continuity = record.carry.continuity,
         continuityReplay = record.carry.replay,
     ).also {
+        it.completionError = record.progress.completionError
         it.issued = record.issued.toList()
         it.sessionId = record.sessionId
         it.conversationId = record.conversationId

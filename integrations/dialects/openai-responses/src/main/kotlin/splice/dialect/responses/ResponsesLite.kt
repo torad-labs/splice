@@ -52,7 +52,7 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
             if (tools != null) {
                 add(
                     buildJsonObject {
-                        put("type", "additional_tools")
+                        put("type", LITE_ADDITIONAL_TOOLS_TYPE)
                         put("role", "developer")
                         put("tools", namespace.group(tools))
                     },
@@ -69,3 +69,4 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
 }
 
 private const val LITE_CONTENT_FIELD = "content"
+internal const val LITE_ADDITIONAL_TOOLS_TYPE = "additional_tools"

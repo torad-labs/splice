@@ -114,7 +114,8 @@ internal enum class CodeModeWeight {
         json(record.origin.outer) + text(record.origin.source) + record.progress.pending.sumOf(::call) +
         record.results.entries.sumOf { (id, result) ->
             text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json)
-        } + text(record.progress.output.orEmpty()) + text(record.error.orEmpty()) +
+        } + text(record.progress.output.orEmpty()) + text(record.progress.completionError.orEmpty()) +
+        text(record.error.orEmpty()) +
         record.carry.segments.sumOf(::segment) + record.carry.continuity.sumOf(::json) +
         record.carry.replay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
 

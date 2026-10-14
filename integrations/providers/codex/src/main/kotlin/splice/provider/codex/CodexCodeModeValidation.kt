@@ -50,8 +50,6 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         val relevant = turn.toolResults.filter { it.id in record.clientIds() }
         val duplicateIds = relevant.groupingBy(CodeModeResult::id).eachCount().filterValues { it > 1 }.keys
         val conflict = relevant.firstOrNull { prior -> conflicts(record, turn, prior) }
-        val missing = (exposed - record.results.keys - current.keys)
-            .takeIf { mode == CodeModeResultMode.RESUME }.orEmpty()
         val oversized = current.values.firstOrNull { !fitsOutput(it.output) }
         val unexposedIds = record.progress.pending.filterNot(CodeModePending::exposed)
             .map(CodeModePending::clientId).toSet()
@@ -60,7 +58,6 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
             duplicateIds.isNotEmpty() -> "duplicate code-mode tool results: $duplicateIds"
             conflict != null -> "conflicting replay for code-mode tool result '${conflict.id}'"
             unexposed != null -> "code-mode tool result '${unexposed.id}' was not exposed to the client"
-            missing.isNotEmpty() -> "missing code-mode tool results: $missing"
             oversized != null -> "code-mode tool result '${oversized.id}' exceeds the size limit"
             mode == CodeModeResultMode.INTERRUPT -> null
             else -> pendingFrameProblem(record, current)
@@ -93,6 +90,11 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
             // Reserve empty future-result fields while accumulating a sequential batch. No placeholders are sent.
             CodeModeResult(pending.runtimeId, result?.output.orEmpty(), result?.isError ?: false)
         }
-        return if (CodeModeProtocol.fitsResultFrame(results)) null else "code-mode result frame exceeds the size limit"
+        return try {
+            CodeModeProtocol.resultChunks(results, CodeModeLimits.MAX_RESULTS_PER_FRAME)
+            null
+        } catch (_: IllegalArgumentException) {
+            "code-mode result frame exceeds the size limit"
+        }
     }
 }

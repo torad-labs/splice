@@ -91,7 +91,7 @@ internal class WsRoundDrive(
         // ended flow, so [SseReserve.gate] keeps its closing call off the client: it must author no terminal, or
         // the client would see that terminal followed by the SSE round's content.
         val raw = provider.streamTranslator(drive.meta, signals).driveTurn(instrumented, reserve.gate(inputs.sink))
-        reserve.detail?.let { return WsRoundResult.NeedsSse(it) }
+        reserve.detail?.let { return WsRoundResult.NeedsSse(it, reserve.reasonCode ?: "pre_output_failure") }
         drive.perf.mark(PerfKeys.STREAM_END)
         // The report is the LAST statement, so it and the return are atomic from WsRoundDriver's
         // point of view: that caller sets `reported` only once drive() returns, and its finally
@@ -129,5 +129,5 @@ internal sealed class WsRoundResult {
     /** The round failed before the client saw any frame, so it is re-served over SSE with the full
      *  recovery machinery. [detail] is the server's failure terminal (type, code, message), or the
      *  transport's tear in its deepest words (V4-242). */
-    data class NeedsSse(val detail: String) : WsRoundResult()
+    data class NeedsSse(val detail: String, val reasonCode: String) : WsRoundResult()
 }

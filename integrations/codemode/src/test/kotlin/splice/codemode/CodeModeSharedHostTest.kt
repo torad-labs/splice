@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Timeout
 import splice.codemode.engine.WorkerSession
 import splice.codemode.host.HostLaunch
 import splice.codemode.host.PoolLimits
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep

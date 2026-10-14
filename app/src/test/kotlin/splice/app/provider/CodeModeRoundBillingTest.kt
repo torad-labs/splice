@@ -631,7 +631,7 @@ class CodeModeSourceBoundaryTest {
                 assertTrue(rejected.contains("fixture read"), rejected)
                 assertEquals(1, ws.aborts.get(), "unowned client content is a genuine interruption")
             } else {
-                assertTrue(rejected.contains("missing code-mode tool results"), rejected)
+                assertTrue(rejected.contains("waiting for outstanding client tool results"), rejected)
                 assertEquals(0, ws.aborts.get(), "a missing result alone must not cancel the source")
                 finishPartialResult(client, url, history, calls, ws)
                 val posted = rows(tmp, 4).single { it.count(PerfKeys.IN_TOKENS) == SOURCE_INPUT }

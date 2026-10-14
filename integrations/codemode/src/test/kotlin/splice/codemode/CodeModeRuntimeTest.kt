@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.host.HostLaunch
 import splice.codemode.host.PoolLimits
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
@@ -96,7 +97,7 @@ class CodeModeRuntimeTest {
     }
 
     /** Oct 1: nine reads under Promise.allSettled and then a Bash poisoned the cell with "invalid call id".
-     *  The ninth read hit the batch cap and burned id 9, so the Bash call arrived as id 10. */
+     *  The old eight-call cap split the settled read group and made the script cross two tool barriers. */
     @Test
     fun `calls past one batch wait for the next batch and keep their ids in step`() = runBlocking {
         runtime().use { runtime ->
@@ -110,12 +111,10 @@ class CodeModeRuntimeTest {
                 tools = setOf("Read", "Bash"),
             )
             val first = calls(cell.advance())
-            assertEquals((1..8).map(Int::toString), first.map(CodeModeCall::id))
+            assertEquals((1..9).map(Int::toString), first.map(CodeModeCall::id))
+            assertTrue(first.all { it.name == "Read" })
             val second = calls(cell.advance(first.map { CodeModeResult(it.id, "r" + it.id) }))
-            assertEquals(listOf("9"), second.map(CodeModeCall::id))
-            assertEquals("Read", second.single().name)
-            val third = calls(cell.advance(listOf(CodeModeResult("9", "r9"))))
-            assertEquals(listOf("10" to "Bash"), third.map { it.id to it.name })
+            assertEquals(listOf("10" to "Bash"), second.map { it.id to it.name })
             val completed = completed(cell.advance(listOf(CodeModeResult("10", "listed"))))
             assertEquals((1..9).joinToString(",") { "fulfilled:r$it" } + "|listed", completed.output)
         }
@@ -242,15 +241,26 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `missing client result ids fail closed`() = runBlocking {
+    fun `new calls carry completed script output while sibling callback remains outstanding`() = runBlocking {
         runtime().use { runtime ->
-            val cell = twoCalls(runtime)
-            assertThrows(IllegalArgumentException::class.java) {
-                runBlocking {
-                    cell.advance(listOf(CodeModeResult("1", "a")))
-                }
-            }
-            assertClosed(cell)
+            val cell = runtime.start(
+                source = """
+                    const winner = await Promise.race([
+                      tools.call("Read", {file: "fast"}), tools.call("Read", {file: "slow"})
+                    ]);
+                    void tools.call("Read", {file: "side-effect"});
+                    return winner;
+                """.trimIndent(),
+                tools = setOf("Read"),
+            )
+            assertEquals(listOf("1", "2"), calls(cell.advance()).map(CodeModeCall::id))
+
+            val next = cell.advance(listOf(CodeModeResult("1", "winner")))
+            assertTrue(next is CodeModeStep.Calls)
+            assertEquals(listOf("3"), (next as CodeModeStep.Calls).calls.map(CodeModeCall::id))
+            val waiting = cell.advance(listOf(CodeModeResult("3", "side")))
+            assertEquals(CodeModeStep.WaitingForResults("winner"), waiting)
+            assertEquals(CodeModeStep.Completed("winner"), cell.advance(listOf(CodeModeResult("2", "slow"))))
         }
     }
 

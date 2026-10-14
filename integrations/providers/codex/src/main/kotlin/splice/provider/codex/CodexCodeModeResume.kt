@@ -8,9 +8,11 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
+import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceReset
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
 
 private data class CodeModeResultBatch(
@@ -141,17 +143,32 @@ internal class CodexCodeModeResume(
         }
         else -> {
             val batch = runtimeResults(record)
-            registry.changes.edit(record) { it.progress.pending.clear() }
-            machine.advance(
-                CodeModeAdvanceRequest(
+            if (batch.isEmpty() && record.progress.pending.isNotEmpty()) {
+                CodexCodeModeIncrementalOutcomes.waitingForResults(
+                    registry,
                     record,
-                    context.turn,
-                    context.disableParallel,
-                    batch,
-                    context.link.sink,
-                    driver.streams.find(record),
-                ),
-            ).also { CodeModeSourceReset.note(driver.streams.find(record), it, context.link.post.perf) }
+                    CodeModeStep.WaitingForResults(record.progress.output, record.progress.completionError),
+                )
+            } else {
+                if (batch.isNotEmpty()) {
+                    val delivered = batch.map(CodeModeResult::id).toSet()
+                    registry.changes.edit(record) { live ->
+                        live.progress.pending.removeAll { it.runtimeId in delivered }
+                    }
+                }
+                machine.advance(
+                    CodeModeAdvanceRequest(
+                        record,
+                        context.turn,
+                        context.disableParallel,
+                        batch,
+                        context.link.sink,
+                        driver.streams.find(record),
+                    ),
+                ).also { outcome ->
+                    CodeModeSourceReset.note(driver.streams.find(record), outcome, context.link.post.perf)
+                }
+            }
         }
     }
 
@@ -222,10 +239,12 @@ internal class CodexCodeModeResume(
     private fun answered(record: CodeModeRecord): Boolean =
         record.progress.pending.all { it.clientId in record.results }
 
-    private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.progress.pending.map { pending ->
-        val result = record.results.getValue(pending.clientId)
-        CodeModeResult(pending.runtimeId, result.output, result.isError)
-    }
+    private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.progress.pending
+        .filter { it.clientId in record.results }
+        .map { pending ->
+            val result = record.results.getValue(pending.clientId)
+            CodeModeResult(pending.runtimeId, result.output, result.isError)
+        }
 
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(

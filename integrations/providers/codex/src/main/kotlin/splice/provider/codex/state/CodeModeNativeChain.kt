@@ -72,6 +72,7 @@ internal object CodeModeNativeChain {
             state
         } else {
             state.copy(nativeSegments = replay(record)).also {
+                it.completionError = state.completionError
                 it.issued = state.issued
                 it.sessionId = state.sessionId
                 it.conversationId = state.conversationId

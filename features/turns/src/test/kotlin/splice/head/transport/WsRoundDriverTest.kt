@@ -896,7 +896,7 @@ class WsRoundReserveTest {
 
         val result = drive.drive(inputs, runner, flowOf(failed))
 
-        assertEquals(WsRoundResult.NeedsSse("response.failed server_error boom"), result)
+        assertEquals(WsRoundResult.NeedsSse("response.failed server_error boom", "upstream_failure_terminal"), result)
         assertEquals(0, runner.endedOk, "a round re-served over SSE is not a clean terminal")
         assertEquals(0, runner.endedNotOk, "and drive must not report it at all — the driver owns the bypass")
         assertNull(
@@ -950,6 +950,11 @@ class WsRoundReserveTest {
             assertTrue(AsyncFileIo.drain(), "the attempt counter reached its perf row")
             val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
             assertEquals("2", row.getValue("attempts").toString(), "the websocket send and HTTP fallback both count")
+            assertEquals(
+                "1",
+                row.getValue(PerfKeys.WS_PRE_OUTPUT_FALLBACKS).toString(),
+                "the accepted WS failure before client output is counted as a real SSE fallback",
+            )
         } finally {
             runBlocking { h.stop() }
         }
@@ -1033,6 +1038,7 @@ class WsRoundReserveTest {
             runBlocking { h.stop() }
         }
         val line = synchronized(lines) { lines.single { "serving over SSE" in it } }
+        assertTrue("code=upstream_failure_terminal" in line, "the fallback's stable reason code survives: $line")
         assertTrue(expected in line, "the detail must survive the shape: $line")
         assertFalse('\n' in line.trimEnd('\n'), "one log line: $line")
     }

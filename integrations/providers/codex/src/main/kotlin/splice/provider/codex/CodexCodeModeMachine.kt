@@ -10,13 +10,19 @@ import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
+import splice.provider.codex.callbacks.CodeModeCallIssuanceGuard
+import splice.provider.codex.callbacks.CodeModeCallIssuerEmitter
+import splice.provider.codex.callbacks.CodeModeCallIssuerPoison
+import splice.provider.codex.callbacks.CodeModeCallIssuerRetry
+import splice.provider.codex.callbacks.CodexCodeModeCallIssuer
+import splice.provider.codex.callbacks.CodexCodeModeCallIssuerActions
+import splice.provider.codex.callbacks.CodexCodeModeIncrementalOutcomes
 import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeOversizedCalls
 import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamingCell
-import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -25,7 +31,6 @@ import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.failure.CodeModeWorkerLostException
 import splice.upstream.sse.WireSink
 import java.io.IOException
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** One step of a running script: the results its calls returned, where the step writes, and the live round and
@@ -51,6 +56,22 @@ internal class CodexCodeModeMachine(
     private val workerRecovery = CodeModeWorkerRecovery(registry)
 
     private val oversized = CodeModeOversizedCalls(config, validation)
+    private val callIssuer = CodexCodeModeCallIssuer(
+        config = config,
+        registry = registry,
+        validation = validation,
+        oversized = oversized,
+        actions = CodexCodeModeCallIssuerActions(
+            guard = CodeModeCallIssuanceGuard { record, cell -> checkIssuable(record, cell) },
+            emitter = CodeModeCallIssuerEmitter { record, calls, sink, cell, recovery ->
+                emit(record, calls, sink, cell, recovery)
+            },
+            poison = CodeModeCallIssuerPoison { record, message -> poison(record, message) },
+            retry = CodeModeCallIssuerRetry { request, cell, results ->
+                dispatchStep(request, cell, cell.advance(results))
+            },
+        ),
+    )
 
     suspend fun advance(request: CodeModeAdvanceRequest): TurnOutcome {
         val record = request.record
@@ -223,7 +244,9 @@ internal class CodexCodeModeMachine(
         step: CodeModeStep,
     ): TurnOutcome =
         when (step) {
-            is CodeModeStep.Calls -> acceptCalls(request, cell, step.calls)
+            is CodeModeStep.Calls -> callIssuer.accept(request, cell, step)
+            is CodeModeStep.WaitingForResults ->
+                CodexCodeModeIncrementalOutcomes.waitingForResults(registry, request.record, step)
             is CodeModeStep.Completed -> complete(request.record, step)
         }.also { request.source?.billing?.prepare(it) }
 
@@ -243,41 +266,6 @@ internal class CodexCodeModeMachine(
         check(record.phase != CodeModePhase.LOST) { "code-mode source is lost; source was not rerun" }
     }
 
-    private suspend fun acceptCalls(
-        request: CodeModeAdvanceRequest,
-        cell: CodeModeCell,
-        calls: List<CodeModeCall>,
-    ): TurnOutcome {
-        // The empty answer is a second oversized batch from the same script, which ends it (CodeModeOversizedCalls).
-        oversized.refused(request.record, calls)?.let { refused ->
-            return if (refused.isEmpty()) {
-                poison(request.record, OVERSIZED_AGAIN)
-            } else {
-                dispatchStep(request, cell, cell.advance(refused))
-            }
-        }
-        validation.calls(request.record, request.turn.tools, calls)?.let { return poison(request.record, it) }
-        val pending = calls.mapIndexed { index, call ->
-            CodeModePending(
-                runtimeId = call.id,
-                clientId = "$CODE_MODE_CLIENT_ID_PREFIX${UUID.randomUUID()}",
-                name = call.name,
-                arguments = call.arguments,
-                exposed = !request.disableParallel || index == 0,
-            )
-        }
-        registry.changes.edit(
-            request.record,
-            growthBytes = pending.sumOf(splice.provider.codex.state.CodeModeWeight.STORED::call),
-        ) { record ->
-            checkIssuable(record, cell)
-            record.progress.totalCalls += calls.size
-            record.progress.pending += pending
-            record.progress.updatedAt = config.clock.millis()
-        }
-        return emit(request.record, request.record.visiblePending(), request.sink, cell, request.recovery)
-    }
-
     private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {
         if (!validation.fitsOutput(step.output)) return poison(record, "code-mode output exceeds the size limit")
         val wall = wallMillis(record)
@@ -294,7 +282,3 @@ internal class CodexCodeModeMachine(
         )
     }
 }
-
-internal const val CODE_MODE_CLIENT_ID_PREFIX = "toolu_splice_"
-
-private const val OVERSIZED_AGAIN: String = "code-mode tool arguments exceed the size limit again after one refusal"

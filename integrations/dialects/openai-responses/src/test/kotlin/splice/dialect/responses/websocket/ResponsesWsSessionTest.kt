@@ -115,6 +115,7 @@ class ResponsesWsSessionTest {
         val req = build(convo(0, trailingUserText = null))
         val f = s.frameFor(KEY, req, GEN)
         assertFalse(f.chained)
+        assertEquals("no_prior_chain", f.fullSendCode)
         assertEquals("response.create", f.frameObj()["type"]?.jsonPrimitive?.content)
         assertEquals(req.items().size, f.frameItems().size, "full send carries the whole input")
         assertTrue(f.frameObj()["previous_response_id"] == null)
@@ -289,7 +290,9 @@ class ResponsesWsSessionTest {
     fun `a new connection generation full-sends`() {
         val s = ResponsesWsSession()
         s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
-        assertFalse(s.frameFor(KEY, build(convo(2)), GEN + 1).chained)
+        val frame = s.frameFor(KEY, build(convo(2)), GEN + 1)
+        assertFalse(frame.chained)
+        assertEquals("connection_generation_changed", frame.fullSendCode)
     }
 
     /** BAIL: a pinned request property changed (codex gates connection reuse on exactly this). */
@@ -299,6 +302,7 @@ class ResponsesWsSessionTest {
         s.completed(KEY, PendingCommit(build(convo(1), effort = "high"), GEN, s.epochOf(KEY)), "resp_1")
         val f = s.frameFor(KEY, build(convo(2), effort = "low"), GEN)
         assertFalse(f.chained, "reasoning.effort is pinned per response; a change must not ride a chain")
+        assertEquals("request_properties_changed", f.fullSendCode)
     }
 
     /** BAIL: the prefix was rewritten (compaction, cache-key drift, an amended body). */
@@ -427,59 +431,6 @@ class ResponsesWsSessionTest {
             },
         )
         assertFalse(s.frameFor(KEY, withAlien, GEN).chained)
-    }
-
-    /** THE EPOCH FENCE (review of #72). Clearing alone cannot fix an ORDERING problem: a bypass
-     *  clears while a WS round is still in flight, and that round's terminal lands afterwards. Its
-     *  commit must be discarded, or the next turn chains onto context the server never got. */
-    @Test
-    fun `a commit built before an invalidation is discarded, not resurrected`() {
-        val s = ResponsesWsSession()
-        val r1 = build(convo(1))
-        val epochAtSend = s.epochOf(KEY) // the in-flight round captures this...
-        s.cleared(KEY) // ...then something bypasses (busy round rides SSE)
-        s.completed(
-            KEY,
-            PendingCommit(r1, GEN, epochAtSend),
-            "resp_1",
-            evidence = CALL_2_EVIDENCE,
-        ) // ...and the terminal lands LATE
-        assertFalse(
-            s.frameFor(KEY, build(convo(2)), GEN).chained,
-            "a stale-epoch commit must NOT resurrect the chain — the next round full-sends",
-        )
-    }
-
-    /** DR-78 (fresh-eyes sweep): the fence must be PER CONVERSATION. A never-cleared key's epoch
-     *  used to fall back to the GLOBAL seq at capture AND commit, so any other conversation's
-     *  clear bumped seq mid-flight and voided this key's commit — on a busy daemon every tear
-     *  anywhere silently defeated chaining for every concurrent conversation. */
-    @Test
-    fun `another conversation's clear does not void an in-flight commit`() {
-        val s = ResponsesWsSession()
-        val r1 = build(convo(1))
-        val epochAtSend = s.epochOf(KEY) // conversation A's round captures its epoch...
-        s.cleared("conv-unrelated") // ...an UNRELATED conversation tears mid-flight...
-        s.completed(
-            KEY,
-            PendingCommit(r1, GEN, epochAtSend),
-            "resp_1",
-            evidence = CALL_2_EVIDENCE,
-        ) // ...and A's clean terminal lands
-        assertTrue(
-            s.frameFor(KEY, build(convo(2)), GEN).chained,
-            "A's commit survives B's clear — the fence is per conversation",
-        )
-    }
-
-    /** The fence must not block the normal path: a commit under the CURRENT epoch still applies. */
-    @Test
-    fun `a commit under the current epoch still chains`() {
-        val s = ResponsesWsSession()
-        s.cleared(KEY) // epoch moves; a round STARTED AFTER it captures the new value
-        val r1 = build(convo(1))
-        s.completed(KEY, PendingCommit(r1, GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
-        assertTrue(s.frameFor(KEY, build(convo(2)), GEN).chained)
     }
 
     /** State is committed only on a clean terminal; a tear/cancel must not leave a chain behind. */

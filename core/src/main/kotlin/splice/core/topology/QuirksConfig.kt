@@ -50,6 +50,10 @@ public data class QuirksConfig(
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
      *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
     @SerialName("websocket") val webSocket: Boolean? = null,
+    /** openai-responses only: send a native-style `generate:false` prefix request before the first
+     *  code-mode WebSocket generation, so the subsequent response can use previous_response_id.
+     *  NULLABLE overlay; absent keeps the provider's own default. This never enables WebSockets. */
+    @SerialName("websocket_prefill") val webSocketPrefill: Boolean? = null,
     /** openai-responses only: stream_options.reasoning_summary_delivery. NULLABLE overlay — absent
      *  keeps the provider default (codex: "sequential_cutoff"); "off" omits the field, which is
      *  codex-rs's own default (its ConcurrentReasoningSummaries flag is off). On gpt-6.1-sol the cutoff

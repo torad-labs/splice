@@ -26,7 +26,7 @@ internal class CodeModeStreamingCell(
         checkSource()
         return try {
             val step = cell.advance(results)
-            round.source.awaitCertification()
+            if (step !is CodeModeStep.WaitingForResults) round.source.awaitCertification()
             checkSource()
             if (step is CodeModeStep.Calls) deliveredText = round.switching.detach()
             step

@@ -2,9 +2,9 @@
 package splice.codemode.host
 
 import kotlinx.serialization.json.JsonObject
-import splice.codemode.CodeModeFrames
 import splice.codemode.JvmCodeModeCell
 import splice.codemode.ReleaseCodeModeCell
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.failure.CodeModeWorkerLostException

@@ -76,6 +76,11 @@ public object PerfKeys {
     /** WebSocket attempts whose peer refused the request frame as too large: a 1009 close before any event. */
     public const val WS_REFUSED_TOO_LARGE: String = "ws_refused_too_large"
 
+    /** WebSocket rounds accepted by the peer then re-served over HTTP/SSE before any client bytes. */
+    public const val WS_PRE_OUTPUT_FALLBACKS: String = "ws_pre_output_fallbacks"
+    public const val WS_PREFILL_ROUNDS: String = "ws_prefill_rounds"
+    public const val WS_PREFILL_BYPASSES: String = "ws_prefill_bypasses"
+
     /** OkHttp responseHeadersStart receipt on the arrival clock, before Ktor's response handoff. */
     public const val ARRIVAL_TO_UPSTREAM_HEADERS_START_MS: String = "arrival_to_upstream_headers_start_ms"
 

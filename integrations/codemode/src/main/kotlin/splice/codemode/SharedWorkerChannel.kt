@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import splice.codemode.wire.CodeModeFrames
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.failure.CodeModeWorkerLostException

@@ -47,6 +47,7 @@ internal class QuirksOverlay {
     ).withReasoningCacheToml(providerCfg.quirks.reasoningCache)
         .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
         .withWebSocketToml(providerCfg.quirks.webSocket)
+        .withWebSocketPrefillToml(providerCfg.quirks.webSocketPrefill)
         .withSummaryDelivery(summaryDeliveryWire(providerCfg.quirks.summaryDelivery, base.reasoning.summaryDelivery))
         .withToolSurfaceToml(
             toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff, base.tools.toolSurface),

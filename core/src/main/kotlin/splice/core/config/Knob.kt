@@ -49,7 +49,6 @@ package splice.core.config
 // state file, and never through an edit of splice.toml.
 public enum class Knob(
     public val key: String,
-    public val kind: KnobKind,
     public val envNames: List<String>,
     private val typedDefault: KnobDefault,
     public val restartRequired: Boolean = false,
@@ -58,17 +57,15 @@ public enum class Knob(
      *  the per-head table is the one switch `splice doctor` reads and names (v0.4.0 prompt-review). */
     public val headOnly: Boolean = false,
 ) {
-    PORT("port", KnobKind.NUMBER, listOf("CODEX_PROXY_PORT"), KnobDefault.Count(3099L), restartRequired = true),
+    PORT("port", listOf("CODEX_PROXY_PORT"), KnobDefault.Count(3099L), restartRequired = true),
     CHATGPT_API_BASE(
         "chatgptApiBase",
-        KnobKind.STRING,
         listOf("CHATGPT_API_BASE"),
         KnobDefault.Text("https://chatgpt.com/backend-api/codex"),
         restartRequired = true,
     ),
     CODEX_AUTH_PATH(
         "codexAuthPath",
-        KnobKind.STRING,
         listOf("CODEX_AUTH_PATH"),
         // The registry's splice-owned default (AuthKind header, 2026-09-05) — referenced, not copied,
         // so the knob and the file `splice login` writes cannot drift apart (the DR-79 class).
@@ -77,7 +74,6 @@ public enum class Knob(
     ),
     PINNED_MODEL(
         "pinnedModel",
-        KnobKind.STRING,
         listOf("CLAUDEX_PINNED_MODEL", "CLAUDEX_MODEL"),
         KnobDefault.Text("gpt-6-sol"),
         restartRequired = true,
@@ -88,7 +84,6 @@ public enum class Knob(
     //  warm prompt-cache prefix is invalidated ("compaction ate my subscription"). Pinned by test.)
     EFFORT(
         "effort",
-        KnobKind.STRING,
         listOf("CLAUDEX_REASONING_EFFORT", "CODEX_REASONING_EFFORT"),
         KnobDefault.None,
         restartRequired = true,
@@ -97,13 +92,11 @@ public enum class Knob(
     // Default detailed: the fullest public reasoning text the Responses backends expose.
     SUMMARY(
         "summary",
-        KnobKind.STRING,
         listOf("CLAUDEX_REASONING_SUMMARY", "CODEX_REASONING_SUMMARY"),
         KnobDefault.Text("detailed"),
     ),
     SHOW_REASONING(
         "showReasoning",
-        KnobKind.STRING,
         listOf("CLAUDEX_SHOW_REASONING", "CODEX_SHOW_REASONING"),
         KnobDefault.Text("text"),
     ),
@@ -113,7 +106,6 @@ public enum class Knob(
     // showReasoning is on. Opt in only with CLAUDEX_REPLAY_REASONING=1.
     REPLAY_REASONING(
         "replayReasoning",
-        KnobKind.BOOL,
         listOf("CLAUDEX_REPLAY_REASONING", "CODEX_REPLAY_REASONING"),
         KnobDefault.Flag(false),
     ),
@@ -123,7 +115,6 @@ public enum class Knob(
     // summary into the transcript or sends that synthetic block back upstream.
     MIRROR_REASONING(
         "mirrorReasoning",
-        KnobKind.BOOL,
         listOf("CLAUDEX_MIRROR_REASONING"),
         KnobDefault.Flag(false),
         restartRequired = true,
@@ -136,7 +127,6 @@ public enum class Knob(
     // above — no reasoning summary, no claim about the model's thinking, only about the wait.
     PROGRESS_LINE(
         "progressLine",
-        KnobKind.BOOL,
         listOf("CLAUDEX_PROGRESS_LINE", "SPLICE_PROGRESS_LINE"),
         KnobDefault.Flag(true),
     ),
@@ -148,25 +138,21 @@ public enum class Knob(
     // fold_max_continue rounds and fold_max_tier (n). OFF for any model not in the set.
     FOLD_REASONING_MODELS(
         "foldReasoningModels",
-        KnobKind.STRING,
         listOf("CLAUDEX_FOLD_REASONING_MODELS"),
         KnobDefault.Text("gpt-5.6-luna,gpt-5.6-terra,gpt-5.5"),
     ),
     FOLD_MAX_CONTINUE(
         "foldMaxContinue",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_FOLD_MAX_CONTINUE"),
         KnobDefault.Count(3L),
     ),
     FOLD_MARKER_TEXT(
         "foldMarkerText",
-        KnobKind.STRING,
         listOf("CLAUDEX_FOLD_MARKER_TEXT"),
         KnobDefault.Text("Continue thinking..."),
     ),
     FOLD_MAX_TIER(
         "foldMaxTier",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_FOLD_MAX_TIER"),
         KnobDefault.Count(6L),
     ),
@@ -177,7 +163,6 @@ public enum class Knob(
     // globally would arm tool_search for grok/openai heads whose backends do not serve it.
     TOOL_SURFACE(
         "toolSurface",
-        KnobKind.STRING,
         listOf("CLAUDEX_TOOL_SURFACE"),
         KnobDefault.Text("auto"),
         restartRequired = true,
@@ -190,7 +175,6 @@ public enum class Knob(
     // headers each round already carries. Any other value keeps polling.
     QUOTA_POLL(
         "quotaPoll",
-        KnobKind.STRING,
         listOf("CLAUDEX_QUOTA_POLL"),
         KnobDefault.Text("auto"),
         restartRequired = true,
@@ -201,7 +185,6 @@ public enum class Knob(
     // operator's too-fast value cannot hammer the provider's usage endpoint.
     QUOTA_POLL_INTERVAL_MS(
         "quotaPollIntervalMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_QUOTA_POLL_INTERVAL_MS"),
         typedDefault = KnobDefault.Count(300_000L),
     ),
@@ -213,29 +196,28 @@ public enum class Knob(
     // over kimi's proven 8. The ceiling belongs to the upstream ACCOUNT (Daemon.kt reasoning);
     // high-capacity backends (vLLM, enterprise keys) raise it per head via [heads.*.overrides]
     // or opt out with 0 = unlimited. Hot-PATCHable, no restart.
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), KnobDefault.Count(12L)),
-    MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), KnobDefault.Count(512L)),
+    MAX_INFLIGHT("maxInflight", listOf("CLAUDEX_MAX_INFLIGHT"), KnobDefault.Count(12L)),
+    MAX_QUEUED("maxQueued", listOf("CLAUDEX_MAX_QUEUED"), KnobDefault.Count(512L)),
 
     // V4-354: one GLOBAL live switch for reading the redacted conversation Claude Code already wrote
     // locally. ON by default because it collects no new bytes. Exact request/response bodies belong to
     // per-head TRACE below (on by default since the operator's 2026-09-28 ruling, off per head);
     // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
-    TRANSCRIPT_VIEW("transcriptView", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+    TRANSCRIPT_VIEW("transcriptView", listOf(), KnobDefault.Flag(true)),
 
     // The two prompt stores that are splice's own to stop (Marcos, Oct 10: the user decides how much splice keeps). Both ON
     // by default, both read LIVE by their writers, so a PATCH stops the next copy with no restart. Off keeps what is
     // already held until Delete now.
-    KEEP_TRANSCRIPT_COPIES("keepTranscriptCopies", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+    KEEP_TRANSCRIPT_COPIES("keepTranscriptCopies", listOf(), KnobDefault.Flag(true)),
 
     // How many days a transcript copy is kept, apart from the history window (the President's ruling, Oct 12):
     // each new copy first removes the copies of sessions last used before now minus this. Read live by that copy,
     // so a PATCH applies to the next one.
-    TRANSCRIPT_COPY_DAYS("transcriptCopyDays", KnobKind.NUMBER, listOf(), KnobDefault.Count(30L)),
-    KEEP_COMPACTION_SUMMARIES("keepCompactionSummaries", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
-    KEEP_CODE_MODE_WORK("keepCodeModeWork", KnobKind.BOOL, listOf(), KnobDefault.Flag(true)),
+    TRANSCRIPT_COPY_DAYS("transcriptCopyDays", listOf(), KnobDefault.Count(30L)),
+    KEEP_COMPACTION_SUMMARIES("keepCompactionSummaries", listOf(), KnobDefault.Flag(true)),
+    KEEP_CODE_MODE_WORK("keepCodeModeWork", listOf(), KnobDefault.Flag(true)),
     UPSTREAM_RETRIES(
         "upstreamRetries",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_UPSTREAM_RETRIES"),
         // 4 attempts matches the surveyed harness floor (codex 4, gemini/Claude Code higher);
         // the old default of 2 with ~200ms total backoff still failed turns on 2-3s blips (G4b).
@@ -248,25 +230,21 @@ public enum class Knob(
     // 429 Retry-After); this is the bounded floor everything else falls onto.
     RETRY_BACKOFF_BASE_MS(
         "retryBackoffBaseMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_RETRY_BACKOFF_BASE_MS"),
         typedDefault = KnobDefault.Count(200L),
     ),
     RETRY_BACKOFF_CAP_MS(
         "retryBackoffCapMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_RETRY_BACKOFF_CAP_MS"),
         typedDefault = KnobDefault.Count(10_000L),
     ),
     RETRY_BACKOFF_JITTER_PCT(
         "retryBackoffJitterPct",
-        KnobKind.NUMBER,
         listOf("SPLICE_RETRY_BACKOFF_JITTER_PCT"),
         typedDefault = KnobDefault.Count(10L),
     ),
     UPSTREAM_TIMEOUT_MS(
         "upstreamTimeoutMs",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_UPSTREAM_TIMEOUT_MS"),
         KnobDefault.Count(900_000L),
         restartRequired = true,
@@ -278,7 +256,6 @@ public enum class Knob(
     // Named rather than positional because §magic-number blesses this spelling (see STALL_REANCHOR_MS).
     FIRST_BYTE_TIMEOUT_MS(
         "firstByteTimeoutMs",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_FIRST_BYTE_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(90_000L),
     ),
@@ -304,7 +281,6 @@ public enum class Knob(
     // a reason, which is the honest place for it now.
     STREAM_IDLE_MS(
         "streamIdleMs",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
         typedDefault = KnobDefault.Count(90_000L),
     ),
@@ -321,7 +297,6 @@ public enum class Knob(
     // 3 x the poll floor (250ms) or the poller samples it too late to matter.
     STALL_REANCHOR_MS(
         "stallReanchorMs",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_STALL_REANCHOR_MS"),
         // Named, not positional: §magic-number (the write-time mirror of detekt's MagicNumber)
         // blocks a NEW bare literal in a call argument, and this is the spelling it blesses. The
@@ -330,43 +305,37 @@ public enum class Knob(
     ),
     AUTH_CACHE_MS(
         "authCacheMs",
-        KnobKind.NUMBER,
         listOf("CLAUDEX_AUTH_CACHE_MS"),
         KnobDefault.Count(60_000L),
         restartRequired = true,
     ),
     DEBUG(
         "debug",
-        KnobKind.BOOL,
         listOf("CLAUDEX_DEBUG", "CODEX_PROXY_DEBUG"),
         KnobDefault.Flag(false),
         restartRequired = true,
     ),
     CONTEXT_WINDOW_OVERRIDE(
         "contextWindowOverride",
-        KnobKind.NUMBER,
         listOf("CODEX_MODEL_CONTEXT_WINDOW"),
-        KnobDefault.None,
+        KnobDefault.NoCount,
         restartRequired = true,
     ),
-    GROK_PORT("grokPort", KnobKind.NUMBER, listOf("GROK_PROXY_PORT"), KnobDefault.Count(3100L), restartRequired = true),
+    GROK_PORT("grokPort", listOf("GROK_PROXY_PORT"), KnobDefault.Count(3100L), restartRequired = true),
     GROK_MODEL(
         "grokModel",
-        KnobKind.STRING,
         listOf("CLAUDE_GROK_MODEL", "CLAUDE_GROK_PINNED_MODEL"),
         KnobDefault.Text("grok-4.7"),
         restartRequired = true,
     ),
     XAI_API_BASE(
         "xaiApiBase",
-        KnobKind.STRING,
         listOf("XAI_API_BASE"),
         KnobDefault.Text("https://api.x.ai/v1"),
         restartRequired = true,
     ),
     GROK_AUTH_PATH(
         "grokAuthPath",
-        KnobKind.STRING,
         listOf("GROK_AUTH_PATH"),
         // DR-79: must agree with AuthKind.GrokOAuth's registry default — login writes there, the
         // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
@@ -377,20 +346,17 @@ public enum class Knob(
     ),
     CONTROL_PORT(
         "controlPort",
-        KnobKind.NUMBER,
         listOf("SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT"),
         KnobDefault.Count(3096L),
         restartRequired = true,
     ),
     USAGE_WARN_PCT(
         "usageWarnPct",
-        KnobKind.NUMBER,
         listOf("SPLICE_USAGE_WARN_PCT"),
         KnobDefault.Count(80L),
     ),
     USAGE_WARN_TOKENS_5H(
         "usageWarnTokens5h",
-        KnobKind.NUMBER,
         listOf("SPLICE_USAGE_WARN_TOKENS_5H"),
         KnobDefault.Count(0L),
     ),
@@ -402,25 +368,21 @@ public enum class Knob(
     // etc.) are the same knob under DaemonConfig's @SerialName transliteration.
     MCP_IDLE_TIMEOUT_MS(
         "mcpIdleTimeoutMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_MCP_IDLE_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(1_800_000L),
     ),
     MCP_MAX_SERVERS(
         "mcpMaxServers",
-        KnobKind.NUMBER,
         listOf("SPLICE_MCP_MAX_SERVERS"),
         typedDefault = KnobDefault.Count(32L),
     ),
     MCP_REQUEST_TIMEOUT_MS(
         "mcpRequestTimeoutMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_MCP_REQUEST_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(1_800_000L),
     ),
     MCP_INITIALIZE_TIMEOUT_MS(
         "mcpInitializeTimeoutMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_MCP_INITIALIZE_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(60_000L),
     ),
@@ -433,13 +395,11 @@ public enum class Knob(
     // 8 MiB a screenshot-heavy session died with the client's canned "Request too large (max 32MB)".
     MAX_REQUEST_BYTES(
         "maxRequestBytes",
-        KnobKind.NUMBER,
         listOf("SPLICE_MAX_REQUEST_BYTES"),
         typedDefault = KnobDefault.Count(32 * 1024 * 1024L),
     ),
     REQUEST_READ_TIMEOUT_MS(
         "requestReadTimeoutMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_REQUEST_READ_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(30_000L),
     ),
@@ -449,7 +409,6 @@ public enum class Knob(
     // sending is never cut; only a stalled one is.
     INGRESS_READ_IDLE_MS(
         "ingressReadIdleMs",
-        KnobKind.NUMBER,
         listOf("SPLICE_INGRESS_READ_IDLE_MS"),
         typedDefault = KnobDefault.Count(30_000L),
     ),
@@ -461,7 +420,6 @@ public enum class Knob(
     // RequestHeapBudgetTest sends both everyday and full-size bursts through the real head.
     MATERIALIZATION_HEAP_BYTES(
         "materializationHeapBytes",
-        KnobKind.NUMBER,
         listOf("SPLICE_MATERIALIZATION_HEAP_BYTES"),
         typedDefault = KnobDefault.Count(0L),
     ),
@@ -472,13 +430,12 @@ public enum class Knob(
     // `git -C` against an untrusted path (review 2026-07-22).
     STATUSLINE_GIT_ROOTS(
         "statuslineGitRoots",
-        KnobKind.STRING,
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         KnobDefault.Text(""),
     ),
 
     // Colon-separated absolute folders; a session's project is the folder under one that holds its cwd (ProjectResolver).
-    PROJECTS_FOLDERS("projectsFolders", KnobKind.STRING, listOf("SPLICE_PROJECTS_FOLDERS"), KnobDefault.Text("")),
+    PROJECTS_FOLDERS("projectsFolders", listOf("SPLICE_PROJECTS_FOLDERS"), KnobDefault.Text("")),
 
     // V4-176: THE SUPERVISION CONTRACT, as two names the operator supplies rather than two constants
     // splice asserts about the box it happens to run on.
@@ -498,14 +455,12 @@ public enum class Knob(
     // (McpContainment) instead of pretending.
     SUPERVISOR_UNIT(
         "supervisorUnit",
-        KnobKind.STRING,
         listOf("SPLICE_SUPERVISOR_UNIT"),
         KnobDefault.Text("splice.service"),
         restartRequired = true,
     ),
     MCP_SLICE(
         "mcpSlice",
-        KnobKind.STRING,
         listOf("SPLICE_MCP_SLICE"),
         KnobDefault.Text("app-mcp.slice"),
         restartRequired = true,
@@ -521,7 +476,6 @@ public enum class Knob(
     // patterns (ActivityStore.kt).
     ACTIVITY_RETENTION_DAYS(
         "activityRetentionDays",
-        KnobKind.NUMBER,
         listOf("SPLICE_ACTIVITY_RETENTION_DAYS"),
         typedDefault = KnobDefault.Count(90L),
     ),
@@ -530,7 +484,6 @@ public enum class Knob(
     // retention or an explicit delete; false stops new appends at the next message (read live, EdgesStored).
     MESSAGE_EDGES(
         "messageEdges",
-        KnobKind.BOOL,
         listOf("SPLICE_MESSAGE_EDGES"),
         KnobDefault.Flag(true),
     ),
@@ -539,7 +492,6 @@ public enum class Knob(
     // stores none, otherwise a comma-separated list of head keys. Message edges use their own switch.
     ACTIVITY_STORE_HEADS(
         "activityStoreHeads",
-        KnobKind.STRING,
         listOf("SPLICE_ACTIVITY_STORE_HEADS"),
         KnobDefault.Text("*"),
         restartRequired = true,
@@ -553,7 +505,6 @@ public enum class Knob(
     // every other head's bodies unkept.
     WIRE_TAP(
         "wireTap",
-        KnobKind.NUMBER,
         listOf(), // head-only: no env alias
         typedDefault = KnobDefault.Count(0L),
         restartRequired = true,
@@ -566,7 +517,6 @@ public enum class Knob(
     // this head out; doctor names every head that is off. No global or env switch may silence it.
     TRACE(
         "trace",
-        KnobKind.BOOL,
         listOf(), // head-only: no env alias
         KnobDefault.Flag(true),
         restartRequired = true,
@@ -578,7 +528,6 @@ public enum class Knob(
     // counts as one of the days.
     TRACE_RETENTION_DAYS(
         "traceRetentionDays",
-        KnobKind.NUMBER,
         listOf("SPLICE_TRACE_RETENTION_DAYS"),
         typedDefault = KnobDefault.Count(7L),
         restartRequired = true,
@@ -589,7 +538,6 @@ public enum class Knob(
     // truncated, so a runaway record cannot grow without bound.
     TRACE_MAX_BODY_CHARS(
         "traceMaxBodyChars",
-        KnobKind.NUMBER,
         listOf("SPLICE_TRACE_MAX_BODY_CHARS"),
         typedDefault = KnobDefault.Count(16L shl 20),
         restartRequired = true,
@@ -600,7 +548,6 @@ public enum class Knob(
     // can tighten the default without a restart.
     BUDGET_DEFAULT_ACTION(
         "budgetDefaultAction",
-        KnobKind.STRING,
         listOf("SPLICE_BUDGET_DEFAULT_ACTION"),
         KnobDefault.Text("warn"),
     ),
@@ -617,7 +564,6 @@ public enum class Knob(
     // (SpliceConfig.historyWindow); nothing writes it any more.
     PERF_ARCHIVE_RETENTION_DAYS(
         "perfArchiveRetentionDays",
-        KnobKind.NUMBER,
         listOf("SPLICE_PERF_ARCHIVE_RETENTION_DAYS"),
         typedDefault = KnobDefault.Count(90L),
         restartRequired = true,
@@ -645,11 +591,13 @@ public enum class Knob(
     // asking for one that nothing needs.
     HISTORY_RETENTION_DAYS(
         "historyRetentionDays",
-        KnobKind.STRING,
         listOf("SPLICE_HISTORY_RETENTION_DAYS"),
         typedDefault = KnobDefault.None,
     ),
     ;
+
+    /** The input kind follows the typed default, including a number with no default value. */
+    public val kind: KnobKind = typedDefault.kind
 
     /** The untyped default the config layers read. A reader that expects a kind uses [count], [text] or [flag]. */
     internal val default: Any? get() = typedDefault.raw()

@@ -19,6 +19,17 @@ internal sealed class KnobDefault {
 
     internal data object None : KnobDefault()
 
+    /** An optional number still accepts numeric input even when it has no default value. */
+    internal data object NoCount : KnobDefault()
+
+    /** A default declares the input kind once, rather than repeating it in every catalogue entry. */
+    internal val kind: KnobKind
+        get() = when (this) {
+            is Count, NoCount -> KnobKind.NUMBER
+            is Flag -> KnobKind.BOOL
+            is Text, ChatgptLoginFile, GrokLoginFile, None -> KnobKind.STRING
+        }
+
     /** The untyped form the config layers carry: a Long, a String, a Boolean, or null. */
     internal fun raw(): Any? =
         when (this) {
@@ -27,6 +38,6 @@ internal sealed class KnobDefault {
             is Flag -> value
             ChatgptLoginFile -> AuthKind.ChatgptOAuth.authFile
             GrokLoginFile -> AuthKind.GrokOAuth.authFile
-            None -> null
+            None, NoCount -> null
         }
 }

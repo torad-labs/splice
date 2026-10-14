@@ -19,49 +19,75 @@ internal class DigestPrefixCheckpoint(private val budget: InputDigestCheckpointB
         val charge: InputDigestCheckpointBudget.Charge,
     )
 
+    private data class Borrowed(
+        val source: Held,
+        val unfinished: MessageDigest,
+        val charge: InputDigestCheckpointBudget.Charge,
+    )
+
+    private data class Encoded(val hex: String, val checkpoint: Held?)
+
+    private val lock = Any()
     private var held: Held? = null
     private var closed = false
 
-    @Synchronized
     fun hex(value: JsonElement, remember: Boolean): String {
-        val old = held
-        val resumed = old?.let { copy(it.unfinished) }
-        val supported = resumed != null || copy(MessageDigest.getInstance("SHA-256")) != null
+        val old = borrow()
+        val supported = old != null || copy(MessageDigest.getInstance("SHA-256")) != null
         if (!supported) return InputDigest.hex(value)
         val charge = captureCharge(remember)
         try {
-            val wire = DigestPrefixStream(
-                old?.bytes?.takeIf { resumed != null },
-                resumed,
-                if (charge != null) budget.prefixLimitBytes else 0,
-            )
-            JsonWire.write(value, wire)
-            val unfinished = wire.unfinished()
-            val next = if (charge != null) copy(unfinished) else null
-            wire.finalByte()?.let { unfinished.update(it.toByte()) }
-            val result = HexFormat.of().formatHex(unfinished.digest())
-            if (remember && !closed) replace(next, wire, charge)
-            return result
+            val encoded = encode(value, old, charge)
+            if (remember) publish(old?.source, encoded.checkpoint)
+            return encoded.hex
         } finally {
             charge?.close()
+            old?.charge?.close()
         }
     }
 
+    /** Only cloning and ownership transfer take the monitor; rendering and matching run outside it. */
+    private fun borrow(): Borrowed? = synchronized(lock) {
+        val old = held ?: return@synchronized null
+        val resumed = copy(old.unfinished) ?: return@synchronized null
+        Borrowed(old, resumed, old.charge.share())
+    }
+
     private fun captureCharge(remember: Boolean): InputDigestCheckpointBudget.Charge? {
-        if (!remember || closed) return null
+        if (!remember || synchronized(lock) { closed }) return null
         return budget.reserve(
             budget.prefixLimitBytes.toLong() * DIGEST_CAPTURE_COPIES + DIGEST_CHECKPOINT_METADATA_BYTES,
         )
     }
 
-    private fun replace(
-        next: MessageDigest?,
-        wire: DigestPrefixStream,
+    private fun encode(
+        value: JsonElement,
+        old: Borrowed?,
         charge: InputDigestCheckpointBudget.Charge?,
-    ) {
-        val replacement = retained(next, wire, charge)
-        held?.charge?.close()
-        held = replacement
+    ): Encoded {
+        val wire = DigestPrefixStream(
+            old?.source?.bytes,
+            old?.unfinished,
+            if (charge != null) budget.prefixLimitBytes else 0,
+        )
+        JsonWire.write(value, wire)
+        val unfinished = wire.unfinished()
+        val next = if (charge != null) copy(unfinished) else null
+        wire.finalByte()?.let { unfinished.update(it.toByte()) }
+        val hex = HexFormat.of().formatHex(unfinished.digest())
+        return Encoded(hex, retained(next, wire, charge))
+    }
+
+    private fun publish(expected: Held?, replacement: Held?) {
+        var adopted = false
+        val retired = synchronized(lock) {
+            if (closed || held !== expected) return@synchronized null
+            val old = held
+            held = replacement
+            adopted = true
+            old
+        }
+        if (adopted) retired?.charge?.close() else replacement?.charge?.close()
     }
 
     private fun retained(
@@ -82,10 +108,13 @@ internal class DigestPrefixCheckpoint(private val budget: InputDigestCheckpointB
         null
     }
 
-    @Synchronized
     override fun close() {
-        closed = true
-        held?.charge?.close()
-        held = null
+        val retired = synchronized(lock) {
+            closed = true
+            val old = held
+            held = null
+            old
+        }
+        retired?.charge?.close()
     }
 }

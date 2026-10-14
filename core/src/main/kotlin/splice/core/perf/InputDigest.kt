@@ -71,9 +71,9 @@ public data class InputPrefix(
     public fun textGrowthBytes(request: JsonObject, digests: InputPrefixDigests): Long? {
         val input = request[PREFIX_INPUT_FIELD] as? JsonArray
         if (input == null || input.size < count) return null
-        val prefix = JsonArray(input.take(count))
+        val prefix = JsonArray(input.subList(0, count))
         val properties = JsonObject(request.filterKeys { it != PREFIX_INPUT_FIELD })
-        val appended = input.drop(count)
+        val appended = input.subList(count, input.size)
         val preserved = digests.input(prefix) == inputDigest && digests.properties(properties) == propertiesDigest
         if (!preserved || appended.any { !textOnly(it) }) return null
         // A byte-level tokenizer cannot add more tokens than the new UTF-8 bytes. Count JSON

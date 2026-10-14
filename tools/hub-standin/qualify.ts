@@ -5,7 +5,7 @@ import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFil
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
-import { Probe, type Sample } from "./probe";
+import { failureCode, Probe, type Sample } from "./probe";
 
 const OLD_HASHES = {
   front: "52c4b8c308fb1268e0e16fcf995396997056f9b9f87c1a3757a8e555025988af",
@@ -41,6 +41,7 @@ const units: string[] = [];
 const daemons: ChildProcess[] = [];
 const redactions = new Set<string>();
 const receipt: Record<string, unknown> = { status: "NOT_QUALIFIED", requiredBehaviorCommit: REQUIRED_BEHAVIOR_COMMIT, artifactProvenance: "release-owner supplied hashes; build revision is not inferred", steps: [] };
+const calls: Sample[] = [];
 let desk: string | undefined, probe: Probe | undefined, probeWork: Promise<void> | undefined;
 let phase = "setup";
 let cleanupOk = true;
@@ -50,8 +51,11 @@ const interrupt = () => { interrupted = true; probe?.stop(); };
 process.on("SIGINT", interrupt);
 process.on("SIGTERM", interrupt);
 
+/** Only messages authored by this procedure are safe to retain in its receipt. */
+class QualificationFailure extends Error {}
+
 function invariant(ok: unknown, message: string): asserts ok {
-  if (!ok) throw new Error(message);
+  if (!ok) throw new QualificationFailure(message);
 }
 
 async function command(program: string, args: string[]): Promise<string> {
@@ -60,11 +64,13 @@ async function command(program: string, args: string[]): Promise<string> {
     let output = "";
     child.stdout.on("data", (chunk) => { output = (output + chunk.toString()).slice(-8192); });
     child.stderr.resume();
-    const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
-    child.once("error", () => { clearTimeout(timer); reject(new Error("A stand-in prerequisite command could not start")); });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 15_000);
+    child.once("error", () => { clearTimeout(timer); reject(new QualificationFailure("A stand-in prerequisite command could not start")); });
     child.once("exit", (code) => {
       clearTimeout(timer);
-      code === 0 ? resolveCommand(output.trim()) : reject(new Error(`Stand-in prerequisite command failed: ${program}`));
+      if (code === 0 && !timedOut) resolveCommand(output.trim());
+      else reject(new QualificationFailure(`Stand-in prerequisite command ${timedOut ? "timed out" : "failed"}: ${program}`));
     });
   });
 }
@@ -93,7 +99,7 @@ async function waitFor(check: () => Promise<boolean>, label: string, millisecond
     if (await check()) return;
     await new Promise((done) => setTimeout(done, 100));
   }
-  throw new Error(`Timed out waiting for ${label}`);
+  throw new QualificationFailure(`Timed out waiting for ${label}`);
 }
 
 async function privateBearer(file: string): Promise<string> {
@@ -180,7 +186,7 @@ async function main(): Promise<void> {
     child.stderr?.on("data", keepLog);
     child.once("error", () => { /* readiness fails without logging an environment or credential */ });
     await waitFor(async () => {
-      if (child.exitCode !== null || child.signalCode !== null) throw new Error("The isolated daemon exited before readiness");
+      if (child.exitCode !== null || child.signalCode !== null) throw new QualificationFailure("The isolated daemon exited before readiness");
       try { const response = await fetch(`http://127.0.0.1:${controlPort}/health`, { signal: AbortSignal.timeout(1500) }); return response.ok; } catch { return false; }
     }, "isolated daemon readiness");
     return child;
@@ -226,7 +232,7 @@ async function main(): Promise<void> {
   phase = "continuity setup";
   let continuityUnit = `${unit}-front`;
   await startFront(continuityUnit, frontPort, join(bin, "splice-mcp-front"));
-  probe = new Probe(endpoint(frontPort), () => privateBearer(mcpFile), launchHeaders, () => {});
+  probe = new Probe(endpoint(frontPort), () => privateBearer(mcpFile), launchHeaders, (sample) => { calls.push(sample); });
   await probe.initialize();
   await probe.openStream();
   let probeFailed = false;
@@ -272,7 +278,7 @@ async function main(): Promise<void> {
   await rename(oldSibling, join(bin, "splice-mcp-front"));
   continuityUnit = `${unit}-old`;
   await startFront(continuityUnit, frontPort, join(bin, "splice-mcp-front"));
-  probe = new Probe(endpoint(frontPort), () => privateBearer(mcpFile), launchHeaders, () => {});
+  probe = new Probe(endpoint(frontPort), () => privateBearer(mcpFile), launchHeaders, (sample) => { calls.push(sample); });
   await probe.initialize();
   const firstOld = await probe.once();
   invariant(firstOld.ok && firstOld.reading?.instance === lastNew.instance && firstOld.reading?.pid === lastNew.pid,
@@ -298,17 +304,17 @@ async function main(): Promise<void> {
   let log = daemonLog;
   for (const secret of redactions) log = log.replaceAll(secret, "[redacted]");
   await writeFile(join(receiptDir, "daemon.log"), log, { mode: 0o600 });
-  await writeFile(join(receiptDir, "calls.jsonl"), [...newFrontCalls, ...probe.samples].map((sample: Sample) => JSON.stringify(sample)).join("\n") + "\n", { mode: 0o600 });
 }
 
 try {
   await main();
-} catch {
+} catch (error) {
   receipt.status = "FAIL";
   receipt.failedStep = phase;
+  receipt.failure = error instanceof QualificationFailure ? error.message : failureCode(error);
 } finally {
   cleaning = true;
-  if (interrupted) { receipt.status = "FAIL"; receipt.failedStep = phase; }
+  if (interrupted) { receipt.status = "FAIL"; receipt.failedStep = phase; receipt.failure ??= "The stand-in was interrupted"; }
   probe?.stop();
   if (probeWork) await probeWork.catch(() => { cleanupOk = false; });
   for (const name of units.reverse()) {
@@ -320,10 +326,23 @@ try {
   for (const slice of [`${unit}-mcp.slice`, `${unit}.slice`]) {
     try { await command("systemctl", ["--user", "stop", slice]); } catch { cleanupOk = false; }
   }
-  if (desk && cleanupOk) await rm(desk, { recursive: true, force: true });
+  if (desk && cleanupOk) {
+    try {
+      await rm(desk, { recursive: true, force: true });
+    } catch (error) {
+      cleanupOk = false;
+      receipt.failure ??= `Owned desk cleanup failed: ${failureCode(error)}`;
+    }
+  }
   receipt.cleanup = cleanupOk ? "complete" : "incomplete; owned desk retained";
-  if (!cleanupOk) receipt.status = "FAIL";
+  if (!cleanupOk) { receipt.status = "FAIL"; receipt.failure ??= "Owned stand-in cleanup did not complete"; }
   if (receiptCreated) {
+    try {
+      await writeFile(join(receiptDir, "calls.jsonl"), calls.map((sample) => JSON.stringify(sample)).join("\n") + "\n", { mode: 0o600 });
+    } catch (error) {
+      receipt.status = "FAIL";
+      receipt.failure ??= failureCode(error);
+    }
     await writeFile(join(receiptDir, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 });
   }
   process.stdout.write(`${receipt.status}: ${receipt.status === "PASS" ? "native pair continuity" : phase}\n`);

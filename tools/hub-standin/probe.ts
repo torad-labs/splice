@@ -24,6 +24,12 @@ interface HttpReply {
 
 const MAX_REPLY_BYTES = 64 * 1024;
 
+/** Receipts keep bounded transport codes, never arbitrary error messages or response data. */
+export function failureCode(error: unknown): string {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  return typeof code === "string" && /^[A-Z0-9_]{1,64}$/.test(code) ? code : "PROBE_FAILED";
+}
+
 // Only counter results and transport error codes leave this module. Authorization,
 // URLs and arbitrary response bodies never enter the receipt or event log.
 export class Probe {
@@ -141,17 +147,21 @@ export class Probe {
       this.last = reading;
       sample = { at: performance.now(), latencyMs: performance.now() - started, ok: true, reading };
     } catch (error) {
-      const failure = error as { code?: unknown; status?: unknown };
+      const failure = error && typeof error === "object" ? error as { status?: unknown } : {};
       sample = {
         at: performance.now(), latencyMs: performance.now() - started, ok: false,
-        error: typeof failure.code === "string" && /^[A-Z0-9_]+$/.test(failure.code) ? failure.code : "PROBE_FAILED",
+        error: failureCode(error),
         ...(typeof failure.status === "number" ? { status: failure.status } : {}),
       };
     }
+    this.record(sample);
+    return sample;
+  }
+
+  private record(sample: Sample): void {
     this.samples.push(sample);
     if (this.samples.length > 20_000) throw new Error("The stand-in probe exceeded its sample bound");
     this.onSample(sample);
-    return sample;
   }
 
   async openStream(): Promise<void> {
@@ -191,7 +201,16 @@ export class Probe {
       if (!sample.ok && this.active) {
         // Re-initialize just the same endpoint. Recovery does not reset the expected
         // counter process or waive a failure already recorded in the receipt.
-        try { await this.initialize(); } catch { /* the next call records continued failure */ }
+        const started = performance.now();
+        try {
+          await this.initialize();
+        } catch (error) {
+          if (!this.active) break;
+          this.record({
+            at: performance.now(), latencyMs: performance.now() - started, ok: false,
+            error: `REINITIALIZE_${failureCode(error)}`,
+          });
+        }
       }
       if (this.active) await new Promise((resolve) => setTimeout(resolve, 20));
     }

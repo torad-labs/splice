@@ -23,29 +23,13 @@ public class RecordedSessions(
         val listing = source.list().let { it.copy(sessions = it.sessions.map(::joined)) }
         seen.note(listing.sessions)
         val present = listing.sessions.mapNotNullTo(HashSet()) { it.sessionId }
-        return listing.copy(sessions = listing.sessions + seen.absent(present).map(::ended))
+        return listing.copy(sessions = listing.sessions + seen.absent(present).map(seen::ended))
     }
 
     private fun joined(record: SessionRecord): SessionRecord {
         val head = record.sessionId?.takeIf { record.wantsHead() }?.let(seen::headOf) ?: return record
         return record.copy(route = SessionRoute.Head(head))
     }
-
-    private fun ended(kept: SeenSession) = SessionRecord(
-        sessionId = kept.sessionId,
-        name = kept.name,
-        status = SessionStatus(),
-        route = kept.head?.let { SessionRoute.Head(it) } ?: SessionRoute.Unknown,
-        availability = SessionAvailability.GONE,
-        process = SessionProcess(
-            pid = null,
-            cwd = kept.cwd,
-            startedAt = null,
-            updatedAt = kept.lastActivityMs,
-            messagingSocketPath = null,
-        ),
-        client = SessionClient(kind = null, version = null),
-    )
 }
 
 /** The head whose port [sessionId]'s requests arrive on, as this daemon has seen them since it started, or null when

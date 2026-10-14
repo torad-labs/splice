@@ -1,5 +1,4 @@
-// NEW: Oct 12, 2026 (splice-lead) — history.jsonl read once, then only what was appended. The file only grows, so a
-// refresh reads from where the last one stopped; a file that shrank or was replaced is read from the start.
+// History rows stream through a bounded cache; cache overflow never truncates the scan.
 package splice.client.transcript
 
 import kotlinx.serialization.SerializationException
@@ -7,44 +6,107 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.FileIdentity
 import splice.core.util.JsonScalars
-import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets
+import java.nio.channels.Channels
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
-private const val HISTORY_LINE_END = '\n'
-private const val HISTORY_LINE_END_BYTE = HISTORY_LINE_END.code.toByte()
-
+private const val MAX_HISTORY_ROWS = 4_096
+private const val MAX_HISTORY_FILES = 64
+private const val MAX_HISTORY_CACHE_BYTES = 4L shl 20
+private const val HISTORY_ROW_BYTES = 96L
 private val HISTORY_ID = Regex("[A-Za-z0-9_-]{1,128}")
 
-/** One history line that names a session, parsed once. [title] is the display text already cut and redacted. */
-internal data class HistoryRow(val id: String, val timestamp: Long?, val title: String?, val project: String?)
+/** One history line that names a session, parsed once. [title] is already cut and redacted. */
+internal data class HistoryRow(val id: String, val timestamp: Long?, val title: String?, val project: String?) {
+    fun retainedBytes(): Long = HISTORY_ROW_BYTES + 2L * (id.length + (title?.length ?: 0) + (project?.length ?: 0))
+}
+
+internal fun interface HistoryRowReceiver {
+    operator fun invoke(row: HistoryRow)
+}
+
+private class HistoryRowRetention(
+    private val slots: Int,
+    private val budget: Long,
+    private val receive: HistoryRowReceiver,
+    var cacheable: Boolean,
+) {
+    val rows = ArrayList<HistoryRow>()
+    var bytes = 0L
+        private set
+
+    fun accept(row: HistoryRow, complete: Boolean) {
+        receive(row)
+        if (!complete || !cacheable) return
+        bytes += row.retainedBytes()
+        if (rows.size >= slots || bytes > budget) {
+            cacheable = false
+            rows.clear()
+        } else {
+            rows += row
+        }
+    }
+}
 
 internal class HistoryRowsCache {
-    internal data class Held(val key: FileIdentity?, var committed: Long, val rows: MutableList<HistoryRow>)
+    internal data class Held(
+        val key: FileIdentity?,
+        val size: Long,
+        val modifiedMs: Long,
+        val committed: Long,
+        val rows: List<HistoryRow>,
+        val bytes: Long,
+    ) {
+        fun accepts(stat: EntryStat): Boolean {
+            if (key != stat.identity || committed > stat.size) return false
+            val unchanged = stat.size == size && stat.modifiedMs == modifiedMs
+            return stat.size > size || unchanged
+        }
+    }
 
     private val json = Json
     private var held: Map<Path, Held> = emptyMap()
 
-    /** One refresh: the rows of each history file it reads, and the files it met kept for the next. */
     fun pass(): Pass = Pass(held)
 
     inner class Pass(private val before: Map<Path, Held>) {
         private val met = HashMap<Path, Held>()
+        private var bytes = 0L
+        private var count = 0
 
-        /** Every row of [file], read from where the last refresh stopped. Throws what reading the file throws. */
-        fun rows(file: Path): List<HistoryRow> {
+        /** Delivers every row, even when the file is too large to retain for the next pass. */
+        fun rows(file: Path, receive: HistoryRowReceiver) {
             val stat = EntryStat(file)
-            val prior = before[file]?.takeIf { it.key == stat.identity && it.committed <= stat.size }
-            val kept = prior ?: Held(stat.identity, 0L, ArrayList())
-            val bytes = readFrom(file, kept.committed)
-            val end = bytes.lastIndexOf(HISTORY_LINE_END_BYTE) + 1
-            kept.rows += parse(String(bytes, 0, end, StandardCharsets.UTF_8))
-            kept.committed += end
-            met[file] = kept
-            // an unterminated last line is read now and read again once its newline arrives
-            return kept.rows + parse(String(bytes, end, bytes.size - end, StandardCharsets.UTF_8))
+            val prior = before[file]?.takeIf { it.accepts(stat) }
+            val kept = HistoryRowRetention(
+                MAX_HISTORY_ROWS - count,
+                MAX_HISTORY_CACHE_BYTES - bytes,
+                receive,
+                met.size < MAX_HISTORY_FILES,
+            )
+            prior?.rows?.forEach { kept.accept(it, true) }
+            val committed = read(file, prior?.committed ?: 0L, kept)
+            if (kept.cacheable) {
+                met[file] = Held(stat.identity, stat.size, stat.modifiedMs, committed, kept.rows, kept.bytes)
+                count += kept.rows.size
+                bytes += kept.bytes
+            }
+        }
+
+        private fun read(file: Path, from: Long, kept: HistoryRowRetention): Long {
+            var committed = from
+            Files.newByteChannel(file, StandardOpenOption.READ).use { channel ->
+                val until = channel.size()
+                channel.position(committed)
+                val lines = HistoryLineReader(Channels.newInputStream(channel), committed, until)
+                while (true) {
+                    val line = lines.next() ?: break
+                    row(line.text)?.let { kept.accept(it, line.complete) }
+                    if (line.complete) committed = line.next
+                }
+            }
+            return committed
         }
 
         fun commit() {
@@ -52,20 +114,6 @@ internal class HistoryRowsCache {
         }
     }
 
-    private fun readFrom(file: Path, offset: Long): ByteArray {
-        Files.newByteChannel(file, StandardOpenOption.READ).use { channel ->
-            val size = channel.size()
-            channel.position(offset)
-            val buffer = ByteBuffer.allocate(maxOf(0L, size - offset).toInt())
-            while (buffer.hasRemaining() && channel.read(buffer) > 0) Unit
-            return buffer.array().copyOf(buffer.position())
-        }
-    }
-
-    private fun parse(text: String): List<HistoryRow> =
-        if (text.isEmpty()) emptyList() else text.removeSuffix("\n").split(HISTORY_LINE_END).mapNotNull(::row)
-
-    /** A line that is not JSON, or names no session, is no row. */
     private fun row(line: String): HistoryRow? {
         val record = try {
             json.parseToJsonElement(line) as? JsonObject
@@ -75,10 +123,10 @@ internal class HistoryRowsCache {
         val id = JsonScalars.str(record, "sessionId")
         if (id == null || !HISTORY_ID.matches(id)) return null
         return HistoryRow(
-            id = id,
-            timestamp = JsonScalars.long(record, "timestamp"),
-            title = TranscriptMetadata.title(JsonScalars.str(record, "display")),
-            project = JsonScalars.str(record, "project")?.takeIf(String::isNotBlank),
+            id,
+            JsonScalars.long(record, "timestamp"),
+            TranscriptMetadata.title(JsonScalars.str(record, "display")),
+            JsonScalars.str(record, "project")?.takeIf(String::isNotBlank),
         )
     }
 }

@@ -1,6 +1,8 @@
 // NEW: V4-344 enumerates Claude Code history and primary transcripts by session id.
 package splice.client.transcript
 
+import kotlinx.coroutines.CancellationException
+import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.sessions.transcript.SessionFiles
@@ -10,33 +12,116 @@ import splice.sessions.transcript.SessionHistoryScan
 import splice.sessions.transcript.SessionHistorySource
 import java.io.IOException
 import java.nio.file.NoSuchFileException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 
 // why: searches typed into one visit reuse the source scan, while new sessions appear soon after.
 private const val CACHE_MS = 10_000L
+private const val MAX_SCAN_ENTRIES = 4_096
+private const val MAX_SCAN_BYTES = 4L shl 20
+private const val SCAN_ENTRY_BYTES = 160L
+private const val SCAN_ERROR_BYTES = 48L
 
 /** Claude Code's history.jsonl and primary transcript files, joined by session id. A short cached
  *  snapshot means typing a search does not redo the join on every keystroke, and what each refresh learned from a
  *  file is kept while the file is unchanged: a refresh lists and stats the transcripts and reads only a new or
- *  changed one, and reads only what was appended to history.jsonl. */
+ *  changed one, and reads only what was appended to retained history files. Caches have entry and byte bounds;
+ *  larger scans still return every session and share their result with overlapping readers. */
 public class TranscriptHistoryIndex(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) : SessionHistorySource {
     private data class Cached(val roots: List<SessionHistoryRoot>, val at: Long, val scan: SessionHistoryScan)
+    private data class Refresh(val roots: List<SessionHistoryRoot>, val result: CompletableFuture<SessionHistoryScan>)
     private val monitor = Any()
     private var cached: Cached? = null
+    private var refreshing: Refresh? = null
     private val transcripts = TranscriptFactsCache()
     private val history = HistoryRowsCache()
 
-    override fun scan(roots: List<SessionHistoryRoot>): SessionHistoryScan = synchronized(monitor) {
-        val now = clock()
-        cached?.takeIf { it.roots == roots && now - it.at in 0 until CACHE_MS }?.let { return@synchronized it.scan }
+    override fun scan(roots: List<SessionHistoryRoot>): SessionHistoryScan {
+        val requested = roots.toList()
+        while (true) {
+            var owner = false
+            val refresh = synchronized(monitor) {
+                val now = clock()
+                cached?.takeIf { it.roots == requested && now - it.at in 0 until CACHE_MS }?.let { return it.scan }
+                refreshing ?: Refresh(requested, CompletableFuture()).also {
+                    refreshing = it
+                    owner = true
+                }
+            }
+            if (owner) return read(refresh)
+            val result = await(refresh)
+            if (refresh.roots == requested) return result
+        }
+    }
+
+    /** Only the refresh owner mutates passes. Readers wait without holding the publication monitor. */
+    private fun read(refresh: Refresh): SessionHistoryScan =
+        Cancellables.withCleanup(cleanup = { incomplete(refresh) }) {
+            val attempt = Cancellables.runCatchingBestEffort { readPass(refresh.roots) }
+            attempt.exceptionOrNull()?.let { failed(refresh, it) }
+            val scan = attempt.getOrThrow()
+            val retained = cacheable(scan)
+            synchronized(monitor) {
+                cached = if (retained) Cached(refresh.roots, clock(), scan) else null
+                refresh.result.complete(scan)
+                refreshing = null
+            }
+            scan
+        }
+
+    private fun readPass(roots: List<SessionHistoryRoot>): SessionHistoryScan {
         val transcriptPass = transcripts.pass()
         val historyPass = history.pass()
-        HistoryScanBuilder(roots, transcriptPass, historyPass).read().also {
-            transcriptPass.commit()
-            historyPass.commit()
-            cached = Cached(roots.toList(), now, it)
+        val scan = HistoryScanBuilder(roots, transcriptPass, historyPass).read()
+        transcriptPass.commit()
+        historyPass.commit()
+        return scan
+    }
+
+    private fun incomplete(refresh: Refresh) {
+        synchronized(monitor) {
+            if (refreshing === refresh) {
+                refresh.result.completeExceptionally(CancellationException("history refresh did not finish"))
+                refreshing = null
+            }
         }
+    }
+
+    private fun failed(refresh: Refresh, error: Throwable) {
+        synchronized(monitor) {
+            refresh.result.completeExceptionally(error)
+            refreshing = null
+        }
+    }
+
+    private fun await(refresh: Refresh): SessionHistoryScan = try {
+        refresh.result.get()
+    } catch (error: ExecutionException) {
+        throw error.cause ?: error
+    } catch (error: InterruptedException) {
+        Thread.currentThread().interrupt()
+        throw error
+    }
+
+    /** Large results remain complete for this call and overlapping callers, but are not retained as a cache. */
+    private fun cacheable(scan: SessionHistoryScan): Boolean {
+        if (scan.sessions.size > MAX_SCAN_ENTRIES) return false
+        var bytes = 0L
+        val estimates = scan.sessions.asSequence().map(::entryBytes) +
+            scan.errors.asSequence().map { SCAN_ERROR_BYTES + 2L * it.length }
+        for (size in estimates) {
+            bytes += size
+            if (bytes > MAX_SCAN_BYTES) return false
+        }
+        return true
+    }
+
+    private fun entryBytes(entry: SessionHistoryEntry): Long {
+        val characters = entry.sessionId.length + (entry.name?.length ?: 0) +
+            (entry.project?.length ?: 0) + (entry.head?.length ?: 0)
+        return SCAN_ENTRY_BYTES + 2L * characters
     }
 }
 
@@ -59,7 +144,7 @@ private class HistoryScanBuilder(
     private fun history(root: SessionHistoryRoot) {
         val file = root.dir.resolve("history.jsonl")
         try {
-            historyRows.rows(file).forEach { prompt(it, root.head) }
+            historyRows.rows(file) { prompt(it, root.head) }
         } catch (_: NoSuchFileException) {
             // This config tree has no history file; its primary transcripts still count.
         } catch (error: IOException) {

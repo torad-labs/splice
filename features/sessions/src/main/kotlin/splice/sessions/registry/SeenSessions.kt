@@ -25,7 +25,6 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
-import java.util.concurrent.ConcurrentHashMap
 
 /** The folder under the state directory the record lives in, which Your data counts as [SEEN_SESSIONS_KEY]. */
 public const val SEEN_SESSIONS_DIR: String = "sessions-seen"
@@ -57,11 +56,10 @@ public class SeenSessions(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // What each record file holds, by session id, as this process last read or wrote it. Only this class writes the
-    // files and the history window only deletes them, so a listing reads the folder once and a file only the first
-    // time it sees it: 650 ended sessions cost one directory read every five seconds, not 650 file reads and parses
-    // (splice-sessions, Oct 13). A listing also writes only what changed against it.
-    private val held = ConcurrentHashMap<String, SeenSession>()
+    // Bounded metadata and ended projections, by session id. Only this class writes the files and the history
+    // window deletes them. A listing reads the folder once and reuses held facts; eviction rereads a record rather
+    // than dropping it from the result. A listing also writes only what changed against those facts.
+    private val held = SeenSessionCache()
 
     /** Records [records] that name a session, writing a file only when what it keeps changed. A record that cannot
      *  be written is skipped: the listing it came from is still served whole. */
@@ -86,7 +84,9 @@ public class SeenSessions(
     /** The sessions recorded that [present] does not hold and the window still keeps, newest first. */
     internal fun absent(present: Set<String>): List<SeenSession> {
         val cutoff = kept.now().cutoffMs(clock()) ?: Long.MIN_VALUE
-        return files().asSequence()
+        val files = files()
+        held.retain(files.mapTo(HashSet()) { it.fileName.toString().removeSuffix(".json") })
+        return files.asSequence()
             .map { it.fileName.toString().removeSuffix(".json") }
             .filter { it !in present && SESSION_ID.matches(it) }
             .mapNotNull { held[it] ?: recorded(it) }
@@ -94,6 +94,9 @@ public class SeenSessions(
             .sortedByDescending { it.lastActivityMs }
             .toList()
     }
+
+    /** Reuses the ended projection while its recorded facts are unchanged. */
+    internal fun ended(record: SeenSession): SessionRecord = held.ended(record)
 
     private fun seen(record: SessionRecord): SeenSession? {
         val id = record.sessionId?.takeIf(SESSION_ID::matches) ?: return null

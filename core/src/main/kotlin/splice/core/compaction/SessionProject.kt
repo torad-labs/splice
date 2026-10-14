@@ -18,28 +18,19 @@
 // one, as every head's does on the operator's machine, that is one read. The transcript stays the fallback.
 package splice.core.compaction
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import splice.core.config.UserHome
 import splice.core.util.ElapsedClock
-import splice.core.util.JsonScalars
 import splice.core.util.MonoClock
 import splice.core.util.PathProbe
-import java.io.IOException
-import java.io.UncheckedIOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
-
-private const val PROJECT_MISS_TTL_MS = 5_000L
-private const val MAX_PROJECT_MISSES = 1_024
 
 /** Maps Claude Code's session id to its working directory. The live registry wins; headless runs
  *  fall back to the transcript whose directory encodes the cwd and whose rows retain it exactly. */
 public class SessionProject(
     private val sessionsDir: Path = UserHome.claudeDir().resolve("sessions"),
     private val projectsDir: Path = UserHome.claudeDir().resolve("projects"),
-    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val headProjectsDirs: List<Path> = emptyList(),
 ) {
     // listOf(projectsDir), never `+ projectsDir`: a Path is an Iterable of its own name elements.
@@ -48,49 +39,24 @@ public class SessionProject(
     // each head's live-session registry folder sits beside its projects tree, under the name Claude Code gives it
     private val sessionsDirs: List<Path> = headProjectsDirs.map { it.resolveSibling("sessions") } + listOf(sessionsDir)
 
-    private val json = Json { ignoreUnknownKeys = true }
-    private val cache = ConcurrentHashMap<String, Path>()
-    private val misses = LinkedHashMap<String, Long>()
+    private val files = ProjectLookupFiles(clock)
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
 
     public fun projectFor(sessionId: String?): Path? {
         if (sessionId == null || !validSessionId.matches(sessionId)) return null
-        val existing = cache[sessionId]
-        if (existing != null || recentMiss(sessionId)) return existing
-        val project = registryProject(sessionId) ?: transcriptProject(sessionId)
-        if (project == null) recordMiss(sessionId)
-        return project?.let {
-            cache.putIfAbsent(sessionId, it)
-            cache[sessionId]
-        }
-    }
-
-    /** An unresolved lookup (including unreadable files) is retried shortly, never remembered as
-     *  permanent absence. Hits do not renew the TTL, so a new registry entry becomes visible. */
-    private fun recentMiss(sessionId: String): Boolean = synchronized(misses) {
-        val recordedAt = misses[sessionId]
-        val fresh = recordedAt != null && clock() - recordedAt < PROJECT_MISS_TTL_MS
-        if (!fresh) misses.remove(sessionId)
-        fresh
-    }
-
-    private fun recordMiss(sessionId: String) {
-        synchronized(misses) {
-            misses[sessionId] = clock()
-            if (misses.size > MAX_PROJECT_MISSES) misses.remove(misses.keys.first())
-        }
+        // Consult registry evidence even on transcript hits: a new higher-priority registration wins immediately.
+        return registryProject(sessionId) ?: transcriptProject(sessionId)
     }
 
     private fun registryProject(sessionId: String): Path? {
         val read = HashSet<Path>()
         return sessionsDirs.asSequence()
             .filter { read.add(realPath(it)) }
-            .flatMap { directoryEntries(it).asSequence() }
+            .flatMap { files.entries(it).asSequence() }
             .filter { it.fileName.toString().endsWith(".json") }
-            .mapNotNull(::readJson)
-            .firstOrNull { JsonScalars.str(it, "sessionId") == sessionId }
-            ?.let { JsonScalars.str(it, "cwd") }
-            ?.let(::absolutePath)
+            .mapNotNull(files::registration)
+            .firstOrNull { it.sessionId == sessionId }
+            ?.cwd
     }
 
     private fun transcriptProject(sessionId: String): Path? {
@@ -98,41 +64,13 @@ public class SessionProject(
         val walked = HashSet<Path>()
         return projectsDirs.asSequence()
             .filter { walked.add(realPath(it)) }
-            .flatMap { directoryEntries(it).asSequence() }
+            .flatMap { files.entries(it).asSequence() }
             .filter { Files.isDirectory(it) }
             .map { it.resolve(fileName) }
-            .filter { Files.isRegularFile(it) }
-            .mapNotNull { cwdFromTranscript(it, sessionId) }
+            .mapNotNull { files.transcript(it, sessionId) }
             .firstOrNull()
     }
 
-    // A transcript Claude Code wrote that cannot be read names no cwd; projectFor records a retried miss.
-    private fun cwdFromTranscript(file: Path, sessionId: String): Path? = try {
-        Files.newBufferedReader(file).useLines { lines ->
-            lines.mapNotNull(::parseJson)
-                .firstNotNullOfOrNull { row ->
-                    val rowSession = JsonScalars.str(row, "sessionId")
-                    if (rowSession == sessionId) JsonScalars.str(row, "cwd")?.let(::absolutePath) else null
-                }
-        }
-    } catch (_: IOException) {
-        null
-    } catch (_: UncheckedIOException) {
-        null
-    }
-
-    // An unreadable registry entry names no project; projectFor records a retried miss.
-    private fun readJson(path: Path): JsonObject? = PathProbe.text(path)?.let(::parseJson)
-
-    // Text that is not a JSON object is data, not a failure; every caller skips it.
-    private fun parseJson(text: String): JsonObject? = JsonScalars.objectOrNull(json, text)
-
-    // A recorded cwd that is not a valid absolute path names no project.
-    private fun absolutePath(raw: String): Path? = PathProbe.spelled(raw)?.normalize()?.takeIf { it.isAbsolute }
-
     // An unresolvable dir is deduplicated by its normalized absolute path instead.
     private fun realPath(dir: Path): Path = PathProbe.resolved(dir) ?: dir.toAbsolutePath().normalize()
-
-    // A missing or unlistable directory holds no candidates; projectFor records a retried miss.
-    private fun directoryEntries(path: Path): List<Path> = PathProbe.entries(path)
 }

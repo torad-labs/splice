@@ -67,7 +67,7 @@ class SessionProjectTest {
     }
 
     @Test
-    fun `successful lookup remains stable after registry disappearance`() {
+    fun `successful registry lookup is invalidated by registry disappearance`() {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         val projects = Files.createDirectories(tmp.resolve("projects"))
         val cwd = tmp.resolve("cached-project").toAbsolutePath()
@@ -79,11 +79,11 @@ class SessionProjectTest {
         assertEquals(cwd.normalize(), resolver.projectFor("cached"))
         Files.delete(registry)
         now = 60_000L
-        assertEquals(cwd.normalize(), resolver.projectFor("cached"))
+        assertNull(resolver.projectFor("cached"))
     }
 
     @Test
-    fun `negative lookup avoids rescans until its original TTL expires`() {
+    fun `negative lookup observes a new registry entry without waiting`() {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         val projects = Files.createDirectories(tmp.resolve("projects"))
         val cwd = tmp.resolve("new-project").toAbsolutePath()
@@ -92,14 +92,13 @@ class SessionProjectTest {
 
         assertNull(resolver.projectFor("new"))
         Files.writeString(sessions.resolve("new.json"), """{"sessionId":"new","cwd":"$cwd"}""")
-        now = 4_999L
-        assertNull(resolver.projectFor("new"), "a rescan would already see the new registry entry")
+        assertEquals(cwd.normalize(), resolver.projectFor("new"))
         now = 5_000L
-        assertEquals(cwd.normalize(), resolver.projectFor("new"), "a cache hit must not renew the TTL")
+        assertEquals(cwd.normalize(), resolver.projectFor("new"))
     }
 
     @Test
-    fun `failed directory lookup can recover through a new transcript after the TTL`() {
+    fun `failed directory lookup recovers immediately through a new transcript`() {
         val sessions = tmp.resolve("sessions")
         val projects = tmp.resolve("projects")
         val cwd = tmp.resolve("headless-project").toAbsolutePath()
@@ -109,13 +108,13 @@ class SessionProjectTest {
 
         val encoded = Files.createDirectories(projects.resolve("-headless-project"))
         Files.writeString(encoded.resolve("headless.jsonl"), """{"sessionId":"headless","cwd":"$cwd"}""")
-        assertNull(resolver.projectFor("headless"))
+        assertEquals(cwd.normalize(), resolver.projectFor("headless"))
         now = 5_000L
         assertEquals(cwd.normalize(), resolver.projectFor("headless"))
     }
 
     @Test
-    fun `negative cache evicts its oldest entry at capacity without forgetting a positive lookup`() {
+    fun `new registrations stay visible after unrelated misses`() {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         val projects = Files.createDirectories(tmp.resolve("projects"))
         val cwd = tmp.resolve("cached-project").toAbsolutePath()
@@ -129,6 +128,6 @@ class SessionProjectTest {
 
         Files.writeString(registry, """{"sessionId":"oldest","cwd":"$cwd"}""")
         assertEquals(cwd.normalize(), resolver.projectFor("oldest"))
-        assertEquals(cwd.normalize(), resolver.projectFor("cached"))
+        assertNull(resolver.projectFor("cached"))
     }
 }

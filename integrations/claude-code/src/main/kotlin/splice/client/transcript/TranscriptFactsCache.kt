@@ -5,6 +5,10 @@ package splice.client.transcript
 import splice.core.util.FileIdentity
 import java.nio.file.Path
 
+private const val MAX_TRANSCRIPT_FACTS = 4_096
+private const val MAX_TRANSCRIPT_FACT_BYTES = 4L shl 20
+private const val TRANSCRIPT_FACT_BYTES = 160L
+
 /** What the scan needs from one primary transcript, read from its head and tail. */
 internal data class TranscriptFacts(val name: String?, val cwd: String?)
 
@@ -21,15 +25,31 @@ internal class TranscriptFactsCache {
 
     /** One refresh. [commit] makes what it met the cache, so a file it did not meet is dropped. */
     inner class Pass(private val before: Map<Path, Held>) {
-        private val met = HashMap<Path, Held>()
+        private val met = LinkedHashMap<Path, Held>()
+        private var bytes = 0L
 
         /** The facts held for [file] while its [stamp] is unchanged, else null: read it and [remember]. */
         fun lookup(file: Path, stamp: TranscriptStamp): TranscriptFacts? =
-            before[file]?.takeIf { it.stamp == stamp }?.facts?.also { met[file] = Held(stamp, it) }
+            before[file]?.takeIf { it.stamp == stamp }?.facts?.also { remember(file, stamp, it) }
 
         fun remember(file: Path, stamp: TranscriptStamp, facts: TranscriptFacts) {
+            met.remove(file)?.let { bytes -= retainedBytes(file, it.facts) }
+            val size = retainedBytes(file, facts)
+            if (size > MAX_TRANSCRIPT_FACT_BYTES) return
+            while (met.isNotEmpty() && overBudget(size)) {
+                val oldest = met.entries.iterator().next()
+                bytes -= retainedBytes(oldest.key, oldest.value.facts)
+                met.remove(oldest.key)
+            }
             met[file] = Held(stamp, facts)
+            bytes += size
         }
+
+        private fun overBudget(size: Long): Boolean =
+            met.size >= MAX_TRANSCRIPT_FACTS || bytes + size > MAX_TRANSCRIPT_FACT_BYTES
+
+        private fun retainedBytes(file: Path, facts: TranscriptFacts): Long =
+            TRANSCRIPT_FACT_BYTES + 2L * (file.toString().length + (facts.name?.length ?: 0) + (facts.cwd?.length ?: 0))
 
         fun commit() {
             held = met

@@ -29,8 +29,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.DaemonLog
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.upstream.ToolNameShortener
+import splice.upstream.memory.MessageFragmentContext
 
 internal class PassthroughRequestBuilder(
     private val quirks: PassthroughQuirks,
@@ -57,13 +59,25 @@ internal class PassthroughRequestBuilder(
         val raw = body.raw
         val typed = body.typed
         val effort = thinking.effortLadder(typed)
+        val context = if (names.active) {
+            null
+        } else {
+            JsonWire.string(
+                buildJsonObject {
+                    put("request", MessageFragmentContext.of(typed, raw))
+                    put("upstream_model", upstreamModel)
+                    put("original_model", originalModel)
+                    put("effort", effort)
+                },
+            )
+        }
 
         val req = buildJsonObject {
             fields.copyUnhandledFields(this, raw)
             put(MODEL, upstreamModel)
             put(STREAM, true)
             raw[SYSTEM]?.let { put(SYSTEM, cache.stripCacheControl(it)) }
-            raw[MESSAGES]?.let { put(MESSAGES, messages.scrubMessages(it)) }
+            raw[MESSAGES]?.let { put(MESSAGES, messages.scrubMessages(it, context)) }
             raw[TOOLS]?.let { put(TOOLS, tools.sanitizeTools(it, clientStreams = typed.stream)) }
             raw[TOOL_CHOICE]?.let { put(TOOL_CHOICE, cache.stripCacheControl(it)) }
             thinking.putThinking(this, typed, raw[THINKING], effort)

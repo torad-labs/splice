@@ -26,13 +26,15 @@ import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
+import splice.upstream.memory.MessageFragments
 
 internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
     private val floor = ImageFloor(quirks.capabilities.minImageEdgePx)
     private val toolInput = ChatToolInput()
+    private val fragments = MessageFragments()
 
-    fun messagesArray(system: String?, body: AnthropicRequest): JsonArray = buildJsonArray {
+    fun messagesArray(system: String?, body: AnthropicRequest, context: String? = null): JsonArray = buildJsonArray {
         // No system prompt, no system message — on every turn, compaction included.
         system?.let { sys ->
             addJsonObject {
@@ -42,7 +44,12 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         }
         val alternation = ChatAlternation()
         body.messages.forEach { msg ->
-            val mapped = buildJsonArray { appendMessage(this, msg.role, msg.content) }
+            val mapped = if (context == null) {
+                buildJsonArray { appendMessage(this, msg.role, msg.content) }
+            } else {
+                fragments.message(context, msg) { buildJsonArray { appendMessage(this, msg.role, msg.content) } }
+            }
+            // Merging across dropped messages is request-local, never part of a cached fragment.
             alternation.accept(mapped.filterIsInstance<JsonObject>())
         }
         alternation.messages().forEach { add(it) }

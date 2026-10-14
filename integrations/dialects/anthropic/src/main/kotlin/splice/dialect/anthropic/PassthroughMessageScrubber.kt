@@ -55,6 +55,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.upstream.ToolNameShortener
+import splice.upstream.memory.MessageFragments
 import java.util.concurrent.ConcurrentHashMap
 
 private const val SIGNATURE_FIELD = "signature"
@@ -83,11 +84,22 @@ internal class PassthroughMessageScrubber(
      *  re-ride every turn, so an unlatched line would repeat per block per turn. Same idiom as
      *  ToolNameShortener.fullLogged and the translator's two latches. */
     private val droppedLogged = ConcurrentHashMap.newKeySet<String>()
+    private val fragments = MessageFragments()
 
-    fun scrubMessages(messages: JsonElement): JsonArray {
+    fun scrubMessages(messages: JsonElement, context: String? = null): JsonArray {
         val arr = messages as? JsonArray ?: return buildJsonArray { }
         return buildJsonArray {
-            arr.forEach { msg -> (msg as? JsonObject)?.let { add(scrubMessage(it)) } }
+            arr.forEach { msg ->
+                (msg as? JsonObject)?.let {
+                    // An active name map can change native-name collision behavior. Always run that live.
+                    val scrubbed = if (context == null || names.active) {
+                        scrubMessage(it)
+                    } else {
+                        fragments.rawMessage(context, it) { scrubMessage(it) }
+                    }
+                    add(scrubbed)
+                }
+            }
         }
     }
 

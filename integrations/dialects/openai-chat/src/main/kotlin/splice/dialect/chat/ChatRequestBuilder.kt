@@ -6,12 +6,16 @@
 package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayNow
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
+import splice.core.util.JsonWire
 import splice.core.wire.AnthropicRequest
+import splice.upstream.memory.MessageFragmentContext
 
 public class ChatRequestBuilder(
     private val quirks: ChatQuirks,
@@ -35,10 +39,17 @@ public class ChatRequestBuilder(
         // builder used to do (directive appended to the system message, tools stripped) moved the
         // backend's prompt-cache prefix from token zero, so every compaction read the whole
         // transcript cold. `compact` reaches TurnMeta for the response side only.
-        val messages = wire.messagesArray(body.system, body)
         val emitTools = quirks.capabilities.supportsTools && body.tools.isNotEmpty()
         val effort = quirks.reasoning.effortVocabulary?.effort(raw, body, upstreamModel)
             ?: effortTiers.chatReasoningEffort(body, upstreamModel)
+        val context = JsonWire.string(
+            buildJsonObject {
+                put("request", MessageFragmentContext.of(body, raw))
+                put("upstream_model", upstreamModel)
+                effort?.let { put("effort", it) }
+            },
+        )
+        val messages = wire.messagesArray(body.system, body, context)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }

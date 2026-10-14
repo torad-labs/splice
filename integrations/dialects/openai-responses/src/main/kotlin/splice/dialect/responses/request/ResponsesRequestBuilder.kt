@@ -42,7 +42,6 @@ package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonArray
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnReasoning
 import splice.core.turn.TurnRoute
@@ -51,7 +50,6 @@ import splice.core.turn.TurnToolSurface
 import splice.core.wire.AnthropicRequest
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
-import splice.dialect.responses.stream.LoopGuard
 import splice.dialect.responses.stream.ResponsesLooseFields
 import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.upstream.ToolNameShortener
@@ -69,6 +67,7 @@ internal class ResponsesRequestBuilder(
     private val ids = ResponsesStableIds()
     private val assembler = ResponsesRequestAssembler(quirks, toolNames)
     private val priorReasoning = ResponsesPriorReasoning()
+    private val messages = ResponsesMessageFragments(quirks, toolNames)
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
@@ -80,16 +79,9 @@ internal class ResponsesRequestBuilder(
         val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
         val partition = toolPlan.partition(wireBody, opts)
         val declareByName = toolPlan.declarationCandidates(wireBody, partition)
-        // The loop guard walks the same conversation (stateless) and marks identical-failed-call
-        // streaks for a directive in that result's output.
-        val loopGuardDirectives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
-        // Constructed per build (the field version predates per-build state) — cheap, race-free.
-        val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives, toolNames)
-        val walked = buildJsonArray {
-            for (msg in body.messages) {
-                inputBuilder.appendMessage(this, msg, opts, declareByName)
-            }
-        }
+        val effort = knobs.resolveEffort(body, raw, opts)
+        val summary = knobs.resolveSummary(raw, opts, effort)
+        val walked = messages.walk(body, raw, opts, declareByName, effort)
         // replay_reasoning=false: the gateway cache must not put an earlier turn's reasoning back, and the current
         // turn keeps its own. A compaction is built exactly like a turn, so it follows the same rule.
         val input = if (opts.handoff.replay.v) {
@@ -98,8 +90,6 @@ internal class ResponsesRequestBuilder(
             JsonArray(priorReasoning.withoutPriorTurns(walked))
         }
         val instructions = body.system.orEmpty().ifEmpty { DEFAULT_INSTRUCTIONS }
-        val effort = knobs.resolveEffort(body, raw, opts)
-        val summary = knobs.resolveSummary(raw, opts, effort)
         val reasoning = knobs.reasoningBlock(effort, summary, opts)
 
         val conversationKey = ids.stablePromptCacheKey(body)

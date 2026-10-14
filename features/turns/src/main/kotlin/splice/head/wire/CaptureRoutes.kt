@@ -112,7 +112,8 @@ public class CaptureRoutes(
         val requested = current.copy(heads = current.heads + (key to head.copy(overrides = overrides)))
         return when (val result = writer.write(requested)) {
             is TopologyWriteResult.Written -> {
-                // The file is saved first, so a refused write moves nothing; then the head's next request follows it.
+                // Persist first; refused writes change neither held config nor capture state.
+                config.headLayer.set(key, overrides)
                 found.trace?.set(parsed.enabled)
                 JsonReply(HttpStatusCode.OK, writtenJson(key, parsed))
             }

@@ -190,9 +190,14 @@ async function readLogNow(s, before) {
 const FOLLOW_PX = 40;
 const readNewer = (s) => alone(`log ${s.id} newer`, () => readNewerNow(s));
 async function readNewerNow(s) {
-  const last = state.logs[s.id]?.messages?.at(-1);
+  const shown = state.logs[s.id]?.messages, last = shown?.at(-1);
   if (!last) return readLogNow(s, "end");
-  const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?cursor=${encodeURIComponent(`after:${last.index}`)}&limit=${LOG_PAGE}`);
+  // A message of his is taken back when a later one of his answers the same reply before anything answers it, and the
+  // daemon marks it only on a page holding both. So the poll reads again from his first message since the last reply,
+  // the oldest one a poll can still change, and a Stop shows within one poll; with none, from the last message.
+  const replied = shown.findLastIndex((m) => m.role === "assistant");
+  const open = shown.slice(replied + 1).find((m) => m.role === "user") ?? last;
+  const res = await API.get(`/api/sessions/${encodeURIComponent(s.id)}/transcript?cursor=${encodeURIComponent(`after:${open.index}`)}&limit=${LOG_PAGE}`);
   const held = state.logs[s.id];
   if (res.status === 400 || res.body?.more || res.body?.state === "off") return readLogNow(s, "end");
   if (!res.ok || !Array.isArray(res.body?.messages) || !held?.messages) return;

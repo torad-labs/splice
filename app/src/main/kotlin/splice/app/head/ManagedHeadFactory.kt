@@ -105,7 +105,11 @@ internal class QuotaPollSeams(
     }
 
     /** Account evidence shares the daemon-owned background lifetime, not an individual request. */
-    fun evidenceLoads(): AccountEvidenceLoads = AccountEvidenceLoads(probeScope, ProcessDispatchers().io())
+    fun evidenceLoads(): AccountEvidenceLoads = AccountEvidenceLoads(
+        probeScope,
+        ProcessDispatchers().io(),
+        heap = splice.upstream.memory.JvmHeap.budget,
+    )
 
     fun pollingFor(
         ctx: ProviderBuild,

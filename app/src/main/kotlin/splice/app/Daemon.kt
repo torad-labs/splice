@@ -84,7 +84,7 @@ public class Daemon(
         statePaths,
         headOverrides = TopologyKnobLayer(topology).configOverrides(),
         perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
-    )
+    ).also { it.observeSnapshots(splice.upstream.memory.JvmHeap.budget) }
     private val mgmtKey = MgmtKey(statePaths)
     private val clientVersions = ClientVersionTracker()
 

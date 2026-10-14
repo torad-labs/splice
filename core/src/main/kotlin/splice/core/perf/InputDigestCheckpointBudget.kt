@@ -1,5 +1,6 @@
 package splice.core.perf
 
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapReservations
 import java.lang.ref.Cleaner
@@ -22,7 +23,7 @@ public class InputDigestCheckpointBudget(
 
     internal fun reserve(bytes: Long): Charge? = synchronized(lock) {
         if (bytes > maximumBytes - charged) return@synchronized null
-        val lease = heap.reserve(bytes) ?: return@synchronized null
+        val lease = heap.reserve(bytes, HeapCategory.RECENT_HISTORY) ?: return@synchronized null
         charged += bytes
         Charge(lease, Allocation(bytes))
     }

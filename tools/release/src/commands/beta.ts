@@ -58,14 +58,20 @@ function sha256(path: string): string {
   return new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
 }
 
-/** The kept hub folder whose two binaries hash to their pins, as lead-install.sh selects it. */
-function qualifiedHub(repoRoot: string): string {
-  const pins = new Map(
+/** Parse the native build's checksum format once for selection and final staged-byte verification. */
+function hubPins(repoRoot: string): Map<string, string> {
+  return new Map(
     readFileSync(join(repoRoot, PINS), "utf8").split("\n").filter(Boolean).map((line) => {
       const [hash, name] = line.split(/\s+/);
+            if (!hash || !name) throw new Refusal(`release beta: malformed native checksum line in ${PINS}`);
       return [name, hash] as const;
     }),
   );
+}
+
+/** The kept hub folder whose two binaries hash to their pins, as lead-install.sh selects it. */
+function qualifiedHub(repoRoot: string): string {
+  const pins = hubPins(repoRoot);
   const kept = join(repoRoot, HUB_KEPT);
   const folder = (existsSync(kept) ? readdirSync(kept) : []).map((name) => join(kept, name)).find((dir) =>
     HUB.every((b) => {
@@ -142,10 +148,10 @@ export async function beta(argv: string[], repoRoot: string): Promise<number> {
       "-x", ":integrations-mcp-hub:linkHolderReleaseExecutableLinuxX64",
       "-x", ":integrations-mcp-hub:linkFrontReleaseExecutableLinuxX64"], tree, env, false);
     run(["bun", "tools/release", "accept"], tree, env, false);
-    const pinned = readFileSync(join(repoRoot, PINS), "utf8");
+    const pinned = hubPins(repoRoot);
     for (const b of HUB) {
       const got = sha256(join(tree, "dist", `splice-mcp-${b}`));
-      if (!pinned.includes(`${got} splice-mcp-${b}`)) throw new Refusal(`release beta: dist/splice-mcp-${b} is ${got}, not its pin in ${PINS}`);
+      if (pinned.get(`splice-mcp-${b}`) !== got) throw new Refusal(`release beta: dist/splice-mcp-${b} is ${got}, not its pin in ${PINS}`);
     }
 
     const notesFile = join(tree, "release-notes.md");

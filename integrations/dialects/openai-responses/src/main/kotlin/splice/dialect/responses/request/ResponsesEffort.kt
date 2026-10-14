@@ -34,14 +34,10 @@ internal class ResponsesEffort {
     public fun effortFromBudget(budget: Long, vocabulary: EffortVocabulary): String? =
         vocabulary.fromBudget(budget)
 
-    /**
-     * Visibility floor: never RAISES a deliberate low/medium/high pick, only floors none/minimal to
-     * low so a hidden reasoning knob still surfaces something when showReasoning != off.
-     */
+    /** Visibility may floor minimal, but never changes none: summary display does not enable reasoning. */
     internal fun flooredForVisibility(effort: String?, showReasoning: ReasoningDisplay): String? {
         if (showReasoning.isOff) return effort
-        val hidden = effort == EFFORT_MINIMAL || effort == "none"
-        return if (hidden) "low" else effort
+        return if (effort == EFFORT_MINIMAL) "low" else effort
     }
 
     internal fun flooredForVendor(effort: String?, vocabulary: EffortVocabulary): String? =

@@ -26,8 +26,11 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
     internal fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
         // No compaction pin, on any provider (2026-09-05): a compaction inherits the session's
         // effort or the reasoning mismatch invalidates the whole prompt-cache prefix.
+        val requested = looseFields.looseEffort(raw)
+        // An explicit none is a reasoning choice, not a display setting or a turn-type default.
+        if (requested == "none") return requested
         if (body.thinking?.disabled == true && quirks.reasoning.effortVocabulary.omitWhenDisabled()) return null
-        var effort = looseFields.looseEffort(raw)
+        var effort = requested
         if (effort == null) {
             // v27: the /effort picker (budget) WINS over the config/env fallback
             val budgetEffort = body.thinking

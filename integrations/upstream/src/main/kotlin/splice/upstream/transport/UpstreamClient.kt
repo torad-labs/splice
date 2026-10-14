@@ -147,7 +147,9 @@ public class UpstreamClient(
         prepared: PreparedPost,
         block: UpstreamHandler<T>,
     ): UpstreamPost<T> {
-        var body = prepared.forClient(this, ctx.observers)
+        var body = ctx.perf?.timed(splice.core.perf.PerfKeys.OUTBOUND_PREP_MS) {
+            prepared.forClient(this, ctx.observers)
+        } ?: prepared.forClient(this, ctx.observers)
         val t0 = clock()
         val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0, pacing.triesFor(maxRetries))
         while (state.attempt < state.maxRetries) {

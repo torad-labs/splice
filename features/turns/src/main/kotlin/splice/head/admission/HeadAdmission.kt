@@ -123,11 +123,13 @@ internal class HeadAdmission(
         if (refusals.refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
-        val selection = deps.quotaBundle.activePool?.awaitingEvidence?.select(
-            prepared.built.meta.scope.sessionId,
-            excluded = emptySet(),
-            callerCredentialKey = callerKey,
-        )
+        val selection = admitted.perf.timed(splice.core.perf.PerfKeys.ACCOUNT_CHECKS_MS) {
+            deps.quotaBundle.activePool?.awaitingEvidence?.select(
+                prepared.built.meta.scope.sessionId,
+                excluded = emptySet(),
+                callerCredentialKey = callerKey,
+            )
+        }
         var account = when (selection) {
             null -> null
             is Selection.Chosen -> selection.account
@@ -137,7 +139,10 @@ internal class HeadAdmission(
             }
         }
         try {
-            when (val hold = credentialHolds.admit(call, prepared, admitted, trace, account)) {
+            val hold = admitted.perf.timed(splice.core.perf.PerfKeys.CREDENTIAL_HOLD_MS) {
+                credentialHolds.admit(call, prepared, admitted, trace, account)
+            }
+            when (hold) {
                 is CredentialHoldAdmission.Outcome.Allowed -> {
                     account = hold.account
                     driveReady(call, prepared, admitted, trace, running(prepared, account, keyAccount))
@@ -168,7 +173,10 @@ internal class HeadAdmission(
         trace: TurnTrace?,
         running: TurnAccountQuota,
     ) {
-        if (refusals.refuseIfOversized(call, prepared, admitted, trace)) return
+        val oversized = admitted.perf.timed(splice.core.perf.PerfKeys.SIZE_PREFLIGHT_MS) {
+            refusals.refuseIfOversized(call, prepared, admitted, trace)
+        }
+        if (oversized) return
         admitted.retainRequest()
         val inputs = TurnInputs(
             prepared.built,

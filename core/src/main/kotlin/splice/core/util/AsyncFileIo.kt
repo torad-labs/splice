@@ -66,6 +66,10 @@ public object AsyncFileIo {
     private val failedWrites = AtomicLong()
     private val running = AtomicInteger()
     private val peakPending = AtomicInteger()
+    private val queueWaitMs = AtomicLong()
+    private val runMs = AtomicLong()
+    private val peakQueueWaitMs = AtomicLong()
+    private val peakRunMs = AtomicLong()
 
     /** Process-wide work outcomes, independent of payload size and heap ownership estimates. */
     @Serializable
@@ -79,6 +83,10 @@ public object AsyncFileIo {
         val running: Int,
         val scheduled: Int,
         val peakPending: Int,
+        val queueWaitMs: Long,
+        val runMs: Long,
+        val peakQueueWaitMs: Long,
+        val peakRunMs: Long,
     ) {
         /** A diagnostic observation: delayed timers are not runnable work to drain. */
         public val queued: Int get() = (pending - running - scheduled).coerceAtLeast(0)
@@ -98,6 +106,10 @@ public object AsyncFileIo {
                 task is Delayed && task.getDelay(TimeUnit.MILLISECONDS) > 0L
             },
             peakPending = peakPending.get(),
+            queueWaitMs = queueWaitMs.get(),
+            runMs = runMs.get(),
+            peakQueueWaitMs = peakQueueWaitMs.get(),
+            peakRunMs = peakRunMs.get(),
         )
 
     @Volatile
@@ -130,14 +142,22 @@ public object AsyncFileIo {
         }
         peakPending.accumulateAndGet(pending.get(), ::maxOf)
         accepted.incrementAndGet()
+        val queuedAt = MonoClock.nowMs()
         val guarded = Runnable {
             running.incrementAndGet()
+            val startedAt = MonoClock.nowMs()
+            val waited = (startedAt - queuedAt - delayMs.coerceAtLeast(0L)).coerceAtLeast(0L)
+            queueWaitMs.addAndGet(waited)
+            peakQueueWaitMs.accumulateAndGet(waited, ::maxOf)
             var successful = false
             try {
                 reportDrops()
                 task()
                 successful = true
             } finally {
+                val elapsed = (MonoClock.nowMs() - startedAt).coerceAtLeast(0L)
+                runMs.addAndGet(elapsed)
+                peakRunMs.accumulateAndGet(elapsed, ::maxOf)
                 if (successful) completed.incrementAndGet() else failed.incrementAndGet()
                 running.decrementAndGet()
                 pending.decrementAndGet()

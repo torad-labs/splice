@@ -47,6 +47,18 @@ public object PerfKeys {
     public const val ADMIT_HELD_MS: String = "admit_held_ms"
     public const val LEASE_WAIT_MS: String = "lease_wait_ms"
     public const val PREP_MS: String = "prep_ms"
+
+    /** Elapsed account evidence and per-call policy admission, including any wait, not CPU time. */
+    public const val ACCOUNT_CHECKS_MS: String = "account_checks_ms"
+
+    /** Elapsed credential hold admission, separate from per-attempt AUTH_MS. */
+    public const val CREDENTIAL_HOLD_MS: String = "credential_hold_ms"
+
+    /** Elapsed measured-input size preflight before the drive begins. */
+    public const val SIZE_PREFLIGHT_MS: String = "size_preflight_ms"
+
+    /** Elapsed local request rendering/compression before an upstream attempt. */
+    public const val OUTBOUND_PREP_MS: String = "outbound_prep_ms"
     public const val ARRIVAL_TO_FIRST_CLIENT_BYTE_MS: String = "arrival_to_first_client_byte_ms"
 
     /** Arrival to the final successfully flushed request byte of the latest upstream attempt. */

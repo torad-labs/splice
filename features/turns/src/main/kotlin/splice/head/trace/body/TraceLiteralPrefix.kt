@@ -76,12 +76,18 @@ internal class TraceRecentLiterals(private val heap: HeapReservations) {
             end += size
         }
         if (reused.isEmpty()) return null
-        // Back from the shared opening to the last char that starts at or before the last reused cut.
+        // Back from the shared opening to the last char that starts at or before the last reused cut. A pair's low
+        // half encodes to nothing (its high half carries all four bytes), so a cut just after a pair still steps back
+        // to the high half: a UTF-8 writer started on a low half writes a replacement byte instead of the pair.
         var from = shared
         var at = sharedBytes
-        while (at > end) at -= TraceLiteral.width(recent.text, --from)
+        while (at > end || lowHalf(recent.text, from)) at -= TraceLiteral.width(recent.text, --from)
         return TraceLiteralResume(reused, from, (end - at).toInt())
     }
+
+    /** Char [index] of [text] is the second half of a surrogate pair. */
+    private fun lowHalf(text: String, index: Int): Boolean =
+        index > 0 && text[index].isLowSurrogate() && text[index - 1].isHighSurrogate()
 
     /** How many opening chars encode identically in both texts. A char's escape can depend on its neighbours
      *  (a surrogate pairs with the next or the one before), so the last char of the common prefix is not counted. */

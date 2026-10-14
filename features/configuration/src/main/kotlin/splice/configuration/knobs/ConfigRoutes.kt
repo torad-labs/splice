@@ -30,10 +30,12 @@ public class ConfigRoutes(
     private val headWrite = HeadOverrideWrite(config, topology)
 
     public fun configJson(headKey: String? = null): String {
-        val layers = config.layers()
+        val snapshot = config.snapshot(headKey)
+        val layers = snapshot.layers
         // JW-06: ?head=<key> answers "why is THIS head's knob X" — effective folds the head's
         // override layer exactly as admission does; unknown/absent key stays the global view.
-        val effective = config.getConfig(headKey).asMap()
+        // Values and provenance come from one revision, even when a control-plane write races this read.
+        val effective = snapshot.effective.asMap()
         return buildJsonObject {
             put("effective", mapToJson(effective))
             putJsonObject("layers") {
@@ -42,8 +44,8 @@ public class ConfigRoutes(
                 // Shown in precedence position (beats defaults, loses to file/env/runtime) so
                 // "why is this knob X?" is answerable from the payload alone.
                 put("toml", mapToJson(layers.headOverrides))
-                // JW-06: [heads.<key>.overrides] — precedence directly above the global TOML
-                // layer (mergedRaw's real order); only override-carrying heads appear.
+                // JW-06: [heads.<key>.overrides] is the most specific layer, above every shared value;
+                // only override-carrying heads appear.
                 putJsonObject("perHead") {
                     layers.perHead.forEach { (key, knobs) -> put(key, mapToJson(knobs)) }
                 }

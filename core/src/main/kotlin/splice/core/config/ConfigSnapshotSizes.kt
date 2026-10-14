@@ -5,6 +5,8 @@ import splice.core.memory.HeapWeights
 
 // Conservative container/entry overhead, shared with HeapJson's UTF-16 text estimate.
 private const val CONFIG_CONTAINER_BYTES = 64L
+
+// why: budget two eight-byte words per reference or scalar slot, including allocation slack.
 private const val CONFIG_REFERENCE_BYTES = 16L
 
 /** Construction-only, overlapping retained-graph estimates. No admission charge or content leaves the owner. */

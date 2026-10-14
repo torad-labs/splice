@@ -68,15 +68,16 @@ dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
 reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
 
-# ── 19 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+# ── Nullary effects, () -> Unit ───────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
-dated = "2026-10-05"
+dated = "2026-10-13"
 names = [
     "AccountMembershipRefresh",
     "AuthRefreshObserver",
     "ClaudePoolChange",
     "CodeModeCleanup",
+    "ConfigRevisionChanged",
     "FileIoTask",
     "HandoffMark",
     "HoldChange",
@@ -102,7 +103,9 @@ from the same place. HoldChange mutates credential-owned refusal state under its
 it is neither a stream-start notification nor dispatched file IO. ClaudePoolChange publishes current stored membership into one booted head, \
 retaining session choices and captured credentials. AccountMembershipRefresh reconciles externally written \
 credentials before the upstream selector captures a generation; unlike app-only mutation publication, \
-it cannot complete an account withdrawal. ShutdownDaemon ends that head instead; swapping \
+it cannot complete an account withdrawal. ConfigRevisionChanged reports publication of a new \
+per-head override map so the config snapshot cache invalidates its held generation; it neither \
+changes account membership nor controls a stream or daemon lifecycle. ShutdownDaemon ends that head instead; swapping \
 these roles would stop serving on login edits or fail to release resources on shutdown. \
 Notifications the caller only observes: AuthRefreshObserver (a credential \
 refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \

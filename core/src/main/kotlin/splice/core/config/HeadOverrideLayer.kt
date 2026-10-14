@@ -6,6 +6,7 @@ package splice.core.config
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicReference
 
+/** A published per-head override change invalidates config snapshots, not account or stream state. */
 internal fun interface ConfigRevisionChanged {
     operator fun invoke()
 }

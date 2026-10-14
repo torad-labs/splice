@@ -116,7 +116,7 @@ internal class QuotaPollSeams(
     /** Permanent daemon retirement, never a reversible stop of a reusable managed head. */
     fun closeEvidenceLoads() {
         while (true) {
-            val reader = evidenceReaders.poll() ?: return
+            val reader: AccountEvidenceLoads = evidenceReaders.poll() ?: return
             reader.close()
         }
     }

@@ -16,15 +16,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapJson
+import splice.core.memory.HeapOwnerState
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
-import splice.core.memory.HeapWeights
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayRecord
 import splice.core.turn.TurnMeta
-import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
 import splice.upstream.memory.JvmHeap
@@ -85,17 +85,41 @@ public class TraceStore(
         if (text.length <= maxBodyChars) text.toString() to false else text.substring(0, maxBodyChars) to true
 
     internal fun write(record: JsonObject) {
-        val retained = HeapOwners.charge(record, heap, HeapJson.bytes(record))
-        val peak = heap.reserve(HeapWeights.multiply(JsonWire.byteSize(record), 2L)) ?: throw HeapCapacityException()
+        val retained = HeapOwners.charge(record, heap, HeapJson.bytes(record), HeapCategory.TRACE)
+        // Trace cost (Oct 13): count only metadata, and bound references and pack workspace from body lengths.
+        // The body text is no longer serialized solely to size the queued encoding charge.
+        var peakAdmitted = false
+        val peak = try {
+            val lease = heap.reserve(bodies.encodingBytes(record), HeapCategory.TRACE, HeapOwnerState.ACTIVE)
+                ?: throw HeapCapacityException()
+            peakAdmitted = true
+            lease
+        } finally {
+            if (!peakAdmitted) retained.ownerFinished()
+        }
         var queued = false
         try {
-            val payload = DayRecord { file -> bodies.encode(record, file) }
+            retained.state(HeapOwnerState.QUEUED)
+            peak.state(HeapOwnerState.QUEUED)
+            val payload = DayRecord { file ->
+                retained.state(HeapOwnerState.RUNNING)
+                peak.state(HeapOwnerState.RUNNING)
+                try {
+                    bodies.encode(record, file)
+                } finally {
+                    retained.ownerFinished()
+                    peak.ownerFinished()
+                }
+            }
             // The queue can drop a callback without invoking it. Its actual lifetime owns the charge.
             HeapOwners.keep(payload, peak)
-            days.append(payload)
-            queued = true
+            // Acceptance means queued, not persisted. Refusal releases only the callback's encoding lease.
+            queued = days.appendAccepted(payload)
         } finally {
-            if (!queued) peak.close()
+            if (!queued) {
+                retained.ownerFinished()
+                peak.close()
+            }
             java.lang.ref.Reference.reachabilityFence(retained)
         }
     }

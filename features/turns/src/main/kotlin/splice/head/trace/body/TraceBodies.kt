@@ -11,7 +11,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
 import splice.core.memory.HeapReservations
+import splice.core.memory.HeapWeights
 import splice.core.storage.BODY_BUDGET_EVICTED_REASON
 import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayBodyCapacityException
@@ -29,6 +31,15 @@ import java.nio.file.Path
 
 private const val UNAVAILABLE_TAG = "unavailable"
 private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "client" to "body", "answer" to "body")
+
+// why: a part's 64 hex hash chars, 19 offset digits, five length digits, JSON syntax and separator use at most 119 bytes.
+private const val TRACE_PART_LINE_BYTES = 128L
+
+// why: 1 KiB exceeds a 28-byte wrapper or the 108-byte unavailable marker, and root flag/newline overhead.
+private const val TRACE_REFERENCE_BASE_BYTES = 1024L
+
+// why: the growing byte stream retains under twice the line length and toByteArray retains one more complete copy.
+private const val TRACE_LINE_BUFFER_COPIES = 3L
 
 /** JSONL stamps stay inline. Only body literals enter a daily pack, once, directly through the Gear encoder. */
 internal class TraceBodies(
@@ -52,6 +63,28 @@ internal class TraceBodies(
     private val indexFullLog = TracePackFullLog(log, maxPackBytes)
 
     private val resolution = TraceBodyResolution(budget, decoder, validation)
+
+    /** Sizes only inline metadata. Body lengths bound the references without escaping or traversing their text. */
+    fun encodingBytes(record: JsonObject): Long {
+        var references = TRACE_REFERENCE_BASE_BYTES
+        val metadata = replace(record) { value ->
+            val chars = JsonScalars.str(value)?.length?.toLong() ?: 0L
+            // Two quotes surround the literal; every nonfinal part has at least CHUNK_MIN encoded bytes.
+            val literal = chars * UNICODE_ESCAPE_BYTES + 2L
+            val parts = (literal + CHUNK_MIN - 1) / CHUNK_MIN
+            references = HeapJson.add(
+                references,
+                HeapJson.add(TRACE_REFERENCE_BASE_BYTES, HeapWeights.multiply(parts, TRACE_PART_LINE_BYTES)),
+            )
+            JsonNull
+        }
+        val line = HeapJson.add(JsonWire.byteSize(metadata), references)
+        val workspace = HeapJson.add(HeapWeights.CONNECTION_BYTES, CHUNK_MAX.toLong() + TracePackFormat.V2.maxStored)
+        // The shallow root/section copies also coexist with the line, even when metadata has many tiny fields.
+        val metadataCopies = HeapJson.bytes(metadata)
+        val buffers = HeapWeights.multiply(line, TRACE_LINE_BUFFER_COPIES)
+        return HeapJson.add(metadataCopies, HeapJson.add(buffers, workspace))
+    }
 
     /** Runs on ActivityDays' one file lane. No complete record String or complete encoded body is built. */
     fun encode(record: JsonObject, day: Path): ByteArray {

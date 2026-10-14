@@ -181,7 +181,7 @@ private const val TRACE_LITERAL_HEX_DIGITS = 4
 private const val SHORT_ESCAPE_BYTES = 2
 
 // why: a Unicode escape is a backslash, u, and four hexadecimal digits.
-private const val UNICODE_ESCAPE_BYTES = 6
+internal const val UNICODE_ESCAPE_BYTES = 6
 
 // why: a UTF-16 surrogate pair is one code point beyond U+FFFF, four bytes in UTF-8.
 private const val UTF8_PAIR_BYTES = 4

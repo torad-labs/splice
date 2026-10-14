@@ -14,8 +14,12 @@ import java.util.HexFormat
 private const val PREFIX_INPUT_FIELD = "input"
 
 /** The same lowercase SHA-256/UTF-8 hex code-mode records have persisted since their creation. */
-public object InputDigest {
+public object InputDigest : InputPrefixDigests {
     private val format = HexFormat.of()
+
+    override fun input(value: JsonArray): String = hex(value)
+
+    override fun properties(value: JsonObject): String = hex(value)
 
     public fun hex(value: String): String = format.formatHex(
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)),
@@ -38,13 +42,16 @@ public object InputDigest {
         }
     }
 
-    public fun capture(request: JsonObject): InputPrefix? {
+    public fun capture(request: JsonObject): InputPrefix? = capture(request, this)
+
+    /** Optional checkpoints must consume exactly the same ordered JSON bytes as the streaming implementation. */
+    public fun capture(request: JsonObject, digests: InputPrefixDigests): InputPrefix? {
         val input = request[PREFIX_INPUT_FIELD] as? JsonArray ?: return null
         val properties = JsonObject(request.filterKeys { it != PREFIX_INPUT_FIELD })
         return InputPrefix(
             count = input.size,
-            inputDigest = hex(input),
-            propertiesDigest = hex(properties),
+            inputDigest = digests.input(input),
+            propertiesDigest = digests.properties(properties),
         )
     }
 }
@@ -58,13 +65,16 @@ public data class InputPrefix(
 ) {
     /** Only byte-identical measured history plus newly appended, text-only items can justify a
      * local refusal. Encoded media has no trustworthy token bound from its transport byte length. */
-    public fun textGrowthBytes(request: JsonObject): Long? {
+    public fun textGrowthBytes(request: JsonObject): Long? = textGrowthBytes(request, InputDigest)
+
+    /** Reuse is only an encoder/digest optimization; prefix admission and text-only bounds remain unchanged. */
+    public fun textGrowthBytes(request: JsonObject, digests: InputPrefixDigests): Long? {
         val input = request[PREFIX_INPUT_FIELD] as? JsonArray
         if (input == null || input.size < count) return null
         val prefix = JsonArray(input.take(count))
         val properties = JsonObject(request.filterKeys { it != PREFIX_INPUT_FIELD })
         val appended = input.drop(count)
-        val preserved = InputDigest.hex(prefix) == inputDigest && InputDigest.hex(properties) == propertiesDigest
+        val preserved = digests.input(prefix) == inputDigest && digests.properties(properties) == propertiesDigest
         if (!preserved || appended.any { !textOnly(it) }) return null
         // A byte-level tokenizer cannot add more tokens than the new UTF-8 bytes. Count JSON
         // structure and the array separator as well as the text, but never old transport bytes.

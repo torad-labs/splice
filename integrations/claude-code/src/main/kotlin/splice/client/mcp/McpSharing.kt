@@ -59,7 +59,7 @@ public fun interface McpRewrite {
 public const val MCP_HEAD_HEADER: String = "X-Splice-Head"
 
 private val LOCATION_FLAG =
-    Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|folder|home|base-?dir|work-?dir)")
+    Regex("--?(root|roots?-?dir|dir|directory|path|cwd|workspace|project|project-?dir|folder|home|base-?dir|work-?dir)")
 private val URL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
 private val VARIABLE = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)""")
 

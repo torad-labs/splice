@@ -34,8 +34,6 @@ import splice.sessions.http.MoveLedger
 import splice.sessions.http.ProjectSessions
 import splice.sessions.http.SessionActed
 import splice.sessions.http.SessionDrive
-import splice.sessions.http.SessionRowFacts
-import splice.sessions.http.SessionWindowOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
@@ -77,7 +75,6 @@ internal class SessionsWiring(
     }
 
     private val perfFacts = SessionPerfFacts(heads, ports)
-    private val sessionAccounts = SessionAccountLabels(heads, ports)
 
     /** The launch records splice-launch writes: a session started from the person's own tmux names its pane there. */
     private val launchOwners = LaunchOwners(StatePaths().stateDir)
@@ -131,15 +128,7 @@ internal class SessionsWiring(
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
-            facts = SessionRowFacts(
-                accountOf = sessionAccounts,
-                turnsOf = perfFacts.turnsOf(),
-                endingOf = perfFacts.endingOf(),
-                servedOf = perfFacts.servedOf(moves),
-                windowOf = SessionWindowOf { record ->
-                    record.head?.let(heads::get)?.statusline?.clientWindows?.windowFor(record.sessionId)
-                },
-            ),
+            facts = perfFacts.rowFacts(SessionAccountLabels(heads, ports), moves),
         )
     }
 

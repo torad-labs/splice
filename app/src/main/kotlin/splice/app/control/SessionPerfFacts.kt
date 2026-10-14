@@ -7,11 +7,14 @@ import splice.app.sources.PerfStatsSource
 import splice.client.resume.ModelMoves
 import splice.core.perf.OutcomeTag
 import splice.core.util.WallClock
+import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionEnding
 import splice.sessions.http.SessionEndingOf
+import splice.sessions.http.SessionRowFacts
 import splice.sessions.http.SessionServedOf
 import splice.sessions.http.SessionTurnCount
 import splice.sessions.http.SessionTurnsOf
+import splice.sessions.http.SessionWindowOf
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -21,6 +24,17 @@ internal class SessionPerfFacts(
     private val ports: ConsolePorts,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    /** The row's facts share these head sources; each callback still reads its live port at call time. */
+    fun rowFacts(accountOf: SessionAccountOf, moves: ModelMoves): SessionRowFacts = SessionRowFacts(
+        accountOf = accountOf,
+        turnsOf = turnsOf(),
+        endingOf = endingOf(),
+        servedOf = servedOf(moves),
+        windowOf = SessionWindowOf { record ->
+            record.head?.let(heads::get)?.statusline?.clientWindows?.windowFor(record.sessionId)
+        },
+    )
+
     /** Every head's per-session accumulator, summed, because a session that moved heads has rows on
      *  both and one head's count would read as the whole of it. The combined start is the LATEST of
      *  the heads that contributed (SessionTurnCount): the sum covers the session only where every one

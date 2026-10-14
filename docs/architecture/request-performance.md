@@ -77,6 +77,8 @@ No claim of efficient concurrency, complete removal of overhead or a percentage 
 
 ## Implementation receipts and open integration
 
+October 14 follow-up: a bounded live JFR profile identified shared Codex registry membership and expiry work as a local CPU and contention bottleneck. A focused patch and operation measurements are documented in [Claudex performance investigation](claudex-performance-2026-10-14.md). Its provider checks pass; it does not establish an optimized live installation or explain every long stall.
+
 These are committed source outcomes, not claims of measured improvement.
 
 | Scope | Committed outcome | Revision |

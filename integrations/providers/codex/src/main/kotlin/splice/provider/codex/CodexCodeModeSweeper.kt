@@ -140,11 +140,14 @@ internal class CodexCodeModeSweeper(
 
     private fun expireRecords(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
-        val lastUse = records.groupBy(CodeModeRecord::key)
+        // A query prepares its own conversation; do not group and inspect every other session
+        // while holding the shared registry lock. The timer supplies each other key separately.
+        val candidates = if (key == null) records else records.filter { it.key == key }
+        val lastUse = candidates.groupBy(CodeModeRecord::key)
             .mapValues { (_, kept) -> kept.maxOf { it.progress.updatedAt } }
-        val protected = records.filter(retainedCells::running).map(CodeModeRecord::key).toSet()
-        val stale = records.filter {
-            (key == null || it.key == key) && it.key !in protected && lastUse.getValue(it.key) < cutoff
+        val protected = candidates.filter(retainedCells::running).map(CodeModeRecord::key).toSet()
+        val stale = candidates.filter {
+            it.key !in protected && lastUse.getValue(it.key) < cutoff
         }
         if (stale.isEmpty()) return false
         stale.forEach { record ->

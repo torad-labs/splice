@@ -21,6 +21,7 @@ import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRecordChanges
+import splice.provider.codex.state.CodeModeRecordList
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
@@ -70,9 +71,9 @@ internal class CodexCodeModeRegistry(
     init {
         // The boot snapshots must not pin payloads after the live record expires or is purged.
         val loaded = store.load()
-        records = loaded.records.map { it.restore().also { record -> CodeModeHeap.own(record, heap) } }
-            .toMutableList()
-            .also(CodeModeNativeChain::link)
+        records = CodeModeRecordList(
+            loaded.records.map { it.restore().also { record -> CodeModeHeap.own(record, heap) } },
+        ).also(CodeModeNativeChain::link)
         history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive)
@@ -216,7 +217,9 @@ internal class CodexCodeModeRegistry(
         private val parked = previous.filter { it.phase == CodeModePhase.ACTIVE }
         private val evicted = (records.map(CodeModeRecord::id) - candidate.map(CodeModeRecord::id).toSet()).toSet()
         private val removedMarkers = (history.entries - nextHistory.entries.toSet()).toSet()
-        private val addedMarkers = nextHistory.entries.filter { it !in history.entries }
+        private val addedMarkers = history.entries.toHashSet().let { before ->
+            nextHistory.entries.filterNot { it in before }
+        }
         val changedKeys = setOf(candidate.last().key) + records.filter { it.id in evicted }.map(CodeModeRecord::key) +
             removedMarkers.map(CodeModeExpiredSnapshot::key) + previous.map(CodeModeRecord::key)
 

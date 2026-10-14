@@ -1,6 +1,9 @@
 // NEW: v0.4.0 FEATURES.md §11 — sticky per-session selection across OAuth accounts.
 package splice.upstream.credentials
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import splice.core.auth.ClientAuthProvider
 import splice.core.util.LruSizing
 import splice.core.util.WallClock
@@ -36,6 +39,7 @@ public sealed class Selection {
 public class AccountPool(
     accounts: List<PoolAccount>,
     private val now: WallClock,
+    private val evidenceLoads: AccountEvidenceLoads? = null,
 ) {
     private class AccountMembership(accounts: List<PoolAccount>) {
         val accounts: List<PoolAccount> = accounts.toList().also {
@@ -51,6 +55,7 @@ public class AccountPool(
     }
 
     private val membership = AtomicReference(AccountMembership(accounts))
+    private val membershipMonitor = Any()
 
     /** Native login writes outside splice. Reconcile its generation before reading selector state. */
     @Volatile
@@ -66,7 +71,8 @@ public class AccountPool(
     public var members: List<PoolAccount>
         get() = membership.get().accounts
         set(accounts) {
-            membership.set(AccountMembership(accounts))
+            val updated = AccountMembership(accounts)
+            synchronized(membershipMonitor) { membership.set(updated) }
         }
 
     /** A forwarded caller alone is the legacy path, not a choice between stored logins. */
@@ -124,28 +130,78 @@ public class AccountPool(
     /** A changed caller login takes precedence over automatic stickiness, but never an operator pin. */
     public fun select(sessionId: String?, excluded: Set<String>, callerCredentialKey: String?): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
-        val at = now()
-        // Credential evidence is read (and hashed) OUTSIDE the sticky-session monitor: the lock only
-        // keeps the LinkedHashMap consistent, and holding it across a filesystem round-trip makes its
-        // contention window the disk's latency. Each account caches the read behind a short TTL, so
-        // the in-monitor selection below reads the cache, never the credential file.
-        val current = liveMembership
-        current.accounts.forEach { it.refreshCredentialEvidence() }
-        val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts)
-        if (sessionId == null) {
-            return synchronized(statelessLock) {
-                val chosen = selected(statelessPrevious, at, excluded, current, caller)
-                chosen.second?.let { statelessPrevious = it }
-                chosen.first
+        while (true) {
+            val current = liveMembership
+            current.accounts.forEach { it.refreshCredentialEvidence() }
+            val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts)
+            val selected = selectionCommit.select(sessionId, excluded, current, caller)
+            if (selected != null) return selected
+        }
+    }
+
+    private val selectionCommit = SelectionCommit()
+
+    /** Suspending turn admission shares raw reads; synchronous control callers retain [select]. */
+    public val awaitingEvidence: AwaitingEvidence = AwaitingEvidence()
+
+    /** No suspension follows lease acquisition, so prompt cancellation cannot strand a probe lease. */
+    public inner class AwaitingEvidence internal constructor() {
+        public suspend fun select(
+            sessionId: String?,
+            excluded: Set<String> = emptySet(),
+            callerCredentialKey: String? = null,
+        ): Selection {
+            require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
+            currentCoroutineContext().ensureActive()
+            val loads = evidenceLoads ?: return this@AccountPool.select(sessionId, excluded, callerCredentialKey)
+            while (true) {
+                loads.ensureActive()
+                val current = runInterruptible(loads.ioDispatcher) { liveMembership }
+                current.accounts.forEach { it.refreshCredentialEvidence(loads) }
+                val caller = runInterruptible(loads.ioDispatcher) {
+                    CallerLogin(callerCredentialKey, sessionId, current.accounts)
+                }
+                currentCoroutineContext().ensureActive()
+                loads.ensureActive()
+                val selected = selectionCommit.select(sessionId, excluded, current, caller)
+                if (selected != null) return selected
             }
         }
-        return synchronized(sessions) {
-            val chosen = selected(sessions[sessionId], at, excluded, current, caller)
-            chosen.second?.let { session ->
-                sessions[sessionId] = session
-                if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
+    }
+
+    private inner class SelectionCommit {
+        /** Membership publication cannot race lease acquisition or the session-state commit. */
+        fun select(
+            sessionId: String?,
+            excluded: Set<String>,
+            current: AccountMembership,
+            caller: CallerLogin,
+        ): Selection? = synchronized(membershipMonitor) {
+            if (membership.get() === current) commit(sessionId, excluded, current, caller) else null
+        }
+
+        private fun commit(
+            sessionId: String?,
+            excluded: Set<String>,
+            current: AccountMembership,
+            caller: CallerLogin,
+        ): Selection {
+            val at = now()
+            if (sessionId == null) {
+                return synchronized(statelessLock) {
+                    val chosen = selected(statelessPrevious, at, excluded, current, caller)
+                    chosen.second?.let { statelessPrevious = it }
+                    chosen.first
+                }
             }
-            chosen.first
+            return synchronized(sessions) {
+                val chosen = selected(sessions[sessionId], at, excluded, current, caller)
+                chosen.second?.let { session ->
+                    sessions[sessionId] = session
+                    if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
+                }
+                chosen.first
+            }
         }
     }
 

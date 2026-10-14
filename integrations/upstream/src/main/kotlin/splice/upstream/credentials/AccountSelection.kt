@@ -2,6 +2,7 @@
 // V4-160 (concentration, 2026-09-18): TtlCredentialIdentitySource moved verbatim to its own file.
 package splice.upstream.credentials
 
+import kotlinx.coroutines.runInterruptible
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.ModelQuota
 import splice.core.usage.QuotaSnapshot
@@ -78,6 +79,14 @@ public data class PoolAccount(
         quotaObservation = QuotaObservation(quota.snapshot(), quota.held)
     }
 
+    /** Shares only the raw observation. Quota and standing remain a fresh read for this caller. */
+    internal suspend fun refreshCredentialEvidence(loads: AccountEvidenceLoads) {
+        loads.refresh(identitySource)
+        runInterruptible(loads.ioDispatcher) {
+            quotaObservation = QuotaObservation(quota.snapshot(), quota.held)
+        }
+    }
+
     internal fun acquireCredential(at: Long, now: WallClock): AccountCredentialEligibility.Lease? =
         credentialEligibility.acquire(at, now)
 
@@ -101,6 +110,7 @@ public data class PoolAccount(
     internal fun markCredentialRefreshSucceeded(
         lease: AccountCredentialEligibility.Lease,
     ): AccountCredentialEligibility.Lease {
+        identitySource.invalidate()
         identitySource.refresh()
         return credentialEligibility.refreshSucceeded(lease)
     }

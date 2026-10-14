@@ -9,8 +9,13 @@ import splice.core.memory.HeapObservation
 import splice.core.memory.HeapOwners
 import java.util.concurrent.atomic.AtomicReference
 
+// why: preserve the two-second policy window after explicit refresh; sequential selection still reads afresh.
 private const val CREDENTIAL_EVIDENCE_TTL_NANOS = 2_000_000_000L
+
+// why: uncharged estimate for evidence and publication bookkeeping; identity and digest are estimated separately.
 private const val CREDENTIAL_EVIDENCE_SCALAR_BYTES = 96L
+
+// why: uncharged estimate for identity scalar fields and string overhead; digest characters are added at publication.
 private const val CREDENTIAL_IDENTITY_SCALAR_BYTES = 64L
 
 /** Keeps policy observations off the selection monitor without treating file metadata as a generation.

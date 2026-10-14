@@ -21,11 +21,22 @@ import splice.core.util.Cancellables
 import java.io.IOException
 import java.util.IdentityHashMap
 
+// why: bound per-head sharing metadata to 256 source slots; excess accounts read independently.
 private const val MAX_EVIDENCE_LOAD_KEYS = 256
+
+// why: cap retained waiters per wave at 128; larger bursts use independent fresh reads instead.
 private const val MAX_EVIDENCE_WAVE_WAITERS = 128
+
+// why: give sharing one second before a waiter takes its own fresh read, ahead of the producer deadline.
 private const val EVIDENCE_WAITER_TIMEOUT_MS = 1_000L
+
+// why: cap producer and independent fallback attempts at five seconds, including dispatcher queueing.
 private const val EVIDENCE_LOAD_TIMEOUT_MS = 5_000L
+
+// why: uncharged estimate for the slot, wave, deferred and references; waiter storage is estimated separately.
 private const val EVIDENCE_COHORT_SCALAR_BYTES = 256L
+
+// why: uncharged estimate per waiter reference and admission bookkeeping, not measured memory or capacity.
 private const val EVIDENCE_WAITER_SCALAR_BYTES = 64L
 
 /** Head-owned sharing of immutable raw account evidence, never OAuth refresh or account decisions.

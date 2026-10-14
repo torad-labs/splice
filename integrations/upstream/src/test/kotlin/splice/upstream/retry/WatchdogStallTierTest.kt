@@ -65,7 +65,7 @@ class WatchdogStallTierTest {
                 try {
                     delay(10.seconds)
                 } finally {
-                    cancelled.set(true)
+                    cancelled.set(dog.fired != null)
                 }
             }
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
@@ -83,6 +83,8 @@ class WatchdogStallTierTest {
             // the responses dialect already fixed for its own two tiers.
             assertEquals(STALL_MS, (fired as WatchdogFired.Idle).limitMs, "the tier that fired must name ITS limit")
             assertTrue(fired.sawClientFrame, "the stall tier is a MID-OUTPUT tier — its family is the client frame")
+            // Publishing the sentinel precedes cancellation; the round's finally runs when it is dispatched.
+            withTimeout(2.seconds) { target.join() }
             assertTrue(cancelled.get(), "the typed sentinel is set FIRST, then the round is cancelled")
 
             target.cancel()

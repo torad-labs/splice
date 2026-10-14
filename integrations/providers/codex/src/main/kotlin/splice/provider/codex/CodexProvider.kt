@@ -45,6 +45,8 @@ public class CodexProvider(
     /** codex-rs's per-turn routing/session headers — the measurement is in CodexRoutingHeaders. */
     override fun perTurnHeaders(meta: TurnMeta): Map<String, String> = routing.forTurn(meta)
 
+    /** This path sees numeric max_tokens, not whether the caller chose it or Claude CLI supplied its default.
+     *  It does not enforce a generation ceiling. Reported usage and deadlines are not token-cap enforcement. */
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
         codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId))
 

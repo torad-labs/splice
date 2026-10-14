@@ -25,7 +25,7 @@ import splice.http.JsonBody
 public class ConfigRoutes(
     private val config: ConfigService,
     private val jsonBody: JsonBody,
-    topology: TopologyWriterSource = TopologyWriterSource { null },
+    private val topology: TopologyWriterSource = TopologyWriterSource { null },
 ) {
     private val headWrite = HeadOverrideWrite(config, topology)
 
@@ -52,6 +52,13 @@ public class ConfigRoutes(
                 put("runtime", mapToJson(layers.runtime))
             }
             put("knobs", KnobViews().of(mapToJson(effective), layers, headKey))
+            // v0.4.0 section 9, Resolved: computed paths are inspectable, never editable. Settings shows where splice.toml,
+            // splice's state and its logs are, read here because only the daemon knows the folders it resolved.
+            putJsonObject("paths") {
+                topology()?.let { put("config", it.path.toString()) }
+                put("state", config.statePaths.stateDir.toString())
+                put("logs", config.statePaths.logsDir.toString())
+            }
         }.toString()
     }
 

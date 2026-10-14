@@ -274,9 +274,19 @@ const KNOBS = (() => {
   function fixedHtml(k, label, hl, lit) {
     const knob = st.cfg.knobs[k.key];
     if (knob.read_only_reason && !warned.has(k.key)) { warned.add(k.key); console.warn(`${k.key}: ${knob.read_only_reason}`); }
-    const why = knob.read_only === "pinned" ? `<span class="tag lock" role="img" aria-label="Locked" title="Locked">${LOCK}</span>`
+    // the lock or where a per-command one is set, then the source and Live or Applies on restart as every row says them
+    // (v0.4.0 section 9, Resolved: every knob shows its source scope and live-versus-restart disposition inline)
+    const from = SOURCE_WORD[valueOf(k).src], later = needsRestart(k.key);
+    const why = knob.read_only === "pinned"
+      ? `<span class="tag lock" role="img" aria-label="Locked" title="Locked">${LOCK}</span>${from ? `<span class="tag">${esc(from)}</span>` : ""}`
       : `<span class="tag">Per command · splice.toml</span>`;
-    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, valueOf(k).v))}</span><span class="tags">${why}</span></div>`;
+    const when = `<span class="tag when${later ? " later" : ""}">${later ? "Applies on restart" : "Live"}</span>`;
+    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, valueOf(k).v))}</span><span class="tags">${why}${when}</span></div>`;
+  }
+  // a setting that does nothing on this machine right now: its value and tags, read-only, and the one line saying why,
+  // so every setting still shows and nothing offers a change that would reach nothing (splice-console-lead, Oct 13)
+  function inertHtml(k, label, hl, lit, why) {
+    return `<div class="lbl${lit}" data-row="${k.key}">${hl(label)}</div><div class="ctl col"><div class="line"><span class="fixed">${esc(word(k, valueOf(k).v))}</span>${restHtml(k.key)}</div><span class="note">${esc(why)}</span></div>`;
   }
   // A command's own value: its control, what the change did, and the way back to the value every other command uses.
   // A command just picked from "One command" has nothing saved yet, so its control shows the shared value until a change.
@@ -310,7 +320,8 @@ const KNOBS = (() => {
     return rows + add;
   }
   // a setting's row in a form: its name, its control, what the change did, and the commands that hold their own value
-  function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false, el = "" } = {}) {
+  function rowHtml(k, { hl = esc, lit = "", label = k.label, everyCommand = false, el = "", inert = null } = {}) {
+    if (inert) return inertHtml(k, label, hl, lit, inert);
     const s = valueOf(k);
     if (s.src === "env") { // set in the person's shell: read here, changed there
       return `<div class="lbl${lit}">${hl(label)}</div><div class="ctl"><span class="fixed">${esc(word(k, s.v))}</span><span class="from">${(st.cfg?.knobs?.[k.key]?.env_names ?? [k.key]).map((n) => `<code>${esc(n)}</code>`).join(" or ")}</span>`

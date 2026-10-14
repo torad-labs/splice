@@ -253,6 +253,10 @@ button.count:hover { color: var(--text); }
 /* when the check happened, and what the card means, each take the row under the acts rather than whichever gap the
    wrap leaves them: at 1440 "Checked Oct 12, 3:17 AM" landed beside Restart splice and read as part of the button */
 #st .vcard .ctl > .vwhy, #st .vcard .ctl > .kel { flex: 1 0 100%; }
+/* Files: where splice keeps them, one full-width line each, the name quiet and the path whole (section 9: computed paths) */
+#st .vcard .ctl > .vfile { flex: 1 0 100%; display: flex; gap: 1.4rem; align-items: baseline; min-width: 0; }
+#st .vcard .vfile .nm { flex: 0 0 9rem; font: 500 1.15rem/1.4 var(--font-name); color: var(--text-mute); }
+#st .vcard .vfile code { font-size: 1.1rem; color: var(--text-body); overflow-wrap: anywhere; min-width: 0; }
 /* on a card wide enough to read along, what acts on the version sits at the far edge, as a lone figure's doors do:
    number at one end, action at the other, instead of both clumped in the first third of a 3828 row */
 @container kcard (min-width: 80rem) {

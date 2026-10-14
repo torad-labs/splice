@@ -43,12 +43,14 @@ const topicOf = (key) => KNOB[key].home || KNOB[key].adv || TOPICS.find((x) => x
  *  each knob's disposition in /api/config, Knob.kt) stays editable and reads "Applies on restart" (v0.4.0 section 9,
  *  Resolved, Marcos's decision, which the Oct 10 "every knob drawn applies live" reading gave way to). */
 const liveKnobs = () => (KNOBS.others(), Object.values(KNOB))
-  .filter((k) => shownKnob(k.key) && (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
-// the poll interval means nothing while reading plan limits is off, and a value that does nothing would read as working (fin);
-// so does "Run at most" while the hub serves, since the hub stops servers when idle and the host's MCP slice caps their
-// memory instead of a count (v0.4.0 section 8, as built under the hub)
-const shownKnob = (key) => (key !== "quotaPollIntervalMs" || val("quotaPoll") !== "off") && (key !== "stallReanchorMs" || KNOB.stallReanchorMs.only.length > 0)
-  && (key !== "mcpMaxServers" || !ui.hubOn);
+  .filter((k) => (k.home || k.adv ? TOPIC[k.home || k.adv] : TOPICS.some((x) => x.keys && x.keys.includes(k.key))));
+// A setting that does nothing right now still shows, read-only, with why (v0.4.0 section 9: every knob shows; the lead's
+// ruling, Oct 13): a value that does nothing would read as working if it took changes (fin). The poll interval while
+// reading plan limits is off; the resume wait while no command has a stall gate; "Run at most" while the hub serves,
+// which stops servers when idle and leaves their memory to the host's MCP slice (v0.4.0 section 8, as built under the hub).
+const inertWhy = (key) => key === "quotaPollIntervalMs" && val("quotaPoll") === "off" ? "Reading plan limits is off, so nothing is polled"
+  : key === "stallReanchorMs" && !KNOB.stallReanchorMs.only.length ? "No command has a stall gate, so no answer is resumed"
+  : key === "mcpMaxServers" && ui.hubOn ? "The MCP hub runs these servers, and it has no count ceiling" : null;
 /** The jobs on the rail: Your data always, the others once one of their settings is live. */
 const jobs = () => TOPICS.filter((x) => x.id === "data" || x.id === "version" || liveKnobs().some((k) => topicOf(k.key) === x.id));
 /** A job's live settings, in the order knobs.js lists them (the first two of Many agents at once are its own section). */
@@ -225,8 +227,7 @@ function elOf(key) {
   return "";
 }
 const blocks = (keys, extra = []) => {
-  const live = keys.filter((key) => shownKnob(key));
-  const cards = live.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true, el: elOf(key) })));
+  const cards = keys.map((key) => kcard(rowHtml(KNOB[key], { hl, lit: lit(knobHay(KNOB[key])), everyCommand: true, el: elOf(key), inert: inertWhy(key) })));
   return cards.length + extra.length ? cardRow([...cards, ...extra]) : "";
 };
 
@@ -443,7 +444,8 @@ function dataHtml() {
     name: "Last requests, in memory", yours: true,
     amount: taps.some((h) => ui.held[h] === undefined) ? READING : taps.some((h) => ui.held[h] === null) ? unreadable : heldN ? `<span class="none">${fmt(heldN)} ${heldN === 1 ? "request" : "requests"} held</span>` : `<span class="none">Nothing held</span>`,
     keep: `<span class="taps">${taps.map((h) => `<span class="tap">${cmdChip(h)}<span class="fixed">Last ${tapOf(h)}</span></span>`).join("")}</span>`,
-    sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span>`,
+    // the tap is read when splice starts, so its row says so as every restart-only setting does (v0.4.0 section 9, §586)
+    sw: `<span class="count">${taps.length} of ${ui.heads.length} commands</span><span class="tags"><span class="tag when later">Applies on restart</span></span>`,
   }) : "";
   const bytes = (g) => DATA_ROWS.filter((r) => r.g === g).reduce((s, r) => s + (heldOf(r)?.bytes ?? 0), 0);
   // a total over a store that was not read is not read either: "0 B" over unread stores is a figure that is not true
@@ -1079,7 +1081,15 @@ function versionHtml() {
   } else if (v.rollback_unavailable_reason) {
     cards.push(vcard("Previous", `<span class="state">Not read</span>`, v.rollback_unavailable_reason));
   }
-  return cardRow(cards, " vcards") + runHtml(run, back);
+  return cardRow(cards, " vcards") + filesHtml() + runHtml(run, back);
+}
+// WHERE SPLICE KEEPS ITS FILES, shown and never edited (v0.4.0 section 9, Resolved: computed paths are inspectable, not
+// editable). The daemon resolved them (GET /api/config paths), so an older daemon without the field draws nothing.
+function filesHtml() {
+  const p = ks.cfg?.paths;
+  if (!p) return "";
+  const line = (name, path) => (path ? `<div class="vfile"><span class="nm">${esc(name)}</span><code>${esc(path)}</code></div>` : "");
+  return cardRow([vcard("Files", `${line("Settings file", p.config)}${line("State", p.state)}${line("Logs", p.logs)}`)], " vcards");
 }
 // A RUN IS ITS STEPS, AND THE LOG IS A DOOR ONLY WHEN IT FAILS (Marlin, Oct 12). The steps are read off the lines the
 // run prints (UpgradeCommand, RestartCommand, DaemonStop, DaemonLaunch): a step is done once a later one has begun.
@@ -1226,7 +1236,7 @@ function pollRun(to, way) {
 const FOLD = ["foldReasoningModels", "foldMaxContinue"];
 function foldCard() {
   const models = KNOB.foldReasoningModels, times = KNOB.foldMaxContinue;
-  if (FOLD.some((key) => needsRestart(key) || !shownKnob(key)) || !keysOf("reasoning").includes(models.key)) return "";
+  if (FOLD.some((key) => needsRestart(key) || inertWhy(key)) || !keysOf("reasoning").includes(models.key)) return "";
   const lit2 = lit([knobHay(models), knobHay(times)].join(" "));
   return kcard(`<div class="lbl${lit2}" data-row="${models.key}">${hl(models.label)}</div>`
     + `<div class="ctl col"><div class="line">${ctlHtml(models, val(models.key))}${saidHtml(models.key)}</div>`

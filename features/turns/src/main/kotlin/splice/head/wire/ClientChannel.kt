@@ -193,7 +193,7 @@ internal class ClientChannel(
         socketFrames.incrementAndGet()
         perf.add(PerfKeys.WRITE_MS, wroteAtMs - t)
         perf.add(PerfKeys.FRAMES_OUT, 1)
-        perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
+        perf.add(PerfKeys.BYTES_OUT, Utf8Length.of(frame)) // bytes on the wire, not UTF-16 chars
         perf.markOnce(PerfKeys.FIRST_FRAME)
         return true
     }

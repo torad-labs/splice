@@ -51,6 +51,12 @@
 # none, because it looks like work.
 
 [[groups]]
+signature = "()->JsonObject"
+dated = "2026-10-13"
+names = ["GlobalMcpServers", "RawMessageFragmentBuild"]
+reason = """GlobalMcpServers reads the operator's current global MCP server configuration from disk for the MCP host. RawMessageFragmentBuild scrubs one captured raw message for the private fragment cache, without reading account, header or global configuration state. Substituting the configuration reader for the message builder would cache server configuration as a message; substituting the message builder for the reader would give the MCP host message content instead of its server inventory."""
+
+[[groups]]
 signature = "(Usage?)->Unit"
 dated = "2026-10-04"
 names = ["RowRelease", "RowWrite"]
@@ -79,6 +85,7 @@ names = [
     "CodeModeCleanup",
     "ConfigRevisionChanged",
     "FileIoTask",
+    "FragmentReleased",
     "HandoffMark",
     "HoldChange",
     "ListingReturned",
@@ -107,6 +114,9 @@ it cannot complete an account withdrawal. ConfigRevisionChanged reports publicat
 per-head override map so the config snapshot cache invalidates its held generation; it neither \
 changes account membership nor controls a stream or daemon lifecycle. ShutdownDaemon ends that head instead; swapping \
 these roles would stop serving on login edits or fail to release resources on shutdown. \
+FragmentReleased returns one fragment's retained-byte and entry capacity only after its last cache, \
+temporary-reader or escaped-output owner releases; unlike TurnEnd, it is not tied to one built turn's \
+provider lifecycle, and eviction alone does not return capacity still held by escaped outputs. \
 Notifications the caller only observes: AuthRefreshObserver (a credential \
 refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \
 (a WS frame arrived that the protocol does not allow), StreamStart (the upstream began emitting), \

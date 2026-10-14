@@ -8,7 +8,9 @@ public fun interface MessageFragmentBuild {
     public operator fun invoke(): JsonArray
 }
 
-/** One independently scrubbed raw message, without account/header state. */
+/** Builds one independently scrubbed raw message, without account/header state.
+ *  Distinct from GlobalMcpServers: transforms the captured message, never reads global MCP configuration.
+ */
 public fun interface RawMessageFragmentBuild {
     public operator fun invoke(): JsonObject
 }

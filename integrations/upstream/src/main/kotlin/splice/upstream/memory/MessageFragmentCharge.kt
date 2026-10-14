@@ -6,6 +6,9 @@ import splice.core.memory.HeapRelease
 import java.lang.ref.Cleaner
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** Returns a fragment's retained bytes and entry capacity after its final owner releases.
+ *  Distinct from TurnEnd: cache, temporary readers and escaped roots can outlive the built turn.
+ */
 internal fun interface FragmentReleased {
     operator fun invoke()
 }

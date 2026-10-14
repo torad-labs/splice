@@ -27,7 +27,8 @@ internal object MessageFragmentStore {
 
     fun find(key: FragmentKey, input: MessageFragmentInput): JsonElement? {
         val candidate = synchronized(lock) { entries[key]?.let { it to it.charge.reader() } } ?: return null
-        val (prior, reader) = candidate
+        val prior = candidate.first
+        val reader: FragmentReader = candidate.second
         // Even an empty fragment keeps its private input admitted throughout out-of-lock equality.
         return reader.use { prior.output.takeIf { input.same(prior.input) } }
     }
@@ -82,8 +83,17 @@ internal object MessageFragmentStore {
     }
 }
 
+// why: Caps process-wide retained fragment graphs, including evicted outputs still owned by callers.
 private const val FRAGMENT_MAX_BYTES = 8 * 1024 * 1024L
+
+// why: Separately bounds metadata for tiny or empty fragments that would not exhaust the byte cap.
 private const val FRAGMENT_MAX_ENTRIES = 2048
+
+// why: Limits one admission to a sixteenth of the byte cap; larger messages still build uncached.
 private const val FRAGMENT_MAX_ENTRY_BYTES = 512 * 1024L
+
+// why: Conservatively charges entry, key and ownership bookkeeping alongside the retained JSON graphs.
 private const val FRAGMENT_OWNER_BYTES = 256L
+
+// why: Uses LinkedHashMap's standard density to balance bucket storage and lookup collisions.
 private const val FRAGMENT_ACCESS_LOAD_FACTOR = 0.75f

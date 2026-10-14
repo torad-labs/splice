@@ -96,4 +96,5 @@ public object MessageFragmentInputs {
     }
 }
 
+// why: Conservatively charges container and content-block ownership overhead alongside their retained fields.
 private const val MESSAGE_FRAGMENT_OWNER_BYTES = 256L

@@ -18,10 +18,8 @@ import splice.client.transcript.TranscriptReader
 import splice.client.transcript.capture.CapturedTranscripts
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
-import splice.core.config.UserHome
 import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
-import splice.core.retired.RetiredHeads
 import splice.core.util.LogSink
 import splice.head.trace.TraceDirPort
 import splice.head.trace.TraceSessionSent
@@ -43,12 +41,10 @@ import splice.sessions.registry.SEEN_SESSIONS_DIR
 import splice.sessions.registry.SeenSessions
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionSource
-import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.memory.JvmHeap
-import java.nio.file.Path
 
 /** [routes] is null when no session registry is wired, and every mount built over it then registers nothing.
  *  [ports] is read at CALL time: ControlPlane assigns the activity and team stores after construction. */
@@ -61,12 +57,7 @@ internal class SessionsWiring(
 ) {
     val sessionHeads = SessionHeadAdapter.adapt(heads)
     val historyIndex = TranscriptHistoryIndex(heap = JvmHeap.budget)
-    val historyRoots = listOf(SessionHistoryRoot(null, UserHome.claudeDir())) +
-        sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } } +
-        // A removed command's sessions stay readable: its config directory is on the retired record.
-        RetiredHeads(config.statePaths.stateDir).all().mapNotNull { retired ->
-            retired.configDir?.let { SessionHistoryRoot(retired.key, Path.of(it)) }
-        }
+    val historyRoots = SessionHeadAdapter.historyRoots(sessionHeads, config.statePaths.stateDir)
 
     /** The registry joined with durable transcript history: every session the project views and request rows know. */
     fun projectSessions(sessions: SessionSource, config: ConfigService): ProjectSessions {

@@ -128,11 +128,12 @@ internal object ConstSingleSource {
     private val NAMED_CONST = Regex("\\b(?:Knob\\.)?([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\\b")
     private val KNOB_ENTRY = Regex("^ {4}([A-Z][A-Z0-9_]*)(?=\\()", RegexOption.MULTILINE)
     private val NAMED_ARG = Regex("^([A-Za-z_][A-Za-z0-9_]*)\\s*=(?!=)\\s*(.*)$")
-    private val KNOB_KIND = Regex("^KnobKind\\.([A-Z_]+)$")
+    private val KNOB_KIND = Regex("^KnobKind\\.(STRING|NUMBER|BOOL)$")
 
-    /** Where Knob's constructor takes `kind` and `default` when an entry passes them by position. */
+    /** Legacy fixtures pass an explicit kind; the catalogue passes its typed default after the aliases. */
     private const val KIND_POSITION = 1
     private const val DEFAULT_POSITION = 3
+    private const val TYPED_DEFAULT_POSITION = 2
 
     private val REQUIRED_KEYS = listOf("recorded", "total", "denominator", "groups")
 
@@ -409,7 +410,8 @@ internal object ConstSingleSource {
 
     /** Knob name -> normalised numeric default, parsed from the enum entries. Every entry is classed
      *  by its KIND, and a NUMBER entry's default is read where the entry writes it: `typedDefault = …` by
-     *  name first, else the FOURTH positional. An entry that cannot be classed, and a NUMBER entry
+     *  name first, else the positional default after the aliases. The kind may be explicit or derived from the typed
+     *  default. An entry that cannot be classed, and a NUMBER entry
      *  whose default does not read as a number, is a problem BY NAME, because skipping it switches
      *  KNOB-SHADOW off for that knob with every test green. That is what the positional-only reader
      *  did to the 19 entries that name their default, with two real shadows under it (V4-210). */
@@ -439,14 +441,17 @@ internal object ConstSingleSource {
     private fun knobEntry(name: String, body: String?): KnobEntry {
         val code = body.orEmpty().lines().joinToString("\n") { Reader.stripLineComment(it) }
         val args = Reader.splitTopLevel(code).map { Reader.normalise(it) }.filter { it.isNotEmpty() }
-        val kind = argument(args, "kind", KIND_POSITION)?.let { KNOB_KIND.matchEntire(it)?.groupValues?.get(1) }
-        return KnobEntry(name, kind, argument(args, "typedDefault", DEFAULT_POSITION)?.let(::unwrapDefault))
+        val explicit = argument(args, "kind", KIND_POSITION)?.let { KNOB_KIND.matchEntire(it)?.groupValues?.get(1) }
+        val position = if (explicit != null) DEFAULT_POSITION else TYPED_DEFAULT_POSITION
+        val default = argument(args, "typedDefault", position)
+        val kind = explicit ?: KnobKeysDocumented.defaultKind(default)
+        return KnobEntry(name, kind, default?.let(::unwrapDefault))
     }
 
     /** A typed default reads as the literal it wraps: `KnobDefault.Count(3099)` is `3099`, and
-     *  `KnobDefault.None` is the null default, which has nothing to shadow. */
+     *  `KnobDefault.None` and `KnobDefault.NoCount` are null defaults, which have nothing to shadow. */
     private fun unwrapDefault(default: String): String = when (default) {
-        "KnobDefault.None" -> "null"
+        "KnobDefault.None", "KnobDefault.NoCount" -> "null"
         else -> Regex("(?:KnobDefault\\.)?Count\\((.*)\\)").matchEntire(default)?.groupValues?.get(1) ?: default
     }
 
@@ -460,12 +465,12 @@ internal object ConstSingleSource {
         val out = mutableListOf<String>()
         if (unclassed.isNotEmpty()) {
             out += "$knobRel: cannot read the kind of ${unclassed.size} Knob entry/entries — neither `kind = " +
-                "KnobKind.X` nor the second positional says what it is, so whether it carries a numeric default " +
+                "KnobKind.X` nor its typed default says what it is, so whether it carries a numeric default " +
                 "to guard is unknown and KNOB-SHADOW would be silently off for it: ${unclassed.joinToString(", ")}"
         }
         if (unread.isNotEmpty()) {
             out += "$knobRel: cannot read the default of ${unread.size} NUMBER Knob(s) — neither `typedDefault = …` " +
-                "nor the fourth positional is a numeric literal or literal arithmetic, so KNOB-SHADOW would be " +
+                "nor its positional default is a numeric literal or literal arithmetic, so KNOB-SHADOW would be " +
                 "silently off for each. Spell the default in literals, or teach this reader the new spelling: " +
                 unread.joinToString(", ")
         }

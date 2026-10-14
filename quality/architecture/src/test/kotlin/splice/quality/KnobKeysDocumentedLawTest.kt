@@ -16,7 +16,8 @@
 // parsed on disk and its FIRST constructor argument — the `key` property — is the TOML key. Three
 // guards refuse a vacuous pass: the enum declaration must be found (a moved or renamed enum fails
 // rather than yielding an empty denominator that passes); a parse yielding zero keys is a failure;
-// the parsed entry count must equal the number of `KnobKind.` mentions in the comment-stripped file.
+// the parsed entry count must equal the number of kind declarations: typed defaults in the current
+// catalogue, or explicit `KnobKind.` arguments in the older source fixtures. Unknown shapes still fail.
 //
 // TWO OPERATOR SPELLINGS, ONE KNOB. `Knob.key` is camelCase; the `[daemon]` table deserializes
 // through DaemonConfig, whose @SerialName spells the same knob snake_case. Both are the operator's
@@ -43,13 +44,22 @@ internal object KnobKeysDocumented {
     private val ENUM_DECL = Regex("\\benum\\s+class\\s+Knob\\b")
     private val ENTRY_HEAD = Regex("^\\s*([A-Z][A-Z0-9_]*)\\s*\\(", RegexOption.DOT_MATCHES_ALL)
     private val KIND_MENTION = Regex("\\bKnobKind\\.")
+    private val DEFAULT_MENTION = Regex("\\bKnobDefault\\.[A-Za-z_][A-Za-z0-9_]*")
+    private val EXPLICIT_KIND = Regex("^(?:kind\\s*=\\s*)?KnobKind\\.(STRING|NUMBER|BOOL)$")
+    private val DEFAULT_ARGUMENT = Regex("^typedDefault\\s*=\\s*(.*)$", RegexOption.DOT_MATCHES_ALL)
+    private val DEFAULT_WRAPPER = Regex("^KnobDefault\\.(Count|Text|Flag)\\(.*\\)$", RegexOption.DOT_MATCHES_ALL)
     private val STRING_LITERAL = Regex("^\\s*\"([^\"]*)\"\\s*$")
     private val RESTART_TRUE = Regex("\\brestartRequired\\s*=\\s*true\\b")
 
     /** [restartRequired] is the entry's own flag, read off its argument list so the liveness twin
      *  (KnobLivenessDocumentedLawTest) shares this parser's denominator and its guards instead of
      *  running a second one that could disagree with it. */
-    data class KnobKey(val entry: String, val key: String, val restartRequired: Boolean = false)
+    data class KnobKey(
+        val entry: String,
+        val key: String,
+        val restartRequired: Boolean = false,
+        val kind: String? = null,
+    )
 
     /** The enum's entry-list text (a Kotlin enum's entries end at the first top-level `;`; members
      *  follow), or the problem that stops the parse. */
@@ -71,7 +81,7 @@ internal object KnobKeysDocumented {
 
     /** The key of one enum entry, or the problem that hides it; (null, null) when [raw] is no entry. */
     private fun entryKey(raw: String, label: String): Pair<KnobKey?, String?> {
-        val head = ENTRY_HEAD.find(raw) ?: return null to null
+        val head = ENTRY_HEAD.find(raw) ?: return missingEntry(raw, label)
         val entry = head.groupValues[1]
         val args = KotlinText.balancedSpan(raw, head.range.last, '(', ')')
         val first = args?.let { KotlinText.splitTopLevel(raw.substring(it.bodyStart, it.closerAt), ',').firstOrNull() }
@@ -84,7 +94,44 @@ internal object KnobKeysDocumented {
                     "(${KotlinText.pyRepr(first.trim())}) — the key cannot be read from the source"
             else -> null
         }
-        return literal?.let { KnobKey(entry, it.groupValues[1], restartFlag(raw, args)) } to problem
+        val kind = entryKind(raw, args)
+        return literal?.let { KnobKey(entry, it.groupValues[1], restartFlag(raw, args), kind) } to
+            entryProblem(problem, kind, entry, label)
+    }
+
+    /** Nonempty entry chunks cannot silently disappear from the denominator. */
+    private fun missingEntry(raw: String, label: String): Pair<KnobKey?, String?> = null to
+        raw.takeIf { it.isNotBlank() }?.let {
+            "$label: unrecognized enum entry ${KotlinText.pyRepr(it.trim())} — the denominator is incomplete"
+        }
+
+    private fun entryProblem(problem: String?, kind: String?, entry: String, label: String): String? =
+        problem ?: if (kind == null) {
+            "$label: $entry's kind cannot be read from its typed default or explicit kind"
+        } else {
+            null
+        }
+
+    /** The recognized typed-default shapes; a new or malformed variant is a parser failure, never a skipped knob. */
+    fun defaultKind(raw: String?): String? = when (raw) {
+        "KnobDefault.NoCount" -> "NUMBER"
+        "KnobDefault.None", "KnobDefault.ChatgptLoginFile", "KnobDefault.GrokLoginFile" -> "STRING"
+        else -> when (raw?.let { DEFAULT_WRAPPER.matchEntire(it)?.groupValues?.get(1) }) {
+            "Count" -> "NUMBER"
+            "Flag" -> "BOOL"
+            "Text" -> "STRING"
+            else -> null
+        }
+    }
+
+    /** Legacy fixtures declare the kind; the catalogue derives it from the default after the aliases. */
+    private fun entryKind(raw: String, span: KotlinText.Span?): String? {
+        if (span == null) return null
+        val args = KotlinText.splitTopLevel(raw.substring(span.bodyStart, span.closerAt), ',').map { it.trim() }
+        val namedKind = args.firstNotNullOfOrNull { EXPLICIT_KIND.matchEntire(it)?.groupValues?.get(1) }
+        val default = args.firstNotNullOfOrNull { DEFAULT_ARGUMENT.matchEntire(it)?.groupValues?.get(1) }
+            ?: args.getOrNull(2)
+        return namedKind ?: defaultKind(default)
     }
 
     /** Whether this entry's argument list sets the restart flag; its own function so reading the flag does not
@@ -104,11 +151,14 @@ internal object KnobKeysDocumented {
             if (problem != null) problems += problem
         }
         if (keys.isEmpty()) return keys to problems
-        val kinds = KIND_MENTION.findAll(KotlinText.stripComments(source)).count()
-        if (kinds != keys.size) {
-            problems += "$label: parsed ${keys.size} enum entries but the file holds $kinds `KnobKind.` mentions — " +
-                "every entry passes exactly one kind, so the parser and the source disagree and no key list from " +
-                "this run can be trusted"
+        val code = KotlinText.stripComments(source)
+        val explicit = KIND_MENTION.findAll(code).count()
+        val declarations = if (explicit > 0) explicit else DEFAULT_MENTION.findAll(code).count()
+        if (declarations != keys.size) {
+            problems += "$label: parsed ${keys.size} enum entries but the file holds $declarations " +
+                "kind declarations — every entry declares exactly one explicit kind or typed default, " +
+                "so the parser and the source " +
+                "disagree and no key list from this run can be trusted"
         }
         return keys to problems
     }

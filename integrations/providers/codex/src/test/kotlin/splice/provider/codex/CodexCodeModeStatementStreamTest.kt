@@ -253,6 +253,12 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
             withTimeout(30_000) { post.stopped.await() }
+            // The mock transport exits before the reader persists its loss; resume the settled recovery case.
+            withTimeout(5_000) {
+                while (stateFiles.records().single()["phase"]?.jsonPrimitive?.content != CodeModePhase.LOST.name) {
+                    yield()
+                }
+            }
             val next = StepSink()
             manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), next, post)

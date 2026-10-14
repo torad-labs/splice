@@ -13,13 +13,18 @@ package splice.hub.front
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import platform.posix.O_CREAT
+import platform.posix.O_DIRECTORY
+import platform.posix.O_NOFOLLOW
 import platform.posix.O_RDONLY
 import platform.posix.O_TRUNC
 import platform.posix.O_WRONLY
@@ -30,11 +35,14 @@ import platform.posix.SIGUSR2
 import platform.posix.SIG_IGN
 import platform.posix.close
 import platform.posix.exit
+import platform.posix.fstat
 import platform.posix.getenv
+import platform.posix.geteuid
 import platform.posix.getpid
 import platform.posix.open
 import platform.posix.rename
 import platform.posix.signal
+import platform.posix.stat
 import platform.posix.unlink
 import platform.posix.write
 import splice.hub.io.Bytes
@@ -198,10 +206,57 @@ class Links(private val sys: Sys, private val loop: Loop) {
         }
 }
 
+/** Same owner-only publication as the daemon. Missing, unreadable, linked, foreign-owned or
+ *  malformed state fails closed; a read error never returns a partial credential. No key is cached. */
+private class McpAccessRead(private val dir: String) {
+    fun key(): String? {
+        if (!ownerDirectory()) return null
+        val fd = open("$dir/access-key", O_RDONLY or O_NOFOLLOW)
+        if (fd < 0) return null
+        try {
+            return if (ownerHeld(fd, REGULAR_KIND)) readKey(fd) else null
+        } finally {
+            close(fd)
+        }
+    }
+
+    private fun ownerDirectory(): Boolean {
+        val fd = open(dir, O_RDONLY or O_DIRECTORY or O_NOFOLLOW)
+        if (fd < 0) return false
+        try {
+            return ownerHeld(fd, DIRECTORY_KIND)
+        } finally {
+            close(fd)
+        }
+    }
+
+    private fun readKey(fd: Int): String? {
+        val bytes = ByteArray(ACCESS_KEY_LENGTH + KEY_READ_SLACK)
+        var size = 0
+        while (size < bytes.size) {
+            val n = bytes.usePinned { platform.posix.read(fd, it.addressOf(size), (bytes.size - size).convert()) }
+            if (n < 0) return null
+            if (n == 0L) break
+            size += n.toInt()
+        }
+        if (size !in ACCESS_KEY_LENGTH..ACCESS_KEY_LENGTH + 1) return null
+        return bytes.decodeToString(endIndex = size).trim().takeIf { key ->
+            key.length == ACCESS_KEY_LENGTH && key.all { it in '0'..'9' || it in 'a'..'f' }
+        }
+    }
+
+    private fun ownerHeld(fd: Int, kind: UInt): Boolean = memScoped {
+        val held = alloc<stat>()
+        fstat(fd, held.ptr) == 0 && held.st_uid == geteuid() &&
+            held.st_mode and FILE_KIND_MASK == kind && held.st_mode and FOREIGN_MODE_BITS == 0u
+    }
+}
+
 /** The hub folder: the keys the front reads, its own state, the daemon's kept listings, and its log line. */
 class HubFiles(private val dir: String) {
+    private val access = McpAccessRead(dir)
 
-    fun accessKey(): String = read("$dir/access-key")?.trim().orEmpty()
+    fun accessKey(): String? = access.key()
 
     fun mgmtKey(): String = read("${dir.substringBeforeLast('/')}/mgmt-key")?.trim().orEmpty()
 
@@ -260,3 +315,9 @@ private const val USAGE = 2
 private const val NO_SOCKET = 3
 private const val DRAIN = 10_000L
 private const val OWNER_RW = 0x180 // 0600
+private const val ACCESS_KEY_LENGTH = 64
+private const val KEY_READ_SLACK = 2 // one allowed newline, one byte to detect an oversized publication
+private const val FILE_KIND_MASK = 0xF000u
+private const val REGULAR_KIND = 0x8000u
+private const val DIRECTORY_KIND = 0x4000u
+private const val FOREIGN_MODE_BITS = 0x3Fu // group/other rwx bits

@@ -58,7 +58,7 @@ internal class ControlMcpWiring(
         enabled = mcpHosting.enabled,
         exclude = mcpHosting.exclude,
         endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
-        bearer = McpAccessKey(mgmtKey::get),
+        bearer = McpAccessKey(statePaths.stateDir, mgmtKey::get),
         rootsBound = McpRootsVerdicts(statePaths.stateDir.resolve("mcp-roots-bound"), log),
         shareByDefault = mcpHosting.share,
     )
@@ -80,7 +80,7 @@ internal class ControlMcpWiring(
             config.initializeTimeout,
             ProcessDispatchers().io(),
             log,
-            McpAccessKey(mgmtKey::get),
+            McpAccessKey(statePaths.stateDir, mgmtKey::get),
         )
         this.hub = McpHubVerdict(wiring.offReason)
         attached = McpAttached { hub.attached() }

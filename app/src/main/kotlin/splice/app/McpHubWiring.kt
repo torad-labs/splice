@@ -32,7 +32,6 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.core.util.SecureFile
 import splice.launch.install.InstallLayout
 import splice.sessions.registry.DarwinPs
 import splice.sessions.registry.ProcessEnvironment
@@ -79,8 +78,8 @@ internal class McpHubWiring(
     }
 
     /** The hub, or its off answer when this machine cannot run it (McpHubGate, decided once here at boot), with one log
-     *  line either way. A running hub writes <state>/mcp-hub/access-key, the bearer [access] the front checks every
-     *  session against; the management key is fixed for the process, so one write at boot keeps it current. */
+     *  line either way. The front reads <state>/mcp-hub/access-key, the bearer [access] checks every request against.
+     *  McpAccessKey owns that publication, including rotations; boot must not replace it. */
     fun hub(
         sharing: McpSharing,
         startBound: McpHandshakeBudget,
@@ -89,7 +88,7 @@ internal class McpHubWiring(
         access: McpBearer,
     ): McpHubCalls {
         val bin = InstallLayout().shareDir(EnvReader(System::getenv))
-        val refusal = McpHubGate(bin).refusal() ?: writeAccess(access)
+        val refusal = McpHubGate(bin).refusal() ?: readAccess(access)
         offReason = refusal
         if (refusal != null) {
             log("[mcp-hub] ${LogSafe.str(refusal)}; MCP servers stay hosted in the daemon\n")
@@ -100,14 +99,12 @@ internal class McpHubWiring(
         return McpHub(sharing, servers, places, paths, startBound, io, log)
     }
 
-    /** Writes the bearer the front checks sessions against, or says why it could not, which keeps the hub off. */
-    private fun writeAccess(access: McpBearer): String? = try {
-        val dir = stateDir.resolve("mcp-hub")
-        Files.createDirectories(dir)
-        SecureFile.writeAtomic0600(dir.resolve("access-key"), access())
+    /** Verifies the canonical publication without writing it. A boot must not resurrect a revoked v1 bearer. */
+    private fun readAccess(access: McpBearer): String? = try {
+        access()
         null
     } catch (e: IOException) {
-        "the access key could not be written (${SafeFailureText.render(e)})"
+        "the access key could not be read (${SafeFailureText.render(e)})"
     }
 
     private fun folderOf(pid: Long): Path? {

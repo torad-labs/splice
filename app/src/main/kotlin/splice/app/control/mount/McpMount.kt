@@ -24,9 +24,12 @@ internal class McpMount(
 ) : ControlMount, BoundResource {
     private val routes = McpRoutes(host)
     private val hub = host.hub?.let(::McpHubRoutes)
+    private val access = McpAccessRoutes(guard.mcpAccessKey)
 
     override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, status()) } }
+        route.post("/api/mcp/access-key/rotate") { guard.guarded(call) { access.rotate(call) } }
+        route.post("/api/mcp/access-key/headers") { guard.guarded(call) { access.headers(call) } }
         route.post("/api/mcp/{name}/test") {
             guard.guarded(call) {
                 ControlReplies.respond(call, host.probe.test(call.parameters["name"].orEmpty()).json())

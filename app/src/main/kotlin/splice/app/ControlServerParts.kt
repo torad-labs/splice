@@ -8,6 +8,7 @@ import splice.app.control.ControlServer
 import splice.app.control.api.ControlAudit
 import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
+import splice.client.mcp.McpAccessKey
 import splice.core.config.UserHome
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
@@ -36,6 +37,7 @@ internal class ControlServerParts(
             AdmissionErrorBody,
             readIdleMs = { config.getConfig().ingressReadIdleMs },
         ),
+        McpAccessKey(daemon.statePaths.stateDir, daemon.mgmtKey::get),
     )
 
     /** Pin the environment override to the live state directory, not its parent: the wrong parent

@@ -81,7 +81,8 @@ class Hub(
     fun handle(conn: HttpConn, req: Request) {
         val server = req.path.removePrefix(PREFIX).takeIf { req.path.startsWith(PREFIX) && it.isNotEmpty() }
             ?: return conn.reply(NOT_FOUND, Rpc.error(JsonNull, "no such path"))
-        if (req.headers["authorization"] != "Bearer ${files.accessKey()}") return conn.reply(UNAUTHORIZED)
+        val access = files.accessKey() ?: return conn.reply(UNAUTHORIZED)
+        if (req.headers["authorization"] != "Bearer $access") return conn.reply(UNAUTHORIZED)
         val session = req.headers["mcp-session-id"]?.let(sessions::get)
         when (req.method) {
             "POST" -> post(conn, req, server, session)

@@ -39,7 +39,7 @@ import java.nio.file.Path
 import kotlin.time.Duration.Companion.days
 
 // why: the port the MCP hub front listens on, the address shape splice-config set (docs/specs/mcp-hub.md step 6).
-private const val MCP_HUB_FRONT_PORT = 3095
+internal const val MCP_HUB_FRONT_PORT = 3095
 
 /** The Claude login owner and accounts port, null until a Claude head's login machinery is built. Readers capture the
  *  slot, never its values, so each read finds what the launch service wired last. */
@@ -116,7 +116,7 @@ internal class ControlLaunchWiring(
             it.hubLaunch = McpHubLaunch(
                 McpLaunchPlanner(home),
                 sharing,
-                McpAccessKey(mgmtKey::get),
+                McpAccessKey(statePaths.stateDir, mgmtKey::get),
                 McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
                 log,
                 PluginFlagGate(TESTED_CLAUDE_CODE, pluginFlags),

@@ -41,8 +41,9 @@ internal class ControlGuard(
     log: LogSink,
     /** The request-size and heap admission, built by ControlPlane from the daemon's one request cap. */
     private val ingress: HeapIngress,
+    /** Production supplies the persisted source; source-only fixtures retain their bootstrap derivation. */
+    internal val mcpAccessKey: McpAccessKey = McpAccessKey(source = mgmtKey::get),
 ) {
-    private val mcpAccessKey = McpAccessKey(mgmtKey::get)
 
     // v0.4.0: the credential a launched session holds opens its OWN hooks' routes and nothing else.
     private val turnKey = TurnKey(mgmtKey)

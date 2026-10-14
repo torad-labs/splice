@@ -10,7 +10,7 @@ private const val HEAP_READ_HEADROOM_DIVISOR = 4L
 
 internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? = null) {
     private val lock: Any = parent?.lock ?: Any()
-    private val retention = parent?.retention ?: HeapRetention()
+    private val retention: HeapRetention = parent?.retention ?: HeapRetention()
     private var free = limitBytes
     private val changes = if (parent == null) MutableStateFlow(limitBytes) else null
     private var closed = false

@@ -1,5 +1,5 @@
 // NEW: ChatGPT Codex request limitations, kept at the provider boundary rather than in the Responses dialect.
-package splice.provider.codex
+package splice.provider.codex.request
 
 import splice.core.wire.AnthropicRequest
 

@@ -11,10 +11,19 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.Reader
 
+// why: 32 KiB covers the 8 Ki-character raw buffer and the UTF-8 decoder's private byte scratch with slack.
 private const val LITERAL_DECODER_BYTES = 32L shl 10
+
+// why: a JSON Unicode escape carries exactly four hexadecimal digits after its u marker.
 private const val LITERAL_HEX_DIGITS = 4
+
+// why: hexadecimal JSON escape digits accumulate in base sixteen to reconstruct one UTF-16 code unit.
 private const val LITERAL_HEX_BASE = 16
+
+// why: an 8 Ki-character refill bounds unescape scratch while UTF-8 and escape state cross stored chunks.
 private const val LITERAL_BUFFER_CHARS = 8_192
+
+// why: InputStream returns unsigned byte values from zero through 255, reserving minus one for end of input.
 private const val LITERAL_UNSIGNED_BYTE = 0xff
 
 internal fun interface TraceLiteralChunk {

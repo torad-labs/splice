@@ -18,7 +18,10 @@ import java.io.IOException
 import java.io.Reader
 import java.nio.file.Path
 
+// why: match TraceTail's one-minute file-lane slack for a turn record written before its late first attempt.
 private const val CAPTURE_LATE_WRITE_SLACK_MS = 60_000L
+
+// why: an 8 Ki-character buffer verifies every referenced byte without retaining the complete captured body.
 private const val CAPTURE_VERIFY_CHARS = 8_192
 
 /** Selects the same newest turn and oldest available client attempt as TraceTail, without hydrating its bodies. */

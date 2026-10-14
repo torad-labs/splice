@@ -17,10 +17,10 @@ public data class CapturedSent(val turnId: String, val body: String)
 
 /** Close every opened reader before this source. Each pass verifies the exact stored chunks it consumes. */
 public class CapturedSentReader internal constructor(
-    public val turnId: String,
     private val source: TraceCaptureRead,
     private val share: HeapReadView,
 ) : AutoCloseable {
+    public val turnId: String get() = checkNotNull(source.turnId)
     public val heap: HeapReservations get() = share
 
     public fun open(): Reader = checkNotNull(source.open()) { "captured trace body is no longer available" }
@@ -42,15 +42,19 @@ public class TraceSessionSent(private val dir: TraceDirPort) {
         val source = Cancellables.withCleanup({ if (!sourceReady) share.close() }) {
             TraceCaptureRead(TraceAsk(1, session = session), share).also { sourceReady = true }
         }
-        var retained = false
-        return Cancellables.withCleanup({
-            if (!retained) Cancellables.withCleanup({ share.close() }) { source.close() }
+        var readerReady = false
+        val reader: CapturedSentReader = Cancellables.withCleanup({
+            if (!readerReady) Cancellables.withCleanup({ share.close() }) { source.close() }
         }) {
+            CapturedSentReader(source, share).also { readerReady = true }
+        }
+        var retained = false
+        return Cancellables.withCleanup({ if (!retained) reader.close() }) {
             DayFiles(traceDir, head).newestFirst(source)
             if (!source.available) {
                 null
             } else {
-                CapturedSentReader(checkNotNull(source.turnId), source, share).also { retained = true }
+                reader.also { retained = true }
             }
         }
     }

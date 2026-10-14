@@ -156,8 +156,7 @@ public class UpstreamClient(
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.result
                 is LoopStep.Amend -> {
-                    prepared.amended(body)
-                    body = request.body(RoundBody.Text(step.bodyJson)).also { it.bytes }
+                    body = prepared.amended(body, step.bodyJson, ctx.perf)
                 }
                 LoopStep.Continue -> Unit
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted

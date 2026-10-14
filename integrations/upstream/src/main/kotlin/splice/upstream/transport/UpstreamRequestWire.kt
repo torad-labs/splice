@@ -65,8 +65,12 @@ public class PreparedPost internal constructor(
 
     /** An amendment must not retain the original byte array alongside its replacement. A later
      *  account still starts from the original body, freshly encoded, rather than amended content. */
-    internal fun amended(body: RequestBody) {
+    internal suspend fun amended(body: RequestBody, text: String, perf: splice.core.perf.TurnPerf?): RequestBody {
         cached.compareAndSet(body, null)
+        val replacement = RoundBody.Text(text)
+        return perf?.timed(splice.core.perf.PerfKeys.OUTBOUND_PREP_MS) {
+            request.body(replacement).also { it.bytes }
+        } ?: request.body(replacement).also { it.bytes }
     }
 }
 

@@ -14,6 +14,10 @@ package splice.sessions.registry
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.perf.KeptHistory
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -38,6 +42,8 @@ private val SESSION_ID = Regex("[A-Za-z0-9_-]{1,128}")
 
 // why: a record is five short fields; anything larger is not one of ours and is not read.
 private const val MAX_SEEN_BYTES = 8L shl 10
+private const val SEEN_LIST_BYTES = 32L
+private const val SEEN_LIST_REFERENCE_BYTES = 8L
 
 /** What the record keeps of one session. */
 internal data class SeenSession(
@@ -53,13 +59,14 @@ public class SeenSessions(
     private val dir: Path,
     private val kept: KeptHistory,
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
+    private val heap: HeapReservations? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     // Bounded metadata and ended projections, by session id. Only this class writes the files and the history
     // window deletes them. A listing reads the folder once and reuses held facts; eviction rereads a record rather
     // than dropping it from the result. A listing also writes only what changed against those facts.
-    private val held = SeenSessionCache()
+    private val held = SeenSessionCache(heap)
 
     /** Records [records] that name a session, writing a file only when what it keeps changed. A record that cannot
      *  be written is skipped: the listing it came from is still served whole. */
@@ -86,13 +93,26 @@ public class SeenSessions(
         val cutoff = kept.now().cutoffMs(clock()) ?: Long.MIN_VALUE
         val files = files()
         held.retain(files.mapTo(HashSet()) { it.fileName.toString().removeSuffix(".json") })
-        return files.asSequence()
+        val records = files.asSequence()
             .map { it.fileName.toString().removeSuffix(".json") }
             .filter { it !in present && SESSION_ID.matches(it) }
             .mapNotNull { held[it] ?: recorded(it) }
             .filter { it.lastActivityMs >= cutoff }
             .sortedByDescending { it.lastActivityMs }
             .toList()
+        if (records.isNotEmpty()) {
+            heap?.let {
+                // The records own separate tickets. This estimates only the escaped list and its references.
+                HeapOwners.observe(
+                    records,
+                    it,
+                    SEEN_LIST_BYTES + SEEN_LIST_REFERENCE_BYTES * records.size,
+                    HeapCategory.TRANSCRIPT_CACHE,
+                    HeapOwnerState.AWAITING_COLLECTION,
+                )
+            }
+        }
+        return records
     }
 
     /** Reuses the ended projection while its recorded facts are unchanged. */

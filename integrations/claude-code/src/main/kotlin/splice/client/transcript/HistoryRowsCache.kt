@@ -4,6 +4,12 @@ package splice.client.transcript
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapObservation
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapRelease
+import splice.core.memory.HeapReservations
 import splice.core.util.FileIdentity
 import splice.core.util.JsonScalars
 import java.nio.channels.Channels
@@ -15,6 +21,7 @@ private const val MAX_HISTORY_ROWS = 4_096
 private const val MAX_HISTORY_FILES = 64
 private const val MAX_HISTORY_CACHE_BYTES = 4L shl 20
 private const val HISTORY_ROW_BYTES = 96L
+private const val HISTORY_FILE_BYTES = 160L
 private val HISTORY_ID = Regex("[A-Za-z0-9_-]{1,128}")
 
 /** One history line that names a session, parsed once. [title] is already cut and redacted. */
@@ -49,7 +56,7 @@ private class HistoryRowRetention(
     }
 }
 
-internal class HistoryRowsCache {
+internal class HistoryRowsCache(private val heap: HeapReservations? = null) {
     internal data class Held(
         val key: FileIdentity?,
         val size: Long,
@@ -58,6 +65,8 @@ internal class HistoryRowsCache {
         val rows: List<HistoryRow>,
         val bytes: Long,
     ) {
+        var observation: HeapObservation? = null
+
         fun accepts(stat: EntryStat): Boolean {
             if (key != stat.identity || committed > stat.size) return false
             val unchanged = stat.size == size && stat.modifiedMs == modifiedMs
@@ -110,6 +119,18 @@ internal class HistoryRowsCache {
         }
 
         fun commit() {
+            held.forEach { (file, item) ->
+                item.observation?.close(if (file in met) HeapRelease.CLOSED else HeapRelease.EVICTED)
+            }
+            heap?.let { source ->
+                met.forEach { (file, item) ->
+                    val size = item.bytes + HISTORY_FILE_BYTES + 2L * file.toString().length
+                    val observation = HeapOwners.observe(item, source, size, HeapCategory.TRANSCRIPT_CACHE)
+                    // Old passes and returned lists retain independent ownership after cache replacement.
+                    HeapOwners.keep(item.rows, observation.share(HeapOwnerState.AWAITING_COLLECTION))
+                    item.observation = observation
+                }
+            }
             held = met
         }
     }

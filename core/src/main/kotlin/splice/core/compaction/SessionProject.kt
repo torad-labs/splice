@@ -19,6 +19,7 @@
 package splice.core.compaction
 
 import splice.core.config.UserHome
+import splice.core.memory.HeapReservations
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import splice.core.util.PathProbe
@@ -32,6 +33,7 @@ public class SessionProject(
     private val projectsDir: Path = UserHome.claudeDir().resolve("projects"),
     clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val headProjectsDirs: List<Path> = emptyList(),
+    heap: HeapReservations? = null,
 ) {
     // listOf(projectsDir), never `+ projectsDir`: a Path is an Iterable of its own name elements.
     private val projectsDirs: List<Path> = headProjectsDirs + listOf(projectsDir)
@@ -39,7 +41,7 @@ public class SessionProject(
     // each head's live-session registry folder sits beside its projects tree, under the name Claude Code gives it
     private val sessionsDirs: List<Path> = headProjectsDirs.map { it.resolveSibling("sessions") } + listOf(sessionsDir)
 
-    private val files = ProjectLookupFiles(clock)
+    private val files = ProjectLookupFiles(clock, heap)
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
 
     public fun projectFor(sessionId: String?): Path? {

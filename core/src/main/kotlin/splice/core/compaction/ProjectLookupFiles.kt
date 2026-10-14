@@ -2,6 +2,10 @@ package splice.core.compaction
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
@@ -17,11 +21,11 @@ internal data class ProjectRegistration(val sessionId: String?, val cwd: Path?)
 private data class TranscriptProject(val sessionId: String, val cwd: Path?)
 
 /** Bounded directory inventories and positive/negative file results. Cache misses still enumerate all candidates. */
-internal class ProjectLookupFiles(private val clock: ElapsedClock) {
+internal class ProjectLookupFiles(private val clock: ElapsedClock, private val heap: HeapReservations? = null) {
     private val json = Json
-    private val directories = ProjectEvidenceCache<List<Path>>()
-    private val registrations = ProjectEvidenceCache<ProjectRegistration>()
-    private val transcripts = ProjectEvidenceCache<TranscriptProject>()
+    private val directories = ProjectEvidenceCache<List<Path>>(heap)
+    private val registrations = ProjectEvidenceCache<ProjectRegistration>(heap)
+    private val transcripts = ProjectEvidenceCache<TranscriptProject>(heap)
 
     fun entries(dir: Path): List<Path> {
         val started = clock()
@@ -35,6 +39,8 @@ internal class ProjectLookupFiles(private val clock: ElapsedClock) {
         if (ProjectEvidenceReader.read(dir) == evidence) {
             val bytes = pathBytes(dir) + entries.sumOf(::pathBytes)
             directories.remember(dir, evidence, entries, bytes, started)
+        } else if (heap != null && entries.isNotEmpty()) {
+            observe(entries, pathBytes(dir) + entries.sumOf(::pathBytes))
         }
         return entries
     }
@@ -58,6 +64,7 @@ internal class ProjectLookupFiles(private val clock: ElapsedClock) {
     private fun registrationAt(file: Path, evidence: ProjectEvidence, started: Long): ProjectRegistration? {
         val text = PathProbe.text(file) ?: return null // Transient read failures are not remembered.
         val record = parse(text)?.let { ProjectRegistration(JsonScalars.str(it, "sessionId"), cwd(it)) }
+        if (heap != null) record?.cwd?.let { observe(it, pathBytes(it)) }
         if (ProjectEvidenceReader.read(file) != evidence) return null
         val bytes = pathBytes(file) + PROJECT_FILE_BYTES + 2L * (record?.sessionId?.length ?: 0) +
             (record?.cwd?.let(::pathBytes) ?: 0L)
@@ -82,6 +89,7 @@ internal class ProjectLookupFiles(private val clock: ElapsedClock) {
         } else {
             readTranscript(file, sessionId) ?: return null
         }
+        if (heap != null) record.cwd?.let { observe(it, pathBytes(it)) }
         if (ProjectEvidenceReader.read(file) != evidence) return null
         val bytes = pathBytes(file) + PROJECT_FILE_BYTES + 2L * sessionId.length + (record.cwd?.let(::pathBytes) ?: 0L)
         transcripts.remember(file, evidence, record, bytes, started)
@@ -105,6 +113,12 @@ internal class ProjectLookupFiles(private val clock: ElapsedClock) {
 
     private fun cwd(row: JsonObject): Path? = JsonScalars.str(row, "cwd")?.let(PathProbe::spelled)
         ?.normalize()?.takeIf { it.isAbsolute }
+
+    private fun <O : Any> observe(owner: O, bytes: Long) {
+        heap?.let {
+            HeapOwners.observe(owner, it, bytes, HeapCategory.TRANSCRIPT_CACHE, HeapOwnerState.AWAITING_COLLECTION)
+        }
+    }
 
     private fun pathBytes(path: Path): Long = PROJECT_PATH_BYTES + 2L * path.toString().length
 }

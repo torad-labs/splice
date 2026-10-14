@@ -2,6 +2,12 @@
 // file. A refresh lists and stats the files and reads again only a new or changed one; a file that is gone is forgotten.
 package splice.client.transcript
 
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapObservation
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapRelease
+import splice.core.memory.HeapReservations
 import splice.core.util.FileIdentity
 import java.nio.file.Path
 
@@ -16,8 +22,11 @@ internal data class TranscriptFacts(val name: String?, val cwd: String?)
  *  device and inode where the platform has them. */
 internal data class TranscriptStamp(val size: Long, val modifiedMs: Long, val key: FileIdentity?)
 
-internal class TranscriptFactsCache {
-    internal data class Held(val stamp: TranscriptStamp, val facts: TranscriptFacts)
+internal class TranscriptFactsCache(private val heap: HeapReservations? = null) {
+    internal data class Held(val stamp: TranscriptStamp, val facts: TranscriptFacts) {
+        var bytes: Long = 0L
+        var observation: HeapObservation? = null
+    }
 
     private var held: Map<Path, Held> = emptyMap()
 
@@ -33,15 +42,17 @@ internal class TranscriptFactsCache {
             before[file]?.takeIf { it.stamp == stamp }?.facts?.also { remember(file, stamp, it) }
 
         fun remember(file: Path, stamp: TranscriptStamp, facts: TranscriptFacts) {
-            met.remove(file)?.let { bytes -= retainedBytes(file, it.facts) }
+            met.remove(file)?.let { bytes -= it.bytes }
             val size = retainedBytes(file, facts)
             if (size > MAX_TRANSCRIPT_FACT_BYTES) return
             while (met.isNotEmpty() && overBudget(size)) {
                 val oldest = met.entries.iterator().next()
-                bytes -= retainedBytes(oldest.key, oldest.value.facts)
+                bytes -= oldest.value.bytes
                 met.remove(oldest.key)
             }
-            met[file] = Held(stamp, facts)
+            // Unchanged facts keep their ticket and age instead of accumulating overlapping Cleaner handles.
+            met[file] = before[file]?.takeIf { it.stamp == stamp && it.facts === facts }
+                ?: Held(stamp, facts).also { it.bytes = size }
             bytes += size
         }
 
@@ -52,6 +63,21 @@ internal class TranscriptFactsCache {
             TRANSCRIPT_FACT_BYTES + 2L * (file.toString().length + (facts.name?.length ?: 0) + (facts.cwd?.length ?: 0))
 
         fun commit() {
+            held.forEach { (file, item) ->
+                if (item !== met[file]) {
+                    item.observation?.close(if (file in met) HeapRelease.CLOSED else HeapRelease.EVICTED)
+                }
+            }
+            val source = heap
+            if (source != null) {
+                met.values.forEach { item ->
+                    if (item.observation == null) {
+                        val observation = HeapOwners.observe(item, source, item.bytes, HeapCategory.TRANSCRIPT_CACHE)
+                        HeapOwners.keep(item.facts, observation.share(HeapOwnerState.AWAITING_COLLECTION))
+                        item.observation = observation
+                    }
+                }
+            }
             held = met
         }
     }

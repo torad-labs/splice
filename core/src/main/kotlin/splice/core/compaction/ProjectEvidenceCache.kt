@@ -1,5 +1,11 @@
 package splice.core.compaction
 
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapObservation
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapRelease
+import splice.core.memory.HeapReservations
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -29,8 +35,10 @@ internal object ProjectEvidenceReader {
 }
 
 /** Null values are cached misses. Every reuse requires current filesystem evidence, never a TTL. */
-internal class ProjectEvidenceCache<V> {
-    internal data class Held<V>(val evidence: ProjectEvidence?, val value: V?, val bytes: Long, val started: Long)
+internal class ProjectEvidenceCache<V>(private val heap: HeapReservations? = null) {
+    internal data class Held<V>(val evidence: ProjectEvidence?, val value: V?, val bytes: Long, val started: Long) {
+        var observation: HeapObservation? = null
+    }
     private val held = LinkedHashMap<Path, Held<V>>(PROJECT_CACHE_INITIAL_CAPACITY, PROJECT_CACHE_LOAD_FACTOR, true)
     private var bytes = 0L
 
@@ -41,16 +49,40 @@ internal class ProjectEvidenceCache<V> {
     /** A slower old read cannot replace a newer observation. I/O and evidence checks happen outside this lock. */
     @Synchronized
     fun remember(file: Path, evidence: ProjectEvidence?, value: V?, size: Long, started: Long) {
+        // An uncached or stale result can still escape. Only scalar ticket metadata reaches the ledger.
+        val escaped = observe(value, size)
         if ((held[file]?.started ?: Long.MIN_VALUE) > started) return
-        held.remove(file)?.let { bytes -= it.bytes }
+        remove(file, HeapRelease.CLOSED)
         if (size > MAX_PROJECT_EVIDENCE_BYTES || evidence?.reusable == false) return
         while (held.isNotEmpty() && overBudget(size)) {
-            val oldest = held.entries.iterator().next()
-            bytes -= oldest.value.bytes
-            held.remove(oldest.key)
+            remove(held.keys.iterator().next(), HeapRelease.EVICTED)
         }
-        held[file] = Held(evidence, value, size, started)
+        val item = Held(evidence, value, size, started)
+        item.observation = escaped?.share() ?: heap?.observe(size, HeapCategory.TRANSCRIPT_CACHE)
+        item.observation?.let { HeapOwners.keep(item, it) }
+        held[file] = item
         bytes += size
+    }
+
+    private fun observe(value: V?, size: Long): HeapObservation? {
+        val source = heap ?: return null
+        // Empty inventories can be JVM singletons; never bind an escaped ticket to an immortal empty list.
+        val emptyInventory = value is Collection<*> && value.isEmpty()
+        if (value == null || emptyInventory) return null
+        return HeapOwners.observe(
+            value,
+            source,
+            size,
+            HeapCategory.TRANSCRIPT_CACHE,
+            HeapOwnerState.AWAITING_COLLECTION,
+        )
+    }
+
+    private fun remove(file: Path, reason: HeapRelease) {
+        held.remove(file)?.let {
+            bytes -= it.bytes
+            it.observation?.close(reason)
+        }
     }
 
     private fun overBudget(size: Long): Boolean =

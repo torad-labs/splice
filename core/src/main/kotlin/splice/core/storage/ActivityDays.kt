@@ -139,12 +139,15 @@ public class ActivityDays(
     public fun append(line: String): Unit = append(DayRecord { (line + "\n").toByteArray(Charsets.UTF_8) })
 
     /** Queues an immutable record, encoded only when its day is ready on the file lane. */
-    public fun append(record: DayRecord) {
+    public fun append(record: DayRecord): Unit = appendAccepted(record).let { Unit }
+
+    /** Acceptance is distinct from persistence; a refused callback will never run. */
+    public fun appendAccepted(record: DayRecord): Boolean {
         val now = clock()
         armMidnightSweep(now)
         val today = day(now)
         val file = dir.resolve("$prefix-$today.jsonl")
-        AsyncFileIo.submit {
+        return AsyncFileIo.submit {
             Cancellables.discard(
                 Cancellables.runCatchingCancellable {
                     // A reason this dir stayed open is not said per append: it sits inside the state dir,
@@ -166,7 +169,7 @@ public class ActivityDays(
                         deleted.clear()
                     }
                     if (sweptFor.getAndSet(today) != today) sweep(today)
-                },
+                }.also { if (it.isFailure) AsyncFileIo.reportWriteFailure() },
                 "a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed " +
                     "append must not surface on the turn that produced it",
             )

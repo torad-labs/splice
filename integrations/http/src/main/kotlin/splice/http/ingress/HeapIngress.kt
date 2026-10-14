@@ -22,6 +22,7 @@ import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
@@ -62,7 +63,7 @@ public class HeapIngress(
     private var connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
 
     public fun install(pipeline: ChannelPipeline) {
-        val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES))
+        val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES, HeapCategory.CONNECTION))
         pipeline.channel().attr(connectionKey).set(ownership)
         // A read requested by the decoder also crosses this guard.
         pipeline.addBefore(CODEC_HANDLER, "splice-heap-read", IngressReadGuard(ownership))

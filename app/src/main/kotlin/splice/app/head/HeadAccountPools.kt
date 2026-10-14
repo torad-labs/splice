@@ -24,13 +24,18 @@ import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
 import splice.upstream.codemode.ProcessElapsedNow
+import splice.upstream.credentials.AccountEvidenceLoads
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountPoolView
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
 
-internal class HeadAccountPools {
+internal class HeadAccountPools(private val evidenceLoads: EvidenceLoadFactory? = null) {
+    fun interface EvidenceLoadFactory {
+        operator fun invoke(): AccountEvidenceLoads
+    }
+
     private val elapsedNow = ProcessElapsedNow()
     private val accountNow = WallClock(System::currentTimeMillis)
 
@@ -56,6 +61,7 @@ internal class HeadAccountPools {
                     ),
                 ),
                 accountNow,
+                evidenceLoads = evidenceLoads?.invoke(),
             )
         }
         val accounts = wired.accounts.map { account ->
@@ -70,7 +76,7 @@ internal class HeadAccountPools {
                 extraHeaders = account.extraHeaders,
             )
         }
-        return AccountPool(accounts, accountNow)
+        return AccountPool(accounts, accountNow, evidenceLoads = evidenceLoads?.invoke())
     }
 
     // V4-132: a NAMED class, not the bare HeadAccountPoolSource { } lambda this returned before —

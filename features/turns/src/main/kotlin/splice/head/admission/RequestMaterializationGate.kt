@@ -6,6 +6,7 @@ import splice.core.config.Knob
 import splice.core.config.MaterializationBudgetBytes
 import splice.core.config.MaterializedByteCap
 import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapWeights
 import splice.head.turn.MaterializedRequest
@@ -41,10 +42,10 @@ public class RequestMaterializationGate(
         if (reservation != null) return leased(reservation, owner, block)
         val weight = requestBytes(bodyBytes)
         if (weight > limitBytes()) return null
-        var lease = heap.reserve(weight)
+        var lease = heap.reserve(weight, HeapCategory.MATERIALIZATION)
         while (lease == null) {
             heap.available.first { it >= weight }
-            lease = heap.reserve(weight)
+            lease = heap.reserve(weight, HeapCategory.MATERIALIZATION)
         }
         return leased(lease, owner, block)
     }
@@ -57,7 +58,7 @@ public class RequestMaterializationGate(
     ): T? {
         val weight = requestBytes(bodyBytes)
         if (reservation == null && weight > limitBytes()) return null
-        val lease = reservation ?: heap.reserve(weight) ?: return null
+        val lease = reservation ?: heap.reserve(weight, HeapCategory.MATERIALIZATION) ?: return null
         return leased(lease, block = block)
     }
 
@@ -66,6 +67,7 @@ public class RequestMaterializationGate(
         owner: MaterializationOwner? = null,
         block: MaterializedRequest<T>,
     ): T {
+        lease.transfer(HeapCategory.MATERIALIZATION)
         val release = TurnEnd { lease.close() }
         var retained = false
         return try {

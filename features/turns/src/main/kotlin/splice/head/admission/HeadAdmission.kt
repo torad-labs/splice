@@ -123,7 +123,7 @@ internal class HeadAdmission(
         if (refusals.refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
-        val selection = deps.quotaBundle.activePool?.select(
+        val selection = deps.quotaBundle.activePool?.awaitingEvidence?.select(
             prepared.built.meta.scope.sessionId,
             excluded = emptySet(),
             callerCredentialKey = callerKey,

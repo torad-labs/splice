@@ -22,6 +22,7 @@ import io.netty.util.ReferenceCountUtil
 import splice.core.config.IngressReadIdleMs
 import splice.core.config.MaterializedByteCap
 import splice.core.config.RequestByteCap
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
@@ -118,7 +119,7 @@ internal class IngressHandler(
                     "process heap limit is ${heap.limitBytes} bytes",
             )
             else -> {
-                val lease = if (ownership.admitted) heap.reserve(weight) else null
+                val lease = if (ownership.admitted) heap.reserve(weight, HeapCategory.INGRESS) else null
                 IngressRequest(lease, if (lease == null) HttpStatus.OVERLOADED else null)
             }
         }

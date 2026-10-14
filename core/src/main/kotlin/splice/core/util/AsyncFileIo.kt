@@ -1,15 +1,18 @@
 // NEW: bounded process-wide filesystem lane for turn-path telemetry and state persistence.
 package splice.core.util
 
+import kotlinx.serialization.Serializable
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Delayed
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * One best-effort write handed to the [AsyncFileIo] lane — a perf/compact JSONL append, a usage
@@ -57,6 +60,45 @@ public object AsyncFileIo {
     private val pending = AtomicInteger()
     private val dropped = AtomicInteger()
     private val episodeDrops = AtomicInteger()
+    private val accepted = AtomicLong()
+    private val completed = AtomicLong()
+    private val failed = AtomicLong()
+    private val failedWrites = AtomicLong()
+    private val running = AtomicInteger()
+    private val peakPending = AtomicInteger()
+
+    /** Process-wide work outcomes, independent of payload size and heap ownership estimates. */
+    @Serializable
+    public data class WorkSnapshot(
+        val accepted: Long,
+        val completed: Long,
+        val failed: Long,
+        val failedWrites: Long,
+        val dropped: Int,
+        val pending: Int,
+        val running: Int,
+        val scheduled: Int,
+        val peakPending: Int,
+    ) {
+        /** A diagnostic observation: delayed timers are not runnable work to drain. */
+        public val queued: Int get() = (pending - running - scheduled).coerceAtLeast(0)
+    }
+
+    /** Counts only scalar transitions; no queued task or path escapes through diagnostics. */
+    public val workSnapshot: WorkSnapshot
+        get() = WorkSnapshot(
+            accepted = accepted.get(),
+            completed = completed.get(),
+            failed = failed.get(),
+            failedWrites = failedWrites.get(),
+            dropped = dropped.get(),
+            pending = pending.get(),
+            running = running.get(),
+            scheduled = executor.queue.count { task ->
+                task is Delayed && task.getDelay(TimeUnit.MILLISECONDS) > 0L
+            },
+            peakPending = peakPending.get(),
+        )
 
     @Volatile
     private var dropSink: DropSink? = null
@@ -86,11 +128,18 @@ public object AsyncFileIo {
             recordDrop()
             return false
         }
+        peakPending.accumulateAndGet(pending.get(), ::maxOf)
+        accepted.incrementAndGet()
         val guarded = Runnable {
+            running.incrementAndGet()
+            var successful = false
             try {
                 reportDrops()
                 task()
+                successful = true
             } finally {
+                if (successful) completed.incrementAndGet() else failed.incrementAndGet()
+                running.decrementAndGet()
                 pending.decrementAndGet()
             }
         }
@@ -102,6 +151,7 @@ public object AsyncFileIo {
             }
             true
         } catch (_: RejectedExecutionException) {
+            accepted.decrementAndGet()
             pending.decrementAndGet()
             recordDrop()
             false
@@ -173,6 +223,11 @@ public object AsyncFileIo {
             pending.get(),
             pendingByPath.keys.filter { path -> path.startsWith(normalized) },
         )
+    }
+
+    /** An operation that deliberately hides a write exception still reports its diagnostic outcome. */
+    public fun reportWriteFailure() {
+        failedWrites.incrementAndGet()
     }
 
     /** Total tasks dropped since process start (pending cap exceeded or executor rejection). */

@@ -47,6 +47,8 @@ import splice.head.usage.UsageStore
 import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.credentials.AccountEvidenceLoads
 import splice.upstream.credentials.AccountPool
 import splice.usage.AccountPlanLookup
 import splice.usage.HeadQuotaPlan
@@ -80,7 +82,7 @@ internal fun interface OnPrimaryQuota {
  *  has sent a turn, and a Claude head's probe then sends none). [probeScope] is the daemon's OWN scope, the same
  *  instance ProviderAssembly prefetches on, so the pollers end with Daemon.stop() like every other background probe. */
 internal class QuotaPollSeams(
-    probeScope: CoroutineScope,
+    private val probeScope: CoroutineScope,
     log: LogSink,
     private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker, intervalMs ->
         QuotaPoller(
@@ -101,6 +103,9 @@ internal class QuotaPollSeams(
     fun primaryWired(tracker: QuotaTracker) {
         onPrimaryQuota(tracker)
     }
+
+    /** Account evidence shares the daemon-owned background lifetime, not an individual request. */
+    fun evidenceLoads(): AccountEvidenceLoads = AccountEvidenceLoads(probeScope, ProcessDispatchers().io())
 
     fun pollingFor(
         ctx: ProviderBuild,
@@ -138,7 +143,7 @@ internal class ManagedHeadFactory(
     private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
     internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
-    private val accountPools = HeadAccountPools()
+    private val accountPools = HeadAccountPools(HeadAccountPools.EvidenceLoadFactory(quotaSeams::evidenceLoads))
     private val accountOrders = AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE))
     private val providerHolds = ProviderHoldFiles(statePaths, log)
     private val traceStores = HeadTraceStores(statePaths)

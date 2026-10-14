@@ -113,8 +113,7 @@ class ResponsesToolAliasWireTest {
         assertEquals(LONG_NAME, names.restore(alias))
         assertEquals(
             alias,
-            req.getValue("tool_choice").jsonObject.getValue("function").jsonObject
-                .getValue("name").jsonPrimitive.content,
+            req.getValue("tool_choice").jsonObject.getValue("name").jsonPrimitive.content,
         )
         val replayedCall = req.getValue("input").jsonArray.map { it.jsonObject }
             .first { it["type"]?.jsonPrimitive?.content == "function_call" }

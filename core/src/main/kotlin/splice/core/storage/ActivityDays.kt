@@ -107,6 +107,9 @@ private object MidnightSweeps {
 /** Encodes a queued record for its actual day file, so body companions and its JSONL index agree. */
 public fun interface DayRecord {
     public fun encode(file: Path): ByteArray
+
+    /** Every accepted task's terminal path, including failures before encoding starts. */
+    public fun finished() {}
 }
 
 public class ActivityDays(
@@ -150,25 +153,27 @@ public class ActivityDays(
         return AsyncFileIo.submit {
             Cancellables.discard(
                 Cancellables.runCatchingCancellable {
-                    // A reason this dir stayed open is not said per append: it sits inside the state dir,
-                    // which every start holds owner-only and names if it could not (secureStateDirs), and
-                    // nobody else can traverse into it past a 0700 parent.
-                    if (ownerOnly) {
-                        val _ = SecureFile.ownerOnlyDirectory(dir)
-                    } else {
-                        Files.createDirectories(dir)
+                    AutoCloseable(record::finished).use {
+                        // A reason this dir stayed open is not said per append: it sits inside the state dir,
+                        // which every start holds owner-only and names if it could not (secureStateDirs), and
+                        // nobody else can traverse into it past a 0700 parent.
+                        if (ownerOnly) {
+                            val _ = SecureFile.ownerOnlyDirectory(dir)
+                        } else {
+                            Files.createDirectories(dir)
+                        }
+                        files.mutation.withLock {
+                            JsonlSink.appendLine(
+                                file,
+                                record.encode(file),
+                                DAY_MAX_BYTES,
+                                DayGenerations.keep,
+                                JsonlSink.PAGE_CACHE_FORCE,
+                            )
+                            deleted.clear()
+                        }
+                        if (sweptFor.getAndSet(today) != today) sweep(today)
                     }
-                    files.mutation.withLock {
-                        JsonlSink.appendLine(
-                            file,
-                            record.encode(file),
-                            DAY_MAX_BYTES,
-                            DayGenerations.keep,
-                            JsonlSink.PAGE_CACHE_FORCE,
-                        )
-                        deleted.clear()
-                    }
-                    if (sweptFor.getAndSet(today) != today) sweep(today)
                 }.also { if (it.isFailure) AsyncFileIo.reportWriteFailure() },
                 "a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed " +
                     "append must not surface on the turn that produced it",

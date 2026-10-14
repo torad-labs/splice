@@ -184,13 +184,17 @@ internal class CodexCodeModeStore(
 
     private fun persist(item: Prepared) {
         var bytes = 0L
+        var writeAttempted = false
         try {
             val conversation = item.conversation
             val cells = item.cells.map(PreparedCell::snapshot)
+            val prior = conversation?.let {
+                kept[item.key]?.snapshot().takeUnless { item.key in uncertainKeys }
+            }
             val stage: CodeModeSaveHeap.Encoding = if (conversation == null) {
                 capacity.encoding(cells, kept[item.key]?.expired.orEmpty())
             } else {
-                capacity.full(conversation)
+                capacity.conversation(conversation, prior)
             }
             stage.use { peak ->
                 if (cells.isNotEmpty()) {
@@ -200,24 +204,30 @@ internal class CodexCodeModeStore(
                     val indexed = checkNotNull(kept[item.key])
                     indexed.prepare(cells)
                     secureDirectory()
+                    writeAttempted = true
                     writer.write(fileOf(item.key), text)
                     indexed.put(cells)
                     indexed.dirty.clear()
                 } else if (conversation == null) {
+                    writeAttempted = true
                     remove(item.key)
                 } else {
-                    val prior = kept[item.key]?.snapshot().takeUnless { item.key in uncertainKeys }
                     val text = journal.encode(item.key, prior, conversation, fileOf(item.key), peak)
                     peak.retain(text)
                     bytes = CodeModeStateText(text).bytes
                     val indexed = CodeModeKeptState(conversation.version, conversation, heap)
                     secureDirectory()
+                    writeAttempted = true
                     write(Encoded(item.key, indexed, text))
                 }
             }
+        } catch (error: HeapCapacityException) {
+            // A reservation refused before the writer cannot have changed durable state. Preserve a
+            // trusted append base on retry; an attempted write still forces checkpoint recovery.
+            savePreparation.failed(item.key, uncertain = writeAttempted)
+            throw CodeModePersistenceException(error, diskFull = false)
         } catch (error: IOException) {
-            uncertainKeys.add(item.key)
-            failedKeys.add(item.key)
+            savePreparation.failed(item.key, uncertain = true)
             val free = freeBytes(dir)
             throw CodeModePersistenceException(error, diskFull = free != null && free < bytes)
         }

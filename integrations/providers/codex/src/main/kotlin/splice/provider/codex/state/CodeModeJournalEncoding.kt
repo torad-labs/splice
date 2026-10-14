@@ -16,6 +16,9 @@ internal object CodeModeJournalEncoding {
             left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors &&
             left?.sourceState == right?.sourceState
 
+    fun unchanged(record: CodeModeRecordSnapshot, prior: CodeModeRecordSnapshot?): Boolean =
+        same(record, prior) && prior?.encodedFieldBytes != null
+
     /** Measures a loaded cell once; saves update only field sizes that actually changed. */
     fun liveBytes(
         state: CodeModePersistedState,
@@ -65,11 +68,11 @@ internal class CodeModeJournalText(private val json: Json) {
         capacity: CodeModeSaveHeap.Encoding? = null,
     ): String {
         if (capacity == null) {
-            return CodeModeSaveHeap(JvmHeap.budget).full(next).use { peak ->
+            return CodeModeSaveHeap(JvmHeap.budget).conversation(next, prior).use { peak ->
                 encode(key, prior, next, path, peak).also(peak::retain)
             }
         }
-        return admitted(key, prior, next, path)
+        return admitted(key, prior, next, path, capacity)
     }
 
     private fun admitted(
@@ -77,10 +80,11 @@ internal class CodeModeJournalText(private val json: Json) {
         prior: CodeModePersistedState?,
         next: CodeModePersistedState,
         path: Path?,
+        capacity: CodeModeSaveHeap.Encoding,
     ): String {
         val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
         val unchanged = { record: CodeModeRecordSnapshot ->
-            CodeModeJournalEncoding.same(record, before[record.id]) && before[record.id]?.encodedFieldBytes != null
+            CodeModeJournalEncoding.unchanged(record, before[record.id])
         }
         val changed = next.records.filterNot(unchanged)
         val encoded = changed.map { CodeModeCellEncoding(it, before[it.id], json) }
@@ -95,6 +99,7 @@ internal class CodeModeJournalText(private val json: Json) {
         val cannotAppend = path?.let { !CodeModeStateJournal.appendable(it, live) } == true
         val encoding = CodeModeStateEncoding(json)
         return if (fullState || cannotAppend) {
+            capacity.checkpoint(next)
             encoding.checkpoint(next, encoded)
         } else {
             encoding.patch(key, encoded, next.expired)

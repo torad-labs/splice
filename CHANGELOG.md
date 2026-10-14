@@ -3,6 +3,7 @@
 ## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
 
 - **Less work under Claudex's shared code-mode lock.** Live record membership uses an identity index, expiry-marker comparisons use a set, and conversation queries limit expiry preparation to their own records. These changes address the bookkeeping bottleneck measured in the live JVM profile while preserving recovery, cancellation and request bytes.
+- **Recovery saves reserve for the selected journal operation.** A conversation append admits its changed records first and grows the reservation before a full checkpoint is encoded. This removes an unnecessary whole-conversation encoding reservation that refused Claudex startup on this machine; uncertain state, removed records and journal compaction still require a full checkpoint reservation.
 - **Qualified integration.** The registry fix passed the full gate and five independent code-review passes. Existing recovery and watchdog tests now await the state transitions their assertions require. Live response-time and memory improvements remain to be measured after installation.
 - **Local beta build.** This version is prepared from the reviewed `feat/v0.4.0` candidate for local installation. A public release is a separate promotion through the repository's main-only release path.
 

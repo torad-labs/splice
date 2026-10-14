@@ -22,6 +22,11 @@ internal class CodeModeSavePreparation(
     private val failedKeys: MutableSet<String>,
     private val write: CodeModePreparedWrite,
 ) {
+    fun failed(key: String, uncertain: Boolean) {
+        if (uncertain) uncertainKeys.add(key)
+        failedKeys.add(key)
+    }
+
     fun saveKey(
         key: String,
         records: List<CodeModeRecord>,

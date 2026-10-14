@@ -14,6 +14,7 @@ import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.state.CodeModeHeap
+import splice.provider.codex.state.CodeModeJournalEncoding
 import splice.provider.codex.state.CodeModeKeptState
 import java.util.IdentityHashMap
 
@@ -32,6 +33,14 @@ private const val SAVE_REFERENCE_BYTES = 128L
 internal class CodeModeSaveHeap(private val heap: HeapReservations) {
     /** Changed-field encoding grows to a checkpoint only after its exact append decision is known. */
     inner class Encoding(private val peak: HeapLease) : AutoCloseable {
+        fun checkpoint(state: CodeModePersistedState) {
+            val bytes = state.records.fold(markerBytes(state.expired)) { total, record ->
+                HeapJson.add(total, CodeModeHeap.bytes(record))
+            }
+            val required = HeapWeights.multiply(bytes, ENCODING_PEAK_FACTOR)
+            if (!peak.resize(maxOf(peak.bytes, required))) throw HeapCapacityException()
+        }
+
         fun checkpoint(prior: CodeModeKeptState, cells: List<CodeModeRecordSnapshot>) {
             var bytes = markerBytes(prior.expired)
             prior.records.values.forEach { old ->
@@ -123,6 +132,15 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
     }
 
     fun full(state: CodeModePersistedState): Encoding = encoding(state.records, state.expired)
+
+    /** Restored conversations usually append only LOST/expiry changes. Admit the actual changed records first;
+     *  the journal grows this lease before encoding a checkpoint if its append decision requires one. */
+    fun conversation(state: CodeModePersistedState, prior: CodeModePersistedState?): Encoding {
+        if (prior == null) return full(state)
+        val before = prior.records.associateBy(CodeModeRecordSnapshot::id)
+        val changed = state.records.filterNot { CodeModeJournalEncoding.unchanged(it, before[it.id]) }
+        return encoding(changed, state.expired)
+    }
 
     private fun markerBytes(expired: List<CodeModeExpiredSnapshot>): Long =
         expired.fold(SAVE_METADATA_BYTES) { total, marker -> HeapJson.add(total, CodeModeHeap.bytes(marker)) }

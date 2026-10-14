@@ -84,6 +84,12 @@ The complete `npm run gate` passed against committed candidate `9d46f785e`: `BUI
 
 ## Transcript continuity
 
+### Installation recovery finding
+
+The first beta.2 restart exposed a second issue: Claudex failed while saving restored code-mode state. Restoring the prior beta.1 jar reproduced the failure. A bounded startup JFR of PID 638155 identified `HeapCapacityException` at `CodeModeSaveHeap.reserve`, wrapped as `CodeModePersistenceException`; no exception messages or journal payloads were printed. The state directory held 1,192 journals totalling 1.646 GB, which includes obsolete deltas and is not a measurement of live graph size.
+
+The save path reserved 16 times the entire conversation's estimated graph before the encoder chose between a small append and a full checkpoint. Trusted prior state now admits changed records and current expiry markers first. The encoder expands that reservation before serializing a full checkpoint when state is missing/uncertain, records were removed, or the journal needs compaction. The existing factors, memory ceiling, forced writes and recovery data remain intact. This still reserves whole changed records rather than individual changed fields.
+
 Three project transcripts were explicitly titled `splice-lead`: September 18–20, September 20–29, and September 29–October 14. Relevant operator requests and the October 13–14 performance handoff were reviewed. The latest transcript reports a red integration gate followed by fixes and a queued checkpoint; it explicitly says no optimized build was installed. See [the existing performance execution plan](request-performance.md) for that larger pending integration.
 
 Local evidence retained for this investigation: `/tmp/splice-slow-20261014.jfr`, `/tmp/splice-threads-20261014.txt`, `/tmp/splice-registry-probe.log`, and `/tmp/splice-codemode-perf-final.log`. The JFR is local diagnostic data, not a repository artifact.

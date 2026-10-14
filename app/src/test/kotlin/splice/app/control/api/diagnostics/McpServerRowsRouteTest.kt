@@ -54,7 +54,8 @@ class McpServerRowsRouteTest {
 
     @BeforeEach
     fun setUp(@TempDir tmp: Path) {
-        val mgmt = MgmtKey(StatePaths(baseOverride = tmp.resolve("state")))
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val mgmt = MgmtKey(paths)
         key = mgmt.get()
         global = buildJsonObject {
             put("fake", FakeMcpServer.entry())
@@ -70,13 +71,13 @@ class McpServerRowsRouteTest {
             true,
             emptySet(),
             "http://127.0.0.1:0/mcp/",
-            McpAccessKey(mgmt::get),
+            McpAccessKey(stateDir = paths.stateDir, source = mgmt::get),
             DirectoryProbe { false },
         )
         control = controlServerFor(
             port = 0,
             heads = emptyMap(),
-            config = ConfigService(StatePaths(baseOverride = tmp.resolve("state"))),
+            config = ConfigService(paths),
             runtime = ControlRuntime(mcpHost = McpHost(sharing, { global }, log = { })),
             auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )

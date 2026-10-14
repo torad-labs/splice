@@ -68,8 +68,13 @@ class ControlServerAccessTest {
         // No heads: every guard runs BEFORE head resolution, so the door is exercised whatever
         // the route would answer, and the session routes answer 200 for an unknown head. An MCP host
         // with no servers, so the /mcp rows are in the table the walk reads: their door is Door.MCP.
-        val sharing =
-            McpSharing(true, emptySet(), "http://127.0.0.1:0/mcp/", McpAccessKey(mgmt::get), DirectoryProbe { false })
+        val sharing = McpSharing(
+            true,
+            emptySet(),
+            "http://127.0.0.1:0/mcp/",
+            McpAccessKey(stateDir = paths.stateDir, source = mgmt::get),
+            DirectoryProbe { false },
+        )
         control = controlServerFor(
             port = 0,
             heads = emptyMap(),

@@ -82,7 +82,7 @@ class McpRoutesTest {
             true,
             emptySet(),
             "http://127.0.0.1:0/mcp/",
-            McpAccessKey(mgmt::get),
+            McpAccessKey(stateDir = paths.stateDir, source = mgmt::get),
             DirectoryProbe { false },
         )
         generatedConfig = sharing.plan(global).rewritten.toString()

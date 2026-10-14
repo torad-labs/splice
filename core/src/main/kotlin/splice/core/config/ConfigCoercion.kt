@@ -23,6 +23,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.memory.HeapWeights
 import splice.core.perf.HistoryWindowWords
 import splice.core.util.EnvReader
+import java.util.Collections
 
 private const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
 private const val MIN_FIRST_BYTE_MS = 10_000L
@@ -79,7 +80,10 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
     private val unlimitedWords = setOf("", "unlimited", "off", "none")
 
     // A flat table of floors/clamps — splitting it would scatter the contract (port fidelity).
-    fun normalize(raw: Map<String, Any?>): Map<String, Any?> {
+    fun normalize(
+        raw: Map<String, Any?>,
+        testIdleFloor: Boolean = envReader("CODEX_PROXY_TEST") == "1",
+    ): Map<String, Any?> {
         val out = LinkedHashMap(raw)
 
         listOf(Knob.CHATGPT_API_BASE, Knob.XAI_API_BASE).forEach { k ->
@@ -117,7 +121,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.FOLD_MAX_TIER.key] = clampLong(out, Knob.FOLD_MAX_TIER, floor = 0L, ceiling = MAX_FOLD_TIER)
         out[Knob.UPSTREAM_TIMEOUT_MS.key] = clampLong(out, Knob.UPSTREAM_TIMEOUT_MS, floor = MIN_UPSTREAM_TIMEOUT_MS)
         out[Knob.FIRST_BYTE_TIMEOUT_MS.key] = clampLong(out, Knob.FIRST_BYTE_TIMEOUT_MS, floor = MIN_FIRST_BYTE_MS)
-        val idleFloor = if (envReader("CODEX_PROXY_TEST") == "1") TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
+        val idleFloor = if (testIdleFloor) TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
         out[Knob.STREAM_IDLE_MS.key] = clampLong(out, Knob.STREAM_IDLE_MS, floor = idleFloor)
         out[Knob.AUTH_CACHE_MS.key] = clampLong(out, Knob.AUTH_CACHE_MS, floor = MIN_AUTH_CACHE_MS)
         out[Knob.MIRROR_REASONING.key] = false
@@ -138,7 +142,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.TOOL_SURFACE.key] = offOrAuto(str(out, Knob.TOOL_SURFACE))
         clampPromoted(out)
         clampRetryCurve(out)
-        return out
+        return Collections.unmodifiableMap(out)
     }
 
     // V4-110: shared MCP hosting and request-materialization knobs are positive-only. A floor keeps

@@ -50,6 +50,9 @@ public class SpliceConfig internal constructor(
      *  through it, where the view held at boot keeps the answer it had. */
     public fun current(): SpliceConfig = fresh.read()
 
+    /** Reuse immutable values without retaining an unconfigured head in the service's cache. */
+    internal fun following(reader: FreshConfig): SpliceConfig = SpliceConfig(m, reader, chosen)
+
     public val port: Int get() = long(Knob.PORT).toInt()
     public val chatgptApiBase: String get() = string(Knob.CHATGPT_API_BASE).orEmpty()
     public val codexAuthPath: String get() = string(Knob.CODEX_AUTH_PATH).orEmpty()

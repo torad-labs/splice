@@ -1,6 +1,6 @@
 // PORT-OF: server/src/config.mjs layers/getConfig @ pre-public-port-baseline — the MERGE ENGINE.
-// Invariants: layers merge FRESH on every read (v29 froze knobs at import; nothing was
-// hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- state config.json (mtime-cached)
+// Invariants: layers are observed FRESH on every read, with immutable normalized snapshots reused
+// only for unchanged observations; precedence defaults <- headOverrides(TOML) <- state config.json (mtime-cached)
 // <- env (alias order) <- runtime PATCH <- perHead ([heads.<key>.overrides] TOML, a command's own value, which beats
 // every shared layer since Oct 12); PATCH persists to the state file best-effort (env still wins at next boot).
 // SEAM (recorded): env access is injected as a reader function so tests can fake the
@@ -31,6 +31,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -40,10 +41,10 @@ public class ConfigService(
     // NAME IS A TRAP (three agents mis-read it): this is the GLOBAL knob layer sourced from the
     // head-topology FILE ([defaults] + [daemon]), NOT a per-head dimension. Per-head lives in
     // [perHeadOverrides] below.
-    private val headOverrides: Map<String, String> = emptyMap(),
+    headOverrides: Map<String, String> = emptyMap(),
     // headKey -> knob map, from [heads.<key>.overrides]. Applied only by getConfig(headKey), so a
     // head can hold its own maxInflight/timeouts without the value leaking onto its siblings.
-    private val perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
+    perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
     private val envReader: EnvReader = EnvReader(System::getenv),
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
@@ -58,16 +59,24 @@ public class ConfigService(
     // Stateless apart from the injected [envReader], so one instance per service is enough.
     private val coercion = ConfigCoercion(envReader)
 
-    // PATCH mutates on control-plane threads while every request thread merges — guard every
-    // touch with [runtimeLock] and hand out COPIES only (audit 2026-07-18: CME risk + torn reads).
+    private val headOverrides = Collections.unmodifiableMap(LinkedHashMap(headOverrides))
+    private val defaults: Map<String, Any?> =
+        Collections.unmodifiableMap(Knob.entries.associate { it.key to it.default })
+    private val globalKnobs = Collections.unmodifiableMap(
+        coerceAll(this.headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys },
+    )
+    private val snapshots = ConfigSnapshotCache()
+
+    // PATCH publishes one immutable batch. Readers never retain a map another thread can mutate.
     private val runtimeLock = Any()
     private val persistLock = Any()
-    private val runtimeLayer = LinkedHashMap<String, Any?>()
+    private var runtimeLayer: Map<String, Any?> = emptyMap()
 
     /** [heads.<key>.overrides] as the daemon holds them now: the boot read, then each console write of splice.toml. */
     public val headLayer: HeadOverrideLayer = HeadOverrideLayer(perHeadOverrides)
 
     init {
+        headLayer.observeChanges(ConfigRevisionChanged(snapshots::invalidate))
         // V4-109: say it ONCE, at construction, for every key the TOML layers asked for and did not
         // get. Logged here rather than at each read because the merge runs per request — a line per
         // read would bury the daemon log in a config mistake that never changes. The doctor repeats
@@ -81,34 +90,21 @@ public class ConfigService(
         val path: Path,
         val modified: FileTime,
         val size: Long,
+        val raw: Map<String, String>,
         val data: Map<String, Any?>,
     )
 
-    @Volatile
-    private var fileCache: FileCache? = null
+    // Identity is the fence: invalidation replaces the holder even when its cache was already empty.
+    private data class FileObservation(val cached: FileCache?)
+
+    private val fileCache = AtomicReference(FileObservation(null))
 
     /** Effective config. [headKey] folds that head's [heads.<key>.overrides] in above the global
      *  TOML layer — an unknown/absent key is simply the global view, so callers never branch. */
     @JvmOverloads
-    public fun getConfig(headKey: String? = null): SpliceConfig {
-        val layered = layeredRaw(headKey)
-        val merged = LinkedHashMap<String, Any?>()
-        Knob.entries.forEach { merged[it.key] = it.default }
-        merged.putAll(layered)
-        return SpliceConfig(coercion.normalize(merged), FreshConfig { getConfig(headKey) }, layered.keys)
-    }
+    public fun getConfig(headKey: String? = null): SpliceConfig = snapshot(headKey).effective
 
-    public fun layers(): ConfigLayers = ConfigLayers(
-        defaults = Knob.entries.associate { it.key to it.default },
-        headOverrides = coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys },
-        file = fileLayer().filterKeys { it !in headOnlyKnobKeys },
-        env = envLayer(),
-        runtime = synchronized(runtimeLock) { runtimeLayer.toMap() },
-        // JW-06: [heads.<key>.overrides] folds into layeredRaw but was invisible here — the
-        // dashboard's provenance feature was silently wrong for exactly the heads that were
-        // tuned. Heads with no overrides are absent (the webui renders only what differs).
-        perHead = headLayer.all().filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v).accepted },
-    )
+    public fun layers(): ConfigLayers = snapshot().layers
 
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
     // its `continue`s): unknown key -> reject; null -> delete; uncoercible -> reject; else -> apply.
@@ -124,7 +120,6 @@ public class ConfigService(
                 folderRefusal != null -> rejected[key] = folderRefusal
                 raw == null -> {
                     applied[key] = null
-                    synchronized(runtimeLock) { runtimeLayer.remove(key) }
                 }
                 else -> {
                     val coerced = coercion.coerce(knob, raw.toString())
@@ -132,33 +127,84 @@ public class ConfigService(
                         rejected[key] = "invalid value"
                     } else {
                         applied[key] = coerced
-                        synchronized(runtimeLock) { runtimeLayer[key] = coerced }
                     }
                 }
             }
         }
-        val notPersisted = if (applied.isNotEmpty()) persistApplied(applied) else null
+        val notPersisted = if (applied.isEmpty()) {
+            null
+        } else {
+            synchronized(persistLock) {
+                synchronized(runtimeLock) {
+                    runtimeLayer = Collections.unmodifiableMap((runtimeLayer + applied).filterValues { it != null })
+                    snapshots.invalidate()
+                }
+                persistApplied(applied)
+            }
+        }
         val restartRequired = applied.keys.filter { it in restartRequiredKnobKeys }
         return PatchResult(applied, rejected, restartRequired, getConfig(), notPersisted)
     }
 
-    /** Every value a layer set, in precedence order, without the defaults beneath them: [getConfig] seeds those, and
-     *  hands the keys set here on, so a reader can tell a knob someone chose from its default. */
-    private fun layeredRaw(headKey: String? = null): Map<String, Any?> {
-        val merged = LinkedHashMap<String, Any?>()
-        // A head-only knob (Knob.headOnly) is taken from [heads.KEY.overrides] alone: the global TOML
-        // and the state file drop it here, it has no env alias, and PATCH refuses it.
-        coerceAll(headOverrides).accepted.filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
-        fileLayer().filterKeys { it !in headOnlyKnobKeys }.forEach { (k, v) -> merged[k] = v }
-        envLayer().forEach { (k, v) -> merged[k] = v }
-        synchronized(runtimeLock) { runtimeLayer.forEach { (k, v) -> merged[k] = v } }
-        // A command's own value is the most specific one there is, so it is folded in LAST and beats every shared
-        // layer. It sat just above the global TOML before (Oct 12, §9 audit): a console change to the shared value lands
-        // in the state file and the runtime layer, both of which outranked it, so after one such change every command's
-        // own value for that knob was ignored while the console said Applied.
-        headKey?.let { key -> headLayer.all()[key]?.let { coerceAll(it).accepted } }
-            ?.forEach { (k, v) -> merged[k] = v }
-        return merged
+    /** One observation pairs effective values and provenance. File freshness and environment aliases stay live. */
+    @JvmOverloads
+    public fun snapshot(headKey: String? = null): ConfigSnapshot {
+        val ticket = snapshots.begin()
+        val file = fileLayer()
+        val environment = snapshots.environment(envReader)
+        val inputs = synchronized(runtimeLock) {
+            ConfigSnapshotCache.Inputs(
+                file,
+                environment,
+                runtimeLayer,
+                headLayer.all(),
+                envReader("CODEX_PROXY_TEST") == "1",
+            )
+        }
+        val previous = snapshots.current()
+        val generation = if (previous != null && previous.inputs == inputs) {
+            previous
+        } else {
+            snapshots.publish(ticket, buildSnapshot(inputs, previous))
+        }
+        generation.envRejected.keys.forEach { key ->
+            log("[config] ignoring invalid env value for $key: '${environment[key]}'")
+        }
+        return generation.snapshot(headKey, FreshConfig { getConfig(headKey) })
+    }
+
+    private fun buildSnapshot(
+        inputs: ConfigSnapshotCache.Inputs,
+        previous: ConfigSnapshotCache.Generation?,
+    ): ConfigSnapshotCache.Generation {
+        val env = if (previous != null && previous.inputs.env == inputs.env) {
+            CoercedLayer(previous.global.layers.env, previous.envRejected)
+        } else {
+            coerceAll(inputs.env)
+        }
+        val perHead = inputs.heads.filterValues { it.isNotEmpty() }.mapValues { (head, raw) ->
+            previous?.global?.layers?.perHead?.get(head)?.takeIf { previous?.inputs?.heads?.get(head) == raw }
+                ?: coerceAll(raw).accepted
+        }.let(Collections::unmodifiableMap)
+        val layers = ConfigLayers(defaults, globalKnobs, inputs.file, env.accepted, inputs.runtime, perHead)
+        // Most-specific head values are LAST, above every shared layer, including runtime PATCH.
+        val globalRaw = LinkedHashMap(globalKnobs)
+        globalRaw.putAll(inputs.file)
+        globalRaw.putAll(env.accepted)
+        globalRaw.putAll(inputs.runtime)
+        val view = ConfigSnapshotCache.View(
+            defaults,
+            coercion,
+            layers,
+            ConfigSnapshotCache.HeadRead { getConfig(it) },
+            inputs.testIdleFloor,
+        )
+        return ConfigSnapshotCache.Generation(
+            inputs,
+            view(globalRaw, null),
+            Collections.unmodifiableMap(perHead.mapValues { (head, values) -> view(globalRaw + values, head) }),
+            env.rejected,
+        )
     }
 
     /** Every key the TOML layers asked for and did not get, keyed by where the operator WROTE it:
@@ -191,7 +237,7 @@ public class ConfigService(
                 accepted[key] = coerced
             }
         }
-        return CoercedLayer(accepted, rejected)
+        return CoercedLayer(Collections.unmodifiableMap(accepted), Collections.unmodifiableMap(rejected))
     }
 
     // Best-effort by design (port fidelity): a broken/absent state file yields {} — the daemon
@@ -204,8 +250,10 @@ public class ConfigService(
     // exactly how the old pre-gate lied "absent". So exists(NOFOLLOW) only disambiguates a caught
     // NoSuch; untraversable parents, inaccessible targets, and dangling links all log their discard.
     private fun fileLayer(): Map<String, Any?> {
-        val read = Cancellables.runCatchingCancellable { readFileLayer() }
+        val observed = fileCache.get()
+        val read = Cancellables.runCatchingCancellable { readFileLayer(observed) }
         val failure = read.exceptionOrNull()
+        if (failure != null) fileCache.compareAndSet(observed, FileObservation(null))
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(statePaths.configFile, LinkOption.NOFOLLOW_LINKS)
         if (failure == null || genuinelyAbsent) {
@@ -245,7 +293,7 @@ public class ConfigService(
         )
     }
 
-    private fun readFileLayer(): Map<String, Any?> {
+    private fun readFileLayer(observed: FileObservation): Map<String, Any?> {
         val path = statePaths.configFile
         // No existence pre-gate (DR-9): absence is proven by this stat throwing NoSuchFile, which
         // fileLayer classifies (genuine absence quiet, dangling/inaccessible logged).
@@ -255,41 +303,28 @@ public class ConfigService(
         // alone (torn-read risk) — refuse the cache while the file's mtime is still within the
         // resolution window, forcing a fresh read until it ages past it.
         val cacheable = System.currentTimeMillis() - modified.toMillis() >= MTIME_RESOLUTION_WINDOW_MS
-        val cached = fileCache
+        val cached = observed.cached
         if (cacheable && cached != null) {
             if (cached.path == path && cached.modified == modified) {
                 if (cached.size == size) return cached.data
             }
         }
         val parsed = json.parseToJsonElement(Files.readString(path)).jsonObject
-        val data = LinkedHashMap<String, Any?>()
+        val raw = LinkedHashMap<String, String>()
         for (knob in Knob.entries) {
-            fileScalar(parsed, knob)?.let { data[knob.key] = it }
+            fileScalar(parsed, knob)?.let { raw[knob.key] = it }
         }
-        fileCache = FileCache(path, modified, size, data)
+        val data = cached?.data?.takeIf { cached.raw == raw } ?: Collections.unmodifiableMap(
+            coerceAll(raw).accepted.filterKeys { it !in headOnlyKnobKeys },
+        )
+        val next = FileCache(path, modified, size, Collections.unmodifiableMap(raw), data)
+        fileCache.compareAndSet(observed, FileObservation(next))
         return data
     }
 
-    private fun fileScalar(parsed: JsonObject, knob: Knob): Any? {
+    private fun fileScalar(parsed: JsonObject, knob: Knob): String? {
         val el = parsed[knob.key] ?: return null
-        val scalar = coercion.jsonScalar(el) ?: return null
-        return coercion.coerce(knob, scalar.toString())
-    }
-
-    private fun envLayer(): Map<String, Any?> {
-        val data = LinkedHashMap<String, Any?>()
-        for (knob in Knob.entries) {
-            val raw = knob.envNames.firstNotNullOfOrNull { name -> envReader(name)?.takeIf { it.isNotEmpty() } }
-            if (raw != null) {
-                val coerced = coercion.coerce(knob, raw)
-                if (coerced != null) {
-                    data[knob.key] = coerced
-                } else {
-                    log("[config] ignoring invalid env value for ${knob.key}: '$raw'")
-                }
-            }
-        }
-        return data
+        return coercion.jsonScalar(el)?.toString()
     }
 
     // Best-effort by design (port fidelity): persistence failure must not undo the applied
@@ -303,7 +338,8 @@ public class ConfigService(
                 val onDisk = readOnDiskStrict(path)
                 val next = mergePersisted(onDisk, applied)
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
-                fileCache = null
+                fileCache.set(FileObservation(null))
+                snapshots.invalidate()
             }
         }.fold(
             onSuccess = { null },

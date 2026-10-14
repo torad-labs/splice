@@ -28,8 +28,13 @@ internal object ResponsesOutputSchema {
     fun wireBody(body: AnthropicRequest, format: JsonObject?): AnthropicRequest =
         if (format != null && forcesTool(body)) body.copy(tools = emptyList(), toolChoice = null) else body
 
+    /** A declared schema tool cannot override the caller's explicit prohibition on tool calls. */
     fun toolName(body: AnthropicRequest): String? =
-        body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL && it.inputSchema != null }?.name
+        if (body.toolChoice?.type == "none") {
+            null
+        } else {
+            body.tools.firstOrNull { it.name == STRUCTURED_OUTPUT_TOOL && it.inputSchema != null }?.name
+        }
 
     /** Checked before request construction, through the provider's explicit admission refusal. */
     fun refusal(body: AnthropicRequest, raw: JsonObject): String? {

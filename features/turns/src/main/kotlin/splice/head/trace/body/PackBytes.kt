@@ -17,6 +17,7 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.UUID
+import java.util.zip.CRC32C
 
 // why: every entry header ends with its raw chunk's 32-byte SHA-256 digest.
 private const val TRACE_PACK_DIGEST_BYTES = 32
@@ -130,14 +131,14 @@ internal object TracePackBytes {
         return UUID(header.long, header.long)
     }
 
-    /** Writer-generated references must still describe the current bytes after a truncate/regrow: the entry at
-     *  [offset] is whole and its header names [length] raw bytes under [hash]. The header digest is the checksum the
-     *  writer stored beside the payload in the same append, so a reuse compares it instead of decoding the stored
-     *  bytes and hashing them again (trace cost, Oct 13): that decode and second SHA-256 ran on every chunk of every
-     *  repeated body, each turn. A reader still decodes and checks the digest (TraceChunkRead), so a payload that rotted
-     *  under its header reads as unavailable, never as another body. */
-    fun matches(channel: FileChannel, format: TracePackFormat, offset: Long, length: Int, hash: String): Boolean =
-        format.entry(channel, offset)?.let { it.raw == length && it.hash == hash } == true
+    /** The whole entry at [offset] when its header still names [length] raw bytes under [hash], after any truncate
+     *  and regrow; whether its payload is intact is the writer's next question (TraceBodyPack.current). */
+    fun entry(channel: FileChannel, format: TracePackFormat, offset: Long, length: Int, hash: String): TracePackEntry? =
+        format.entry(channel, offset)?.takeIf { it.raw == length && it.hash == hash }
+
+    /** The CRC32C of a stored payload as written: what the writer compares a reused entry's bytes against, in place of
+     *  decoding them and hashing the raw chunk again. Zero is kept for "not yet taken" (TracePackIndex). */
+    fun checksum(stored: ByteArray): Int = CRC32C().apply { update(stored) }.value.toInt()
 
     fun hashOf(bytes: ByteArray): String =
         HEX.formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))

@@ -88,14 +88,24 @@ internal class TraceBodyPack(
     /** Where [text] resumes after the stored chunks it shares with a recent literal, or null to encode it whole. */
     fun resume(text: String): TraceLiteralResume? = index.recent.resume(text, this)
 
-    /** [part] still names whole bytes of this pack under its digest, after any truncate and regrow. */
-    fun current(part: JsonObject): Boolean = TracePackBytes.matches(
-        channel,
-        FORMAT,
-        part.getValue("offset").jsonPrimitive.long,
-        part.getValue("bytes").jsonPrimitive.int,
-        checkNotNull(JsonScalars.str(part["hash"])),
-    )
+    /** [part] still names a whole entry of this pack under its digest, after any truncate and regrow, and the entry's
+     *  stored payload is intact. Trace cost (Oct 13): an entry this writer appended, or already decoded and verified,
+     *  is checked by the CRC32C of its stored bytes against the one the index took then, never decoded and hashed
+     *  again; any other is decoded and hashed once, which records its CRC32C. A payload that changed under its header
+     *  is not current, so the dedup write that asked appends a fresh copy, and the index names that copy from then on. */
+    fun current(part: JsonObject): Boolean {
+        val offset = part.getValue("offset").jsonPrimitive.long
+        val hash = checkNotNull(JsonScalars.str(part["hash"]))
+        val entry = TracePackBytes.entry(channel, FORMAT, offset, part.getValue("bytes").jsonPrimitive.int, hash)
+            ?: return false
+        val stored = TracePackBytes.read(channel, offset, entry.stored)
+        val check = TracePackBytes.checksum(stored)
+        val known = index.check(hash, offset)
+        if (known != 0) return check == known
+        val intact = FORMAT.decode(stored, entry.raw)?.let(TracePackBytes::hashOf) == hash
+        if (intact) index.verified(hash, offset, check)
+        return intact
+    }
 
     fun put(bytes: ByteArray): JsonObject {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
@@ -115,7 +125,7 @@ internal class TraceBodyPack(
         val part = reference(hash, offset, bytes.size)
         index.end = offset + stored.size
         index.tail = part
-        if (!index.full) index.put(hash, offset)
+        if (!index.full) index.put(hash, offset, TracePackBytes.checksum(stored))
         return part
     }
 

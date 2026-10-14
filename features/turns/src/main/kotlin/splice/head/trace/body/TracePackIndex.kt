@@ -25,8 +25,8 @@ internal const val TRACE_PACK_MAX_ENTRIES: Int = 1 shl 19
 // why: the first table; it doubles whenever it would pass half full.
 private const val TRACE_INDEX_FIRST_SLOTS = 1 shl 10
 
-// why: two longs per slot, the digest prefix and the entry's offset.
-private const val TRACE_INDEX_SLOT_BYTES = 2L * Long.SIZE_BYTES
+// why: two longs and an int per slot: the digest prefix, the entry's offset and its stored payload's CRC32C.
+private const val TRACE_INDEX_SLOT_BYTES = 2L * Long.SIZE_BYTES + Int.SIZE_BYTES
 
 // why: a digest's first 16 hex digits are its first 8 bytes, which key the slot.
 private const val TRACE_INDEX_KEY_DIGITS = 16
@@ -47,6 +47,9 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
     private val literalLease = HeapOwners.charge(literals, heap, 0L)
     private var keys = LongArray(0)
     private var offsets = LongArray(0)
+
+    // The CRC32C this writer took of each entry's stored payload, or 0 while it has not taken one.
+    private var checks = IntArray(0)
 
     // The index outlives every table it grows through, so it owns the table's charge.
     private val tableLease = HeapOwners.charge(this, heap, 0L)
@@ -78,23 +81,35 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
         if (!tableLease.resize(slots * TRACE_INDEX_SLOT_BYTES)) throw HeapCapacityException()
         val oldKeys = keys
         val oldOffsets = offsets
+        val oldChecks = checks
         keys = LongArray(slots)
         offsets = LongArray(slots)
+        checks = IntArray(slots)
         size = 0
         for (slot in oldKeys.indices) {
-            if (oldKeys[slot] != 0L) place(oldKeys[slot], oldOffsets[slot], replace = true)
+            if (oldKeys[slot] != 0L) place(oldKeys[slot], oldOffsets[slot], oldChecks[slot], replace = true)
         }
     }
 
-    /** Names [offset] for [hash]; an admitted entry replaces what a colliding or stale slot named. */
-    fun put(hash: String, offset: Long) = place(key(hash), offset, replace = true)
+    /** Names [offset] for [hash], whose stored payload has CRC32C [check]; an admitted entry replaces what a colliding
+     *  or stale slot named. */
+    fun put(hash: String, offset: Long, check: Int) = place(key(hash), offset, check, replace = true)
 
     /** Names [offset] for [hash] unless an earlier entry already holds that digest. */
-    fun putIfAbsent(hash: String, offset: Long) = place(key(hash), offset, replace = false)
+    fun putIfAbsent(hash: String, offset: Long) = place(key(hash), offset, 0, replace = false)
+
+    /** The CRC32C taken of the payload at [offset] while the table names it for [hash], or 0 when none was taken. */
+    fun check(hash: String, offset: Long): Int = slotOf(hash, offset)?.let { checks[it] } ?: 0
+
+    /** Records [check] for the payload at [offset], decoded and verified, while the table names it for [hash]. */
+    fun verified(hash: String, offset: Long, check: Int) {
+        slotOf(hash, offset)?.let { checks[it] = check }
+    }
 
     fun clear() {
         keys.fill(0L)
         offsets.fill(0L)
+        checks.fill(0)
         size = 0
         literals.clear()
         recent.clear()
@@ -107,7 +122,7 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
         literals[text] = parts
     }
 
-    private fun place(key: Long, offset: Long, replace: Boolean) {
+    private fun place(key: Long, offset: Long, check: Int, replace: Boolean) {
         var slot = slot(key)
         while (keys[slot] != 0L && keys[slot] != key) slot = (slot + 1) and (keys.size - 1)
         if (keys[slot] == 0L) {
@@ -117,6 +132,15 @@ internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
             return
         }
         offsets[slot] = offset
+        checks[slot] = check
+    }
+
+    private fun slotOf(hash: String, offset: Long): Int? {
+        if (size == 0) return null
+        val key = key(hash)
+        var slot = slot(key)
+        while (keys[slot] != 0L && keys[slot] != key) slot = (slot + 1) and (keys.size - 1)
+        return slot.takeIf { keys[it] == key && offsets[it] == offset }
     }
 
     private fun slot(key: Long): Int = (key xor (key ushr Int.SIZE_BITS)).toInt() and (keys.size - 1)

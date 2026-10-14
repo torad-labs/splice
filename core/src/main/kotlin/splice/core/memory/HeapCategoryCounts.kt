@@ -49,7 +49,13 @@ internal class HeapCategoryCounts {
 
     fun snapshot(category: HeapCategory, ages: HeapAgeSnapshot): HeapCategorySnapshot = HeapCategorySnapshot(
         category, allocations, owners, bytes.value, peakAllocations, peakOwners, peakBytes,
-        releasedOwners, refundedAllocations, refundedBytes, evictedOwners, collectedOwners,
+        HeapReleaseSnapshot(
+            releasedOwners,
+            refundedAllocations,
+            refundedBytes,
+            evictedOwners,
+            collectedOwners,
+        ),
         HeapOwnerState.entries.map { state ->
             val index = state.ordinal
             HeapStateSnapshot(state, stateOwners[index], stateAllocations[index], stateBytes[index].value)
@@ -60,7 +66,13 @@ internal class HeapCategoryCounts {
     fun observationSnapshot(category: HeapCategory, ages: HeapAgeSnapshot): HeapObservedCategorySnapshot =
         HeapObservedCategorySnapshot(
             category, allocations, owners, bytes.value, peakAllocations, peakOwners, peakBytes,
-            releasedOwners, refundedAllocations, refundedBytes, evictedOwners, collectedOwners,
+            HeapObservedReleaseSnapshot(
+                releasedOwners,
+                refundedAllocations,
+                refundedBytes,
+                evictedOwners,
+                collectedOwners,
+            ),
             HeapOwnerState.entries.map { state ->
                 val index = state.ordinal
                 HeapObservedStateSnapshot(state, stateOwners[index], stateAllocations[index], stateBytes[index].value)

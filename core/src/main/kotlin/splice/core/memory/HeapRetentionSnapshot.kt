@@ -24,13 +24,25 @@ public data class HeapCategorySnapshot(
     @SerialName("peak_allocations") public val peakAllocations: Long,
     @SerialName("peak_owners") public val peakOwners: Long,
     @SerialName("peak_estimated_charged_bytes") public val peakEstimatedChargedBytes: Long,
+    public val releases: HeapReleaseSnapshot,
+    public val states: List<HeapStateSnapshot>,
+    public val ages: HeapAgeSnapshot,
+) {
+    public val releasedOwnersTotal: Long get() = releases.releasedOwnersTotal
+    public val refundedAllocationsTotal: Long get() = releases.refundedAllocationsTotal
+    public val refundedEstimatedBytesTotal: Long get() = releases.refundedEstimatedBytesTotal
+    public val evictedOwnersTotal: Long get() = releases.evictedOwnersTotal
+    public val collectionObservedOwnersTotal: Long get() = releases.collectionObservedOwnersTotal
+}
+
+/** Cumulative charged-owner releases. Refunds include shrinking charges and do not measure object reclamation. */
+@Serializable
+public data class HeapReleaseSnapshot(
     @SerialName("released_owners_total") public val releasedOwnersTotal: Long,
     @SerialName("refunded_allocations_total") public val refundedAllocationsTotal: Long,
     @SerialName("refunded_estimated_bytes_total") public val refundedEstimatedBytesTotal: Long,
     @SerialName("evicted_owners_total") public val evictedOwnersTotal: Long,
     @SerialName("collection_observed_owners_total") public val collectionObservedOwnersTotal: Long,
-    public val states: List<HeapStateSnapshot>,
-    public val ages: HeapAgeSnapshot,
 )
 
 /** Handle counts may exceed allocation counts; estimated bytes belong to allocations, not handles. */

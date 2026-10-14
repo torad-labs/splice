@@ -8,6 +8,8 @@ import java.nio.file.Path
 
 // why: /proc/self/status is a small fixed kernel record, and diagnostics stop after a bounded number of lines.
 private const val RESIDENT_STATUS_LINE_LIMIT = 256
+
+// why: Linux VmRSS reports binary kibibytes as kB; converting to bytes needs 1024, not decimal 1000.
 private const val RESIDENT_KIB_BYTES = 1024L
 
 internal object JvmResident {

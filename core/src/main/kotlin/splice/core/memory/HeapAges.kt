@@ -5,8 +5,14 @@ import splice.core.util.MonoClock
 
 // why: 4096 allocation ages cover ordinary concurrent owners with a fixed 64 KiB primitive metadata budget.
 internal const val HEAP_AGE_CAPACITY: Int = 4096
+
+// why: the tracked_1s_to_1m diagnostic bucket ends at one minute in monotonic milliseconds.
 private const val AGE_MINUTE_MS = 60_000L
+
+// why: the tracked_1m_to_5m diagnostic bucket ends at five minutes in the same monotonic time unit.
 private const val AGE_FIVE_MINUTES_MS = 300_000L
+
+// why: the tracked_5m_to_1h diagnostic bucket ends at one hour before the tracked_over_1h bucket begins.
 private const val AGE_HOUR_MS = 3_600_000L
 
 /** All access is under the process ledger lock. No slot stores an allocation, lease or owner reference. */

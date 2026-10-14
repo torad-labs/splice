@@ -38,7 +38,7 @@ public object MessageFragmentInputs {
         is ToolUseBlock -> after is ToolUseBlock && sameToolUse(before, after)
         is ToolResultBlock -> after is ToolResultBlock && sameToolResult(before, after)
         is UnknownBlock -> after is UnknownBlock && same(before.raw, after.raw)
-        else -> before == after
+        is TextBlock, is ThinkingBlock, is RedactedThinkingBlock, is ImageBlock, is DocumentBlock -> before == after
     }
 
     private fun sameToolUse(before: ToolUseBlock, after: ToolUseBlock): Boolean =
@@ -64,7 +64,7 @@ public object MessageFragmentInputs {
         is ToolUseBlock -> block.copy(input = freeze(block.input) as JsonObject)
         is ToolResultBlock -> block.copy(content = Collections.unmodifiableList(block.content.map(::freezeBlock)))
         is UnknownBlock -> block.copy(raw = freeze(block.raw) as JsonObject)
-        else -> block // remaining DTOs contain only immutable scalars/media-source DTOs
+        is TextBlock, is ThinkingBlock, is RedactedThinkingBlock, is ImageBlock, is DocumentBlock -> block
     }
 
     /** Conservative retained graph weight; never serializes the complete typed message to select a hit. */

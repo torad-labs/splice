@@ -28,6 +28,7 @@ import splice.core.turn.TurnMeta
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
 import splice.upstream.memory.JvmHeap
+import java.nio.file.Path
 import java.util.UUID
 
 /** The record kinds a trace file holds, spelled once for the writer and the `splice trace` reader. */
@@ -101,17 +102,19 @@ public class TraceStore(
         try {
             retained.state(HeapOwnerState.QUEUED)
             peak.state(HeapOwnerState.QUEUED)
-            val payload = DayRecord { file ->
-                retained.state(HeapOwnerState.RUNNING)
-                peak.state(HeapOwnerState.RUNNING)
-                try {
-                    bodies.encode(record, file)
-                } finally {
+            val payload = object : DayRecord {
+                override fun encode(file: Path): ByteArray {
+                    retained.state(HeapOwnerState.RUNNING)
+                    peak.state(HeapOwnerState.RUNNING)
+                    return bodies.encode(record, file)
+                }
+
+                override fun finished() {
                     retained.ownerFinished()
                     peak.ownerFinished()
                 }
             }
-            // The queue can drop a callback without invoking it. Its actual lifetime owns the charge.
+            // Accepted work retires even before encode; actual collection still owns the charge.
             HeapOwners.keep(payload, peak)
             // Acceptance means queued, not persisted. Refusal releases only the callback's encoding lease.
             queued = days.appendAccepted(payload)

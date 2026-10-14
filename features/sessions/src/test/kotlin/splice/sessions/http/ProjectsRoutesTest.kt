@@ -33,11 +33,18 @@ class ProjectsRoutesTest {
     private fun routes(heads: Map<String, SessionHead>): ProjectsRoutes {
         Files.createDirectories(rig.repo.resolve(".git"))
         val teams = TeamSource { rig.store }
+        val config = ConfigService(
+            StatePaths(baseOverride = tmp.resolve("route-config")),
+            headOverrides = mapOf("statuslineGitRoots" to tmp.toString()),
+            envReader = EnvReader { null },
+            log = { },
+        )
         val sessions = SessionsRoutes(
             rig.registry,
             TestTranscripts(),
             roots = TranscriptRoots(heads, vanilla = tmp.resolve("vanilla")),
             teams = teams,
+            settings = ConfigSessionSettings(config),
         )
         return ProjectsRoutes(
             rig.registry,

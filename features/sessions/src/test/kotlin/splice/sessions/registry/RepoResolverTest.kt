@@ -47,7 +47,7 @@ class RepoResolverTest {
 
     @Test
     fun `every cwd the resolver will not place answers with itself and its reason`() {
-        val resolver = RepoResolver(home = null)
+        val resolver = RepoResolver(extraRoots = listOf(tmp.toString()), home = null)
         assertEquals(RepoRoot("relative/dir", reason = REASON_NOT_ABSOLUTE), resolver.resolve("relative/dir"))
         val missing = tmp.resolve("gone").toString()
         assertEquals(RepoRoot(missing, reason = REASON_MISSING), resolver.resolve(missing))

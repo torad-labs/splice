@@ -28,6 +28,8 @@ private const val MAX_HISTORY_CACHE_BYTES = 4L shl 20
 
 // why: Estimate 96 bytes for fixed row and list-slot overhead; string characters are counted separately.
 private const val HISTORY_ROW_BYTES = 96L
+
+// why: Estimate 160 bytes for fixed per-file cache metadata; rows and path characters are added separately.
 private const val HISTORY_FILE_BYTES = 160L
 private val HISTORY_ID = Regex("[A-Za-z0-9_-]{1,128}")
 

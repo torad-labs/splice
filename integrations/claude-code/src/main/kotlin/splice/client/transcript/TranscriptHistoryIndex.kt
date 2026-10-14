@@ -35,7 +35,11 @@ private const val SCAN_ENTRY_BYTES = 160L
 
 // why: Estimate 48 bytes for each error string's fixed overhead; its characters are counted separately.
 private const val SCAN_ERROR_BYTES = 48L
+
+// why: Estimate 128 bytes for fixed retained-scan cache overhead; roots are added separately.
 private const val SCAN_CACHE_BYTES = 128L
+
+// why: Estimate 128 bytes for fixed retained-root and path overhead; path and head characters are added separately.
 private const val SCAN_ROOT_BYTES = 128L
 
 /** Claude Code's history.jsonl and primary transcript files, joined by session id. A short cached

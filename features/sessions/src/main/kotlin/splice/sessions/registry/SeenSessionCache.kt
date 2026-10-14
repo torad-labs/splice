@@ -21,6 +21,8 @@ private const val SEEN_CACHE_LOAD_FACTOR = 0.75f
 
 // why: Budget 640 bytes for fixed metadata and lazy projection overhead; strings are added separately.
 private const val SEEN_METADATA_BYTES = 640L
+
+// why: 448 estimates fixed objects in a lazy ended-session projection; metadata strings are budgeted separately.
 private const val SEEN_PROJECTION_BYTES = 448L
 
 /** Bounded metadata ownership only: eviction rereads the record, never removes it from a listing. */

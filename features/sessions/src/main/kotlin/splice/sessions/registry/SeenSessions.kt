@@ -42,7 +42,11 @@ private val SESSION_ID = Regex("[A-Za-z0-9_-]{1,128}")
 
 // why: a record is five short fields; anything larger is not one of ours and is not read.
 private const val MAX_SEEN_BYTES = 8L shl 10
+
+// why: 32 estimates fixed overhead for an escaped list; its records have separate ownership tickets.
 private const val SEEN_LIST_BYTES = 32L
+
+// why: budget 8 bytes per list reference to allow full-width JVM references.
 private const val SEEN_LIST_REFERENCE_BYTES = 8L
 
 /** What the record keeps of one session. */
@@ -58,8 +62,8 @@ internal data class SeenSession(
 public class SeenSessions(
     private val dir: Path,
     private val kept: KeptHistory,
-    private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val heap: HeapReservations? = null,
+    private val clock: WallClock = WallClock { System.currentTimeMillis() },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 

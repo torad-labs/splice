@@ -428,8 +428,10 @@ function dataRow(r) {
   const stop = r.id === "trace" ? traceStopped() : null;
   const stopped = stop ? `<p class="dstop" role="status">Nothing new saved since ${esc(stop.when)}${esc(stop.who)}: ${esc(stop.words)}</p>` : "";
   return drow({
-    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r), keep: keep + said, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
-    sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob)) : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
+    name: r.name, yours: r.yours, door: r.door, amount: amountOf(x, r), keep, cls: said || r.knob ? " once" : "", off: r.off || "", offShown: !!r.knob && !val(r.knob),
+    // the switch's own source and Live tags sit beside the switch, so a row with two settings (the days and the switch) says
+    // which each pair describes; on the Keep for line both pairs read as one (look at 3394 dark, Oct 13)
+    sw: r.knob ? ctlHtml(KNOB[r.knob], val(r.knob)) + said : r.needs ? `<span class="fixed quiet need">${esc(r.needs)}</span>` : on ? `<button class="count" data-act="saving" aria-expanded="${ui.saving === r.id}">${on.length} of ${ui.heads.length} commands${ICON.caret}</button>` : "",
     more: stopped + (on && ui.saving === r.id ? `<div class="dmore"><div class="cmdsw">${ui.heads.map((h) => `<div class="cs${traceOn(h) ? "" : " off"}">${cmdChip(h)}<span class="switch"><button data-act="capture" data-head="${esc(h)}" data-v="true" aria-pressed="${traceOn(h)}">On</button><button data-act="capture" data-head="${esc(h)}" data-v="false" aria-pressed="${!traceOn(h)}">Off</button></span>${ui.said[`capture@${h}`] ? `<span class="said ${ui.bad[`capture@${h}`] ? "limit" : "ok"}">${esc(ui.said[`capture@${h}`])}</span>` : ""}</div>`).join("")}</div></div>` : ""),
     del: `${ui.bad[id] ? `<span class="said limit">${esc(ui.bad[id])}</span>` : ""}${delBtn(id, x.n, r.unit)}`,
   });

@@ -1,5 +1,11 @@
 package splice.core.config
 
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapObservation
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapRelease
+import splice.core.memory.HeapReservations
 import splice.core.util.EnvReader
 import java.util.Collections
 
@@ -44,6 +50,38 @@ internal class ConfigSnapshotCache {
         val heads: Map<String, ConfigSnapshot>,
         val envRejected: Map<String, String>,
     ) {
+        private val estimatedRetainedBytes = ConfigSnapshotSizes.generation(inputs, envRejected, heads.size)
+        private val layersBytes = ConfigSnapshotSizes.layers(global.layers)
+        private var observations: List<HeapObservation> = emptyList()
+
+        // Called only under the cache lock, at binding/publication, never by snapshot accessors.
+        fun observe(heap: HeapReservations) {
+            if (observations.isNotEmpty()) return
+            observations = buildList {
+                add(observeOwner(this@Generation, heap, estimatedRetainedBytes))
+                add(observeOwner(global.layers, heap, layersBytes))
+                add(global.effective.observeHeap(heap).share())
+                heads.values.forEach { add(it.effective.observeHeap(heap).share()) }
+            }
+        }
+
+        private fun <O : Any> observeOwner(owner: O, heap: HeapReservations, bytes: Long): HeapObservation =
+            HeapOwners.observe(
+                owner,
+                heap,
+                bytes,
+                HeapCategory.CONFIG_SNAPSHOT,
+                HeapOwnerState.AWAITING_COLLECTION,
+            ).share()
+
+        fun retire(reason: HeapRelease) {
+            // Only the cache handles close. Escaped owners keep their separate Cleaner-bound handles.
+            observations.forEach {
+                it.ownerFinished()
+                it.close(reason)
+            }
+        }
+
         fun snapshot(head: String?, fresh: FreshConfig): ConfigSnapshot = when {
             head == null -> global
             head in heads -> checkNotNull(heads[head])
@@ -54,6 +92,15 @@ internal class ConfigSnapshotCache {
     private val lock = Any()
     private var observation = 0L
     private var held: Generation? = null
+    private var heap: HeapReservations? = null
+
+    fun observeSnapshots(source: HeapReservations) {
+        synchronized(lock) {
+            check(heap == null || heap === source) { "Config snapshot observation source is already bound" }
+            heap = source
+            held?.observe(source)
+        }
+    }
 
     /** Capture alias precedence on every read, without re-coercing an unchanged layer. */
     fun environment(reader: EnvReader): Map<String, String> {
@@ -71,13 +118,22 @@ internal class ConfigSnapshotCache {
     fun current(): Generation? = synchronized(lock) { held }
 
     fun publish(ticket: Long, generation: Generation): Generation = synchronized(lock) {
-        if (ticket == observation) held = generation
+        val source = heap
+        if (source != null) generation.observe(source)
+        if (ticket == observation) {
+            held?.retire(HeapRelease.EVICTED)
+            held = generation
+        } else {
+            // A stale observation can still escape to its reader, but never becomes the held owner.
+            generation.retire(HeapRelease.CLOSED)
+        }
         generation
     }
 
     fun invalidate() {
         synchronized(lock) {
             observation++
+            held?.retire(HeapRelease.EVICTED)
             held = null
         }
     }

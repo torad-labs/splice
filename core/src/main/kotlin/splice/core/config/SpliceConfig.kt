@@ -11,6 +11,11 @@
 // (a raw map would read pre-clamp values and silently hand out un-floored timeouts).
 package splice.core.config
 
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapObservation
+import splice.core.memory.HeapOwnerState
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
 import splice.core.perf.HistoryWindowWords
@@ -45,13 +50,18 @@ public class SpliceConfig internal constructor(
     private val fresh: FreshConfig,
     /** The keys a layer set (TOML, a command's own, env, Settings), as opposed to those at their default. */
     private val chosen: Set<String> = emptySet(),
+    private val retainedBytes: Long = ConfigSnapshotSizes.normalized(m, chosen),
 ) {
     /** This view's own effective config read again now: a value a change must reach without a restart is read
      *  through it, where the view held at boot keeps the answer it had. */
     public fun current(): SpliceConfig = fresh.read()
 
     /** Reuse immutable values without retaining an unconfigured head in the service's cache. */
-    internal fun following(reader: FreshConfig): SpliceConfig = SpliceConfig(m, reader, chosen)
+    internal fun following(reader: FreshConfig): SpliceConfig = SpliceConfig(m, reader, chosen, retainedBytes)
+
+    internal fun observeHeap(heap: HeapReservations): HeapObservation =
+        // Bind the shared normalized map, not a wrapper that following() can outlive.
+        HeapOwners.observe(m, heap, retainedBytes, HeapCategory.CONFIG_SNAPSHOT, HeapOwnerState.AWAITING_COLLECTION)
 
     public val port: Int get() = long(Knob.PORT).toInt()
     public val chatgptApiBase: String get() = string(Knob.CHATGPT_API_BASE).orEmpty()

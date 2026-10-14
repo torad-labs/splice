@@ -20,6 +20,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
@@ -105,6 +106,11 @@ public class ConfigService(
     public fun getConfig(headKey: String? = null): SpliceConfig = snapshot(headKey).effective
 
     public fun layers(): ConfigLayers = snapshot().layers
+
+    /** Bind the shared process observer without charging admission. Absent binding disables observations. */
+    public fun observeSnapshots(heap: HeapReservations) {
+        snapshots.observeSnapshots(heap)
+    }
 
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
     // its `continue`s): unknown key -> reject; null -> delete; uncoercible -> reject; else -> apply.
@@ -312,7 +318,8 @@ public class ConfigService(
         val parsed = json.parseToJsonElement(Files.readString(path)).jsonObject
         val raw = LinkedHashMap<String, String>()
         for (knob in Knob.entries) {
-            fileScalar(parsed, knob)?.let { raw[knob.key] = it }
+            val scalar = parsed[knob.key]?.let(coercion::jsonScalar)
+            if (scalar != null) raw[knob.key] = scalar.toString()
         }
         val data = cached?.data?.takeIf { cached.raw == raw } ?: Collections.unmodifiableMap(
             coerceAll(raw).accepted.filterKeys { it !in headOnlyKnobKeys },
@@ -320,11 +327,6 @@ public class ConfigService(
         val next = FileCache(path, modified, size, Collections.unmodifiableMap(raw), data)
         fileCache.compareAndSet(observed, FileObservation(next))
         return data
-    }
-
-    private fun fileScalar(parsed: JsonObject, knob: Knob): String? {
-        val el = parsed[knob.key] ?: return null
-        return coercion.jsonScalar(el)?.toString()
     }
 
     // Best-effort by design (port fidelity): persistence failure must not undo the applied

@@ -10,7 +10,7 @@ public class InputDigestCheckpointBudget(
     private val maximumBytes: Long,
     public val prefixLimitBytes: Int,
 ) {
-    private data class Allocation(var bytes: Long, var owners: Int = 1)
+    internal data class Allocation(var bytes: Long, var owners: Int = 1)
 
     private val lock = Any()
     private val cleaner = Cleaner.create()

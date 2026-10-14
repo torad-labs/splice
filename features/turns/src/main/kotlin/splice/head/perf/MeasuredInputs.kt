@@ -32,24 +32,54 @@ internal data class InputEstimate(val lowerTokens: Long, val upperTokens: Long, 
 /** Latest upstream input for one session, conversation and model; optional byte evidence is private and charged. */
 internal class MeasuredInputs {
     private data class Key(val session: String, val conversation: String, val model: String)
-    private data class Sample(val input: Long, val prefix: InputPrefix, val digests: InputDigestCheckpoints)
+    private data class Sample(val input: Long, val prefix: InputPrefix, val owner: Owner)
+
+    private data class Evidence(val digests: InputDigestCheckpoints) {
+        val lock = Any()
+        var owners = 1
+    }
+
+    /** Each sample or caller owns an independent pin; eviction releases only the sample's pin. */
+    private class Owner(private val evidence: Evidence) : AutoCloseable {
+        val digests: InputDigestCheckpoints get() = evidence.digests
+        private var closed = false
+
+        fun share(): Owner = synchronized(evidence.lock) {
+            check(!closed)
+            evidence.owners++
+            Owner(evidence)
+        }
+
+        override fun close() {
+            val last = synchronized(evidence.lock) {
+                if (closed) return@synchronized false
+                closed = true
+                evidence.owners--
+                evidence.owners == 0
+            }
+            if (last) digests.close()
+        }
+    }
 
     private val samples = LinkedHashMap<Key, Sample>()
     private val lock = Any()
+
+    private fun borrow(key: Key): Sample? = synchronized(lock) {
+        samples[key]?.let { it.copy(owner = it.owner.share()) }
+    }
 
     fun remember(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject?) {
         val key = key(meta) ?: return
         val input = snap.counters[PerfKeys.IN_TOKENS]?.takeIf { it > 0 }
         if (request == null || input == null) return
-        val digests =
-            synchronized(lock) { samples[key]?.digests } ?: InputDigestCheckpoints(MeasuredDigestEvidence.budget)
+        val owner = borrow(key)?.owner ?: Owner(Evidence(InputDigestCheckpoints(MeasuredDigestEvidence.budget)))
         var published = false
         try {
-            val prefix = digests.capture(request) ?: return
-            publish(key, Sample(input, prefix, digests))
+            val prefix = owner.digests.capture(request) ?: return
+            publish(key, Sample(input, prefix, owner))
             published = true
         } finally {
-            if (!published && synchronized(lock) { samples[key]?.digests !== digests }) digests.close()
+            if (!published) owner.close()
         }
     }
 
@@ -58,9 +88,9 @@ internal class MeasuredInputs {
             val replaced = samples.remove(key)
             samples[key] = sample
             val evicted = if (samples.size > MAX_PREFLIGHT_WITNESSES) samples.remove(samples.keys.first()) else null
-            listOfNotNull(replaced?.digests?.takeUnless { it === sample.digests }, evicted?.digests)
+            listOfNotNull(replaced?.owner, evicted?.owner)
         }
-        retired.forEach(InputDigestCheckpoints::close)
+        retired.forEach(Owner::close)
     }
 
     private fun key(meta: PerfRowMeta): Key? {
@@ -71,12 +101,10 @@ internal class MeasuredInputs {
 
     fun estimate(session: String?, conversation: String?, model: String, request: JsonObject): InputEstimate? {
         val key = if (session != null && conversation != null) Key(session, conversation, model) else null
-        val measured = key?.let { synchronized(lock) { samples[it] } }
-        val growth = measured?.prefix?.textGrowthBytes(request, measured.digests)
-        return if (measured != null && growth != null) {
+        val measured = key?.let(::borrow) ?: return null
+        return measured.owner.use { owner ->
+            val growth = measured.prefix.textGrowthBytes(request, owner.digests) ?: return@use null
             InputEstimate(measured.input, measured.input + growth, "measured-text-prefix")
-        } else {
-            null
         }
     }
 }

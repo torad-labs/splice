@@ -8,10 +8,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonObject
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.ConsoleWiring
 import splice.app.control.ConsolePorts
@@ -25,8 +21,6 @@ import splice.app.sources.mcp.McpSignatures
 import splice.control.mcp.APP_MCP_SLICE
 import splice.core.config.ConfigService
 import splice.core.config.Knob
-import splice.core.util.AsyncFileIo
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.upstream.codemode.ProcessDispatchers
@@ -105,7 +99,7 @@ internal class UsageMount(
         route.get("/api/perf") {
             guard.guarded(call) {
                 val result = withContext(fileIo) {
-                    memoryPerfJson(ControlReplies.tail(call, DEFAULT_PERF_TAIL))
+                    JvmHeap.withObservations(perfPayloads.perfJson(ControlReplies.tail(call, DEFAULT_PERF_TAIL)))
                 }
                 ControlReplies.respond(call, result)
             }
@@ -128,16 +122,5 @@ internal class UsageMount(
         route.get("/statusline/{head}") {
             guard.guarded(call, Door.SESSION, STATUSLINE_RELAUNCH) { statuslineRoute.statusline(call) }
         }
-    }
-
-    /** Process observations are authenticated, fixed-category aggregates, never per-message content. */
-    private fun memoryPerfJson(tail: Int): String {
-        val base = Json.parseToJsonElement(perfPayloads.perfJson(tail)).jsonObject
-        return buildJsonObject {
-            base.forEach { (key, value) -> put(key, value) }
-            put("memory", Json.encodeToJsonElement(JvmHeap.memorySnapshot()))
-            put("observed_owners", Json.encodeToJsonElement(JvmHeap.budget.observationSnapshot()))
-            put("file_io", Json.encodeToJsonElement(AsyncFileIo.workSnapshot))
-        }.let(JsonWire::string)
     }
 }

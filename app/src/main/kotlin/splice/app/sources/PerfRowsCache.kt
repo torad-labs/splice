@@ -7,21 +7,12 @@ import splice.app.sources.dense.PerfCachedEntry
 import splice.app.sources.dense.PerfDenseCodec
 import splice.app.sources.dense.PerfDenseEntries
 import splice.app.sources.dense.PerfEntryFactory
-import splice.app.sources.dense.PerfGenerationRef
 import splice.app.sources.dense.PerfLinkedEntries
-import splice.core.memory.HeapCategory
-import splice.core.memory.HeapOwners
-import splice.core.util.JsonlAppendProof
-import splice.core.util.JsonlAppendReceipt
-import splice.core.util.JsonlFileVersion
-import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.READ
-import java.nio.file.attribute.FileTime
-import java.util.LinkedList
 
 /** Per-source byte ceiling: the synthetic 27,537-row daily shape fits without retaining all archives. */
 internal const val PERF_CACHE_BYTES: Long = 64L * 1_024 * 1_024
@@ -43,15 +34,6 @@ private const val CACHE_GENERATIONS = 64
 
 // Small custom caches reserve at most one sixteenth of their ceiling for shared field names.
 private const val FIELD_NAME_BUDGET_DIVISOR = 16L
-
-// Covers generation, identity, linked-list and map objects, digest and amortized map capacity.
-private const val GENERATION_OVERHEAD_BYTES = 1_024L
-
-// Covers the 8 KiB digest buffer, bounded parser recycler and scratch, and cache objects with headroom.
-private const val CACHE_OVERHEAD_BYTES = 24L * 1_024
-
-// Covers the path's byte/string forms and fallback normalized identity with worst-case UTF-16.
-private const val PATH_STORAGE_BYTES_PER_CHAR = 8L
 
 /** A bounded, append-aware recent suffix. Older evicted prefixes keep the original on-demand path.
  *  The byte charge includes compact records, field-name sharing, generation metadata and a pending
@@ -75,12 +57,7 @@ internal class PerfRowsCache(
     private val entries = PerfEntryFactory { ref -> codec?.let { PerfDenseEntries(it, ref) } ?: PerfLinkedEntries() }
     private val prefix = PerfPrefixDigest()
     internal val decoder = PerfRowDecode(names)
-    private val observation = HeapOwners.observe(
-        this,
-        JvmHeap.budget,
-        CACHE_OVERHEAD_BYTES,
-        HeapCategory.RECENT_HISTORY,
-    )
+    private val observation = PerfCacheFootprint.observe(this)
 
     /** The oldest cutoff any read of this cache has asked for; a wider one starts the cache over. */
     internal var since: Long? = null
@@ -284,89 +261,4 @@ internal class PerfRowsCache(
             }
         }
     }
-}
-
-internal data class PerfReadVersion(
-    val path: Path,
-    val version: JsonlFileVersion?,
-    val receipt: JsonlAppendReceipt?,
-    val complete: Long,
-    val digest: ByteArray?,
-) {
-    fun coherent(): Boolean {
-        val before = version ?: return false
-        return try {
-            val after = JsonlAppendProof.version(path)
-            when {
-                after.changed != null && before == after -> true
-                JsonlAppendProof.current(path)?.continues(before, after, receipt) == true -> true
-                after.changed == null -> FileChannel.open(path, READ).use { channel ->
-                    PerfPrefixDigest().matches(channel, after.size, complete, digest)
-                }
-                else -> false
-            }
-        } catch (_: IOException) {
-            false
-        }
-    }
-}
-
-private class PerfFileStamp(path: Path) {
-    val version: JsonlFileVersion = JsonlAppendProof.version(path)
-    val receipt: JsonlAppendReceipt? = JsonlAppendProof.current(path)
-    val regular: Boolean get() = version.regular
-    val modified: FileTime get() = version.modified
-    val changed: FileTime? get() = version.changed
-    fun identity(path: Path): Any = version.key ?: (path.toAbsolutePath().normalize() to version.created)
-}
-
-private class PerfCachedGeneration(path: Path, var priority: Int, entries: PerfEntryFactory) {
-    val ref = PerfGenerationRef(path)
-    var path: Path
-        get() = ref.path
-        set(value) {
-            ref.path = value
-        }
-    val lines = entries.of(ref)
-    val ranges = LinkedList<PerfSkippedRange>()
-    var rangeBytes = 0L
-    var changeTime: FileTime? = null
-    var complete = 0L
-    var size = 0L
-    var modified: FileTime? = null
-    var trailingCr = false
-    var readLimit = 0L
-    var prefixDigest: ByteArray? = null
-    var prefixState: PerfPrefixState? = null
-    var version: JsonlFileVersion? = null
-    var receipt: JsonlAppendReceipt? = null
-    val metadataBytes: Long
-        get() = GENERATION_OVERHEAD_BYTES + path.toString().length * PATH_STORAGE_BYTES_PER_CHAR +
-            rangeBytes
-
-    fun evicted(entry: PerfCachedEntry) {
-        val row = entry.line.row ?: return
-        if (entry.line.probe || entry.raw != null) return
-        val previous = ranges.lastOrNull { it.end == entry.start }
-        val range = previous ?: PerfSkippedRange(entry.start, entry.end, row.ts).also {
-            val position = ranges.indexOfFirst { next -> next.start > it.start }
-                .takeIf { index -> index >= 0 } ?: ranges.size
-            ranges.add(position, it)
-            rangeBytes += it.retainedBytes
-        }
-        val before = range.retainedBytes
-        range.add(entry.line, entry.end)
-        rangeBytes += range.retainedBytes - before
-    }
-
-    fun appendProof(opened: PerfFileStamp): PerfPrefixState? = prefixState?.takeIf {
-        version?.let { before -> opened.receipt?.continues(before, opened.version, receipt) } == true
-    }
-
-    fun unchanged(nextSize: Long, nextModified: FileTime, changed: FileTime?): Boolean {
-        if (changed == null || nextSize != complete) return false
-        return !changed(nextSize, nextModified) && changeTime == changed
-    }
-
-    fun changed(nextSize: Long, nextModified: FileTime): Boolean = nextSize != size || nextModified != modified
 }

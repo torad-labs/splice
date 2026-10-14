@@ -43,6 +43,7 @@ import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
 import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.ModelMove
+import splice.sessions.transcript.RowTranscriptFields
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionActivity

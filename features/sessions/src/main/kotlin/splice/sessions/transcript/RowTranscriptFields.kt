@@ -5,15 +5,10 @@
 // resolved and stat'ed the file two to four times and redrew the card line through its markdown rules on every row
 // every five seconds (splice-sessions, Oct 13: 686 rows). The account and turn fields change without the file changing
 // and stay live (SessionRowFacts).
-package splice.sessions.http
+package splice.sessions.transcript
 
 import kotlinx.serialization.json.JsonElement
 import splice.sessions.registry.SessionRecord
-import splice.sessions.transcript.ModelMove
-import splice.sessions.transcript.SessionActivity
-import splice.sessions.transcript.SessionTitleOf
-import splice.sessions.transcript.SessionTranscriptViewEnabled
-import splice.sessions.transcript.SessionTranscripts
 import java.nio.file.Path
 
 // why: every row one listing shows, with room for the history window's ended sessions; a row is three short fields.

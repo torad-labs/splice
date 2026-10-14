@@ -9,9 +9,12 @@ import splice.app.sources.dense.PerfDenseEntries
 import splice.app.sources.dense.PerfEntryFactory
 import splice.app.sources.dense.PerfGenerationRef
 import splice.app.sources.dense.PerfLinkedEntries
+import splice.core.memory.HeapCategory
+import splice.core.memory.HeapOwners
 import splice.core.util.JsonlAppendProof
 import splice.core.util.JsonlAppendReceipt
 import splice.core.util.JsonlFileVersion
+import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -72,6 +75,12 @@ internal class PerfRowsCache(
     private val entries = PerfEntryFactory { ref -> codec?.let { PerfDenseEntries(it, ref) } ?: PerfLinkedEntries() }
     private val prefix = PerfPrefixDigest()
     internal val decoder = PerfRowDecode(names)
+    private val observation = HeapOwners.observe(
+        this,
+        JvmHeap.budget,
+        CACHE_OVERHEAD_BYTES,
+        HeapCategory.RECENT_HISTORY,
+    )
 
     /** The oldest cutoff any read of this cache has asked for; a wider one starts the cache over. */
     internal var since: Long? = null
@@ -90,6 +99,7 @@ internal class PerfRowsCache(
     fun clear() {
         generations.values.forEach(::reset)
         generations.clear()
+        observation.resize(retainedBytes)
     }
 
     fun fields(obj: JsonObject): PerfNumericFields {
@@ -109,7 +119,12 @@ internal class PerfRowsCache(
             if (before.identity(path) != opened.identity(path)) {
                 throw IOException("rotated while opening perf generation")
             }
-            readState(channel, generation(path, opened, priority), opened, visit, decode)
+            try {
+                readState(channel, generation(path, opened, priority), opened, visit, decode)
+            } finally {
+                // Existing bounded metadata totals, never another scan of row payloads.
+                observation.resize(retainedBytes)
+            }
         }
     }
 

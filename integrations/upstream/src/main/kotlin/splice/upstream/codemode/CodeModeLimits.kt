@@ -56,6 +56,10 @@ public object CodeModeLimits {
     private const val ONE_BYTE_LIMIT = 0x80
     private const val TWO_BYTE_LIMIT = 0x800
     private const val THREE_BYTE_LIMIT = 0x10000
-    private const val THREE_BYTES = 3
-    private const val FOUR_BYTES = 4
+
+    // why: a BMP code point above U+07FF occupies three bytes in UTF-8; shared with the client wire counter.
+    public const val THREE_BYTES = 3
+
+    // why: a supplementary code point occupies four bytes in UTF-8; shared with the client wire counter.
+    public const val FOUR_BYTES = 4
 }

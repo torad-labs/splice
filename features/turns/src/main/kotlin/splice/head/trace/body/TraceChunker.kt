@@ -63,7 +63,33 @@ internal class TraceChunker(
     }
 
     override fun write(bytes: ByteArray, offset: Int, length: Int) {
-        for (index in offset until offset + length) write(bytes[index].toUByte().toInt())
+        val end = offset + length
+        var index = offset
+        while (index < end) {
+            val first = bytes[index++].toUByte().toInt()
+            if (skip > 0 || index == end) write(first) else pair(first, bytes[index++].toUByte().toInt())
+        }
+    }
+
+    private fun pair(first: Int, second: Int) {
+        val mask = (CHUNK_TARGET - 1).toLong()
+        val firstGear = GEAR[first]
+        val shiftedFirst = (gear shl 2) + (firstGear shl 1)
+        buffer[count++] = first.toByte()
+        // Shifting h1 drops its low bit, so the original first-byte cut also checks firstGear's parity.
+        val firstBoundary = count >= CHUNK_MIN && (firstGear and 1L) == 0L &&
+            (shiftedFirst and (mask shl 1)) == 0L
+        if (firstBoundary || count == CHUNK_MAX) {
+            gear = (gear shl 1) + firstGear
+            emit()
+            // The second byte belongs to a fresh chunk after emit resets Gear.
+            write(second)
+        } else {
+            buffer[count++] = second.toByte()
+            gear = shiftedFirst + GEAR[second]
+            val secondBoundary = count >= CHUNK_MIN && (gear and mask) == 0L
+            if (secondBoundary || count == CHUNK_MAX) emit()
+        }
     }
 
     fun finish(): JsonArray {

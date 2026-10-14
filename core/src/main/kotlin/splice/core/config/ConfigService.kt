@@ -189,7 +189,7 @@ public class ConfigService(
             coerceAll(inputs.env)
         }
         val perHead = inputs.heads.filterValues { it.isNotEmpty() }.mapValues { (head, raw) ->
-            previous?.global?.layers?.perHead?.get(head)?.takeIf { previous?.inputs?.heads?.get(head) == raw }
+            previous?.global?.layers?.perHead?.get(head)?.takeIf { previous.inputs.heads[head] == raw }
                 ?: coerceAll(raw).accepted
         }.let(Collections::unmodifiableMap)
         val layers = ConfigLayers(defaults, globalKnobs, inputs.file, env.accepted, inputs.runtime, perHead)

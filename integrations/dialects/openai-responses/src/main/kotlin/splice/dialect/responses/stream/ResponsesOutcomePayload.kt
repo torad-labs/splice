@@ -28,7 +28,8 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         ),
         text = RoundText(
             thinkingText = state.thinkingBuf.toString(),
-            bodyText = state.textBuf.toString(),
+            // Schema JSON was delivered as tool input, not prose for an honesty fallback to emit again.
+            bodyText = if (state.schemaToolEmitted) "" else state.textBuf.toString(),
             emittedText = state.emittedText,
             emittedThinking = state.emittedThinking,
         ),
@@ -62,7 +63,8 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
     private fun partialRound(state: ResponsesTurnState): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
         text = RoundText(
             thinkingText = state.thinkingBuf.toString(),
-            bodyText = state.textBuf.toString(),
+            // Schema JSON was delivered as tool input, not prose for an honesty fallback to emit again.
+            bodyText = if (state.schemaToolEmitted) "" else state.textBuf.toString(),
             emittedText = state.emittedText,
             emittedThinking = state.emittedThinking,
         ),

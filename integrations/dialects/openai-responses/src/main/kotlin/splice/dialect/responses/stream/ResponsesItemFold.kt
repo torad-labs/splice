@@ -17,6 +17,7 @@ internal class ResponsesItemFold(
     private val reasoningFold: ResponsesReasoningFold,
     private val replay: ResponsesReasoningReplay,
     private val names: ToolNameShortener = ToolNameShortener(),
+    private val outputToolName: String? = null,
 ) {
 
     val execProgress = ResponsesExecProgress()
@@ -155,9 +156,10 @@ internal class ResponsesItemFold(
         // the passthrough's PT-001 unmapped-index deltas.
         val mistargeted = existing != null && existing.tool
         if (mistargeted) return
+        state.textBuf.append(delta)
+        if (outputToolName != null) return // Validated schema JSON is emitted as tool input at completion, not prose.
         val b = existing ?: BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
         state.emittedText = true
-        state.textBuf.append(delta)
         sink.textDelta(b.index, delta)
     }
 

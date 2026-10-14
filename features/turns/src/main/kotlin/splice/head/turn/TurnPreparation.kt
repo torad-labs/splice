@@ -155,7 +155,7 @@ internal class TurnPreparation(
             deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
             Preparation.Rejected("${provider.key}: $OPERATOR_STOPPED")
         }
-        else -> null
+        else -> provider.requestRefusal(parsed)?.let { Preparation.Rejected(it) }
     }
 
     /** V4-265: a working session's own turn is its activity sample, at the side query's pace; see

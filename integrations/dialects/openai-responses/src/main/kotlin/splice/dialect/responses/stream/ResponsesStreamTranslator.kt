@@ -59,6 +59,7 @@ internal class ResponsesStreamTranslator(
     /** daemon.log, tagged with the provider, for the one line a round that ends failed or incomplete gets. The
      *  default drops it for tests that do not read it. */
     private val log: LogSink = LogSink { },
+    private val outputToolName: String? = null,
 ) : StreamTranslator {
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
@@ -105,7 +106,7 @@ internal class ResponsesStreamTranslator(
     ): TurnOutcome {
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
         val replay = ResponsesReasoningReplay(ctx, state)
-        val itemFold = ResponsesItemFold(state, reasoningFold, replay, names)
+        val itemFold = ResponsesItemFold(state, reasoningFold, replay, names, outputToolName)
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.
@@ -193,6 +194,7 @@ internal class ResponsesStreamTranslator(
     private fun billedOutcome(state: ResponsesTurnState): TurnOutcome {
         latchSweptToolBlocks(state)
         ResponsesTerminalBackfill().harvestFallback(state)
+        ResponsesSchemaOutput(outputToolName).latchUndelivered(state)
         val payload = ResponsesOutcomePayload(ctx)
         val outcome = ResponsesTerminalDecision(ctx, payload).terminalOutcome(state, runawayGuard, tear)
         return if (outcome is TurnOutcome.Failure && outcome.partial == null) {
@@ -204,7 +206,9 @@ internal class ResponsesStreamTranslator(
 
     private suspend fun finishRound(state: ResponsesTurnState, sink: WireSink): TurnOutcome {
         latchSweptToolBlocks(state)
+        ResponsesTerminalBackfill().harvestFallback(state)
         sink.closeAll()
+        ResponsesSchemaOutput(outputToolName).emit(state, sink)
         val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }
         captureTurnReasoning(state, outcome)

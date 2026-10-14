@@ -75,6 +75,8 @@ public data class TurnScope(
 public data class TurnToolSurface(
     val eager: Int? = null,
     val deferred: Int? = null,
+    /** Schema-constrained response text is this caller tool's JSON input, not ordinary prose. */
+    val outputToolName: String? = null,
 )
 
 /** The compaction text a turn carries. */

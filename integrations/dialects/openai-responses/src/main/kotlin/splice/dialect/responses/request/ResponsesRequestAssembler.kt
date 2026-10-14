@@ -10,8 +10,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.core.wire.AnthropicRequest
-import splice.core.wire.ToolChoiceMapping
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.ResponsesClientHints
 import splice.dialect.responses.ResponsesLiteShape
@@ -44,6 +45,7 @@ internal data class RequestParts(
     val reasoning: JsonObject?,
     val partition: ToolPartition?,
     val conversationKey: String?,
+    val outputFormat: JsonObject? = null,
 )
 
 internal class ResponsesRequestAssembler(
@@ -75,9 +77,9 @@ internal class ResponsesRequestAssembler(
         // Lite turns carry tools as an additional_tools input item, not top-level `tools`; without
         // an explicit tool_choice the backend never enables function-calling from them (the model
         // then improvises tool calls in text — stuck/looping turns). codex-rs sends tool_choice:"auto"
-        // unconditionally (core/src/client.rs:896), so lite MUST too, independent of the grok-style
-        // emitToolChoice negotiation that codex otherwise leaves off.
-        val emitToolChoice = tools != null && (quirks.tools.emitToolChoice || lite)
+        // for implicit choice (core/src/client.rs:896). Explicit caller choices are preserved below;
+        // a provider that cannot honor them refuses before assembly.
+        val emitToolChoice = body.toolChoice != null || tools != null && (quirks.tools.emitToolChoice || lite)
         val include = if (opts.handoff.includeEncrypted.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
         val cacheKey = cacheKey(opts, parts.conversationKey)
@@ -94,7 +96,9 @@ internal class ResponsesRequestAssembler(
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
-            text = hints.liteTextBlock(quirks, lite),
+            text = parts.outputFormat?.let { format ->
+                JsonObject(hints.liteTextBlock(quirks, lite).orEmpty() + ("format" to format))
+            } ?: hints.liteTextBlock(quirks, lite),
             clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey),
             streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),
         )
@@ -112,21 +116,26 @@ internal class ResponsesRequestAssembler(
         )
     }
 
-    /** Lite pins "auto" (the only value codex-rs validated against additional_tools — client.rs:896);
-     *  non-lite keeps the negotiated choice for grok's specific-tool path; null omits the field. */
-    internal fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? = when {
-        !emitToolChoice -> null
-        lite -> JsonPrimitive("auto")
-        else -> {
-            val choice = body.toolChoice
-            val name = choice?.name
-            val wireChoice = if (choice?.type == "tool" && name != null) {
-                choice.copy(name = toolNames.shorten(name))
-            } else {
-                choice
+    /** Explicit caller choices win on every turn shape. Responses named choices are flat, not Chat's function object. */
+    internal fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? {
+        val choice = body.toolChoice ?: return implicitChoice(emitToolChoice, lite, body)
+        return when (choice.type) {
+            "none" -> JsonPrimitive("none")
+            "any", "required" -> JsonPrimitive("required")
+            "tool" -> choice.name?.let { name ->
+                buildJsonObject {
+                    put("type", "function")
+                    put("name", toolNames.shorten(name))
+                }
             }
-            ToolChoiceMapping.openAiToolChoice(wireChoice)
+            "auto" -> JsonPrimitive("auto")
+            else -> null // Unknown choices are refused before building, never rewritten to auto.
         }
+    }
+
+    private fun implicitChoice(emit: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? {
+        if (emit) return JsonPrimitive("auto")
+        return if (lite && body.tools.isNotEmpty()) JsonPrimitive("auto") else null
     }
 
     /** codex-rs parity: 5.6-family models get parallel_tool_calls=false whenever tools ride —

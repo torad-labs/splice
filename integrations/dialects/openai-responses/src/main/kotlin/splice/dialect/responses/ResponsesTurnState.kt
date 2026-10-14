@@ -44,6 +44,10 @@ internal class ResponsesTurnState {
     }
 
     var hasToolUse = false
+
+    /** Completed schema text reached the wire as the caller's tool input in this round. */
+    var schemaToolEmitted = false
+
     var emittedText = false
 
     /** codex-parity active-item tracking (sequential_cutoff, 2026-08-26; codex-rs

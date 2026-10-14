@@ -25,11 +25,11 @@
 //     across per-turn system-reminder drift) or session-id 'claude-grok:<sid>' (grok);
 //   - effort precedence (v27): explicit body fields > /effort picker (thinking.budget_tokens)
 //     > config/env fallback > high; visibility floor when showReasoning != off never RAISES
-//     a deliberate pick, only floors none/minimal -> low and folds summary to detailed;
+//     a deliberate none pick; it floors minimal -> low and folds summary to detailed;
 //   - spark rejects reasoning.summary (openai/codex#31846) — omitted via quirk regex;
 //   - gpt-5.4-mini caps effort at xhigh — the backend 400s effort=max, clamped via quirk regex;
-//   - ChatGPT backend rejects token-limit params: max_output_tokens is NEVER sent; the clamp
-//     applies to REPORTED usage (P3-USE).
+//   - max_tokens remains caller metadata, not a forwarded generation limit. Backend guarantees
+//     and limitations belong to each provider, not to the shared Responses dialect.
 //
 // Decomposed 2026-08-17 (concentration campaign) into sibling files in this same package —
 // ResponsesQuirks.kt, ResponsesBuildContract.kt, ResponsesRequestAssembler.kt, ResponsesToolPlan.kt,
@@ -76,8 +76,10 @@ internal class ResponsesRequestBuilder(
         // per ToolUseBlock, whether that tool is THIS request's deferred set — moving it earlier
         // costs nothing (buildRequestObject no longer recomputes it) and keeps position 0 of the
         // wire input untouched by anything the walk discovers.
-        val partition = toolPlan.partition(body, opts)
-        val declareByName = toolPlan.declarationCandidates(body, partition)
+        val outputFormat = ResponsesOutputSchema.format(body, raw)
+        val wireBody = ResponsesOutputSchema.wireBody(body, outputFormat)
+        val partition = toolPlan.partition(wireBody, opts)
+        val declareByName = toolPlan.declarationCandidates(wireBody, partition)
         // The loop guard walks the same conversation (stateless) and marks identical-failed-call
         // streaks for a directive in that result's output.
         val loopGuardDirectives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
@@ -101,8 +103,8 @@ internal class ResponsesRequestBuilder(
         val reasoning = knobs.reasoningBlock(effort, summary, opts)
 
         val conversationKey = ids.stablePromptCacheKey(body)
-        val parts = RequestParts(input, instructions, reasoning, partition, conversationKey)
-        val built = assembler.buildRequestObject(body, opts, parts)
+        val parts = RequestParts(input, instructions, reasoning, partition, conversationKey, outputFormat)
+        val built = assembler.buildRequestObject(wireBody, opts, parts)
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
         val sentSummary = looseFields.sentSummary(reasoning)
@@ -130,10 +132,17 @@ internal class ResponsesRequestBuilder(
                 // Every continuation round reuses this meta object (continuationRequest bypasses
                 // build()), so the dedup state it carries is genuinely turn-scoped.
             ),
-            tools = TurnToolSurface(eager = built.toolsEager, deferred = built.toolsDeferred),
+            tools = toolSurface(built, body, outputFormat),
         )
         return BuiltRequest(built.req, meta, built.toolSearch)
     }
+
+    private fun toolSurface(built: BuiltBody, body: AnthropicRequest, format: JsonObject?): TurnToolSurface =
+        TurnToolSurface(
+            eager = built.toolsEager,
+            deferred = built.toolsDeferred,
+            outputToolName = format?.let { ResponsesOutputSchema.toolName(body) },
+        )
 }
 
 private const val DEFAULT_INSTRUCTIONS = "You are a helpful assistant."

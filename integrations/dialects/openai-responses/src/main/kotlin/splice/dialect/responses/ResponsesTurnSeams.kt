@@ -77,6 +77,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 ),
                 deps.services.toolNames,
                 LogSink { line -> deps.services.log("[${deps.quirks.providerTag}] $line") },
+                outputToolName = meta.tools.outputToolName,
             )
         }
 

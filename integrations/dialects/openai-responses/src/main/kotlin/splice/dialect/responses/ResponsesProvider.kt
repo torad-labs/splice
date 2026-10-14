@@ -62,6 +62,9 @@ public abstract class ResponsesProvider(
      *  HERE, never on shared state. */
     protected open fun perTurnHeaders(meta: TurnMeta): Map<String, String> = emptyMap()
 
+    override fun requestRefusal(body: AnthropicTurnBody): String? =
+        splice.dialect.responses.request.ResponsesOutputSchema.refusal(body.typed, body.raw)
+
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val built = parts.builder.build(body.typed, body.raw, parts.turnOptions.build(body, compact, sessionId))
         return BuiltTurn(

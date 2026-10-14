@@ -71,12 +71,10 @@ internal class SessionsWiring(
         }
 
     /** The registry joined with durable transcript history: every session the project views and request rows know. */
-    fun projectSessions(sessions: SessionSource, config: ConfigService): ProjectSessions = ProjectSessions(
-        sessions,
-        historyIndex,
-        historyRoots,
-        SessionTranscriptViewEnabled { config.getConfig().transcriptView },
-    )
+    fun projectSessions(sessions: SessionSource, config: ConfigService): ProjectSessions {
+        val viewEnabled = SessionTranscriptViewEnabled { config.getConfig().transcriptView }
+        return ProjectSessions(sessions, historyIndex, historyRoots, viewEnabled)
+    }
 
     private val perfFacts = SessionPerfFacts(heads, ports)
     private val sessionAccounts = SessionAccountLabels(heads, ports)
@@ -92,8 +90,7 @@ internal class SessionsWiring(
         launched = LaunchedTerminals { id ->
             sessions?.read()
                 ?.firstOrNull { it.sessionId == id && it.availability != SessionAvailability.GONE }
-                ?.process?.pid
-                ?.let { pid ->
+                ?.process?.pid?.let { pid ->
                     launchOwners.read(pid)?.takeIf { it.kind == "session" }?.terminal
                         ?.let { LaunchedTerminal(pid, it.pane, it.socket) }
                 }

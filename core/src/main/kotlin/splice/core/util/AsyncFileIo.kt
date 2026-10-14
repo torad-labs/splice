@@ -83,14 +83,20 @@ public object AsyncFileIo {
         val running: Int,
         val scheduled: Int,
         val peakPending: Int,
-        val queueWaitMs: Long,
-        val runMs: Long,
-        val peakQueueWaitMs: Long,
-        val peakRunMs: Long,
+        val elapsed: WorkElapsed,
     ) {
         /** A diagnostic observation: delayed timers are not runnable work to drain. */
         public val queued: Int get() = (pending - running - scheduled).coerceAtLeast(0)
     }
+
+    /** Queue delay excludes scheduled timer delay; execution spans are elapsed, not CPU time. */
+    @Serializable
+    public data class WorkElapsed(
+        val queueWaitMs: Long,
+        val runMs: Long,
+        val peakQueueWaitMs: Long,
+        val peakRunMs: Long,
+    )
 
     /** Counts only scalar transitions; no queued task or path escapes through diagnostics. */
     public val workSnapshot: WorkSnapshot
@@ -106,10 +112,12 @@ public object AsyncFileIo {
                 task is Delayed && task.getDelay(TimeUnit.MILLISECONDS) > 0L
             },
             peakPending = peakPending.get(),
-            queueWaitMs = queueWaitMs.get(),
-            runMs = runMs.get(),
-            peakQueueWaitMs = peakQueueWaitMs.get(),
-            peakRunMs = peakRunMs.get(),
+            elapsed = WorkElapsed(
+                queueWaitMs = queueWaitMs.get(),
+                runMs = runMs.get(),
+                peakQueueWaitMs = peakQueueWaitMs.get(),
+                peakRunMs = peakRunMs.get(),
+            ),
         )
 
     @Volatile

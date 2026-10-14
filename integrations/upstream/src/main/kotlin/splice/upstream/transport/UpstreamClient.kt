@@ -147,7 +147,7 @@ public class UpstreamClient(
         prepared: PreparedPost,
         block: UpstreamHandler<T>,
     ): UpstreamPost<T> {
-        var body = ctx.perf?.timed(splice.core.perf.PerfKeys.OUTBOUND_PREP_MS) {
+        var body = ctx.observers.perf?.timed(splice.core.perf.PerfKeys.OUTBOUND_PREP_MS) {
             prepared.forClient(this, ctx.observers)
         } ?: prepared.forClient(this, ctx.observers)
         val t0 = clock()
@@ -156,7 +156,7 @@ public class UpstreamClient(
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.result
                 is LoopStep.Amend -> {
-                    body = prepared.amended(body, step.bodyJson, ctx.perf)
+                    body = prepared.amended(body, step.bodyJson, ctx.observers.perf)
                 }
                 LoopStep.Continue -> Unit
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted

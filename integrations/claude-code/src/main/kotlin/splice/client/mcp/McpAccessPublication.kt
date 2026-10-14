@@ -10,6 +10,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 
 private const val MCP_KEY_LENGTH = 64
+private const val ROTATED_MARKER = "access-key-rotated"
 
 /** The ONE active MCP bearer, also read per HTTP request by the native front. Only a genuinely
  *  absent publication at bootstrap adopts v1. Reads after bootstrap never derive a fallback. */
@@ -41,13 +42,23 @@ internal class McpAccessPublication(stateDir: Path) {
         try {
             attributes(file)
         } catch (_: NoSuchFileException) {
+            bootstrapKey(legacy)
+        }
+        read()
+    }
+
+    private fun bootstrapKey(legacy: McpBearer) {
+        try {
+            attributes(file.resolveSibling(ROTATED_MARKER))
+        } catch (_: NoSuchFileException) {
             try {
                 SecureFile.createNew0600(file, (legacy() + "\n").toByteArray(Charsets.UTF_8))
             } catch (_: FileAlreadyExistsException) {
                 // Another bootstrap won. Read its complete publication, never overwrite it.
             }
+            return
         }
-        read()
+        throw IOException("Rotated MCP key publication is missing; refusing to restore the bootstrap bearer")
     }
 
     fun read(): String {
@@ -62,6 +73,9 @@ internal class McpAccessPublication(stateDir: Path) {
 
     fun replace(expected: String, replacement: String) {
         if (read() != expected) throw IOException("MCP key changed during rotation; retry with its current publication")
+        // Publish the no-bootstrap fence first. Even a failed replacement must never let later
+        // loss of the active publication resurrect the exposed v1 capability.
+        SecureFile.writeAtomic0600(file.resolveSibling(ROTATED_MARKER), "splice:mcp-revocation:v1\n")
         SecureFile.writeAtomic0600(file, replacement + "\n")
     }
 

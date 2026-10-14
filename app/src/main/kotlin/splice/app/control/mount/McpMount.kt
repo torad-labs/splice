@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.app.control.McpLaunchFolders
+import splice.app.control.api.mcp.McpAccessRoutes
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpRoutes
 import splice.control.mcp.hub.McpHubRoutes

@@ -1,4 +1,6 @@
-package splice.app.control.mount
+// MCP lifecycle request decoding, selective regeneration and replies belong to the control API.
+// McpMount retains registration, management authentication and the host's bound-resource lifecycle.
+package splice.app.control.api.mcp
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -155,4 +157,5 @@ internal class McpAccessRoutes(private val key: McpAccessKey) {
     }
 }
 
+// why: a revoked HMAC-SHA256 bearer is 32 bytes encoded as 64 lowercase hex characters, never arbitrary text.
 private const val KEY_LENGTH = 64

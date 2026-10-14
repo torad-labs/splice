@@ -13,21 +13,20 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.util.UUID
 
-/** The publication half of a preflighted selective header update. */
-public fun interface McpHeaderPublication {
-    public operator fun invoke(replacement: String)
-}
-
 /** One preflighted header file. Contains private snapshots, so deliberately not a data class.
  *  [backupFile] is an owner-only copy in state, not alongside an operator's file or in a repository. */
 public class McpHeaderUpdate internal constructor(
     public val file: Path,
     public val matchedHeaders: Int,
     public val backupFile: Path?,
-    private val writer: McpHeaderPublication,
+    private val regeneration: McpHeaderRegeneration,
+    private val original: String,
 ) {
     /** Publishes only matching MCP headers, refusing a file changed since preflight. */
-    public fun publish(replacement: String): Unit = writer(replacement)
+    public fun publish(replacement: String) {
+        if (matchedHeaders == 0) return
+        regeneration.publish(file, original, replacement)
+    }
 }
 
 /** Selective regeneration, not a full materialization: grants, hooks, unrelated headers, endpoints
@@ -47,10 +46,8 @@ public class McpHeaderRegeneration(
         val document = Json.parseToJsonElement(original) as? JsonObject
             ?: throw IllegalArgumentException("MCP header file must be a JSON object")
         val count = rewrite(document, previous).second
-        if (count == 0) return McpHeaderUpdate(file, 0, null) { }
-        return McpHeaderUpdate(file, count, backup(original)) { replacement ->
-            publish(file, original, document, replacement)
-        }
+        val backup = if (count == 0) null else backup(original)
+        return McpHeaderUpdate(file, count, backup, this, original)
     }
 
     private fun requireOwnerFile(file: Path) {
@@ -69,9 +66,11 @@ public class McpHeaderRegeneration(
         return file
     }
 
-    private fun publish(file: Path, original: String, document: JsonObject, replacement: String) {
+    internal fun publish(file: Path, original: String, replacement: String) {
         requireOwnerFile(file)
         if (Files.readString(file) != original) throw IOException("MCP header file changed since preflight")
+        val document = Json.parseToJsonElement(original) as? JsonObject
+            ?: throw IllegalArgumentException("MCP header file must be a JSON object")
         SecureFile.writeAtomic0600(file, rewrite(document, replacement).first.toString() + "\n")
     }
 

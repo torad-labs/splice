@@ -9,6 +9,7 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 
+// why: HMAC-SHA256 publishes its 32-byte capability as 64 lowercase hex characters.
 private const val MCP_KEY_LENGTH = 64
 private const val ROTATED_MARKER = "access-key-rotated"
 

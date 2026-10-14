@@ -10,6 +10,8 @@ import java.security.SecureRandom
 
 private const val MCP_SCOPE = "splice:mcp-access:v1"
 private const val MCP_ROTATED_SCOPE = "splice:mcp-access:v2:"
+
+// why: 256 fresh random bits separate each MCP incarnation before HMAC-SHA256 derives its capability.
 private const val MCP_NONCE_BYTES = 32
 
 /** Domain-separated MCP authority. Production instances share the persisted publication with the

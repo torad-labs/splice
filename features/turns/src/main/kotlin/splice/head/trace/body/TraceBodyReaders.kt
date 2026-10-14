@@ -16,6 +16,11 @@ internal class TraceBodyReaders(private val heap: HeapReservations = JvmHeap.bud
             Cancellables.runCatchingCancellable { TraceBodyReader(file, format, heap) }
         }.getOrThrow()
 
+    /** Keep pack indexes and cached open failures, but stop owning the last record's hydrated bodies. */
+    fun clearLiterals() {
+        readers.values.forEach { it.getOrNull()?.clearLiterals() }
+    }
+
     override fun close() {
         var failure: IOException? = null
         readers.values.forEach { result ->

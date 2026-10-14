@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
+import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
@@ -28,12 +29,20 @@ internal class TraceBodyReader(
     private val format: TracePackFormat,
     private val heap: HeapReservations = JvmHeap.budget,
 ) : AutoCloseable {
+    private var literals: HashMap<JsonArray, JsonPrimitive>? = HashMap()
     private val chunks = TraceChunkRead(file, format, heap)
-    private val literals = HashMap<JsonArray, JsonPrimitive>()
-    private val literalLease = HeapOwners.charge(literals, heap, 0L)
+    private var literalLease = initialLiteralLease()
+
+    private fun initialLiteralLease(): HeapLease {
+        var ready = false
+        return Cancellables.withCleanup({ if (!ready) chunks.close() }) {
+            HeapOwners.charge(checkNotNull(literals), heap, 0L).also { ready = true }
+        }
+    }
 
     fun literal(parts: JsonArray): JsonPrimitive {
-        literals[parts]?.let { return it }
+        val cache = checkNotNull(literals)
+        cache[parts]?.let { return it }
         val bytes = parts.sumOf(::literalBytes)
         val weight = HeapJson.add(HeapWeights.multiply(bytes, TRACE_LITERAL_HEAP_FACTOR), HeapJson.text(""))
         val peak = (if (bytes <= Int.MAX_VALUE) heap.reserve(weight) else null) ?: throw HeapCapacityException()
@@ -46,7 +55,7 @@ internal class TraceBodyReader(
             HeapOwners.keep(value.content, peak.split(HeapJson.text(value.content)))
             val metadata = HeapJson.add(literalLease.bytes, HeapJson.add(HeapJson.bytes(parts), HeapJson.text("")))
             if (!literalLease.resize(metadata)) throw HeapCapacityException()
-            literals[parts] = value
+            cache[parts] = value
             return value
         }
     }
@@ -98,8 +107,21 @@ internal class TraceBodyReader(
     private fun <T : Any> required(value: T?): T =
         value ?: throw IOException("invalid trace body chunk reference: $file")
 
+    /** Release cached references, not String-owned leases or the pack's channel and boundary index. */
+    fun clearLiterals() {
+        if (literals == null || literalLease.bytes == 0L) return
+        // HashMap.clear retains its table; a replacement needs its own Cleaner-bound metadata lease.
+        val empty = HashMap<JsonArray, JsonPrimitive>()
+        val lease = HeapOwners.charge(empty, heap, 0L)
+        literals = empty
+        literalLease.close()
+        literalLease = lease
+    }
+
     override fun close() {
-        literals.clear()
-        chunks.close()
+        Cancellables.withCleanup({ literalLease.close() }) {
+            literals = null
+            chunks.close()
+        }
     }
 }

@@ -26,6 +26,7 @@ import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.storage.DayLine
 import splice.core.storage.LineVisit
+import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
@@ -170,7 +171,9 @@ internal class TraceSearch(
 
     private fun take(line: DayLine, turn: Placed) {
         oldest = turn.at
-        hit(line, turn)?.let { hits += it }
+        Cancellables.withCleanup({ readers.clearLiterals() }) {
+            hit(line, turn)?.let { hits += it }
+        }
     }
 
     private fun hit(line: DayLine, turn: Placed): TraceHit? {

@@ -1,5 +1,6 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
+import splice.client.transcript.BAD_CURSOR
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapCategory
 import splice.core.memory.HeapOwners
@@ -11,8 +12,14 @@ import splice.sessions.transcript.TranscriptPage
 
 private const val CAPTURE_PATH = "captured by splice's trace, turn"
 private const val CAPTURE_TOO_LARGE = "captured reply exceeds the transcript page byte limit"
+
+// why: raw message text, JSON trees, projected blocks and masked copies coexist during page materialization.
 private const val CAPTURE_PAGE_HEAP_FACTOR = 16L
+
+// why: reserve fixed page, cursor and collection metadata even when the selected source span is empty.
 private const val CAPTURE_PAGE_METADATA_BYTES = 4_096L
+
+// why: each admitted source message needs span, group and list-reference scratch under the existing page count cap.
 private const val CAPTURE_SPAN_WORKSPACE_BYTES = MAX_TRANSCRIPT_PAGE * 192L
 
 private data class CapturedGroup(val span: CaptureSpan, val messages: List<TranscriptMessage>)

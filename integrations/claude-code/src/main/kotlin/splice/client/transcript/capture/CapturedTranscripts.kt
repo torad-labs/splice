@@ -1,7 +1,8 @@
 // Sessions' read-only fallback when no primary transcript exists. Captured pages keep complete API-message
 // groups, the file reader's byte ceiling, and the same credential masking. File cursors never fall back.
-package splice.client.transcript
+package splice.client.transcript.capture
 
+import splice.client.transcript.BAD_CURSOR
 import splice.core.util.Cancellables
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup

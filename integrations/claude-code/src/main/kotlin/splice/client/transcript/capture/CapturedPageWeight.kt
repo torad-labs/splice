@@ -1,10 +1,13 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
 import splice.core.memory.HeapJson
 import splice.sessions.transcript.TranscriptPage
 import java.util.IdentityHashMap
 
+// why: the escaped page retains its shell, message-list backing storage and cursor bookkeeping beyond text payloads.
 private const val CAPTURE_PAGE_OWNER_BYTES = 4_096L
+
+// why: each projected message retains its object, tool/source facts and list reference separately from shared strings.
 private const val CAPTURE_MESSAGE_OWNER_BYTES = 256L
 
 /** One page's escaped graph, not its decoding peak. A shared assistant id is counted once, not once per block. */

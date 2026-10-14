@@ -1,4 +1,4 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
 import splice.core.memory.HeapReservations
 import java.io.Reader

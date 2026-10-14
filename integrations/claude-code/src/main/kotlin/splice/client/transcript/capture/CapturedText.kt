@@ -1,18 +1,34 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapCategory
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 import java.io.Reader
 
+// why: an 8 Ki-character refill bounds input scratch independently of the captured conversation's length.
 private const val CAPTURE_BUFFER_CHARS = 8_192
+
+// why: reserve conservative parser and bounded field-mark bookkeeping beyond the character buffer.
 private const val CAPTURE_PARSER_BYTES = 1_024L
+
+// why: each nesting level retains a phase frame, deque reference and backing-array growth allowance.
 private const val CAPTURE_FRAME_BYTES = 64L
+
+// why: U+007F is the last one-byte UTF-8 code point; the next value starts the two-byte range.
 private const val CAPTURE_ASCII_END = 0x7f
+
+// why: U+07FF is the last two-byte UTF-8 code point; the next value starts the three-byte range.
 private const val CAPTURE_TWO_BYTE_END = 0x7ff
-private const val CAPTURE_THREE_BYTES = 3L
+
+// Borrow the canonical Utf8Wire length model once; the character loop keeps only scalar widths.
+private val CAPTURE_ONE_BYTE = JsonWire.byteSize("a")
+private val CAPTURE_TWO_BYTES = JsonWire.byteSize("\u0080")
+private val CAPTURE_THREE_BYTES = JsonWire.byteSize("ࠀ")
+private val CAPTURE_LONE_SURROGATE_BYTES = JsonWire.byteSize("\uD800")
+private val CAPTURE_PAIR_TAIL_BYTES = JsonWire.byteSize("𐀀") - CAPTURE_LONE_SURROGATE_BYTES
 
 /** One privately leased character buffer. Positions stay in UTF-16 units so existing cursors and ids stay exact. */
 internal class CapturedText(private val input: Reader, heap: HeapReservations?) : AutoCloseable {
@@ -53,9 +69,10 @@ internal class CapturedText(private val input: Reader, heap: HeapReservations?) 
     }
 
     private fun width(char: Char): Long = when {
-        previousHigh && char.isLowSurrogate() -> CAPTURE_THREE_BYTES
-        char.code <= CAPTURE_ASCII_END || char.isSurrogate() -> 1L
-        char.code <= CAPTURE_TWO_BYTE_END -> 2L
+        previousHigh && char.isLowSurrogate() -> CAPTURE_PAIR_TAIL_BYTES
+        char.code <= CAPTURE_ASCII_END -> CAPTURE_ONE_BYTE
+        char.isSurrogate() -> CAPTURE_LONE_SURROGATE_BYTES
+        char.code <= CAPTURE_TWO_BYTE_END -> CAPTURE_TWO_BYTES
         else -> CAPTURE_THREE_BYTES
     }
 

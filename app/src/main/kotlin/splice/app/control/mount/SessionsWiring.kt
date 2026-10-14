@@ -12,10 +12,10 @@ import splice.app.control.SessionPerfFacts
 import splice.app.control.TranscriptLimitEnding
 import splice.client.resume.ModelMoves
 import splice.client.resume.MovingTrust
-import splice.client.transcript.CapturedTranscripts
 import splice.client.transcript.MovedTranscripts
 import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
+import splice.client.transcript.capture.CapturedTranscripts
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome

@@ -1,5 +1,6 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
+// why: match file paging's 16 MiB source ceiling while refusing, rather than splitting, an oversized complete message.
 internal const val MAX_CAPTURE_PAGE_BYTES: Long = 16L shl 20
 
 internal data class CapturedWindow(

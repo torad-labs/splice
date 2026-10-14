@@ -1,9 +1,11 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.client.transcript.PER_RECORD
+import splice.client.transcript.TranscriptRedaction
 import splice.core.util.JsonScalars
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole

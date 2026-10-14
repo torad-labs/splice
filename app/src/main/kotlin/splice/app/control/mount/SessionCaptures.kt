@@ -1,9 +1,9 @@
 package splice.app.control.mount
 
-import splice.client.transcript.CapturedBodyReader
-import splice.client.transcript.CapturedRequest
-import splice.client.transcript.CapturedRequestReader
-import splice.client.transcript.CapturedSource
+import splice.client.transcript.capture.CapturedBodyReader
+import splice.client.transcript.capture.CapturedRequest
+import splice.client.transcript.capture.CapturedRequestReader
+import splice.client.transcript.capture.CapturedSource
 import splice.head.trace.TraceSessionSent
 import splice.sessions.registry.SessionSource
 import java.io.Reader

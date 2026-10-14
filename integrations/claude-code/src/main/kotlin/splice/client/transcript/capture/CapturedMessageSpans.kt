@@ -1,8 +1,9 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
 import kotlinx.serialization.json.Json
 import splice.core.util.JsonScalars
 
+// why: the eight-character messages key needs at most 50 quoted characters with Unicode escapes; 64 bounds scratch.
 private const val MAX_CAPTURE_FIELD_CHARS = 64
 
 internal data class CaptureSpan(val start: Int, val end: Int, val bytes: Long = 0L)

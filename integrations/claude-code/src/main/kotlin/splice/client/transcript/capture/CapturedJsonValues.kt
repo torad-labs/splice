@@ -1,10 +1,19 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
+// why: JSON's Unicode escape consumes exactly four hexadecimal digits after the u marker.
 private const val JSON_UNICODE_DIGITS = 4
 private const val JSON_CONTROL_BOUNDARY = ' '
+
+// why: the initial container phase alone permits an immediate closing delimiter for an empty value.
 private const val JSON_START = 0
+
+// why: an object member begins with a quoted key and colon before its value can be scanned.
 private const val JSON_KEY = 1
+
+// why: both arrays and object members scan one value before entering the separator phase.
 private const val JSON_VALUE = 2
+
+// why: after a value, only a comma or the container's closing delimiter is accepted.
 private const val JSON_SEPARATOR = 3
 
 /** Validates skipped JSON over a bounded reader without constructing trees or copying strings. */

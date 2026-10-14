@@ -1,9 +1,13 @@
-package splice.client.transcript
+package splice.client.transcript.capture
 
 import java.util.Base64
 
 private const val CAPTURE_CURSOR_PREFIX = "capture:"
+
+// why: bound decoding and split scratch for the encoded trace turn id and decimal source offset.
 private const val MAX_CAPTURE_CURSOR_CHARS = 1_024
+
+// why: after the capture prefix, a cursor contains exactly the encoded turn id and source offset.
 private const val CAPTURE_CURSOR_PARTS = 2
 
 internal data class CapturePosition(val turn: String, val offset: Int)

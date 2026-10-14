@@ -1,5 +1,5 @@
 // NEW: one active day's chunk and weak-literal indexes own their charged capacity.
-// 2026-10-05: chunks are indexed in two primitive arrays, a digest prefix to an entry's offset, under a hard entry
+// 2026-10-05: chunks are indexed in primitive arrays, a digest prefix to an entry's offset, under a hard entry
 // cap. Each entry was a map node holding a hex key and a JSON reference charged at 1 KiB, and a v2 pack holds about
 // 220 thousand entries when its day fills 1 GiB: about 220 MiB of heap per head, on a 2 GiB daemon.
 package splice.head.trace.body
@@ -18,7 +18,7 @@ import java.util.WeakHashMap
 // why: a hash key, JSON reference fields, map nodes and table growth coexist for each weak-literal entry.
 private const val TRACE_INDEX_ENTRY_BYTES = 1024L
 
-// why: the most chunks one pack indexes, so its table stops at 2^20 slots of two longs, 16 MiB per head. The
+// why: the most chunks one pack indexes, so its table stops at 2^20 slots of two longs and an int, 20 MiB per head. The
 // 2026-10-05 traffic fills a 1 GiB pack at about 220 thousand entries, so only a day of tiny entries meets this.
 internal const val TRACE_PACK_MAX_ENTRIES: Int = 1 shl 19
 

@@ -2,6 +2,7 @@
 package splice.provider.codex.state.save
 
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
@@ -127,5 +128,5 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
         expired.fold(SAVE_METADATA_BYTES) { total, marker -> HeapJson.add(total, CodeModeHeap.bytes(marker)) }
 
     private fun reserve(bytes: Long, factor: Long): HeapLease =
-        heap.reserve(HeapWeights.multiply(bytes, factor)) ?: throw HeapCapacityException()
+        heap.reserve(HeapWeights.multiply(bytes, factor), HeapCategory.CODE_MODE) ?: throw HeapCapacityException()
 }

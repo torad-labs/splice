@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
@@ -185,18 +186,22 @@ internal object CodeModeHeap {
         if (record.heapBudget == null) record.heapBudget = heap
         val lease = record.heapLease
         if (lease == null) {
-            record.heapLease = HeapOwners.charge(record, heap, minimumBytes)
+            record.heapLease = HeapOwners.charge(record, heap, minimumBytes, HeapCategory.CODE_MODE)
         } else if (!lease.resize(maxOf(lease.bytes, minimumBytes))) {
             throw HeapCapacityException()
         }
     }
 
     fun own(record: CodeModeRecordSnapshot, heap: HeapReservations = JvmHeap.budget) {
-        if (record.heapLease == null) record.heapLease = HeapOwners.charge(record, heap, retained(record))
+        if (record.heapLease == null) {
+            record.heapLease = HeapOwners.charge(record, heap, retained(record), HeapCategory.CODE_MODE)
+        }
     }
 
     fun own(marker: CodeModeExpiredSnapshot, heap: HeapReservations = JvmHeap.budget) {
-        if (marker.heapLease == null) marker.heapLease = HeapOwners.charge(marker, heap, bytes(marker))
+        if (marker.heapLease == null) {
+            marker.heapLease = HeapOwners.charge(marker, heap, bytes(marker), HeapCategory.CODE_MODE)
+        }
     }
 
     /** A snapshot taken of [record] holds the record's own payload objects, so it shares the record's charge rather
@@ -232,6 +237,7 @@ internal object CodeModeHeap {
             state,
             heap,
             RECORD_METADATA_BYTES + (state.records.size + state.expired.size) * STATE_ENTRY_BYTES,
+            HeapCategory.CODE_MODE,
         )
         return state
     }
@@ -262,7 +268,7 @@ internal object CodeModeHeap {
         record.heapSnapshots.mapNotNull(WeakReference<CodeModeRecordSnapshot>::get).forEach { snapshot ->
             val bytes = kept(snapshot)
             if (bytes > 0 && snapshot !in held) {
-                held[snapshot] = heap.reserve(bytes) ?: run {
+                held[snapshot] = heap.reserve(bytes, HeapCategory.CODE_MODE) ?: run {
                     held.values.forEach(HeapLease::close)
                     throw HeapCapacityException()
                 }

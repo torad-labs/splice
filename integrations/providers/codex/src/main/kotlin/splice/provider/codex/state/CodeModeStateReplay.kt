@@ -9,8 +9,10 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
+import splice.core.memory.HeapRelease
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.util.JsonScalars
@@ -37,7 +39,8 @@ internal class CodeModeStateReplay(
     private var expired = JsonArray(emptyList())
     private var expiry: HeapLease? = null
     private val metadata = JsonObject(checkpoint - REPLAY_RECORDS - REPLAY_EXPIRED)
-    private val base = heap.reserve(HeapJson.bytes(metadata) + REPLAY_ENTRY_BYTES) ?: throw HeapCapacityException()
+    private val base = heap.reserve(HeapJson.bytes(metadata) + REPLAY_ENTRY_BYTES, HeapCategory.REPLAY)
+        ?: throw HeapCapacityException()
     private val key: String
     private val descriptor = CodeModeRecordSnapshot.serializer().descriptor
     private val fields = (0 until descriptor.elementsCount).map(descriptor::getElementName).toSet()
@@ -83,8 +86,10 @@ internal class CodeModeStateReplay(
 
     private fun patched(id: String, before: JsonObject?, fields: JsonObject) {
         val bytes = HeapJson.add(before?.let(HeapJson::bytes) ?: 0L, HeapJson.bytes(fields))
-        val peak = heap.reserve(HeapWeights.multiply(bytes + REPLAY_ENTRY_BYTES, REPLAY_DECODE_FACTOR))
-            ?: throw HeapCapacityException()
+        val peak = heap.reserve(
+            HeapWeights.multiply(bytes + REPLAY_ENTRY_BYTES, REPLAY_DECODE_FACTOR),
+            HeapCategory.REPLAY,
+        ) ?: throw HeapCapacityException()
         peak.use {
             val next = JsonObject(before.orEmpty() + fields)
             val restored = json.decodeFromJsonElement<CodeModeRecordSnapshot>(next)
@@ -99,7 +104,7 @@ internal class CodeModeStateReplay(
         require(sameRecords && delta.expired.all { it.key == key }) { "code-mode journal crosses conversation keys" }
         delta.removed.forEach { id ->
             val _ = records.remove(id)
-            charges.remove(id)?.close()
+            charges.remove(id)?.close(HeapRelease.EVICTED)
         }
         change.getValue(REPLAY_RECORDS).jsonArray.forEach { cell ->
             val value = cell.jsonObject
@@ -108,14 +113,16 @@ internal class CodeModeStateReplay(
     }
 
     private fun replace(id: String, value: JsonObject) {
-        val next = heap.reserve(HeapJson.bytes(value) + REPLAY_ENTRY_BYTES) ?: throw HeapCapacityException()
+        val next = heap.reserve(HeapJson.bytes(value) + REPLAY_ENTRY_BYTES, HeapCategory.REPLAY)
+            ?: throw HeapCapacityException()
         val prior = charges.put(id, next)
         records[id] = value
         prior?.close()
     }
 
     private fun replaceExpiry(value: JsonArray) {
-        val next = heap.reserve(HeapJson.bytes(value) + REPLAY_ENTRY_BYTES) ?: throw HeapCapacityException()
+        val next = heap.reserve(HeapJson.bytes(value) + REPLAY_ENTRY_BYTES, HeapCategory.REPLAY)
+            ?: throw HeapCapacityException()
         val prior = expiry
         expired = value
         expiry = next
@@ -126,7 +133,8 @@ internal class CodeModeStateReplay(
         val bytes = charges.values.fold(base.bytes + checkNotNull(expiry).bytes) { sum, lease ->
             HeapJson.add(sum, lease.bytes)
         }
-        val peak = heap.reserve(HeapWeights.multiply(bytes, REPLAY_DECODE_FACTOR)) ?: throw HeapCapacityException()
+        val peak = heap.reserve(HeapWeights.multiply(bytes, REPLAY_DECODE_FACTOR), HeapCategory.REPLAY)
+            ?: throw HeapCapacityException()
         return peak.use {
             val graph = JsonObject(
                 metadata + mapOf(REPLAY_RECORDS to JsonArray(records.values.toList()), REPLAY_EXPIRED to expired),

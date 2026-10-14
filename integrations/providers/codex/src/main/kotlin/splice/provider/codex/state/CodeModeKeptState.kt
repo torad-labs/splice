@@ -2,6 +2,7 @@
 package splice.provider.codex.state
 
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapCategory
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModePersistedState
@@ -23,7 +24,12 @@ internal class CodeModeKeptState(
     }
     private val byId: MutableMap<String, CodeModeRecordSnapshot> =
         state.records.associateByTo(linkedMapOf(), CodeModeRecordSnapshot::id)
-    private val indexLease = HeapOwners.charge(byId, heap, (state.records.size + 1L) * KEPT_INDEX_ENTRY_BYTES)
+    private val indexLease = HeapOwners.charge(
+        byId,
+        heap,
+        (state.records.size + 1L) * KEPT_INDEX_ENTRY_BYTES,
+        HeapCategory.CODE_MODE,
+    )
     val records: Map<String, CodeModeRecordSnapshot> get() = byId
     val expired = state.expired
 

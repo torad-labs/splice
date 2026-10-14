@@ -16,7 +16,7 @@
 # — bump both together whenever this shim's behavior changes. No code generation.
 SPLICE_SHIM_VERSION="shim-21"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
-SPLICE_GATEWAY_VERSION="0.4.0-beta.1"
+SPLICE_GATEWAY_VERSION="0.4.0-beta.2"
 
 NL='
 '

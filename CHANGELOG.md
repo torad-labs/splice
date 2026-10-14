@@ -1,5 +1,11 @@
 # Changelog
 
+## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
+
+- **Less work under Claudex's shared code-mode lock.** Live record membership uses an identity index, expiry-marker comparisons use a set, and conversation queries limit expiry preparation to their own records. These changes address the bookkeeping bottleneck measured in the live JVM profile while preserving recovery, cancellation and request bytes.
+- **Qualified integration.** The registry fix passed the full gate and five independent code-review passes. Existing recovery and watchdog tests now await the state transitions their assertions require. Live response-time and memory improvements remain to be measured after installation.
+- **Local beta build.** This version is prepared from the reviewed `feat/v0.4.0` candidate for local installation. A public release is a separate promotion through the repository's main-only release path.
+
 ## splice v0.4.0-beta.1: the first 0.4.0 prerelease, built locally while Actions is locked - 2026-10-13
 
 The first beta of 0.4.0 carries everything on feat/v0.4.0 so far, as the v0.4.0 section below describes.

@@ -73,6 +73,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
+import splice.core.util.FileStat
 import splice.core.util.JsonScalars
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
 import splice.sessions.transcript.SentTexts
@@ -130,6 +131,16 @@ public class TranscriptReader(
 
     override fun tail(sessionId: String, roots: List<Path>, cwd: String?): SessionTail? =
         tailOf(sessionId, roots, cwd)?.let { SessionTail(it.model, it.answered, it.modelAt) }
+
+    override fun stamp(sessionId: String, roots: List<Path>, cwd: String?): String? {
+        val file = if (validSessionId.matches(sessionId)) locator.locate(roots, sessionId, cwd) else null
+        return try {
+            file?.let { FileStat(it, "size,lastModifiedTime") }
+                ?.let { stat -> "$file ${stat.identity} ${stat["size"]} ${stat["lastModifiedTime"]}" }
+        } catch (_: IOException) {
+            null
+        }
+    }
 
     private fun tailOf(sessionId: String, roots: List<Path>, cwd: String?): TailReading? {
         val file = if (validSessionId.matches(sessionId)) locator.locate(roots, sessionId, cwd) else null

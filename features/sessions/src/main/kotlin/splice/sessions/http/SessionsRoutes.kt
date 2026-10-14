@@ -140,6 +140,9 @@ public class SessionsRoutes(
             ?.let { transcripts.title(it, roots.treesFor(record.head), record.process.cwd) }
     }
 
+    /** Each row's last, model and title, kept against its transcript file's stamp. */
+    private val transcriptFields = RowTranscriptFields(transcripts, viewEnabled, titleOf)
+
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
         val rowFacts = facts.forRecords(listing.sessions)
@@ -197,12 +200,10 @@ public class SessionsRoutes(
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
         val trees = roots.treesFor(s.head)
-        // A session that is not running shows the reply before a message of his that was taken back or never answered.
-        val running = s.status.state == "working" || s.status.state == "busy"
-        val said = if (running) SessionActivity::last else SessionActivity::answered
-        put("last", said(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
-        put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
-        put("title", titleOf(s))
+        val shown = transcriptFields.of(s, trees)
+        put("last", shown.last)
+        put("model", shown.model)
+        put("title", shown.title)
         put("version", s.client.version)
         put("cwd", s.process.cwd)
         put("status", s.status.state)

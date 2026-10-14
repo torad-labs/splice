@@ -134,6 +134,11 @@ public interface SessionTranscripts {
      *  stamp: what a session with no name of its own is called. Null when no message of the person's is readable. */
     public fun title(sessionId: String, roots: List<Path>, cwd: String? = null): String? = null
 
+    /** What changes whenever the file [last], [tail] and [title] read for [sessionId] changes: its path, identity, size
+     *  and modified time, read with one stat and no read of the file. Null when there is no file or the port cannot
+     *  say, and the caller reads afresh. */
+    public fun stamp(sessionId: String, roots: List<Path>, cwd: String? = null): String? = null
+
     /** Where [sessionId] changed model, oldest first; none for a session that was never moved. */
     public fun moves(sessionId: String): List<ModelMove> = emptyList()
 

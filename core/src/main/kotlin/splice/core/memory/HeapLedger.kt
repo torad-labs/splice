@@ -10,6 +10,7 @@ private const val HEAP_READ_HEADROOM_DIVISOR = 4L
 
 internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? = null) {
     private val lock: Any = parent?.lock ?: Any()
+    private val retention = parent?.retention ?: HeapRetention()
     private var free = limitBytes
     private val changes = if (parent == null) MutableStateFlow(limitBytes) else null
     private var closed = false
@@ -40,16 +41,24 @@ internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? 
         parent?.refund(bytes)
     }
 
-    fun reserve(bytes: Long): HeapLease? = synchronized(lock) {
+    fun reserve(
+        bytes: Long,
+        category: HeapCategory = HeapCategory.UNCLASSIFIED,
+        state: HeapOwnerState = HeapOwnerState.ACTIVE,
+    ): HeapLease? = synchronized(lock) {
         require(bytes >= 0L)
         if (closed || !charge(bytes)) return@synchronized null
-        HeapLease(this, HeapAllocation(bytes))
+        val allocation = HeapAllocation(bytes, category, state)
+        retention.acquire(allocation)
+        HeapLease(this, allocation, state)
     }
 
-    fun share(allocation: HeapAllocation): HeapLease = synchronized(lock) {
+    fun share(allocation: HeapAllocation, state: HeapOwnerState): HeapLease = synchronized(lock) {
         check(allocation.owners > 0)
-        allocation.owners++
-        HeapLease(this, allocation)
+        retention.remove(allocation)
+        allocation.adjust(state, 1)
+        retention.record(allocation)
+        HeapLease(this, allocation, state)
     }
 
     fun resize(allocation: HeapAllocation, bytes: Long): Boolean = synchronized(lock) {
@@ -57,26 +66,49 @@ internal class HeapLedger(val limitBytes: Long, private val parent: HeapLedger? 
         check(allocation.owners > 0)
         val growth = bytes - allocation.bytes
         if (!charge(growth)) return@synchronized false
+        retention.remove(allocation)
+        if (growth < 0L) retention.shrunk(allocation, -growth)
         allocation.bytes = bytes
+        retention.record(allocation)
         true
     }
 
-    fun split(allocation: HeapAllocation, bytes: Long): HeapLease = synchronized(lock) {
+    fun split(allocation: HeapAllocation, bytes: Long, state: HeapOwnerState): HeapLease = synchronized(lock) {
         check(allocation.owners == 1) { "a shared allocation cannot be partitioned" }
         require(bytes in 0..allocation.bytes)
+        retention.remove(allocation)
         allocation.bytes -= bytes
-        HeapLease(this, HeapAllocation(bytes))
+        retention.record(allocation)
+        val partition = HeapAllocation(bytes, allocation.category, state, allocation.startedAtMs)
+        retention.acquire(partition)
+        HeapLease(this, partition, state)
     }
 
     fun bytes(allocation: HeapAllocation): Long = synchronized(lock) { allocation.bytes }
 
-    fun release(allocation: HeapAllocation) {
+    fun transition(
+        allocation: HeapAllocation,
+        from: HeapOwnerState,
+        to: HeapOwnerState,
+        category: HeapCategory? = null,
+    ): Unit = synchronized(lock) {
+        retention.remove(allocation)
+        allocation.adjust(from, -1)
+        allocation.adjust(to, 1)
+        if (category != null) retention.transfer(allocation, category)
+        retention.record(allocation)
+    }
+
+    fun release(allocation: HeapAllocation, state: HeapOwnerState, reason: HeapRelease) {
         synchronized(lock) {
             check(allocation.owners > 0)
-            allocation.owners--
+            retention.remove(allocation)
+            allocation.adjust(state, -1)
             if (allocation.owners == 0) refund(allocation.bytes)
+            retention.released(allocation, reason)
         }
     }
-}
 
-internal data class HeapAllocation(var bytes: Long, var owners: Int = 1)
+    /** Called on the root so every read-view charge appears exactly once in the process summary. */
+    fun retentionSnapshot(): HeapRetentionSnapshot = synchronized(lock) { retention.snapshot(limitBytes) }
+}

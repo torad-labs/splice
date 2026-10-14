@@ -9,4 +9,7 @@ public object JvmHeap {
 
     /** Listeners and retained owners share at most half the heap; read views debit this same root. */
     public val budget: HeapBudget = HeapBudget(limitBytes)
+
+    /** Diagnostic-only, off the request path. The control plane calls this on its existing file-I/O dispatcher. */
+    public fun memorySnapshot(): JvmMemorySnapshot = JvmMemory.snapshot(budget.retentionSnapshot())
 }

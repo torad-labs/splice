@@ -15,8 +15,17 @@ public object HeapOwners {
         return lease
     }
 
-    /** Transfer a shared charge to an escaped container before releasing the previous owner. */
+    /** Categorized acquisition preserves the existing GC-owned lifetime and capacity refusal. */
+    public fun <O : Any> charge(owner: O, heap: HeapReservations, bytes: Long, category: HeapCategory): HeapLease {
+        val lease = heap.reserve(bytes, category) ?: throw HeapCapacityException()
+        keep(owner, lease)
+        return lease
+    }
+
+    /** Transfer a shared charge to an escaped container before releasing the previous owner.
+     *  Registration does not end logical ownership. The terminal owner explicitly calls ownerFinished().
+     */
     public fun <O : Any> keep(owner: O, lease: HeapLease) {
-        val _ = cleaner.register(owner, Runnable { lease.close() })
+        val _ = cleaner.register(owner, Runnable { lease.close(HeapRelease.COLLECTED) })
     }
 }

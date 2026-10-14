@@ -7,6 +7,9 @@ public class HeapReadView internal constructor(private val ledger: HeapLedger) :
 
     override fun reserve(bytes: Long): HeapLease? = ledger.reserve(bytes)
 
+    override fun reserve(bytes: Long, category: HeapCategory, state: HeapOwnerState): HeapLease? =
+        ledger.reserve(bytes, category, state)
+
     override fun readShare(): HeapReadView = HeapReadView(ledger.readShare())
 
     override fun close() {

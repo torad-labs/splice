@@ -26,6 +26,12 @@ public class HeapBudget(
     override fun readShare(): HeapReadView = HeapReadView(ledger.readShare())
 
     override fun reserve(bytes: Long): HeapLease? = ledger.reserve(bytes)
+
+    override fun reserve(bytes: Long, category: HeapCategory, state: HeapOwnerState): HeapLease? =
+        ledger.reserve(bytes, category, state)
+
+    /** One process-root snapshot. It contains no owner, payload or content-derived identity. */
+    public fun retentionSnapshot(): HeapRetentionSnapshot = ledger.retentionSnapshot()
 }
 
 /** Saturating byte arithmetic prevents malformed sizes from wrapping into a cheap reservation. */

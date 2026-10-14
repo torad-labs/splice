@@ -17,9 +17,16 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
+// why: The 4,096-row cap bounds retained history across files; overflow still delivers every row.
 private const val MAX_HISTORY_ROWS = 4_096
+
+// why: The 64-file cap bounds per-file metadata even when histories contain few rows.
 private const val MAX_HISTORY_FILES = 64
+
+// why: 4 MiB bounds cached row estimates across files; larger histories still stream in full.
 private const val MAX_HISTORY_CACHE_BYTES = 4L shl 20
+
+// why: Estimate 96 bytes for fixed row and list-slot overhead; string characters are counted separately.
 private const val HISTORY_ROW_BYTES = 96L
 private const val HISTORY_FILE_BYTES = 160L
 private val HISTORY_ID = Regex("[A-Za-z0-9_-]{1,128}")

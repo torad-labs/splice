@@ -10,9 +10,16 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
+// why: The 1,024-entry cap bounds small lookup records even when their byte estimates are tiny.
 private const val MAX_PROJECT_EVIDENCE_ENTRIES = 1_024
+
+// why: 1 MiB per cache bounds retained lookup payloads; oversized results remain uncached.
 private const val MAX_PROJECT_EVIDENCE_BYTES = 1L shl 20
+
+// why: 16 starts sparse project caches small without preallocating the entry limit.
 private const val PROJECT_CACHE_INITIAL_CAPACITY = 16
+
+// why: 0.75 uses the standard map density to balance bucket memory and collision cost.
 private const val PROJECT_CACHE_LOAD_FACTOR = 0.75f
 
 /** Nanosecond file times and inode/device/change time on Unix. A restored mtime does not hide a rewrite there. */

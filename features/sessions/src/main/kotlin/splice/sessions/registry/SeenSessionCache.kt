@@ -7,10 +7,19 @@ import splice.core.memory.HeapOwners
 import splice.core.memory.HeapRelease
 import splice.core.memory.HeapReservations
 
+// why: The 2,048-record cap bounds metadata count without dropping sessions from listings.
 private const val MAX_SEEN_CACHE_ENTRIES = 2_048
+
+// why: 4 MiB caps retained metadata and lazy projections; eviction only forces a reread.
 private const val MAX_SEEN_CACHE_BYTES = 4L shl 20
+
+// why: 16 starts small registries cheaply and grows only as records are cached.
 private const val SEEN_CACHE_INITIAL_CAPACITY = 16
+
+// why: 0.75 keeps the standard map memory/collision tradeoff for metadata lookups.
 private const val SEEN_CACHE_LOAD_FACTOR = 0.75f
+
+// why: Budget 640 bytes for fixed metadata and lazy projection overhead; strings are added separately.
 private const val SEEN_METADATA_BYTES = 640L
 private const val SEEN_PROJECTION_BYTES = 448L
 

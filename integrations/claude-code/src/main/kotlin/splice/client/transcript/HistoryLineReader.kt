@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
+// why: 64 KiB amortizes stream reads while keeping the input buffer fixed; rows may span blocks.
 private const val HISTORY_READ_BLOCK = 64 shl 10
 
 internal data class HistoryLine(val text: String, val next: Long, val complete: Boolean)

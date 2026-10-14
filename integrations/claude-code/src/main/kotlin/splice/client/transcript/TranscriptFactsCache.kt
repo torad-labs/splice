@@ -11,8 +11,13 @@ import splice.core.memory.HeapReservations
 import splice.core.util.FileIdentity
 import java.nio.file.Path
 
+// why: The 4,096-entry cap bounds retained transcript facts without limiting scan results.
 private const val MAX_TRANSCRIPT_FACTS = 4_096
+
+// why: 4 MiB caps retained fact estimates when paths and names are large.
 private const val MAX_TRANSCRIPT_FACT_BYTES = 4L shl 20
+
+// why: Estimate 160 bytes for fixed fact-cache entry overhead; string characters are counted separately.
 private const val TRANSCRIPT_FACT_BYTES = 160L
 
 /** What the scan needs from one primary transcript, read from its head and tail. */

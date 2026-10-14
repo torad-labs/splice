@@ -14,7 +14,10 @@ import java.io.UncheckedIOException
 import java.nio.file.Files
 import java.nio.file.Path
 
+// why: Estimate 256 bytes for fixed file-result and evidence overhead; ids and paths are counted separately.
 private const val PROJECT_FILE_BYTES = 256L
+
+// why: Estimate 128 bytes for fixed path overhead; path characters are counted separately.
 private const val PROJECT_PATH_BYTES = 128L
 
 internal data class ProjectRegistration(val sessionId: String?, val cwd: Path?)

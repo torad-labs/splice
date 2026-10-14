@@ -23,9 +23,17 @@ import java.util.concurrent.ExecutionException
 
 // why: searches typed into one visit reuse the source scan, while new sessions appear soon after.
 private const val CACHE_MS = 10_000L
+
+// why: The 4,096-session cap bounds retained snapshots; larger scans still return every session.
 private const val MAX_SCAN_ENTRIES = 4_096
-private const val MAX_SCAN_BYTES = 4L shl 20
+
+// why: 4 MiB caps retained scan entry and error estimates; oversized scans are returned uncached.
+private const val MAX_HISTORY_SCAN_BYTES = 4L shl 20
+
+// why: Estimate 160 bytes for fixed joined-entry overhead; strings are counted separately.
 private const val SCAN_ENTRY_BYTES = 160L
+
+// why: Estimate 48 bytes for each error string's fixed overhead; its characters are counted separately.
 private const val SCAN_ERROR_BYTES = 48L
 private const val SCAN_CACHE_BYTES = 128L
 private const val SCAN_ROOT_BYTES = 128L
@@ -102,7 +110,7 @@ public class TranscriptHistoryIndex(
     }
 
     private fun cacheable(scan: SessionHistoryScan, size: ScanSize?): Boolean =
-        size != null && scan.sessions.size <= MAX_SCAN_ENTRIES && size.bytes <= MAX_SCAN_BYTES
+        size != null && scan.sessions.size <= MAX_SCAN_ENTRIES && size.bytes <= MAX_HISTORY_SCAN_BYTES
 
     private fun readPass(roots: List<SessionHistoryRoot>): SessionHistoryScan {
         val transcriptPass = transcripts.pass()
@@ -150,14 +158,14 @@ public class TranscriptHistoryIndex(
         var sessions = 0L
         for (entry in scan.sessions) {
             sessions += entryBytes(entry)
-            if (sessions > MAX_SCAN_BYTES) return null
+            if (sessions > MAX_HISTORY_SCAN_BYTES) return null
         }
         var errors = 0L
         for (error in scan.errors) {
             errors += SCAN_ERROR_BYTES + 2L * error.length
-            if (sessions + errors > MAX_SCAN_BYTES) break
+            if (sessions + errors > MAX_HISTORY_SCAN_BYTES) break
         }
-        return if (sessions + errors > MAX_SCAN_BYTES) null else ScanSize(sessions, errors)
+        return if (sessions + errors > MAX_HISTORY_SCAN_BYTES) null else ScanSize(sessions, errors)
     }
 
     private fun observeScan(scan: SessionHistoryScan, size: ScanSize): List<HeapObservation> {

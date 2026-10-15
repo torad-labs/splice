@@ -1,7 +1,7 @@
 // Sessions at his width (builder3's sweep, Oct 12): one column of his 269 cards ran 17,900 px down beside the open
-// session. From 3394 the cards flow two across, the open session keeps the rest and stays on screen as the list
-// scrolls, and a lamp in the right column has its own gutter. At 1440 the page is as it was: one column. Through the
-// real page, measured in the rendered DOM.
+// session. The open session stays on screen as the list scrolls. Since Oct 15 a project is one block of one-line rows
+// and the blocks run down as many columns as fit, so cards no longer pair across and 1440 is no longer one column.
+// Through the real page, measured in the rendered DOM.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "@playwright/test";
 import { existsSync } from "node:fs";
@@ -58,26 +58,10 @@ async function measure(width: number, height: number, scrollY = 0) {
   }
 }
 
-test("at his width the cards run two across, with a gutter for the right-hand lamp, beside the open session", async () => {
-  const m = await measure(3394, 1889);
-  const [left, right] = m.cards;
-  expect(right!.y).toBe(left!.y);
-  expect(right!.x).toBeGreaterThan(left!.right);
-  expect(m.lamps[1]!.x).toBeGreaterThanOrEqual(left!.right);
-  expect(m.pane!.x).toBeGreaterThan(right!.right);
-}, 30_000);
-
-test("the open session stays on screen while the two columns scroll", async () => {
+test("the open session stays on screen while the list scrolls", async () => {
   const m = await measure(3828, 1889, 3000);
   expect(m.pane!.y).toBeGreaterThanOrEqual(0);
   expect(m.pane!.bottom).toBeLessThanOrEqual(m.vh);
-}, 30_000);
-
-test("at 1440 the list stays one column", async () => {
-  const m = await measure(1440, 1000);
-  const [first, second] = m.cards;
-  expect(second!.y).toBeGreaterThan(first!.bottom);
-  expect(second!.x).toBe(first!.x);
 }, 30_000);
 
 // His project tiles at 3394 (splice-lead, Oct 12): twelve projects crowd the row. A short name is never cut ("twork"

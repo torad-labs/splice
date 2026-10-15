@@ -27,7 +27,8 @@ CONSOLE.page("sessions.html", (scope) => {
 const state = { rows: [], past: new Map(), heads: [], retired: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, usage: {}, error: null, loading: true };
 const ui = { ending: new Map(), armedEnd: new Map(), armedStop: new Set(), open: null, missing: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set(), hold: false, order: [], looks: new Map(), answered: new Map(), leftover: {}, menu: null, choices: {}, moving: new Map(), held: {}, noted: new Map(), logins: {}, pinning: null,
   // which groups he has folded, and whose Ended line he has opened: his, across a reload, until he closes the tab
-  shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")), grouped: false, gorder: null, project: PICK.get(), by: sessionStorage.getItem("splice.by") || "project", pmenu: false };
+  shut: new Set(JSON.parse(sessionStorage.getItem("splice.shut") || "[]")), rest: new Set(JSON.parse(sessionStorage.getItem("splice.rest") || "[]")),
+  idle: new Set(JSON.parse(sessionStorage.getItem("splice.idle") || "[]")), grouped: false, gorder: null, project: PICK.get(), by: sessionStorage.getItem("splice.by") || "project", pmenu: false };
 const remember = (key, set) => sessionStorage.setItem(key, JSON.stringify([...set]));
 const root = document.getElementById("sessions");
 const wide = sideBySide;
@@ -248,10 +249,13 @@ function metaHtml(s, L, inPane) {
   const started = s.row.started_at ? `<span>Started ${backWord(new Date(s.row.started_at))}</span>` : "";
   // the Claude Code version the session registered with (SessionsRoutes `version`); the pane has room for it
   const version = inPane && s.row.version ? `<span>Claude Code ${esc(s.row.version)}</span>` : "";
-  const parts = `${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}${inPane ? L.paneDetail || "" : ""}${team}${model}${repo}${started}${version}`;
-  // on a list card everything but the time sits in one row that drops whole parts from its end when it runs out of
-  // room, the folder first, then the model, then the team; the open pane has the width and shows every part (hitstop b6bae4e)
-  return inPane ? `<div class="meta">${parts}</div>` : `<div class="meta"><span class="parts">${parts}</span>${when}</div>`;
+  const word = `<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${quiet}`;
+  if (inPane) return `<div class="meta">${chip}${word}${L.paneDetail || ""}${team}${model}${repo}${started}${version}</div>`;
+  // A LIST ROW IS ONE LINE (Marcos, Oct 15: sessions per project, denser, the Temple's agent rows): the state whole, then
+  // what it last said, then its tags in one strip that drops whole tags from its end when the row runs out of room, the
+  // start first, then the folder, then the model, then the team, then the command and the time at the right. Nothing is
+  // cut mid-word, and the open pane shows every part (hitstop b6bae4e).
+  return { word: `<span class="meta">${word}</span>`, tags: `<span class="parts">${team}${model}${repo}${started}</span>`, when };
 }
 
 // What a waiting session asks, and answering it where it waits. A question's words and options come off its transcript
@@ -316,20 +320,24 @@ function armedStopHtml(s, small) {
     `<button class="act danger${sz}" data-act="stop-now" data-s="${esc(s.id)}">Stop</button>` +
     `<button class="act quiet${sz}" data-act="stop-keep" data-s="${esc(s.id)}">Keep running</button></div>`;
 }
+/** A session in the list: one line, lamp, name, state, what it last said, tags, command and time, with Stop over the
+ *  time while the pointer or focus is on the row. A session that needs him opens under its line to what it asks and the
+ *  answers it takes, so nothing waiting on him is a click away. */
 function cardHtml(s) {
   const L = movingLook(s) || look(s), last = lastOf(s);
   const stop = stopHtml(s, "act quiet small", "");
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
-  let body = "";
-  if (s.state === "needs") body = askHtml(s);
-  else if (last?.text) body = last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
+  const said = s.state === "needs" || !last?.text ? `<span class="last"></span>`
+    : last.tool ? `<p class="last tool"><b>${esc(last.tool)}</b>${esc(last.text)}</p>` : `<p class="last">${esc(last.text.replace(/`/g, ""))}</p>`;
+  const { word, tags, when } = metaHtml(s, L, false);
   const failed = ui.failed.get(s.id);
   // a card whose state changed since it was last drawn rings once where it stands
   const was = ui.looks.get(s.id); ui.looks.set(s.id, L.cls);
   return `<article class="card s ${L.cls}${was && was !== L.cls ? " changed" : ""}" style="--c:${color(s)}" data-key="s:${esc(s.id)}" data-open="${esc(s.id)}" aria-current="${ui.open === s.id}">`
     + `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
-    + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${stop}</div>`
-    + `${metaHtml(s, L, false)}${body}${armedStopHtml(s, true)}${failedHtml(s, failed, false)}</article>`;
+    + `<div class="top"><button class="name" data-open="${esc(s.id)}">${esc(title(s))}</button>${wt}${word}${said}${tags}`
+    + `${QUIET.has(s.cmd) ? `<span class="state mute">${s.cmd}</span>` : s.cmd ? `<span class="chip">${s.live ? "<i></i>" : ""}${esc(s.cmd)}</span>` : ""}${when}${stop}</div>`
+    + `${s.state === "needs" ? askHtml(s) : ""}${armedStopHtml(s, true)}${failedHtml(s, failed, false)}</article>`;
 }
 
 // ---------- the list: what needs him first, then what runs, then what rests ----------
@@ -397,23 +405,38 @@ const BIG = { needs: ICON.input, stalled: ICON.flat, working: ICON.trace };
 const countsOf = (g) => STATES.map(([k, r]) => [k, g.filter((s) => RANK(s) === r).length]).filter(([, n]) => n);
 const bigCount = ([k, n]) => `<span class="pc big ${k}"><span class="lamp ${k}" aria-hidden="true">${BIG[k]}</span><b>${n}</b></span>`;
 /** A project's ended cards under one line at its end, closed until he opens it; a search opens every one, because no
- *  fold may hide a match. Only Ended folds: Idle stays up, and nothing here knows which replies he has read. */
+ *  fold may hide a match. Its fold and its rows come apart, so the fold can sit on the group's foot line. */
 function restHtml(key, ended) {
-  if (!ended.length) return "";
+  if (!ended.length) return ["", ""];
   const open = ui.rest.has(key) || Boolean(ui.q);
-  return `<button class="act quiet fold prest" data-act="rest" data-p="${esc(key)}" aria-expanded="${open}">${ended.length} Ended${ICON.caret}</button>`
-    + (open ? `<div class="rested">${ended.map(cardHtml).join("")}</div>` : "");
+  return [`<button class="act quiet fold prest" data-act="rest" data-p="${esc(key)}" aria-expanded="${open}">${ended.length} Ended${ICON.caret}</button>`,
+    open ? `<div class="rested">${ended.map(cardHtml).join("")}</div>` : ""];
+}
+// A GROUP SHOWS WHAT MOVES AND FOLDS WHAT RESTS (Marcos, Oct 15: "organize sessions per project a bit more efficiently").
+// Needs you, stalled and working always stand, then its latest idle sessions up to a handful of rows; the idle ones past
+// that fold behind "N idle" on the group's foot line, beside its Ended fold, closed until he opens it. A search opens
+// it, because no fold may hide a match, and a fold he opened stays open for the tab.
+const HANDFUL = 6;
+const FLAT = "*";
+function rowsHtml(key, g, ended) {
+  const up = g.filter((s) => RANK(s) < 3), idle = g.filter((s) => RANK(s) === 3);
+  const room = Math.max(0, HANDFUL - up.length), hidden = idle.length - room;
+  const folds = hidden > 0, open = !folds || ui.idle.has(key) || Boolean(ui.q);
+  const kept = new Set([...up, ...idle.slice(0, room)]);
+  const rows = (open ? g : g.filter((s) => kept.has(s))).map(cardHtml).join("");
+  const idleFold = folds ? `<button class="act quiet fold pidle" data-act="idle" data-p="${esc(key)}" aria-expanded="${open}">${hidden} ${room ? "more idle" : "idle"}${ICON.caret}</button>` : "";
+  const [rest, rested] = restHtml(key, ended);
+  return rows + (idleFold || rest ? `<div class="pfoot">${idleFold}${rest}</div>` : "") + rested;
 }
 /** COLLAPSED, A GROUP STILL SHOWS ITS NEEDS-YOU CARDS (Marlin): nothing waiting on him is ever hidden by a fold. */
 function groupHtml([key, g], ended) {
   const shut = ui.shut.has(key) && !ui.q, counts = countsOf(g), total = g.length + ended.length;
-  const shown = shut ? g.filter((s) => RANK(s) === 0) : g;
   const go = key === NO_PROJECT || ui.by !== "project" ? ""
     : `<a class="pgo" href="requests.html?project=${encodeURIComponent(key)}">${ICON.door}<span>Open on Requests</span></a>`;
   return `<section class="pgroup${shut ? " shut" : ""}" data-key="g:${esc(key)}" aria-label="${esc(`${groupName(g[0])}, ${countWords(counts, total, "session")}`)}">`
     + `<header class="phead"><button class="pfold" data-act="fold" data-p="${esc(key)}" aria-expanded="${!shut}">${ICON.caret}<span class="pname">${esc(groupName(g[0]))}</span></button>`
     + `<span class="pcounts">${counts.map(bigCount).join("")}<span class="ptotal">${total}</span></span>${go}</header>${key === NO_PROJECT && ui.by === "project" ? noProjectWhy(g) : ""}`
-    + `${shown.map(cardHtml).join("")}${shut ? "" : restHtml(key, ended)}</section>`;
+    + `${shut ? g.filter((s) => RANK(s) === 0).map(cardHtml).join("") : rowsHtml(key, g, ended)}</section>`;
 }
 /** Under No project, each folder the daemon would not file under one, by its place, with the reason the repo wire
  *  carries (an untrusted or outside root, gap 421); a session with no reason is simply in no project and says nothing. */
@@ -465,10 +488,9 @@ const HEADLESS = `<p class="headless">Runs started with claude -p never appear h
 // a command chip, the meta line and the last line, striped and fading down the page, so the sessions land where the eye
 // already is (splice-lead, gap 384b; the bare word Reading read as an empty page).
 const GHOST_CARDS = [[12, 5, 16, 22], [9, 6, 13, 18], [14, 5, 18, 26], [10, 6, 12, 20], [11, 5, 15, 16]];
-const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions">`
+const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading sessions"><div class="rows">`
   + GHOST_CARDS.map(([name, chip, meta, last], i) => `<article class="card s ghosted" style="--i:${i}" aria-hidden="true">`
-    + `<span class="lamp"></span><div class="top">${GHOST.bar(name, "nm")}${GHOST.bar(chip, "chip")}</div>`
-    + `<div class="meta">${GHOST.bar(meta)}</div>${GHOST.lines([last])}</article>`).join("") + "</div>";
+    + `<span class="lamp"></span><div class="top">${GHOST.bar(name, "nm")}${GHOST.bar(meta * .5)}${GHOST.bar(last)}${GHOST.bar(chip, "chip")}</div></article>`).join("") + "</div></div>";
 function listHtml() {
   if (state.loading) return ghostListHtml();
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
@@ -482,14 +504,15 @@ function listHtml() {
   }
   // PICKED, THE LIST IS THAT PROJECT'S CARDS, WITH NO HEADER: the picker already names it. Its ended cards fold under
   // its own line, as they do in its group
-  if (picked() != null) return `<div class="list">${head}${list.map(cardHtml).join("")}${restHtml(picked(), ended)}${HEADLESS}</div>`;
+  // the rows flow in as many columns as the list has room for, read row by row; a group is one block in that flow
+  if (picked() != null) return `<div class="list">${head}<div class="rows">${rowsHtml(picked(), list, ended)}</div>${HEADLESS}</div>`;
   let cards, loose = ended;
   if (ui.grouped) {
     const groups = groupsOf(list); ui.gorder = groups.map(([k]) => k);
     const keys = new Set(ui.gorder);
     cards = groups.map(([k, g]) => groupHtml([k, g], ended.filter((s) => groupKey(s) === k))).join("");
     loose = ended.filter((s) => !keys.has(groupKey(s))); // a project with nothing open today keeps its ended at the foot
-  } else { ui.gorder = null; cards = list.map(cardHtml).join(""); }
+  } else { ui.gorder = null; cards = list.length ? `<div class="rows">${rowsHtml(FLAT, list, [])}</div>` : ""; }
   const fold = loose.length ? `<button class="act quiet fold" data-act="ended" aria-expanded="${ui.ended}">${loose.length} ended${ICON.caret}</button>` : "";
   const endedList = ui.ended && loose.length ? `<div class="ended">${loose.map(cardHtml).join("")}</div>` : "";
   return `<div class="list">${head}${cards}${fold}${endedList}${HEADLESS}</div>`;
@@ -1123,6 +1146,7 @@ document.addEventListener("click", (e) => {
     case "by": ui.by = BY.includes(el.dataset.by) ? el.dataset.by : "project"; sessionStorage.setItem("splice.by", ui.by); render({ stick: false }); break;
     case "fold": { const p = el.dataset.p; ui.shut.has(p) ? ui.shut.delete(p) : ui.shut.add(p); remember("splice.shut", ui.shut); render({ stick: false }); break; }
     case "rest": { const p = el.dataset.p; ui.rest.has(p) ? ui.rest.delete(p) : ui.rest.add(p); remember("splice.rest", ui.rest); render({ stick: false }); break; }
+    case "idle": { const p = el.dataset.p; ui.idle.has(p) ? ui.idle.delete(p) : ui.idle.add(p); remember("splice.idle", ui.idle); render({ stick: false }); break; }
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.missing = null; ui.auto = false; render(); break;
     case "stop": if (s) { ui.armedStop.add(s.id); render({ stick: false }); } break;

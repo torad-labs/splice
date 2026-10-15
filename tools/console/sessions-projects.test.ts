@@ -266,7 +266,7 @@ test("on a wide screen every project is a tile, Every project first, and pressin
     await temple.click();
     await expect(temple).toHaveAttribute("aria-pressed", "true");
     await expect(p.locator(".pgroup")).toHaveCount(0);
-    await expect(p.locator(".list > .card.s")).toHaveCount(2);
+    await expect(p.locator(".list .card.s")).toHaveCount(2);
   } finally {
     await ctx.close();
   }

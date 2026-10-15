@@ -1,50 +1,50 @@
 /* Usage build 3, in the console language (console.css): the plans and the keys first, each a door, then the window's bars
    at their full width, then where it went (grouped by one thing, filters carried) beside how each command answered.
-   Built for 3828 first; below 104rem of page everything stacks. Class names checked against console.css: .card, .bar,
+   Built for 3828 first; below 84rem of page everything stacks. Class names checked against console.css: .card, .bar,
    .windows, .when, .ring, .stale-at, .state and .act are its own and are used as Accounts uses them. */
 
 .page { container-type: inline-size; }
-.usage { display: flex; flex-direction: column; gap: 3.4rem; }
-.usage section > header { display: flex; align-items: center; gap: 1.2rem; margin-bottom: 1.4rem; min-height: 3.2rem; }
-.usage section > header .hn { font: 500 1.3rem/1 var(--font-data); color: var(--text-body); }
+.usage { display: flex; flex-direction: column; gap: 1.85rem; }
+.usage section > header { display: flex; align-items: center; gap: .9rem; margin-bottom: 1.05rem; min-height: 2.4rem; }
+.usage section > header .hn { font: 500 1.05rem/1 var(--font-data); color: var(--text-body); }
 .usage .dot { display: inline-block; width: .3rem; height: .3rem; border-radius: 50%; background: var(--text-mute); margin: 0 .6rem; vertical-align: .2rem; }
 .usage .go { width: 1rem; height: 1rem; flex: none; }
 
 /* ---------- plans and keys: one card each, the card a door to what it used ---------- */
-.money-band { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3.4rem; }
-.plans .grid, .keys .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(29rem, 1fr)); gap: 1.8rem; }
-.plans .grid { grid-template-columns: repeat(auto-fill, minmax(33rem, 1fr)); }  /* room for a window's bar beside its whole reset time */
-.pcard, .kcard { cursor: pointer; display: flex; flex-direction: column; gap: 1.1rem; }
+.money-band { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.85rem; }
+.plans .grid, .keys .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 1rem; }
+.plans .grid { grid-template-columns: repeat(auto-fill, minmax(27rem, 1fr)); }  /* room for a window's bar beside its whole reset time */
+.pcard, .kcard { cursor: pointer; display: flex; flex-direction: column; gap: .85rem; }
 .pcard:hover, .kcard:hover { background: color-mix(in oklab, var(--obj) 92%, var(--key-light)); }
 .pcard > header, .kcard > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem .9rem; min-height: 0; margin: 0; }
-.pcard .nm, .kcard .nm { font: 500 1.35rem/1.1 var(--font-name); color: var(--text); }
-.kcard .nm .var { font: 500 1.15rem/1.1 var(--font-data); letter-spacing: .01em; }
-.pcard .pv, .kcard .pv { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
+.pcard .nm, .kcard .nm { font: 500 1.1rem/1.1 var(--font-name); color: var(--text); }
+.kcard .nm .var { font: 500 .95rem/1.1 var(--font-data); letter-spacing: .01em; }
+.pcard .pv, .kcard .pv { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
 .pcard .cmds, .kcard .cmds { display: inline-flex; gap: .45rem; margin-left: auto; }
 .pcard .windows { margin-top: 0; }
 .pcard .bar > b { transition: none; }
 .pcard .state { margin: .2rem 0; color: var(--text-mute); }
-.pcard .since { margin: -.2rem 0 0; display: flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--limit); }
-.kcard .nolimit { margin: -.2rem 0 0; font: 400 1rem/1.2 var(--font-name); color: var(--text-mute); }
+.pcard .since { margin: -.2rem 0 0; display: flex; align-items: center; gap: .45rem; font: 500 .9rem/1 var(--font-data); color: var(--limit); }
+.kcard .nolimit { margin: -.2rem 0 0; font: 400 .9rem/1.2 var(--font-name); color: var(--text-mute); }
 .pcard .since svg { width: 1.05rem; height: 1.05rem; }
 .pcard .since a { color: inherit; text-decoration-color: color-mix(in srgb, var(--limit) 50%, transparent); text-underline-offset: .22rem; }
 .pcard .since a:hover { text-decoration-color: var(--limit); }
-.pcard > footer, .kcard > footer { display: flex; align-items: flex-end; gap: 1.4rem; margin-top: auto; padding-top: 1rem; border-top: .12rem solid var(--track); }
-.thru { margin-left: auto; font: 500 .98rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
+.pcard > footer, .kcard > footer { display: flex; align-items: flex-end; gap: 1.05rem; margin-top: auto; padding-top: .75rem; border-top: .12rem solid var(--track); }
+.thru { margin-left: auto; font: 500 .9rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .thru b { font-weight: 600; color: var(--text); }
-.kcard .spent { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem 1.1rem; }
-.kcard .spent .money { font: 600 2.3rem/1 var(--font-data); color: var(--text); }
-.kcard .spent .none { font: 500 1.3rem/2.3rem var(--font-name); color: var(--text-mute); }
-.kcard .was { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
-.kcard .was b { font: 500 1.05rem/1 var(--font-data); color: var(--text-body); }
+.kcard .spent { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem .85rem; }
+.kcard .spent .money { font: 600 1.5rem/1 var(--font-data); color: var(--text); }
+.kcard .spent .none { font: 500 1.05rem/1.5rem var(--font-name); color: var(--text-mute); }
+.kcard .was { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.kcard .was b { font: 500 .95rem/1 var(--font-data); color: var(--text-body); }
 /* its use across the window, a column per slice, today's lit */
 
 /* ---------- over time, at its full width ---------- */
 .chart { --c: var(--rail); display: flex; flex-direction: column; }
-.chart > header { margin-bottom: 1rem; }
-.plot { position: relative; flex: 1; min-height: 24rem; margin: 1.4rem 0 0 5.4rem; border-bottom: .14rem solid var(--track-line); }
+.chart > header { margin-bottom: .75rem; }
+.plot { position: relative; flex: 1; min-height: 16rem; margin: .8rem 0 0 4.4rem; border-bottom: .14rem solid var(--track-line); }
 .gl { position: absolute; left: 0; right: 0; border-top: .1rem dashed var(--track); }
-.gl span { position: absolute; right: calc(100% + .8rem); top: 0; transform: translateY(-50%); font: 500 .92rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.gl span { position: absolute; right: calc(100% + .8rem); top: 0; transform: translateY(-50%); font: 500 .88rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: .55rem; align-items: end; }
 .col { position: relative; height: 100%; display: flex; align-items: flex-end; }
 .col .stack { width: 100%; display: flex; flex-direction: column-reverse; border: .12rem solid var(--ink); border-radius: .3rem .3rem 0 0; overflow: hidden; min-height: 0; }
@@ -55,24 +55,24 @@
 .col .stack a:hover { filter: brightness(1.18); }
 .col .stack a.alt, .legend .key i.alt, .tip p i.alt { background: repeating-linear-gradient(135deg, var(--c) 0 .5rem, color-mix(in srgb, var(--c) 68%, var(--ink)) .5rem .75rem); }
 .col.on .stack { box-shadow: 0 0 0 .2rem var(--key-light); }
-.col .x { position: absolute; top: calc(100% + .7rem); left: 0; font: 500 .92rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.legend { display: flex; flex-wrap: wrap; gap: .6rem 1.4rem; margin: 3rem 0 0 5.4rem; }
-.legend .key { display: inline-flex; align-items: center; gap: .5rem; font: 500 .98rem/1 var(--font-data); color: var(--text-body); }
+.col .x { position: absolute; top: calc(100% + .7rem); left: 0; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: .6rem 1.05rem; margin: 1.2rem 0 0 4.4rem; }
+.legend .key { display: inline-flex; align-items: center; gap: .5rem; font: 500 .9rem/1 var(--font-data); color: var(--text-body); }
 .legend .key i, .tip p i { width: .85rem; height: .85rem; border-radius: .2rem; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
 .legend .key.fail i { width: .45rem; height: .45rem; margin: 0 .2rem; border-radius: 50%; background: var(--limit); box-shadow: none; }  /* the mark under a bar */
 .tip {
-  position: absolute; top: 0; z-index: 5; min-width: 19rem; padding: .9rem 1.1rem; transform: translateX(1.4rem); pointer-events: none;
+  position: absolute; top: 0; z-index: 5; min-width: 15.5rem; padding: .8rem .85rem; transform: translateX(1.1rem); pointer-events: none;
   background: var(--obj-high); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .35rem .35rem 0 var(--ink);
 }
-.tip.lefty { transform: translateX(calc(-100% - 1.4rem)); }
-.tip p { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .98rem/1.7 var(--font-data); color: var(--text-body); }
-.tip p b { margin-left: auto; padding-left: 1.4rem; color: var(--text); font-weight: 600; }
-.tip .tw { font: 500 1rem/1 var(--font-name); color: var(--text-mute); margin-bottom: .5rem; }
+.tip.lefty { transform: translateX(calc(-100% - 1.1rem)); }
+.tip p { margin: 0; display: flex; align-items: center; gap: .6rem; font: 500 .9rem/1.7 var(--font-data); color: var(--text-body); }
+.tip p b { margin-left: auto; padding-left: 1.05rem; color: var(--text); font-weight: 600; }
+.tip .tw { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); margin-bottom: .5rem; }
 .tip .sum { margin-top: .35rem; padding-top: .35rem; border-top: .1rem solid var(--track-line); }
 .tip .none { color: var(--text-mute); }
 
 /* ---------- where it went: grouped by one thing, the filters on top ---------- */
-.lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3.2rem; align-items: start; }
+.lower { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.75rem; align-items: start; }
 .by { --c: var(--rail); }
 .by > header { flex-wrap: wrap; }
 .by > header .act { margin-left: auto; display: inline-flex; align-items: center; gap: .5rem; }
@@ -80,67 +80,67 @@
 .fchips { display: flex; flex-wrap: wrap; gap: .7rem; }
 .fchips:empty { display: none; }
 .fwrap { position: relative; display: inline-flex; }
-.fbtn { display: inline-flex; align-items: center; gap: .6rem; font: 500 1.05rem/1 var(--font-name); color: var(--text); white-space: nowrap; background: var(--obj-sunk); border: .12rem solid var(--key-light); border-radius: var(--r-in); padding: .72rem 2.9rem .72rem .9rem; }
+.fbtn { display: inline-flex; align-items: center; gap: .6rem; font: 500 .95rem/1 var(--font-name); color: var(--text); white-space: nowrap; background: var(--obj-sunk); border: .12rem solid var(--key-light); border-radius: var(--r-in); padding: .6rem 2.5rem .6rem .8rem; }
 .fbtn em { font-style: normal; color: var(--text-mute); }
-.fbtn .var { font: 500 1rem/1 var(--font-data); }
-.fclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); width: 2.1rem; height: 2.1rem; display: grid; place-items: center; border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer; }
+.fbtn .var { font: 500 .9rem/1 var(--font-data); }
+.fclear { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); width: 1.8rem; height: 1.8rem; display: grid; place-items: center; border: 0; background: none; color: var(--text-body); border-radius: .3rem; cursor: pointer; }
 .fclear:hover { background: var(--track); color: var(--text); }
 .fclear svg { width: .95rem; height: .95rem; }
 .brow {
-  display: grid; grid-template-columns: minmax(19rem, 1.5fr) minmax(12rem, 1.2fr) 8rem 16rem; gap: 1.4rem; align-items: center;
-  padding: 1rem .6rem; margin: 0 -.6rem; border-top: .12rem solid var(--track); border-radius: .3rem; cursor: pointer;
+  display: grid; grid-template-columns: minmax(15rem, 1.5fr) minmax(10rem, 1.2fr) 6.5rem 13rem; gap: 1.05rem; align-items: center;
+  padding: .75rem .6rem; margin: 0 -.6rem; border-top: .12rem solid var(--track); border-radius: .3rem; cursor: pointer;
 }
 .brow:hover { background: color-mix(in oklab, var(--obj) 90%, var(--key-light)); }
-.brow.bhead { cursor: default; border-top: 0; padding: 0 .6rem .55rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.brow.bhead { cursor: default; border-top: 0; padding: 0 .6rem .55rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 .brow.bhead:hover { background: none; }
 .brow .who { display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
-.brow .nm { font: 500 1.2rem/1.15 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.brow .nm .var { font: 500 1.08rem/1.15 var(--font-data); letter-spacing: .01em; }
-.brow .sb { font: 500 .92rem/1.2 var(--font-data); color: var(--text-mute); display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; min-width: 0; }
+.brow .nm { font: 500 1rem/1.15 var(--font-name); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow .nm .var { font: 500 .95rem/1.15 var(--font-data); letter-spacing: .01em; }
+.brow .sb { font: 500 .88rem/1.2 var(--font-data); color: var(--text-mute); display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; min-width: 0; }
 .brow .sb:empty { display: none; }
 .share { display: flex; align-items: center; gap: .9rem; min-width: 0; }
-.sbar { height: 1.25rem; min-width: .3rem; background: var(--c); border: .12rem solid var(--ink); border-radius: .25rem; flex: none; max-width: calc(100% - 5.5rem); }
+.sbar { height: 1rem; min-width: .3rem; background: var(--c); border: .12rem solid var(--ink); border-radius: .25rem; flex: none; max-width: calc(100% - 4.5rem); }
 .share .num { flex: none; }
-.brow .num { font: 500 1.05rem/1 var(--font-data); color: var(--text); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.brow .num { font: 500 .95rem/1 var(--font-data); color: var(--text); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .brow a.open { display: inline-flex; align-items: center; justify-content: flex-end; gap: .45rem; color: var(--text); text-decoration: none; border-radius: .3rem; padding: .35rem .4rem; margin: -.35rem -.4rem; }
 .brow a.open .go { color: var(--text-mute); }
 .brow a.open:hover { background: var(--track); }
 .brow a.open:hover .go { color: var(--key-light); }
 .brow .cost { text-align: right; }
-.brow .cost .money { font: 500 1.05rem/1 var(--font-data); color: var(--text); }
-.brow .cost .gap { font: 500 1.02rem/1 var(--font-name); color: var(--text-mute); }
-.brow.bhead .num, .brow.bhead .cost { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
-.by > .act { margin-top: 1rem; }
-.by .empty { margin: 1rem 0; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }
+.brow .cost .money { font: 500 .95rem/1 var(--font-data); color: var(--text); }
+.brow .cost .gap { font: 500 .92rem/1 var(--font-name); color: var(--text-mute); }
+.brow.bhead .num, .brow.bhead .cost { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
+.by > .act { margin-top: .75rem; }
+.by .empty { margin: .75rem 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 
 /* the filters in the page head, so one picked down the page stays in sight */
 .hfilters { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-right: auto; }
 
 /* the command that's slow or failing today leads, with since when */
-.heads, .breakdown { display: flex; flex-direction: column; gap: 2rem; }  /* the table and Commands: one heading, then their cards on one line */
+.heads, .breakdown { display: flex; flex-direction: column; gap: 1.1rem; }  /* the table and Commands: one heading, then their cards on one line */
 .heads > header { margin-bottom: -.6rem; }
-.flag { margin: 1.1rem 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1.4rem; }
-.flag a { display: inline-flex; align-items: center; gap: .45rem; font: 500 1.35rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
+.flag { margin: .85rem 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem 1.05rem; }
+.flag a { display: inline-flex; align-items: center; gap: .45rem; font: 500 1.1rem/1.1 var(--font-name); color: var(--limit); text-decoration: none; }
 .flag a .go { width: 1.1rem; height: 1.1rem; }
 .flag a:hover { text-decoration: underline; }
-.flag .vs { font: 500 1rem/1 var(--font-name); color: var(--text-mute); }
-.flag .vs b { font: 600 1.02rem/1 var(--font-data); color: var(--text); }
+.flag .vs { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
+.flag .vs b { font: 600 .92rem/1 var(--font-data); color: var(--text); }
 /* the rest, one line each; a line opens its card in place */
-.quiet-heads { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin: 1.6rem 0 0; }
-.quiet-heads > span:first-child { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); margin-right: .4rem; }
+.quiet-heads { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; margin: 1.2rem 0 0; }
+.quiet-heads > span:first-child { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); margin-right: .4rem; }
 .quiet-heads .chip { opacity: .7; }
 
 /* side by side where both fit */
-@container (min-width: 104rem) {
+@container (min-width: 84rem) {
   .money-band { grid-template-columns: minmax(0, 2.6fr) minmax(0, 1fr); align-items: start; }
   .keys .grid { grid-template-columns: minmax(0, 1fr); }
   .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-@container (min-width: 150rem) { .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); } }
+@container (min-width: 120rem) { .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); } }
 /* the rule between lines sits at the card's own width, like the border over and under the list */
 
 /* where a plan or key card goes when clicked: the breakdown's word and an arrow down, at the foot's right */
-.pcard .drill, .kcard .drill { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; font: 500 1.05rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
+.pcard .drill, .kcard .drill { margin-left: auto; display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }
 .pcard .drill .go, .kcard .drill .go { color: var(--text-mute); }
 .pcard:hover .drill, .kcard:hover .drill, .pcard:hover .drill .go, .kcard:hover .drill .go { color: var(--key-light); }
 /* a plan card's foot is full with its three figures, so where it goes takes the line under them, at the right */
@@ -151,33 +151,33 @@
 
 /* ---------- live additions: a plan's value beside "On your plan", splice's own count labelled, a cut read said ---------- */
 .brow .cost { display: flex; flex-direction: column; align-items: flex-end; gap: .3rem; }
-.brow .cost .val { white-space: nowrap; font: 500 1rem/1 var(--font-data); color: var(--text-mute); }
-.ctd { font: 500 1rem/1 var(--font-name); color: var(--text-mute); margin-right: .9rem; }
-.pickline:not(:empty) { margin: 0 0 3rem; }
+.brow .cost .val { white-space: nowrap; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
+.ctd { font: 500 .9rem/1 var(--font-name); color: var(--text-mute); margin-right: .9rem; }
+.pickline:not(:empty) { margin: 0 0 1.65rem; }
 .pickline .lhead { margin-left: 0; }
-.usage > .empty { color: var(--text-mute); font: 500 1.2rem/1.4 var(--font-name); }
+.usage > .empty { color: var(--text-mute); font: 500 1rem/1.4 var(--font-name); }
 /* each command still being read, in a line of its own above the figures it is missing from (marlin, Oct 12) */
-.reading { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.4rem; margin: 0 0 1.4rem; font: 500 1rem/1.3 var(--font-name); color: var(--text-mute); }
+.reading { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.05rem; margin: 0 0 1.05rem; font: 500 .9rem/1.3 var(--font-name); color: var(--text-mute); }
 .reading .rd { display: inline-flex; align-items: center; gap: .6rem; }
 .col .fails { position: absolute; top: calc(100% + .2rem); left: 50%; width: .45rem; height: .45rem; margin-left: -.225rem; border-radius: 50%; background: var(--limit); }  /* the slice had failed requests: opens them on Requests */
 
 /* ---------- each command's tokens, under the breakdown: input, cached, written to cache, output ---------- */
-.lcol { display: flex; flex-direction: column; gap: 3.2rem; min-width: 0; }
-.tokens > header .tsub { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); }
-.tokens .card { padding: .4rem 1.5rem .6rem; }
+.lcol { display: flex; flex-direction: column; gap: 1.75rem; min-width: 0; }
+.tokens > header .tsub { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
+.tokens .card { padding: .4rem 1.15rem .6rem; }
 .trow {
-  display: grid; grid-template-columns: minmax(12rem, 1.4fr) repeat(5, minmax(0, 1fr)); gap: 1.2rem; align-items: baseline;
-  padding: 1rem 0; border-top: .12rem solid var(--track); font: 500 1.05rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text);
+  display: grid; grid-template-columns: minmax(9.5rem, 1.4fr) repeat(5, minmax(0, 1fr)); gap: .9rem; align-items: baseline;
+  padding: .75rem 0; border-top: .12rem solid var(--track); font: 500 .95rem/1.25 var(--font-data); font-variant-numeric: tabular-nums; color: var(--text);
 }
-.trow.thead { border-top: 0; padding: .8rem 0 .7rem; font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.trow.thead { border-top: 0; padding: .8rem 0 .7rem; font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 .trow .num { text-align: right; min-width: 0; }
 .trow .num i.of { display: block; margin-top: .25rem; font: 500 .85rem/1.2 var(--font-name); font-style: normal; color: var(--text-mute); }
-.trow .nr { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.trow .nr { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }
 .trow .who { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; min-width: 0; }
 .trow .sb { font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); }
-.tokens .empty { margin: 1rem 0; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }
+.tokens .empty { margin: .75rem 0; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 /* an account's cold turns, under its command, the account's name indented in the name face */
 .trow.tacct { border-top: 0; padding: .2rem 0 .8rem; }
-.trow.tacct .an { padding-left: 1rem; font: 500 .95rem/1.25 var(--font-name); color: var(--text-mute); min-width: 0; overflow-wrap: anywhere; }
+.trow.tacct .an { padding-left: .75rem; font: 500 .88rem/1.25 var(--font-name); color: var(--text-mute); min-width: 0; overflow-wrap: anywhere; }
 /* a group no request reported tokens for says so where its figure would stand (v0.4.0 section 9: never 0) */
-.brow .share .nr { font: 500 .95rem/1.2 var(--font-name); color: var(--text-mute); }
+.brow .share .nr { font: 500 .88rem/1.2 var(--font-name); color: var(--text-mute); }

@@ -91,8 +91,8 @@
 }
 @container (min-width: 120rem) {
   .room { grid-template-columns: 34rem minmax(0, 1fr) 22rem; grid-template-areas: "members talk feed"; grid-template-rows: auto; }
-  .talk { position: sticky; top: 1.2rem; height: calc(100vh - 32rem); contain: none; }
-  .feed { position: sticky; top: 1.2rem; height: calc(100vh - 32rem); min-height: 28rem; }
+  .talk { position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 32rem - var(--bar-h)); contain: none; }
+  .feed { position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 32rem - var(--bar-h)); min-height: 28rem; }
 }
 
 
@@ -125,7 +125,7 @@
 /* Timeline: a time gutter, then one column per member; a message is a line from its sender's column to its receiver's */
 .tl { display: grid; grid-template-columns: 3.6rem repeat(var(--n), minmax(0, 1fr)); gap: .4rem .6rem; align-items: center; }
 .tl > time { grid-column: 1; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
-.tlhead { grid-row: 1; position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: .35rem; min-width: 0; padding: .5rem .2rem .7rem; background: var(--wall); border-bottom: .22rem solid var(--c); }
+.tlhead { grid-row: 1; position: sticky; top: var(--bar-h); z-index: 1; display: flex; flex-direction: column; gap: .35rem; min-width: 0; padding: .5rem .2rem .7rem; background: var(--wall); border-bottom: .22rem solid var(--c); }
 .tlhead .party { overflow: hidden; text-overflow: ellipsis; }
 .tlhead .tlcost { font: 500 .85rem/1.25 var(--font-data); color: var(--text-mute); }
 .tlact, .tlnote { display: flex; align-items: center; gap: .4rem; min-width: 0; font: 400 .95rem/1.2 var(--font-name); color: var(--text-body); border-left: .25rem solid var(--c); padding-left: .45rem; }

@@ -78,10 +78,11 @@
 }
 .requests.open .list { display: none; }
 .requests.open .pane { display: flex; }
+.page { --side-by-side: 120; } /* kit.js sideBySide() reads this: the same 120rem as the container query below */
 @container (min-width: 120rem) {
   .requests, .requests.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
   .requests .list, .requests.open .list { display: flex; flex: 0 0 58rem; }
-  .requests.open .pane { flex: 1 1 0; max-width: 112rem; position: sticky; top: 1.6rem; height: calc(100vh - 11rem); overflow: hidden; }
+  .requests.open .pane { flex: 1 1 0; max-width: 112rem; position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 11rem - var(--bar-h)); overflow: hidden; }
   .requests.open .rqpane .scroll { overflow-y: auto; }
 }
 /* A WIDER SCREEN MUST NOT GIVE THE LIST LESS THAN A NARROW ONE. The column is a fraction of a 3828-wide screen while

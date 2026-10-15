@@ -18,10 +18,11 @@
 .cmds .pane { display: none; }
 .cmds.open .list { display: none; }
 .cmds.open .pane { display: flex; }
+.page { --side-by-side: 90; } /* kit.js sideBySide() reads this: the same 90rem as the container query below */
 @container (min-width: 90rem) {
   .cmds, .cmds.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
   .cmds .list, .cmds.open .list { display: flex; flex: 0 0 36rem; }
-  .cmds .pane, .cmds.open .pane { display: flex; flex: 1 1 0; max-width: 150rem; position: sticky; top: 1.2rem; height: calc(100vh - 12rem); }
+  .cmds .pane, .cmds.open .pane { display: flex; flex: 1 1 0; max-width: 150rem; position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - 12rem - var(--bar-h)); }
   .pane .close { display: none; }
 }
 .cmds .add[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }

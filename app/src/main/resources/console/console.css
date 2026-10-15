@@ -32,6 +32,7 @@
   --ink-w: .16rem;                    /* the outline: thick enough to read as drawn */
   --cast: .5rem;                      /* the hard shadow's offset */
   --gap-col: 3.2rem; --gap-card: 1.6rem;
+  --bar-h: 3.4rem;                    /* the nav bar across the top; a sticky pane clears it */
 
   --t-snap: 240ms; --t-move: 420ms;
   --e-out: cubic-bezier(.22, 1, .36, 1); --e-io: cubic-bezier(.65, 0, .35, 1);
@@ -74,7 +75,7 @@ body {
   min-height: 100vh; position: relative;
 }
 /* the wall: grain over the whole page, and one still light shaft from the upper left. The shaft is a stripe
-   in width units that leaves through the left edge, behind the nav band, so no page height cuts it. */
+   in width units that leaves through the left edge, so no page height cuts it. */
 body::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; background: var(--shaft);
   clip-path: polygon(23.4vw 0, 44.2vw 0, 0 83.2vw, -20.8vw 83.2vw);
@@ -87,32 +88,40 @@ body::before {
 button { font: inherit; color: inherit; }
 :focus-visible { outline: .16rem solid var(--key-light); outline-offset: .2rem; }
 
-/* ---------- the frame: the nav on the left, the page on the wall ---------- */
-.app { position: relative; z-index: 1; display: grid; grid-template-columns: 15rem 1fr; min-height: 100vh; }
-/* the nav's band runs the whole page; the nav itself stays in view */
-.app::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 15rem;
-  background: var(--wall-low); border-right: var(--ink-w) solid var(--ink);
-}
+/* ---------- the frame: the nav across the top, the page on the wall under it (Marcos, Oct 15: "let's also move the
+   navigation from the left to the top") ---------- */
+.app { position: relative; z-index: 1; min-height: 100vh; }
+/* the bar: the wordmark, the pages inline after it, the stale mark and the theme toggle at the right end. It stays in
+   view, on the wall's own colour with a thin ink line under it, and an anchor scrolls to just under it, never behind it.
+   A sticky pane on a page clears it with top: calc(var(--bar-h) + 1rem). */
+html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .side {
-  padding: 2.4rem 1.6rem; display: flex; flex-direction: column; gap: 2.4rem;
-  position: sticky; top: 0; height: 100vh;
+  position: sticky; top: 0; z-index: 40; height: var(--bar-h); padding: 0 2.4rem;
+  display: flex; align-items: center; gap: 2rem;
+  background: var(--wall); border-bottom: .1rem solid var(--ink);
 }
-.mark { font: 400 2.6rem/1 var(--font-lead); letter-spacing: -.01em; padding-left: .8rem; }
-.nav { display: flex; flex-direction: column; gap: .3rem; }
+.mark { flex: none; font: 400 1.5rem/1 var(--font-lead); letter-spacing: -.01em; }
+.nav { display: flex; align-self: stretch; gap: .15rem; min-width: 0; }
 .nav a {
-  font: 400 1.15rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
-  padding: .75rem .8rem; border-radius: var(--r-obj); position: relative;
+  display: flex; align-items: center; padding: 0 .75rem; position: relative; white-space: nowrap;
+  font: 400 .95rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
+  transition: color 140ms var(--e-out);
 }
-.nav a:hover { color: var(--text); background: var(--track); }
-.nav a[aria-current="page"] { color: var(--text); background: var(--obj); box-shadow: 0 0 0 var(--ink-w) var(--ink); }
-.nav a[aria-current="page"]::before {
-  content: ""; position: absolute; left: -1.6rem; top: .55rem; bottom: .55rem; width: .3rem;
-  background: var(--key-light); border-radius: 0 .2rem .2rem 0;
+/* the page he is on: its name in full ink and the key's lamp on the bar's ink line under it; hover draws the same line
+   in the track's ink, so the bar says where a press goes before it goes */
+.nav a::before {
+  content: ""; position: absolute; left: .75rem; right: .75rem; bottom: -.1rem; height: .22rem; border-radius: .2rem .2rem 0 0;
+  background: var(--track-line); opacity: 0; transform: scaleX(.5);
+  transition: opacity 140ms var(--e-out), transform 140ms var(--e-out);
 }
-.side .foot { margin-top: auto; display: flex; gap: .6rem; padding-left: .8rem; }
-/* the stale mark (kit.js markStale): the key's ink, small, wrapping beside the theme toggle rather than widening the column */
-.side .foot .stale { align-self: center; max-width: 11rem; font-size: .78rem; line-height: 1.25; color: var(--key-ink); }
+.nav a:hover { color: var(--text); }
+.nav a:hover::before { opacity: 1; transform: none; }
+.nav a[aria-current="page"] { color: var(--text); }
+.nav a[aria-current="page"]::before { background: var(--key-ink); opacity: 1; transform: none; }
+.nav a:focus-visible { outline-offset: -.4rem; border-radius: var(--r-in); }
+.side .foot { flex: none; margin-left: auto; display: flex; align-items: center; gap: .9rem; }
+/* the stale mark (kit.js markStale): the key's ink, small, on one line beside the theme toggle */
+.side .foot .stale { font-size: .85rem; line-height: 1.25; color: var(--key-ink); white-space: nowrap; }
 
 .page { padding: 3.2rem 4rem 6rem; min-width: 0; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; margin-bottom: 3.2rem; }
@@ -439,20 +448,21 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 
 /* ---------- the review's own panel: not part of the console ---------- */
 .mock {
-  position: fixed; left: 1.2rem; bottom: 5.6rem; width: 12.6rem; z-index: 50; display: flex; flex-direction: column; gap: .6rem; align-items: stretch;  /* in the sidebar's empty middle, off the board */
+  position: fixed; left: 1.2rem; bottom: 5.6rem; width: 12.6rem; z-index: 50; display: flex; flex-direction: column; gap: .6rem; align-items: stretch;  /* at the lower left, over the page: the review's alone */
   padding: .7rem .8rem; border: .12rem dashed #d14d9b; border-radius: .5rem; background: rgba(10, 8, 14, .86);
   font: 500 .9rem/1 var(--font-data); color: #f5c7e3;
 }
 .mock button { font: 500 .9rem/1 var(--font-data); color: #f5c7e3; background: none; border: .1rem solid #d14d9b; border-radius: .35rem; padding: .45rem .6rem; cursor: pointer; text-align: left; }
 
 @media (max-width: 825px) {  /* 1100 px times --scale: a media query can't read the root size */
-  .app { grid-template-columns: 1fr; }
-  .app::before { display: none; }
-  .side { position: static; height: auto; background: var(--wall-low); flex-direction: row; align-items: center; flex-wrap: wrap; border-right: 0; border-bottom: var(--ink-w) solid var(--ink); }
-  .nav { flex-direction: row; flex-wrap: wrap; }
-  .side .foot { margin: 0 0 0 auto; }
-  .page { padding: 2rem 1.4rem 5rem; }
-  .head h1 { font-size: 3rem; }
+  /* a narrow screen: the wordmark and the toggle on the first line, every page on the second, which scrolls sideways
+     rather than dropping one */
+  .side { position: static; height: auto; flex-wrap: wrap; row-gap: .3rem; padding: .7rem 1.4rem 0; }
+  .nav { order: 1; flex: 1 0 100%; height: 2.8rem; overflow-x: auto; scrollbar-width: none; }
+  .nav a:first-child { padding-left: 0; }
+  .nav a::before { bottom: 0; }
+  .nav a:first-child::before { left: 0; }
+  .page { padding: 1.2rem 1.4rem 4rem; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 /* reading off: a waiting card's quiet door to the switch, drawn as Sessions' "Open on Requests" door (fin, hitstop

@@ -466,7 +466,7 @@ function toggleTheme() {
   try { localStorage.setItem(THEME_KEY, h.dataset.theme); } catch { /* storage off: this page still switches */ }
 }
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
-// selected box reads as a strip with its other tabs torn off. The column keeps its width, its wordmark and its
+// selected box reads as a strip with its other tabs torn off. The top bar keeps its height, its wordmark and its
 // theme toggle either way, so nothing moves when the links arrive.
 function drawNav() {
   const side = document.querySelector(".side");
@@ -488,7 +488,7 @@ document.querySelector('.side [data-act="theme"]')?.addEventListener("click", to
 
 // THE STALE MARK (web-console.md:385, :397; gap 460): splice.toml on disk no longer matches what the daemon booted with,
 // so a change written there, by this console or by hand, waits on a restart. /health says so as topologyStale; the
-// mark sits in the side column's foot on every page and is absent while the two match. Read once the page's scripts have
+// mark sits at the top bar's right end, beside the theme toggle, on every page and is absent while the two match. Read once the page's scripts have
 // loaded (API comes after this file), then every 15 s; an unanswered read leaves the mark as it was.
 const STALE_READ_MS = 15_000;
 async function markStale() {

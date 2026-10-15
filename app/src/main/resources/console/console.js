@@ -1,4 +1,4 @@
-// The sidebar belongs to the console. Sections get their own DOM, requests and lifetime.
+// The top bar belongs to the console. Sections get their own DOM, requests and lifetime.
 "use strict";
 
 const CONSOLE = (() => {

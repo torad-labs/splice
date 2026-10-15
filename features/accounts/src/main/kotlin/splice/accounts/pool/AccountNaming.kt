@@ -8,6 +8,7 @@ import kotlinx.serialization.json.put
 import splice.core.auth.AccountRef
 import splice.core.util.JsonScalars
 
+// why: allow long provider email addresses while bounding the text rendered as an account name.
 private const val MAX_ACCOUNT_EMAIL_CHARS = 254
 
 /** What a row is called, its [ref] when its credential proved one, and whether the name is splice's default rather

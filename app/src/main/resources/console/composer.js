@@ -3,7 +3,9 @@
 // "let's bring a composer into the picture", after the Temple's).
 //
 // WHERE EVERY VALUE COMES FROM. The composer carries no data of its own:
-//   GET  /api/sessions               every 10 s while the tab is in view and the console unlocked: the live sessions
+//   GET  /api/sessions               every 30 s while the tab is in view and the console unlocked, and again when the
+//                                    picker opens, the tab returns or a send lands (the read holds every ended session,
+//                                    hundreds of KB, so it is not asked often): the live sessions
 //   GET  /api/sessions/{id}/screen   just before a send: a session showing a menu takes no typing, since a typed Enter
 //                                    would press its highlighted choice
 //   POST /api/sessions/{id}/say      the message, typed into the terminal splice opened for it (200 = typed)
@@ -15,7 +17,7 @@
 
 (() => {
   const STORE = "splice-console-composer-target";
-  const EVERY_MS = 10_000;
+  const EVERY_MS = 30_000;
   const SAID_MS = 4_000;
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   const PLACEHOLDER = `Message a session. ${MAC ? "⌘K" : "Ctrl+K"}`;

@@ -14,7 +14,8 @@ Three inputs, in order of authority:
    below is enumerated from a named file, so the denominator is the code, not memory (§2).
 2. **The v0.4.0 feature list, section 9** (`.dev/campaigns/v0.4.0/FEATURES.md`), which already
    makes a redesigned, complete console a user-required item and records decisions from
-   2026-09-13: left rail navigation, per-knob source and live-versus-restart disposition, honest
+   2026-09-13: top bar navigation (a left rail until Marcos, 2026-10-15: "let's also move the
+   navigation from the left to the top"), per-knob source and live-versus-restart disposition, honest
    subscription data, masked secrets, a coverage gate. Those decisions are carried here unchanged,
    with one exception the operator made on 2026-09-17: the visual world may be replaced; it no
    longer has to be the Torad plate system.

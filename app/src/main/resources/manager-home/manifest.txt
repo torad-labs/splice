@@ -8,3 +8,5 @@ CLAUDE.md
 .claude/skills/splice/reference/reliability-mcp-install.md
 .claude/skills/splice/reference/cli.md
 .claude/skills/splice/reference/accounts-sessions-console.md
+.claude/skills/splice/reference/heads-and-backends.md
+.claude/skills/splice/reference/toml-reference.md

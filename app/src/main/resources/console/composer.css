@@ -7,6 +7,8 @@
   color: var(--text); font-family: var(--font-name);
 }
 body.locked .cmp, body:has(.scrim) .cmp { display: none; }  /* a locked console sends nothing; a sheet has the stage */
+/* beside a pane that fills the screen on the right (Sessions, Requests, Models, Settings), composer.js centres it under
+   the column left of the pane, so the pane's own field and buttons are never under it */
 /* the page scrolls clear of it: its last line stops above the field, never under it */
 main.page::after { content: ""; display: block; height: 3.5rem; }
 

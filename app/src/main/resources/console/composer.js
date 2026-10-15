@@ -145,6 +145,24 @@
     field.style.height = "auto";
     field.style.height = `${field.scrollHeight}px`;
   }
+  /** Bottom centre, unless a pane that fills the screen stands on the right under where it would sit: then it is
+   *  centred under the column left of that pane, so the pane's own Message field and buttons are never under it
+   *  (Sessions at 1440: the open conversation's field sat under the composer). */
+  function place() {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 12;
+    const vw = document.documentElement.clientWidth, w = Math.min(50 * rem, vw - 2 * rem);
+    const pane = [...document.querySelectorAll("main.page .pane")].map((el) => el.getBoundingClientRect())
+      .find((r) => r.width > 0 && r.height > innerHeight / 2 && r.left > vw / 4 && r.left < (vw + w) / 2 + rem);
+    let left = "", width = "";
+    if (pane) {
+      const main = document.querySelector("main.page");
+      const from = main.getBoundingClientRect().left + (parseFloat(getComputedStyle(main).paddingLeft) || 0);
+      const room = pane.left - from - 1.5 * rem;
+      if (room >= 24 * rem) { width = `${Math.round(Math.min(room, 50 * rem))}px`; left = `${Math.round(from + room / 2)}px`; }
+    }
+    if (dock.style.left !== left) dock.style.left = left;
+    if (dock.style.width !== width) dock.style.width = width;
+  }
 
   // the line above the field: what a send did, or why it did not, with the one way out it offers
   function say(next) {
@@ -375,12 +393,18 @@
       field.focus();
     }, true);
 
-    // the page's address names the open session on Sessions; the router and Sessions move it without an event
+    // the page's address names the open session on Sessions; the router and Sessions move it without an event, and a
+    // page opens or closes its pane on its own clock, so both are looked at a little more than once a second
     st.href = location.href;
-    setInterval(() => { if (location.href !== st.href) { st.href = location.href; settle(); draw(); } }, 700);
+    setInterval(() => {
+      if (!locked()) place();
+      if (location.href !== st.href) { st.href = location.href; settle(); draw(); }
+    }, 700);
+    addEventListener("resize", place);
     setInterval(refresh, EVERY_MS);
     document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - st.readAt > EVERY_MS / 2) refresh(); });
     draw();
+    place();
     refresh();
   }
   // after console.js's own DOMContentLoaded (it loads first), so the router never counts the dock among the page's nodes

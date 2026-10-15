@@ -7,10 +7,10 @@
    panel's log, the page as a container — is sessions.css, which this page links beside console.css. */
 
 /* ---------- the tabs: one per team, its members' colours on it ---------- */
-.tabs { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin: -1rem 0 2.8rem; }
+.tabs { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin: -.75rem 0 1.54rem; }
 .tab {
-  display: inline-flex; align-items: center; gap: .85rem; padding: .7rem 1rem .7rem 1.1rem; cursor: pointer; position: relative;
-  font: 500 1.25rem/1 var(--font-name); color: var(--text-body); background: transparent;
+  display: inline-flex; align-items: center; gap: .85rem; padding: .7rem .75rem .7rem .83rem; cursor: pointer; position: relative;
+  font: 500 1rem/1 var(--font-name); color: var(--text-body); background: transparent;
   border: var(--ink-w) solid var(--track-line); border-radius: var(--r-obj);
 }
 .tab:hover { color: var(--text); background: var(--track); }
@@ -20,64 +20,64 @@
 .tab .blots i.open { background: transparent; box-shadow: inset 0 0 0 .14rem var(--c); }
 .tab.needs::before { content: ""; width: .7rem; height: .7rem; border-radius: 50%; background: var(--key-ink); box-shadow: 0 0 .7rem .1rem rgba(255, 215, 154, .55); }
 .tabs .new { display: inline-flex; align-items: center; gap: .6rem; }
-.tabs .new .plus { margin-block: -.225rem; }
+.tabs .new .plus { margin-block: -.23rem; }
 .tabs .new[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }
-.plus { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: .14rem solid currentColor; display: grid; place-items: center; font: 500 1.05rem/1 var(--font-data); }
-.tabs .rule { width: .16rem; height: 2.4rem; background: var(--track-line); border-radius: .1rem; margin: 0 .3rem; }
+.plus { width: 1.2rem; height: 1.2rem; border-radius: 50%; border: .14rem solid currentColor; display: grid; place-items: center; font: 500 .95rem/1 var(--font-data); }
+.tabs .rule { width: .16rem; height: 1.49rem; background: var(--track-line); border-radius: .1rem; margin: 0 .3rem; }
 .tabs .fold { margin-left: auto; }
 /* a project's teams sit together under its muted name, in Sessions' group order (PROJECTS.md); the pick line above */
-.tabs .tcluster { display: inline-flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-right: 1.4rem; }
-.tabs .tproj { font: 500 1.05rem/1 var(--font-name); color: var(--text-mute); margin-right: .1rem; }
-#teams > .lhead, #teams > .ptiles { margin: -1rem 0 2.2rem; }
+.tabs .tcluster { display: inline-flex; align-items: center; gap: .9rem; flex-wrap: wrap; margin-right: 1.05rem; }
+.tabs .tproj { font: 500 .95rem/1 var(--font-name); color: var(--text-mute); margin-right: .1rem; }
+#teams > .lhead, #teams > .ptiles { margin: -.75rem 0 1.21rem; }
 #teams > .lhead + .tabs, #teams > .ptiles + .tabs { margin-top: 0; }
 .team.archived .team-head h2 { color: var(--text-body); }
 
 /* ---------- the team's head: name, goal, where it works and what it has cost ---------- */
-.team-head { display: flex; align-items: flex-start; gap: 2rem; margin-bottom: 2.4rem; }
+.team-head { display: flex; align-items: flex-start; gap: 1.1rem; margin-bottom: 1.32rem; }
 .team-head .who { flex: 1; min-width: 0; }
-.team-head h2 { font: 400 3rem/1 var(--font-lead); letter-spacing: -.01em; margin: 0; }
-.team-head .goal { margin: .75rem 0 0; font: 400 1.3rem/1.45 var(--font-name); color: var(--text-body); max-width: 72rem; }
-.team-head .where { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1.8rem; margin-top: 1.05rem; }
+.team-head h2 { font: 400 1.4rem/1 var(--font-lead); letter-spacing: -.01em; margin: 0; }
+.team-head .goal { margin: .75rem 0 0; font: 400 1rem/1.45 var(--font-name); color: var(--text-body); max-width: 50.4rem; }
+.team-head .where { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1.35rem; margin-top: .79rem; }
 /* the requests line keeps its own row under the folder whatever the header's width, so End all never moves it (marlin p227) */
 .team-head .where > .figs { flex-basis: 100%; }
 .repo { display: inline-flex; align-items: center; gap: .45rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
-.repo svg { width: 1.15rem; height: 1.15rem; }
-.figs { display: inline-flex; flex-wrap: wrap; gap: .4rem 1.1rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
+.repo svg { width: .92rem; height: .92rem; }
+.figs { display: inline-flex; flex-wrap: wrap; gap: .4rem .83rem; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .figs .since { color: var(--text-mute); }
 .team-head .acts { display: flex; align-items: center; gap: .7rem; position: relative; }
 .team-head .acts .menu { top: calc(100% + .5rem); right: 0; }
 
 /* ---------- the room ---------- */
-.room { display: grid; gap: 2.4rem var(--gap-col); grid-template-columns: minmax(0, 1fr); grid-template-areas: "members" "talk" "feed"; align-items: start; }
+.room { display: grid; gap: 1.32rem var(--gap-col); grid-template-columns: minmax(0, 1fr); grid-template-areas: "members" "talk" "feed"; align-items: start; }
 /* the members are one column on one rail at every width, each lamp in its socket: a grid of 28rem cards at 1440 put the
    lamps in the gutters and clipped roles and activity (builder3's Teams build, Marlin Oct 10) */
-.members { grid-area: members; position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--gap-card); padding-left: 3.4rem; }
-.members::before { content: ""; position: absolute; left: .95rem; top: 1.4rem; bottom: 1.4rem; width: .7rem; background: var(--rail); border-radius: .35rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
+.members { grid-area: members; position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--gap-card); padding-left: 1.87rem; }
+.members::before { content: ""; position: absolute; left: .95rem; top: 1.05rem; bottom: 1.05rem; width: .7rem; background: var(--rail); border-radius: .35rem; box-shadow: 0 0 0 var(--ink-w) var(--ink); }
 /* the members that left, under the cards: muted, each with when it left and what it did while on the team (spec §14) */
-.members .gone { margin-top: .6rem; padding: 1.1rem 1.3rem; border: .12rem dashed var(--track-line); border-radius: var(--r-obj); }
-.members .gone h3 { margin: 0 0 .8rem; font: 500 1.1rem/1 var(--font-name); color: var(--text-mute); }
+.members .gone { margin-top: .6rem; padding: .83rem .98rem; border: .12rem dashed var(--track-line); border-radius: var(--r-obj); }
+.members .gone h3 { margin: 0 0 .8rem; font: 500 .95rem/1 var(--font-name); color: var(--text-mute); }
 .members .gone ul { display: flex; flex-direction: column; gap: .9rem; margin: 0; padding: 0; list-style: none; }
-.members .gone li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1.2rem; color: var(--text-mute); }
+.members .gone li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem .9rem; color: var(--text-mute); }
 .members .gone .ghead, .members .gone time { font: 500 .95rem/1 var(--font-data); }
 .members .gone .use { flex-basis: 100%; }
-.talk { grid-area: talk; height: 40rem; }
-.feed { grid-area: feed; max-height: 34rem; }
+.talk { grid-area: talk; height: 28rem; }
+.feed { grid-area: feed; max-height: 24rem; }
 .talk, .feed {
   display: flex; flex-direction: column; min-width: 0; overflow: hidden; background: var(--obj);
   border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--wall-low), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
-.talk > header, .feed > header { display: flex; align-items: center; gap: 1rem; min-height: 4.2rem; padding: .7rem 1.2rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
+.talk > header, .feed > header { display: flex; align-items: center; gap: .75rem; min-height: 3rem; padding: .7rem .9rem; background: var(--obj-high); border-bottom: var(--ink-w) solid var(--ink); }
 .feed > header .dname { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
 /* the feed is a sample, and says so (spec §14): Claude Code asks for a label every 30 s, in fin's words, Oct 13 */
 .feed > header .sampled { font: 500 .95rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
 .day { display: flex; align-items: center; gap: .3rem; }
-.day .dname { font: 500 1.2rem/1 var(--font-name); min-width: 5.6rem; text-align: center; }
-@container (min-width: 64rem) {
-  .room { grid-template-columns: minmax(0, 1fr) 24rem; grid-template-areas: "members members" "talk feed"; }
-  .feed { height: 40rem; max-height: none; }
+.day .dname { font: 500 .95rem/1 var(--font-name); min-width: 4.4rem; text-align: center; }
+@container (min-width: 52rem) {
+  .room { grid-template-columns: minmax(0, 1fr) 18rem; grid-template-areas: "members members" "talk feed"; }
+  .feed { height: 28rem; max-height: none; }
 }
-/* from 88rem (1440 is 97) the members column is 3828's own 46rem, so its card is the same card, and the day reads down the
+/* from 72rem the members column is 3828's own 46rem, so its card is the same card, and the day reads down the
    second column, the talk and under it the activity: a sticky talk there left a 574 x 665 px hole under itself beside a
    feed cut off at its own edge in the first column (builder3's full day, console-lead, Oct 10). The
    members span both rows, so a tall column's extra height goes to the second row only (1fr): shared across two auto
@@ -85,45 +85,45 @@
    short team's members, 540 x 650 px beside the activity for three members at 1440 (splice-sessions, Oct 13), so the
    activity reads under the members and the talk runs the whole height beside both: its size is contained, so its
    messages never stretch the rows, and it stretches to whatever the left column needs */
-@container (min-width: 88rem) {
-  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "feed talk"; grid-template-rows: auto auto; }
-  .talk { height: auto; min-height: 40rem; contain: size; align-self: stretch; }
+@container (min-width: 72rem) {
+  .room { grid-template-columns: 34rem minmax(0, 1fr); grid-template-areas: "members talk" "feed talk"; grid-template-rows: auto auto; }
+  .talk { height: auto; min-height: 28rem; contain: size; align-self: stretch; }
 }
-@container (min-width: 128rem) {
-  .room { grid-template-columns: 46rem minmax(0, 1fr) 30rem; grid-template-areas: "members talk feed"; grid-template-rows: auto; }
-  .talk { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); contain: none; }
-  .feed { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); min-height: 40rem; }
+@container (min-width: 120rem) {
+  .room { grid-template-columns: 34rem minmax(0, 1fr) 22rem; grid-template-areas: "members talk feed"; grid-template-rows: auto; }
+  .talk { position: sticky; top: 1.2rem; height: calc(100vh - 32rem); contain: none; }
+  .feed { position: sticky; top: 1.2rem; height: calc(100vh - 32rem); min-height: 28rem; }
 }
 
 
 /* ---------- the views: Board, By command, By role, Timeline (web-console §4.13; marlin, Oct 13) ---------- */
-.views { display: flex; flex-wrap: wrap; gap: .6rem; margin: -.6rem 0 2.2rem; }
+.views { display: flex; flex-wrap: wrap; gap: .6rem; margin: -.6rem 0 1.21rem; }
 .views .view { font: 600 .95rem/1 var(--font-data); padding: .6rem .95rem; border-radius: var(--r-in); cursor: pointer; background: transparent; color: var(--text-mute); border: .12rem solid var(--track-line); }
 .views .view[aria-pressed="true"] { background: var(--key-light); color: #241d14; border-color: var(--ink); }
 /* a view other than Board holds its members and their hand-offs in one column, the grid's members area */
-.mcol { grid-area: members; display: flex; flex-direction: column; gap: 2.4rem; min-width: 0; }
-.members.bays { gap: 2rem; }
+.mcol { grid-area: members; display: flex; flex-direction: column; gap: 1.32rem; min-width: 0; }
+.members.bays { gap: 1.1rem; }
 .bay { display: flex; flex-direction: column; gap: var(--gap-card); }
-.bayname { display: flex; align-items: center; gap: .7rem; margin: 0; font: 500 1.25rem/1 var(--font-name); color: var(--text-body); }
+.bayname { display: flex; align-items: center; gap: .7rem; margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
 .bayname i { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
 .bayname .bcount { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
-.handoffs { padding: 1.1rem 1.3rem 1.3rem; background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); }
-.handoffs h3 { display: flex; align-items: center; gap: 1rem; margin: 0 0 .9rem; }
+.handoffs { padding: .83rem .98rem .98rem; background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); }
+.handoffs h3 { display: flex; align-items: center; gap: .75rem; margin: 0 0 .9rem; }
 .handoffs h3 .dname { margin-left: auto; font: 500 .95rem/1 var(--font-data); color: var(--text-mute); }
-.handoffs .empty { margin: 0; font: 500 1.05rem/1.3 var(--font-name); color: var(--text-mute); }
+.handoffs .empty { margin: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
 .handoffs .note { margin: .8rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-mute); }
 .pairs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
 .pairs li { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .pairs .n { margin-left: auto; font: 600 .95rem/1 var(--font-data); color: var(--text); }
 .pairs time { font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
-.timerule { position: relative; height: 2.6rem; border-radius: .35rem; background: var(--obj-high); box-shadow: inset 0 0 0 var(--ink-w) var(--track-line); }
+.timerule { position: relative; height: 1.8rem; border-radius: .35rem; background: var(--obj-high); box-shadow: inset 0 0 0 var(--ink-w) var(--track-line); }
 .timerule i { position: absolute; top: .4rem; bottom: .4rem; width: .3rem; margin-left: -.15rem; border-radius: .15rem; background: var(--c); }
-.hours { position: relative; height: 1.4rem; margin-top: .45rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
+.hours { position: relative; height: 1.2rem; margin-top: .45rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 .hours span { position: absolute; top: 0; transform: translateX(-50%); }
 .hours span:first-child { transform: none; }
 .hours span:last-child { transform: translateX(-100%); }
 /* Timeline: a time gutter, then one column per member; a message is a line from its sender's column to its receiver's */
-.tl { display: grid; grid-template-columns: 4.4rem repeat(var(--n), minmax(0, 1fr)); gap: .4rem .6rem; align-items: center; }
+.tl { display: grid; grid-template-columns: 3.6rem repeat(var(--n), minmax(0, 1fr)); gap: .4rem .6rem; align-items: center; }
 .tl > time { grid-column: 1; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
 .tlhead { grid-row: 1; position: sticky; top: 0; z-index: 1; display: flex; flex-direction: column; gap: .35rem; min-width: 0; padding: .5rem .2rem .7rem; background: var(--wall); border-bottom: .22rem solid var(--c); }
 .tlhead .party { overflow: hidden; text-overflow: ellipsis; }
@@ -131,36 +131,36 @@
 .tlact, .tlnote { display: flex; align-items: center; gap: .4rem; min-width: 0; font: 400 .95rem/1.2 var(--font-name); color: var(--text-body); border-left: .25rem solid var(--c); padding-left: .45rem; }
 .tlact .obj, .tlnote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tlact svg, .tlnote svg { flex: none; }
-.tlmsg { position: relative; height: 1.4rem; }
+.tlmsg { position: relative; height: 1.2rem; }
 .tlmsg::before { content: ""; position: absolute; left: .3rem; right: .3rem; top: 50%; height: .22rem; margin-top: -.11rem; background: var(--c); border-radius: .11rem; }
 .tlmsg::after { content: ""; position: absolute; top: 50%; right: 0; margin-top: -.45rem; border: .45rem solid transparent; border-left: .6rem solid var(--c); border-right: 0; }
 .tlmsg.back::after { right: auto; left: 0; border-left: 0; border-right: .6rem solid var(--c); }
-.tlcol > .empty { margin: 0; font: 500 1.05rem/1.3 var(--font-name); color: var(--text-mute); }
+.tlcol > .empty { margin: 0; font: 500 .95rem/1.3 var(--font-name); color: var(--text-mute); }
 /* the timeline wants width: from 88rem it takes the first column's free share, the chat and the activity beside it */
-@container (min-width: 88rem) {
-  .room.tlroom { grid-template-columns: minmax(0, 1fr) 36rem; }
+@container (min-width: 72rem) {
+  .room.tlroom { grid-template-columns: minmax(0, 1fr) 27rem; }
 }
-@container (min-width: 128rem) {
-  .room.tlroom { grid-template-columns: minmax(0, 1fr) 40rem 30rem; }
+@container (min-width: 120rem) {
+  .room.tlroom { grid-template-columns: minmax(0, 1fr) 30rem 22rem; }
 }
 
 /* ---------- a member ---------- */
 .card.m { min-width: 0; }
 .card.m.needs { background: color-mix(in oklab, var(--obj) 86%, var(--key-light)); }
 .card.m.vacant { background: var(--obj); border-style: dashed; border-color: var(--track-line); box-shadow: none; }
-.card.m .top { display: flex; align-items: center; gap: .8rem; min-height: 2.6rem; }
-.role { font: 500 1.45rem/1.1 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.m .top { display: flex; align-items: center; gap: .8rem; min-height: 2rem; }
+.role { font: 500 1.1rem/1.1 var(--font-name); color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lead { flex: none; font: 600 .85rem/1 var(--font-data); letter-spacing: .03em; color: #241d14; background: var(--key-light); border: .12rem solid var(--ink); border-radius: .35rem; padding: .3rem .45rem; }
 .card.m .top .chip { margin-left: auto; }
 .lamp.open { background: var(--obj-sunk); box-shadow: 0 0 0 var(--ink-w) var(--ink), inset 0 0 0 .16rem var(--track-line); }
 .meta .word.starting { display: inline-flex; align-items: center; gap: .45rem; }
-.meta .word.starting .wait { width: 1.2rem; height: 1.2rem; }
+.meta .word.starting .wait { width: .96rem; height: .96rem; }
 /* one line (hitstop, the mock): the model and the folder shrink with an ellipsis, every classed part stays whole */
 .card.m .meta { flex-wrap: nowrap; }
 .card.m .meta > span:not([class]) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.m .meta > [class] { flex: none; white-space: nowrap; }
 /* the model's label is what a member runs, so it keeps its room and the session's name beside it gives (console rewalk, ea3eeff67) */
-.card.m .meta > .mdl { flex: none; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
+.card.m .meta > .mdl { flex: none; max-width: 12.6rem; overflow: hidden; text-overflow: ellipsis; }
 /* a member bound to a session opens it: the whole card is the control, its own buttons keep their own acts */
 .card.m.go { cursor: pointer; }
 .card.m.go:hover { background: var(--obj-high); }
@@ -174,8 +174,8 @@
    THE LIMIT COLOUR: this class carries three different sentences, and only one of them is bad news. A
    permission prompt's own description ("Run the tax tests") and the fallback telling the person where to
    answer are ordinary prose, and painting them the failure red said a turn had gone wrong when none had. */
-.card.m .why { margin: .8rem 0 0; font: 400 1.05rem/1.45 var(--font-name); color: var(--text-body); white-space: pre-line; overflow-wrap: anywhere; }
-.refusal { font: 400 1.05rem/1.2 var(--font-name); color: var(--limit); min-width: 0; overflow-wrap: anywhere; }
+.card.m .why { margin: .8rem 0 0; font: 400 .95rem/1.45 var(--font-name); color: var(--text-body); white-space: pre-line; overflow-wrap: anywhere; }
+.refusal { font: 400 .95rem/1.2 var(--font-name); color: var(--limit); min-width: 0; overflow-wrap: anywhere; }
 .card.m .top .refusal { margin-left: auto; text-align: right; }
 .card.m .top .refusal + .chip { margin-left: .8rem; }
 /* a start that did not come up is the one that reads as a fault, because it is one */
@@ -188,39 +188,39 @@
 .planuse span + span { color: var(--text-mute); }
 .slot-acts { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-top: .95rem; position: relative; }
 .menu.use { left: 0; right: auto; top: calc(100% + .5rem); }
-.menu.use button { display: flex; align-items: baseline; justify-content: space-between; gap: 1.8rem; }
+.menu.use button { display: flex; align-items: baseline; justify-content: space-between; gap: 1.35rem; }
 .mmeta { font: 500 .9rem/1 var(--font-data); color: var(--text-mute); }
 
 /* ---------- a member to a member, or to a session outside the team ---------- */
-.party { display: inline-flex; align-items: center; gap: .4rem; font: 500 1.02rem/1 var(--font-name); color: var(--text); white-space: nowrap; }
+.party { display: inline-flex; align-items: center; gap: .4rem; font: 500 .95rem/1 var(--font-name); color: var(--text); white-space: nowrap; }
 .party i { width: .7rem; height: .7rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
 .party.out { font: 500 .95rem/1 var(--font-data); color: var(--text-body); }
-.log.chat { gap: 1.45rem; }
-.tm { display: flex; flex-direction: column; gap: .45rem; max-width: 62rem; }
+.log.chat { gap: 1.09rem; }
+.tm { display: flex; flex-direction: column; gap: .45rem; max-width: 44rem; }
 .tm .who { display: flex; align-items: center; gap: .55rem; }
 .tm .who > svg { width: 1rem; height: 1rem; color: var(--text-mute); flex: none; }
 .tm .who time { margin-left: .6rem; font: 500 .85rem/1 var(--font-data); color: var(--text-mute); }
 .tm .body {
-  width: fit-content; max-width: 100%; overflow-wrap: anywhere; padding: .75rem 1.05rem;
-  font: 400 1.12rem/1.55 var(--font-name); color: var(--text); background: var(--obj-high);
+  width: fit-content; max-width: 100%; overflow-wrap: anywhere; padding: .75rem .79rem;
+  font: 400 1rem/1.55 var(--font-name); color: var(--text); background: var(--obj-high);
   border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .3rem .3rem 0 var(--c), .3rem .3rem 0 var(--ink-w) var(--ink);
 }
 .tm .body p { margin: 0 0 .5rem; }
 .tm .body p:last-child { margin-bottom: 0; }
-.tm .body ul { margin: .2rem 0 .5rem; padding-left: 1.3rem; }
+.tm .body ul { margin: .2rem 0 .5rem; padding-left: .98rem; }
 .tm .body code { font: 500 .95em/1 var(--font-data); background: var(--obj-sunk); border-radius: .25rem; padding: .12rem .3rem; }
 .tm.outside .body { box-shadow: .3rem .3rem 0 var(--wall-low), .3rem .3rem 0 var(--ink-w) var(--ink); }
 .cut { display: flex; align-items: center; gap: .8rem; margin: 0; font: 500 .9rem/1 var(--font-data); color: var(--text-mute); width: 100%; max-width: none; }
 .cut::before, .cut::after { content: ""; flex: 1; height: .12rem; background: var(--track-line); border-radius: .1rem; }
-.cut > span { max-width: 44rem; line-height: 1.4; text-align: center; }
+.cut > span { max-width: 30.8rem; line-height: 1.4; text-align: center; }
 /* in a wide panel the chat reads like a script down the panel's middle: who spoke to whom and when in the margin,
    what they said in a card as wide as the column */
 .talk { container: talk / inline-size; }
-@container talk (min-width: 90rem) {
+@container talk (min-width: 68rem) {
   .talk > header { justify-content: center; }
-  .log.chat { gap: 1.6rem; }
-  .log.chat > :not(.empty) { width: 100%; max-width: 84rem; margin-inline: auto; }
-  .tm { display: grid; grid-template-columns: 16rem minmax(0, 1fr); column-gap: 1.8rem; align-items: start; }
+  .log.chat { gap: 1.2rem; }
+  .log.chat > :not(.empty) { width: 100%; max-width: 63rem; margin-inline: auto; }
+  .tm { display: grid; grid-template-columns: 12rem minmax(0, 1fr); column-gap: 1.35rem; align-items: start; }
   .tm .who { flex-wrap: wrap; justify-content: flex-end; row-gap: .55rem; padding-top: .9rem; }
   .tm .who time { flex-basis: 100%; margin-left: 0; text-align: right; }
   .tm .body { width: auto; }
@@ -230,43 +230,43 @@
   .tm.bare .who time { flex-basis: auto; margin-left: .6rem; text-align: left; }
   .log.chat > .tm.bare + .tm.bare { margin-top: -.8rem; }
 }
-.feed .flow { flex: 1; overflow-y: auto; padding: 1.1rem 1.2rem 1.3rem; display: flex; flex-direction: column; gap: 1rem; }
+.feed .flow { flex: 1; overflow-y: auto; padding: .83rem .9rem .98rem; display: flex; flex-direction: column; gap: .75rem; }
 /* a panel with nothing in it is as tall as its one line, not a screen of empty card (hitstop's eye pass, Oct 12) */
 .talk:has(.log > .empty:only-child), .feed:has(.flow > .empty:only-child) { height: auto; min-height: 0; max-height: none; }
-.talk:has(.log > .empty:only-child) .log, .feed:has(.flow > .empty:only-child) .flow { flex: none; padding-block: 2.2rem; }
-.feed .empty, .talk .empty { margin: auto; font: 500 1.15rem/1 var(--font-name); color: var(--text-mute); }
-.feed .empty.limit, .talk .empty.limit { color: var(--limit); max-width: 24rem; text-align: center; line-height: 1.4; }
+.talk:has(.log > .empty:only-child) .log, .feed:has(.flow > .empty:only-child) .flow { flex: none; padding-block: 1.21rem; }
+.feed .empty, .talk .empty { margin: auto; font: 500 .9rem/1 var(--font-name); color: var(--text-mute); }
+.feed .empty.limit, .talk .empty.limit { color: var(--limit); max-width: 16.8rem; text-align: center; line-height: 1.4; }
 .feed ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .8rem; }
-.feed li { display: grid; grid-template-columns: 5.4rem auto minmax(0, 1fr); align-items: center; gap: .75rem; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); }
+.feed li { display: grid; grid-template-columns: 4.2rem auto minmax(0, 1fr); align-items: center; gap: .75rem; font: 500 .95rem/1.2 var(--font-data); color: var(--text-body); }
 .feed li time { color: var(--text-mute); }
 .what { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; }
 
 /* ---------- the composer, in a modal over the page: the wall dims and the page stays still behind it ---------- */
 html:has(#sheet .scrim) { overflow: hidden; }
-.scrim { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding: 7vh 3rem; overflow: auto; background: color-mix(in srgb, var(--wall-low) 78%, transparent); }
-.compose > h2 { margin-bottom: 1.8rem; }
+.scrim { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding: 7vh 1.65rem; overflow: auto; background: color-mix(in srgb, var(--wall-low) 78%, transparent); }
+.compose > h2 { margin-bottom: 1.35rem; }
 .compose {
-  --c: var(--key-light); width: min(78rem, 100%); flex: none; padding: 2rem 2.2rem 1.6rem; background: var(--obj);
+  --c: var(--key-light); width: min(58rem, 100%); flex: none; padding: 1.1rem 1.21rem 1.2rem; background: var(--obj);
   border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
   box-shadow: var(--cast) var(--cast) 0 var(--key-light), var(--cast) var(--cast) 0 var(--ink-w) var(--ink);
 }
 /* one right edge: the fields run to it, as the member rows do, and a refusal sits on its own line under them */
-.frow { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: center; gap: 1.2rem; margin-bottom: 1.1rem; }
-.frow:has(> .state) { grid-template-columns: 8rem minmax(0, 1fr); }
+.frow { display: grid; grid-template-columns: 6rem minmax(0, 1fr); align-items: center; gap: .9rem; margin-bottom: .83rem; }
+.frow:has(> .state) { grid-template-columns: 6rem minmax(0, 1fr); }
 .frow > .state { grid-column: 2; }
 /* the modal's refusal sits on Repo's row, ending at the modal's right edge */
-.frow .withword { display: flex; align-items: center; gap: 1.2rem; min-width: 0; }
-.frow .withword .field { flex: 1 1 14rem; min-width: 0; }
+.frow .withword { display: flex; align-items: center; gap: .9rem; min-width: 0; }
+.frow .withword .field { flex: 1 1 10rem; min-width: 0; }
 .frow .withword .state { flex: 0 1 auto; max-width: 55%; margin-left: auto; text-align: right; overflow-wrap: anywhere; }
-.frow label { font: 500 1.15rem/1 var(--font-name); color: var(--text-body); }
-.frow textarea { font: 400 1.12rem/1.45 var(--font-name); resize: vertical; }
-#t-name { font: 500 1.35rem/1 var(--font-name); }
-.compose h3 { margin: 2.2rem 0 1.2rem; }
-.rows { display: flex; flex-direction: column; gap: 1.3rem; }
-.card.slot-row { padding: 1rem 1.2rem; }
+.frow label { font: 500 .9rem/1 var(--font-name); color: var(--text-body); }
+.frow textarea { font: 400 1rem/1.45 var(--font-name); resize: vertical; }
+#t-name { font: 500 1.1rem/1 var(--font-name); }
+.compose h3 { margin: 1.21rem 0 .9rem; }
+.rows { display: flex; flex-direction: column; gap: .98rem; }
+.card.slot-row { padding: .75rem .9rem; }
 /* a member row is a fixed grid: each picker owns its column, empty until chosen, so a choice never widens the row,
    wraps it or moves the row under it */
-.slot-row .top { display: grid; grid-template-columns: minmax(8rem, 1fr) 14.5rem 16rem 9rem auto auto auto; align-items: center; gap: .7rem; position: relative; }
+.slot-row .top { display: grid; grid-template-columns: minmax(6rem, 1fr) 11rem 12rem 7rem auto auto auto; align-items: center; gap: .7rem; position: relative; }
 .slot-row .top .pickbtn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-row .top .pickbtn[data-what="head"] { grid-column: 2; }
 .slot-row .top .pickbtn[data-what="model"] { grid-column: 3; }
@@ -275,7 +275,7 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .slot-row .top [data-act="instr"] { grid-column: 6; }
 .slot-row .top [data-act="rm"] { grid-column: 7; }
 @media (max-width: 825px) { .slot-row .top { display: flex; flex-wrap: wrap; } }
-.role-in { min-width: 0; font: 500 1.2rem/1 var(--font-name); }
+.role-in { min-width: 0; font: 500 .95rem/1 var(--font-name); }
 .blot { width: .8rem; height: .8rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); display: inline-block; flex: none; }
 .leadtog { font: 600 .9rem/1 var(--font-data); padding: .55rem .7rem; border-radius: var(--r-in); cursor: pointer; background: transparent; color: var(--text-mute); border: .12rem dashed var(--track-line); }
 .leadtog[aria-pressed="true"] { background: var(--key-light); color: #241d14; border: .12rem solid var(--ink); }
@@ -283,20 +283,20 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .rulehint { margin: .8rem 0 0; font: 400 1rem/1.4 var(--font-name); color: var(--text-mute); }
 .rulerow { display: flex; align-items: center; gap: .9rem; margin-top: .8rem; }
 .rulerow .rulehint { margin: 0; }
-.slot-row .instr { width: 100%; margin-top: .9rem; font: 400 1.05rem/1.45 var(--font-name); resize: vertical; }
+.slot-row .instr { width: 100%; margin-top: .9rem; font: 400 .95rem/1.45 var(--font-name); resize: vertical; }
 /* a picker's menu opens under its own picker: the grid area of its column is its containing block */
-.pick-menu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 30rem; overflow: auto; grid-row: 1; }
+.pick-menu { left: 0; right: auto; top: calc(100% + .5rem); min-width: 100%; max-height: 18rem; overflow: auto; grid-row: 1; }
 .pick-menu button { display: flex; align-items: center; gap: .6rem; }
 .pick-menu .empty { margin: 0; padding: .7rem .9rem; font: 500 1rem/1.35 var(--font-name); color: var(--text-mute); }
-.compose footer { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; margin-top: 1.8rem; }
-.compose .foothint { margin: 0 auto 0 0; max-width: 32rem; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); }
+.compose footer { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; margin-top: 1.35rem; }
+.compose .foothint { margin: 0 auto 0 0; max-width: 22.4rem; font: 400 1rem/1.35 var(--font-name); color: var(--text-mute); }
 
 /* ---------- nothing to show yet ---------- */
-.no-teams { display: flex; align-items: center; gap: 1.6rem; max-width: 50rem; min-height: 6rem; padding: 1.4rem 1.8rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
-.no-teams p { margin: 0; font: 500 1.3rem/1 var(--font-name); color: var(--text-body); }
-.teams > .empty { margin: 0; font: 500 1.2rem/1.45 var(--font-name); color: var(--text-mute); max-width: 60rem; }
+.no-teams { display: flex; align-items: center; gap: 1.2rem; max-width: 35rem; min-height: 4.2rem; padding: 1.05rem 1.35rem; border: var(--ink-w) dashed var(--track-line); border-radius: var(--r-obj); }
+.no-teams p { margin: 0; font: 500 1rem/1 var(--font-name); color: var(--text-body); }
+.teams > .empty { margin: 0; font: 500 .95rem/1.45 var(--font-name); color: var(--text-mute); max-width: 42rem; }
 .teams > .empty.limit { color: var(--limit); }
-.teams > .why.stale { margin: 0 0 1.2rem; font: 400 1.05rem/1.45 var(--font-name); color: var(--limit); max-width: 60rem; }
+.teams > .why.stale { margin: 0 0 .9rem; font: 400 .95rem/1.45 var(--font-name); color: var(--limit); max-width: 42rem; }
 
 /* both lines of each picker's menu: an absolutely placed grid item's auto end is the grid's edge */
 .pick-menu[data-what="head"] { grid-column: 2 / 3; }
@@ -309,20 +309,20 @@ html:has(#sheet .scrim) { overflow: hidden; }
    family of a member's ask, holding the client's question, its folder and its two options (Marlin, Oct 12; hitstop da3d8b2) */
 .card.m.trust .ask .cmd { margin-top: .6rem; }
 /* "Last screen": the client's screen as splice last read it, opened on his press, in a sunk mono well (fin; hitstop da3d8b2) */
-.slot-acts .screen { flex-basis: 100%; margin: .2rem 0 0; max-height: 18rem; overflow: auto; font: 400 .95rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .7rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.slot-acts .screen { flex-basis: 100%; margin: .2rem 0 0; max-height: 12.6rem; overflow: auto; font: 400 .95rem/1.45 var(--font-data); color: var(--text-body); background: var(--obj-sunk); border: .12rem solid var(--ink); border-radius: var(--r-in); padding: .7rem .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* End armed: what ending would lose, then the danger End and Keep running, Restart's pattern on Settings (fin, Marlin p218) */
 .card.m .armed.end, .team-head .armed.end { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-top: .8rem; }
 .team-head .armed.end { margin-top: 0; }
 .armed.end .said { font: 500 1rem/1 var(--font-name); color: var(--text-body); }
-.armed.end .unsent { font: 400 1rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 14rem; min-width: 0; }
+.armed.end .unsent { font: 400 1rem/1.4 var(--font-data); color: var(--text-mute); overflow-wrap: anywhere; flex: 1 1 10rem; min-width: 0; }
 .armed.end .word.working { display: inline-flex; align-items: center; gap: .4rem; }
 .armed.end .chip i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--track-line); }
 .armed.end .chip.live i { background: var(--live); }
 .act.danger { background: var(--limit); color: var(--on-limit, #fff7ea); }
 /* an empty page says what a team is before it offers one (splice-usage's walk, Oct 13) */
 .no-teams .say { display: flex; flex-direction: column; gap: .5rem; }
-.no-teams .say .what { font: 400 1.05rem/1.45 var(--font-name); color: var(--text-mute); }
+.no-teams .say .what { font: 400 .95rem/1.45 var(--font-name); color: var(--text-mute); }
 /* the sentence wraps, never the button beside it ("New / team", splice-usage's look at 3394, Oct 13) */
 .no-teams .say { flex: 1 1 auto; min-width: 0; }
 .no-teams > .act { flex: none; white-space: nowrap; }

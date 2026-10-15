@@ -105,7 +105,7 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
   background: var(--wall); border-bottom: .1rem solid var(--ink);
 }
 .mark { flex: none; font: 400 1.5rem/1 var(--font-lead); letter-spacing: -.01em; }
-.nav { display: flex; align-self: stretch; gap: .15rem; min-width: 0; }
+.nav { flex: none; display: flex; align-self: stretch; gap: .15rem; }
 .nav a {
   display: flex; align-items: center; padding: 0 .75rem; position: relative; white-space: nowrap;
   font: 400 .95rem/1 var(--font-name); color: var(--text-body); text-decoration: none;
@@ -123,9 +123,11 @@ html { scroll-padding-top: calc(var(--bar-h) + 1rem); }
 .nav a[aria-current="page"] { color: var(--text); }
 .nav a[aria-current="page"]::before { background: var(--key-ink); opacity: 1; transform: none; }
 .nav a:focus-visible { outline-offset: -.4rem; border-radius: var(--r-in); }
-.side .foot { flex: none; margin-left: auto; display: flex; align-items: center; gap: .9rem; }
-/* the stale mark (kit.js markStale): the key's ink, small, on one line beside the theme toggle */
-.side .foot .stale { font-size: .85rem; line-height: 1.25; color: var(--key-ink); white-space: nowrap; }
+.side .foot { flex: 0 1 auto; min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .9rem; }
+/* the stale mark (kit.js markStale): the key's ink, small, beside the theme toggle; one line where the bar has room, and
+   it wraps rather than run under the pages where it has not (a bar between 825 and about 1000 px) */
+.side .foot .stale { font-size: .85rem; line-height: 1.2; color: var(--key-ink); text-align: right; }
+.side .foot > .icon { flex: none; }
 
 .page { padding: 1.6rem 2.4rem 5rem; min-width: 0; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.2rem; margin-bottom: 1.6rem; }

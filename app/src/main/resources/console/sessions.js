@@ -717,7 +717,18 @@ function render({ stick = true, slide = false, hold = false } = {}) {
   const log = root.querySelector(".log");
   if (log) log.scrollTop = fromBottom != null ? log.scrollHeight - fromBottom : keep ?? log.scrollHeight;
   if (before) slideFrom(before);
+  fitPane();
 }
+// THE OPEN SESSION REACHES THE FOOT OF THE SCREEN FROM WHEREVER ITS TOP IS: under the tiles before he scrolls, under the
+// top bar once pinned, so its Message field is on screen from the first look (a fixed height left it 160 px under the
+// fold at 3394, Oct 15). Its top only moves until the pane pins, so the scroll sets it only that far.
+let paneTop = null;
+function fitPane() {
+  const top = Math.max(0, Math.round(root.getBoundingClientRect().top));
+  if (top === paneTop) return;
+  paneTop = top; root.style.setProperty("--pane-top", `${top}px`);
+}
+addEventListener("scroll", () => requestAnimationFrame(fitPane), { passive: true });
 /** The sliding move: each card starts where it stood and eases to its new place, on the shared list-move tokens
  *  (--t-move on --e-io, hitstop): a re-sort moves every card, and a list-sized move arrives on an in-out ease. */
 const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();

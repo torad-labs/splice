@@ -33,11 +33,12 @@
 @container (min-width: 122rem) {
   .sessions, .sessions.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
   .sessions .list, .sessions.open .list { display: block; flex: 1 1 0; min-width: 0; }
-  /* the open session keeps a reading width and the list takes the rest: two columns at 3394, three at 3828. Pinned
-     under the top bar, it reaches to 1rem off the bottom; the page's composer steps aside for a pane on the right */
+  /* the open session keeps a reading width and the list takes the rest: two columns at 3394, three at 3828. From its
+     top (sessions.js fitPane: under the tiles, or pinned under the top bar) it reaches to 1rem off the bottom; the
+     page's composer steps aside for a pane on the right */
   .sessions .pane, .sessions.open .pane {
     display: flex; flex: 0 0 clamp(52rem, 100cqi - 54rem, 78rem);
-    position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - var(--bar-h) - 2rem);
+    position: sticky; top: calc(var(--bar-h) + 1rem); height: calc(100vh - max(var(--pane-top, 0px), var(--bar-h) + 1rem) - 1rem);
   }
   .sessions .pane .close { display: none; }
 }
@@ -170,9 +171,10 @@ div.ended { display: flex; flex-direction: column; gap: .7rem; }
 .sessions .s .top .meta > * { flex: none; white-space: nowrap; }
 .sessions .s .top .meta .detail { font-size: .88rem; }
 .sessions .s .top .last {
-  flex: 1 1 10rem; min-width: 5rem; margin: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1 1 14rem; min-width: 5rem; margin: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font: 400 .95rem/1.3 var(--font-name); color: var(--text-body); -webkit-line-clamp: none;
 }
+.sessions .s .top .last:empty { flex: 1 1 0; min-width: 0; }  /* nothing said: its room goes to the tags */
 .sessions .s .top .last.tool { width: auto; max-width: none; padding: 0; border: 0; background: none; box-shadow: none; font: 400 .88rem/1.3 var(--font-data); }
 .sessions .s .top .last.tool b { margin-right: .45rem; }
 .sessions .s .top .parts {
@@ -180,6 +182,8 @@ div.ended { display: flex; flex-direction: column; gap: .7rem; }
   font: 500 .88rem/1 var(--font-data); color: var(--text-mute);
 }
 .sessions .s .top .parts > * { flex: none; white-space: nowrap; height: 1.3rem; display: inline-flex; align-items: center; gap: .35rem; }
+/* an empty first slot, so even the first tag wraps away whole when it alone does not fit ("Starte" at 1440) */
+.sessions .s .top .parts::before { content: ""; flex: none; width: 0; height: 1.3rem; margin-right: -.9rem; }
 .sessions .s .top .parts:empty { display: none; }
 .sessions .s .top .chip, .sessions .s .top .state { flex: none; margin-left: 0; }
 .sessions .s .top .when { flex: none; min-width: 4.4rem; text-align: right; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
@@ -187,9 +191,10 @@ div.ended { display: flex; flex-direction: column; gap: .7rem; }
    at the line's end, since nothing hovers there */
 .sessions .s .top > .act { flex: none; }
 @media (hover: hover) {
-  .sessions .s .top > .act { position: absolute; right: .7rem; top: .5rem; background: var(--obj-high); }
+  .sessions .s .top > .act { position: absolute; right: .9rem; top: .5rem; background: var(--obj-high); }
   .sessions .s .top > .act[data-act="stop"] { opacity: 0; transition: opacity var(--t-snap) var(--e-out); }
   .sessions .s:hover .top > .act[data-act="stop"], .sessions .s:focus-within .top > .act[data-act="stop"] { opacity: 1; }
+  .sessions .s:is(:hover, :focus-within) .top:has(> .act[data-act="stop"]) > .when, .sessions .s .top:has(> .stopping) > .when { visibility: hidden; }
 }
 /* what a needs-you row asks opens under its line, with its answers */
 .sessions .s .ask { margin: .4rem 0 .25rem; }

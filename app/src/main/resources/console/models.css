@@ -21,7 +21,7 @@
 @container (min-width: 90rem) {
   .cmds, .cmds.open { display: flex; align-items: flex-start; gap: var(--gap-col); }
   .cmds .list, .cmds.open .list { display: flex; flex: 0 0 36rem; }
-  .cmds .pane, .cmds.open .pane { display: flex; flex: 1 1 0; max-width: 120rem; position: sticky; top: 1.2rem; height: calc(100vh - 12rem); }
+  .cmds .pane, .cmds.open .pane { display: flex; flex: 1 1 0; max-width: 150rem; position: sticky; top: 1.2rem; height: calc(100vh - 12rem); }
   .pane .close { display: none; }
 }
 .cmds .add[aria-pressed="true"] { border-color: var(--key-light); color: var(--text); }
@@ -52,9 +52,9 @@
 #a-url, #a-key { flex: 0 1 34rem; }
 .field.win { flex: 0 0 7.5rem; }
 .field.ptext { width: 100%; font: 400 .95rem/1.5 var(--font-name); resize: vertical; }
-.form .menuwrap > .pickbtn { min-width: 15rem; justify-content: space-between; }  /* the tiers' windows line up */
+.form .menuwrap > .pickbtn { min-width: 17rem; justify-content: space-between; }  /* the tiers' windows line up */
 .pickbtn + .field.win { margin-left: .2rem; }
-.field.url { flex: 0 1 23.6rem; min-width: 14rem; }  /* a long address, as wide as a tier's picker and window together (marlin, Oct 12) */
+.field.url { flex: 0 1 25.6rem; min-width: 14rem; }  /* a long address, as wide as a tier's picker and window together (marlin, Oct 12) */
 .shared { display: inline-flex; align-items: center; gap: .5rem; margin-left: .4rem; font: 500 .88rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 /* a prompt kept in a file: its name, the way a compaction rung names its file */
 .pfile { display: inline-flex; align-items: center; gap: .55rem; font: 500 .92rem/1 var(--font-data); color: var(--text); }
@@ -225,7 +225,7 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 /* console-lead's per-command setting rows sit in the form's own grid */
 .form .kn { display: contents; }
 /* one picker look in a command's pane: a set value carries the command's colour edge, the settings' pickers like the tiers' */
-.pane .kn .pickbtn { --c: inherit; min-width: 15rem; }
+.pane .kn .pickbtn { --c: inherit; min-width: 17rem; }
 /* a tier nothing is set for reads the model that answers, in full ink, with the Default mark muted and no colour edge */
 .pickbtn.dflt-tier { box-shadow: none; border-color: var(--track-line); }
 .pickbtn .dflt, .menu .dflt { font: 500 .88rem/1 var(--font-data); color: var(--text-mute); }
@@ -272,7 +272,7 @@ code.launch { font: 500 .95rem/1 var(--font-data); color: var(--text); padding: 
 .act.quiet.risky { color: var(--limit); border-color: var(--limit); }
 /* the tier rows' column names, over the picker and the window box they name (walk on 1b40881cf) */
 .ctl.colhead { font: 500 .88rem/1 var(--font-name); color: var(--text-mute); margin-bottom: -.4rem; }
-.ctl.colhead .ch-model { min-width: 15rem; }
+.ctl.colhead .ch-model { min-width: 17rem; }
 /* a session's window figure stands apart from its chip (walk on ea24c63fc) */
 .fig > a.chip { margin-right: .55rem; }
 /* a model whose provider published no window says so, never 0K (v0.4.0 section 9) */

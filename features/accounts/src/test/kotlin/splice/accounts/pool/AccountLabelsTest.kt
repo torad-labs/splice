@@ -1,6 +1,4 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). Through /api/accounts as the console reads it: every
-// login is shown by a label a person chose or by its plan word and the number it keeps, "Plus" then "Plus 2", a default
-// is offered for naming, and no account id or ref appears in any name.
+// Account naming contracts through /api/accounts: chosen names, proved-email defaults, then plan/ordinal fallbacks.
 package splice.accounts.pool
 
 import io.ktor.client.request.get
@@ -35,7 +33,11 @@ class AccountLabelsTest {
 
     private fun account(label: String, plan: String) = HeadAccountView(label, false, false, true, plan)
 
-    private fun head(accounts: Map<String, Pair<String, String>>, key: String = "codex"): AccountHead = AccountHead(
+    private fun head(
+        accounts: Map<String, Pair<String, String>>,
+        key: String = "codex",
+        emails: Map<String, String> = emptyMap(),
+    ): AccountHead = AccountHead(
         key = key,
         auth = object : AuthProvider {
             override suspend fun credentials() = null
@@ -49,7 +51,11 @@ class AccountLabelsTest {
                 AuthDescription(
                     true,
                     "chatgpt-oauth",
-                    mapOf("auth_path" to "/synthetic/$label.json", ACCOUNT_REF_FIELD to AccountRef.of(plan.second)),
+                    buildMap {
+                        put("auth_path", "/synthetic/$label.json")
+                        put(ACCOUNT_REF_FIELD, AccountRef.of(plan.second))
+                        emails[label]?.let { put("email", it) }
+                    },
                 )
             }
         },
@@ -95,6 +101,65 @@ class AccountLabelsTest {
     }
 
     @Test
+    fun `known email is the untouched default and a chosen name takes priority`(@TempDir dir: Path) = runBlocking {
+        val names = AccountNameStore(dir.resolve(ACCOUNT_NAMES_FILE))
+        val emailRef = AccountRef.of("acct-long-email")
+        val chosenRef = AccountRef.of("acct-chosen")
+        val longEmail = "${"x".repeat(55)}@example.test"
+        names.set(chosenRef, "Work account")
+        val pool = mapOf(
+            "codex-2" to ("plus" to "acct-long-email"),
+            "codex-3" to ("plus" to "acct-chosen"),
+            "codex-4" to ("plus" to "acct-second-email"),
+        )
+        val body = AccountsRoute(
+            mapOf(
+                "codex" to head(
+                    pool,
+                    emails = mapOf(
+                        "codex-2" to longEmail,
+                        "codex-3" to "work@example.test",
+                        "codex-4" to "second@example.test",
+                    ),
+                ),
+            ),
+            names = names,
+        ).accountsJson()
+        val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
+            .associateBy { it.jsonObject.getValue("label").jsonPrimitive.content }
+            .mapValues { (_, row) -> row.jsonObject }
+        fun read(label: String, field: String) = rows.getValue(label).getValue(field).jsonPrimitive.content
+
+        assertEquals(longEmail, read("codex-2", "display_name"), "a normal long email remains the account's default")
+        assertEquals("true", read("codex-2", "label_default"))
+        assertEquals(emailRef, read("codex-2", "ref"))
+        assertEquals("Work account", read("codex-3", "display_name"), "the chosen label beats the proved email")
+        assertEquals("false", read("codex-3", "label_default"))
+        assertEquals("second@example.test", read("codex-4", "display_name"), "settling does not number email defaults")
+        assertEquals("true", read("codex-4", "label_default"))
+        assertEquals(mapOf(chosenRef to "Work account"), names.names(), "email defaults never become chosen names")
+    }
+
+    @Test
+    fun `an email default is not renumbered when another row for its ref needs a plan fallback`() = runBlocking {
+        val sharedRef = "acct-shared"
+        val pool = mapOf(
+            "codex-2" to ("plus" to sharedRef),
+            "codex-3" to ("plus" to sharedRef),
+        )
+        val body = AccountsRoute(
+            mapOf("codex" to head(pool, emails = mapOf("codex-3" to "shared@example.test"))),
+        ).accountsJson()
+        val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
+            .associateBy { it.jsonObject.getValue("label").jsonPrimitive.content }
+        fun read(label: String, field: String) = rows.getValue(label).jsonObject.getValue(field).jsonPrimitive.content
+
+        assertEquals("Plus", read("codex-2", "display_name"))
+        assertEquals("shared@example.test", read("codex-3", "display_name"))
+        assertEquals("true", read("codex-3", "label_default"))
+    }
+
+    @Test
     fun `a number is kept for good, a signed-out login keeps its own, and a new login never takes it`(
         @TempDir dir: Path,
     ) = runBlocking {
@@ -130,7 +195,7 @@ class AccountLabelsTest {
     }
 
     @Test
-    fun `a name given by ref wins for any login, never holds an email, and a blank one brings the default back`(
+    fun `chosen labels and custom email names win, and blank restores the default`(
         @TempDir dir: Path,
     ) = testApplication {
         val names = AccountNameStore(dir.resolve(ACCOUNT_NAMES_FILE))
@@ -165,8 +230,8 @@ class AccountLabelsTest {
         assertEquals("Day job" to "false", shown("work"), "a chosen name outranks the label the login was stored under")
 
         val email = client.put("/api/accounts/names/$ordinal") { setBody("""{"name":"me@example.com"}""") }
-        assertEquals(HttpStatusCode.BadRequest, email.status)
-        assertEquals("Side gig" to "false", shown("codex-2"), "a refused name leaves the one it had")
+        assertEquals(HttpStatusCode.OK, email.status)
+        assertEquals("me@example.com" to "false", shown("codex-2"), "an explicitly chosen email is a custom name")
 
         assertEquals(
             HttpStatusCode.OK,

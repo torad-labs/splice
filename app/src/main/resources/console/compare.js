@@ -5,7 +5,9 @@
 // request (reqview.js). The picker lists only the commands that can send now (a login added to splice, a key, a local
 // runtime), never the client's own sign-in, which splice has no credential for.
 // Reads: GET /api/heads, /api/models, /api/auth, /api/accounts.
-"use strict";
+CONSOLE.page("compare.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener, fetch } = scope;
 
 const MAX_PANES = 4;
 const KEPT = "splice.compare.prompt";
@@ -383,3 +385,5 @@ document.addEventListener("click", (e) => {
   await read();
   render();
 })();
+
+});

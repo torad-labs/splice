@@ -1,6 +1,5 @@
-// NEW: Oct 10, 2026 — two ChatGPT accounts on one command are told apart on Accounts. Rewritten Oct 12 for labels only
-// (Eli's ruling): the description names the account by its ref, never by the email or user id the id_token carries,
-// masked or not, and never a token.
+// NEW: Oct 10, 2026 — two ChatGPT accounts on one command are told apart on Accounts. Auth description carries the
+// proved email for default naming, while user id, account id and token material remain masked.
 package splice.provider.codex
 
 import kotlinx.coroutines.CoroutineScope
@@ -49,15 +48,15 @@ class CodexAuthClaimsTest {
     }
 
     @Test
-    fun `describe names the account by its ref, and no part of its email or user id`(
+    fun `describe carries the proved email for naming without exposing user id or token`(
         @TempDir tmp: Path,
     ) = runTest {
         val id = jwt("""{"sub":"user-abc","email":"work@example.com"}""")
         val json = """{"tokens":{"access_token":"secret","account_id":"acct-1","id_token":"$id"}}"""
         val d = provider(tmp, json).describe()
         assertEquals(AccountRef.of("acct-1"), d.fields[ACCOUNT_REF_FIELD])
-        val leaked = d.fields.values.any { "@" in it || "user-abc" in it || "acct-1" in it }
-        assertFalse(leaked, "no email, user id or account id leaves describe, masked or whole")
+        assertEquals("work@example.com", d.fields["email"])
+        assertFalse(d.fields.values.any { "user-abc" in it || "acct-1" in it }, "raw user and account IDs stay masked")
         assertFalse(d.fields.values.any { it.contains("secret") || it == id })
     }
 

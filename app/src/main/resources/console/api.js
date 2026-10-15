@@ -11,11 +11,9 @@ const API = (() => {
   }
   // A 401 means this browser holds no key splice takes: every page is locked the same way, its body set aside for the
   // one way back, `splice console` with Copy, which hands the key over again whatever lost it (fin, Marlin, Oct 12).
-  let locked = false;
   function lock() {
     const main = document.querySelector("main.page");
-    if (locked || !main) return;
-    locked = true;
+    if (!main || main.querySelector(".lockedby")) return;
     document.body.classList.add("locked");
     const box = document.createElement("section");
     box.className = "lockedby";
@@ -30,27 +28,29 @@ const API = (() => {
     (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
   }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
-  async function call(method, path, body, extra) {
-    const init = { method, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
+  async function call(method, path, body, extra, signal) {
+    const init = { method, signal, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
     if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
     try {
       const res = await fetch(path, init);
       const text = await res.text();
       let parsed = null;
       try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
-      if (res.status === 401) lock();
+      if (res.status === 401 && !signal?.aborted) lock();
       return { ok: res.ok, status: res.status, body: parsed };
     } catch {
       return { ok: false, status: 0, body: null };
     }
   }
-  return {
-    get: (p) => call("GET", p),
+  const client = (signal) => ({
+    get: (p) => call("GET", p, undefined, undefined, signal),
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
-    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }),
-    post: (p, b) => call("POST", p, b ?? {}),
-    put: (p, b) => call("PUT", p, b),
-    patch: (p, b) => call("PATCH", p, b),
-    del: (p) => call("DELETE", p),
-  };
+    getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal),
+    post: (p, b) => call("POST", p, b ?? {}, undefined, signal),
+    put: (p, b) => call("PUT", p, b, undefined, signal),
+    patch: (p, b) => call("PATCH", p, b, undefined, signal),
+    del: (p) => call("DELETE", p, undefined, undefined, signal),
+    scoped: (nextSignal) => client(nextSignal),
+  });
+  return client();
 })();

@@ -5,7 +5,9 @@
 // /api/models, /api/projects, /api/add, /api/doctor, /api/logs, /api/claude-head. Where the drawing and the daemon
 // disagree on a fact the daemon wins, and the element shows only where the fact exists. Rename is out of 0.4.0, and
 // Remove is not on this page yet.
-"use strict";
+CONSOLE.page("models.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener, KNOBS } = scope;
 
 const COMMAND_KNOBS = Object.values(KNOBS.KNOB).filter((k) => k.cmd).map((k) => k.key);
 const TIERS = ["opus", "sonnet", "haiku", "fable"];
@@ -1493,3 +1495,5 @@ async function init() {
   setInterval(async () => { if (!locked() && !ui.draft && !ui.add && !ui.comp && !ui.saving && !ui.keyin && !ui.sign && !Object.keys(ui.fixing).length) { await readAll(); render(); } }, 5000);
 }
 init();
+
+});

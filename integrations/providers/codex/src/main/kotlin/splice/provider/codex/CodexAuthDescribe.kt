@@ -27,6 +27,7 @@ private const val FIELD_REFRESH_TOKEN = "refresh_token"
 private const val FIELD_ACCOUNT_ID = "account_id"
 private const val FIELD_LAST_REFRESH = "last_refresh"
 private const val REFRESH_ERROR_SNIPPET = 160
+private const val MAX_EMAIL_CHARS = 254
 
 internal fun interface PersistRotation {
     operator fun invoke(
@@ -45,18 +46,15 @@ internal class CodexAuthDescribe(
     private val log: LogSink,
     private val refreshCall: RefreshCall<RefreshedTokens>,
 ) {
+    private val oauth = CodexOAuth()
+
     suspend fun describe(): AuthDescription {
         val out = mutableMapOf("auth_path" to authPath.toString())
         val presentOutcome = Cancellables.runCatchingCancellable {
             val raw = authJson.parseObject()
             val tokens = raw[FIELD_TOKENS] as? JsonObject
             val hasAccess = JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)?.isNotEmpty() == true
-            // Labels only (Eli's ruling, 2026-10-12): the account id leaves this module as its ref and nothing
-            // else, and the sign-in's email and user id not at all. The ref is the hash the stored default label
-            // `plus-<ref>` ends in.
-            JsonScalars.str(tokens, FIELD_ACCOUNT_ID)?.takeIf(String::isNotBlank)?.let {
-                out[ACCOUNT_REF_FIELD] = AccountRef.of(it)
-            }
+            out.putAll(identityFields(tokens))
             JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
             hasAccess
         }
@@ -71,6 +69,19 @@ internal class CodexAuthDescribe(
         val identity = authFile.codexAuthIdentityOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(identity)) out["refresh_latched"] = INVALID_GRANT_REASON
         return AuthDescription(present = present, kind = KIND, fields = out)
+    }
+
+    private fun identityFields(tokens: JsonObject?): Map<String, String> = buildMap {
+        JsonScalars.str(tokens, FIELD_ACCOUNT_ID)?.takeIf(String::isNotBlank)
+            ?.let { put(ACCOUNT_REF_FIELD, AccountRef.of(it)) }
+        accountEmail(tokens)?.let { put("email", it) }
+    }
+
+    private fun accountEmail(tokens: JsonObject?): String? {
+        val email = JsonScalars.str(oauth.decodeJwtClaims(JsonScalars.str(tokens, FIELD_ID_TOKEN)), "email")
+            ?.trim() ?: return null
+        if (email.isEmpty() || email.length > MAX_EMAIL_CHARS) return null
+        return email.takeIf { '@' in it && it.none(Char::isISOControl) }
     }
 
     // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,

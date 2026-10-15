@@ -23,7 +23,9 @@
 //
 // A FIGURE NOBODY REPORTED IS LEFT OUT, never printed as a zero: a provider that reported no tokens, a request that
 // never got a first byte and a turn with no price each draw nothing where the number would be.
-"use strict";
+CONSOLE.page("requests.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener, IntersectionObserver } = scope;
 
 // ---------- what this page adds to the kit ----------
 // kit.js carries the console's shared language: NOW and tick(), esc, G, ICON, COLORS, colorOf, clock, dayWord, md,
@@ -1257,3 +1259,5 @@ const showAsked = (asked) => {
 reload({ standing: true }).then(() => { if (asked) showAsked(asked); });
 // a door followed while Requests is already open changes only the address's fragment, and the page follows it too
 addEventListener("hashchange", () => { const id = askedOf(); if (id) showAsked(id); });
+
+});

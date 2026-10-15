@@ -44,8 +44,6 @@ public class AccountNameStore(private val file: Path) {
         val refused = when {
             !refShape.matches(ref) -> "Not an account"
             trimmed.length > MAX_NAME_CHARS -> "Too long"
-            // a name is what every page shows, so it can never carry the email the ruling keeps off them
-            '@' in trimmed -> "Can't hold an email"
             trimmed.any(Char::isISOControl) -> "Not a name"
             else -> null
         }

@@ -10,6 +10,7 @@ internal data class AuthExclusionView(
     val refusal: String? = null,
     val ref: String? = null,
     val displayName: String? = null,
+    val email: String? = null,
 )
 
 /** The three yes/no/unknown facts a console row renders as booleans — grouped for the same

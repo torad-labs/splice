@@ -1,5 +1,4 @@
-// NEW: labels only (Eli's ruling via splice-lead, 2026-10-12). Every account row is named by a label a person chose or
-// by splice's default, never by an email or an account id; this is the one rule every row kind is named by.
+// Account rows use a chosen label first, then the account email when its provider proves one, then splice's fallback.
 package splice.accounts.pool
 
 import kotlinx.serialization.json.JsonObject
@@ -8,6 +7,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
 import splice.core.auth.AccountRef
 import splice.core.util.JsonScalars
+
+private const val MAX_ACCOUNT_EMAIL_CHARS = 254
 
 /** What a row is called, its [ref] when its credential proved one, and whether the name is splice's default rather
  *  than one a person gave (a default is what the console offers to name once). */
@@ -26,6 +27,7 @@ internal data class AccountNameFacts(
     val stored: String?,
     val ref: String?,
     val plan: String?,
+    val email: String? = null,
 )
 
 /** [store] holds the names a person gave and the number each unnamed login keeps, by ref (AccountNameStore); without
@@ -41,14 +43,22 @@ internal class AccountNaming(private val store: AccountNameStore? = null) {
     // why: the ordinal splice mints when no name was given (`claude-2`, `codex-3`, `grok-2`), whatever the vendor.
     private val ordinal = Regex("^[a-z][a-z0-9]*-\\d+$")
 
-    /** A name chosen on the console wins, then a name a person gave elsewhere, then a stored label a person chose;
-     *  anything else reads its plan word, numbered once the roster settles. A stored label splice made up itself (its ordinal `claude-2`, ChatGPT's
+    /** A name chosen on the console wins, then a name a person gave elsewhere, then a stored label a person chose,
+     *  then the proved account email; anything else reads its plan word, numbered once the roster settles. A stored label splice made up itself (its ordinal `claude-2`, ChatGPT's
      *  `plus-<ref>`, the first account's `primary`) is a default too, so it is offered for naming and never shown as if
      *  someone chose it. */
     fun name(facts: AccountNameFacts): AccountName {
         val ref = facts.ref ?: facts.stored?.let { hashTail.find(it)?.groupValues?.get(1) }
         val given = ref?.let(chosen::get) ?: facts.given?.takeIf(String::isNotBlank) ?: personal(facts.stored)
-        return given?.let { AccountName(it, ref, isDefault = false) } ?: fallback(facts.plan, ref)
+        given?.let { return AccountName(it, ref, isDefault = false) }
+        return emailName(facts.email, ref) ?: fallback(facts.plan, ref)
+    }
+
+    private fun emailName(email: String?, ref: String?): AccountName? {
+        val trimmed = email?.trim() ?: return null
+        if (trimmed.isEmpty() || trimmed.length > MAX_ACCOUNT_EMAIL_CHARS) return null
+        return trimmed.takeIf { '@' in it && it.none(Char::isISOControl) }
+            ?.let { AccountName(it, ref, isDefault = true) }
     }
 
     /** A stored label a person chose, or null for a blank one or one splice made up. */
@@ -75,8 +85,13 @@ internal class AccountNaming(private val store: AccountNameStore? = null) {
 
     /** An unnamed login's ref and the provider and plan word it is counted among, or null for any other row. */
     private fun kind(row: JsonObject): Pair<String, AccountKind>? {
-        val ref = JsonScalars.str(row, "ref")?.takeIf { JsonScalars.str(row, "label_default") == "true" }
-        return ref?.let(words::get)?.let { ref to AccountKind(JsonScalars.str(row, "provider"), it) }
+        val ref = JsonScalars.str(row, "ref")?.takeIf { JsonScalars.str(row, "label_default") == "true" } ?: return null
+        val word = words[ref] ?: return null
+        return if (JsonScalars.str(row, "display_name") == word) {
+            ref to AccountKind(JsonScalars.str(row, "provider"), word)
+        } else {
+            null
+        }
     }
 
     private fun madeUp(label: String): Boolean =

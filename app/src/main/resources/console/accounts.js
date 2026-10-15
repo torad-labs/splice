@@ -1,7 +1,9 @@
 // Accounts: every account on every provider, how much of each window is used, when it comes back, which one
 // serves next, and what each command may spend in a day. The drawing (Splice-Animator design/console, d3338fa) on
 // splice's own answers: every name, number and state below is read from the control API, and every act calls it.
-"use strict";
+CONSOLE.page("accounts.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
 
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
 
@@ -903,6 +905,7 @@ addEventListener("resize", () => { const n = layout?.n; if (columns().n !== n) r
 // Chrome fires focusout on a focused field as the board replaces it; `drawing` keeps that from reading as him leaving it.
 let drawing = false;
 function render({ flip = false } = {}) {
+  if (!board.isConnected) return;
   const before = new Map();
   if (flip) for (const el of document.querySelectorAll("[data-key]")) before.set(el.dataset.key, el.getBoundingClientRect());
   const L = columns();
@@ -1277,4 +1280,6 @@ probe().then(() => {
   if (!card) return;
   const el = board.querySelector(`[data-key^="card:${CSS.escape(card)}"]`);
   if (el) { el.scrollIntoView({ block: "center", behavior: "instant" }); el.classList.add("pulse-once"); }
+});
+
 });

@@ -111,7 +111,12 @@ public class AccountsRoute(
                     observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                     noUsageAt = quota?.noUsageAt,
                 ),
-                authExclusion = AuthExclusionView(null, null, ref = description.fields[ACCOUNT_REF_FIELD]),
+                authExclusion = AuthExclusionView(
+                    null,
+                    null,
+                    ref = description.fields[ACCOUNT_REF_FIELD],
+                    email = description.fields["email"],
+                ),
                 flags = AccountFlags(
                     available = null,
                     credentialPresent = description.present,
@@ -172,6 +177,7 @@ public class AccountsRoute(
             fields[REFUSAL_FIELD],
             fields[ACCOUNT_REF_FIELD],
             fields["display_name"],
+            fields["email"],
         ),
         flags = AccountFlags(
             available = account.available,
@@ -223,15 +229,14 @@ public class AccountsRoute(
         AccountAnswerJson.write(into, answer)
     }
 
-    /** A login is named by a person's name, a label a person chose, or its plan and ref (labels only, never an email or
-     *  an id). A key row has no login to name, and keeps the name it always had. */
+    /** A login is named by a chosen label, its proved email, or its plan fallback. A key row keeps its own label. */
     private fun name(row: JoinedAccount, first: FirstAccountEdit?, naming: AccountNaming): AccountName {
         val given = row.authExclusion.displayName ?: first?.name
         val ref = row.authExclusion.ref
         if (row.credential.kind == API_KEY_WIRE) {
             return AccountName(given ?: row.label ?: "Primary", ref, isDefault = false)
         }
-        return naming.name(AccountNameFacts(given, row.label, ref, row.quota.plan))
+        return naming.name(AccountNameFacts(given, row.label, ref, row.quota.plan, row.authExclusion.email))
     }
 
     /** A first OAuth account's name and whether it may be removed; null for every other row. */

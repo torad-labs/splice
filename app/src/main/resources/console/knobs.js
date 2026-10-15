@@ -16,7 +16,8 @@
 // without managing a restart").
 "use strict";
 
-const KNOBS = (() => {
+const createKnobs = (scope) => {
+  const { API, setTimeout } = scope;
   const fmt = (n) => Number(n).toLocaleString("en-US");
   const SEC = 1000, MIN = 60000, HR = 3600000, MB = 1048576;
   const dur = (ms) => (ms % HR === 0 ? `${ms / HR} h` : ms % MIN === 0 ? `${ms / MIN} min` : ms % SEC === 0 ? `${ms / SEC} s` : `${ms} ms`);
@@ -540,4 +541,4 @@ const KNOBS = (() => {
     fmt, SEC, MIN, HR, MB, dur, tok, LIST, KNOB, st, load, valueOf, val, word, needsRestart, ownersOf, ownValue,
     cmdChip, ctlHtml, saidHtml, backHtml, rowHtml, commandRowsHtml, patch, sent, click, wire, focusCustom, others,
   };
-})();
+};

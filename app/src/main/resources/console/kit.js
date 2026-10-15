@@ -484,6 +484,7 @@ function drawNav() {
   side.insertBefore(nav, side.querySelector(".foot"));
 }
 drawNav();
+document.querySelector('.side [data-act="theme"]')?.addEventListener("click", toggleTheme);
 
 // THE STALE MARK (web-console.md:385, :397; gap 460): splice.toml on disk no longer matches what the daemon booted with,
 // so a change written there, by this console or by hand, waits on a restart. /health says so as topologyStale; the

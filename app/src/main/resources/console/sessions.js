@@ -17,7 +17,9 @@
 // WHERE A SESSION MOVED is drawn from the transcript page's `moves` (ModelMoves): "Continued on [to] model · from
 // [from] model", at the moment of the move, with its time and, when moved rows lost it, "Thinking not carried over"
 // (fin, hitstop f38853e). A move kept from before Continue on named its start carries no from, and draws only where it went.
-"use strict";
+CONSOLE.page("sessions.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
 
 // `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
 // answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
@@ -1212,3 +1214,5 @@ setInterval(() => {
     if (t?.age_ms != null) el.textContent = heldFor(t);
   }
 }, 1000);
+
+});

@@ -79,10 +79,10 @@ class ClaudeAccountSignInTest {
         )
         Files.writeString(
             directory.resolve(".claude.json"),
-            """{"oauthAccount":{"accountUuid":"$account","emailAddress":"$account@synthetic"}}""",
+            """{"oauthAccount":{"accountUuid":"$account","emailAddress":"person@example.invalid"}}""",
         )
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
-        ClaudeCredentialProfiles(state, {}).observed(key, ClaudeAccountIdentity(account, "$account@synthetic"))
+        ClaudeCredentialProfiles(state, {}).observed(key, ClaudeAccountIdentity(account, "person@example.invalid"))
     }
 
     /** Runs one sign-in to its end and returns its final status. */
@@ -189,8 +189,7 @@ class ClaudeAccountSignInTest {
         assertTrue(refused.failureReason.orEmpty().contains("your own Claude Code sign-in"))
     }
 
-    // Labels only (Eli's ruling, Oct 12; S11): the Accounts row an added login gets, read through its own describe and
-    // the roster route. [plan] stands in for the plan its first reading reports.
+    // Account naming reads chosen labels first and the credential's verified email before its plan fallback.
     private fun roster(label: String, plan: String): JsonObject = runBlocking {
         val folder = state.resolve("claude-accounts").resolve(HEAD).resolve(label)
         val described = ClaudeFolderAuth(
@@ -224,14 +223,13 @@ class ClaudeAccountSignInTest {
     }
 
     @Test
-    fun `a lone login added with no label is shown as its plan alone, with its ref kept for naming, never the id`() {
+    fun `a lone login added with no label defaults to its email, with its ref kept for naming, never the id`() {
         val minted = add(HEAD, label = null, account = "uuid-home")
         val row = roster(minted.label!!, "max")
-        // the only unnamed Max login needs no ref on screen (Marlin, Oct 12); the row still carries it for naming
-        assertEquals("Max", row.getValue("display_name").jsonPrimitive.content)
+        assertEquals("person@example.invalid", row.getValue("display_name").jsonPrimitive.content)
         assertEquals(AccountRef.of("uuid-home"), row.getValue("ref").jsonPrimitive.content)
         assertEquals("true", row.getValue("label_default").jsonPrimitive.content, "a default is offered its one naming")
-        assertFalse(row.toString().contains("uuid-home") || row.toString().contains("@"), row.toString())
+        assertFalse(row.toString().contains("uuid-home"), row.toString())
     }
 }
 

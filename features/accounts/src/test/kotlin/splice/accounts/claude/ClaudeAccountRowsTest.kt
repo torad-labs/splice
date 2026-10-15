@@ -42,6 +42,7 @@ class ClaudeAccountRowsTest {
             mapOf(
                 "auth_path" to "/synthetic/work/.credentials.json",
                 ACCOUNT_REF_FIELD to AccountRef.of("work-account"),
+                "email" to "work@synthetic.test",
             ),
         ),
     )
@@ -95,6 +96,10 @@ class ClaudeAccountRowsTest {
             mapOf(head.key to null),
             nowSeconds = 100,
         )
+        assertClientPoolRows(body)
+    }
+
+    private fun assertClientPoolRows(body: String) {
         val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
         assertEquals(2, rows.size, "a real client pool is not discarded before folding")
         val work = rows.map { it.jsonObject }.single { it["label"]?.jsonPrimitive?.content == "work" }
@@ -102,15 +107,16 @@ class ClaudeAccountRowsTest {
         assertEquals(JsonNull, place["carrying_request"], "before any request matched, no place is carrying")
         assertFalse(work.containsKey("carrying_request"), "an added pool login keeps its own selection fields")
         assertEquals(11.0, work.getValue("five_hour_used_percent").jsonPrimitive.content.toDouble())
-        // Labels only: a row names its account by its ref and label, and no email or id is anywhere in the roster.
+        // The added row's chosen label beats its email; the native login uses its proved email as the default.
         assertFalse(work.containsKey("account"), body)
         assertEquals(AccountRef.of("work-account"), work.getValue("ref").jsonPrimitive.content)
         assertEquals(AccountRef.of("native-account"), place.getValue("ref").jsonPrimitive.content)
-        assertFalse("@" in body || "native-account" in body, body)
+        assertEquals("native@synthetic.test", place.getValue("display_name").jsonPrimitive.content)
+        assertEquals("work", work.getValue("display_name").jsonPrimitive.content)
+        assertFalse("native-account" in body || "work-account" in body, body)
         assertEquals("pool", work.getValue("edit_target").jsonObject.getValue("kind").jsonPrimitive.content)
         assertEquals("work", work.getValue("edit_target").jsonObject.getValue("id").jsonPrimitive.content)
         assertEquals("true", work.getValue("can_remove").jsonPrimitive.content)
-        assertEquals("work", work.getValue("display_name").jsonPrimitive.content)
     }
 
     @Test

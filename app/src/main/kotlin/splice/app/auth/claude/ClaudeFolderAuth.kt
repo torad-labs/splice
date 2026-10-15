@@ -91,14 +91,17 @@ internal class ClaudeFolderAuth(
     override suspend fun describe(): AuthDescription {
         val held = read()
         val fields = mutableMapOf("auth_path" to folder.resolve(CREDENTIALS_JSON).toString())
-        // Only a name a person gave: the folder's own name is the pool label, which the accounts row names from.
+        // A name a person gave beats the email verified from this credential profile.
         val given = ClaudeLoginFactsReader().displayName(folder.resolve(".splice-account.json"))
         given?.let { fields["display_name"] = it }
         held?.let { credential ->
             val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer ${credential.accessToken}"))
             val account = key?.let { profiles?.read(it) }
             if (account == null && key != null) identities?.request(key, credential.accessToken)
-            account?.let { fields[ACCOUNT_REF_FIELD] = AccountRef.of(it.uuid) }
+            account?.let {
+                fields[ACCOUNT_REF_FIELD] = AccountRef.of(it.uuid)
+                it.email?.let { email -> fields["email"] = email }
+            }
         }
         return AuthDescription(present = held != null, kind = CLAUDE_ACCOUNT_AUTH_KIND, fields = fields)
     }

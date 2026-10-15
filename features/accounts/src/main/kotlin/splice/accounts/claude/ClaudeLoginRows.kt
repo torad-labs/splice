@@ -60,10 +60,10 @@ internal class ClaudeLoginRows(
         put("credential_present", view.credential.present)
         put("kind", "client")
         put("label", view.id.wire)
-        // Labels only: a saved name a person gave, else `<Plan> · <ref>`; the command word is no account's name.
+        // A saved name wins; otherwise the proved account email names this login when available.
         val given = view.management?.takeIf { it.canRename }?.displayName
         val ref = view.identity.account?.ref
-        val name = naming.name(AccountNameFacts(given, null, ref, view.quota?.plan))
+        val name = naming.name(AccountNameFacts(given, null, ref, view.quota?.plan, view.identity.account?.email))
         // A place no credential has proved yet reads "Account", never the command's word, which names no account
         // (Marlin's Accounts walk, ruled via splice-lead, Oct 12); the page says it is Not read.
         name.write(this)

@@ -4,7 +4,9 @@
 // drawn, and a store with no route to count or delete it says so on its own row instead of offering a Delete that
 // would do nothing. Jobs whose settings the daemon reads only at start, and the jobs that need their own routes
 // (the week's turns, MCP servers, the version), join as each one is true end to end.
-"use strict";
+CONSOLE.page("settings.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener, KNOBS } = scope;
 
 const { fmt, KNOB, st: ks, val, word, rowHtml, ctlHtml, saidHtml, cmdChip, needsRestart } = KNOBS;
 const SV = {
@@ -1477,3 +1479,5 @@ const ghostHtml = () => `<div class="jobs"><div class="list rail" aria-busy="tru
   + `${SKETCH_LINES[i] ? `<div class="meta">${GHOST.bar(SKETCH_LINES[i])}</div>` : ""}</article>`).join("")}</div></div>`;
 root.innerHTML = ghostHtml();
 refresh();
+
+});

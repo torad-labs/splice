@@ -16,7 +16,9 @@
 // A REFUSAL IS SHOWN WHERE IT HAPPENED, in the words the daemon used. A start that does not come up puts its own
 // sentence on the member's card beside Try again, because "the terminal is still showing a trust prompt" is the
 // only thing that tells him what to do next.
-"use strict";
+CONSOLE.page("teams.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
 
 // ---------- the marks this page adds to the kit's own (kit.js holds esc, G, COLORS, colorOf, clock) ----------
 const GLYPH = {
@@ -1185,7 +1187,7 @@ document.addEventListener("keydown", (e) => {
 
 /** A member card bound to a session opens it in Sessions, which reads its door from the hash. */
 function openSession(card) {
-  location.href = `sessions.html#${encodeURIComponent(card.dataset.go)}`;
+  CONSOLE.navigate(`sessions.html#${encodeURIComponent(card.dataset.go)}`);
 }
 document.addEventListener("keydown", (e) => {
   const card = e.target.closest?.(".card[data-go]");
@@ -1319,3 +1321,5 @@ setInterval(() => {
 // the tiles come and go with the page's width, as Sessions' do
 let wasWide = null;
 addEventListener("resize", () => { const w = tilesWide(); if (w !== wasWide) { wasWide = w; if (!state.loading) render(); } });
+
+});

@@ -17,7 +17,9 @@
 // PLANS AND KEYS NEVER MEET IN ONE MONEY FIGURE (fin, Oct 11). A plan's requests read "On your plan", with their value at
 // API prices as a value, never as money spent; only a key's requests are money. A count that is splice's own says so,
 // so it never passes for the provider's window. A figure nobody reported is left out, never printed as a zero.
-"use strict";
+CONSOLE.page("usage.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
 
 const n0 = (n) => Math.round(n).toLocaleString("en-US");
 const secs = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : ms < 60000 ? `${+(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s` : `${Math.floor(ms / 60000)} min ${Math.round((ms % 60000) / 1000)} s`);
@@ -516,6 +518,7 @@ function projectFigures() {
 // a command that could not be read: its chip and Not read, the cause in the console (fin, Oct 12)
 const notReadHtml = () => `<p class="reading">${D.errors.map((cmd) => S.heads.find((h) => h.command === cmd)?.key).filter(Boolean).map(chip).join("")}<span class="why">${NOT_READ}</span></p>`;
 const readingHtml = () => `<p class="reading">${[...(D.reading ?? [])].map((h) => `<span class="rd">${chip(h)}${GHOST.bar(5)}</span>`).join("")}<span class="why">Not counted yet</span></p>`;
+const PERF_HEADS = createPerfHeads(scope, { render, chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ });
 function render() {
   tick();
   document.getElementById("pickline").innerHTML = pickLineHtml(S.groups, ui.project, ui.pmenu, projectFigures());
@@ -576,3 +579,5 @@ root.addEventListener("mouseleave", () => { if (ui.hover != null) { ui.hover = n
   if (DIMS[A.get("by")]) ui.by = A.get("by"); else if (hasFilter()) ui.by = nextBy(Object.keys(ui.f).at(-1));
 }
 (async () => { render(); await readStanding(); render(); await readWindow(); })();
+
+});

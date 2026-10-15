@@ -11,7 +11,9 @@
 // tagWord, isFailed, GHOST, esc).
 "use strict";
 
-const PERF_HEADS = (() => {
+const createPerfHeads = (scope, helpers) => {
+  const { API, document } = scope;
+  const { render, chip, providerOfHead, cmdOf, flagOf, flagHtml, hasFilter, ui, S, n0, secs, OPEN, OUTCOME_WORD, tagWord, isFailed, NOT_READ } = helpers;
   const WINDOWS = { "1h": "1 hour", "24h": "24 hours", "7d": "7 days" };
   // a compaction's ending, in words (StreamCompact's outcome); an outcome not named here reads as its own key
   const ENDED = {
@@ -198,4 +200,4 @@ const PERF_HEADS = (() => {
     render();
   });
   return { html };
-})();
+};

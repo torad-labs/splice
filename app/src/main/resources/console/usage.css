@@ -32,6 +32,8 @@
 .pcard > footer, .kcard > footer { display: flex; align-items: flex-end; gap: 1.05rem; margin-top: auto; padding-top: .75rem; border-top: .12rem solid var(--track); }
 .thru { margin-left: auto; font: 500 .9rem/1 var(--font-data); color: var(--text-body); white-space: nowrap; }
 .thru b { font-weight: 600; color: var(--text); }
+/* a plan card's figures wrap inside the card, right-aligned, instead of running past its edge (walk Oct 15, 3394 dark) */
+.pcard .thru { white-space: normal; min-width: 0; text-align: right; line-height: 1.5; }
 .kcard .spent { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem .85rem; }
 .kcard .spent .money { font: 600 1.5rem/1 var(--font-data); color: var(--text); }
 .kcard .spent .none { font: 500 1.05rem/1.5rem var(--font-name); color: var(--text-mute); }
@@ -56,7 +58,7 @@
 .col .stack a.alt, .legend .key i.alt, .tip p i.alt { background: repeating-linear-gradient(135deg, var(--c) 0 .5rem, color-mix(in srgb, var(--c) 68%, var(--ink)) .5rem .75rem); }
 .col.on .stack { box-shadow: 0 0 0 .2rem var(--key-light); }
 .col .x { position: absolute; top: calc(100% + .7rem); left: 0; font: 500 .88rem/1 var(--font-data); color: var(--text-mute); white-space: nowrap; }
-.legend { display: flex; flex-wrap: wrap; gap: .6rem 1.05rem; margin: 1.2rem 0 0 4.4rem; }
+.legend { display: flex; flex-wrap: wrap; gap: .6rem 1.05rem; margin: 2.6rem 0 0 4.4rem; }  /* clears the day labels (.col .x) under the bars */
 .legend .key { display: inline-flex; align-items: center; gap: .5rem; font: 500 .9rem/1 var(--font-data); color: var(--text-body); }
 .legend .key i, .tip p i { width: .85rem; height: .85rem; border-radius: .2rem; background: var(--c); box-shadow: 0 0 0 .1rem var(--ink); flex: none; }
 .legend .key.fail i { width: .45rem; height: .45rem; margin: 0 .2rem; border-radius: 50%; background: var(--limit); box-shadow: none; }  /* the mark under a bar */

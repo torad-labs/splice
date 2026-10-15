@@ -824,9 +824,9 @@ const ordered = (rows) => rows.slice().sort(state.order === "price"
 // rail, their words the striped bars a meter draws while it reads, fading down the page, so the rows land where the
 // eye already is and nothing moves when they do. The filters' row holds ghost chips the same way.
 const GHOST_SLIPS = [[11, 6, 18, 4], [9, 8, 14, 3.4], [13, 5, 16, 4.4], [8, 7, 12, 3.6], [10, 6, 15, 4]];
-const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading requests"><div class="hour"><span><i class="ghost" style="width:2.6rem"></i></span></div>`
+const ghostListHtml = () => `<div class="list ghosts" aria-busy="true" aria-label="Reading requests"><div class="hour"><span><i class="ghost" style="width:2.2rem"></i></span></div>`
   + GHOST_SLIPS.map(([name, chip, line, dur], i) => `<article class="card rq ghost-rq ghosted" style="--i:${i}" aria-hidden="true"><span class="lamp"></span>`
-    + `<div class="top"><i class="ghost" style="width:6.4rem"></i><i class="ghost nm" style="width:${name}rem"></i><i class="ghost end" style="width:${dur}rem"></i></div>`
+    + `<div class="top"><i class="ghost" style="width:5.6rem"></i><i class="ghost nm" style="width:${name}rem"></i><i class="ghost end" style="width:${dur}rem"></i></div>`
     + `<div class="meta"><i class="ghost chip" style="width:${chip}rem"></i><i class="ghost" style="width:${line}rem"></i></div></article>`).join("") + "</div>";
 const ghostFiltersHtml = () => `<div class="filters" aria-hidden="true">${[5.6, 6.6, 6, 5.4, 6.2].map((w) => `<i class="ghost chip" style="width:${w}rem"></i>`).join("")}</div>`;
 function listHtml() {

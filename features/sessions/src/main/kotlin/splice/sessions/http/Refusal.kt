@@ -38,6 +38,24 @@ internal enum class Refusal(val key: String) {
 
     /** A turn is running, which ending the session would cut: shown to the person, ended only on his say-so (Marlin). */
     WORKING("working"),
+
+    /** The manager (ManagerSession): no head named, or none splice runs by that key. */
+    HEAD_UNKNOWN("head_unknown"),
+
+    /** The manager's head has no command linked where `splice install` puts it. */
+    NOT_INSTALLED("not_installed"),
+
+    /** The manager's terminal did not open, or Claude Code did not register in it in time. */
+    LAUNCH_FAILED("launch_failed"),
+
+    /** The manager's folder could not be made ready. */
+    FOLDER_MISSING("folder_missing"),
+
+    /** The manager already runs on the head asked for. */
+    SAME_HEAD("same_head"),
+
+    /** The manager waits on an answer, which a move would type `/exit` into. */
+    WAITING("waiting"),
 }
 
 /** A refusal's reply: its sentence, for the log, and its [Refusal] key when it has one, which is what a page names

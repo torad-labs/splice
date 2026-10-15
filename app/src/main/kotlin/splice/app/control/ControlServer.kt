@@ -49,6 +49,7 @@ import splice.app.control.mount.FleetMount
 import splice.app.control.mount.LaunchMount
 import splice.app.control.mount.LaunchSessions
 import splice.app.control.mount.LifecycleMount
+import splice.app.control.mount.ManagerMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
 import splice.app.control.mount.ProjectsMount
@@ -139,6 +140,9 @@ internal class ControlServer(
     private val teams = TeamsMount(sessionWiring, sessions, heads, ports, guard)
     private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)
 
+    // Oct 15, 2026: the splice manager the composer opens, started and moved through the same drive (ManagerMount).
+    private val managerMount = ManagerMount(sessionWiring, sessions, heads, resolver, config, guard)
+
     // Every request row names its project through the one resolver the session rows use.
     init {
         projects.requestTags?.let(usage::tagProjects)
@@ -180,6 +184,7 @@ internal class ControlServer(
         ControlMount(sessionMount::register),
         ControlMount(teams::register),
         ControlMount(projects::register),
+        ControlMount(managerMount::register),
         ControlMount(diagnostics::register),
         ControlMount(models::register),
         ControlMount(launch::register),

@@ -1,158 +1,536 @@
-// The composer: one field at the bottom of every console page that types a message into a live session, the way
-// Sessions' own Message field does, with the session picked from the live ones grouped per project (Marcos, Oct 15:
-// "let's bring a composer into the picture", after the Temple's).
+// The composer: the door to the splice manager, ONE resident Claude Code session that works in splice's global settings
+// folder and helps run splice (Marcos, Oct 15: "the composer for splice is a session that runs inside a splice global
+// settings folder and its goal is to help manage splice, not to switch between multiple sessions"). It never types into
+// any other session: the manager reaches other sessions itself, the way any session can.
 //
 // WHERE EVERY VALUE COMES FROM. The composer carries no data of its own:
-//   GET  /api/sessions               every 30 s while the tab is in view and the console unlocked, and again when the
-//                                    picker opens, the tab returns or a send lands (the read holds every ended session,
-//                                    hundreds of KB, so it is not asked often): the live sessions
-//   GET  /api/sessions/{id}/screen   just before a send: a session showing a menu takes no typing, since a typed Enter
-//                                    would press its highlighted choice
-//   POST /api/sessions/{id}/say      the message, typed into the terminal splice opened for it (200 = typed)
-//   POST /api/sessions/{id}/message  a note to a session splice did not open (202 = submitted, never "delivered")
+//   GET  /api/manager                        the manager's state: every 15 s, every 3 s while the sheet is open
+//   POST /api/manager/start {head}           Start on the first-run card, and Resume (also a send while it is not running)
+//   POST /api/manager/head {head}            the head chip's menu: Continue on, the same conversation on another head
+//   GET  /api/sessions/{id}/transcript       while the sheet is open: its newest 50 messages, then only what is newer
+//   GET  /api/sessions/{id}/screen           before a send, and while it waits on him: a menu takes buttons, never typing
+//   POST /api/sessions/{id}/answer           the numbered choice he pressed
+//   POST /api/sessions/{id}/say {text}       his message, typed into the manager's terminal (200 = typed, nothing more)
 //
-// It mounts once, after console.js has taken the page's own nodes, outside main.page, so the router's swap of
-// main.page never removes it; and it draws the count of sessions that need him as a lamp on the nav's Sessions item.
+// It mounts once, after console.js has taken the page's own nodes, outside main.page, so the router's swap of main.page
+// never removes it.
 "use strict";
 
 (() => {
-  const STORE = "splice-console-composer-target";
-  const EVERY_MS = 30_000;
-  const SAID_MS = 4_000;
+  const OPEN_MS = 3_000, CLOSED_MS = 15_000, SAID_MS = 4_000, PAGE = 50, FOLLOW_PX = 40, TYPED_MS = 120_000, EXIT_MS = 60_000;
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-  const PLACEHOLDER = `Message a session. ${MAC ? "⌘K" : "Ctrl+K"}`;
-  const NONE_LIVE = "No live session to message";
-  // the cards' rank (kit rankOf): waiting on him, in trouble, working, the rest; a row not heard from in 30 min last
-  const RANK = { needs: 0, stalled: 1, working: 2, idle: 3, quiet: 4, ended: 5 };
-  const WORD = { needs: "Needs you", stalled: "Stalled", working: "Working", idle: "Idle", quiet: "Not heard from", ended: "Ended" };
-  const COUNTED = ["needs", "stalled", "working", "idle", "quiet"];
+  const KEYS = MAC ? "⌘K" : "Ctrl+K";
+  const WORD = { working: "Working", waiting: "Waiting on you", idle: "Ready" };
+  const X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+  const CARET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>`;
 
   const h = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const oneLine = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
-  const path = (s, act) => `/api/sessions/${encodeURIComponent(s.id)}/${act}`;
   const locked = () => document.body.classList.contains("locked");
+  const route = (id, act) => `/api/sessions/${encodeURIComponent(id)}/${act}`;
+  const home = (p) => String(p || "").replace(/^\/(?:home|Users)\/[^/]+/, "~");
 
   const st = {
-    rows: [], byId: new Map(), notes: new Set(), read: false, reading: false, readAt: 0,
-    target: null, seen: null, pinned: false, open: false, q: "", active: 0, flat: [], busy: false, line: null, href: "",
+    m: null, gone: null,        // the manager's state as last read; why it could not be read (absent, down, error)
+    phase: null,                // { kind: start | resume | move, head } while that POST is out
+    card: false, notNow: false, // the first-run card; Not now holds for this page load only, never stored as a refusal
+    pick: null,                 // the head chosen on the card
+    open: false, menu: false,   // the conversation sheet; the head chip's menu
+    sid: null, log: null,       // the session whose conversation is drawn, and what was read of it
+    fresh: false,               // the drawn conversation is an older id's: the next read is from the end, and replaces it whole
+    typed: [],                  // what he sent that the transcript does not hold yet
+    ask: null, answering: null, // the manager's screen while it offers a menu; the choice he pressed
+    busy: false, line: null, reading: false, timer: 0, opened: new Set(),
   };
-  let dock, chip, lamp, who, where, field, send, line, pop, q, list, lineTimer = 0, listHtml = "";
+  let dock, card, sheet, where, log, ask, foot, line, lamp, door, field, send, lineTimer = 0;
+  const drawn = { card: "", ask: "", foot: "", rows: [] };
 
   // ---------- reading ----------
-  /** One row in the lamp's words, read the way Sessions reads it (kit rowLook), without the live turns it also asks. */
-  function lookOf(row) {
-    let state = row.waiting_for ? "needs" : row.availability !== "stale" && (row.status === "working" || row.status === "busy") ? "working" : "idle";
-    let stall = null;
-    try { ({ state, stall } = rowLook(row, null, null)); } catch { /* kit.js absent: the row's own status stands */ }
-    if (state === "needs") return "needs";
-    if (stall) return "stalled";
-    if (state === "working") return "working";
-    return row.availability === "stale" ? "quiet" : "idle";
+  const heads = () => st.m?.heads || [];
+  const headOf = (key) => heads().find((x) => x.key === key) ?? null;
+  const labelOf = (key) => headOf(key)?.label || key || "a head";
+  /** A head's colour is its provider's (kit.js colorOf). The state names only a key, so the provider is read off the key
+   *  ("claude-splice" is Claude's) when the head carries none; a key naming no provider draws in the muted text colour. */
+  function tint(key) {
+    try {
+      const hd = headOf(key);
+      let fam = hd?.provider ? PROVIDER_FAMILY[hd.provider] ?? hd.provider : null;
+      for (const t of String(key || "").toLowerCase().split(/[^a-z0-9]+/)) {
+        if (fam) break;
+        fam = COLORS[t] ? t : PROVIDER_FAMILY[t] ?? null;
+      }
+      return colorOf(fam);
+    } catch { return "var(--text-mute)"; }
   }
-  function sessionOf(row) {
-    return {
-      id: row.session_id, row, look: lookOf(row),
-      name: oneLine(row.name || row.title) || row.session_id.slice(0, 8),
-      project: row.project?.label || row.project?.name || "No project",
-      key: row.project?.id || "-", // the project pick's key (kit PICK, NO_PROJECT_KEY)
-      last: oneLine(row.last?.text) || oneLine(row.waiting_for),
-      at: +new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
-    };
+  function lampOf() {
+    if (st.phase) return "busy";
+    if (st.gone === "down") return "trouble";
+    if (st.m?.state !== "live") return "off";
+    return st.m.status === "working" ? "working" : st.m.status === "waiting" ? "waiting" : "idle";
   }
-  const urgent = (a, b) => RANK[a.look] - RANK[b.look] || b.at - a.at;
+  /** Nothing runs, and either nothing exists to resume or he was never asked: the pill is the door to the card. */
+  const unasked = (m) => m.state !== "live" && (m.state === "off" || !m.consented);
+  function phaseWord() {
+    const p = st.phase;
+    return p.kind === "move" ? `Moving to ${labelOf(p.head)}` : p.kind === "resume" ? "Resuming your manager" : `Starting on ${labelOf(p.head)}`;
+  }
 
-  async function refresh() {
-    if (st.reading || document.hidden || locked()) return;
+  /** Every 3 s while the sheet is open and the tab in view, every 15 s while it is closed (the state alone, then). */
+  async function tick() {
+    if (!document.hidden && !locked() && !st.phase) await readAll();
+    clearTimeout(st.timer); // after the read, so two ticks that overlap leave one clock, never two
+    st.timer = setTimeout(tick, st.open ? OPEN_MS : CLOSED_MS);
+  }
+  async function readAll() {
+    if (st.reading) return;
     st.reading = true;
-    const res = await API.get("/api/sessions");
-    st.reading = false; st.readAt = Date.now();
-    if (!res.ok) return; // what was read last stands; a locked console hides the composer (body.locked)
-    st.read = true;
-    st.notes = new Set(res.body?.note_versions || []);
-    st.rows = (res.body?.sessions || []).filter((r) => r?.session_id && r.availability !== "gone").map(sessionOf);
-    st.byId = new Map(st.rows.map((s) => [s.id, s]));
-    settle();
-    draw();
+    try {
+      const res = await API.get("/api/manager");
+      if (st.phase) return; // a start or a move is out: its own answer is the state
+      if (res.ok && res.body?.state) { st.gone = null; apply(res.body); }
+      else {
+        st.gone = res.status === 404 ? "absent" : res.status === 0 ? "down" : "error";
+        if (res.status === 404) st.m = null; // a splice without the manager: the pill says so and takes nothing
+      }
+      if (st.open && st.sid && st.m) {
+        await readLog();
+        if (st.m.state === "live" && st.m.status === "waiting") await readScreen(); else st.ask = null;
+      }
+    } finally { st.reading = false; draw(); }
   }
-
-  // ---------- the target ----------
-  const pickedProject = () => {
-    try { return PICK.get(); } catch { return new URLSearchParams(location.search).get("project") || null; }
-  };
-  /** The session open on Sessions, else the most urgent live one of the picked project, else the one last used. */
-  function defaultTarget() {
-    if (/(^|\/)sessions(\.html)?$/.test(location.pathname)) {
-      const id = decodeURIComponent(location.hash.slice(1));
-      const open = id && (st.byId.get(id) ?? (id.length >= 8 ? st.rows.find((s) => s.id.startsWith(id)) : null));
-      if (open) return open.id;
+  /** The state the server answered, from a read or from a start or a move. */
+  function apply(m) {
+    const was = st.m;
+    st.m = m;
+    if (m.session_id && m.session_id !== st.sid) {
+      // a move that copied the conversation under a new id: the view keeps what it shows until the new id reads
+      if (st.sid && st.log) st.fresh = true;
+      st.sid = m.session_id;
     }
-    const pick = pickedProject();
-    const top = pick ? st.rows.filter((s) => s.key === pick).sort(urgent)[0] : null;
-    if (top) return top.id;
-    let last = null;
-    try { last = localStorage.getItem(STORE); } catch { /* no storage: no memory */ }
-    return last && st.byId.has(last) ? last : null;
+    if (m.state !== "live" || m.status !== "waiting") { st.ask = null; st.answering = null; }
+    if (m.state === "live") st.card = false;
+    else if (!m.consented && !st.notNow && !st.phase) st.card = true; // first run: ask before anything starts or resumes
+    // a reply: the turn it was working on ended, for him to read or to answer
+    if (was?.state === "live" && was.status === "working" && m.status !== "working" && !st.open && !st.card) openSheet();
   }
-  /** Follow the page until he takes the session himself: picking one, sending to one, or typing to one fixes it, so a
-   *  read never moves his words to another session under him. */
-  function settle() {
-    const held = st.pinned || st.busy || st.line?.held != null || field.value.trim() !== "" || document.activeElement === field;
-    if (!held && st.read) st.target = defaultTarget();
-    const s = st.byId.get(st.target);
-    if (s) st.seen = s;
+  async function readLog() {
+    const id = st.sid, held = st.log;
+    const last = held?.messages?.at(-1);
+    if (st.fresh || !last || held.sid !== id) return readEnd(id);
+    // read again from his first message since the last reply, the oldest one a poll can still change, else the last
+    const replied = held.messages.findLastIndex((m) => m.role === "assistant");
+    const from = held.messages.slice(replied + 1).find((m) => m.role === "user") ?? last;
+    const res = await API.get(`${route(id, "transcript")}?cursor=${encodeURIComponent(`after:${from.index}`)}&limit=${PAGE}`);
+    if (id !== st.sid) return;
+    if (res.status === 400 || res.body?.more || res.body?.state === "off") return readEnd(id);
+    if (!res.ok || !Array.isArray(res.body?.messages)) return;
+    const first = res.body.messages[0]?.index ?? Infinity;
+    st.log = { ...held, messages: [...held.messages.filter((m) => m.index < first), ...res.body.messages], moves: res.body.moves ?? held.moves };
+    settleTyped();
   }
-  /** The target as last read; one that left the list reads Ended under the name it had. */
-  const cur = () => st.byId.get(st.target) ?? (st.target && st.read && st.seen?.id === st.target ? { ...st.seen, look: "ended" } : null);
-  const notable = (s) => Boolean(s.row.address) && st.notes.has(s.row.version);
-  function remember(id) {
-    try { localStorage.setItem(STORE, id); } catch { /* no storage: no memory */ }
+  async function readEnd(id) {
+    const res = await API.get(`${route(id, "transcript")}?before=end&limit=${PAGE}`);
+    if (id !== st.sid) return;
+    const kept = st.log?.messages?.length ? st.log : null;
+    if (res.ok && res.body?.state === "off") { if (!kept) st.log = { sid: id, off: true }; st.fresh = false; return; }
+    // a moved conversation's new id that reads nothing yet leaves the old view standing; the next poll reads it again
+    if (!res.ok || !Array.isArray(res.body?.messages) || (st.fresh && kept && !res.body.messages.length)) {
+      if (!kept) st.log = { sid: id, messages: res.status === 404 ? [] : null, error: res.status === 404 ? null : "Not read" };
+      return;
+    }
+    st.log = { sid: id, messages: res.body.messages, earlier: Boolean(res.body.earlier), moves: res.body.moves || [] };
+    st.fresh = false;
+    settleTyped();
+  }
+  async function readScreen() {
+    const res = await API.get(route(st.sid, "screen"));
+    if (res.ok) st.ask = res.body?.choices?.length || res.body?.asked ? res.body : null;
+  }
+  /** A typed message leaves the view's tail once the transcript holds it, or after two minutes. */
+  function settleTyped() {
+    const said = (st.log?.messages || []).filter((m) => m.role === "user").map((m) => ({ text: oneLine(m.text), ts: m.ts ?? Infinity }));
+    st.typed = st.typed.filter((t) => Date.now() - t.at < TYPED_MS && !said.some((m) => m.text === oneLine(t.text) && m.ts >= t.at - 10_000));
   }
 
   // ---------- drawing ----------
   function draw() {
-    drawChip(); drawField(); drawNeeds();
-    if (st.open) drawPop();
+    drawPill(); drawCard(); drawSheet();
+    dock.classList.toggle("wide", st.open || st.card);
   }
-  function drawChip() {
-    const s = cur();
-    lamp.className = `cmp-lamp ${s ? s.look : "none"}`;
-    who.textContent = s ? s.name : st.read && !st.rows.length ? "No session" : "Choose a session";
-    where.textContent = s ? s.project : "";
-    where.hidden = !s;
-    const said = s ? `${s.name}, ${s.project}, ${WORD[s.look]}` : who.textContent;
-    chip.title = s ? `${said}. Choose another session` : "Choose a session";
-    chip.setAttribute("aria-label", s ? `To ${said}. Choose another session` : "Choose a session");
-  }
-  function drawField() {
-    field.placeholder = st.read && !st.rows.length && !cur() ? NONE_LIVE : PLACEHOLDER;
-    field.readOnly = st.busy;
-    send.disabled = st.busy || !field.value.trim() || cur()?.look === "ended";
-    send.textContent = st.busy ? "Sending" : "Send";
+  function drawPill() {
+    const m = st.m, door1 = Boolean(m) && unasked(m) && !st.phase;
+    door.hidden = !door1; field.hidden = door1;
+    lamp.className = `cmp-lamp ${lampOf()}`;
+    field.readOnly = st.busy || Boolean(st.phase) || !m;
+    field.placeholder = st.phase ? phaseWord()
+      : !m ? (st.gone === "absent" ? "This splice has no manager yet" : st.gone === "down" ? "splice is not answering" : "Reading the splice manager")
+      : st.gone === "down" ? "splice is not answering"
+      : m.state === "resumable" ? `Resume the splice manager. ${KEYS}` : `Message the splice manager. ${KEYS}`;
+    const words = field.value.trim() !== "";
+    send.hidden = door1;
+    send.disabled = st.busy || Boolean(st.phase) || !m || (m.state === "live" && !words);
+    send.textContent = st.busy ? "Sending" : m?.state === "resumable" && !words ? "Resume" : "Send";
     send.setAttribute("aria-busy", String(st.busy));
   }
-  /** The count of sessions that need him, as a quiet gold lamp on the nav's Sessions item; the number is in its title. */
-  function drawNeeds() {
-    const a = document.querySelector('.nav a[href="sessions.html"]');
-    if (!a || !st.read) return;
-    const n = st.rows.filter((s) => s.look === "needs").length;
-    if (n) {
-      a.dataset.needs = String(n);
-      a.title = n === 1 ? "1 session needs you" : `${n} sessions need you`;
-    } else if (a.dataset.needs) {
-      delete a.dataset.needs;
-      a.removeAttribute("title");
+  function headChip(x, on, role) {
+    const why = x.ready ? "" : `<small>${h(x.why || "Not ready")}</small>`;
+    return `<button type="button" class="cmp-hd" role="${role}" aria-checked="${on}" data-act="${role === "radio" ? "pick" : "head"}" data-head="${h(x.key)}"`
+      + ` style="--c:${tint(x.key)}"${x.ready ? "" : " disabled"}><span class="cmp-blot" aria-hidden="true"></span><span>${h(x.label || x.key)}${why}</span></button>`;
+  }
+  function drawCard() {
+    card.hidden = !st.card;
+    if (!st.card) return;
+    const list = heads(), ready = list.filter((x) => x.ready);
+    if (!ready.some((x) => x.key === st.pick)) st.pick = ready.find((x) => x.key === st.m?.head)?.key ?? ready[0]?.key ?? null;
+    const folder = st.m?.folder ? `<code>${h(home(st.m.folder))}</code>` : "splice's settings folder";
+    const again = st.m?.state === "resumable";
+    const html = `<h2 id="cmp-card-h">${again ? "Resume" : "Start"} the splice manager</h2>`
+      + `<p>The splice manager is a Claude Code session that works in ${folder} and helps you run splice: heads, config, accounts and sessions. `
+      + `It changes splice.toml only when you approve, and what you tell it goes to the head you pick here.</p>`
+      + `<p class="cmp-cap" id="cmp-heads-l">${ready.length ? "Runs on" : "No head can run it right now"}</p>`
+      + `<div class="cmp-heads" role="radiogroup" aria-labelledby="cmp-heads-l">${list.map((x) => headChip(x, x.key === st.pick, "radio")).join("")}</div>`
+      + `<div class="cmp-go"><button type="button" class="act primary" data-act="start"${st.pick ? "" : " disabled"}>${again ? "Resume" : "Start"}</button>`
+      + `<button type="button" class="act quiet" data-act="later">Not now</button></div>`;
+    if (html !== drawn.card) { card.innerHTML = html; drawn.card = html; }
+  }
+  function drawSheet() {
+    sheet.hidden = !st.open;
+    if (!st.open) return;
+    where.textContent = st.m?.folder ? home(st.m.folder) : "";
+    drawLog(); drawAsk(); drawFoot();
+  }
+  function drawFoot() {
+    const m = st.m, key = m?.head;
+    const menu = `<div class="cmp-menu" role="menu" aria-label="Move the manager to"${st.menu ? "" : " hidden"}>`
+      + heads().map((x) => headChip(x, x.key === key, "menuitemradio")).join("") + `</div>`;
+    const chip = key ? `<div class="cmp-menuwrap"><button type="button" class="cmp-hd" data-act="menu" aria-haspopup="menu" aria-expanded="${st.menu}" style="--c:${tint(key)}"`
+      + ` title="The head the manager runs on. Another one continues the same conversation there."${st.phase || !heads().length ? " disabled" : ""}>`
+      + `<span class="cmp-blot" aria-hidden="true"></span><span>${h(labelOf(key))}</span>${CARET}</button>${menu}</div>` : "";
+    const look = lampOf();
+    const word = st.phase ? phaseWord() : m?.state === "live" ? WORD[m.status] ?? "Ready"
+      : m?.state === "resumable" ? "Not running. A message resumes it." : "";
+    const state = `<span class="cmp-state ${look}"><span class="cmp-lamp ${look}" aria-hidden="true"><i></i></span><span>${h(word)}</span></span>`;
+    const open = st.sid ? `<a class="act quiet small cmp-open" href="sessions.html#${encodeURIComponent(st.sid)}" data-act="go">Open on Sessions</a>` : "";
+    const html = chip + state + open;
+    if (html !== drawn.foot) { foot.innerHTML = html; drawn.foot = html; }
+  }
+  function drawAsk() {
+    const a = st.ask;
+    let html = "";
+    if (a) {
+      // what it will run, as its screen framed it, and the line above that says why, so nothing is approved blind
+      const panel = a.panel || [], at = panel.findIndex((l) => l.framed);
+      const run = at < 0 ? "" : `<p class="cmp-run">${h(panel.filter((l) => l.framed).map((l) => l.text).join("\n"))}</p>`;
+      const why = at > 0 ? panel[at - 1].text : "";
+      const q = oneLine(a.asked) || why || "The manager is asking you something.";
+      const going = st.answering;
+      const choices = (a.choices || []).map((c, i) => `<button type="button" class="act${i ? "" : " primary"}" data-act="answer" data-choice="${c.choice}" data-label="${h(c.label)}"`
+        + `${going ? " disabled" : ""}${going === c.choice ? ' aria-busy="true"' : ""}><kbd>${c.choice}</kbd>${h(c.label)}</button>`).join("");
+      html = `<p class="cmp-q">${h(q)}</p>${run}`
+        + (choices ? `<div class="cmp-choices">${choices}</div>` : `<p class="cmp-askline">Answer it on Sessions, where its terminal shows.</p>`);
     }
+    ask.hidden = !html;
+    if (html !== drawn.ask) { ask.innerHTML = html; drawn.ask = html; }
+  }
+
+  // ---------- the conversation ----------
+  /** Light markdown, as the manager writes it: paragraphs, bullets, numbered lists, inline and fenced code, bold. */
+  const inline = (s) => String(s).split(/(`[^`\n]+`)/).map((p, i) => (i % 2 ? `<code>${h(p.slice(1, -1))}</code>`
+    : h(p).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>"))).join("");
+  function md(text) {
+    const out = [];
+    let para = [], list = null, code = null;
+    const endPara = () => { if (para.length) out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+    const endList = () => { if (list) out.push(`<${list.tag}>${list.items.map((x) => `<li>${inline(x)}</li>`).join("")}</${list.tag}>`); list = null; };
+    for (const ln of String(text).split("\n")) {
+      if (code) {
+        if (/^\s*```/.test(ln)) { out.push(`<pre><code>${h(code.join("\n"))}</code></pre>`); code = null; } else code.push(ln);
+        continue;
+      }
+      if (/^\s*```/.test(ln)) { endPara(); endList(); code = []; continue; }
+      const li = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/.exec(ln);
+      if (li) {
+        endPara();
+        const tag = li[1] ? "ol" : "ul";
+        if (list && list.tag !== tag) endList();
+        (list ??= { tag, items: [] }).items.push(li[2]);
+        continue;
+      }
+      if (!ln.trim()) { endPara(); endList(); continue; }
+      if (list && /^\s{2,}\S/.test(ln)) { list.items[list.items.length - 1] += ` ${ln.trim()}`; continue; }
+      endList();
+      const hd = /^#{1,6}\s+(.*)$/.exec(ln);
+      if (hd) { endPara(); out.push(`<p><strong>${inline(hd[1])}</strong></p>`); continue; }
+      para.push(ln);
+    }
+    if (code) out.push(`<pre><code>${h(code.join("\n"))}</code></pre>`);
+    endPara(); endList();
+    return out.join("");
+  }
+  /** What a call was about, from its input as the transcript keeps it (Sessions' callSummary); a path in the manager's
+   *  own folder reads from there. */
+  function callSummary(m) {
+    let input;
+    try { input = JSON.parse(m.text); } catch { return oneLine(m.text); }
+    if (!input || typeof input !== "object") return oneLine(m.text);
+    const folder = st.m?.folder ? `${String(st.m.folder).replace(/\/$/, "")}/` : null;
+    const file = (p) => (folder && p.startsWith(folder) ? p.slice(folder.length) : home(p));
+    if (input.command) return oneLine(input.command);
+    if (input.file_path || input.notebook_path) return file(input.file_path || input.notebook_path);
+    if (input.pattern) return input.path ? `${input.pattern} in ${file(input.path)}` : input.pattern;
+    if (input.questions?.[0]?.question) return input.questions[0].question;
+    if (input.url) return input.url;
+    if (input.to && input.message) return `to ${input.to}`;
+    return oneLine(Object.values(input).find((v) => typeof v === "string" && v.trim()) ?? "");
+  }
+  /** The rows the sheet shows, each with a key, so a poll only adds what is new and never redraws what he is reading. */
+  function rows() {
+    const held = st.log, msgs = held?.messages || [], out = [];
+    if (held?.earlier && st.sid) out.push({ key: "earlier", html: `<a class="cmp-older" href="sessions.html#${encodeURIComponent(st.sid)}" data-act="go">Earlier messages are on Sessions</a>` });
+    const results = new Map(msgs.filter((m) => m.role === "tool" && m.tool_use_id).map((m) => [m.tool_use_id, m.text]));
+    const moves = (held?.moves || []).slice().sort((a, b) => a.moved_at - b.moved_at);
+    const exits = new Set(); // the /exit splice typed to end the client for a move: the move's mechanics, not his words
+    for (const mv of moves) {
+      const exit = msgs.find((m) => m.role === "user" && m.ts && m.ts >= mv.moved_at - 5_000 && m.ts - mv.moved_at <= EXIT_MS && oneLine(m.text) === "/exit");
+      if (exit) exits.add(exit.index);
+    }
+    const joint = (mv) => ({ key: `mv${mv.moved_at}`, html: `<p class="cmp-moved"><span>Continued on</span><span class="cmp-blot" style="--c:${tint(mv.command)}" aria-hidden="true"></span>`
+      + `<b>${h(headOf(mv.command)?.label || mv.command || "another head")}</b>${mv.thinking_dropped ? "<span>Thinking not carried over</span>" : ""}</p>` });
+    for (const m of msgs) {
+      while (moves.length && m.ts && moves[0].moved_at <= m.ts) out.push(joint(moves.shift()));
+      const key = `${m.index}`;
+      if (m.role === "tool" || exits.has(m.index)) continue;
+      if (m.tool) {
+        const result = results.get(m.tool_use_id), sum = callSummary(m), open = st.opened.has(key) ? " open" : "";
+        out.push({ key, html: `<details class="cmp-tool" data-k="${h(key)}"${open}><summary title="${h(`${m.tool} ${sum}`)}"><b>${h(m.tool)}</b><span>${h(sum)}</span></summary>`
+          + `<pre>${h(result == null ? "No result yet" : result.trim() || "No output")}</pre></details>` });
+        continue;
+      }
+      if (m.role === "system") { if (m.kind === "interrupted") out.push({ key, html: `<p class="cmp-moved"><span>Stopped</span></p>` }); continue; }
+      if (!String(m.text || "").trim()) continue;
+      if (m.role === "peer") { out.push({ key, html: `<div class="cmp-m peer"><span class="cmp-from">From ${h(m.from || "another session")}</span><div class="cmp-md">${md(m.text)}</div></div>` }); continue; }
+      if (m.role === "user") { out.push({ key, html: `<div class="cmp-m you">${h(String(m.text).trim())}</div>` }); continue; }
+      out.push({ key, html: `<div class="cmp-m ai"><div class="cmp-md">${md(m.text)}</div></div>` });
+    }
+    for (const mv of moves) out.push(joint(mv)); // a move after the newest message
+    for (const t of st.typed) out.push({ key: `typed${t.at}`, html: `<div class="cmp-m you typed">${h(t.text)}</div>` });
+    if (!out.length) {
+      const words = !st.log ? (st.sid ? "Reading the conversation" : "")
+        : st.log.off ? `Reading conversations is off, so the manager's words are not shown here. <a href="settings.html#data">Turn reading on</a>`
+        : st.log.error ? `${h(st.log.error)}. It is read again in a moment.`
+        : st.m?.state === "resumable" ? "The manager is not running. A message resumes it, and its conversation continues where it stopped."
+        : "The manager is ready. Ask it about heads, config, accounts or sessions.";
+      out.push({ key: "empty", html: `<p class="cmp-empty">${words}</p>` });
+    }
+    return out;
+  }
+  /** Only what changed is drawn again, from the first row that differs; the view follows only when he was at the foot. */
+  function drawLog() {
+    const next = rows(), old = drawn.rows;
+    let i = 0;
+    while (i < old.length && i < next.length && old[i].key === next[i].key && old[i].html === next[i].html) i++;
+    if (i === old.length && i === next.length) return;
+    const follow = log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX || !old.length;
+    const top = log.scrollTop;
+    while (log.children.length > i) log.lastElementChild.remove();
+    log.insertAdjacentHTML("beforeend", next.slice(i).map((r) => r.html).join(""));
+    drawn.rows = next;
+    if (follow) log.scrollTop = log.scrollHeight; else log.scrollTop = top;
+  }
+
+  // ---------- the line over the pill: what a start, a move or a send did, or why not, and the one way out ----------
+  function say(next) {
+    clearTimeout(lineTimer);
+    st.line = next;
+    if (next?.tone === "ok") lineTimer = setTimeout(() => { if (st.line === next) say(null); }, SAID_MS);
+    line.hidden = !next;
+    if (!next) { line.innerHTML = ""; return; }
+    line.className = `cmp-line ${next.tone}${next.wrap ? " wrap" : ""}`;
+    const words = next.html ?? h(next.text);
+    line.innerHTML = `<span class="cmp-mark" aria-hidden="true"></span><span class="cmp-text" title="${h(next.title || next.text || "")}">${words}`
+      + `${next.held != null ? ` <q>${h(next.held)}</q>` : ""}</span>`
+      + (next.acts?.length ? `<span class="cmp-acts">${next.acts.map((x, i) => `<button type="button" class="act small${x.primary ? " primary" : " quiet"}" data-i="${i}">${h(x.word)}</button>`).join("")}</span>` : "");
+  }
+
+  // ---------- acts ----------
+  function openSheet() {
+    if (!st.m || st.m.state === "off") return;
+    st.open = true; st.card = false;
+    draw(); place();
+    tick();
+  }
+  function closeSheet() {
+    if (!st.open && !st.menu) return;
+    st.open = false; st.menu = false;
+    draw(); place();
+  }
+  function openCard() {
+    if (!st.m) return;
+    st.card = true; st.open = false; st.menu = false;
+    draw(); place();
+    (card.querySelector('.cmp-hd[aria-checked="true"]') || card.querySelector('[data-act="start"]'))?.focus();
+  }
+  function notNow() {
+    st.notNow = true; st.card = false;
+    draw(); place();
+    door.focus();
+  }
+  async function start(head, kind) {
+    if (st.phase) return false;
+    st.phase = { kind, head }; st.card = false; draw(); place();
+    // his words fill the field, so the field cannot say what is happening: the line over the pill does, unless the sheet does
+    const progress = !st.open && field.value.trim() ? { tone: "busy", text: phaseWord() } : null;
+    say(progress);
+    const res = await API.post("/api/manager/start", head ? { head } : {});
+    st.phase = null;
+    if (progress && st.line === progress) say(null);
+    const up = res.ok && res.body?.state;
+    if (up) { st.gone = null; apply(res.body); } else startRefused(res, head, kind);
+    draw(); place();
+    if (up && kind === "start" && st.m.state === "live") { openSheet(); field.focus(); }
+    tick();
+    return up && st.m.state === "live";
+  }
+  function startRefused(res, head, kind) {
+    const why = res.body?.error || "", label = labelOf(head);
+    const again = { word: "Try again", primary: true, run: () => start(head, kind) };
+    const other = { word: "Choose another head", run: openCard };
+    const plain = (text, acts = [again]) => say({ tone: "refused", text, title: why || text, acts });
+    switch (res.body?.reason) {
+      case "not_installed":
+        say({ tone: "refused", wrap: true, text: `${label} is not installed as a command.`, title: why,
+          html: `${h(label)} is not installed as a command. Run <code>splice install --all</code> in a terminal, then try again.`, acts: [other, again] });
+        return;
+      case "head_unknown": plain(`splice has no head called ${head || "that"}. Choose another one.`, [{ ...other, primary: true }]); return;
+      case "launch_failed": plain(`The manager did not start on ${label}${why ? `: ${why}` : ""}.`, [other, again]); return;
+      case "folder_missing": plain(`splice could not open its settings folder${st.m?.folder ? ` ${home(st.m.folder)}` : ""}${why ? `: ${why}` : ""}.`); return;
+      default:
+        if (res.status === 503) plain("splice has no terminal to run the manager in. It runs sessions in tmux.");
+        else if (res.status === 404) plain("This splice has no manager yet. It comes with a newer splice.", []);
+        else if (res.status === 0) plain("splice is not answering. Nothing was started.");
+        else plain(`The manager did not start${why ? `: ${why}` : `. splice answered ${res.status}`}.`);
+    }
+  }
+  /** The head chip's menu: Continue on. The conversation stays on screen through the move and goes on where it was. */
+  async function move(key) {
+    st.menu = false;
+    const m = st.m;
+    if (!m || st.phase || key === m.head) { draw(); return; }
+    const live = m.state === "live";
+    if (live) { st.phase = { kind: "move", head: key }; say(null); }
+    draw();
+    const res = await API.post("/api/manager/head", { head: key });
+    st.phase = null;
+    if (res.ok && res.body?.state) {
+      apply(res.body);
+      if (!live) say({ tone: "ok", text: `The manager resumes on ${labelOf(key)} next time.` });
+    } else moveRefused(res, key, m.head);
+    draw();
+    tick();
+  }
+  function moveRefused(res, key, from) {
+    const why = res.body?.error || "";
+    const plain = (text) => say({ tone: "refused", text, title: why || text });
+    switch (res.body?.reason) {
+      case "waiting": plain("The manager is waiting on an answer. Answer it, then move it."); return;
+      case "same_head": plain(`The manager already runs on ${labelOf(key)}.`); return;
+      case "draft": plain("The manager's prompt holds words that were not sent. Send or clear them, then move it."); return;
+      case "not_installed":
+        say({ tone: "refused", wrap: true, text: `${labelOf(key)} is not installed as a command.`, title: why,
+          html: `${h(labelOf(key))} is not installed as a command. Run <code>splice install --all</code> in a terminal, then try again.` });
+        return;
+      default:
+        plain(res.status === 0 ? `splice is not answering. The manager stays on ${labelOf(from)}.`
+          : `The manager did not move${why ? `: ${why}` : ""}. It stays on ${labelOf(from)}.`);
+    }
+  }
+  /** His message, whole, to the manager. A manager that is not running resumes first; words that did not go through stay
+   *  in the field. */
+  async function submit(clear = false) {
+    if (st.busy || st.phase || !st.m) return;
+    const m = st.m, text = field.value.trim();
+    if (unasked(m)) { openCard(); return; }
+    if (m.state === "resumable") {
+      if (await start(m.head, "resume") && text) await submit(clear);
+      return;
+    }
+    if (!text) { field.focus(); return; }
+    if (st.ask?.choices?.length) { asking(); return; }
+    st.busy = true; say(null); draw();
+    const id = st.sid;
+    // a manager that began asking since the last read shows a menu, which typed words and their Enter would answer
+    const screen = await API.get(route(id, "screen"));
+    if (screen.ok && screen.body?.choices?.length) { st.busy = false; st.ask = screen.body; asking(); draw(); return; }
+    const res = await API.post(route(id, "say"), clear ? { text, clear: true } : { text });
+    st.busy = false;
+    if (res.ok) {
+      st.typed.push({ text, at: Date.now() });
+      field.value = ""; fit();
+      lamp.classList.remove("sent"); void lamp.offsetWidth; lamp.classList.add("sent");
+      setTimeout(() => lamp.classList.remove("sent"), 900);
+      openSheet();
+      field.focus();
+      return;
+    }
+    refused(res);
+    draw();
+  }
+  function asking() {
+    openSheet();
+    say({ tone: "held", text: "The manager is asking you something. Answer it above, then send." });
+  }
+  /** Why /say did not type, in plain words, with the way out it offers (SessionDrive's refusals, by their reason). */
+  function refused(res) {
+    const why = res.body?.error || "";
+    const plain = (text, acts) => say({ tone: "refused", text, title: why || text, acts });
+    const look = { word: "Open on Sessions", run: go };
+    switch (res.body?.reason) {
+      case "draft":
+        say({ tone: "held", text: "The manager's prompt already holds", held: oneLine(res.body.draft),
+          acts: [{ word: "Cancel", run: () => { say(null); field.focus(); } }, { word: "Clear and send", primary: true, run: () => submit(true) }] });
+        return;
+      case "closed":
+      case "pane_gone":
+        // its terminal is gone: the manager is resumable, and the next send resumes it before it types
+        st.m = { ...st.m, state: "resumable", status: null };
+        plain("The manager's terminal has closed. Nothing was typed. Send again to resume it.");
+        setTimeout(tick, 400);
+        return;
+      case "not_ours": plain("splice did not open the manager's terminal, so it cannot type there. Nothing was typed.", [look]); return;
+      case "pane_taken": plain("The manager's terminal runs something else now. Nothing was typed.", [look]); return;
+      case "no_terminal": plain("splice has no terminal to type into yet. Nothing was typed."); return;
+      case "refused": plain("The terminal did not take it. Look at the manager before sending again.", [look]); return;
+      default:
+        plain(res.status === 0 ? "splice is not answering. Nothing was typed."
+          : why ? `Not typed: ${why}.` : `splice answered ${res.status}. Look at the manager before sending again.`, [look]);
+    }
+  }
+  /** Press the numbered choice he picked, as Sessions' needs-you card does; the label guards against a menu that moved. */
+  async function answer(choice, label) {
+    if (st.answering || !st.sid) return;
+    st.answering = choice; say(null); draw();
+    const res = await API.post(route(st.sid, "answer"), { choice, label });
+    st.answering = null;
+    if (res.ok) st.ask = null;
+    else if (res.body?.reason === "screen_moved") { say({ tone: "refused", text: "The menu changed before your press landed. Nothing was pressed." }); await readScreen(); }
+    else say({ tone: "refused", text: res.status === 0 ? "splice is not answering. Nothing was pressed." : `Not pressed: ${res.body?.error || `splice answered ${res.status}`}.`, acts: [{ word: "Open on Sessions", run: go }] });
+    draw();
+    setTimeout(tick, 600);
+  }
+  function go() {
+    say(null); closeSheet();
+    const to = `sessions.html#${encodeURIComponent(st.sid || "")}`;
+    if (typeof CONSOLE !== "undefined") CONSOLE.navigate(to); else location.href = to;
   }
   function fit() {
     field.style.height = "auto";
     field.style.height = `${field.scrollHeight}px`;
   }
-  /** Bottom centre, unless a pane that fills the screen stands on the right under where it would sit: then it is
-   *  centred under the column left of that pane, so the pane's own Message field and buttons are never under it
-   *  (Sessions at 1440: the open conversation's field sat under the composer). */
+  /** Bottom centre, unless a pane that fills the screen stands on the right under where it would sit: then it is centred
+   *  under the column left of that pane, so the pane's own field and buttons are never under it (Sessions at 1440). */
   function place() {
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 12;
-    const vw = document.documentElement.clientWidth, w = Math.min(50 * rem, vw - 2 * rem);
+    const vw = document.documentElement.clientWidth, w = Math.min((st.open || st.card ? 58 : 50) * rem, vw - 2 * rem);
     const pane = [...document.querySelectorAll("main.page .pane")].map((el) => el.getBoundingClientRect())
       .find((r) => r.width > 0 && r.height > innerHeight / 2 && r.left > vw / 4 && r.left < (vw + w) / 2 + rem);
     let left = "", width = "";
@@ -160,175 +538,10 @@
       const main = document.querySelector("main.page");
       const from = main.getBoundingClientRect().left + (parseFloat(getComputedStyle(main).paddingLeft) || 0);
       const room = pane.left - from - 1.5 * rem;
-      if (room >= 24 * rem) { width = `${Math.round(Math.min(room, 50 * rem))}px`; left = `${Math.round(from + room / 2)}px`; }
+      if (room >= 24 * rem) { width = `${Math.round(Math.min(room, w))}px`; left = `${Math.round(from + room / 2)}px`; }
     }
     if (dock.style.left !== left) dock.style.left = left;
     if (dock.style.width !== width) dock.style.width = width;
-  }
-
-  // the line above the field: what a send did, or why it did not, with the one way out it offers
-  function say(next) {
-    clearTimeout(lineTimer);
-    st.line = next;
-    if (next?.tone === "ok") lineTimer = setTimeout(() => { if (st.line === next) say(null); }, SAID_MS);
-    line.hidden = !next;
-    if (!next) { line.innerHTML = ""; return; }
-    line.className = `cmp-line ${next.tone}`;
-    const full = next.held != null ? `${next.text} “${next.held}”` : next.text;
-    line.innerHTML = `<span class="cmp-mark" aria-hidden="true"></span><span class="cmp-text" title="${h(next.title || full)}">${h(next.text)}`
-      + `${next.held != null ? ` <q>${h(next.held)}</q>` : ""}</span>`
-      + (next.acts?.length ? `<span class="cmp-acts">${next.acts.map((x, i) => `<button type="button" class="act small${x.primary ? " primary" : " quiet"}" data-i="${i}">${h(x.word)}</button>`).join("")}</span>` : "");
-  }
-  function needsLine(s) {
-    say({ tone: "held", text: `${s.name} is asking you something. Answer it on Sessions.`, acts: [{ word: "Open on Sessions", primary: true, run: () => go(s) }] });
-  }
-  function go(s) {
-    say(null);
-    const to = `sessions.html#${encodeURIComponent(s.id)}`;
-    if (typeof CONSOLE !== "undefined") CONSOLE.navigate(to); else location.href = to;
-  }
-
-  // ---------- the picker ----------
-  function groups() {
-    const words = st.q.toLowerCase().split(/\s+/).filter(Boolean);
-    const hay = (s) => `${s.name} ${s.row.title || ""} ${s.project} ${s.row.head || ""} ${s.row.team_name || ""} ${s.id}`.toLowerCase();
-    const by = new Map();
-    for (const s of st.rows.filter((r) => words.every((w) => hay(r).includes(w))).sort(urgent)) {
-      if (!by.has(s.key)) by.set(s.key, { key: s.key, label: s.project, rows: [] });
-      by.get(s.key).rows.push(s);
-    }
-    const pick = pickedProject();
-    const latest = (g) => Math.max(...g.rows.map((s) => s.at));
-    // the projects with a session waiting on him first, then the picked project, then the most recently active
-    return [...by.values()].sort((a, b) => (a.rows[0].look === "needs" ? 0 : 1) - (b.rows[0].look === "needs" ? 0 : 1)
-      || (a.key === pick ? 0 : 1) - (b.key === pick ? 0 : 1) || latest(b) - latest(a));
-  }
-  const counts = (rows) => COUNTED.map((k) => [k, rows.filter((s) => s.look === k).length]).filter(([, n]) => n)
-    .map(([k, n]) => `${n} ${WORD[k].toLowerCase()}`).join(" · ");
-  function drawPop() {
-    const gs = groups();
-    st.flat = gs.flatMap((g) => g.rows);
-    st.active = Math.max(0, Math.min(st.active, st.flat.length - 1));
-    let i = 0;
-    const html = gs.length ? gs.map((g, gi) => `<div class="cmp-group" role="group" aria-labelledby="cmp-g${gi}">`
-      + `<p class="cmp-gh" id="cmp-g${gi}"><b>${h(g.label)}</b><span>${h(counts(g.rows))}</span></p>`
-      + g.rows.map((s) => {
-        const n = i++;
-        return `<div class="cmp-o" id="cmp-o${n}" role="option" aria-selected="${s.id === st.target}" data-n="${n}">`
-          + `<span class="cmp-lamp ${s.look}" aria-hidden="true"><i></i></span><span class="n">${h(s.name)}</span>`
-          + `<span class="w ${s.look}">${WORD[s.look]}</span><span class="l">${h(s.last)}</span></div>`;
-      }).join("") + `</div>`).join("")
-      : `<p class="cmp-empty">${st.q.trim() ? `No live session matches “${h(st.q.trim())}”.` : st.read ? "No live session." : "Reading the sessions."}</p>`;
-    // drawn again only when it changed, so a working lamp breathes as the list opens and then holds
-    if (html !== listHtml) { list.innerHTML = html; listHtml = html; }
-    mark(false);
-  }
-  /** The row the keys are on: lit, in view, and named to the search field for a screen reader. */
-  function mark(scroll) {
-    for (const el of list.querySelectorAll(".cmp-o.on")) el.classList.remove("on");
-    const el = st.flat.length ? list.querySelector(`#cmp-o${st.active}`) : null;
-    el?.classList.add("on");
-    if (scroll) el?.scrollIntoView({ block: "nearest" });
-    if (el) q.setAttribute("aria-activedescendant", el.id); else q.removeAttribute("aria-activedescendant");
-  }
-  function setActive(n) {
-    if (!st.flat.length) return;
-    st.active = (n + st.flat.length) % st.flat.length;
-    mark(true);
-  }
-  function openPop() {
-    st.open = true; st.q = ""; q.value = "";
-    const gs = groups();
-    st.active = Math.max(0, gs.flatMap((g) => g.rows).findIndex((s) => s.id === st.target));
-    listHtml = "";
-    drawPop();
-    pop.hidden = false;
-    chip.setAttribute("aria-expanded", "true");
-    q.focus();
-    mark(true);
-    if (Date.now() - st.readAt > 3000) refresh();
-  }
-  function closePop() {
-    if (!st.open) return;
-    st.open = false;
-    pop.hidden = true;
-    chip.setAttribute("aria-expanded", "false");
-  }
-  function pick(s) {
-    if (!s) return;
-    st.target = s.id; st.seen = s; st.pinned = true;
-    remember(s.id);
-    say(null);
-    closePop();
-    draw();
-    field.focus();
-    if (s.look === "needs") needsLine(s);
-  }
-
-  // ---------- sending ----------
-  /** His message, whole, to the target. Words that did not go through stay in the field. */
-  async function submit(clear = false) {
-    if (st.busy) return;
-    const text = field.value.trim();
-    if (!text) { field.focus(); return; }
-    const s = cur();
-    if (!s) { openPop(); return; }
-    if (s.look === "ended") { say({ tone: "refused", text: `${s.name} has ended. Choose another session.` }); return; }
-    if (s.look === "needs") { needsLine(s); return; }
-    st.busy = true; st.pinned = true; say(null); drawField();
-    // a session that began asking since the last read shows a menu, which typed words and their Enter would answer
-    const screen = await API.get(path(s, "screen"));
-    if (screen.ok && (screen.body?.choices || []).length) { st.busy = false; drawField(); needsLine(s); return; }
-    const res = await API.post(path(s, "say"), clear ? { text, clear: true } : { text });
-    st.busy = false;
-    if (res.ok) { done(s, `Typed into ${s.name}.`); return; }
-    refused(s, res);
-  }
-  /** A note to a session splice did not open: handed to its messaging socket, which gives no receipt. */
-  async function note(s) {
-    const text = field.value.trim();
-    if (st.busy || !text) return;
-    st.busy = true; say(null); drawField();
-    const res = await API.post(path(s, "message"), { text });
-    st.busy = false;
-    if (res.ok) { done(s, `Note submitted to ${s.name}.`); return; }
-    drawField();
-    say({ tone: "refused", text: `Note not sent: ${res.status === 0 ? "splice is not answering" : res.body?.error || `splice answered ${res.status}`}.` });
-  }
-  function done(s, word) {
-    field.value = ""; fit();
-    remember(s.id);
-    drawField();
-    say({ tone: "ok", text: word });
-    lamp.classList.remove("sent"); void lamp.offsetWidth; lamp.classList.add("sent");
-    setTimeout(() => lamp.classList.remove("sent"), 900);
-    field.focus();
-    setTimeout(refresh, 1500); // its state moves once the words land
-  }
-  /** Why /say did not type, in plain words, with the way out it offers (SessionDrive's refusals, by their reason). */
-  function refused(s, res) {
-    drawField();
-    const why = res.body?.error || "";
-    const plain = (text) => say({ tone: "refused", text, title: why || text });
-    switch (res.body?.reason) {
-      case "draft":
-        say({ tone: "held", text: `${s.name}'s prompt already holds`, held: oneLine(res.body.draft),
-          acts: [{ word: "Cancel", run: () => { say(null); field.focus(); } }, { word: "Clear and send", primary: true, run: () => submit(true) }] });
-        return;
-      case "not_ours":
-        say({ tone: "refused", text: notable(s) ? `splice did not open ${s.name}, so it cannot type there.` : `splice did not open ${s.name}, so it cannot type there. Write in the terminal it runs in.`,
-          title: why, acts: notable(s) ? [{ word: "Send as a note", primary: true, run: () => note(s) }] : [] });
-        return;
-      case "closed": plain(`${s.name}'s terminal is closed. Nothing was sent.`); return;
-      case "pane_gone": plain(`The terminal ${s.name} started in is gone. Nothing was typed.`); return;
-      case "pane_taken": plain(`${s.name}'s terminal runs something else now. Nothing was typed.`); return;
-      case "no_terminal": plain("splice has no terminal to type into yet. Nothing was typed."); return;
-      case "ended": plain(`${s.name} has ended. Nothing was sent.`); return;
-      case "refused": plain(`The terminal did not take it. Look at ${s.name} before sending again.`); return;
-      default:
-        plain(res.status === 0 ? `splice is not answering. Look at ${s.name} before sending again.`
-          : why ? `Not typed: ${why}.` : `splice answered ${res.status}. Look at ${s.name} before sending again.`);
-    }
   }
 
   // ---------- mounting ----------
@@ -336,78 +549,81 @@
     dock = document.createElement("div");
     dock.className = "cmp";
     dock.setAttribute("role", "region");
-    dock.setAttribute("aria-label", "Composer");
-    dock.innerHTML = `<div class="cmp-line" role="status" aria-live="polite" hidden></div>`
-      + `<div class="cmp-base">`
-      + `<div class="cmp-pop" id="cmp-pop" hidden><label class="cmp-find"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>`
-      + `<input id="cmp-q" type="search" placeholder="Find a session" aria-label="Find a session" role="combobox" aria-expanded="true" aria-controls="cmp-list" aria-autocomplete="list" autocomplete="off" spellcheck="false"></label>`
-      + `<div class="cmp-list" id="cmp-list" role="listbox" aria-label="Live sessions"></div></div>`
-      + `<form class="cmp-pill" novalidate><button type="button" class="cmp-chip" aria-haspopup="listbox" aria-expanded="false" aria-controls="cmp-pop">`
-      + `<span class="cmp-lamp none" aria-hidden="true"><i></i></span><span class="cmp-who"><b></b><span></span></span>`
-      + `<svg class="cmp-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>`
-      + `<textarea class="cmp-field" rows="1" aria-label="Message" autocomplete="off"></textarea>`
-      + `<button type="submit" class="act primary cmp-send" disabled>Send</button></form></div>`;
-    chip = dock.querySelector(".cmp-chip"); lamp = chip.querySelector(".cmp-lamp");
-    who = chip.querySelector(".cmp-who b"); where = chip.querySelector(".cmp-who span");
+    dock.setAttribute("aria-label", "The splice manager");
+    dock.innerHTML = `<section class="cmp-card" role="dialog" aria-labelledby="cmp-card-h" hidden></section>`
+      + `<section class="cmp-sheet" aria-label="Conversation with the splice manager" hidden>`
+      + `<header class="cmp-sh"><b>splice manager</b><span class="cmp-where"></span><button type="button" class="cmp-x" data-act="close" aria-label="Close the conversation" title="Close (Esc)">${X}</button></header>`
+      + `<div class="cmp-log" role="log" aria-live="polite" tabindex="0"></div>`
+      + `<div class="cmp-ask" role="group" aria-label="The manager asks" hidden></div>`
+      + `<footer class="cmp-foot"></footer></section>`
+      + `<div class="cmp-line" role="status" aria-live="polite" hidden></div>`
+      + `<form class="cmp-pill" novalidate><span class="cmp-lamp off" aria-hidden="true"><i></i></span>`
+      + `<button type="button" class="cmp-door" hidden><span>Start the splice manager</span><kbd>${KEYS}</kbd></button>`
+      + `<textarea class="cmp-field" rows="1" aria-label="Message the splice manager" autocomplete="off"></textarea>`
+      + `<button type="submit" class="act primary cmp-send" disabled>Send</button></form>`;
+    card = dock.querySelector(".cmp-card"); sheet = dock.querySelector(".cmp-sheet");
+    where = dock.querySelector(".cmp-where"); log = dock.querySelector(".cmp-log");
+    ask = dock.querySelector(".cmp-ask"); foot = dock.querySelector(".cmp-foot"); line = dock.querySelector(".cmp-line");
+    lamp = dock.querySelector(".cmp-pill > .cmp-lamp"); door = dock.querySelector(".cmp-door");
     field = dock.querySelector(".cmp-field"); send = dock.querySelector(".cmp-send");
-    line = dock.querySelector(".cmp-line"); pop = dock.querySelector(".cmp-pop");
-    q = dock.querySelector("#cmp-q"); list = dock.querySelector(".cmp-list");
     document.body.append(dock);
 
     dock.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
-    chip.addEventListener("click", () => (st.open ? (closePop(), field.focus()) : openPop()));
-    field.addEventListener("input", () => { fit(); drawField(); });
-    field.addEventListener("focus", () => {
-      closePop();
-      const s = cur();
-      if (s?.look === "needs" && !st.line) needsLine(s);
-    });
+    door.addEventListener("click", openCard);
+    field.addEventListener("input", () => { fit(); drawPill(); });
+    const reveal = () => { if (!st.open && st.sid && st.m && st.m.state !== "off") openSheet(); };
+    field.addEventListener("focus", reveal);
+    field.addEventListener("click", reveal);
     field.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.shiftKey || e.altKey || e.isComposing) return;
       e.preventDefault();
       submit();
     });
-    q.addEventListener("input", () => { st.q = q.value; st.active = 0; drawPop(); });
-    q.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setActive(st.active + (e.key === "ArrowDown" ? 1 : -1)); }
-      else if (e.key === "Enter") { e.preventDefault(); pick(st.flat[st.active]); }
+    dock.addEventListener("click", (e) => {
+      const act = e.target.closest("[data-act]"), lineAct = e.target.closest(".cmp-line button[data-i]");
+      if (lineAct) { st.line?.acts?.[+lineAct.dataset.i]?.run(); return; }
+      if (!act) return;
+      switch (act.dataset.act) {
+        case "pick": st.pick = act.dataset.head; drawCard(); card.querySelector(`.cmp-hd[data-head="${CSS.escape(st.pick)}"]`)?.focus(); return;
+        case "start": if (st.pick) start(st.pick, st.m?.state === "resumable" ? "resume" : "start"); return;
+        case "later": notNow(); return;
+        case "close": closeSheet(); field.focus(); return;
+        case "menu": st.menu = !st.menu; drawFoot(); if (st.menu) foot.querySelector(".cmp-menu .cmp-hd:not(:disabled)")?.focus(); return;
+        case "head": move(act.dataset.head); return;
+        case "answer": answer(Number(act.dataset.choice), act.dataset.label); return;
+        case "go": e.preventDefault(); go(); return;
+        default:
+      }
     });
-    list.addEventListener("pointerdown", (e) => e.preventDefault()); // the search keeps the focus
-    list.addEventListener("pointermove", (e) => { const o = e.target.closest(".cmp-o"); if (o && +o.dataset.n !== st.active) setActive(+o.dataset.n); });
-    list.addEventListener("click", (e) => { const o = e.target.closest(".cmp-o"); if (o) pick(st.flat[+o.dataset.n]); });
-    line.addEventListener("click", (e) => { const b = e.target.closest("button[data-i]"); if (b) st.line?.acts?.[+b.dataset.i]?.run(); });
+    // a tool call he opened stays open through every redraw
+    log.addEventListener("toggle", (e) => { const k = e.target.dataset?.k; if (k) { if (e.target.open) st.opened.add(k); else st.opened.delete(k); } }, true);
     // its keys are its own: Escape here never also closes what the page has open (Sessions' in-prompt card, a menu)
     dock.addEventListener("keydown", (e) => {
       e.stopPropagation();
       if (e.key !== "Escape") return;
       e.preventDefault();
-      if (st.open) { closePop(); field.focus(); return; }
+      if (st.menu) { st.menu = false; drawFoot(); foot.querySelector('[data-act="menu"]')?.focus(); return; }
+      if (st.open) { closeSheet(); return; }
+      if (st.card) { notNow(); return; }
       if (st.line?.acts?.length) { say(null); return; }
       document.activeElement?.blur();
     });
-    dock.addEventListener("focusout", (e) => { if (st.open && !dock.contains(e.relatedTarget)) closePop(); });
-    document.addEventListener("pointerdown", (e) => { if (st.open && !dock.contains(e.target)) closePop(); }, true);
+    document.addEventListener("pointerdown", (e) => { if ((st.open || st.menu) && !dock.contains(e.target)) closeSheet(); }, true);
     addEventListener("keydown", (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || String(e.key).toLowerCase() !== "k") return;
       if (locked() || document.querySelector(".scrim")) return;
       e.preventDefault(); e.stopPropagation();
-      closePop();
+      if (!door.hidden) { openCard(); return; }
       field.focus();
+      reveal();
     }, true);
-
-    // the page's address names the open session on Sessions; the router and Sessions move it without an event, and a
-    // page opens or closes its pane on its own clock, so both are looked at a little more than once a second
-    st.href = location.href;
-    setInterval(() => {
-      if (!locked()) place();
-      if (location.href !== st.href) { st.href = location.href; settle(); draw(); }
-    }, 700);
+    // a page opens or closes its pane on its own clock, so where the pill stands is looked at a little more than once a second
+    setInterval(() => { if (!locked()) place(); }, 700);
     addEventListener("resize", place);
-    setInterval(refresh, EVERY_MS);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - st.readAt > EVERY_MS / 2) refresh(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
     draw();
     place();
-    refresh();
+    tick();
   }
   // after console.js's own DOMContentLoaded (it loads first), so the router never counts the dock among the page's nodes
   if (document.readyState === "loading") addEventListener("DOMContentLoaded", mount); else mount();

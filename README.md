@@ -289,6 +289,14 @@ the budget can read low.
   saved in the alert settings, if there is one. On Accounts, the command's Day meter fills and shows its
   bell. Nothing else announces it: desktop alerts are not delivered, and the status line shows no budget.
 
+## The splice manager
+
+The composer at the bottom of the console is the door to one Claude Code session, the splice manager. It runs in splice's global settings folder, the folder that holds `splice.toml` (usually `~/.config/splice`), and its job is to help you run splice: read its status and logs, explain what it sees, change its configuration when you ask, and message your other sessions for you through Claude Code's own `ListAgents` and `SendMessage`. The composer itself never messages other sessions. There is one manager: the console resumes it when it exists, and asks before starting it the first time, along with the head it runs on. Changing the head later keeps the conversation.
+
+The installer creates the manager's files in that folder: a `CLAUDE.md` with its standing instructions, a `.claude/settings.json` that fences what it may read and run, and the `splice` skill under `.claude/skills/`. `splice init` prints where the folder is, and every daemon start refreshes the files from the running release, so an auto-update brings the new ones. A file you edit is never overwritten: splice keeps your copy and stops updating that file.
+
+That folder holds your secrets: `keys.toml`, `key-ledger.json` and the login tokens under `auth/`. The manager's messages go to the head you pick, which can be a hosted provider, so its settings deny it reads and edits of those files and of splice's state folder, which holds the management key, and its instructions tell it never to read, print or send a key.
+
 ## Heads that see each other
 
 Ask a session on one backend to get a review from a session on another. Both appear in Claude Code's `ListAgents`, and `SendMessage` carries the request and reply. This works across splice heads and plain `claude` sessions on the same machine.

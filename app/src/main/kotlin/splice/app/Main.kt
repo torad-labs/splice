@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
+import splice.app.manager.ManagerHome
 import splice.app.provider.LocalRowBootFindings
 import splice.client.wrap.WrapGuard
 import splice.client.wrap.WrappedHead
@@ -97,6 +98,9 @@ internal class DaemonProcess(
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
         start.ownerOnlyLines.forEach { log(it) }
+        // Oct 15: the splice manager's folder, refreshed from this release, because auto-update never reruns init. Best
+        // effort: a failure is logged and never refuses boot.
+        ManagerHome(start.topologyPath, statePaths.stateDir, log).ensureBestEffort()
         val shutdownSignal = CompletableDeferred<Unit>()
         InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
         // FAIL-CLOSED: a socket manager's hand-off is read and checked BEFORE anything binds, and a hand-off that

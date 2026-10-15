@@ -153,6 +153,10 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **The splice manager's folder, installed and kept current.** `splice init`, which the installer runs, and every
+  daemon start write a `CLAUDE.md`, a `.claude/settings.json` that denies the session splice's keys, login tokens and
+  state folder, and the `splice` skill into the global settings folder beside `splice.toml`, where the console's
+  composer runs its one resident session. A refresh replaces only the files splice wrote and nobody edited.
 - **The MCP hub: one copy of each MCP server for every session, kept through restarts.** On Linux x86-64 with
   `systemd --user` running, the MCP servers of each session splice launches run under two small native programs
   installed beside the jar: `splice-mcp-front`, which holds `127.0.0.1:3095` and every session's connection, and one

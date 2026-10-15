@@ -17,7 +17,7 @@
 //     the head resolves it and this file only ever knows a provider's colour.
 //
 // LOADED FIRST, before api.js and before the page's own script. Nothing here reads the network or the DOM at
-// load except the one nav draw, which needs the sidebar the page already wrote.
+// load except the one nav draw, which needs the top bar (aside.side) the page already wrote.
 
 // ---------- the present ----------
 // why read it again: a page open across a window's reset drew the reset as still ahead of a NOW from before it.

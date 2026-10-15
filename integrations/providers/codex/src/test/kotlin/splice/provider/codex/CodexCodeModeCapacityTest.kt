@@ -28,12 +28,12 @@ import kotlin.time.Duration.Companion.minutes
  * Worker slots are the scarce resource. On 2026-09-07 four parked cells (clients that never
  * returned results) held all four slots for an hour, and every new script on every session failed
  * with "runtime failed to start" — a 502 the client retried identically. These pin: a parked cell
- * is reaped after the idle timeout, evicted at capacity, and when nothing can be evicted the model
- * hears about it in the script's own output instead of the turn failing.
+ * is reaped after the idle timeout, only dead or aged-unknown cells are reclaimed under pressure,
+ * and a capacity refusal reaches the model in the incoming script's output.
  */
 class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `four alive parked cells with detached histories yield the oldest engine to a fifth session`() = runTest {
+    fun `four alive parked cells survive pressure and the incoming exec receives a capacity result`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 4)
         val manager = CodexCodeModeBridge(
@@ -51,31 +51,28 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             assertTrue(runtime.cells.none { it.closed }, "detached side histories do not evict without pressure")
             assertTrue(stateFiles.records().all { it.getValue("phase").jsonPrimitive.content == "ACTIVE" })
             var posts = 0
-            val incoming = RecordingSink()
+            var posted = ""
             val outcome = manager.interceptor(turn(sessionId = "fifth"), null, false)
-                .intercept(BASE_REQUEST, incoming) {
+                .intercept(BASE_REQUEST, RecordingSink()) { body ->
+                    posted = body
                     RoundResult.Outcome(if (posts++ == 0) outerOutcome("outer-fifth") else completedOutcome())
                 }.turn()
-            assertTrue(outcome is TurnOutcome.Success && outcome.hasToolUse, "pool-full refusal: $outcome; $logLines")
-            assertEquals(listOf(false, true, false, false, false), runtime.cells.map { it.closed })
+            val capacityReturnedAsToolOutput = outcome is TurnOutcome.Success && !outcome.hasToolUse
+            assertTrue(capacityReturnedAsToolOutput, "capacity result is returned as model-visible tool output")
+            assertTrue("code-mode worker capacity reached" in posted, posted)
+            assertEquals(List(4) { false }, runtime.cells.map { it.closed })
             assertEquals(4, runtime.open)
-            assertEquals(5, runtime.starts)
-            val lost = stateFiles.records().single { it.getValue("phase").jsonPrimitive.content == "LOST" }
-            assertEquals("outer-1", lost.getValue("outerCallId").jsonPrimitive.content)
-            assertTrue("capacity" in lost.getValue("error").jsonPrimitive.content)
+            assertEquals(4, runtime.starts)
             val id = sinks[1].tools.single().id
-            var posted = ""
             val late = manager.interceptor(
                 turn(id, "A", sessionId = "session-1").copy(conversationKey = "original-1"),
                 null,
                 false,
-            ).intercept(requestWithResult(id, "A"), RecordingSink()) { body ->
-                posted = body
+            ).intercept(requestWithResult(id, "A"), RecordingSink()) {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
             assertTrue(late is TurnOutcome.Success && !late.hasToolUse)
-            assertTrue("source was not rerun" in interruptionOutput(posted))
-            assertEquals(5, runtime.starts, "a late callback never restarts the evicted source")
+            assertEquals(4, runtime.starts, "the pending source resumes without another worker")
         } finally {
             manager.onHeadStop()
         }
@@ -105,6 +102,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `capacity retries after each parked reclamation rather than refusing after the first`() = runTest {
+        val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 2)
         var denials = 2
         val contended = object : CodeModeRuntime by runtime {
@@ -118,11 +116,12 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 return runtime.start(source, tools, descriptions)
             }
         }
-        val manager = bridge(contended)
+        val manager = bridge(contended, clock = clock)
         try {
             repeat(2) { index ->
                 manager.interceptor(turn(sessionId = "parked-$index"), outer("outer-$index"), false)
                     .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-$index")) }
+                clock.now += 31.minutes.inWholeMilliseconds
             }
             var posts = 0
             val admitted = manager.interceptor(turn(sessionId = "incoming"), null, false)
@@ -378,7 +377,7 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `capacity reclaims the oldest alive cell before the younger unknown cell`() = runTest {
+    fun `capacity preserves a live cell and a fresh unknown cell while reporting refusal to the model`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 2)
         val manager = CodexCodeModeBridge(
@@ -399,11 +398,12 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
             clock.now += 29.minutes.inWholeMilliseconds
             manager.interceptor(turn(sessionId = "unknown"), outer("outer-unknown"), false)
                 .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-unknown")) }
-            val admitted = incoming(manager)
-            assertTrue(admitted is TurnOutcome.Success && admitted.hasToolUse)
-            assertTrue(runtime.cells[0].closed)
+            val admitted = incoming(manager, RecordingSink())
+            assertTrue(admitted is TurnOutcome.Success && !admitted.hasToolUse)
+            assertFalse(runtime.cells[0].closed)
             assertFalse(runtime.cells[1].closed)
-            assertEquals(3, runtime.starts)
+            assertEquals(2, runtime.starts)
+            assertTrue(logLines.any { "alive=1" in it && "unknown=1" in it }, logLines.toString())
         } finally {
             manager.onHeadStop()
         }

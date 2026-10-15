@@ -76,27 +76,27 @@ class CodeModeCellLeaseTest {
     }
 
     @Test
-    fun `capacity reclaims an alive parked cell without an idle floor`() {
+    fun `capacity preserves an alive parked cell`() {
         val fixture = LeaseFixture(dir)
         fixture.alive["alive"] = true
         val record = fixture.park("alive", 0)
-        assertSame(record, fixture.registry.evictIdleCell(), "an alive-only pool must not wedge newcomers")
-        assertEquals(CodeModePhase.LOST, record.phase)
-        assertTrue("source was not rerun" in record.error.orEmpty())
+        assertNull(fixture.registry.evictIdleCell(), "a pending continuation remains resumable under pressure")
+        assertEquals(CodeModePhase.ACTIVE, record.phase)
         fixture.registry.onHeadStop()
     }
 
     @Test
-    fun `capacity orders alive unknown and dead parked cells only by idle time`() {
+    fun `capacity reclaims known dead parked cells and preserves live or fresh unknown cells`() {
         val fixture = LeaseFixture(dir)
         fixture.alive["alive"] = true
         val alive = fixture.park("alive", 0)
         val unknown = fixture.park("unknown", 1_000)
         val dead = fixture.park("dead", 2_000)
         fixture.alive["dead"] = false
-        assertSame(alive, fixture.registry.evictIdleCell())
-        assertSame(unknown, fixture.registry.evictIdleCell())
         assertSame(dead, fixture.registry.evictIdleCell())
+        assertNull(fixture.registry.evictIdleCell())
+        assertEquals(CodeModePhase.ACTIVE, alive.phase)
+        assertEquals(CodeModePhase.ACTIVE, unknown.phase)
         fixture.registry.onHeadStop()
     }
 

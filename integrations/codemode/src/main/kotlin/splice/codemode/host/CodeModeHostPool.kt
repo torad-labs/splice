@@ -112,7 +112,11 @@ internal class CodeModeHostPool(
         if (host == null) {
             val victim = sessions.values.filter { it.users == 0 && !it.host.draining }.minByOrNull { it.lastUse }
                 ?: hosts.filterNot { it.draining }.flatMap { it.sessions }.firstOrNull { it.closing }
-                ?: throw if (hosts.any { it.draining }) drains.capacity() else admission.capacity()
+                ?: throw if (hosts.any { it.draining }) {
+                    drains.capacity()
+                } else {
+                    admission.capacity(hosts.size, hosts.sumOf(CodeModePoolHost::load))
+                }
             retire(victim)
             return CodeModePlacement.Reclaim(victim)
         }

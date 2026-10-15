@@ -138,14 +138,14 @@ zstd_request_body = true
 # not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
 # reruns the lost JavaScript source automatically.
 # code_mode = false
-# The JAR-bundled runner pins each session's isolated engine to a least-loaded host JVM.
+# The JAR-bundled runner fills existing host JVMs to four session engines before starting another.
 # These code-mode-only overrides retain the defaults shown when omitted (chatgpt-oauth + responses).
 #   code_mode_workers = 6      maximum on-demand host JVMs, with four session-owned engines per host
 #   code_mode_timeout_ms = 5000 retained positive compatibility setting; not a per-script deadline
 #   code_mode_heap = 512       MiB for each host JVM heap; each session's native heap has its own 384 MiB cap
 #   code_mode_memory_mb = 24576 head-wide reservation including collector/native headroom; idle engines evict first
-# The default admits 21 concurrent sessions: 6 hosts x 1152 MiB + 21 engines x 832 MiB = 24384 MiB.
-# A 22nd would reserve 25216 MiB and is refused without evicting a live or parked guest cell.
+# The default admits 21 concurrent sessions: 6 host reservations x 1152 MiB + 21 engines x 832 MiB = 24384 MiB.
+# A 22nd would reserve 25216 MiB and is refused without evicting a live or fresh-unknown parked cell.
 #   code_mode_models = ["codex-auto-review"]  models offered the runner in ADDITION to those the backend marks
 #                              code_mode_only (a model the backend hides from its list is only reachable here)
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every

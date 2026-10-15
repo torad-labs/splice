@@ -50,7 +50,7 @@ internal class CodeModeRuntimeStarter(
             try {
                 return open(record, context, stream)
             } catch (error: CodeModeCapacityException) {
-                // Capacity refused before source dispatch. Reclaim one parked engine, then recheck capacity.
+                // Nothing was dispatched. Reclaim only cells already eligible for session/lifetime cleanup.
                 if (registry.evictIdleCell() == null) {
                     registry.retainedCells.logRefusal()
                     throw error

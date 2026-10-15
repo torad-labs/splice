@@ -986,15 +986,18 @@ origin.
 - **Each code-mode conversation owns its engine.** Its scripts use a GraalJS engine,
   isolate, guest heap and collector keyed by session, conversation and model. Host JVMs start only
   when a cell is admitted. `code_mode_workers` defaults to six hosts per head, with at most four
-  session engines in each. A new session takes an empty host. If none is free, it boots a new host while the host
-  cap and memory budget allow, and otherwise joins the least-loaded host. It stays pinned there. The host heap still defaults to 512 MiB, with a separate 384 MiB guest heap per engine.
+  session engines in each. A new session fills the least-loaded existing host to four engines before
+  another host starts, subject to the host and memory caps. It stays pinned there. The host heap still
+  defaults to 512 MiB, with a separate 384 MiB guest heap per engine.
   `code_mode_memory_mb` defaults to a 24,576 MiB head-wide admission reservation, not an
   operating-system resident-memory limit. Including collector and native reserves, a default host
   reserves 1,152 MiB and each engine 832 MiB: six hosts and 21 engines reserve 24,384 MiB; a 22nd
   engine would require 25,216 MiB. Admission refuses before dispatch when the pool is full,
   naming the memory budget, host and engine caps, and both settings in the script's interrupted
   tool output. The model sees that output and the turn continues without a 502. Capacity pressure
-  can reclaim parked cells, even in a live session, but never executing or borrowed cells.
+  reclaims known-dead sessions or unknown sessions past their 30-minute lease; live and fresh-unknown
+  parked cells keep pending calls resumable. A refused incoming exec receives a typed capacity result
+  in its tool output, so the turn continues without a 502.
   Empty engines are reclaimed least-recently-used
   at admission and become eligible for idle eviction after one minute. An engine also closes on
   explicit session close, whole-session state expiry, or session death after its last active

@@ -49,14 +49,15 @@ internal class CodeModeCellRetention(
         return idle.isNotEmpty()
     }
 
-    /** Capacity pressure ignores liveness and idle grace, but never an executing or borrowed cell. */
-    fun capacityCandidates(): List<CodeModeRecord> = records.filter {
-        it.phase == CodeModePhase.ACTIVE && it.id in cells && !running(it)
-    }.sortedBy(CodeModeRecord::cellIdleSince)
+    /** Pressure cannot revoke a live continuation, including one waiting for client tool results. */
+    fun capacityCandidates(): List<CodeModeRecord> = ranked(null).filter { (priority, record) ->
+        priority < 2 && record.id in cells
+    }.map { it.second }
 
     fun evict(key: String): CodeModeRecord? {
         val victim = capacityCandidates().firstOrNull { it.key == key } ?: return null
-        val reason = if (alive(victim) == false) reasons[0] else "code-mode parked cell closed at capacity"
+        val priority = rank(victim)?.takeIf { it < 2 } ?: return null
+        val reason = reasons[priority]
         park(victim, "$reason to admit a newer script")
         return victim
     }

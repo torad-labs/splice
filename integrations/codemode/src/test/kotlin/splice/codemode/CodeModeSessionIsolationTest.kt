@@ -2,6 +2,7 @@
 package splice.codemode
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -10,11 +11,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.host.HostLaunch
 import splice.codemode.host.PoolLimits
+import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
-import java.util.concurrent.ConcurrentLinkedQueue
 
 // why: a warm host starts a cell in well under a second; 15 s separates a slow start from one that never comes.
 private const val START_BOUND_MS = 15_000L
@@ -117,23 +118,41 @@ class CodeModeSessionIsolationTest {
     }
 
     @Test
-    fun `two active sessions use two on-demand hosts when maxWorkers is two`() = runBlocking {
-        val spawned = ConcurrentLinkedQueue<Process>()
+    @Timeout(180)
+    fun `fifty parked sessions resume with their own callback results`() = runBlocking {
         JvmCodeModeRuntime(
-            limits = PoolLimits(maxWorkers = 2),
-            launch = HostLaunch(
-                classpath = testClasspath,
-                spawn = WorkerSpawn { builder -> builder.start().also { spawned += it } },
-            ),
+            limits = PoolLimits(maxWorkers = 32, memoryBudgetMb = 32_768),
+            launch = HostLaunch(heapMb = 256, classpath = testClasspath),
         ).use { runtime ->
-            assertEquals(0, spawned.size, "constructing a runtime must not eagerly start a host")
-            val first = runtime.startSession("session-a", "return await tools.Read({});", setOf("Read"))
-            assertTrue(first.advance() is CodeModeStep.Calls)
-            val next = runtime.startSession("session-b", "return await tools.Read({});", setOf("Read"))
-            assertTrue(next.advance() is CodeModeStep.Calls)
-            assertEquals(2, spawned.size, "maxWorkers must place separate active sessions on separate hosts")
-            first.close()
-            next.close()
+            val parked = mutableListOf<Pair<Int, CodeModeCell>>()
+            try {
+                repeat(50) { index ->
+                    val marker = "session-$index"
+                    val script = """
+                        globalThis.marker = '$marker';
+                        const reply = await tools.Read({});
+                        return marker + ':' + reply;
+                    """.trimIndent()
+                    val cell = runtime.startSession(marker, script, setOf("Read"))
+                    parked += index to cell
+                    assertTrue(cell.advance() is CodeModeStep.Calls, marker)
+                }
+
+                val completed = coroutineScope {
+                    parked.map { (index, cell) ->
+                        async {
+                            val step = cell.advance(listOf(CodeModeResult("1", "value-$index")))
+                            index to (step as CodeModeStep.Completed)
+                        }
+                    }.map { it.await() }
+                }
+                val expected = (0 until 50).map { it to "session-$it:value-$it" }
+                val actual = completed.map { (index, step) -> index to step.output }
+                assertEquals(expected, actual)
+                assertTrue(completed.all { it.second.error == null })
+            } finally {
+                parked.forEach { (_, cell) -> cell.close() }
+            }
         }
     }
 }

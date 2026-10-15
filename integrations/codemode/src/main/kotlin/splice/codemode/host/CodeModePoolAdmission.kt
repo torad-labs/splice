@@ -34,19 +34,28 @@ internal class CodeModePoolAdmission(
     fun select(hosts: MutableList<CodeModePoolHost>): CodeModePoolHost? {
         val engines = hosts.sumOf(CodeModePoolHost::load)
         val least = hosts.filterNot { it.draining }.minByOrNull(CodeModePoolHost::load)
-        val occupied = least?.load() != 0
-        val addHost = hosts.size < maxWorkers && occupied
-        if (addHost && fits(hosts.size + 1, engines + 1)) {
-            return CodeModePoolHost().also(hosts::add)
+        // Host heaps are reserved as well as guest heaps. Fill isolated engine slots before
+        // adding host overhead, otherwise a large worker limit strands most of the budget.
+        if (least != null && least.load() < CodeModeHeap.maxEnginesPerHost) {
+            return least.takeIf { fits(hosts.size, engines + 1) }
         }
-        if (least == null || least.load() >= CodeModeHeap.maxEnginesPerHost) return null
-        return least.takeIf { fits(hosts.size, engines + 1) }
+        return if (hosts.size < maxWorkers && fits(hosts.size + 1, engines + 1)) {
+            CodeModePoolHost().also(hosts::add)
+        } else {
+            null
+        }
     }
 
     fun capacity(): CodeModeCapacityException = CodeModeCapacityException(
-        "Code-mode pool is full: $memoryBudgetMb MiB head reservation (quirks.code_mode_memory_mb), " +
-            "$maxWorkers hosts (quirks.code_mode_workers), ${CodeModeHeap.maxEnginesPerHost} engines per host; " +
-            "every retained engine has a live cell",
+        "Code-mode engine capacity reached: $memoryBudgetMb MiB head reservation (quirks.code_mode_memory_mb), " +
+            "at most $maxWorkers hosts (quirks.code_mode_workers), " +
+            "${CodeModeHeap.maxEnginesPerHost} engines per host",
+    )
+
+    fun capacity(hosts: Int, engines: Int): CodeModeCapacityException = CodeModeCapacityException(
+        "Code-mode pool is full: ${reservedBytes(hosts, engines) / MIB} MiB reserved / $memoryBudgetMb MiB budget; " +
+            "$hosts hosts ($maxWorkers maximum), $engines engines " +
+            "(${CodeModeHeap.maxEnginesPerHost} per host)",
     )
 
     private fun fits(hosts: Int, engines: Int): Boolean = reservedBytes(hosts, engines) <= budgetBytes

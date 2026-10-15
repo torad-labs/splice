@@ -412,11 +412,14 @@ function look(s) {
 // you card's act is its answer and Deny its stop.
 const live = (s) => Boolean(s.live);
 
-// list and open item sit side by side exactly where the .page container query (min-width: 104rem) puts them:
-// the page's content box, padding out, so a page never opens an item the CSS can only show in place of its list
+// list and open item sit side by side exactly where the page's .page container query puts them: the page's content
+// box, padding out, against the width its stylesheet writes beside that query as .page { --side-by-side: <rem> }, 104
+// where it writes none. So a page never opens an item the CSS can only show in place of its list, and each page keeps
+// its one width in its own stylesheet (the scale pass of Oct 15 moved Requests to 120 and Models to 90).
 const sideBySide = () => {
   const p = document.querySelector(".page"), cs = getComputedStyle(p);
-  return (p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / parseFloat(getComputedStyle(document.documentElement).fontSize) >= 104;
+  const at = parseFloat(cs.getPropertyValue("--side-by-side")) || 104;
+  return (p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / parseFloat(getComputedStyle(document.documentElement).fontSize) >= at;
 };
 
 // ---------- the one nav ----------
@@ -547,7 +550,8 @@ function pickerHtml(projects, pick, open, doors, all = null, show = showCount) {
     + `<span class="pname">${esc(pick == null ? "Every project" : label(pick))}</span>${fig(totalOf(pick ?? ""))}${ICON.caret}</button>${menu}</span>${ways}`;
 }
 
-// ---------- the project tiles: at a 150rem page and wider (2560 and up), every project at once (Marlin, fin) ----------
+// ---------- the project tiles: at a 150rem page and wider (about 1970 px and up since the nav moved to the top bar and
+// the page took the rail's width), every project at once (Marlin, fin) ----------
 // A row of tiles across the page replaces the picker and the doors on Sessions, Teams and Requests alike: a tile is its
 // project's header in another place, the name, the muted total beside it, and a card-size lamp and count per live
 // state. "Every project" comes first and sums them. Pressing a tile is the pick, and the picked tile is raised like a

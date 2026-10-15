@@ -219,7 +219,9 @@ their own and come back. Without `--now` it first waits for running compactions,
 skips that wait. A systemd user unit that runs the daemon restarts through the unit instead.
 
 The new daemon reads its API-key environment variables from the shell that ran `restart` (or the unit's
-environment). Keys in `keys.toml` are re-read per request and need no restart.
+environment). A restart run from your pane would carry YOUR environment, not the person's, so prefer the console's "Restart
+splice" button or the person's own terminal; if you do run it after a yes, run it in the background. Keys in `keys.toml` are
+re-read per request and need no restart.
 
 Needs a restart: any provider or head change in `splice.toml`, tier mappings, ports. Needs none: a model's
 `context_window`, `extra_windows`, `window_rules`, `default_context_window`, a head's `context_window`, a key

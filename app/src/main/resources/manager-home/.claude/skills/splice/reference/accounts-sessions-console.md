@@ -63,10 +63,13 @@ shows "Live" or "Applies on restart"; "Set for one command" writes `[heads.<key>
 days and trace body size have no control (TOML only, by decision).
 
 **Requests.** Filters: window, command, session, model, account, outcome ("All", "Failed", "Stopped"), "Started over", "Compactions".
+A failed row names the cause in plain words: Overloaded, Network error, Given up after a silence, Cut off, Rate limited, No quota,
+Signed out, Credentials refused, No access, Invalid request, Over budget, Too many at once, splice restarted, Provider error, Internal
+error. What each means and what happens next is in reliability-mcp-install.md 1.5.
 Search needs two characters and covers bodies. The open request offers "Open session", "Copy JSON", "Download".
 
 Source: `models.js:13-14,139-187,270-330,429-466,654-707,768-916,1096`, `settings.js:32-41,236,629-1144`, `knobs.js:39-120`,
-`requests.js:130,695-756,1073-1075`, `docs/specs/v0.4.0.md` section 9 (eight pages; "TOML only, by decision").
+`requests.js:130,695-756,1073-1075`, `kit.js:99-135,389-397`, `docs/specs/v0.4.0.md` section 9 (eight pages; "TOML only, by decision").
 
 ## Accounts and login
 
@@ -227,7 +230,9 @@ Source: `AGENTS.md:49-53`, repo `CLAUDE.md` project laws, `docs/specs/v0.4.0.md`
 | `stale` | Process runs, entry older than 30 minutes | "Not heard from since <time>"; never shown as working off its own status |
 | `gone` | Process exited | Ended (`splice sessions` prints `gone`) |
 
-"Needs you" is a question waiting (permission, choice). "Stalled" is a turn retrying or given up (retry count and "since"). A working turn
+"Needs you" is a question waiting (permission, choice). "Stalled" is a turn retrying or given up: it shows the retry count and "since",
+then "Resumes in <counter>" (splice will re-anchor a silence) or "Won't resume" (needs the person). "At limit" (with the window's reset)
+and "Signed out" appear when a plan limit or a missing credential ended the turn. A working turn
 reads "Working · <time>", "Compacting · <time>" or "In line · <time>" (queued at splice's gate). Stale is not dead: a long foreground tool
 can outlast the window.
 

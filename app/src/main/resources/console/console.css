@@ -20,9 +20,11 @@
   --font-data: "IBM Plex Mono", monospace;
 
   /* scale: the root grows with the screen, and every size below is in rem, so one factor sizes the whole page: text,
-     spacing, borders, radii and shadows together. Marcos, Oct 8: everything 25% smaller (12 px at 1440, 18 px at 3828). */
-  --scale: .75;                       /* a side pane's max-width is set to fill the page at 3828 at this scale */
-  font-size: calc(var(--scale) * clamp(16px, calc(9px + 0.4vw), 25px));
+     spacing, borders, radii and shadows together. Marcos, Oct 8: everything 25% smaller (12 px at 1440, 18 px at 3828).
+     Oct 15: still too big on his wide screen, so the root keeps 12 px at 1440 and now grows slower (14.6 px at 3394,
+     15.2 px at 3828), close to the Temple's 14 px text at its 1.25 zoom. */
+  --scale: .75;
+  font-size: calc(var(--scale) * clamp(16px, calc(13.45px + 0.177vw), 22px));
 
   --r-obj: .55rem;                    /* cel objects: firm corners, never pills */
   --r-in: .45rem;                     /* what sits inside one: a field, a picker, a chip, a sunk box */

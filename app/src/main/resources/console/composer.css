@@ -1,0 +1,148 @@
+/* The composer (composer.js): one field fixed at the bottom centre of every page, a cel object like the cards (ink
+   outline, hard shadow, firm corners), over the page's menus (6) and under a sheet's scrim (40). Left to right: the
+   session it types into, with its lamp; the message; Send. The Temple's pill, in the console's own material. */
+.cmp {
+  position: fixed; left: 50%; bottom: 1.5rem; z-index: 30; transform: translateX(-50%);
+  width: min(50rem, 100% - 2rem); display: flex; flex-direction: column; gap: .5rem;
+  color: var(--text); font-family: var(--font-name);
+}
+body.locked .cmp, body:has(.scrim) .cmp { display: none; }  /* a locked console sends nothing; a sheet has the stage */
+/* the page scrolls clear of it: its last line stops above the field, never under it */
+main.page::after { content: ""; display: block; height: 3.5rem; }
+
+.cmp-base { position: relative; }
+.cmp-pill {
+  display: flex; align-items: flex-end; gap: .45rem; min-height: 3.4rem; padding: .3rem .35rem;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj);
+  box-shadow: .3rem .3rem 0 var(--ink); transition: box-shadow 140ms var(--e-out);
+}
+.cmp-pill:focus-within { box-shadow: .3rem .3rem 0 var(--key-ink), .3rem .3rem 0 var(--ink-w) var(--ink); }
+
+/* the target: a sunk chip naming the session and its project; it opens the list of live sessions above the field */
+.cmp-chip {
+  flex: 0 1 auto; min-width: 0; max-width: 14rem; height: 2.5rem; display: flex; align-items: center; gap: .55rem;
+  padding: 0 .55rem 0 .5rem; border: .12rem solid var(--track-line); border-radius: var(--r-in);
+  background: var(--obj-sunk); color: var(--text); cursor: pointer; text-align: left;
+  transition: border-color 140ms var(--e-out);
+}
+.cmp-chip:hover, .cmp-chip[aria-expanded="true"] { border-color: var(--key-ink); }
+.cmp-who { display: flex; flex-direction: column; justify-content: center; gap: .14rem; min-width: 0; }
+.cmp-who b, .cmp-who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-who b { font: 600 .92rem/1.1 var(--font-name); }
+.cmp-who span { font: 400 .85rem/1.1 var(--font-data); color: var(--text-mute); }
+.cmp-who span[hidden] { display: none; }
+.cmp-caret { flex: none; width: .85rem; height: .85rem; color: var(--text-mute); transition: transform 140ms var(--e-out); }
+.cmp-chip[aria-expanded="true"] .cmp-caret { transform: rotate(180deg); }
+
+/* the message: one line closed, growing to six as he writes */
+.cmp-field {
+  flex: 1 1 auto; min-width: 0; min-height: 2.5rem; max-height: calc(.95rem * 1.35 * 6 + 1.2rem); padding: .6rem .3rem;
+  font: 400 .95rem/1.35 var(--font-data); color: var(--text); background: transparent; border: 0; resize: none;
+  overflow-y: auto; scrollbar-width: thin;
+}
+.cmp-field:focus, .cmp-field:focus-visible { outline: none; }  /* the field's focus is drawn on the whole bar */
+.cmp-field::placeholder { color: var(--text-mute); }
+.cmp-field[readonly] { color: var(--text-mute); }
+
+.cmp .cmp-send {
+  flex: none; height: 2.5rem; padding: 0 1.15rem; display: inline-flex; align-items: center;
+  font: 600 .92rem/1 var(--font-name);
+}
+.cmp .cmp-send[aria-busy="true"] { cursor: progress; }
+.cmp .cmp-send[aria-busy="true"]::after {
+  content: ""; width: .7rem; height: .7rem; margin-left: .5rem; border-radius: 50%;
+  border: .14rem solid currentColor; border-right-color: transparent; animation: spin 800ms linear infinite;
+}
+
+/* ---------- the lamp: a dark socket with an ink ring, lit in the state's colour (Sessions' .lamp, small) ---------- */
+.cmp-lamp {
+  flex: none; width: 1.05rem; height: 1.05rem; border-radius: 50%; display: grid; place-items: center;
+  color: var(--text-mute); background: var(--socket); box-shadow: 0 0 0 .1rem var(--ink), inset 0 0 0 .1rem var(--rail);
+}
+/* the socket is dark in both themes, so what is lit in it keeps night's ink in day (sessions.css .lamp) */
+[data-theme="day"] .cmp-lamp { --live: #5bb59c; --limit: #f06a4c; --text-mute: #9c8f70; }
+.cmp-lamp i { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.cmp-lamp.needs { color: var(--key-light); }
+.cmp-lamp.needs i { box-shadow: 0 0 .4rem .08rem rgba(255, 215, 154, .7); }
+.cmp-lamp.working { color: var(--live); }
+.cmp-lamp.working i { animation: cmp-breathe 2.8s ease-in-out 3; }  /* breathes three times as it starts, then holds */
+.cmp-lamp.stalled { color: var(--limit); }
+.cmp-lamp.quiet { color: #e39a3b; }  /* not heard from in 30 minutes: amber, neither calm nor red */
+.cmp-lamp.ended i, .cmp-lamp.none i { background: transparent; box-shadow: inset 0 0 0 .1rem rgba(239, 226, 198, .3); }
+.cmp-lamp.sent { animation: cmp-sent 900ms var(--e-out) 1; }
+@keyframes cmp-breathe { 0%, 100% { opacity: 1; transform: none; } 50% { opacity: .35; transform: scale(.82); } }
+@keyframes cmp-sent {
+  0% { box-shadow: 0 0 0 .1rem var(--ink), inset 0 0 0 .1rem var(--rail), 0 0 0 0 rgba(255, 215, 154, .85); }
+  100% { box-shadow: 0 0 0 .1rem var(--ink), inset 0 0 0 .1rem var(--rail), 0 0 0 .7rem rgba(255, 215, 154, 0); }
+}
+
+/* ---------- the line over the field: what a send did, or why not, and the one way out ---------- */
+.cmp-line {
+  display: flex; align-items: center; gap: .6rem; min-height: 2.5rem; padding: .3rem .35rem .3rem .75rem;
+  background: var(--obj-high); border: .12rem solid var(--ink); border-radius: var(--r-in); box-shadow: .2rem .2rem 0 var(--ink);
+  font: 500 .92rem/1.2 var(--font-name); color: var(--text-body); animation: cmp-rise 140ms var(--e-out);
+}
+.cmp-line[hidden] { display: none; }
+.cmp-mark { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--text-mute); }
+.cmp-line.ok .cmp-mark { background: var(--live); }
+.cmp-line.held .cmp-mark { background: var(--key-ink); }
+.cmp-line.refused .cmp-mark { background: var(--limit); }
+.cmp-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-text q { font: 400 .9rem/1.2 var(--font-data); color: var(--text); quotes: "“" "”"; }
+.cmp-acts { flex: none; display: flex; gap: .45rem; }
+.cmp .cmp-acts .act { padding: .45rem .8rem; font-size: .9rem; }
+@keyframes cmp-rise { from { opacity: 0; transform: translateY(.4rem); } to { opacity: 1; transform: none; } }
+
+/* ---------- the list of live sessions, per project, over the field ---------- */
+.cmp-pop {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + .6rem); display: flex; flex-direction: column;
+  max-height: min(34rem, 100vh - var(--bar-h, 3.4rem) - 8rem); overflow: hidden;
+  background: var(--obj); border: var(--ink-w) solid var(--ink); border-radius: var(--r-obj); box-shadow: .3rem .3rem 0 var(--ink);
+  transform-origin: bottom left; animation: cmp-rise 140ms var(--e-out);
+}
+.cmp-pop[hidden] { display: none; }
+.cmp-find { flex: none; display: flex; align-items: center; gap: .55rem; padding: .45rem .8rem; border-bottom: .12rem solid var(--track-line); }
+.cmp-find svg { flex: none; width: 1rem; height: 1rem; color: var(--text-mute); }
+.cmp-find input {
+  flex: 1; min-width: 0; padding: .4rem 0; font: 400 .95rem/1.2 var(--font-data); color: var(--text);
+  background: transparent; border: 0;
+}
+.cmp-find input:focus, .cmp-find input:focus-visible { outline: none; }
+.cmp-find input::placeholder { color: var(--text-mute); }
+.cmp-list { overflow-y: auto; overscroll-behavior: contain; padding: .3rem .35rem .45rem; scrollbar-width: thin; }
+.cmp-group + .cmp-group { margin-top: .35rem; padding-top: .2rem; border-top: .1rem solid var(--track); }
+.cmp-gh { display: flex; align-items: baseline; gap: .7rem; margin: 0; padding: .45rem .55rem .25rem; }
+.cmp-gh b { font: 600 .95rem/1.2 var(--font-name); color: var(--text); }
+.cmp-gh span { font: 400 .85rem/1.2 var(--font-data); color: var(--text-mute); }
+/* a row: lamp, name, state word and its last words, in columns that line up down the list */
+.cmp-o {
+  display: grid; grid-template-columns: 1.05rem minmax(0, 13rem) 7.6rem minmax(0, 1fr); align-items: center; column-gap: .65rem;
+  min-height: 2.3rem; padding: .3rem .55rem; border-radius: var(--r-in); cursor: pointer;
+}
+.cmp-o.on { background: var(--track); }
+.cmp-o[aria-selected="true"] { box-shadow: inset .2rem 0 0 var(--key-ink); }
+.cmp-o .n, .cmp-o .l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-o .n { font: 600 .95rem/1.2 var(--font-name); color: var(--text); }
+.cmp-o .w { font: 400 .85rem/1.2 var(--font-data); color: var(--text-mute); white-space: nowrap; }
+.cmp-o .w.needs { color: var(--key-ink); }
+.cmp-o .w.working { color: var(--live); }
+.cmp-o .w.stalled { color: var(--limit); }
+.cmp-o .l { font: 400 .9rem/1.2 var(--font-name); color: var(--text-body); }
+.cmp-empty { margin: 0; padding: 1rem .6rem; font: 400 .92rem/1.3 var(--font-name); color: var(--text-mute); }
+
+/* ---------- the nav's Sessions item: a quiet gold lamp while a session needs him; the count is in its title ---------- */
+.nav a[data-needs] { position: relative; }
+.nav a[data-needs]::after {
+  content: ""; position: absolute; top: calc(50% - .82rem); right: .04rem; width: .48rem; height: .48rem; border-radius: 50%;
+  background: var(--key-ink); box-shadow: 0 0 0 .1rem var(--ink), 0 0 .45rem rgba(255, 215, 154, .55); pointer-events: none;
+}
+
+@media (max-width: 825px) {
+  .cmp { bottom: 1rem; }
+  .cmp-chip { max-width: 40%; }
+  .cmp-o { grid-template-columns: 1.05rem minmax(0, 1fr) auto; }
+  .cmp-o .l { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmp-lamp.working i, .cmp-lamp.sent, .cmp-line, .cmp-pop, .cmp .cmp-send[aria-busy="true"]::after { animation: none; }
+}

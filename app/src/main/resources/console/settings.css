@@ -30,7 +30,7 @@
   /* MAX-height, never height: a job with four settings in it drew a box the height of the screen with nothing in its
      lower three quarters (Marcos on this shape: "why are we having all this empty space"). The pane ends where its
      content ends, and only a job taller than the screen scrolls inside itself. */
-  .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; max-width: 110rem; position: sticky; top: 1.2rem; max-height: calc(100vh - 8rem); }
+  .jobs .pane, .jobs.open .pane { display: flex; flex: 1 1 0; max-width: 150rem; position: sticky; top: 4.6rem; max-height: calc(100vh - 11rem); }
   .pane .close { display: none; }
   /* the lit card is the one beside it; with no pane beside the list, none is lit */
   .card.job[aria-current="true"] { --c: var(--key-light); border-color: var(--key-light); }
@@ -341,11 +341,11 @@ button.count:hover { color: var(--text); }
 /* groups of figures under one heading, each with its label */
 .fgroups { display: flex; flex-wrap: wrap; gap: .9rem 1.65rem; }
 /* a group takes the share of the row its figure count earns (--f, set in groupHtml), and its figures split that share,
-   so every figure in the section comes out one width and the row ends where the pane ends. 26rem per figure is what a
+   so every figure in the section comes out one width and the row ends where the pane ends. 24rem per figure is what a
    figure's door needs to stay on one line; where the groups cannot both have it, each takes a row of its own rather
    than squeezing a door into "Longest / silence" and "Open / it" (Silent models at 1440). */
-.fgroup { display: flex; flex-direction: column; gap: .7rem; flex: var(--f, 1) 1 0; min-width: calc(var(--f, 1) * 26rem); }
-.fgroup > .figs3 > .fig3 { flex: 1 1 0; min-width: 26rem; }  /* the width its door needs whole: below it the groups take a row each */
+.fgroup { display: flex; flex-direction: column; gap: .7rem; flex: var(--f, 1) 1 0; min-width: calc(var(--f, 1) * 24rem); }
+.fgroup > .figs3 > .fig3 { flex: 1 1 0; min-width: 24rem; }  /* the width its door needs whole: below it the groups take a row each */
 /* where the groups took a row each, a group of one figure stretched its tile across the pane and left the right two
    thirds of it empty (Ended early at 1440, Marcos: "why are we having all this empty space"). A tile that wide reads
    along the row instead: the count and its door at the left, each command's share at the right edge. The row is asked,

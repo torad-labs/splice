@@ -314,7 +314,9 @@ function spawnGradle(
   // The pre-push tree is the exception: its longest tasks (the app and turns test suites, then the kover and detekt
   // tasks of every module the diff reaches) are independent of each other and ran one after another, 395 s of
   // gradle on a catalog push. Three workers overlap them while the build gate's admission still bounds the machine.
-  const parallel = childEnv.CI ? ["--parallel"] : label === PRE_PUSH_LABEL ? ["--parallel", `--max-workers=${PRE_PUSH_WORKERS}`] : [];
+  // Keep the full gate's worker count at the same bound on both CI and local runs without changing local parallelism.
+  const parallel = childEnv.CI || label === PRE_PUSH_LABEL ? ["--parallel"] : [];
+  if (label === PRE_PUSH_LABEL || label === "gate-of-record") parallel.push(`--max-workers=${PRE_PUSH_WORKERS}`);
   // `command -v buildgate` — resolved against the child's PATH, because buildgate is this MACHINE's
   // memory-containment wrapper and nothing in the tree provides it. Calling it unconditionally is
   // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).

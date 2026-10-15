@@ -350,6 +350,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
 
     private fun retire(manager: CodexCodeModeBridge, mode: String, clock: MutableClock): Long = when (mode) {
         "capacity" -> {
+            deadSessions += "session-a"
             reapIdleCell(manager)
             0L
         }
@@ -498,7 +499,7 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
             cellLease = CodeModeCellLease(
                 sessionAlive = CodeModeSessionAlive {
                     manager?.let { owner -> retireIdle(owner, armed, evicted, ending) }
-                    null
+                    if (armed.get()) null else false
                 },
             ),
         )

@@ -198,7 +198,7 @@
   }
 
   // ---------- what the strip and the foot show: the manager's line, its head's models, its account's limits ----------
-  const unit = (n) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${Math.round(n / 1_000)}k` : String(n));
+  const unit = (n) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${Math.floor(n / 1_000)}k` : String(n));
   const bare = (v) => String(v ?? "").replace(/\[[^\]]*\]$/, "").toLowerCase();
   const lineOf = () => (st.m?.state === "live" ? st.m.line ?? null : null);
   /** A head's model row is the one the manager runs when its id or label is what its status line names (a [1m] hint aside). */

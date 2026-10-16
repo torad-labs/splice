@@ -236,7 +236,7 @@ main.page::after { content: ""; display: block; height: 3.5rem; }
    colours: green, amber from 60%, red from 85%. */
 .cmp-meters {
   flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: .45rem 1rem; padding: .5rem 1.1rem;
-  border-top: .12rem solid var(--track-line); background: var(--obj-high);
+  border-top: .12rem solid var(--track-line); background: var(--obj-high); container-type: inline-size;
 }
 .cmp-meters[hidden] { display: none; }
 .cmp-meter { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; }
@@ -248,6 +248,9 @@ main.page::after { content: ""; display: block; height: 3.5rem; }
 .cmp-meter.hot .cmp-bar b { background: var(--limit); }
 .cmp-meter.hot .cmp-mnum { color: var(--limit); }
 .cmp-sep { flex: none; width: .1rem; height: 1.1rem; background: var(--track-line); }
+/* a narrow sheet cannot hold the limits beside the context: the divider becomes the row break, so they start their own row
+   and no bar is left at the start of a line (the row gap is taken back once, for the break's own row) */
+@container (max-width: 48rem) { .cmp-sep { width: 100%; height: 0; margin-top: -.45rem; background: none; } }
 .cmp-meters .act.small { padding: .25rem .6rem; font-size: .85rem; }
 
 /* the foot of the sheet: the head it runs on, its model and effort, its lamp, what it is doing, and the way to its full view */

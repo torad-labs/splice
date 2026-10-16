@@ -153,17 +153,29 @@ public class TranscriptReader(
         }
     }
 
-    override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
+    override fun page(
+        sessionId: String,
+        roots: List<Path>,
+        cursor: String?,
+        limit: Int,
+        cwd: String?,
+    ): TranscriptLookup {
         val start = ForwardCursor.parse(cursor)
         if (!validSessionId.matches(sessionId) || start == null) {
             return TranscriptLookup.Refused(if (start == null) BAD_CURSOR else BAD_ID)
         }
-        val file = locator.locate(roots, sessionId)
+        val file = locator.locate(roots, sessionId, cwd)
             ?: return TranscriptLookup.Missing
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
 
-    override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
+    override fun pageBefore(
+        sessionId: String,
+        roots: List<Path>,
+        before: String?,
+        limit: Int,
+        cwd: String?,
+    ): TranscriptLookup {
         val end = before?.toLongOrNull()?.takeIf { it >= 0 }
         // Refused before any file is looked for: a cursor that is no offset, or an id that is no id.
         val refusal = when {
@@ -171,7 +183,7 @@ public class TranscriptReader(
             !validSessionId.matches(sessionId) -> BAD_ID
             else -> null
         }
-        val file = if (refusal == null) locator.locate(roots, sessionId) else null
+        val file = if (refusal == null) locator.locate(roots, sessionId, cwd) else null
         return when {
             refusal != null -> TranscriptLookup.Refused(refusal)
             file == null -> TranscriptLookup.Missing
@@ -179,9 +191,9 @@ public class TranscriptReader(
         }
     }
 
-    override fun pageAt(sessionId: String, roots: List<Path>, atMs: Long, limit: Int): TranscriptLookup {
+    override fun pageAt(sessionId: String, roots: List<Path>, atMs: Long, limit: Int, cwd: String?): TranscriptLookup {
         if (!validSessionId.matches(sessionId)) return TranscriptLookup.Refused(BAD_ID)
-        val file = locator.locate(roots, sessionId)
+        val file = locator.locate(roots, sessionId, cwd)
             ?: return TranscriptLookup.Missing
         return back.lookup(file, sessionId, seek.after(file, atMs), limit)
     }
@@ -189,13 +201,19 @@ public class TranscriptReader(
     /** Forward from the record [after] names (its index / [PER_RECORD] is where it starts), numbered by offset as
      *  a page from the end is, so the pane swaps its last message and appends the rest. A file shorter than that offset
      *  was replaced: the cursor is refused and the pane reads from the end. */
-    override fun pageAfter(sessionId: String, roots: List<Path>, after: Long, limit: Int): TranscriptLookup {
+    override fun pageAfter(
+        sessionId: String,
+        roots: List<Path>,
+        after: Long,
+        limit: Int,
+        cwd: String?,
+    ): TranscriptLookup {
         val refusal = when {
             after < 0 -> BAD_CURSOR
             !validSessionId.matches(sessionId) -> BAD_ID
             else -> null
         }
-        val file = if (refusal == null) locator.locate(roots, sessionId) else null
+        val file = if (refusal == null) locator.locate(roots, sessionId, cwd) else null
         val start = ForwardCursor.Position(after / PER_RECORD, 0L)
         val size = limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)
         return when {

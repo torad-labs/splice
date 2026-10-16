@@ -95,20 +95,27 @@ private const val AT_MOMENT = "at:"
 private const val AFTER_MESSAGE = "after:"
 
 /** One transcript read: forward from [cursor], back from [before] (or the end), the page ending at `at:<ms>`, or what
- *  follows the message a cursor `after:<index>` names. */
-private class TranscriptAsk(val trees: List<Path>, val cursor: String?, val size: Int, val before: String?) {
+ *  follows the message a cursor `after:<index>` names. [cwd] is the session's working directory as its row reads it,
+ *  so a session with no transcript yet is judged missing where its row judged it, without a walk on every read. */
+private class TranscriptAsk(
+    val trees: List<Path>,
+    val cursor: String?,
+    val size: Int,
+    val before: String?,
+    val cwd: String?,
+) {
     /** The message index an `after:` cursor names; null for every other read. */
     val after: Long? = cursor?.takeIf { before == null && it.startsWith(AFTER_MESSAGE) }
         ?.removePrefix(AFTER_MESSAGE)?.toLongOrNull()?.takeIf { it >= 0 }
 
     fun lookup(transcripts: SessionTranscripts, sessionId: String): TranscriptLookup = when {
-        after != null -> transcripts.pageAfter(sessionId, trees, after, size)
+        after != null -> transcripts.pageAfter(sessionId, trees, after, size, cwd)
         cursor?.startsWith(AFTER_MESSAGE) == true -> TranscriptLookup.Refused("not a message this daemon numbered")
-        before == null -> transcripts.page(sessionId, trees, cursor, size)
+        before == null -> transcripts.page(sessionId, trees, cursor, size, cwd)
         before.startsWith(AT_MOMENT) -> before.removePrefix(AT_MOMENT).toLongOrNull()
-            ?.let { transcripts.pageAt(sessionId, trees, it, size) }
+            ?.let { transcripts.pageAt(sessionId, trees, it, size, cwd) }
             ?: TranscriptLookup.Refused("not a moment this daemon reads")
-        else -> transcripts.pageBefore(sessionId, trees, before.takeUnless { it == FROM_END }, size)
+        else -> transcripts.pageBefore(sessionId, trees, before.takeUnless { it == FROM_END }, size, cwd)
     }
 }
 
@@ -164,10 +171,10 @@ public class SessionsRoutes(
      *  `cursor=after:<index>` reads what follows the message with that index, which it reads again, numbered alike. */
     public fun transcript(sessionId: String, cursor: String?, limit: Int?, before: String? = null): JsonReply {
         if (!viewEnabled()) return SessionTranscriptOff.reply
-        val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
-        val trees = roots.treesFor(head)
+        val record = registry.read().firstOrNull { it.sessionId == sessionId }
+        val trees = roots.treesFor(record?.head)
         val size = limit ?: DEFAULT_TRANSCRIPT_PAGE
-        val ask = TranscriptAsk(trees, cursor, size, before)
+        val ask = TranscriptAsk(trees, cursor, size, before, record?.process?.cwd)
         return when (val lookup = ask.lookup(transcripts, sessionId)) {
             is TranscriptLookup.Found ->
                 JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null, ask.after != null))

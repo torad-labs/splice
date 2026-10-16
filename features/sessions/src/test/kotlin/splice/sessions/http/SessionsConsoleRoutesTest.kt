@@ -208,7 +208,13 @@ class SessionsConsoleRoutesTest {
 
             override fun tail(sessionId: String, roots: List<Path>, cwd: String?) = SessionTail("gpt-6.1", reply)
 
-            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+            override fun page(
+                sessionId: String,
+                roots: List<Path>,
+                cursor: String?,
+                limit: Int,
+                cwd: String?,
+            ): TranscriptLookup =
                 error("a card never pages")
 
             override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
@@ -236,7 +242,13 @@ class SessionsConsoleRoutesTest {
             override fun moves(sessionId: String): List<ModelMove> =
                 listOf(ModelMove(null, "claude-fable-5-1", "claude", 2_000L, "claude", "claude-opus-5-5"))
 
-            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+            override fun page(
+                sessionId: String,
+                roots: List<Path>,
+                cursor: String?,
+                limit: Int,
+                cwd: String?,
+            ): TranscriptLookup =
                 error("a card never pages")
 
             override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
@@ -266,7 +278,13 @@ class SessionsConsoleRoutesTest {
             override fun moves(sessionId: String): List<ModelMove> =
                 listOf(ModelMove(null, "claude-opus-5-5", "claude-splice", 2_000L, "claudex", "gpt-5.6"))
 
-            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+            override fun page(
+                sessionId: String,
+                roots: List<Path>,
+                cursor: String?,
+                limit: Int,
+                cwd: String?,
+            ): TranscriptLookup =
                 error("a card never pages")
 
             override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
@@ -284,7 +302,13 @@ class SessionsConsoleRoutesTest {
     fun `the transcript page says where the session moved to another model`() {
         val reply = TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "hi", messageId = "m1")
         val transcripts = object : SessionTranscripts {
-            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+            override fun page(
+                sessionId: String,
+                roots: List<Path>,
+                cursor: String?,
+                limit: Int,
+                cwd: String?,
+            ): TranscriptLookup =
                 TranscriptLookup.Found(TranscriptPage(sessionId, "/x/$ALPHA.jsonl", listOf(reply), null, emptyMap()))
 
             override fun moves(sessionId: String): List<ModelMove> =
@@ -312,7 +336,13 @@ class SessionsConsoleRoutesTest {
     fun `the transcript route reads from the end when asked, and names the cursor of the page before`() {
         val asked = mutableListOf<String?>()
         val transcripts = object : SessionTranscripts {
-            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+            override fun page(
+                sessionId: String,
+                roots: List<Path>,
+                cursor: String?,
+                limit: Int,
+                cwd: String?,
+            ): TranscriptLookup =
                 error("a read from the end never pages forward")
 
             override fun pageBefore(
@@ -320,6 +350,7 @@ class SessionsConsoleRoutesTest {
                 roots: List<Path>,
                 before: String?,
                 limit: Int,
+                cwd: String?,
             ): TranscriptLookup {
                 asked += before
                 val newest = TranscriptMessage(7168, TranscriptRole.USER, null, "newest")

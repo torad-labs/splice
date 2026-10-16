@@ -133,7 +133,13 @@ internal class TestTranscripts(
         SentTexts(null, emptyMap(), ids, roots.map { it.resolve("projects").toString() })
     },
 ) : SessionTranscripts {
-    override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+    override fun page(
+        sessionId: String,
+        roots: List<Path>,
+        cursor: String?,
+        limit: Int,
+        cwd: String?,
+    ): TranscriptLookup =
         pages(sessionId, roots, cursor, limit)
 
     override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =

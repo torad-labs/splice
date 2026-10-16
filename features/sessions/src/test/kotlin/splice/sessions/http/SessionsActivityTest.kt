@@ -267,7 +267,13 @@ class SessionsActivityTest {
             this.roots = roots
             return message
         }
-        override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+        override fun page(
+            sessionId: String,
+            roots: List<Path>,
+            cursor: String?,
+            limit: Int,
+            cwd: String?,
+        ): TranscriptLookup =
             error("activity must never fetch a transcript page")
         override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
             error("activity must never scan sent text")

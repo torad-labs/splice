@@ -33,7 +33,7 @@ internal class TranscriptLimitEnding(
         // reading off, splice opens no conversation: the perf row's ending and the console's own marks decide alone
         if (!config.getConfig().transcriptView) return true
         val id = record.sessionId ?: return false
-        val page = transcripts.pageBefore(id, roots.treesFor(record.head), null, LIMIT_TAIL)
+        val page = transcripts.pageBefore(id, roots.treesFor(record.head), null, LIMIT_TAIL, record.process.cwd)
         return ended((page as? TranscriptLookup.Found)?.page?.messages.orEmpty())
     }
 

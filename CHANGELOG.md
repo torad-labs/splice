@@ -1856,6 +1856,8 @@ origin.
   value equal to the shared one says Follow every command.
 - **Your data's Prompts and answers row claims no more than trace keeps:** "Up to N days, sooner past its size caps,
   oldest day first", or "Until its size caps".
+- **A session with no conversation yet is looked for once, not on every read,** where each read of it went through
+  every project folder again, 12 s each time for a new manager's composer.
 
 ## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
 

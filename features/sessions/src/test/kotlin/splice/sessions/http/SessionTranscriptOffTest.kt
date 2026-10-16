@@ -69,7 +69,13 @@ class SessionTranscriptOffTest {
             override fun list(): SessionListing = SessionListing(listOf(named))
         }
         val source = object : SessionTranscripts {
-            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
+            override fun page(
+                sessionId: String,
+                roots: List<Path>,
+                cursor: String?,
+                limit: Int,
+                cwd: String?,
+            ): TranscriptLookup {
                 transcriptReads++
                 return TranscriptLookup.Found(
                     TranscriptPage(

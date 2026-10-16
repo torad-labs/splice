@@ -26,9 +26,15 @@ public class CapturedTranscripts(
     private val pages = CapturedPages()
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
 
-    override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
+    override fun page(
+        sessionId: String,
+        roots: List<Path>,
+        cursor: String?,
+        limit: Int,
+        cwd: String?,
+    ): TranscriptLookup {
         if (CaptureCursor.owns(cursor)) return fromCapture(sessionId, cursor, false, limit) ?: TranscriptLookup.Missing
-        val read = delegate.page(sessionId, roots, cursor, limit)
+        val read = delegate.page(sessionId, roots, cursor, limit, cwd)
         return if (read == TranscriptLookup.Missing && cursor == null) {
             fromCapture(sessionId, null, false, limit) ?: read
         } else {
@@ -36,10 +42,16 @@ public class CapturedTranscripts(
         }
     }
 
-    override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
+    override fun pageBefore(
+        sessionId: String,
+        roots: List<Path>,
+        before: String?,
+        limit: Int,
+        cwd: String?,
+    ): TranscriptLookup {
         if (CaptureCursor.owns(before)) return fromCapture(sessionId, before, true, limit) ?: TranscriptLookup.Missing
         val fromEnd = before == null || before == "end"
-        val read = delegate.pageBefore(sessionId, roots, if (before == "end") null else before, limit)
+        val read = delegate.pageBefore(sessionId, roots, if (before == "end") null else before, limit, cwd)
         return if (read == TranscriptLookup.Missing && fromEnd) {
             fromCapture(sessionId, null, true, limit) ?: read
         } else {

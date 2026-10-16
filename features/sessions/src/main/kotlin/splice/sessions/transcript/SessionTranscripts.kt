@@ -145,40 +145,50 @@ public interface SessionTranscripts {
     /** When [sessionId]'s moves that did not come back were pressed, oldest first: the client was ended for each. */
     public fun unmoved(sessionId: String): List<Long> = emptyList()
 
+    /** Up to [limit] messages forward from [cursor] (null: the start of the file). [cwd] is the session's working
+     *  directory when the caller knows it, as on [last]: a session with no transcript yet is then judged missing
+     *  without a walk of every project directory on each read. */
     public fun page(
         sessionId: String,
         roots: List<Path>,
         cursor: String?,
         limit: Int,
+        cwd: String? = null,
     ): TranscriptLookup
 
     /** The newest [limit] messages at or before the cursor [before] (null: the end of the file), oldest first, with
      *  [TranscriptPage.earlier] naming the page before them. A message's indices rise with its place in the file and
-     *  never repeat across pages, but they are not the forward pages' counts. Ports that only page forward refuse. */
+     *  never repeat across pages, but they are not the forward pages' counts. Ports that only page forward refuse.
+     *  [cwd] is as on [page]. */
     public fun pageBefore(
         sessionId: String,
         roots: List<Path>,
         before: String?,
         limit: Int,
+        cwd: String? = null,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source pages forward only")
 
     /** The newest [limit] messages written at or before [atMs], as [pageBefore] reads them: a door from a request opens
-     *  its agent at that request's place, however deep in the file it lies. Ports that cannot seek refuse. */
+     *  its agent at that request's place, however deep in the file it lies. Ports that cannot seek refuse. [cwd] is as
+     *  on [page]. */
     public fun pageAt(
         sessionId: String,
         roots: List<Path>,
         atMs: Long,
         limit: Int,
+        cwd: String? = null,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source cannot open at a moment")
 
     /** Up to [limit] messages from where the message numbered [after] starts, as [pageBefore] numbers them: a live pane
      *  reads its last message again, which may have grown, and what follows it, never the page it already has.
-     *  [TranscriptPage.next] is set when more follows than [limit]. Ports that cannot seek refuse. */
+     *  [TranscriptPage.next] is set when more follows than [limit]. Ports that cannot seek refuse. [cwd] is as on
+     *  [page]. */
     public fun pageAfter(
         sessionId: String,
         roots: List<Path>,
         after: Long,
         limit: Int,
+        cwd: String? = null,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source cannot read after a message")
 
     public fun sentTexts(

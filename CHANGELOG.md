@@ -153,6 +153,14 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **The splice manager's composer has the controls of a composer.** The sheet's foot shows how full the manager's context
+  is with Compact beside it, how much of its account's 5-hour and 7-day windows is spent, and chips for its head, its
+  model and its reasoning effort. The model and effort chips type Claude Code's own `/model` and `/effort` and answer
+  its "Switch model?" and "Change effort level?" question, so the same session, transcript and cache go on. Stop ends the
+  turn in flight and the Up arrow recalls the last message. `GET /api/manager` carries the new `line`: the manager's model,
+  effort and context as its status line last said them, kept in memory from each status-line post. A prompt that shows
+  only Claude Code's grey suggestion (`Try "edit <filepath> to..."`) no longer counts as a draft, which refused the
+  first message to every new session.
 - **The splice manager's folder, installed and kept current.** `splice init`, which the installer runs, and every
   daemon start write a `CLAUDE.md`, a `.claude/settings.json` that denies the session splice's keys, login tokens and
   state folder, and the `splice` skill into `manager/`, a folder inside the global settings folder beside `splice.toml`,

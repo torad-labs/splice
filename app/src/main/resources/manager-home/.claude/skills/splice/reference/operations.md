@@ -334,6 +334,16 @@ What it means for you:
   conversation are the same. Re-read the reference file you need instead of trusting a summary.
 - If the person asks you to switch heads, tell them to pick the head in the composer.
 
+### Your model, effort and context
+
+The foot of the composer's sheet also has a model chip, an effort chip, Compact and Stop, and bars for how full your
+context is and how much of your account's 5-hour and 7-day windows is spent. The chips type Claude Code's own `/model`,
+`/effort` and `/compact` into your pane and answer its "Switch model?" or "Change effort level?" question for the
+person. You cannot run them: they are the client's commands, not tools. If the person asks you to change your model or
+effort, tell them to use the chips. What it means for you: after a change your whole conversation is read again on
+your next message, a model change can give you a different window (the context bar shows it), and an effort or model typed
+this way is saved by Claude Code as the head's default, which splice's next launch of that head writes over.
+
 Source: features/sessions/src/main/kotlin/splice/sessions/http/SessionContinue.kt (lines 1-30, 56, 107, 130-131);
 TranscriptModelRewrite.kt (lines 14-20, 104); docs/specs/v0.4.0.md section 15. The manager's own head route (`POST /api/manager/head`) was being built on
 2026-10-15; the steps above follow its contract and the Continue on code (unverified against the finished route).

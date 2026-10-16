@@ -4,7 +4,7 @@ package splice.provider.codex.state
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import splice.core.perf.InputDigest
+import splice.core.perf.InputItemDigests
 import splice.core.util.JsonElementInterner
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
@@ -29,9 +29,11 @@ internal data class CodeModeReplayAnchors(
 /** One index over client items is shared by all v5 record placements in a rewrite. */
 private val OWNED_TYPES = setOf("function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output")
 
+/** [digests] is the request's: every index a turn builds over the same borrowed items renders each item once. */
 internal class CodeModeHistoryIndex(
     val items: List<JsonElement>,
     private val codec: CodexCodeModeHistoryCodec,
+    digests: InputItemDigests = InputItemDigests(),
 ) {
     val payloads = JsonElementInterner()
     private val matching = CodeModeNativeMatching(payloads)
@@ -40,7 +42,7 @@ internal class CodeModeHistoryIndex(
 
     init {
         val opaque = mutableSetOf<String>()
-        InputDigest.hexItems(items).forEachIndexed { index, digest ->
+        digests.hexItems(items).forEachIndexed { index, digest ->
             val item = items[index]
             val type = codec.string(item as? JsonObject, "type")
             if (type in OWNED_TYPES) codec.callId(item)?.let { ids.getOrPut(it) { mutableListOf() } += index }

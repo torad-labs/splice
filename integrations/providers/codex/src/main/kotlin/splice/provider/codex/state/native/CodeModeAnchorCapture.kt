@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigest
+import splice.core.perf.InputItemDigests
 import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeInputBoundary
@@ -24,11 +25,13 @@ internal object CodeModeAnchorCapture {
         codec: CodexCodeModeHistoryCodec,
     ): CodeModeInputBoundary? = inputBoundary(codec.root(bodyJson)?.second, completed, codec)
 
-    /** [input]: the round's parsed input array, or null when the round is not a Responses request. */
+    /** [input]: the round's parsed input array, or null when the round is not a Responses request.
+     *  [digests]: the round's item digests, which the turn's history indexes have usually filled already. */
     fun inputBoundary(
         input: JsonArray?,
         completed: List<CodeModeRecord>,
         codec: CodexCodeModeHistoryCodec,
+        digests: InputItemDigests = InputItemDigests(),
     ): CodeModeInputBoundary? {
         if (input == null) return null
         val conversation = codec.conversation(codec.projection.project(input))
@@ -40,7 +43,7 @@ internal object CodeModeAnchorCapture {
             "",
             "",
             natives,
-        ).also { it.replayAnchors = capture(body.logicalItems, natives, completed, codec) }
+        ).also { it.replayAnchors = capture(body.logicalItems, natives, completed, codec, digests) }
     }
 
     fun capture(
@@ -48,10 +51,11 @@ internal object CodeModeAnchorCapture {
         natives: List<CodeModeNativeSegment>,
         completed: List<CodeModeRecord>,
         codec: CodexCodeModeHistoryCodec,
+        digests: InputItemDigests = InputItemDigests(),
     ): CodeModeReplayAnchors {
         val owned = completed.flatMap { it.clientIds() + it.origin.outerCallId }.toSet()
         val continuity = completed.flatMap { it.carry.continuity }.toSet()
-        val fingerprints = InputDigest.hexItems(items).toList()
+        val fingerprints = digests.hexItems(items)
         val eligible = items.indices.filter { codec.callId(items[it]) !in owned && items[it] !in continuity }.toSet()
         fun at(boundary: Int): CodeModeHistoryAnchor {
             val prior = eligible.lastOrNull { it < boundary } ?: return CodeModeHistoryAnchor(null, 0, boundary)

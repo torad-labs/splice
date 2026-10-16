@@ -4,6 +4,7 @@ package splice.provider.codex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.InputItemDigests
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.state.CodeModeExtraContent
@@ -26,7 +27,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
     private val extras = CodeModeExtraContent(codec, ownership)
 
     fun anchoredBoundary(body: CodeModeBody, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
-        CodeModeAnchorCapture.inputBoundary(body.request?.second, completed, codec)
+        CodeModeAnchorCapture.inputBoundary(body.request?.second, completed, codec, body.digests)
 
     /** What the client added after the record's baseline that the record does not own (V4-336),
      *  sorted by [CodeModeExtraContent]. [candidateMedia]: follow-ups rendered for results the record
@@ -36,14 +37,14 @@ internal class CodexCodeModeHistory(private val json: Json) {
         body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): CodeModeExtra = extras.of(body.request?.second, record, candidateMedia)
+    ): CodeModeExtra = extras.of(body.request?.second, record, candidateMedia, body.digests)
 
     fun describeExtraContent(
         body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>>,
         extra: CodeModeExtra,
-    ): String = extras.describe(body.request?.second, record, candidateMedia, extra)
+    ): String = extras.describe(body.request?.second, record, candidateMedia, extra, body.digests)
 
     /**
      * Rewrites every completed record it can still place, except an abandoned one (V4-342): its
@@ -82,15 +83,19 @@ internal class CodexCodeModeHistory(private val json: Json) {
         val root = body.request
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
         val conversation = codec.conversation(codec.projection.project(root.second))
-        val restored = restoreProjected(conversation.body, record)
+        val restored = restoreProjected(conversation.body, record, body.digests)
         return restored.error?.let { CodeModeRewrite(null, it, nativeRejection = restored.nativeRejection) }
             ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input), body)
     }
 
-    private fun restoreProjected(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
+    private fun restoreProjected(
+        input: ResponsesCodeModeInput,
+        record: CodeModeRecord,
+        digests: InputItemDigests,
+    ): ProjectedRewrite {
         metadata.problem(record)?.let { return ProjectedRewrite(null, it) }
         val index = if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION) {
-            CodeModeHistoryIndex(input.logicalItems, codec)
+            CodeModeHistoryIndex(input.logicalItems, codec, digests)
         } else {
             null
         }

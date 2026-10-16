@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.InputDigest
+import splice.core.perf.InputItemDigests
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeProjection
@@ -44,9 +45,14 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         )
     }
 
-    fun baselineBoundary(items: List<JsonElement>, record: CodeModeRecord): Int? =
+    /** [digests]: the request's item digests, so a boundary over its borrowed items renders none twice. */
+    fun baselineBoundary(
+        items: List<JsonElement>,
+        record: CodeModeRecord,
+        digests: InputItemDigests = InputItemDigests(),
+    ): Int? =
         if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
-            CodeModeHistoryIndex(items, this).boundary(record)
+            CodeModeHistoryIndex(items, this, digests).boundary(record)
         } else {
             record.origin.baseline.logicalCount.takeIf { validPrefix(items, record) }
         }
@@ -112,7 +118,8 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
             rebuilt.indices.all { rebuilt[it] === received[it] }
         if (unchanged) return CodeModeRewrite(original)
         val request = JsonObject(root + (FIELD_INPUT to rebuilt))
-        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emitted.at(request)))
+        val digests = original?.digests ?: InputItemDigests()
+        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emitted.at(request), digests))
     }
 
     fun root(bodyJson: String): Pair<JsonObject, JsonArray>? = CodeModeBody(RoundBody.Text(bodyJson), json).request
@@ -161,8 +168,14 @@ internal data class CodeModeConversation(
 )
 
 /** One round's request as code mode reads it: [round] is what it posts, and [request] is what every reader
- *  of the round reads. An unchanged history posts [round] as it arrived. */
-internal class CodeModeBody(val round: RoundBody, json: Json, val emission: CodeModeEmission? = null) {
+ *  of the round reads. An unchanged history posts [round] as it arrived. [digests] is shared with every body
+ *  rebuilt from this one, whose history items are this one's, borrowed. */
+internal class CodeModeBody(
+    val round: RoundBody,
+    json: Json,
+    val emission: CodeModeEmission? = null,
+    val digests: InputItemDigests = InputItemDigests(),
+) {
     /** The body parsed once: its root and input array, or null when it is not a Responses request. A tree
      *  is read as itself; only text is parsed. */
     val request: Pair<JsonObject, JsonArray>? = run {

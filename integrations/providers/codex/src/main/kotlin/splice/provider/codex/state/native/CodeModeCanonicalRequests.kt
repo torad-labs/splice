@@ -48,6 +48,7 @@ internal class CodeModeCanonicalRequests(private val codec: CodexCodeModeHistory
             pending.filter { it.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION },
             replayMedia,
             capture,
+            body.digests,
         )
         omitted += anchored.omitted
         return codec.rebuilt(root.first, conversation, anchored.input, body, CodeModeEmitted(eligible, omitted))

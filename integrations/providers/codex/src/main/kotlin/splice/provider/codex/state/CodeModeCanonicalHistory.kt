@@ -3,6 +3,7 @@ package splice.provider.codex.state
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.InputItemDigests
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
@@ -41,11 +42,13 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
     private val ownership = CodeModeOwnership(codec)
     private val continuity = CodeModeExtraContent(codec, ownership)
 
+    /** [digests]: the request body's item digests, shared with the turn's later indexes over the same items. */
     fun rewrite(
         input: ResponsesCodeModeInput,
         records: List<CodeModeRecord>,
         media: Map<String, List<JsonElement>>,
         capture: CodeModeRecord? = null,
+        digests: InputItemDigests = InputItemDigests(),
     ): CodeModeCanonicalResult {
         if (records.none { it.replayAnchors != null }) {
             val replay = CodeModeNativeChain.normalizedReplay(input.replayItems.filter { it.items.isNotEmpty() })
@@ -54,7 +57,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             }
             return CodeModeCanonicalResult(input.copy(replayItems = replay), omitted)
         }
-        val index = CodeModeHistoryIndex(input.logicalItems, codec)
+        val index = CodeModeHistoryIndex(input.logicalItems, codec, digests)
         val inputOwners = records.filterNot(CodeModeNativeChain::retired)
         val natives = CodeModeNativeReplay(codec, input, index, inputOwners)
         val omitted = mutableListOf<CodeModeOmission>()

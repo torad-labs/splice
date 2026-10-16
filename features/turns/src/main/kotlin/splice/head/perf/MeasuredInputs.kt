@@ -1,9 +1,11 @@
 package splice.head.perf
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigestCheckpointBudget
 import splice.core.perf.InputDigestCheckpoints
 import splice.core.perf.InputPrefix
+import splice.core.perf.InputPrefixDigests
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.upstream.memory.JvmHeap
@@ -61,6 +63,14 @@ internal class MeasuredInputs {
         }
     }
 
+    /** Answers each digest with the measured one, so a growth bound can be asked without rendering history.
+     *  Null from it is the real answer too; a bound from it holds only once the real digests agree. */
+    private class MeasuredDigests(private val prefix: InputPrefix) : InputPrefixDigests {
+        override fun input(value: JsonArray): String = prefix.inputDigest
+
+        override fun properties(value: JsonObject): String = prefix.propertiesDigest
+    }
+
     private val samples = LinkedHashMap<Key, Sample>()
     private val lock = Any()
 
@@ -103,6 +113,9 @@ internal class MeasuredInputs {
         val key = if (session != null && conversation != null) Key(session, conversation, model) else null
         val measured = key?.let(::borrow) ?: return null
         return measured.owner.use { owner ->
+            // why: an appended tool call bounds nothing whatever the history digests say, and most turns append one;
+            // asking first with the measured digests standing in skips a history render the answer would discard.
+            measured.prefix.textGrowthBytes(request, MeasuredDigests(measured.prefix)) ?: return@use null
             val growth = measured.prefix.textGrowthBytes(request, owner.digests) ?: return@use null
             InputEstimate(measured.input, measured.input + growth, "measured-text-prefix")
         }

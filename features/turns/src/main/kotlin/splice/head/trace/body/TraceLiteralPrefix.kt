@@ -25,6 +25,9 @@ private const val TRACE_RECENT_LITERALS = 4
 // why: a literal shorter than one largest chunk saves at most a chunk or two, so it is not worth its held text.
 private const val TRACE_RECENT_MIN_CHARS = CHUNK_MAX
 
+// why: two texts are compared 1K chars at a time with one bulk compare, and only the block that differs per char.
+private const val TRACE_SHARED_BLOCK_CHARS = 1024
+
 /** Where a literal's encoding picks up after the chunks it shares with a recent literal: [parts] are reused as they
  *  are, encoding restarts at char [from] of the text, and its first [skip] bytes already lie inside the last of them. */
 internal data class TraceLiteralResume(val parts: List<JsonObject>, val from: Int, val skip: Int)
@@ -35,7 +38,9 @@ internal data class TraceLiteralResume(val parts: List<JsonObject>, val from: In
  *  literal between them.
  *
  *  Trace cost (Oct 13): a resume reads the marks of the parts it reuses, and a remembered literal inherits them and
- *  measures only the text after them, so no turn re-measures the history it shares with the one before. */
+ *  measures only the text after them, so no turn re-measures the history it shares with the one before.
+ *  Trace cost (Oct 15): a new part's mark is measured from the char its chunker's cut names (TraceCuts), at most a
+ *  batch of text before the cut, so each part re-measures about 1 KiB of text rather than all of it. */
 internal class TraceRecentLiterals(private val heap: HeapReservations) {
     /** [marks] holds, for part k, the char where encoding resumes after it, shifted left by [MARK_SKIP_BITS], with the
      *  bytes of that char's encoding already inside the part in the low bits. */
@@ -76,7 +81,8 @@ internal class TraceRecentLiterals(private val heap: HeapReservations) {
         return TraceLiteralResume(shared, best.from(last), best.skip(last))
     }
 
-    fun remember(text: String, parts: JsonArray) {
+    /** Holds [text], whose [parts] past the resumed ones were cut where [cuts] says. */
+    fun remember(text: String, parts: JsonArray, cuts: TraceCuts) {
         val prior = resumed
         resumed = null
         if (text.length < TRACE_RECENT_MIN_CHARS) return
@@ -87,7 +93,8 @@ internal class TraceRecentLiterals(private val heap: HeapReservations) {
         ) ?: return
         var remembered = false
         try {
-            held.addFirst(Recent(text, parts, lease, marks(text, parts, prior)).also { HeapOwners.keep(it, lease) })
+            val marks = marks(text, parts, prior, cuts)
+            held.addFirst(Recent(text, parts, lease, marks).also { HeapOwners.keep(it, lease) })
             remembered = true
         } finally {
             if (!remembered) lease.close()
@@ -106,23 +113,33 @@ internal class TraceRecentLiterals(private val heap: HeapReservations) {
     /** Each part's mark: the last char that starts at or before the part's end, and the bytes of it the part holds. A
      *  pair's low half encodes to nothing (its high half carries all four bytes), so a mark never lands on one: a UTF-8
      *  writer started on a low half writes a replacement byte instead of the pair. Inherited marks are copied as they
-     *  are, and only the text after them is measured. */
-    private fun marks(text: String, parts: JsonArray, prior: Resumed?): LongArray {
+     *  are. A new part's measuring starts at its cut's origin when that lies ahead: every char before the origin ends
+     *  at or before it, inside this part, so measuring them would only consume them. */
+    private fun marks(text: String, parts: JsonArray, prior: Resumed?, cuts: TraceCuts): LongArray {
         val marks = LongArray(parts.size)
         var part = 0
         var end = 0L
         // The stream opens with the literal's quote, one byte before char 0.
         var from = 0
         var at = 1L
+        // The encoder's first fed byte: the opening quote, or the first byte of the char a resume restarted at.
+        var fedBase = 0L
         if (prior != null) {
             prior.base.marks.copyInto(marks, 0, 0, prior.reused)
             part = prior.reused
             end = prior.end
             from = prior.base.from(part - 1)
             at = end - prior.base.skip(part - 1)
+            fedBase = at
         }
+        val reused = part
         while (part < parts.size) {
-            end += (parts[part] as JsonObject).getValue("bytes").jsonPrimitive.int
+            val cut = part - reused
+            end += cuts.length(cut)
+            if (cuts.originChar(cut) > from) {
+                from = cuts.originChar(cut)
+                at = fedBase + cuts.originFed(cut)
+            }
             while (from < text.length) {
                 val width = TraceLiteral.width(text, from)
                 if (at + width > end) break
@@ -141,6 +158,9 @@ internal class TraceRecentLiterals(private val heap: HeapReservations) {
     private fun shared(old: String, new: String): Int {
         val limit = minOf(old.length, new.length)
         var at = 0
+        while (at + TRACE_SHARED_BLOCK_CHARS <= limit && old.regionMatches(at, new, at, TRACE_SHARED_BLOCK_CHARS)) {
+            at += TRACE_SHARED_BLOCK_CHARS
+        }
         while (at < limit && old[at] == new[at]) at++
         return maxOf(0, at - 1)
     }

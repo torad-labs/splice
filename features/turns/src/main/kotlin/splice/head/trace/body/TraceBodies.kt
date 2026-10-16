@@ -180,10 +180,10 @@ internal class TraceBodies(
         val parts = pack.cached(text) ?: run {
             val resume = pack.resume(text)
             val chunks = TraceChunker(pack, heap, resume?.parts.orEmpty(), resume?.skip ?: 0)
-            TraceLiteral.encode(text, chunks, heap, resume?.from ?: 0)
+            TraceLiteral.encode(text, chunks, heap, resume?.from ?: 0, chunks.cuts)
             chunks.finish().also {
                 activeIndex.cache(text, it)
-                activeIndex.recent.remember(text, it)
+                activeIndex.recent.remember(text, it, chunks.cuts)
             }
         }
         buildJsonObject {

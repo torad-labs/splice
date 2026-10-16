@@ -42,6 +42,7 @@ import splice.head.perf.SessionTotals
 import splice.head.usage.AccountOnPlan
 import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore
+import splice.head.usage.QuotaAccountFiles
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.oauth.AuthHttpClientFactory
@@ -323,12 +324,15 @@ internal class ManagedHeadFactory(
 
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a
-     *  file. Labeled accounts persist next to their credential. */
+     *  file. Labeled accounts persist next to their credential. Each reading also names the account its credential
+     *  proves (Codex), and that account keeps its own copy beside the head's file (`codex-quota-<ref>.json`), so a
+     *  sign-in moved to another account no longer overwrites the first one's windows with no name (Oct 15, 2026). */
     private fun accountQuotas(key: String, wired: Wired): MutableMap<String, QuotaTracker> =
         wired.accounts.associateTo(java.util.concurrent.ConcurrentHashMap()) { account ->
             val file =
                 if (account.primary && account.nativePlace == null) statePaths.quotaFile(key) else account.quota.file
-            account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily()).also {
+            val named = QuotaAccountFiles(statePaths.quotaFile(key), account.label, account.auth)
+            account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily(), accounts = named).also {
                 it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
             }
         }

@@ -61,6 +61,11 @@ public interface AuthProvider {
 
     /** Existing credential-reading join key, resolved without refresh, writes or provider requests. Never rendered. */
     public fun observedCredentialKey(): String? = null
+
+    /** The [AccountRef] of the account the credential names now, read without refresh, writes or provider requests;
+     *  null where the vendor proves no account id. Unlike [observedCredentialKey] it stays put across token refreshes,
+     *  so it can name whose quota reading a file holds. */
+    public fun observedAccountRef(): String? = null
 }
 
 /** An AuthProvider that can refresh its credentials (single-flight at the impl). */

@@ -14,6 +14,7 @@ package splice.provider.codex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
+import splice.core.auth.AccountRef
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
@@ -203,6 +204,10 @@ public class CodexAuthProvider(
     override fun observedCredentialKey(): String? = authJson.readSnapshot(0L)?.let {
         CredentialKey.fromCredentials(Credentials.Bearer(it.access, it.accountId))
     }
+
+    /** The ref of `tokens.account_id`, the same one [describe] gives the Accounts page. */
+    override fun observedAccountRef(): String? =
+        authJson.readSnapshot(authCacheMs)?.accountId?.takeIf(String::isNotBlank)?.let(AccountRef::of)
 
     override fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? =
         planLimits.read(body, nowEpochSeconds)

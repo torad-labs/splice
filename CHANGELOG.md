@@ -1175,6 +1175,11 @@ origin.
 - **`splice login` names a Claude login by its label, never its email,** in every sentence it prints.
 
 ### Fixed
+- **The Codex quota file says whose quota it is.** `codex-quota.json` held whichever account the head's sign-in named
+  at its last reading, with nothing naming it, so a tool reading it could not tell one ChatGPT account from another.
+  Each reading now carries `"account": {"ref": ..., "label": ...}`, with the same ref the Accounts page shows, and each
+  account keeps its own `codex-quota-<ref>.json`, which signing in to another account no longer overwrites. The file
+  keeps its windows across the upgrade, and gains the account at its next reading.
 - **`install.sh` says when `gh` did not answer.** A `gh auth status` that took over 20 seconds read as "gh is not
   signed in"; it now reads "gh did not answer gh auth status within 20 s".
 - **A daemon that runs out of memory exits** and leaves a heap dump, `splice-oom.hprof` in the state folder, instead

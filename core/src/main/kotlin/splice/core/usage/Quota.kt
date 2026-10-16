@@ -25,6 +25,10 @@ public data class ModelQuota(val model: String, val usedPercent: Double, val res
     public fun runsAt(nowSeconds: Long): Boolean = resetsAt == null || resetsAt > nowSeconds
 }
 
+/** Whose reading a quota file holds: the account's [ref] (splice.core.auth.AccountRef, the `ref` /api/accounts shows,
+ *  never the account id itself) and the [label] its head signs it in under (`primary` for the head's own sign-in). */
+public data class QuotaAccount(val ref: String, val label: String)
+
 public data class QuotaSnapshot(
     val fiveHour: QuotaWindow? = null,
     val sevenDay: QuotaWindow? = null,

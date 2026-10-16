@@ -27,13 +27,21 @@ private const val RESETS_AT = "resets_at"
 public class QuotaJson {
     private val json = Json { ignoreUnknownKeys = true }
 
-    public fun encode(snapshot: QuotaSnapshot): String = JsonWire.string(
+    /** [account] names whose reading this is, as `"account": {"ref": ..., "label": ...}`; a reader that does not know
+     *  the member reads the windows as before. */
+    public fun encode(snapshot: QuotaSnapshot, account: QuotaAccount? = null): String = JsonWire.string(
         buildJsonObject {
             snapshot.fiveHour?.let { w -> putJsonObject("five_hour") { window(this, w) } }
             snapshot.sevenDay?.let { w -> putJsonObject("seven_day") { window(this, w) } }
             snapshot.plan?.let { put("plan", it) }
             if (snapshot.models.isNotEmpty()) putModels(this, "models", snapshot.models)
             put("updated_at", snapshot.updatedAt)
+            account?.let { a ->
+                putJsonObject("account") {
+                    put("ref", a.ref)
+                    put("label", a.label)
+                }
+            }
         },
     )
 

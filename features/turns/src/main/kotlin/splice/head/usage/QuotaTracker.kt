@@ -35,6 +35,8 @@ public class QuotaTracker(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
     private val extraFamily: QuotaHeaderFamily? = null,
+    /** Names each reading's account in [file] and writes the reading to that account's own file too. */
+    private val accounts: QuotaAccountFiles? = null,
 ) : CredentialQuotaReceiver {
     private val codec = QuotaJson()
     private val headers = QuotaHeaders(clock)
@@ -66,10 +68,15 @@ public class QuotaTracker(
 
     private fun keep(snapshot: QuotaSnapshot) {
         latest.set(snapshot)
+        val named = accounts?.current()
+        val text = codec.encode(snapshot, named?.first)
+        val targets = listOfNotNull(file, named?.second)
         writes.withLock {
             if (!retired) {
-                Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, codec.encode(snapshot)) }
-                    .onFailure { log("[quota] $file write FAILED (${SafeFailureText.render(it)})\n") }
+                targets.forEach { target ->
+                    Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(target, text) }
+                        .onFailure { log("[quota] $target write FAILED (${SafeFailureText.render(it)})\n") }
+                }
             }
         }
     }

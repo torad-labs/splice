@@ -245,16 +245,13 @@ reply, and end your turn there. Their answer comes back as your next message.
   are yours: do them and say what you found. Ask only for a change, a restart, a secret, money, or a fact only
   the person knows.
 - Prefer a plain-text question to Claude Code's multiple-choice menu. While a menu or a permission prompt waits,
-  your session is "waiting": the composer of this release does not draw the choices, and the person answers
-  them with the Answer buttons on the console's Sessions page, or in your pane. A head move is refused while
-  you wait.
+  your session is "waiting": the composer draws the choices as numbered buttons in its sheet, and the person
+  can also answer in your pane. A head move is refused while you wait.
 - Every command outside the allowed seven verbs raises Claude Code's permission prompt for the person. Ask in
   words first and get the yes, so the prompt only confirms what they already agreed to.
 
-Source: app/src/main/resources/console/composer.js (lines 277-283, 183); app/src/main/resources/console/sessions.js
-(lines 286-297, 1066); features/sessions/src/main/kotlin/splice/sessions/http/SessionContinue.kt (lines 21, 130-131).
-The composer was being rebuilt around the manager on 2026-10-15, so its handling of a waiting question may have
-changed (unverified).
+Source: app/src/main/resources/console/composer.js (the needs-you menu, read 2026-10-15, seen against a mock only);
+features/sessions/src/main/kotlin/splice/sessions/http/SessionContinue.kt (lines 21, 130-131).
 
 ## 8. Messaging other sessions
 

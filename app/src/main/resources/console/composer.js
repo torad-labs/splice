@@ -108,6 +108,7 @@
       st.sid = m.session_id;
     }
     if (m.state !== "live" || m.status !== "waiting") { st.ask = null; st.answering = null; }
+    if (m.state === "off") { st.open = false; st.menu = false; } // nothing left to show: the door to the card stands
     if (m.state === "live") st.card = false;
     else if (!m.consented && !st.notNow && !st.phase) st.card = true; // first run: ask before anything starts or resumes
     // a reply: the turn it was working on ended, for him to read or to answer
@@ -194,10 +195,15 @@
     if (html !== drawn.card) { card.innerHTML = html; drawn.card = html; }
   }
   function drawSheet() {
+    const shown = !sheet.hidden;
     sheet.hidden = !st.open;
     if (!st.open) return;
+    // a sheet just opened starts at its newest words (a hidden log forgets its scroll), and one he was reading at the
+    // foot stays there when a question opens under it and takes its room
+    const stick = !shown || log.scrollHeight - log.scrollTop - log.clientHeight < FOLLOW_PX;
     where.textContent = st.m?.folder ? home(st.m.folder) : "";
     drawLog(); drawAsk(); drawFoot();
+    if (stick) log.scrollTop = log.scrollHeight;
   }
   function drawFoot() {
     const m = st.m, key = m?.head;
@@ -295,7 +301,7 @@
       if (exit) exits.add(exit.index);
     }
     const joint = (mv) => ({ key: `mv${mv.moved_at}`, html: `<p class="cmp-moved"><span>Continued on</span><span class="cmp-blot" style="--c:${tint(mv.command)}" aria-hidden="true"></span>`
-      + `<b>${h(headOf(mv.command)?.label || mv.command || "another head")}</b>${mv.thinking_dropped ? "<span>Thinking not carried over</span>" : ""}</p>` });
+      + `<b>${h(headOf(mv.command)?.label || mv.command || "another head")}</b>${mv.thinking_dropped ? "<span>· Thinking not carried over</span>" : ""}</p>` });
     for (const m of msgs) {
       while (moves.length && m.ts && moves[0].moved_at <= m.ts) out.push(joint(moves.shift()));
       const key = `${m.index}`;

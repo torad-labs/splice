@@ -242,9 +242,9 @@ main.page::after { content: ""; display: block; height: 3.5rem; }
 .cmp-foot .cmp-menuwrap > .cmp-hd:disabled { opacity: 1; cursor: progress; }
 .cmp-foot .cmp-hd svg { flex: none; width: .8rem; height: .8rem; color: var(--text-mute); }
 .cmp-state { display: flex; align-items: center; gap: .5rem; min-width: 0; font: 400 .88rem/1.2 var(--font-data); color: var(--text-mute); }
-.cmp-state span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cmp-state.waiting span { color: var(--key-ink); }
-.cmp-state.trouble span { color: var(--limit); }
+.cmp-state > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-state.waiting > span:last-child { color: var(--key-ink); }
+.cmp-state.trouble > span:last-child { color: var(--limit); }
 .cmp-foot .cmp-open { margin-left: auto; flex: none; }
 .cmp .cmp-foot .act.small { padding: .35rem .65rem; font-size: .88rem; }
 .cmp-menuwrap { position: relative; flex: none; }

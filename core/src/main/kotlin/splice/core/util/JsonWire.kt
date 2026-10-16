@@ -15,13 +15,13 @@ import java.util.StringJoiner
 internal const val UTF8_ASCII_CEILING = 0x80
 
 // why: code points below 2^11 fit in two UTF-8 bytes.
-private const val UTF8_TWO_BYTE_CEILING = 0x800
+internal const val UTF8_TWO_BYTE_CEILING = 0x800
 
 // why: a non-surrogate Basic Multilingual Plane code point occupies three UTF-8 bytes.
-private const val UTF8_BMP_WIDTH = 3
+internal const val UTF8_BMP_WIDTH = 3
 
 // why: a supplementary code point occupies four UTF-8 bytes rather than two UTF-16 code units.
-private const val UTF8_SUPPLEMENTARY_WIDTH = 4
+internal const val UTF8_SUPPLEMENTARY_WIDTH = 4
 
 // The pinned library owns escaping. Borrow its exact ASCII escape spellings, never a second escape algorithm.
 private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->
@@ -29,6 +29,9 @@ private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->
     val quoted = Json.encodeToString(String.serializer(), character)
     quoted.substring(1, quoted.length - 1).takeUnless { it == character }
 }
+
+// why: the same spellings as the UTF-8 bytes a span of them wrote, so the one-pass stream copies them as is.
+private val WIRE_ESCAPE_BYTES = Array(UTF8_ASCII_CEILING) { code -> WIRE_ESCAPES[code]?.toByteArray(Charsets.UTF_8) }
 
 /** Streams borrowed tree nodes while retaining the legacy wire's numeric lexemes and string escaping. */
 public object JsonWire {
@@ -133,6 +136,22 @@ public object JsonWire {
     private interface WireText {
         fun raw(text: String, start: Int = 0, end: Int = text.length)
         fun ascii(character: Char)
+
+        /** One JSON string: each escaped character's spelling in its place, the spans between written raw. */
+        fun quoted(text: String) {
+            ascii('"')
+            var start = 0
+            for (index in text.indices) {
+                val escape = WIRE_ESCAPES.getOrNull(text[index].code)
+                if (escape != null) {
+                    raw(text, start, index)
+                    raw(escape)
+                    start = index + 1
+                }
+            }
+            raw(text, start, text.length)
+            ascii('"')
+        }
     }
 
     /** Both outputs walk the original nodes and retain raw scalar spellings. */
@@ -144,7 +163,7 @@ public object JsonWire {
                     output.ascii('{')
                     element.entries.forEachIndexed { index, (key, value) ->
                         if (index > 0) output.ascii(',')
-                        quoted(key)
+                        output.quoted(key)
                         output.ascii(':')
                         tree(value)
                     }
@@ -158,23 +177,9 @@ public object JsonWire {
                     }
                     output.ascii(']')
                 }
-                is JsonPrimitive -> if (element.isString) quoted(element.content) else output.raw(element.content)
+                is JsonPrimitive ->
+                    if (element.isString) output.quoted(element.content) else output.raw(element.content)
             }
-        }
-
-        private fun quoted(text: String) {
-            output.ascii('"')
-            var start = 0
-            for (index in text.indices) {
-                val escape = WIRE_ESCAPES.getOrNull(text[index].code)
-                if (escape != null) {
-                    output.raw(text, start, index)
-                    output.raw(escape)
-                    start = index + 1
-                }
-            }
-            output.raw(text, start, text.length)
-            output.ascii('"')
         }
     }
 
@@ -223,6 +228,16 @@ public object JsonWire {
 
         override fun ascii(character: Char) {
             utf8.ascii(character)
+        }
+
+        /** The bytes the split spans wrote, in one pass over bulk-copied characters.
+         *  why: splitting read every character twice through String.charAt, which was most of each digest's CPU.
+         *  An escaped character is ASCII and never a surrogate, so pairing over the whole string pairs as the
+         *  spans did: a surrogate beside an escape was unpaired in its span and is unpaired here. */
+        override fun quoted(text: String) {
+            utf8.ascii('"')
+            utf8.span(text, 0, text.length, WIRE_ESCAPE_BYTES)
+            utf8.ascii('"')
         }
 
         fun drain() = utf8.drain()

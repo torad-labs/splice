@@ -266,9 +266,14 @@ public class PerfStats(
         }
     }
 
+    // why: `longOrNull` answers a value that is not a number by throwing and catching inside the parser, and a row is
+    // mostly names, nulls and booleans; every status-line refresh paid a stack trace for each of them. A Long's text
+    // starts with a digit or a minus sign, so anything else is skipped before the parser sees it.
     private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {
         row.forEach { (k, v) ->
-            (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
+            val value = v as? JsonPrimitive ?: return@forEach
+            val first = value.content.firstOrNull() ?: return@forEach
+            if (first == '-' || first in '0'..'9') value.longOrNull?.let { put(k, it) }
         }
     }
 

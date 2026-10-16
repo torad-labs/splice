@@ -357,7 +357,7 @@ Source: `README.md` 976-1003; `gradle/module-law.txt`; `settings.gradle.kts`.
 
 | what | where |
 |---|---|
-| config dir (the manager's folder) | the folder of `splice.toml`: `SPLICE_CONFIG`, else `$XDG_CONFIG_HOME/splice`, else `~/.config/splice`. Holds `splice.toml`, `keys.toml`, `key-ledger.json`, `auth/`, `prompts/`, `mcp-front.env` |
+| config dir (the manager's `manager/` is inside it) | the folder of `splice.toml`: `SPLICE_CONFIG`, else `$XDG_CONFIG_HOME/splice`, else `~/.config/splice`. Holds `splice.toml`, `keys.toml`, `key-ledger.json`, `auth/`, `prompts/`, `mcp-front.env`, `manager/` |
 | state dir | `SPLICE_STATE_DIR` (or the older `CLAUDEX_STATE_DIR`), else `[daemon] state_dir`, else `~/.splice/state`. An install older than 0.4 keeps `~/.claude-codex/state` and splice adopts it in place. Holds `mgmt-key`, `config.json`, `trace/`, perf and usage files, `teams.json`, `mcp-hub/`, `config-backups/` |
 | logs dir | the sibling `logs` of the state dir: `~/.splice/logs`, or `~/.claude-codex/logs` when adopted. `daemon.log`, `daemon-boot.log` |
 | install dir | `~/.local/share/splice` (`SPLICE_SHARE_DIR`): `splice.jar`, `splice-launch`, `releases/`, `managed-install`, hub programs |
@@ -400,7 +400,7 @@ Source: `install.sh` lines 7-15, 92-146, 257-331, 373-393, 464-497, 543-566.
 
 | verb | does |
 |---|---|
-| `splice init` | writes the starter `splice.toml` only if absent, on Linux writes `mcp-front.env`, and places the manager's folder (`CLAUDE.md`, `.claude/settings.json`, the skill) beside `splice.toml`. A file the person edited is kept as they left it. The daemon does the same at every start, because auto-update swaps the jar and never reruns init |
+| `splice init` | writes the starter `splice.toml` only if absent, on Linux writes `mcp-front.env`, and places the manager's folder (`CLAUDE.md`, `.claude/settings.json`, the skill) in `manager/` beside `splice.toml`. A file the person edited is kept as they left it. The daemon does the same at every start, because auto-update swaps the jar and never reruns init |
 | `splice install [<head>\|--all]` | links the wrapper symlinks in `~/.local/bin`, and on Linux writes the hub units where none exist. Never prunes a link |
 | `splice setup` | guided, needs a terminal: first provider, which commands, plain `claude` or `claude-splice`, MCP sharing. Writes nothing until confirmed |
 | `splice doctor [--live] [--json [--with-logs] [--out FILE]]` | seven sections: prerequisites, installation, configuration, daemon, auth, accounts, runtime. Every failing check prints its fix. `--live` sends one tiny tool call per local-runtime row and nothing else. `--json` is a redacted, shareable report |

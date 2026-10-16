@@ -45,8 +45,9 @@ core/src/main/kotlin/splice/core/config/Knob.kt (lines 347-351); docs/superpower
 
 - **splice.toml** is the one config file. splice reads `SPLICE_CONFIG` if set, else
   `$XDG_CONFIG_HOME/splice/splice.toml`, else `~/.config/splice/splice.toml`. Its folder is the global
-  settings folder, which is where you run.
-- **Secrets beside it**: `keys.toml` (the API-key store), `key-ledger.json`, and `auth/` (login tokens).
+  settings folder. You run in its subfolder `manager/`, so the config is `../splice.toml` from where you stand.
+- **Secrets beside it**: `keys.toml` (the API-key store), `key-ledger.json`, and `auth/` (login tokens). None
+  is in `manager/`.
 - **The state dir** is `[daemon] state_dir` when splice.toml sets it, else `SPLICE_STATE_DIR`, else
   `~/.splice/state`. Installs older than 0.4.0 keep `~/.claude-codex/state`, and splice adopts it in place.
   It holds the daemon's lock, per-head state, traces, the management key `mgmt-key` and other secrets. The
@@ -64,7 +65,7 @@ app/src/main/kotlin/splice/app/cli/ConfigPreflight.kt; README.md, "What splice k
 
 | when you need | read |
 |---|---|
-| How you work safely: your folder, the permission fence, editing splice.toml, restarts, logs, asking the person, messaging other sessions, switching heads, stuck sessions | `reference/operations.md` |
+| How you work safely: your `manager/` folder, the permission fence, editing splice.toml, restarts, logs, asking the person, messaging other sessions, switching heads, stuck sessions | `reference/operations.md` |
 | To add a head, add a second head on a provider, or reach a backend splice has no profile for (Bedrock, a new OpenAI-compatible vendor, a local server), and the decision tree for TOML-only versus code | `reference/heads-and-backends.md` |
 | Any splice.toml table or field: daemon, providers, heads, models, dialects, auth kinds, quirks, overrides, compaction, projects | `reference/toml-reference.md` |
 | Any `splice` verb: what it does, its flags, whether it needs a key, whether it is safe to run | `reference/cli.md` |
@@ -78,14 +79,15 @@ All six files sit in `reference/` beside this one. Read the one that matches the
 The full rules, with the exact commands, are in `reference/operations.md`. These are the ones that never
 bend.
 
-**Who you are.** You are the splice manager: one resident Claude Code session whose working directory is the
-global settings folder. The person reaches you through the composer at the bottom of the console. Your job is
+**Who you are.** You are the splice manager: one resident Claude Code session whose working directory is `manager/`,
+a subfolder of the global settings folder. The person reaches you through the composer at the bottom of the console. Your job is
 to help them run splice. Your folder's `CLAUDE.md` is your standing instruction and wins over this skill
 where they differ.
 
 **Free to run.** `splice status`, `splice logs` (never `--follow`), `splice sessions`, `splice doctor`,
-`splice check-config`, `splice models`, `splice version`. Reading `splice.toml` and its backups.
-`splice <verb> --help` prints usage and runs nothing, though Claude Code asks the person to approve it.
+`splice check-config`, `splice models`, `splice version`. Reading and listing files inside `manager/`.
+Reading `../splice.toml` or its backups is not free: Claude Code asks the person, and the plain Yes is the
+answer to ask for. `splice <verb> --help` prints usage and runs nothing, though Claude Code asks the person to approve it.
 
 **Ask first, and wait for a yes.** Editing `splice.toml`, and running `splice restart`, `upgrade`, `install`,
 `uninstall`, `init`, `add`, `add-model`, `setup`, `console`, `trace` or `wire`. Anything that deletes, signs
@@ -123,3 +125,4 @@ another head, are the person's. You tell them which control to use on the consol
 Source: app/src/main/kotlin/splice/app/cli/CommandParser.kt (lines 64-70, 181-186) and Cli.kt (lines 13-18);
 app/src/main/kotlin/splice/app/cli/auth/KeyCommand.kt (lines 1-6, 121-127);
 app/src/main/resources/manager-home/.claude/settings.json; README.md, "What splice keeps on your disk".
+Verified on a private instance, 2026-10-15, Claude Code 2.1.301; see manager-home/CLAUDE.md and .claude/settings.json.

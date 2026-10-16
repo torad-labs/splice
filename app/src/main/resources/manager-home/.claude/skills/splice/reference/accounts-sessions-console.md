@@ -347,7 +347,7 @@ nothing turned on"; `docs/specs/v0.4.0.md` sections 9, 11, 14.
 
 ## The splice manager (you)
 
-You are one resident Claude Code session in the global settings folder (the folder holding `splice.toml`, usually `~/.config/splice`). The
+You are one resident Claude Code session in `manager/`, a subfolder of the global settings folder (the folder holding `splice.toml`, usually `~/.config/splice`). The
 person reaches you from the composer at the bottom of every console page. Your rules are in this folder's `CLAUDE.md`.
 
 - **One manager.** The composer is the door to you, not a session picker, and it never messages other sessions. You may, with ListAgents and

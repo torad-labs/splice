@@ -357,7 +357,7 @@ splice init
 ```
 
 Writes the starter `splice.toml` only when none exists. Then writes or refreshes the manager's files in the
-same folder from the jar (this `CLAUDE.md`, `.claude/settings.json` and this skill) and prints
+`manager/` subfolder beside it from the jar (this `CLAUDE.md`, `.claude/settings.json` and this skill) and prints
 `splice: the splice manager's folder is <path>`. On Linux it also writes the MCP hub front's environment file
 (`mcp-front.env`). Prints `splice: topology already at <path>` when the file is there. `install.sh` runs it on
 every install and upgrade, and every daemon start refreshes the manager's files too. A file the person edited is
@@ -384,7 +384,7 @@ There is no verb that removes splice. `splice uninstall --all` removes wrapper l
 | `splice daemon`, `splice start` | Runs or starts the daemon in your shell; a second daemon is refused, and a foreground one ties up the pane |
 | `splice trace --purge` | Deletes a head's trace files; not undoable |
 | `splice console` | Opens a browser on the person's desktop with the key in the URL |
-| Anything that reads `keys.toml`, `auth/`, `key-ledger.json` or `mgmt-key` | `cat`, `grep`, `cp`, a script: all fenced. A key you meet in output is named by its setting, never repeated |
+| Anything that reads `keys.toml`, `auth/`, `key-ledger.json` or `mgmt-key` | `cat`, `grep`, `cp`, a script: denied when the command names the file; a glob can still slip past (see operations.md, section 2). A key you meet in output is named by its setting, never repeated |
 
 Source: manager-home `CLAUDE.md` (what you may do, secrets, ask first); `SetupCommand.kt:1-5` (non-TTY defaults);
 `AddArgs.kt` (`--yes`); `LogsCommand.kt:27-31`; `TraceCommand.kt:47-56`.

@@ -180,7 +180,7 @@ Details of each verb: `cli.md`.
 
 Use it for a second account or key, another default model, or other knobs on the same vendor.
 
-1. Read `splice.toml`. Pick a head key, a port no head and not `[daemon] control_port` (3096 by default) uses, a
+1. Read `../splice.toml` (the person gets a prompt). Pick a head key, a port no head and not `[daemon] control_port` (3096 by default) uses, a
    new `discovery_prefix` and a new command.
 2. Add the head. For a second key on an api-key vendor, give it its own provider with its own `env`, because the
    key belongs to the provider's `auth`.

@@ -40,23 +40,76 @@ public object JsonWire {
     // bounding every recursive downstream walk. These are fixture measurements, not live-client maxima.
     public const val MAX_REQUEST_DEPTH: Int = 128
 
-    /** Refuses excessive container nesting before parsing; strings and their escapes are not structure. */
+    // why: the nesting scan copies the body 8 Ki characters at a time, the stream wire's own chunk.
+    private const val NESTING_CHUNK_CHARS = 8_192
+
+    /** Refuses excessive container nesting before parsing; strings and their escapes are not structure.
+     *  why: reading a 1-2 MB body through String.charAt paid a bounds check per character, the daemon's top leaf
+     *  method, so the scan reads bulk copies. Its state is per character, so a chunk edge changes no decision. */
     public fun requireRequestNesting(text: String) {
-        var depth = 0
-        var quoted = false
-        var escaped = false
-        for (character in text) {
-            when {
-                escaped -> escaped = false
-                quoted && character == '\\' -> escaped = true
-                character == '"' -> quoted = !quoted
-                quoted -> Unit
-                character in "{[" -> {
-                    depth++
-                    require(depth <= MAX_REQUEST_DEPTH) { "request JSON nesting exceeds $MAX_REQUEST_DEPTH levels" }
-                }
-                character in "}]" -> depth--
+        val scan = NestingScan()
+        val chunk = CharArray(minOf(text.length, NESTING_CHUNK_CHARS))
+        var offset = 0
+        while (offset < text.length) {
+            val count = minOf(chunk.size, text.length - offset)
+            text.toCharArray(chunk, 0, offset, offset + count)
+            scan.read(chunk, count)
+            offset += count
+        }
+    }
+
+    /** Container depth outside strings, carried from one chunk to the next. An escape is only ever pending inside
+     *  a string, so whether a string is open decides how each character reads: structure or string text. */
+    private class NestingScan {
+        private var depth = 0
+        private var quoted = false
+        private var escaped = false
+
+        fun read(chars: CharArray, count: Int) {
+            var index = 0
+            while (index < count) {
+                index = if (quoted) insideString(chars, index, count) else outsideString(chars, index, count)
             }
+        }
+
+        /** Returns the index after the string's closing quote, or [count] while the string goes on. */
+        private fun insideString(chars: CharArray, from: Int, count: Int): Int {
+            var index = from
+            var escape = escaped
+            var open = true
+            while (open && index < count) {
+                val character = chars[index++]
+                when {
+                    escape -> escape = false
+                    character == '\\' -> escape = true
+                    character == '"' -> open = false
+                }
+            }
+            escaped = escape
+            quoted = open
+            return index
+        }
+
+        /** Returns the index after a string's opening quote, or [count] while structure goes on. */
+        private fun outsideString(chars: CharArray, from: Int, count: Int): Int {
+            var index = from
+            var level = depth
+            var opened = false
+            while (!opened && index < count) {
+                when (chars[index++]) {
+                    '"' -> opened = true
+                    '{', '[' -> {
+                        level++
+                        require(level <= MAX_REQUEST_DEPTH) {
+                            "request JSON nesting exceeds $MAX_REQUEST_DEPTH levels"
+                        }
+                    }
+                    '}', ']' -> level--
+                }
+            }
+            depth = level
+            quoted = opened
+            return index
         }
     }
 

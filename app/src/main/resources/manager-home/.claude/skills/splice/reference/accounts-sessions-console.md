@@ -30,9 +30,68 @@ splice console
 4. A page showing **Locked** with `splice console` and a Copy button means this browser holds no key splice accepts (a 401).
    The person runs `splice console` again.
 
-You never run it and never ask for the key. If it says the key is absent, `splice restart` creates it (ask first).
+You never run bare `splice console` and never ask for the key. If it says the key is absent, `splice restart`
+creates it (ask first). To show or do something on the page the person already has open, use its actions (next
+section).
 
 Source: `app/.../cli/status/ConsoleCommand.kt:1-55`, `app/src/main/resources/console/api.js:1-30`.
+
+## Showing and doing things in the console
+
+The person talks to you from the console, so show them instead of describing where things are. `splice console
+<action>` works on the console tab they looked at last, the way their own hand would, and prints one sentence
+saying what happened. The full grammar is in cli.md, section "console".
+
+**Start with a look.** `splice console snapshot` prints the page's name, then every control under the heading it
+sits under, each with a ref:
+
+```
+Accounts (accounts.html), night theme, 3394x1889, scrolled 0px.
+The composer's sheet is open over the lower middle of the page.
+
+Claude:
+  e14 button "Add account"
+  e15 button "Remove" row "work@example.com" (disabled)
+```
+
+Refs are the surest target. They last until the next snapshot and survive the page redrawing itself, but not a
+move to another page. The words on a control work too (`tap "Add account"`); words that fit several things are
+refused with a ref for each. `read` prints the page's words, or one card's (`read "Claude"`), when you need
+figures rather than controls.
+
+**Recipes.**
+
+| The person says | You do |
+|---|---|
+| "Where do I add a second Claude account?" | `goto accounts`, `snapshot`, then `highlight e14 --note "Add account opens Claude's sign-in"` and say it in words too |
+| "Show me why claude-grok failed" | `goto requests`, `snapshot`, set the outcome filter to "Failed" (`tap` or `select`, as the snapshot shows it), `read` the row, highlight the cause |
+| "Stop that session" | `goto sessions`, `snapshot`, name the row and its Stop, wait for the yes, `tap` it, and read what the answer says changed |
+| "What does this setting do?" | `goto settings`, `hover` the knob for its tip, `read` its card, highlight it |
+| "Turn this on for me" | say which control and what it changes (a setting saves at once), wait for the yes, then `tap`, `fill` or `select` |
+
+**What the answers tell you.** After an act the sentence says the page you are now on, the control's new words
+or state, a notice the page raised, or that a dialog opened. A press that cuts or moves someone asks once: the
+first tap arms it and the answer says `It now reads "..."` with the sessions it would cut. Tell the person what
+the second press would do, and press it only within the yes they gave. When an answer surprises you, run
+`snapshot` again before the next act.
+
+**Rules.** Looking, reading, highlighting, hovering, scrolling and moving between pages are free. A tap, fill,
+select or key press that deletes, signs out, restarts, spends money, changes a setting or touches a running
+session needs the person's yes first, the same yes the act needs anywhere else. A highlight stays until the
+person presses anywhere outside the composer or presses Escape, or until you run `highlight --clear` or highlight
+something else; clear it when your explanation is done.
+
+**What you cannot reach.** The composer itself: its field, its chips, Compact and Stop are never listed or
+pressed, and a key you press never lands in it. A field that holds a password, key, token or secret shows only
+whether it is empty. A tab the person cannot see takes no orders.
+
+**When it refuses.** `no console is open in a browser`: the person has no console tab showing; ask them to open
+or show it. `the console did not answer in 15 s`: the tab closed or the machine slept; ask them to bring it back.
+`the daemon that is running is older than this splice`: the console actions arrive with the next install and
+restart, so describe the control in words until then.
+
+Source: `app/.../cli/status/ConsolePilotCommand.kt`, `app/.../control/ConsolePilot.kt`, `app/src/main/resources/console/pilot.js`,
+`docs/specs/v0.4.0.md` section 16.
 
 ## The eight pages
 
@@ -362,6 +421,8 @@ person reaches you from the composer at the bottom of every console page. Your r
   head (`same_head`).
 - **Your messages go to the picked head**, possibly a hosted provider. That is why the fence denies you `keys.toml`, `auth/`, `key-ledger.json`
   and `mgmt-key`.
+- **You can drive the console.** `splice console <action>` looks at, points within and presses controls on the page the
+  person has open, never the composer. See "Showing and doing things in the console" above.
 - A start answering 503 means splice has no terminal driver; sessions run in tmux, so check `command -v tmux`.
 - `splice init` and every daemon start write or refresh your `CLAUDE.md`, `.claude/settings.json` and this skill from the release. A file the
   person edited is kept and stops taking updates, so an old copy of this skill can outlive an upgrade. If something here looks stale, say so.
@@ -381,6 +442,7 @@ card wording may change.
 | Move a session to another model | Sessions, "Continue on": a copy on the new head, thinking blocks removed |
 | Compaction too early or late | The row's `context_window` in `splice.toml`; a `[1m]` row must be exactly 1000000; edits apply live |
 | Console says Locked | The person runs `splice console` |
+| "Where is ...?" or "How do I ...?" about the console | Open the page with `splice console goto`, `snapshot`, and `highlight` the control with a note, as in "Showing and doing things in the console" |
 | Use low effort for compaction, or turn on mirror_reasoning | No. See "Reasoning effort is part of the cache key" |
 | Add Bedrock or another backend | heads-and-backends.md |
 | Config will not boot | `splice check-config` (cli.md) |

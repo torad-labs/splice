@@ -1,6 +1,6 @@
 ---
 name: splice
-description: Use for any question about running, configuring, extending or debugging splice, the local proxy that puts Claude Code on many model backends. That covers its heads and providers, splice.toml, adding a head or an unsupported backend, accounts and logins, models and routing, sessions and Teams, the console, retries and errors, MCP hosting, install, upgrade and logs. Load it before you answer about splice or change its configuration.
+description: Use for any question about running, configuring, extending or debugging splice, the local proxy that puts Claude Code on many model backends. That covers its heads and providers, splice.toml, adding a head or an unsupported backend, accounts and logins, models and routing, sessions and Teams, the console, retries and errors, MCP hosting, install, upgrade and logs, and showing or doing things for the person in the console with `splice console <action>`. Load it before you answer about splice or change its configuration.
 ---
 
 Last read: 2026-10-15 against splice 0.4.0 (feat/v0.4.0)
@@ -69,6 +69,7 @@ app/src/main/kotlin/splice/app/cli/ConfigPreflight.kt; README.md, "What splice k
 | To add a head, add a second head on a provider, or reach a backend splice has no profile for (Bedrock, a new OpenAI-compatible vendor, a local server), and the decision tree for TOML-only versus code | `reference/heads-and-backends.md` |
 | Any splice.toml table or field: daemon, providers, heads, models, dialects, auth kinds, quirks, overrides, compaction, projects | `reference/toml-reference.md` |
 | Any `splice` verb: what it does, its flags, whether it needs a key, whether it is safe to run | `reference/cli.md` |
+| To show the person where something is in the console, read a page, or press a control for them: every `splice console` action, its targets and what its answer says | `reference/cli.md`, section "console", then `reference/accounts-sessions-console.md`, "Showing and doing things in the console" |
 | Accounts and logins, a second account, pinning, models and routing, sessions, Teams, what each console page shows, usage, budgets and cost | `reference/accounts-sessions-console.md` |
 | Retries and error messages, MCP hosting and the hub, code mode, install, upgrade, rollback, log reading, and the troubleshooting playbook | `reference/reliability-mcp-install.md` |
 
@@ -86,12 +87,16 @@ where they differ.
 
 **Free to run.** `splice status`, `splice logs` (never `--follow`), `splice sessions`, `splice doctor`,
 `splice check-config`, `splice models`, `splice version`. Reading and listing files inside `manager/`.
+`splice console snapshot`, `read`, `highlight`, `goto`, `scroll` and `hover`, which look at and point within the
+console page the person has open.
 Reading `../splice.toml` or its backups is not free: Claude Code asks the person, and the plain Yes is the
 answer to ask for. `splice <verb> --help` prints usage and runs nothing, though Claude Code asks the person to approve it.
 
 **Ask first, and wait for a yes.** Editing `splice.toml`, and running `splice restart`, `upgrade`, `install`,
-`uninstall`, `init`, `add`, `add-model`, `setup`, `console`, `trace` or `wire`. Anything that deletes, signs
-out, kills a process or spends money. `splice add` and `splice add-model` write splice.toml themselves.
+`uninstall`, `init`, `add`, `add-model`, `setup`, bare `console`, `trace` or `wire`. Anything that deletes, signs
+out, kills a process or spends money. `splice add` and `splice add-model` write splice.toml themselves. A
+`splice console` tap, fill, select or key press that deletes, signs out, restarts, spends money, changes a
+setting or touches a running session: say what you will press and why first.
 
 **The person runs these, never you.** `splice key` and `splice login`, in their own terminal.
 
@@ -110,8 +115,12 @@ Claude Code's own ListAgents and SendMessage tools; `splice sessions` prints the
 live one. Say which session you wrote to and what you sent. Never send a secret. A sent message is not a
 receipt: nothing tells you it was read.
 
-**You have no management key.** The console's keyed routes, such as stopping a session or moving it to
-another head, are the person's. You tell them which control to use on the console's Sessions page.
+**You have no management key, but you have the console's hands.** You never see the key: `splice console
+<action>` reads it for you and works on the console page the person has open, the way their own hand would. Show
+them where a thing is with `highlight` and a note, instead of describing it. Press a control yourself once they
+say yes, such as a session's Stop on the Sessions page, then read the answer, which says what changed. Run
+`splice console snapshot` before you drive a page. The composer is never yours to press: its head, model and
+effort chips, Compact and Stop stay the person's. The grammar is in `reference/cli.md`, section "console".
 
 ## When you do not know
 

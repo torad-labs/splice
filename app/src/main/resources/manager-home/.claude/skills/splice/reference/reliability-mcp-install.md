@@ -243,8 +243,9 @@ Source: `README.md` 599-601, 611-620, 668; `CHANGELOG.md` 132-134, 171-186; `app
    `systemctl --user enable --now splice-mcp-front.socket`); front not answering on 127.0.0.1:3095 (fix:
    `systemctl --user status splice-mcp-front.socket splice-mcp-front.service`); off with the reason.
 2. Settings > MCP in the console: the sharing choice, what sharing saves in memory, and each server's copies,
-   reason and sessions using it. These are the keyed routes `GET /api/mcp` and `GET /api/mcp/memory`; you have no
-   key, so ask the person to open the page.
+   reason and sessions using it. These are the keyed routes `GET /api/mcp` and `GET /api/mcp/memory`. You have no
+   key, but you can open and read that page on the person's console: `splice console goto settings`, then
+   `snapshot`, tap "MCP servers" in the rail, and `read`.
 3. `splice logs --tail 300` and read the `[mcp-hub]` and `[mcp-host]` lines.
 
 ### 2.6 Recipes

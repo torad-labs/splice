@@ -93,7 +93,9 @@ Source: verified on a private instance, 2026-10-15, Claude Code 2.1.301; see man
 | harmless, may prompt | `splice <verb> --help`, `splice perf`, `splice listeners`, `splice capabilities`, `diff`, `ls` | reads or prints usage; no yes needed, but Claude Code asks the person to approve each command outside the seven |
 | prints session content | `splice trace`, `splice wire` | ask first: their output is prompts and answers, and it goes to your head's provider; `trace --purge` deletes |
 | writes config | editing `splice.toml`, `splice add`, `splice add-model`, `splice setup` | ask first, then follow section 3 |
-| touches the daemon | `splice restart`, `splice upgrade`, `splice install`, `splice uninstall`, `splice init`, `splice console` | ask first; for a restart follow section 5 |
+| touches the daemon | `splice restart`, `splice upgrade`, `splice install`, `splice uninstall`, `splice init`, bare `splice console` | ask first; for a restart follow section 5 |
+| looks at the console | `splice console snapshot`, `read`, `highlight`, `goto`, `scroll`, `hover` | free; they look at and point within the page the person has open |
+| acts in the console | `splice console tap`, `fill`, `select`, `press` | free when the press only opens, shows or filters; ask first when it deletes, signs out, restarts, spends money, changes a setting or touches a running session |
 | touches secrets | `splice key`, `splice login` | never run them; give the person the command to type |
 | anything else that deletes, signs out, kills a process or spends money | `kill`, `tmux kill-*`, `rm`, a paid request | ask first, name what is in use and how to undo it |
 
@@ -105,7 +107,8 @@ Notes on the free verbs:
 - `splice models` calls each provider's model-list endpoint with that provider's credential. It is a GET and
   spends nothing, but it does reach the network.
 - `splice status`, `splice sessions` and `splice doctor` read the management key themselves to ask the daemon.
-  They never print it. That is why they are allowed and reading the key file is not.
+  They never print it. That is why they are allowed and reading the key file is not. `splice console <action>`
+  does the same, so the console's controls are within your reach through it, never through the key.
 
 Source: app/src/main/resources/manager-home/.claude/settings.json; CommandParser.kt (lines 72-170);
 DoctorLocalRuntime.kt (lines 50-51, 93-103); UpstreamRoster.kt (lines 13-14); DaemonSessionAccounts.kt (line 22);
@@ -302,7 +305,8 @@ A sent message is not a receipt. It reaches the session, and its model reads it 
 tells you it was read or acted on. Say so when you report, and do not wait on a reply.
 
 The composer never messages other sessions. Only you do, and only when asked. The console has its own note to a
-session (`POST /api/sessions/{id}/message`), which needs the management key, so it is the person's, not yours.
+session (`POST /api/sessions/{id}/message`) on the Sessions page. When the person asks you to send one that way,
+fill and press it with `splice console`, under the same rules as SendMessage.
 
 Source: features/sessions/src/main/kotlin/splice/sessions/list/SessionsCommand.kt (lines 118-123); README.md,
 "Heads that see each other"; docs/specs/v0.4.0.md section 15; app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt
@@ -312,8 +316,8 @@ the exact address form.
 
 ## 9. Switching your head
 
-The person changes your head in the composer. You cannot do it yourself: the move goes through a route that
-needs the management key.
+The person changes your head in the composer. You cannot do it yourself: the head chip is in the composer, which
+`splice console` never presses, and the move ends your own process mid-turn.
 
 What happens when they do:
 
@@ -350,7 +354,7 @@ TranscriptModelRewrite.kt (lines 14-20, 104); docs/specs/v0.4.0.md section 15. T
 
 ## 10. When a session is stuck
 
-Diagnose freely, act through the person.
+Diagnose freely, act through the console with the person's yes.
 
 1. Look. `splice sessions` shows whether it is live, stale or gone, its head, its model and its state.
    `splice logs --head <key> --tail 200` shows what its head did. `splice status` shows whether the daemon and
@@ -359,8 +363,8 @@ Diagnose freely, act through the person.
    for 30 seconds, splice sends a short line saying how long the turn has run and whether the model has produced
    anything yet, unless the head's `progressLine` override is `"false"`. A turn that is still reporting progress
    is not stuck.
-3. Tell the person what you found and which control fits. They are on the console's Sessions page, in the
-   session's row and its open pane:
+3. Tell the person what you found and which control fits, and show it: `splice console goto sessions`,
+   `snapshot`, then `highlight` the control in the session's row or its open pane. The controls:
 
    | control | what it does |
    |---|---|
@@ -372,9 +376,10 @@ Diagnose freely, act through the person.
    | Continue on | moves the session to another head, as in section 9 |
    | copy buttons | copy the session's resume command or its SendMessage line |
 
-4. Never stop, end, kill or type into another session yourself: no `kill`, no `tmux send-keys`, no `tmux
-   kill-*`. The console's controls need the management key, which you do not have, and a shell command would
-   reach around them. The session is the person's. You may write to it with SendMessage when the person asks
+4. The session is the person's. Once they say yes, press the control yourself with `splice console tap`, and
+   read the answer: Stop and End arm on the first press, so the answer says what the second would do. Never
+   reach a session from the shell: no `kill`, no `tmux send-keys`, no `tmux kill-*`, which go around the
+   console's controls and the person's yes. You may also write to it with SendMessage when the person asks
    (section 8).
 5. A session that stays stuck, or did not come back after a restart, is a splice defect. Give the person its
    `splice sessions` row, its head, and the log lines from that time.

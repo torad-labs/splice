@@ -230,7 +230,10 @@
       const why = at > 0 ? panel[at - 1].text : "";
       const q = oneLine(a.asked) || why || "The manager is asking you something.";
       const going = st.answering;
-      const choices = (a.choices || []).map((c, i) => `<button type="button" class="act${i ? "" : " primary"}" data-act="answer" data-choice="${c.choice}" data-label="${h(c.label)}"`
+      // The press he is most likely to want is the first Yes: a menu whose first line is "No, exit" (the folder-trust
+      // question) never paints the exit as its primary button.
+      const yes = (a.choices || []).findIndex((c) => /^yes\b/i.test(c.label));
+      const choices = (a.choices || []).map((c, i) => `<button type="button" class="act${i === yes ? " primary" : ""}" data-act="answer" data-choice="${c.choice}" data-label="${h(c.label)}"`
         + `${going ? " disabled" : ""}${going === c.choice ? ' aria-busy="true"' : ""}><kbd>${c.choice}</kbd>${h(c.label)}</button>`).join("");
       html = `<p class="cmp-q">${h(q)}</p>${run}`
         + (choices ? `<div class="cmp-choices">${choices}</div>` : `<p class="cmp-askline">Answer it on Sessions, where its terminal shows.</p>`);

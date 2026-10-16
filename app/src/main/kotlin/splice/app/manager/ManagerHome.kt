@@ -1,6 +1,9 @@
 // NEW (Oct 15, 2026): the splice manager's folder. Marcos: "Make sure this folder is installed with the installer".
-// The folder is splice's global settings folder, the parent of splice.toml, where the console's composer runs its one
-// resident Claude Code session. Its files ship inside the jar under resources/manager-home, named by that folder's
+// The folder is `manager/` inside splice's global settings folder (the folder that holds splice.toml), where the
+// console's composer runs its one resident Claude Code session. It is a subfolder because the settings folder holds the
+// secrets (keys.toml, auth/, key-ledger.json): a session whose working folder held them read them to the person's
+// chosen head on a plain `grep -rn x .` or `cat *.toml` (seen on a private instance, Oct 15), while one a level down
+// holds nothing secret, and a command that reaches outside it asks the person first. Its files ship inside the jar under resources/manager-home, named by that folder's
 // manifest.txt because a jar cannot be listed at runtime. `splice init`, which install.sh runs on every install, and
 // every daemon start call [ManagerHome.ensure]: auto-update replaces the jar and never reruns init. The shapes are
 // HubUnits' (each file splice writes is recorded by SHA-256 in splice's own state) and UpgradeWrapper's (a shipped file
@@ -42,8 +45,8 @@ internal class ManagerHome(
         prettyPrint = true
     }
 
-    /** The manager's folder: the parent of splice.toml. Reads nothing and writes nothing. */
-    fun folder(): Path = configFile.toAbsolutePath().normalize().parent
+    /** The manager's folder: `manager/` beside splice.toml. Reads nothing and writes nothing. */
+    fun folder(): Path = configFile.toAbsolutePath().normalize().parent.resolve(MANAGER_DIR)
 
     /** Creates the folder when it is absent, then writes or refreshes every shipped file, and returns the folder. A file
      *  that cannot be written is said and skipped, so only a folder that cannot be created throws. A new folder gets the
@@ -159,14 +162,14 @@ internal class ManagerHome(
     private fun resource(name: String): ByteArray? =
         javaClass.getResourceAsStream("$RESOURCES/$name")?.use { it.readBytes() }
 
-    /** The settings fence with this machine's folders in it: a `[daemon] state_dir` or a SPLICE_CONFIG elsewhere is
-     *  denied by its absolute path (`//<path>`), beside the shipped defaults. Every caller resolves the same two folders,
+    /** The settings fence with this machine's folders in it: the settings folder (the manager's parent) and a `[daemon]
+     *  state_dir` or a SPLICE_CONFIG elsewhere are denied by their absolute paths (`//<path>`), beside the shipped defaults. Every caller resolves the same two folders,
      *  so the bytes, and the SHA-256 recorded for them, are the same on every run until a folder moves; then a fence
      *  nobody edited is refreshed to the new one. The other files ship as they are. */
     private fun render(name: String, folder: Path, bytes: ByteArray): ByteArray {
         if (name != SETTINGS) return bytes
         return bytes.toString(Charsets.UTF_8)
-            .replace(CONFIG_DIR_TOKEN, jsonText(folder))
+            .replace(CONFIG_DIR_TOKEN, jsonText(folder.parent))
             .replace(STATE_DIR_TOKEN, jsonText(stateDir.toAbsolutePath().normalize()))
             .toByteArray(Charsets.UTF_8)
     }
@@ -203,6 +206,7 @@ private const val RESOURCES = "/manager-home"
 private const val MANIFEST = "manifest.txt"
 private const val SETTINGS = "${UserHome.CLAUDE_DIR}/settings.json"
 private const val SHARED_MODE = "rw-r--r--"
+private const val MANAGER_DIR = "manager"
 
 // The settings template's two folders, each written after one slash, so `/@STATE_DIR@/**` renders `//home/.../**`: an
 // absolute path in Claude Code's permission rules, where a single leading slash would anchor at the settings folder.

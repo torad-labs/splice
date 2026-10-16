@@ -1,17 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
+    "defaultMode": "default",
     "deny": [
-      "Read(./keys.toml)",
-      "Edit(./keys.toml)",
-      "Read(./keys.toml.*)",
-      "Edit(./keys.toml.*)",
-      "Read(./key-ledger.json)",
-      "Edit(./key-ledger.json)",
-      "Read(./key-ledger.json.*)",
-      "Edit(./key-ledger.json.*)",
-      "Read(./auth/**)",
-      "Edit(./auth/**)",
       "Read(/@CONFIG_DIR@/keys.toml)",
       "Edit(/@CONFIG_DIR@/keys.toml)",
       "Read(/@CONFIG_DIR@/keys.toml.*)",
@@ -27,7 +18,14 @@
       "Read(~/.claude-codex/state/**)",
       "Edit(~/.claude-codex/state/**)",
       "Read(/@STATE_DIR@/**)",
-      "Edit(/@STATE_DIR@/**)"
+      "Edit(/@STATE_DIR@/**)",
+      "Bash(*keys.toml*)",
+      "Bash(*key-ledger*)",
+      "Bash(*mgmt-key*)",
+      "Bash(*console-open.html*)",
+      "Bash(*.splice/state*)",
+      "Bash(*.claude-codex/state*)",
+      "Bash(*@STATE_DIR@*)"
     ],
     "allow": [
       "Bash(splice status)",

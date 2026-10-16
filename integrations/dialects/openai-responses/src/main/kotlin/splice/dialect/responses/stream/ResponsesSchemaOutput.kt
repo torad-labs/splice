@@ -9,10 +9,12 @@ import java.util.UUID
 
 /** Relays only the upstream's real, completed JSON. The client's schema validator still receives the tool input. */
 internal class ResponsesSchemaOutput(private val toolName: String?) {
+    private val customCalls = ResponsesCustomCallParse()
+
     suspend fun emit(state: ResponsesTurnState, sink: WireSink) {
         if (toolName == null || !completed(state)) return
         if (state.textBuf.isEmpty()) {
-            if (!state.hasToolUse && !state.endedInReasoning) state.toolArgsInvalid = "empty structured output"
+            if (!endedInTools(state)) state.toolArgsInvalid = "empty structured output"
             return
         }
         val text = state.textBuf.toString()
@@ -40,7 +42,15 @@ internal class ResponsesSchemaOutput(private val toolName: String?) {
     }
 
     private fun missingDelivery(state: ResponsesTurnState): Boolean =
-        !state.schemaToolEmitted && (state.textBuf.isNotEmpty() || !state.hasToolUse && !state.endedInReasoning)
+        !state.schemaToolEmitted && (state.textBuf.isNotEmpty() || !endedInTools(state))
+
+    /** A round with no schema JSON is not empty when the model spent it on tools: a function call, a completed custom
+     *  call (code mode's `exec`, the round a Claude Code client under StructuredOutput takes before its JSON), or
+     *  reasoning alone, which has its own continuation. The custom calls are read as the outcome reads them, the
+     *  terminal response's and the streamed ones, so a round the stream closed early is not called empty. */
+    private fun endedInTools(state: ResponsesTurnState): Boolean =
+        state.hasToolUse || state.endedInReasoning ||
+            customCalls.merge(state.customCalls, state.finalResponse).isNotEmpty()
 
     private fun completed(state: ResponsesTurnState): Boolean =
         state.finalResponse != null && !state.incomplete && state.upstreamFailure == null &&

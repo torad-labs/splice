@@ -226,14 +226,23 @@
     if (a) {
       // what it will run, as its screen framed it, and the line above that says why, so nothing is approved blind
       const panel = a.panel || [], at = panel.findIndex((l) => l.framed);
-      const run = at < 0 ? "" : `<p class="cmp-run">${h(panel.filter((l) => l.framed).map((l) => l.text).join("\n"))}</p>`;
+      // The real screen's `asked` carries the menu's rule lines (a permission prompt reads "──── Bash command … ╌╌╌ cat ../x ╌╌╌ Do you want
+      // to proceed?"), so the question is the panel's own line that ends in "?", and a screen with no framed command (the folder-trust
+      // question) shows its panel lines, so what he is trusting is on screen when he presses.
+      const ruled = (v) => oneLine(String(v ?? "").replace(/[─╌━┄┈═]+/g, " "));
+      const asking = [...panel].reverse().find((l) => /\?\s*$/.test(l.text))?.text;
+      const body = at >= 0 ? panel.filter((l) => l.framed) : panel.filter((l) => l.text !== asking).slice(0, 8);
+      const run = body.length ? `<p class="cmp-run">${h(body.map((l) => l.text).join("\n"))}</p>` : "";
       const why = at > 0 ? panel[at - 1].text : "";
-      const q = oneLine(a.asked) || why || "The manager is asking you something.";
+      const q = ruled(asking) || ruled(a.asked) || why || "The manager is asking you something.";
       const going = st.answering;
       // The press he is most likely to want is the first Yes: a menu whose first line is "No, exit" (the folder-trust
       // question) never paints the exit as its primary button.
       const yes = (a.choices || []).findIndex((c) => /^yes\b/i.test(c.label));
-      const choices = (a.choices || []).map((c, i) => `<button type="button" class="act${i === yes ? " primary" : ""}" data-act="answer" data-choice="${c.choice}" data-label="${h(c.label)}"`
+      // A Yes that also widens what the manager may do from now on (a whole folder, every edit, auto mode) reads quieter than
+      // the plain Yes, so the plain one is the easy press.
+      const broad = /auto mode|allow (all|reading|writing)|all edits|don.t ask again|this project|this session/i;
+      const choices = (a.choices || []).map((c, i) => `<button type="button" class="act${i === yes ? " primary" : ""}${broad.test(c.label) ? " broad" : ""}" data-act="answer" data-choice="${c.choice}" data-label="${h(c.label)}"`
         + `${going ? " disabled" : ""}${going === c.choice ? ' aria-busy="true"' : ""}><kbd>${c.choice}</kbd>${h(c.label)}</button>`).join("");
       html = `<p class="cmp-q">${h(q)}</p>${run}`
         + (choices ? `<div class="cmp-choices">${choices}</div>` : `<p class="cmp-askline">Answer it on Sessions, where its terminal shows.</p>`);

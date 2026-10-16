@@ -141,7 +141,7 @@ internal class ControlServer(
     private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)
 
     // Oct 15, 2026: the splice manager the composer opens, started and moved through the same drive (ManagerMount).
-    private val managerMount = ManagerMount(sessionWiring, sessions, heads, resolver, config, guard)
+    private val managerMount = ManagerMount(sessionWiring, sessions, heads, resolver, config, guard, usage.lines)
 
     // Every request row names its project through the one resolver the session rows use.
     init {

@@ -21,6 +21,7 @@ import splice.app.sources.mcp.McpSignatures
 import splice.control.mcp.APP_MCP_SLICE
 import splice.core.config.ConfigService
 import splice.core.config.Knob
+import splice.core.session.SessionLines
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.upstream.codemode.ProcessDispatchers
@@ -56,7 +57,10 @@ internal class UsageMount(
     private val usageLookup = UsageHeadAdapter.consoleLookup(resolver, ports, config.statePaths)
     private val usagePayloads = UsagePayloads(usageHeads)
     private val perfPayloads = PerfPayloads(usageHeads)
-    private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
+
+    /** What each session's status line last said, written by each post and read by the manager's state. */
+    val lines = SessionLines()
+    private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions, lines)
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()

@@ -18,6 +18,7 @@ package splice.sessions.http
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import splice.core.session.SessionLines
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -28,9 +29,11 @@ public class ManagerSession(
     private val pointers: ManagerPointerStore,
     heads: ManagerHeads,
     ports: ManagerDrive,
+    /** What each session's status line last said; the state carries the manager's. */
+    lines: SessionLines = SessionLines(),
 ) {
     private val lookup = ManagerLookup(ports)
-    private val replies = ManagerReplies(lookup, pointers, heads)
+    private val replies = ManagerReplies(lookup, pointers, heads, lines)
     private val starts = ManagerStart(ports, pointers, lookup, replies)
     private val moves = ManagerMove(ports, pointers, replies)
 

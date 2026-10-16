@@ -9,6 +9,7 @@ import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.core.session.SessionLines
 import splice.core.util.JsonScalars
 import splice.core.version.ClientVersionTracker
 import splice.usage.UsageHead
@@ -20,6 +21,8 @@ public class StatuslineRoute(
     private val heads: UsageHeadLookup,
     private val config: ConfigService,
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    /** Where each tick's figures are kept for the console's composer: the model, the effort, how full the context is. */
+    private val lines: SessionLines = SessionLines(),
 ) {
     private val renderers = RendererCache()
     private val usageOwner = StatuslineUsageOwner()
@@ -60,6 +63,9 @@ public class StatuslineRoute(
         val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.sinks.perf as? HeadSessionPerfSource)
         val warn = StatuslineWarn(managed.warn.warnPct, managed.warn.warnTokens5h)
         val line = renderer.render(stdin, managed.usage, warn, sessionId, unanswered)
+        JsonScalars.objectOrNull(json, stdin)?.let {
+            lines.record(sessionId, StatuslineFacts(managed.statusline.catalog).read(it, unanswered))
+        }
         val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }

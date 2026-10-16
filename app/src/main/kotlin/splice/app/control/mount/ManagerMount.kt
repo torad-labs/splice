@@ -12,6 +12,7 @@ import splice.app.control.api.HeadResolver
 import splice.app.manager.ManagerHome
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.core.session.SessionLines
 import splice.sessions.http.ManagerDrive
 import splice.sessions.http.ManagerPointerStore
 import splice.sessions.http.ManagerSession
@@ -28,6 +29,7 @@ internal class ManagerMount(
     resolver: HeadResolver,
     config: ConfigService,
     private val guard: ControlGuard,
+    lines: SessionLines,
 ) {
     private val commands = HeadStartCommands(heads)
 
@@ -52,6 +54,7 @@ internal class ManagerMount(
                 ledger = wiring.moveLedger,
             ),
         ),
+        lines = lines,
     )
 
     fun register(route: Route) {

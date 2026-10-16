@@ -29,6 +29,7 @@ import splice.provider.codex.CodeModeJournaling
 import splice.provider.codex.CodeModeOnlyModels
 import splice.provider.codex.CodeModeReplayReasoning
 import splice.provider.codex.CodeModeSessionAlive
+import splice.provider.codex.CodeModeSessionIdle
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
@@ -58,6 +59,8 @@ internal class CodexResponsesArm(
             codeModeHeads.fold(log) { sink, head -> HeadScopedLogs.headScopedLog(head, sink) }(line)
         },
     ),
+    private val sessionIdle: CodeModeSessionIdle =
+        (sessionAlive as? CodeModeSessionLiveness)?.idle ?: CodeModeSessionIdle { false },
 ) {
     private val quirksOverlay = QuirksOverlay()
     private val accountFiles = OAuthAccountFiles()
@@ -172,7 +175,7 @@ internal class CodexResponsesArm(
                         replayReasoning = CodeModeReplayReasoning { ctx.cfg.current().replayReasoning },
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
-                    cellLease = CodeModeCellLease(sessionAlive = sessionAlive),
+                    cellLease = CodeModeCellLease(sessionAlive = sessionAlive, sessionIdle = sessionIdle),
                 ),
             ).also { bridge ->
                 checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {

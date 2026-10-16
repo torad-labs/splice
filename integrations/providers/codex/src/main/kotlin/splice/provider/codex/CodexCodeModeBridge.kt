@@ -36,6 +36,12 @@ public fun interface CodeModeSessionAlive {
     public operator fun invoke(sessionId: String): Boolean?
 }
 
+/** Whether a live session sits at its prompt with no turn in flight, as Claude Code's own status says. Its client
+ *  cannot be running the tool calls a parked cell waits on, so the cell's quiet is no longer evidence of work. */
+public fun interface CodeModeSessionIdle {
+    public operator fun invoke(sessionId: String): Boolean
+}
+
 // Decoded JSON, strings and transient serialization buffers need several times the stored bytes.
 private const val RETAINED_HEAP_DIVISOR: Long = 4
 
@@ -66,8 +72,10 @@ public data class CodeModeScriptBounds(
 
 /** How a parked cell is kept alive: the evidence that its session lives, and the monotonic clock its lease runs on. */
 public data class CodeModeCellLease(
-    /** Alive cells survive timer sweeps; capacity may reclaim any parked cell past its thirty-minute lease. */
+    /** Alive cells survive timer sweeps; capacity may reclaim any parked cell past its five-minute lease. */
     val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
+    /** A live session idle at its prompt leases its parked cells as an unknown one does. Records are unaffected. */
+    val sessionIdle: CodeModeSessionIdle = CodeModeSessionIdle { false },
     /** Monotonic lease time; persisted timestamps continue to use [CodeModeBridgeConfig.clock]. */
     val clock: ElapsedClock = ElapsedClock { TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) },
 )

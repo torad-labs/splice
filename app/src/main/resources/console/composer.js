@@ -823,9 +823,11 @@
       if (st.line?.acts?.length) { say(null); return; }
       document.activeElement?.blur();
     });
-    document.addEventListener("pointerdown", (e) => { if ((st.open || st.menu) && !dock.contains(e.target)) closeSheet(); }, true);
+    // Only the person's own press or key reaches these: the manager's acts on the page (pilot.js) are not theirs, and
+    // never close the sheet they are reading or pull the field open under them.
+    document.addEventListener("pointerdown", (e) => { if (e.isTrusted && (st.open || st.menu) && !dock.contains(e.target)) closeSheet(); }, true);
     addEventListener("keydown", (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || String(e.key).toLowerCase() !== "k") return;
+      if (!e.isTrusted || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || String(e.key).toLowerCase() !== "k") return;
       if (locked() || document.querySelector(".scrim")) return;
       e.preventDefault(); e.stopPropagation();
       if (!door.hidden) { openCard(); return; }

@@ -1,5 +1,5 @@
-// NEW: Oct 16, 2026 — the console pilot's four rows (ConsolePilot): the CLI's order, and the open page's ask, answer
-// and leave. All four take the management key, which both the CLI and the console already carry.
+// NEW: Oct 16, 2026 — the console pilot's five rows (ConsolePilot): the CLI's order, and the open page's ask, answer,
+// focus and leave. All five take the management key, which both the CLI and the console already carry.
 package splice.app.control.mount
 
 import io.ktor.server.request.receiveText
@@ -20,6 +20,9 @@ internal class ConsolePilotMount(private val guard: ControlGuard) {
             }
         }
         route.post("/api/console/pilot/answer") { guard.guarded(call) { pilot.answer(call.receiveText()).send(call) } }
+        route.post("/api/console/pilot/focus") {
+            guard.guarded(call) { pilot.focus(call.request.queryParameters["tab"]).send(call) }
+        }
         route.post("/api/console/pilot/leave") {
             guard.guarded(call) { pilot.leave(call.request.queryParameters["tab"]).send(call) }
         }

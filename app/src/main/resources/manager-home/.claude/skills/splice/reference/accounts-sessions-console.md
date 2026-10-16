@@ -69,11 +69,14 @@ figures rather than controls.
 | "What does this setting do?" | `goto settings`, `hover` the knob for its tip, `read` its card, highlight it |
 | "Turn this on for me" | say which control and what it changes (a setting saves at once), wait for the yes, then `tap`, `fill` or `select` |
 
-**What the answers tell you.** After an act the sentence says the page you are now on, the control's new words
-or state, a notice the page raised, or that a dialog opened. A press that cuts or moves someone asks once: the
-first tap arms it and the answer says `It now reads "..."` with the sessions it would cut. Tell the person what
-the second press would do, and press it only within the yes they gave. When an answer surprises you, run
-`snapshot` again before the next act.
+**What the answers tell you.** An act's answer waits for what the press started, then says the page you are now
+on, the control's new words or state, the controls and words that came or went, a notice, or that a dialog opened.
+`Nothing on the page changed, so the act may not have taken` is a real answer: look again before you tell the
+person it is done. A delete or a save can fail after the press, and its failure shows as new words such as
+`Not deleted`; report what the answer said, not what you meant to do. A press that cuts or moves someone asks
+once: the first tap arms it and the answer says `It now reads "..."` with the sessions it would cut. Tell the
+person what the second press would do, and press it only within the yes they gave. When an answer surprises you,
+run `snapshot` again before the next act.
 
 **Rules.** Looking, reading, highlighting, hovering, scrolling and moving between pages are free. A tap, fill,
 select or key press that deletes, signs out, restarts, spends money, changes a setting or touches a running
@@ -82,13 +85,19 @@ person presses anywhere outside the composer or presses Escape, or until you run
 something else; clear it when your explanation is done.
 
 **What you cannot reach.** The composer itself: its field, its chips, Compact and Stop are never listed or
-pressed, and a key you press never lands in it. A field that holds a password, key, token or secret shows only
-whether it is empty. A tab the person cannot see takes no orders.
+pressed, a key you press never lands in it, and your acts never close its sheet or take its focus. A field that
+holds a password, key, token or secret shows only whether it is empty. A tab the person cannot see takes no
+orders. A tap, fill, select or key press needs a control: words that are only text on the page are refused.
 
-**When it refuses.** `no console is open in a browser`: the person has no console tab showing; ask them to open
-or show it. `the console did not answer in 15 s`: the tab closed or the machine slept; ask them to bring it back.
-`the daemon that is running is older than this splice`: the console actions arrive with the next install and
-restart, so describe the control in words until then.
+**When it refuses.** Each refusal says whether anything was done.
+- `no console tab has asked for orders in the last 30 s, so nothing was done`: no console is showing, or one is
+  reconnecting after a restart. Wait a few seconds and try once more, then ask the person to show the console.
+- `no console tab took the order ... so nothing was done`: the tab closed or the machine slept.
+- `the console took the order but did not answer in 25 s, so it may have run`, or `the daemon dropped the
+  connection after the order went up ... so it may have run`: run `snapshot` and look before you try again, so
+  nothing is done twice.
+- `the daemon that is running is older than this splice`: the console actions arrive with the next install and
+  restart, so describe the control in words until then.
 
 Source: `app/.../cli/status/ConsolePilotCommand.kt`, `app/.../control/ConsolePilot.kt`, `app/src/main/resources/console/pilot.js`,
 `docs/specs/v0.4.0.md` section 16.

@@ -366,6 +366,7 @@ splice console select <target> <option>          picks a choice in a picker, by 
 splice console press <key> [target]             Enter, Escape, Tab, Shift+Tab, Space, ArrowDown, Ctrl+K, ...
 splice console hover <target>                    rests the pointer on it and prints its tip, if it has one
 splice console scroll <target|up|down|top|bottom>
+splice console fill e7 -- --not-a-flag          words after -- are taken as typed, never as flags
 ```
 
 With an action, the verb drives the console page the person has open: the daemon hands the order to the tab they
@@ -375,19 +376,28 @@ place, row and state).
 
 - **Targets.** A ref from the last `snapshot` (`e12`, surest; a ref survives the page redrawing it, but not a move
   to another page), the words a person reads on a control (`"Add account"`), or `css:<selector>`. Words that fit
-  several things are refused with a ref for each, so you pick one. Words no control carries are matched against
-  any text showing, so you can highlight a figure or a sentence.
+  several things are refused with a ref for each, so you pick one. `highlight`, `read`, `scroll` and `hover` also
+  match any text showing, so you can point at a figure or a sentence. `tap`, `fill`, `select` and `press` need a
+  control: words that are only text lead to the control around them, or are refused.
 - **What the person sees.** A tap, fill, select or hover flashes a ring on its target, and `highlight` draws one
   that stays until the person presses anywhere outside the composer or presses Escape, or you clear it or
   highlight something else. Each target is scrolled into the part of the screen above the composer.
-- **What you never reach.** The composer itself is never listed, read or driven, and a key press never lands in
-  it, so you never type over the person. A field's value is shown in a snapshot unless it is a password or its
-  name says key, token, secret or credential.
-- **After an act** the answer says what changed: the page you are now on, the control's new words or state, a
-  notice the page raised, or a dialog that opened.
-- **Exit codes.** 0 when the page did it. 1 when the page refused (the sentence says why), no console is open
-  (`splice: no console is open in a browser`), the console did not answer in 15 s, or the daemon is not running.
-  2 for words no action takes (usage printed).
+- **What you never reach.** The composer itself is never listed, read or driven, a key press never lands in it,
+  and an act never closes its sheet or takes its focus, so you never type over the person. A field's value is
+  shown in a snapshot unless it is a password or its name says key, token, secret or credential.
+- **After an act** the answer waits for the calls the act started (up to 4 s), then says what changed: the page
+  you are now on, the control's new words or state, the controls now showing or no longer showing, new words on
+  the page, a notice, or a dialog that opened. `Nothing on the page changed, so the act may not have taken` means
+  just that: snapshot and look before you say it is done. A `fill` the field would not take as typed is refused and
+  the field is left as it was.
+- **When it did not run.** `no console tab has asked for orders in the last 30 s, so nothing was done`: no console
+  is showing, or one is reconnecting after a restart; wait a few seconds and try once more. `no console tab took
+  the order ... so nothing was done`: the tab closed or slept. `the daemon isn't running, so nothing was done`.
+- **When it may have run.** `the console took the order but did not answer in 25 s, so it may have run`, and `the
+  daemon dropped the connection after the order went up ... so it may have run`. Run `snapshot` before you try
+  again, so an act is never done twice.
+- **Exit codes.** 0 when the page did it. 1 for every refusal above and every refusal the page gives (the sentence
+  says why). 2 for words no action takes (usage printed).
 
 Source: `app/.../cli/status/ConsolePilotCommand.kt` (the words), `app/.../control/ConsolePilot.kt` (the relay),
 `app/src/main/resources/console/pilot.js` (what each action does on the page).

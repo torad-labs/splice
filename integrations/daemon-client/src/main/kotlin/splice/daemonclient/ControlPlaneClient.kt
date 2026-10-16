@@ -4,11 +4,22 @@
 // 401/403; request() swallows non-2xx and that would paper over F1.
 package splice.daemonclient
 
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 
 /** One control-plane answer: the status line and the body that came with it. */
 public data class ControlReply(public val status: Int, public val body: String)
+
+/** What a POST that acts came to ([ControlPlaneClient.post]): the daemon's answer, no connection at all (nothing was
+ *  sent), or a connection cut after the body went up (it may have run). */
+public sealed class PostReading {
+    public data class Answered(public val reply: ControlReply) : PostReading()
+
+    public data object NotConnected : PostReading()
+
+    public data object CutAfterSending : PostReading()
+}
 
 public object ControlPlaneClient {
 
@@ -48,14 +59,12 @@ public object ControlPlaneClient {
      *  every refusal as `{"error": "<reason>"}` — "claude is not currently wrapped", "the
      *  'claude-splice' head is not configured — wrap needs its catalog to materialize" — and a
      *  caller that printed only the code would be hiding the one thing the operator can act on.
-     *  Null when it never connected, the same contract [statusOf] carries. A [json] body goes up as
-     *  `application/json` (Oct 16, 2026: `splice console <action>` posts its order). */
+     *  Null when it never connected, the same contract [statusOf] carries. */
     public fun send(
         url: String,
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
-        json: String? = null,
     ): ControlReply? {
         val read = Unanswered.read {
             val connection = URI(url).toURL().openConnection() as HttpURLConnection
@@ -64,11 +73,6 @@ public object ControlPlaneClient {
                 bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
                 connection.connectTimeout = PROBE_TIMEOUT_MS
                 connection.readTimeout = readTimeoutMs
-                json?.let { body ->
-                    connection.doOutput = true
-                    connection.setRequestProperty("Content-Type", "application/json")
-                    connection.outputStream.use { it.write(body.encodeToByteArray()) }
-                }
                 val status = connection.responseCode
                 // A non-2xx puts the body on the ERROR stream and leaves inputStream throwing, which is
                 // exactly the half that carries the reason.
@@ -81,6 +85,41 @@ public object ControlPlaneClient {
         return when (read) {
             is Reading.Answered -> read.value
             Reading.Refused, Reading.Malformed -> null
+        }
+    }
+
+    /** Oct 16, 2026 (`splice console <action>`): POSTs one JSON [json] body that acts, and says which of three things
+     *  happened, because an act's caller must not read a cut connection as "the daemon is down": once the body went
+     *  up, the act may have run. The body streams at a fixed length, which also keeps the JDK from quietly sending the
+     *  POST a second time when the connection drops (its `sun.net.http.retryPost` default). */
+    public fun post(url: String, bearer: String, json: String, readTimeoutMs: Int): PostReading {
+        val body = json.encodeToByteArray()
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Authorization", "Bearer $bearer")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.connectTimeout = PROBE_TIMEOUT_MS
+            connection.readTimeout = readTimeoutMs
+            connection.doOutput = true
+            connection.setFixedLengthStreamingMode(body.size)
+            val connected = try {
+                connection.connect()
+                true
+            } catch (_: IOException) {
+                false
+            }
+            if (!connected) return PostReading.NotConnected
+            return try {
+                connection.outputStream.use { it.write(body) }
+                val status = connection.responseCode
+                val stream = if (status in OK_RANGE) connection.inputStream else connection.errorStream
+                PostReading.Answered(ControlReply(status, stream?.readBytes()?.decodeToString().orEmpty()))
+            } catch (_: IOException) {
+                PostReading.CutAfterSending
+            }
+        } finally {
+            connection.disconnect()
         }
     }
 

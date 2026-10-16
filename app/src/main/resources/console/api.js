@@ -27,10 +27,15 @@ const API = (() => {
     });
     (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
   }
+  // Calls a page has in flight, so the manager's acts (pilot.js) can wait for what a press started before saying what
+  // it did. The pilot's own calls are not counted: its ask is always open.
+  let pending = 0;
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
   async function call(method, path, body, extra, signal, keepalive) {
     const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
     if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
+    const counted = !path.startsWith("/api/console/pilot");
+    if (counted) pending++;
     try {
       const res = await fetch(path, init);
       const text = await res.text();
@@ -40,9 +45,12 @@ const API = (() => {
       return { ok: res.ok, status: res.status, body: parsed };
     } catch {
       return { ok: false, status: 0, body: null };
+    } finally {
+      if (counted) pending--;
     }
   }
   const client = (signal) => ({
+    pending: () => pending,
     get: (p) => call("GET", p, undefined, undefined, signal),
     // a read that answers at once with what is ready, marking what splice is still reading, rather than waiting on it
     getReady: (p) => call("GET", p, undefined, { "x-splice-read-pending": "1" }, signal),

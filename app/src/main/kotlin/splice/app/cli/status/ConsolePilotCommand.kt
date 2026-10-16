@@ -17,21 +17,23 @@ import splice.core.wire.HttpStatus
 import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.ControlReply
 import splice.daemonclient.MgmtKeyRead
+import splice.daemonclient.PostReading
 
 /** The actions `splice console` takes, as its usage line prints them. */
 internal const val CONSOLE_PILOT_USAGE: String =
     "[snapshot | read [target] | tap <target> | fill <target> <text> | select <target> <option> | " +
         "press <key> [target] | hover <target> | scroll <target|up|down|top|bottom> | " +
-        "highlight <target>... [--note TEXT] | highlight --clear | goto <page|back>] [--json]"
+        "highlight <target>... [--note TEXT] | highlight --clear | goto <page|back>] [--json] [-- <words as typed>]"
 
 private const val JSON_FLAG = "--json"
+private const val END_OF_FLAGS = "--"
 private const val NOTE_FLAG = "--note"
 private const val CLEAR_FLAG = "--clear"
 private const val HIGHLIGHT = "highlight"
 private const val USAGE_EXIT = 2
 
 /** Longer than the daemon's own wait for the page's answer (ConsolePilot), so the daemon's sentence arrives first. */
-private const val READ_MS = 20_000
+private const val READ_MS = 30_000
 
 /** The words each action takes after its name: the fewest and the most. */
 private val ACTION_WORDS: Map<String, IntRange> = mapOf(
@@ -55,29 +57,41 @@ internal class ConsolePilotCommand(
 
     /** 0 when the page did it, 1 when the page or the daemon refused, 2 for words no action takes. */
     internal fun run(args: List<String>): Int {
-        val order = order(args.filterNot { it == JSON_FLAG })
+        // Every word after `--` is the order's own, so a fill can type `--json` or `-h`.
+        val flagged = args.takeWhile { it != END_OF_FLAGS }
+        val raw = JSON_FLAG in flagged
+        val literal = args.dropWhile { it != END_OF_FLAGS }.drop(1)
+        val order = order(flagged.filterNot { it == JSON_FLAG }, literal = literal)
         if (order == null) {
             err.line("usage: splice console $CONSOLE_PILOT_USAGE")
             return USAGE_EXIT
         }
         val url = "http://127.0.0.1:${AdminSupport.controlPort()}/api/console/pilot"
-        val reply = when (val read = AdminSupport.readMgmtKey()) {
-            is MgmtKeyRead.Present -> ControlPlaneClient.send(url, "POST", read.key, READ_MS, order)
+        val reading = when (val read = AdminSupport.readMgmtKey()) {
+            is MgmtKeyRead.Present -> ControlPlaneClient.post(url, read.key, order, READ_MS)
             is MgmtKeyRead.Absent, is MgmtKeyRead.Unreadable ->
-                return refuse("splice holds no readable management key yet. Run `splice restart`, then try again.")
+                return refuse("splice holds no readable management key yet, so nothing was done.")
         }
-        return reply?.let { said(it, raw = JSON_FLAG in args) }
-            ?: refuse("the daemon isn't running, so no console is open. Run `splice console` to open one.")
+        return when (reading) {
+            is PostReading.Answered -> said(reading.reply, raw)
+            PostReading.NotConnected -> refuse("the daemon isn't running, so nothing was done.")
+            PostReading.CutAfterSending -> refuse(
+                "the daemon dropped the connection after the order went up, as a restart does, so it may have " +
+                    "run. Run `splice console snapshot` before you try again.",
+            )
+        }
     }
 
-    /** The order's JSON, or null when the words fit no action. The page reads the words by its action. */
-    private fun order(args: List<String>): String? {
-        val action = args.firstOrNull() ?: return null
-        val rest = args.drop(1)
+    /** The order's JSON, or null when the words fit no action. The page reads the words by its action. Flags are read
+     *  from [flagged] only; [literal] words, those after `--`, are taken as they are. */
+    private fun order(flagged: List<String>, literal: List<String>): String? {
+        val action = flagged.firstOrNull() ?: return null
+        val rest = flagged.drop(1)
         val noteAt = rest.indexOf(NOTE_FLAG)
         val note = if (noteAt < 0) null else rest.getOrNull(noteAt + 1) ?: return null
         val clear = CLEAR_FLAG in rest
-        val words = rest.filterIndexed { i, word -> word != CLEAR_FLAG && (noteAt < 0 || i !in noteAt..noteAt + 1) }
+        val words = rest.filterIndexed { i, word -> word != CLEAR_FLAG && (noteAt < 0 || i !in noteAt..noteAt + 1) } +
+            literal
         val fits = fits(action, words.size, noted = note != null, clear = clear)
         return if (fits) orderJson(action, words, note, clear) else null
     }

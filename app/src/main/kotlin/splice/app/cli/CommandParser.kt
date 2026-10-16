@@ -65,10 +65,13 @@ private const val EVERY_HEAD_FLAG = "--all"
 
 private val helpFlags = setOf("--help", "-h")
 
+/** Words after `--` are a verb's own text, never flags: `splice console fill e3 -- -h` types "-h" (Oct 16, 2026). */
+private const val END_OF_FLAGS = "--"
+
 /** Each table entry owns its arguments and factory; help never reaches that factory. */
 private class CommandRegistration(val usage: String, private val factory: CommandFactory) : CommandFactory {
     override fun invoke(args: Array<String>): Command? =
-        if (args.any { it in helpFlags }) null else factory(args)
+        if (args.takeWhile { it != END_OF_FLAGS }.any { it in helpFlags }) null else factory(args)
 }
 
 private val verbs: Map<String, CommandRegistration> = mapOf(
@@ -182,7 +185,7 @@ internal class CommandParser {
     /** Explicit help is usage for the selected registration, never a parsed command. */
     internal fun help(args: Array<String>): String? {
         val registration = verbs[args.firstOrNull()] ?: return null
-        if (args.none { it in helpFlags }) return null
+        if (args.takeWhile { it != END_OF_FLAGS }.none { it in helpFlags }) return null
         val prefix = "usage: splice ${args.first()}"
         return if (registration.usage.isEmpty()) prefix else "$prefix ${registration.usage}"
     }

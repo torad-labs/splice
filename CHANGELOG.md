@@ -157,7 +157,8 @@ origin.
   open, the way their own hands would: `snapshot` lists the page and every control with a ref, `read` prints its words,
   `tap`, `fill`, `select`, `press`, `hover` and `scroll` act, `goto` moves between pages, and `highlight` draws a ring,
   with an optional note, around whatever the manager is explaining. Every act flashes a ring on its target, so the
-  person sees what was pressed. The composer itself is never driven, an act never pulls the focus out of it, and a
+  person sees what was pressed, and its answer waits for what the press started and says what changed, or that
+  nothing did. A refusal says whether the act was done, not done, or may have run. The composer itself is never driven, an act never pulls the focus out of it, and a
   field that holds a password, key, token or secret is never read out. Bare `splice console` still opens the console.
   The manager may look, read, point and move freely, and asks first before a press that deletes, signs out, restarts,
   spends money, changes a setting or touches a running session.

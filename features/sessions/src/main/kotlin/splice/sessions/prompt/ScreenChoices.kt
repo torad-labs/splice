@@ -46,6 +46,11 @@ private val POINTER_LINE = Regex("""^ +❯[ \u00A0]+(\S.*)$""")
 // Claude Code 2.1.296 follows its prompt arrow with a no-break space (U+00A0); a plain space is taken too.
 private val PROMPT_LINE = Regex("""^❯[ \u00A0]?(.*)$""")
 
+// why: an empty input box of a session with no message yet shows the client's own suggestion in grey (Claude Code
+// 2.1.301: `Try "edit <filepath> to..."`). A captured screen carries no colour, so the suggestion reads like words
+// somebody typed and a send is refused for them. Every suggestion the client writes is `Try "` ... `"` on one line.
+private val SUGGESTION = Regex("""^Try ".*"$""")
+
 // why: how a numbered choice is named in the contract, so the digit on the screen names the key that answers it.
 private const val CHOICE = "CHOICE_"
 
@@ -165,7 +170,8 @@ public class ScreenChoices {
         if (at < 1 || !INPUT_EDGE.matches(lines[at - 1])) return ""
         val first = PROMPT_LINE.matchEntire(lines[at])?.groupValues?.get(1).orEmpty()
         val more = lines.drop(at + 1).takeWhile { !INPUT_EDGE.matches(it) }.map { it.removePrefix("  ") }
-        return (listOf(first) + more).joinToString("\n").trimEnd()
+        val typed = (listOf(first) + more).joinToString("\n").trimEnd()
+        return if (SUGGESTION.matches(typed)) "" else typed
     }
 
     /** The prompt's panel: every line between the last solid rule above the choices and the first choice, blank

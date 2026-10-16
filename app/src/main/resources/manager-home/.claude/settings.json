@@ -42,6 +42,7 @@
       "Bash(splice models *)",
       "Bash(splice version)",
       "Bash(splice version *)",
+      "Bash(splice console *)",
       "Read(./**)"
     ]
   }

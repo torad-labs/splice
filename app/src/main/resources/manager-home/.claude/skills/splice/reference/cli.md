@@ -15,6 +15,10 @@ Source: `app/src/main/kotlin/splice/app/cli/CommandParser.kt` (the verb table), 
 - You may run, without asking, the seven verbs in your CLAUDE.md: `status`, `logs`, `sessions`, `doctor`,
   `check-config`, `models`, `version`. Run `logs` with `--tail N`, never `--follow` (it never exits and blocks
   your pane).
+- `splice console <action>` drives the console the person has open (section "console" below). Looking,
+  reading, highlighting, scrolling and moving between pages are free. A tap, fill, select or key press that
+  deletes, signs out, restarts, spends money, changes a setting or touches a running session needs the yes
+  the same act would need anywhere else.
 - Every other verb needs the person's yes first, and some you never run yourself (last section).
 - A verb that handles a secret (`login`, `key`, `add`, `setup`) is run by the person in their own terminal.
   You give them the exact command and wait.
@@ -45,7 +49,7 @@ You: `free` (run it), `ask` (person's yes first), `person` (the person runs it i
 | `shim-version` | Prints the launch-shim version this jar expects | none | no | no | ask (read-only) |
 | `restart` | Stops the daemon and starts it again | `--now` | starts it | yes | ask |
 | `upgrade` | Fetches, verifies and activates a release, restarts, runs doctor | `--to vX.Y.Z`, `--now`, `--rollback`, `--check` | no (restarts it) | yes | ask (`--check` is read-only) |
-| `console` | Starts the daemon if needed and opens the console in the person's browser, unlocked | none | starts it | yes | person |
+| `console` | Bare: starts the daemon if needed and opens the console in the person's browser, unlocked. With an action: drives the console the person has open | `<action> [words]`, `--note TEXT`, `--clear`, `--json` | yes (with an action) | yes | bare: person. Actions: free to look and point, ask before an act |
 | `login` | Signs in to a head (browser or device flow, or a masked key prompt) | `<head>`, `--label <name>`, `--discard` | no | no | person |
 | `key` | The API-key store (`keys.toml`) | `set <ENV_NAME> [--value V \| --stdin]`, `list`, `unset <ENV_NAME>` | no | no | person |
 | `add` | Adds a provider and a head without editing TOML; writes `splice.toml` | `<profile>`, `--name`, `--base-url`, `--model`, `--command`, `--key provider\|new`, `--live`, `--yes`, `-y` | optional | yes | person |
@@ -350,6 +354,44 @@ It exits 1 if the daemon cannot start, or the management key is unreadable or ab
 
 Source: `app/.../cli/status/ConsoleCommand.kt:1-55`.
 
+```
+splice console snapshot                          the page, and every control on it with a ref (e1, e2, ...)
+splice console read [target]                     the words on the page, or in one part of it
+splice console highlight <target>... [--note TEXT]   a ring around each target, the note beside the first
+splice console highlight --clear                 puts the rings away
+splice console goto <page|back>                  accounts, sessions, teams, requests, usage, models, compare, settings
+splice console tap <target>                      presses it, as a person's click does
+splice console fill <target> <text>              replaces a field's text and leaves it, so the page takes it
+splice console select <target> <option>          picks a choice in a picker, by its words or value
+splice console press <key> [target]             Enter, Escape, Tab, Shift+Tab, Space, ArrowDown, Ctrl+K, ...
+splice console hover <target>                    rests the pointer on it and prints its tip, if it has one
+splice console scroll <target|up|down|top|bottom>
+```
+
+With an action, the verb drives the console page the person has open: the daemon hands the order to the tab they
+looked at last, and the page does it and answers with one plain sentence, which the verb prints. A hidden tab takes
+no orders. Add `--json` to print the page's whole answer (a snapshot's answer lists each control's role, name,
+place, row and state).
+
+- **Targets.** A ref from the last `snapshot` (`e12`, surest; a ref survives the page redrawing it, but not a move
+  to another page), the words a person reads on a control (`"Add account"`), or `css:<selector>`. Words that fit
+  several things are refused with a ref for each, so you pick one. Words no control carries are matched against
+  any text showing, so you can highlight a figure or a sentence.
+- **What the person sees.** A tap, fill, select or hover flashes a ring on its target, and `highlight` draws one
+  that stays until the person presses anywhere outside the composer or presses Escape, or you clear it or
+  highlight something else. Each target is scrolled into the part of the screen above the composer.
+- **What you never reach.** The composer itself is never listed, read or driven, and a key press never lands in
+  it, so you never type over the person. A field's value is shown in a snapshot unless it is a password or its
+  name says key, token, secret or credential.
+- **After an act** the answer says what changed: the page you are now on, the control's new words or state, a
+  notice the page raised, or a dialog that opened.
+- **Exit codes.** 0 when the page did it. 1 when the page refused (the sentence says why), no console is open
+  (`splice: no console is open in a browser`), the console did not answer in 15 s, or the daemon is not running.
+  2 for words no action takes (usage printed).
+
+Source: `app/.../cli/status/ConsolePilotCommand.kt` (the words), `app/.../control/ConsolePilot.kt` (the relay),
+`app/src/main/resources/console/pilot.js` (what each action does on the page).
+
 ### init
 
 ```
@@ -383,7 +425,7 @@ There is no verb that removes splice. `splice uninstall --all` removes wrapper l
 | `splice logs --follow` | Never exits; blocks your pane |
 | `splice daemon`, `splice start` | Runs or starts the daemon in your shell; a second daemon is refused, and a foreground one ties up the pane |
 | `splice trace --purge` | Deletes a head's trace files; not undoable |
-| `splice console` | Opens a browser on the person's desktop with the key in the URL |
+| Bare `splice console` | Opens a browser on the person's desktop with the key in the URL. Its actions (`splice console snapshot`, ...) are yours |
 | Anything that reads `keys.toml`, `auth/`, `key-ledger.json` or `mgmt-key` | `cat`, `grep`, `cp`, a script: denied when the command names the file; a glob can still slip past (see operations.md, section 2). A key you meet in output is named by its setting, never repeated |
 
 Source: manager-home `CLAUDE.md` (what you may do, secrets, ask first); `SetupCommand.kt:1-5` (non-TTY defaults);

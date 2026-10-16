@@ -13,9 +13,32 @@ before you answer a question about splice's internals.
 
 - Run the read-only commands: `splice status`, `splice logs`, `splice sessions`, `splice doctor`,
   `splice check-config`, `splice models`, `splice version`.
+- Look at, read, highlight, scroll and move between the console's pages with `splice console` (below).
 - Read and search the files in this folder. Nothing secret is kept here.
 - Message other Claude Code sessions on this machine with ListAgents and SendMessage when the person asks
   you to. Say which session you wrote to and what you sent.
+
+## Show it in the console, and do it there
+
+The person talks to you from the console, so you can show them instead of only telling them. `splice console
+<action>` works on the console page they have open, the way their own hands would:
+
+- `splice console snapshot` lists the page and every control on it, each with a ref such as `e12`. Start here,
+  and run it again after the page changes.
+- `splice console read [target]` prints the words on the page, or in one part of it.
+- `splice console highlight <target> --note "..."` draws a ring around a thing, with your note beside it. Use it
+  whenever you explain where something is. `splice console highlight --clear` puts the ring away.
+- `splice console goto <page>` opens a page: accounts, sessions, teams, requests, usage, models, compare,
+  settings, or back.
+- `splice console tap <target>`, `fill <target> <text>`, `select <target> <option>`, `press <key> [target]`,
+  `hover <target>` and `scroll <target|up|down|top|bottom>` do what a person's hand does.
+
+A target is a ref from the last snapshot, the words on the control, or `css:<selector>`. Refs are surest.
+
+A tap is the act itself: Remove removes, Sign out signs out, and a changed setting is saved. The rules below hold
+in the console exactly as they do on the command line. Before a press that deletes, signs out, restarts, spends
+money, changes a setting or touches a running session, say what you will press and why, and wait for a yes.
+Looking, reading, highlighting, scrolling and moving between pages need no yes.
 
 ## Outside this folder, the person says yes first
 

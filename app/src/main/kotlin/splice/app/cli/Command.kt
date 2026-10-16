@@ -14,6 +14,7 @@ import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.ConsoleCommand
+import splice.app.cli.status.ConsolePilotCommand
 import splice.app.cli.status.StatusCommand
 import splice.configuration.add.AddModelsResult
 import splice.core.GATEWAY_VERSION
@@ -133,9 +134,11 @@ public sealed class Command {
 
     public data object Status : Command() { override suspend fun run(): Int = success { StatusCommand().status() } }
 
-    /** `splice console`: opens the console in the browser, unlocked. */
-    public data object Console : Command() {
-        override suspend fun run(): Int = outcomeExitCode(ConsoleCommand().open())
+    /** `splice console`: opens the console in the browser, unlocked. `splice console <action>` (Oct 16, 2026) drives
+     *  the console a person has open: look at it, tap, type, move between pages and point at things. */
+    public data class Console(val args: List<String> = emptyList()) : Command() {
+        override suspend fun run(): Int =
+            if (args.isEmpty()) outcomeExitCode(ConsoleCommand().open()) else ConsolePilotCommand().run(args)
     }
 
     /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */

@@ -28,8 +28,8 @@ const API = (() => {
     (main.querySelector(":scope > .head") || main.firstChild)?.after(box);
   }
   // Every answer comes back as { ok, status, body }; a refused or unreachable call is an answer too, never a throw.
-  async function call(method, path, body, extra, signal) {
-    const init = { method, signal, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
+  async function call(method, path, body, extra, signal, keepalive) {
+    const init = { method, signal, keepalive, headers: { Authorization: `Bearer ${localStorage.getItem(STORE) || ""}`, ...extra } };
     if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
     try {
       const res = await fetch(path, init);
@@ -50,6 +50,8 @@ const API = (() => {
     put: (p, b) => call("PUT", p, b, undefined, signal),
     patch: (p, b) => call("PATCH", p, b, undefined, signal),
     del: (p) => call("DELETE", p, undefined, undefined, signal),
+    // a last word as the tab hides or closes: the browser still delivers it after the page is gone (pilot.js)
+    parting: (p) => call("POST", p, {}, undefined, undefined, true),
     scoped: (nextSignal) => client(nextSignal),
   });
   return client();

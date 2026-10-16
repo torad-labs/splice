@@ -616,3 +616,21 @@ body.locked main.page > :not(.head):not(.lockedby), body.locked main.page > .hea
    the Next row keep only the lock, so neither cuts a name (walk on ea24c63fc, Claude's cards at 650 px) */
 .windows .heldline { grid-column: 1 / -1; font: 500 .95rem/1.35 var(--font-name); color: var(--limit); }
 .windows .next .nextwhy { grid-column: 2 / -1; font: 500 .92rem/1.35 var(--font-name); color: var(--limit); white-space: normal; }
+/* THE PILOT'S MARKS (pilot.js, Oct 16): the ring an agent points with through `splice console highlight`, the brief ring
+   on whatever it taps, and the note it may write beside a highlight. They sit under the composer, never over the person's
+   conversation, and take no presses. Room under the page lets a thing near its foot rise above the composer's sheet. */
+.pilot-ring {
+  position: fixed; z-index: 29; pointer-events: none; border-radius: var(--r-in);
+  box-shadow: 0 0 0 .2rem var(--key-ink), 0 0 0 .5rem rgba(255, 215, 154, .22), 0 0 1.6rem .3rem rgba(255, 215, 154, .3);
+  animation: pilot-in var(--t-snap) var(--e-out);
+}
+.pilot-ring.flash { animation: pilot-flash 900ms var(--e-out) forwards; }
+.pilot-note {
+  position: fixed; z-index: 29; pointer-events: none; max-width: 22rem; padding: .5rem .75rem;
+  font: 400 .98rem/1.4 var(--font-name); color: var(--text); background: var(--obj-high); border-radius: var(--r-in);
+  box-shadow: 0 0 0 var(--ink-w) var(--ink), var(--cast) var(--cast) 0 var(--ink);
+  animation: pilot-in var(--t-snap) var(--e-out);
+}
+@keyframes pilot-in { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+@keyframes pilot-flash { 0%, 60% { opacity: 1; } 100% { opacity: 0; } }
+body.pilot-room main.page::after { height: var(--pilot-room); }

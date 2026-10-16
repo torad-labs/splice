@@ -41,6 +41,7 @@ import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource
 import splice.app.control.mount.ConfigurationMount
 import splice.app.control.mount.ConsoleMount
+import splice.app.control.mount.ConsolePilotMount
 import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.ControlMount
 import splice.app.control.mount.DaemonSelfAnswers
@@ -167,6 +168,9 @@ internal class ControlServer(
     // Oct 10, 2026: the console's pages at /, open rows that carry no data (ConsoleMount).
     private val console = ConsoleMount()
 
+    // Oct 16, 2026: what `splice console <action>` hands the open console to do, and the page's answer (ConsolePilot).
+    private val consolePilot = ConsolePilotMount(guard)
+
     // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
     // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
     private val mcp: McpMount? = runtime.mcpHost?.let { host ->
@@ -188,6 +192,7 @@ internal class ControlServer(
         ControlMount(diagnostics::register),
         ControlMount(models::register),
         ControlMount(launch::register),
+        ControlMount(consolePilot::register),
         ControlMount(console::register),
     ) + listOfNotNull(mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp)

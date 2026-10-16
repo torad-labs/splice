@@ -3,6 +3,8 @@
 // sat beside Install because that verb owned the argv-shaped cases.
 package splice.app.cli
 
+import splice.app.cli.status.CONSOLE_PILOT_USAGE
+
 /**
  * Builds one [Command] from the full argv — the value half of the verb table.
  *
@@ -138,7 +140,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
-    "console" to CommandRegistration("", CommandFactory.Alone(Command.Console)),
+    "console" to CommandRegistration(CONSOLE_PILOT_USAGE, CommandFactory { a -> Command.Console(a.drop(1)) }),
     "restart" to CommandRegistration(
         "[--now]",
         CommandFactory { a ->

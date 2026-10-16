@@ -48,12 +48,14 @@ public object ControlPlaneClient {
      *  every refusal as `{"error": "<reason>"}` — "claude is not currently wrapped", "the
      *  'claude-splice' head is not configured — wrap needs its catalog to materialize" — and a
      *  caller that printed only the code would be hiding the one thing the operator can act on.
-     *  Null when it never connected, the same contract [statusOf] carries. */
+     *  Null when it never connected, the same contract [statusOf] carries. A [json] body goes up as
+     *  `application/json` (Oct 16, 2026: `splice console <action>` posts its order). */
     public fun send(
         url: String,
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
+        json: String? = null,
     ): ControlReply? {
         val read = Unanswered.read {
             val connection = URI(url).toURL().openConnection() as HttpURLConnection
@@ -62,6 +64,11 @@ public object ControlPlaneClient {
                 bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
                 connection.connectTimeout = PROBE_TIMEOUT_MS
                 connection.readTimeout = readTimeoutMs
+                json?.let { body ->
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(body.encodeToByteArray()) }
+                }
                 val status = connection.responseCode
                 // A non-2xx puts the body on the ERROR stream and leaves inputStream throwing, which is
                 // exactly the half that carries the reason.

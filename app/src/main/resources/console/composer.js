@@ -304,6 +304,8 @@
           title="Summarise the conversation so far to make room. It stays the same conversation.">Compact</button>`);
         if (ctx.cache != null) parts.push(`<span class="cmp-meter" title="How much of what the manager reads each turn the cache served."><span class="cmp-mname">Cache</span><span class="cmp-mnum">${ctx.cache}%</span></span>`);
       } else if (ln) parts.push(`<span class="cmp-meter" title="Nothing has been said yet."><span class="cmp-mname">Context</span><span class="cmp-mnum">empty</span></span>`);
+      // splice holds the manager's last status-line reading in memory, and an idle session posts none until something happens in it
+      else parts.push(`<span class="cmp-meter" title="splice reads this from the manager's status line, which reports when something happens in the session. Nothing has since splice started."><span class="cmp-mname">Context</span><span class="cmp-mnum">shows after its next turn</span></span>`);
       const row = st.limits?.row, who = [row?.display_name, row?.plan].filter(Boolean).join(" · ");
       const windows = [["5h", "5 hour", row?.five_hour_used_percent, row?.five_hour_reset_epoch_seconds],
         ["7d", "7 day", row?.seven_day_used_percent, row?.seven_day_reset_epoch_seconds]]

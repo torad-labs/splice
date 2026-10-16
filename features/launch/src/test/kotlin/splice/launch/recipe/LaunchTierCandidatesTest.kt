@@ -109,7 +109,7 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
             spec(
                 available = listOf("fixture/pinned", "fixture/discovered"),
                 tiers = ModelTiers(
-                    slots = mapOf("fixture/discovered" to "opus"),
+                    byTier = mapOf("opus" to "fixture/discovered"),
                     candidates = listOf("fixture/pinned"),
                 ),
             ),
@@ -123,13 +123,35 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
         val recipe = service.launch(
             spec(
                 available = listOf("fixture/pinned"),
-                tiers = ModelTiers(slots = mapOf("fixture/absent" to "opus")),
+                tiers = ModelTiers(byTier = mapOf("opus" to "fixture/absent")),
             ),
             emptyList(),
             dangerouslySkipPermissions = false,
         )
         assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" !in recipe.env, recipe.env.toString())
         assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" in recipe.unset, recipe.unset.toString())
+    }
+
+    // Two tiers may name one model (Marcos, 2026-10-15: claudex runs opus and sonnet on gpt-6.1-sol).
+    // Both tiers are planted; the repeat carries the head's discovery spelling of the same model.
+    @Test
+    fun `two tiers declared on one model are both planted`() {
+        val base = spec(
+            available = listOf("gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"),
+            tiers = ModelTiers(
+                byTier = mapOf(
+                    "opus" to "gpt-6.1-sol",
+                    "sonnet" to "gpt-6.1-sol",
+                    "haiku" to "gpt-6-luna",
+                    "fable" to "gpt-6-astra",
+                ),
+            ),
+        )
+        val env = env(base.copy(models = base.models.copy(discoveryPrefix = "claudex--")))
+        assertEquals("gpt-6.1-sol", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertEquals("claudex--gpt-6.1-sol", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals("gpt-6-luna", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
+        assertEquals("gpt-6-astra", env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
     }
 
     // No candidates list is every offered id — the positional scheme every head had before discovery.

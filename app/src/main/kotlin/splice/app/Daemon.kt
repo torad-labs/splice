@@ -125,9 +125,12 @@ public class Daemon(
             declaredHeads = DeclaredHeads {
                 topology.heads.mapValues { (_, head) ->
                     val family = topology.providers[head.provider]?.let { ProviderFamilyRule().of(head.provider, it) }
-                    val slots = head.tierSlots()
-                    val declared = head.models?.map { it.copy(slot = slots[it.id]) }
-                        ?: slots.map { (id, slot) -> HeadModel(id, slot) }
+                    // One row per declared tier: a model behind two tiers is two declared slots.
+                    val tiers = head.tierModels()
+                    val declared = head.models?.flatMap { model ->
+                        tiers.filterValues { it == model.id }.keys.map { model.copy(slot = it) }
+                            .ifEmpty { listOf(model.copy(slot = null)) }
+                    } ?: tiers.map { (slot, id) -> HeadModel(id, slot) }
                     DeclaredHead(head.provider, declared, family)
                 }
             },

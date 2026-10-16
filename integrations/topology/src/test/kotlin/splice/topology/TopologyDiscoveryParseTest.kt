@@ -89,11 +89,10 @@ class TopologyDiscoveryParseTest {
     }
 
     @Test
-    fun `tier mappings reject unknown repeated and competing declarations`() {
+    fun `tier mappings reject unknown repeated and competing tiers and accept one model behind two`() {
         val invalid = listOf(
             """model_slots = { unknown = "m1" }""",
             """model_slots = { opus = "" }""",
-            """model_slots = { opus = "m1", sonnet = "m1" }""",
             """model_slots = { opus = "m1", OPUS = "m2" }""",
             """model_slots = { opus = "m1", opus = "m2" }""",
             """model_slots = { "opus" = "m1", 'opus' = "m2" }""",
@@ -114,6 +113,9 @@ class TopologyDiscoveryParseTest {
         }
         assertTrue(mixed.message.orEmpty().contains("keep"), mixed.message)
         assertTrue(mixed.message.orEmpty().contains("model_slots"), mixed.message)
+        // One model behind two tiers is a declaration, not a repeat (Marcos, 2026-10-15).
+        val shared = withHead("""model_slots = { opus = "m1", sonnet = "m1" }""").heads.getValue("one")
+        assertEquals(mapOf("opus" to "m1", "sonnet" to "m1"), shared.tierModels())
     }
 
     @Test
@@ -127,7 +129,7 @@ class TopologyDiscoveryParseTest {
             val topology = withHead(declaration)
             val head = topology.heads.getValue("one")
             val catalog = topology.providers.getValue("p").catalogFor(head, discovered = listOf(DiscoveredModel("m2")))
-            assertEquals(mapOf("m1" to "opus", "m2" to "sonnet"), head.tierSlots())
+            assertEquals(mapOf("opus" to "m1", "sonnet" to "m2"), head.tierModels())
             assertEquals(emptyMap<String, String>(), catalog.unmappedTiers)
         }
     }
@@ -143,7 +145,7 @@ class TopologyDiscoveryParseTest {
         assertTrue(failure.message.orEmpty().contains("model_slots.sonnet"), failure.message)
         val catalog = provider.catalogFor(head, discovered = listOf(DiscoveredModel("m2")))
         assertEquals(listOf("m1", "m2"), catalog.models.map { it.id })
-        assertEquals(mapOf("m1" to "opus", "m2" to "sonnet"), head.tierSlots())
+        assertEquals(mapOf("opus" to "m1", "sonnet" to "m2"), head.tierModels())
     }
 
     @Test
@@ -154,7 +156,7 @@ class TopologyDiscoveryParseTest {
         )
         val head = topology.heads.getValue("one")
         val provider = topology.providers.getValue("p")
-        assertEquals(mapOf("m1" to "opus"), head.tierSlots())
+        assertEquals(mapOf("opus" to "m1"), head.tierModels())
         assertEquals(
             listOf("m1"),
             provider.catalogFor(head, discovered = listOf(DiscoveredModel("m2"))).models.map { it.id },

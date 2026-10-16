@@ -187,7 +187,7 @@ class TurnPreparationTest {
             gate = InflightGate({ 1 }),
         )
         val preparation = TurnPreparation(
-            provider(mapOf("fixture/absent" to "opus")),
+            provider(mapOf("opus" to "fixture/absent")),
             deps,
             RequestBodyReader(deps.policy.requestReadTimeoutMs),
             parser,
@@ -225,7 +225,7 @@ class TurnPreparationTest {
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(MODEL, "Kimi", contextWindow = 200_000)),
                 defaultContextWindow = 200_000,
-                client = ClientModelPolicy(tierSlots = tiers),
+                client = ClientModelPolicy(tierModels = tiers),
             ),
             pinnedModel = MODEL,
             auth = LayersTestAuth(),

@@ -51,12 +51,16 @@ internal class HeadModels(private val provider: ProviderConfig) {
         return null
     }
 
-    /** Why a head's own model list cannot stand, whatever the provider carries. */
+    /** Why a head's own model list cannot stand, whatever the provider carries. Each row is one catalog
+     *  row, so a repeated id would draw one model twice in the picker; one model behind several tiers is
+     *  a model_slots map, which names tiers without adding rows. */
     private fun listRefusal(requested: List<HeadModel>): String? {
         val slots = requested.mapNotNull { it.slot?.lowercase() }
         return when {
             requested.isEmpty() -> "head model list must not be empty"
-            requested.map { it.id }.distinct().size != requested.size -> "head model list contains duplicates"
+            requested.map { it.id }.distinct().size != requested.size ->
+                "head model list contains duplicates; list each model once and put one model behind " +
+                    "several tiers with model_slots"
             !slots.all { it in headModelSlots } -> "unknown Claude model slot"
             slots.distinct().size != slots.size -> "head model slots contain duplicates"
             else -> null

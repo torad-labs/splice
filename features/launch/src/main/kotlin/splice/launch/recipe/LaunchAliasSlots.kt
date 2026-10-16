@@ -21,7 +21,7 @@ internal object LaunchAliasSlots {
         val offered = spec.models.availableModelIds
         val ids = (listOf(spec.models.pinnedModel) + (spec.models.tiers.candidates ?: offered)).distinct()
         val declared = declaredSlots(spec)
-        if (spec.models.tiers.slots.isNotEmpty()) {
+        if (spec.models.tiers.byTier.isNotEmpty()) {
             return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
                 declared[slot.lowercase()]?.let { model -> slot to model }
             }
@@ -76,10 +76,10 @@ internal object LaunchAliasSlots {
 
     /** slot name -> model id, keeping only slots this catalog actually offers. A declared slot
      *  naming a model the head does not serve is ignored rather than planted, so a stale row in
-     *  splice.toml cannot point a tier at a model every turn would 400 on. */
+     *  splice.toml cannot point a tier at a model every turn would 400 on. Keyed by tier, so two
+     *  tiers on one model both survive; LaunchModelEnvironment plants the repeat off the picker. */
     private fun declaredSlots(spec: LaunchSpec): Map<String, String> =
-        spec.models.tiers.slots
-            .filterKeys { it == spec.models.pinnedModel || it in spec.models.availableModelIds }
-            .entries
-            .associate { (model, slot) -> slot.lowercase() to model }
+        spec.models.tiers.byTier
+            .filterValues { it == spec.models.pinnedModel || it in spec.models.availableModelIds }
+            .mapKeys { (slot, _) -> slot.lowercase() }
 }

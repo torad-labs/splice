@@ -28,7 +28,8 @@ public data class HeadConfig(
     @SerialName("pinned_model") val pinnedModel: String = "",
     val models: List<HeadModel>? = null,
     /** Tier mappings without a serving allowlist. [models] still restricts the roster; its entries
-     *  must not carry slots alongside this map. Keys are tiers, values are model ids. */
+     *  must not carry slots alongside this map. Keys are tiers, values are model ids, and one id may
+     *  fill several tiers (Marcos, 2026-10-15: claudex runs opus and sonnet on one gpt-6.1-sol). */
     @SerialName("model_slots") val modelSlots: Map<String, String> = emptyMap(),
     @SerialName("context_window") val contextWindow: Long? = null,
     val overrides: Map<String, String> = emptyMap(),
@@ -58,19 +59,18 @@ public data class HeadConfig(
         if (slots.any { it !in headModelSlots }) throw TopologySlotsFailure(TopologySlotsFailure.Problem.UNKNOWN)
         if (slots.distinct().size != slots.size) throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
         if (modelSlots.values.any(String::isBlank)) throw TopologySlotsFailure(TopologySlotsFailure.Problem.BLANK_ID)
-        if (modelSlots.values.distinct().size != modelSlots.size) {
-            throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE_ID)
-        }
         if (modelSlots.isNotEmpty() && models.orEmpty().any { it.slot != null }) {
             throw TopologySlotsFailure(TopologySlotsFailure.Problem.COMPETING)
         }
     }
 
-    /** The id-to-tier map the launcher consumes, independent of the provider's discovered roster. */
-    public fun tierSlots(): Map<String, String> = if (modelSlots.isNotEmpty()) {
-        modelSlots.entries.associate { (slot, id) -> id to slot.trim('"', '\'').lowercase() }
+    /** The tier-to-id map the launcher consumes, independent of the provider's discovered roster. Keyed
+     *  by TIER, so two tiers may name one model; the launch plants the repeat where the picker never
+     *  draws it (LaunchModelEnvironment). */
+    public fun tierModels(): Map<String, String> = if (modelSlots.isNotEmpty()) {
+        modelSlots.entries.associate { (slot, id) -> slot.trim('"', '\'').lowercase() to id }
     } else {
-        models.orEmpty().mapNotNull { model -> model.slot?.let { model.id to it.lowercase() } }.toMap()
+        models.orEmpty().mapNotNull { model -> model.slot?.let { it.lowercase() to model.id } }.toMap()
     }
 
     /** V4-36: this head's standing prompt as its resolver. An ABSENT `system_prompt_mode` is the

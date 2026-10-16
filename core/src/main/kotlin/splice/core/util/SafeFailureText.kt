@@ -51,7 +51,6 @@ public class TopologySlotsFailure(public val problem: Problem) : IllegalArgument
         UNKNOWN("model_slots contains an unknown Claude tier; use opus, sonnet, haiku or fable"),
         DUPLICATE("model_slots contains duplicate tiers; keep one assignment per tier"),
         BLANK_ID("model_slots model ids must not be blank"),
-        DUPLICATE_ID("model_slots assigns one model id to multiple tiers; keep one tier per model"),
         COMPETING(
             "models entries with slots and model_slots compete; keep slots in models or keep model_slots, not both",
         ),

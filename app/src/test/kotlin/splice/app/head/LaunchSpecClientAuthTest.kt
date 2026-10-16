@@ -108,7 +108,7 @@ class LaunchSpecClientAuthTest {
         )
         val ctx = base.copy(head = head, providerCfg = provider, catalog = provider.catalogFor(head))
         val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = false)
-        assertEquals(tiers.entries.associate { (slot, id) -> id to slot }, spec.models.tiers.slots)
+        assertEquals(tiers, spec.models.tiers.byTier)
         assertEquals(listOf("m", "m2", "m3", "m4"), ctx.catalog.models.map { it.id })
     }
 
@@ -186,7 +186,7 @@ class LaunchSpecClientAuthTest {
 
         assertEquals(listOf(shown.id), spec.models.availableModelIds)
         assertEquals(mapOf(shown.id to shown.label), spec.models.modelLabels)
-        assertEquals(mapOf(shown.id to "opus"), spec.models.tiers.slots)
+        assertEquals(mapOf("opus" to shown.id), spec.models.tiers.byTier)
         assertEquals(
             listOf(shown.id),
             spec.models.modelOptionsCache.jsonArray.map { it.jsonObject.getValue("value").jsonPrimitive.content },

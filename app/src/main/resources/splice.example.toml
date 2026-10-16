@@ -492,8 +492,9 @@ context_window = 1000000
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
 # `models` is this process's ordered provider-model allowlist. `model_slots` maps tiers to ids
 # without restricting discovery: model_slots = { opus = "vendor/model-a", sonnet = "vendor/model-b" }.
-# Keep either slots within `models` or `model_slots`, never both. An unslotted allowlist can use
-# `model_slots` for ids it allows. A mapped model the endpoint does not list stays unmapped,
+# Keep either slots within `models` or `model_slots`, never both. One id may fill several tiers
+# in `model_slots` (opus = "m", sonnet = "m"); a `models` list names each id once. An
+# unslotted allowlist can use `model_slots` for ids it allows. A mapped model the endpoint does not list stays unmapped,
 # with a boot-log explanation, never a substitute. An explicit `context_window` forces
 # one window onto every selected row; omit it when their real backend ceilings differ. A launch
 # plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
@@ -576,8 +577,10 @@ pinned_model = "gpt-6-sol"
 # slot = the Claude Code tier alias this row answers (opus/sonnet/haiku/fable). A tier NO row
 # declares is not emitted at launch, so Claude Code requests using its built-in Anthropic ids —
 # background titling/summarization, `--model haiku` — get a clean pre-upstream 400 on this head
-# (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
-# point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
+# (no quota burned; the main turn is unaffected). Declare a row per tier you want served. To put
+# one model behind two tiers, list it once and map the tiers with model_slots instead of slots:
+# model_slots = { opus = "gpt-6-sol", sonnet = "gpt-6-sol", haiku = "gpt-6-luna", fable = "gpt-6-astra" }.
+# Both tiers are planted; the picker draws the model once.
 models = [{ id = "gpt-6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-6-luna", slot = "haiku" }, { id = "gpt-6-astra", slot = "fable" }]
 context_window = 272000
 [heads.claudex.claude]
@@ -665,8 +668,8 @@ provider = "muse"
 port = 3106                    # 3103 is fireworks; 3104 is claude-splice; 3105 is commented ollama
 discovery_prefix = "claude-muse--"
 pinned_model = "muse-spark-1.3[1m]"
-# No models line: Spark 1.3 is the only catalog model worth pinning, and four slots on one id
-# is illegal (head model list contains duplicates). The head keeps the provider-wide surface.
+# No models line: Spark 1.3 is the only catalog model worth pinning, and a models list names each
+# id once (model_slots can put it behind several tiers). The head keeps the provider-wide surface.
 context_window = 1000000
 [heads.claude-muse.claude]
 command = "claude-muse"
@@ -721,9 +724,9 @@ provider = "deepseek"
 port = 3107                    # 3106 is claude-muse above
 discovery_prefix = "claude-deepseek--"
 pinned_model = "deepseek-flash"
-# One slot per id: the head model list rejects a repeated id, and two slots on one id emit
-# two rows with the same id. DeepSeek publish two ids, so haiku and fable go undeclared and
-# take the documented honest 400 rather than a duplicated picker row.
+# One slot per row: the head model list rejects a repeated id, because two rows with one id draw
+# that model twice. DeepSeek publish two ids, so haiku and fable go undeclared here; a model_slots
+# map could put one of the two behind them instead.
 models = [{ id = "deepseek-flash", slot = "opus" }, { id = "deepseek-v4-pro", slot = "sonnet" }]
 context_window = 1000000
 [heads.claude-deepseek.claude]

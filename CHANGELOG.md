@@ -949,6 +949,7 @@ origin.
   command sits on the card of the key it sends with, and the keys a key replaced fold into one quiet line.
 
 ### Changed
+- **One model can fill several tiers.** `model_slots = { opus = "gpt-6.1-sol", sonnet = "gpt-6.1-sol" }` now loads and launches with both tiers set, and the picker still lists the model once. A `models` list still names each model once.
 - **splice works with the systemd unit that runs it.** `splice start`, `splice restart` and `splice console` go
   through `splice.service` whenever a unit serves this shell, even while it is down, instead of starting a second daemon
   beside it. A unit that runs another home's daemon is refused by name and nothing is stopped, and a shell whose home is

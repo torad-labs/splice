@@ -177,9 +177,7 @@ public data class ModelCatalog(
         get() {
             val current = live()
             val offered = current.models.mapTo(HashSet()) { it.id }
-            return current.client.tierSlots.entries
-                .filterNot { it.key in offered }
-                .associate { (id, slot) -> slot to id }
+            return current.client.tierModels.filterValues { it !in offered }
         }
 
     public fun wrap(id: String): String = discoveryPrefix + id
@@ -359,8 +357,9 @@ public data class CatalogWindows(
 
 /** What a [ModelCatalog] declares to the client about which models it may pick. */
 public data class ClientModelPolicy(
-    /** Declared model id to Claude tier, kept even when a listing omits the model. */
-    val tierSlots: Map<String, String> = emptyMap(),
+    /** Declared Claude tier to model id, kept even when a listing omits the model. One id may fill
+     *  several tiers. */
+    val tierModels: Map<String, String> = emptyMap(),
     /** The head forwards the client's own Claude login, so the client picks its models (2026-09-30): any id
      *  is admitted and nothing about models is declared to the client. Counts ride raw except for
      *  Claude sessions whose actual divisor was learned from a status-line post. [ModelCatalog.models] holds

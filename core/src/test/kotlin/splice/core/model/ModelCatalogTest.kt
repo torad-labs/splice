@@ -30,7 +30,7 @@ class ModelCatalogTest {
 
     @Test
     fun `tier availability uses the exact offered row even when turn admission strips a suffix`() {
-        val mapped = catalog.copy(client = ClientModelPolicy(tierSlots = mapOf("gpt-5.6-sol[1m]" to "opus")))
+        val mapped = catalog.copy(client = ClientModelPolicy(tierModels = mapOf("opus" to "gpt-5.6-sol[1m]")))
         assertTrue(mapped.contains("gpt-5.6-sol[1m]"))
         assertEquals(mapOf("opus" to "gpt-5.6-sol[1m]"), mapped.unmappedTiers)
         val offered = mapped.copy(models = mapped.models + ModelEntry("gpt-5.6-sol[1m]", contextWindow = 272_000))

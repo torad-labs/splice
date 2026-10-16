@@ -40,13 +40,13 @@ public data class HeadTrees(
  *  value, because every part answers the same question and [LaunchSpec] sits at the constructor-width
  *  ratchet. */
 public data class ModelTiers(
-    /** id -> tier slot, declared per row in the head's catalog. Empty = fall back to
-     *  [splice.launch.recipe.LaunchService]'s positional heuristic, which is what every catalog used before slots existed
-     *  and is the reason splice.toml carries an "ORDER IS LOAD-BEARING" banner. Non-empty = ONLY the
-     *  declared tiers are emitted — positional order is fully retired for that head, and an
-     *  undeclared tier stays un-set rather than pointing a second alias at an already-claimed model
-     *  (the 2-model duplication this exists to remove). */
-    val slots: Map<String, String> = emptyMap(),
+    /** tier slot -> model id, as the head declares it (HeadConfig.tierModels); two tiers may name one
+     *  model. Empty = fall back to [splice.launch.recipe.LaunchService]'s positional heuristic, which is
+     *  what every catalog used before slots existed and is the reason splice.toml carries an "ORDER IS
+     *  LOAD-BEARING" banner. Non-empty = ONLY the declared tiers are emitted — positional order is fully
+     *  retired for that head, and an undeclared tier stays un-set rather than pointing a second alias at
+     *  an already-claimed model (the 2-model duplication this exists to remove). */
+    val byTier: Map<String, String> = emptyMap(),
     /** The ids the positional heuristic may place, in catalog order (ModelCatalog.tierModelIds), or
      *  null for every offered id. 2026-09-22: a model the endpoint lists but no row declares joins
      *  the picker and never a slot — slot order is a decision splice.toml makes, and a vendor's list

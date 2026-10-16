@@ -51,7 +51,7 @@ class OneMillionSpellingLaunchTest(@param:TempDir private val tmp: Path) {
             pinnedModel = cat.pinnedModel,
             availableModelIds = cat.availableModelIds(),
             modelLabels = cat.models.associate { it.id to it.label },
-            tiers = ModelTiers(slots = mapOf("gpt-6-sol" to "opus", "gpt-5.6-sol" to "sonnet")),
+            tiers = ModelTiers(byTier = mapOf("opus" to "gpt-6-sol", "sonnet" to "gpt-5.6-sol")),
             discoveryPrefix = cat.discoveryPrefix,
             contextWindow = cat.clientLaunchWindow,
             modelOptionsCache = buildJsonArray {

@@ -166,10 +166,10 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
                     models = base.models.copy(
                         tiers = ModelTiers(
                             mapOf(
-                                "grok-4.6" to "opus",
-                                "grok-4.3" to "sonnet",
-                                "grok-build-0.1" to "haiku",
-                                "grok-build-latest" to "fable",
+                                "opus" to "grok-4.6",
+                                "sonnet" to "grok-4.3",
+                                "haiku" to "grok-build-0.1",
+                                "fable" to "grok-build-latest",
                             ),
                         ),
                     ),
@@ -183,8 +183,6 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertEquals("grok-build-0.1", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
         assertEquals("grok-build-latest", env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
-        val assigned = listOf("OPUS", "SONNET", "HAIKU", "FABLE").map { env["ANTHROPIC_DEFAULT_${it}_MODEL"] }
-        assertEquals(assigned.size, assigned.toSet().size, "no model may answer two tiers: $assigned")
     }
 
     // The exact live target: the grok head serves two models and declares two slots. Positional
@@ -196,7 +194,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
             spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5")).let { base ->
                 base.copy(
                     models = base.models.copy(
-                        tiers = ModelTiers(mapOf("grok-4.6" to "opus", "grok-4.5" to "sonnet")),
+                        tiers = ModelTiers(mapOf("opus" to "grok-4.6", "sonnet" to "grok-4.5")),
                     ),
                 )
             },
@@ -234,9 +232,9 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
                     models = base.models.copy(
                         tiers = ModelTiers(
                             mapOf(
-                                "grok-4.6" to "opus",
-                                "grok-retired" to "sonnet",
-                                "grok-4.5" to "turbo",
+                                "opus" to "grok-4.6",
+                                "sonnet" to "grok-retired",
+                                "turbo" to "grok-4.5",
                             ),
                         ),
                     ),

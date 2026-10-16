@@ -182,7 +182,7 @@ pinned_model = "vendor/model-a"
 model_slots = { opus = "vendor/model-a", sonnet = "vendor/model-b" }
 ```
 
-Use your existing head key and fields in place of the example. Slot names are opus, sonnet, haiku and fable, with one model per slot and one slot per model. Do not combine `model_slots` with slots inside `models`. An unslotted `models` allowlist can have a separate tier map, but its tier ids must be allowed. A mapped model the endpoint does not list stays unmapped, with a boot-log explanation, rather than selecting another model. Restart after changing tier mappings.
+Use your existing head key and fields in place of the example. Slot names are opus, sonnet, haiku and fable, with one model per slot. One model may fill several slots, as in `model_slots = { opus = "gpt-6.1-sol", sonnet = "gpt-6.1-sol" }`; the picker still lists it once. A `models` list names each model once, so put one model behind two tiers with `model_slots`. Do not combine `model_slots` with slots inside `models`. An unslotted `models` allowlist can have a separate tier map, but its tier ids must be allowed. A mapped model the endpoint does not list stays unmapped, with a boot-log explanation, rather than selecting another model. Restart after changing tier mappings.
 
 Each of the ten rows carries the rate card read on September 29, 2026, and keeps it until you edit the row. A model the daemon discovers with no row is priced from the card OpenRouter lists for it, read when the daemon starts and every hour after. Either way its turns show a dollar figure on the status line and count against a budget. A model OpenRouter lists no price for reads `no rate card`. A `rates = { input = …, cache_read = …, output = … }` line on the row wins over the listed price.
 

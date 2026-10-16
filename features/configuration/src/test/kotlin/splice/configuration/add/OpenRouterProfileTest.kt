@@ -47,12 +47,12 @@ class OpenRouterProfileTest {
         assertEquals(provider.models.first().id, catalog.pinnedModel)
         assertEquals(
             mapOf(
-                "anthropic/claude-sonnet-5" to "sonnet",
-                "anthropic/claude-opus-5.5" to "opus",
-                "z-ai/glm-5.3-flash" to "haiku",
-                "openai/gpt-6-sol" to "fable",
+                "sonnet" to "anthropic/claude-sonnet-5",
+                "opus" to "anthropic/claude-opus-5.5",
+                "haiku" to "z-ai/glm-5.3-flash",
+                "fable" to "openai/gpt-6-sol",
             ),
-            head.tierSlots(),
+            head.tierModels(),
         )
         assertEquals(null, head.models)
         assertEquals(null, head.contextWindow)

@@ -84,7 +84,7 @@ internal class HeadBoot {
                     "list at this start, so they are not offered until it does\n",
             )
         }
-        head.tierSlots().filterKeys { id -> catalog.live().models.none { it.id == id } }.forEach { (id, slot) ->
+        head.tierModels().filterValues { id -> catalog.live().models.none { it.id == id } }.forEach { (slot, id) ->
             log("[$key][boot] model_slots.$slot names $id, which is not offered at this start; $slot stays unmapped\n")
         }
     }

@@ -78,7 +78,7 @@ internal class LaunchSpecFactory(
                 availableModelIds = ctx.catalog.availableModelIds(),
                 modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
                 tiers = ModelTiers(
-                    slots = head.tierSlots(),
+                    byTier = head.tierModels(),
                     candidates = ctx.catalog.tierModelIds(),
                     // V4-232: the rows the client resolves as a Claude model it knows (their `client_model`).
                     modelOverrides = ctx.catalog.presented.overrides,

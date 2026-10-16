@@ -12,6 +12,14 @@ import kotlin.time.Duration.Companion.minutes
 
 private val CELL_IDLE_MS = 30.minutes.inWholeMilliseconds
 
+// why: a full pool is the one moment an idle parked cell costs somebody a script. A cell of a session the registry
+// does not vouch for (a subagent or a headless client never registers, and an ended session's file is gone, so both
+// read as unknown) has not been resumed for this long when its client is almost surely gone; waiting the whole
+// lifetime above left 50 of 53 engines parked and idle on Oct 15 while every new exec was refused (executing=1 of
+// retained=53). Only pressure uses this bound; the timed sweep keeps the lifetime, and a session the registry
+// vouches for is never reclaimed.
+private val PRESSURE_IDLE_MS = 5.minutes.inWholeMilliseconds
+
 /** Runs under the registry monitor. Persistence remains the registry's conversation-key transaction. */
 internal class CodeModeCellRetention(
     private val config: CodeModeBridgeConfig,
@@ -42,22 +50,23 @@ internal class CodeModeCellRetention(
 
     /** Source-only death cleanup remains valid. A request never ages out its own retained worker. */
     fun sweep(key: String?, protectedKey: String? = null): Boolean {
-        val idle = ranked(key).filter { (priority, record) ->
+        val idle = ranked(key, CELL_IDLE_MS).filter { (priority, record) ->
             priority < 2 && (record.id !in cells || record.key != protectedKey)
         }
         idle.forEach { (priority, record) -> park(record, reasons[priority]) }
         return idle.isNotEmpty()
     }
 
-    /** Pressure cannot revoke a live continuation, including one waiting for client tool results. */
-    fun capacityCandidates(): List<CodeModeRecord> = ranked(null).filter { (priority, record) ->
+    /** Pressure cannot revoke a live continuation, including one waiting for client tool results. It reclaims a cell
+     *  its session no longer vouches for once it has sat idle for [PRESSURE_IDLE_MS], oldest first. */
+    fun capacityCandidates(): List<CodeModeRecord> = ranked(null, PRESSURE_IDLE_MS).filter { (priority, record) ->
         priority < 2 && record.id in cells
     }.map { it.second }
 
     fun evict(key: String): CodeModeRecord? {
         val victim = capacityCandidates().firstOrNull { it.key == key } ?: return null
-        val priority = rank(victim)?.takeIf { it < 2 } ?: return null
-        val reason = reasons[priority]
+        val priority = rank(victim, PRESSURE_IDLE_MS)?.takeIf { it < 2 } ?: return null
+        val reason = pressureReasons[priority]
         park(victim, "$reason to admit a newer script")
         return victim
     }
@@ -86,29 +95,29 @@ internal class CodeModeCellRetention(
             "[code-mode] pool refusal: retained=${retained.size} " +
                 "dead=${liveness.count { it == false }} unknown=${liveness.count { it == null }} " +
                 "alive=${liveness.count { it == true }} executing=${retained.count(::running)} " +
-                "oldestIdleMs=$age idleBoundMs=$CELL_IDLE_MS",
+                "oldestIdleMs=$age idleBoundMs=$CELL_IDLE_MS pressureBoundMs=$PRESSURE_IDLE_MS",
         )
     }
 
-    private fun ranked(key: String?): List<Pair<Int, CodeModeRecord>> = records.mapNotNull { record ->
-        if (key == null || record.key == key) rank(record)?.let { it to record } else null
+    private fun ranked(key: String?, bound: Long): List<Pair<Int, CodeModeRecord>> = records.mapNotNull { record ->
+        if (key == null || record.key == key) rank(record, bound)?.let { it to record } else null
     }.sortedWith(compareBy({ it.first }, { it.second.cellIdleSince ?: Long.MIN_VALUE }))
 
-    private fun rank(record: CodeModeRecord): Int? {
+    private fun rank(record: CodeModeRecord, bound: Long): Int? {
         if (record.phase != CodeModePhase.ACTIVE || running(record)) return null
         val liveness = alive(record)
         return when {
             liveness == false -> if (record.id in cells || record.sourceEnd != null) 0 else null
             record.id !in cells -> null
-            else -> idleRank(record, liveness)
+            else -> idleRank(record, liveness, bound)
         }
     }
 
-    private fun idleRank(record: CodeModeRecord, liveness: Boolean?): Int? {
+    private fun idleRank(record: CodeModeRecord, liveness: Boolean?, bound: Long): Int? {
         val idle = record.cellIdleSince ?: return null
         val since = if (liveness == null) maxOf(idle, record.cellLastAliveAt ?: idle) else idle
         return when {
-            config.cellLease.clock() - since < CELL_IDLE_MS -> null
+            config.cellLease.clock() - since < bound -> null
             liveness == null -> 1
             else -> 2
         }
@@ -121,6 +130,11 @@ internal class CodeModeCellRetention(
     private val reasons = listOf(
         "code-mode cell closed after its session ended",
         "code-mode cell closed after unknown session exceeded its idle lifetime",
+    )
+
+    private val pressureReasons = listOf(
+        reasons[0],
+        "code-mode cell closed after unknown session sat idle past the pool-pressure bound",
     )
 
     fun closeEmpty(key: String) {

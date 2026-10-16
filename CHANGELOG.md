@@ -1861,6 +1861,9 @@ origin.
 - **A round that only runs code is no longer an empty answer under StructuredOutput:** a reply that held one completed
   `exec` call and no JSON was refused as "empty structured output", so the client got an overloaded error and sent it
   again.
+- **A full code-mode pool reclaims idle parked scripts of sessions nobody vouches for after 5 minutes, not 30:** subagents,
+  headless clients and ended sessions are not in the Claude Code registry, and their parked scripts held 50 of 53
+  engines while every new `exec` was refused. A session the registry lists as live is still never reclaimed.
 
 ## splice v0.4.0-beta.2: reduce Claudex registry contention - 2026-10-14
 

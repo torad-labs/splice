@@ -8,6 +8,7 @@ import splice.provider.codex.CodeModeResultOwners
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 
 /** The one conversation whose query is about to read live or durable owners. */
 internal fun interface CodeModeQueryPreparation {
@@ -29,19 +30,19 @@ internal class CodeModeRecordQueries(
         excluded: Set<String>,
     ): CodeModeRecord? = withKey(key) {
         val activeIds = if (callbackIds.isEmpty()) resultIds else resultIds + callbackIds
-        records.lastOrNull { record ->
-            record.key == key && record.phase == CodeModePhase.ACTIVE &&
-                matches(record, digest, activeIds, excluded)
-        } ?: records.lastOrNull { record ->
-            record.key == key && (record.phase == CodeModePhase.LOST || record.phase == CodeModePhase.STARTING) &&
+        val own = CodeModeRecordKeys.of(records, key)
+        own.lastOrNull { record ->
+            record.phase == CodeModePhase.ACTIVE && matches(record, digest, activeIds, excluded)
+        } ?: own.lastOrNull { record ->
+            (record.phase == CodeModePhase.LOST || record.phase == CodeModePhase.STARTING) &&
                 matches(record, digest, resultIds, excluded)
         }
     }
 
-    fun recordsFor(key: String): List<CodeModeRecord> = withKey(key) { records.filter { it.key == key } }
+    fun recordsFor(key: String): List<CodeModeRecord> = withKey(key) { CodeModeRecordKeys.of(records, key) }
 
     fun completed(key: String): List<CodeModeRecord> = withKey(key) {
-        records.filter { it.key == key && it.phase == CodeModePhase.COMPLETED }
+        CodeModeRecordKeys.of(records, key).filter { it.phase == CodeModePhase.COMPLETED }
             .filterNot { CodeModeNativeChain.retired(it) && !CodeModeNativeChain.rewritable(it) }
     }
 
@@ -52,10 +53,20 @@ internal class CodeModeRecordQueries(
     }
 
     fun resultOwners(key: String, ids: Set<String>): CodeModeResultOwners = withKey(key) {
-        val foreign = records.firstOrNull { record -> record.key != key && record.clientIds().any { it in ids } }
-        val known = records.filter { it.key == key }.flatMap(CodeModeRecord::clientIds).toSet()
-        val unknown = ids.filter { it.startsWith(CODE_MODE_CLIENT_ID_PREFIX) && it !in known }.toSet()
-        CodeModeResultOwners(foreign, unknown)
+        // why: this reads every conversation's records each turn. Asking a record whether it holds one of [ids]
+        // copies nothing, where building each record's id set allocated a map and two sets per record per turn.
+        val foreign = if (ids.isEmpty()) {
+            null
+        } else {
+            records.firstOrNull { record -> record.key != key && record.holdsAnyClientId(ids) }
+        }
+        val claimed = ids.filter { it.startsWith(CODE_MODE_CLIENT_ID_PREFIX) }
+        val known = if (claimed.isEmpty()) {
+            emptySet()
+        } else {
+            CodeModeRecordKeys.of(records, key).flatMapTo(HashSet(), CodeModeRecord::clientIds)
+        }
+        CodeModeResultOwners(foreign, claimed.filterTo(LinkedHashSet()) { it !in known })
     }
 
     private inline fun <T> withKey(key: String, block: () -> T): T = access.withKey(key) {
@@ -70,5 +81,5 @@ internal class CodeModeRecordQueries(
         ids: Set<String>,
         excluded: Set<String>,
     ): Boolean = record.id !in excluded &&
-        (record.progress.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
+        (record.progress.lastDigest == digest || (ids.isNotEmpty() && record.holdsAnyClientId(ids)))
 }

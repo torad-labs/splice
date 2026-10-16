@@ -18,6 +18,7 @@ import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
@@ -135,14 +136,16 @@ internal class CodexCodeModeSweeper(
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
     private fun expireMarkers(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
-        return history.entries.removeAll { (key == null || it.key == key) && it.expiredAt < cutoff }
+        // why: every query runs this; the age test goes first because almost no marker is old enough, and it costs
+        // a long comparison where the key test costs a string comparison per marker.
+        return history.entries.removeAll { it.expiredAt < cutoff && (key == null || it.key == key) }
     }
 
     private fun expireRecords(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
         // A query prepares its own conversation; do not group and inspect every other session
         // while holding the shared registry lock. The timer supplies each other key separately.
-        val candidates = if (key == null) records else records.filter { it.key == key }
+        val candidates = if (key == null) records else CodeModeRecordKeys.of(records, key)
         val lastUse = candidates.groupBy(CodeModeRecord::key)
             .mapValues { (_, kept) -> kept.maxOf { it.progress.updatedAt } }
         val protected = candidates.filter(retainedCells::running).map(CodeModeRecord::key).toSet()
@@ -195,7 +198,8 @@ internal class CodeModeRecordRetention(
      *  the turn: its newest finished record takes the turn's time. The turn writes nothing for it, because a
      *  large conversation's full save can refuse the turn; the head's stop saves it with every conversation. */
     private fun used(records: List<CodeModeRecord>, key: String, now: Long) {
-        records.filter { it.key == key && it.terminal() }.maxByOrNull { it.progress.updatedAt }?.let { newest ->
+        val finished = CodeModeRecordKeys.of(records, key).filter(CodeModeRecord::terminal)
+        finished.maxByOrNull { it.progress.updatedAt }?.let { newest ->
             newest.progress.updatedAt = maxOf(newest.progress.updatedAt, now)
         }
     }
@@ -206,7 +210,7 @@ internal class CodeModeRecordRetention(
         key: String,
         now: Long,
     ): Boolean {
-        val own = records.filter { it.key == key }
+        val own = CodeModeRecordKeys.of(records, key)
         if (own.isEmpty() || !own.all(CodeModeRecord::terminal)) return false
         val why = when {
             own.any { it.sessionId?.let(sessionAlive::invoke) == true } -> null
@@ -259,7 +263,7 @@ internal class CodeModeRecordRetention(
     private fun exceedsHeadCount(count: Int): Boolean = bounds.records?.let { count > it } == true
 
     private fun overOwnBound(records: List<CodeModeRecord>, key: String): Boolean {
-        val own = records.filter { it.key == key }
+        val own = CodeModeRecordKeys.of(records, key)
         val countFull = bounds.perConversation?.let { own.size > it } == true
         return countFull || own.sumOf(::bytesOf) > bounds.bytes
     }
@@ -288,7 +292,7 @@ internal class CodeModeRecordRetention(
 
         /** Every finished record of conversation [key], together. The bytes freed, or null when it has none. */
         fun finished(key: String, why: String): Long? {
-            val going = records.filter { it.key == key && it.terminal() }
+            val going = CodeModeRecordKeys.of(records, key).filter(CodeModeRecord::terminal)
             if (going.isEmpty()) return null
             records.removeAll(going.toSet())
             going.forEach { expired.remember(it, now) }

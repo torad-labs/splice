@@ -6,12 +6,22 @@ import splice.provider.codex.CodeModeAcceptedResult
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeResultSnapshot
 import splice.upstream.codemode.CodeModeResult
+import java.util.Collections
 
 /** Acceptance order is durable sequence order. A result and its media never disagree on keys. */
 internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = emptyMap()) {
     private val entries: MutableMap<String, CodeModeAcceptedResult> = LinkedHashMap(entries)
 
     val results: Map<String, CodeModeResult> get() = entries.mapValues { (_, entry) -> entry.result }
+
+    /** The accepted ids in acceptance order, as a read-only view: read it now, never keep it. */
+    fun ids(): Set<String> = Collections.unmodifiableSet(entries.keys)
+
+    fun holds(id: String): Boolean = id in entries
+
+    /** Whether any of [ids] was accepted, walking the smaller side so neither a long turn nor a long record copies. */
+    fun holdsAny(ids: Set<String>): Boolean =
+        if (ids.size < entries.size) ids.any { it in entries } else entries.keys.any { it in ids }
 
     /** Null means legacy uncaptured media; empty means captured with no media. */
     fun media(id: String): List<JsonElement>? = entries[id]?.media

@@ -1,6 +1,7 @@
 package splice.provider.codex.state.collection
 
 import splice.provider.codex.CodeModeRecord
+import java.util.Collections
 import java.util.IdentityHashMap
 import java.util.RandomAccess
 
@@ -13,6 +14,11 @@ internal class CodeModeRecordList(records: Collection<CodeModeRecord>) :
     private val ordered = records.toMutableList()
     private val owners = IdentityHashMap<CodeModeRecord, Int>()
 
+    // why: every query, sweep and turn start reads one conversation's records, and a busy head holds thousands
+    // across all of them. Filtering the whole list per call was 38% of the daemon's CPU on Oct 15. The grouping
+    // is rebuilt once after a membership change, under the same head-wide lock every reader of this list holds.
+    private var byKey: Map<String, List<CodeModeRecord>>? = null
+
     init {
         ordered.forEach(::retain)
     }
@@ -24,9 +30,19 @@ internal class CodeModeRecordList(records: Collection<CodeModeRecord>) :
     override fun contains(element: CodeModeRecord): Boolean =
         owners.containsKey(element) || ordered.contains(element)
 
+    /** Conversation [key]'s records in list order, as `filter { it.key == key }` reads them. A record's key never
+     *  changes, so only adding, replacing or removing a record moves this view. */
+    fun ofKey(key: String): List<CodeModeRecord> {
+        val index = byKey ?: ordered.groupBy(CodeModeRecord::key)
+            .mapValues { (_, kept) -> Collections.unmodifiableList(kept) }
+            .also { byKey = it }
+        return index[key].orEmpty()
+    }
+
     override fun add(index: Int, element: CodeModeRecord) {
         ordered.add(index, element)
         retain(element)
+        byKey = null
         modCount++
     }
 
@@ -34,12 +50,14 @@ internal class CodeModeRecordList(records: Collection<CodeModeRecord>) :
         val previous = ordered.set(index, element)
         release(previous)
         retain(element)
+        byKey = null
         return previous
     }
 
     override fun removeAt(index: Int): CodeModeRecord {
         val previous = ordered.removeAt(index)
         release(previous)
+        byKey = null
         modCount++
         return previous
     }
@@ -48,6 +66,7 @@ internal class CodeModeRecordList(records: Collection<CodeModeRecord>) :
         if (ordered.isEmpty()) return
         ordered.clear()
         owners.clear()
+        byKey = null
         modCount++
     }
 
@@ -61,6 +80,7 @@ internal class CodeModeRecordList(records: Collection<CodeModeRecord>) :
         if (changed) {
             owners.clear()
             ordered.forEach(::retain)
+            byKey = null
             modCount++
         }
         return changed
@@ -74,4 +94,11 @@ internal class CodeModeRecordList(records: Collection<CodeModeRecord>) :
         val count = checkNotNull(owners[record])
         if (count == 1) owners.remove(record) else owners[record] = count - 1
     }
+}
+
+/** One conversation's records, in list order, from any record list the registry hands its parts. The registry's
+ *  own list answers from its index; a working copy, such as an admission's candidate list, is filtered. */
+internal object CodeModeRecordKeys {
+    fun of(records: List<CodeModeRecord>, key: String): List<CodeModeRecord> =
+        (records as? CodeModeRecordList)?.ofKey(key) ?: records.filter { it.key == key }
 }

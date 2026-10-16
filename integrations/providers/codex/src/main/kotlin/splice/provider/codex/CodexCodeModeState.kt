@@ -61,10 +61,20 @@ internal data class CodeModeRecord(
     val heapSnapshots: MutableList<WeakReference<CodeModeRecordSnapshot>> = mutableListOf()
 
     fun visiblePending(): List<CodeModePending> = progress.pending.filter { pending ->
-        pending.exposed && pending.clientId !in results
+        pending.exposed && !accepted.holds(pending.clientId)
     }
 
-    fun clientIds(): Set<String> = (results.keys + progress.pending.map(CodeModePending::clientId)).toSet()
+    fun clientIds(): Set<String> = buildSet {
+        addAll(accepted.ids())
+        progress.pending.forEach { add(it.clientId) }
+    }
+
+    /** Whether [id] is one of [clientIds], without building them. */
+    fun holdsClientId(id: String): Boolean = accepted.holds(id) || progress.pending.any { it.clientId == id }
+
+    /** Whether any of [ids] is one of [clientIds], without building them. */
+    fun holdsAnyClientId(ids: Set<String>): Boolean =
+        accepted.holdsAny(ids) || progress.pending.any { it.clientId in ids }
 
     fun terminal(): Boolean = phase == CodeModePhase.COMPLETED || error != null
 

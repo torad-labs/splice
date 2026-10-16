@@ -5,6 +5,7 @@ import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.state.collection.CodeModeRecordKeys
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import kotlin.concurrent.withLock
@@ -64,7 +65,9 @@ internal class CodeModeCellRetention(
     }.map { it.second }
 
     fun evict(key: String): CodeModeRecord? {
-        val victim = capacityCandidates().firstOrNull { it.key == key } ?: return null
+        val victim = ranked(key, PRESSURE_IDLE_MS).firstOrNull { (priority, record) ->
+            priority < 2 && record.id in cells
+        }?.second ?: return null
         val priority = rank(victim, PRESSURE_IDLE_MS)?.takeIf { it < 2 } ?: return null
         val reason = pressureReasons[priority]
         park(victim, "$reason to admit a newer script")
@@ -75,8 +78,8 @@ internal class CodeModeCellRetention(
         record.cellBorrowers > 0 || (record.id in cells && record.cellIdleSince == null)
 
     fun supersede(key: String, digest: String, continued: Set<String>): Boolean {
-        val stale = records.filter {
-            it.key == key && it.phase == CodeModePhase.ACTIVE && it.id in cells && !running(it) &&
+        val stale = CodeModeRecordKeys.of(records, key).filter {
+            it.phase == CodeModePhase.ACTIVE && it.id in cells && !running(it) &&
                 it.progress.lastDigest != digest && it.id !in continued
         }
         stale.forEach {
@@ -99,9 +102,10 @@ internal class CodeModeCellRetention(
         )
     }
 
-    private fun ranked(key: String?, bound: Long): List<Pair<Int, CodeModeRecord>> = records.mapNotNull { record ->
-        if (key == null || record.key == key) rank(record, bound)?.let { it to record } else null
-    }.sortedWith(compareBy({ it.first }, { it.second.cellIdleSince ?: Long.MIN_VALUE }))
+    private fun ranked(key: String?, bound: Long): List<Pair<Int, CodeModeRecord>> =
+        (if (key == null) records else CodeModeRecordKeys.of(records, key)).mapNotNull { record ->
+            rank(record, bound)?.let { it to record }
+        }.sortedWith(compareBy({ it.first }, { it.second.cellIdleSince ?: Long.MIN_VALUE }))
 
     private fun rank(record: CodeModeRecord, bound: Long): Int? {
         if (record.phase != CodeModePhase.ACTIVE || running(record)) return null
@@ -138,7 +142,7 @@ internal class CodeModeCellRetention(
     )
 
     fun closeEmpty(key: String) {
-        if (records.none { it.key == key }) closeSession(key)
+        if (CodeModeRecordKeys.of(records, key).isEmpty()) closeSession(key)
     }
 
     /** A park is not a use: keep the record's last-use timestamp and all no-rerun callback evidence. */
@@ -151,7 +155,8 @@ internal class CodeModeCellRetention(
         record.sourceEnd = null
         cells.remove(record.id)?.close()
         record.cellIdleSince = null
-        if (records.none { it.key == record.key && it.phase == CodeModePhase.ACTIVE }) closeSession(record.key)
+        val live = CodeModeRecordKeys.of(records, record.key).any { it.phase == CodeModePhase.ACTIVE }
+        if (!live) closeSession(record.key)
         config.log(
             "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.origin.outerCallId}): $message",
         )

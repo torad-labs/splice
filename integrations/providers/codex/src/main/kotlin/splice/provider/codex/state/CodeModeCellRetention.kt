@@ -11,15 +11,14 @@ import splice.upstream.codemode.CodeModeCell
 import kotlin.concurrent.withLock
 import kotlin.time.Duration.Companion.minutes
 
-private val CELL_IDLE_MS = 30.minutes.inWholeMilliseconds
-
-// why: a full pool is the one moment an idle parked cell costs somebody a script. A cell of a session the registry
-// does not vouch for (a subagent or a headless client never registers, and an ended session's file is gone, so both
-// read as unknown) has not been resumed for this long when its client is almost surely gone; waiting the whole
-// lifetime above left 50 of 53 engines parked and idle on Oct 15 while every new exec was refused (executing=1 of
-// retained=53). Only pressure uses this bound; the timed sweep keeps the lifetime, and a session the registry
-// vouches for is never reclaimed.
-private val PRESSURE_IDLE_MS = 5.minutes.inWholeMilliseconds
+// why: a parked cell holds its engine, and one held engine keeps its whole host JVM (400-600 MB resident). A cell of a
+// session the registry does not vouch for (a subagent or a headless client never registers, and an ended session's
+// file is gone, so both read as unknown) has not been resumed for this long when its client is almost surely gone.
+// Codex frees a cell when its owner ends; splice cannot see these owners end, so this bound stands in for it. At 30
+// minutes, 14 hosts held 5.5 GB on Oct 15 with almost nothing executing, and the pool's own idle exit never ran
+// because no host ever emptied. Pressure and the timed sweep share the bound; a session the registry vouches for is
+// never reclaimed, and an executing or borrowed cell never is.
+private val CELL_IDLE_MS = 5.minutes.inWholeMilliseconds
 
 /** Runs under the registry monitor. Persistence remains the registry's conversation-key transaction. */
 internal class CodeModeCellRetention(
@@ -59,16 +58,16 @@ internal class CodeModeCellRetention(
     }
 
     /** Pressure cannot revoke a live continuation, including one waiting for client tool results. It reclaims a cell
-     *  its session no longer vouches for once it has sat idle for [PRESSURE_IDLE_MS], oldest first. */
-    fun capacityCandidates(): List<CodeModeRecord> = ranked(null, PRESSURE_IDLE_MS).filter { (priority, record) ->
+     *  its session no longer vouches for once it has sat idle for [CELL_IDLE_MS], oldest first. */
+    fun capacityCandidates(): List<CodeModeRecord> = ranked(null, CELL_IDLE_MS).filter { (priority, record) ->
         priority < 2 && record.id in cells
     }.map { it.second }
 
     fun evict(key: String): CodeModeRecord? {
-        val victim = ranked(key, PRESSURE_IDLE_MS).firstOrNull { (priority, record) ->
+        val victim = ranked(key, CELL_IDLE_MS).firstOrNull { (priority, record) ->
             priority < 2 && record.id in cells
         }?.second ?: return null
-        val priority = rank(victim, PRESSURE_IDLE_MS)?.takeIf { it < 2 } ?: return null
+        val priority = rank(victim, CELL_IDLE_MS)?.takeIf { it < 2 } ?: return null
         val reason = pressureReasons[priority]
         park(victim, "$reason to admit a newer script")
         return victim
@@ -98,7 +97,7 @@ internal class CodeModeCellRetention(
             "[code-mode] pool refusal: retained=${retained.size} " +
                 "dead=${liveness.count { it == false }} unknown=${liveness.count { it == null }} " +
                 "alive=${liveness.count { it == true }} executing=${retained.count(::running)} " +
-                "oldestIdleMs=$age idleBoundMs=$CELL_IDLE_MS pressureBoundMs=$PRESSURE_IDLE_MS",
+                "oldestIdleMs=$age idleBoundMs=$CELL_IDLE_MS",
         )
     }
 

@@ -16,6 +16,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val WORKER_MAIN_CLASS: String = "splice.codemode.CodeModeWorker"
 
+// why: without an initial heap the JVM takes 1/64 of the machine's memory up to -Xmx, so every host committed its
+// whole 256 MiB at boot and its young generation filled with relay garbage: 166 MiB of each host's 400 MiB on Oct 15
+// was its own heap, about 9 MiB of it live. A small start grows on demand up to -Xmx; the maximum, which sizes the
+// guest heap, is unchanged. It never exceeds the maximum, which the JVM refuses.
+private const val WORKER_INITIAL_HEAP_MB: Int = 16
+
+// why: G1 explicitly, so the maximum heap the guest heap is sized from never shifts with collector ergonomics; and a
+// periodic collection on an idle host gives the memory a burst used back to the system instead of holding it.
+private const val WORKER_COLLECTOR: String = "-XX:+UseG1GC"
+private const val WORKER_IDLE_COLLECTION: String = "-XX:G1PeriodicGCInterval=30000"
+
 internal class CodeModeHostLauncher(
     private val options: HostLaunch,
     private val scope: LifecycleScope,
@@ -29,7 +40,10 @@ internal class CodeModeHostLauncher(
         val host = runInterruptible {
             val builder = ProcessBuilder(
                 options.javaExecutable,
+                "-Xms${minOf(WORKER_INITIAL_HEAP_MB, options.heapMb)}m",
                 "-Xmx${options.heapMb}m",
+                WORKER_COLLECTOR,
+                WORKER_IDLE_COLLECTION,
                 "-cp",
                 pinnedWorkerClasspath,
                 WORKER_MAIN_CLASS,

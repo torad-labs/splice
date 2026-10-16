@@ -33,11 +33,15 @@ internal class CodeModePoolAdmission(
     /** Called under the placement lock; retiring engines retain their reservation until acknowledged closed. */
     fun select(hosts: MutableList<CodeModePoolHost>): CodeModePoolHost? {
         val engines = hosts.sumOf(CodeModePoolHost::load)
-        val least = hosts.filterNot { it.draining }.minByOrNull(CodeModePoolHost::load)
+        // why: the fullest host with a free slot, not the emptiest. Least-loaded placement sent each new session to the
+        // host that was about to empty, so on Oct 15 no host ever sat empty long enough to exit and 14 JVMs stayed up.
+        // Packing lets the emptiest host drain and close its JVM after the pool's idle time.
+        val open = hosts.filter { !it.draining && it.load() < CodeModeHeap.maxEnginesPerHost }
+            .maxByOrNull(CodeModePoolHost::load)
         // Host heaps are reserved as well as guest heaps. Fill isolated engine slots before
         // adding host overhead, otherwise a large worker limit strands most of the budget.
-        if (least != null && least.load() < CodeModeHeap.maxEnginesPerHost) {
-            return least.takeIf { fits(hosts.size, engines + 1) }
+        if (open != null) {
+            return open.takeIf { fits(hosts.size, engines + 1) }
         }
         return if (hosts.size < maxWorkers && fits(hosts.size + 1, engines + 1)) {
             CodeModePoolHost().also(hosts::add)

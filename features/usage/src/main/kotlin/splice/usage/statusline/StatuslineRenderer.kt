@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
@@ -68,13 +69,8 @@ internal class StatuslineRenderer(
         windowLearner.learn(root)
         val snapshot = usage?.snapshot()
         val pool = accountPool?.view(sessionId)
-        val account = pool?.selectedAccount()
         val selectedQuota = pool?.selectedQuota()
         val shownQuota = if (pool == null) snapshot?.quota else pool.quotaOr(snapshot?.quota)
-        val switchReason = pool?.lastSwitch?.takeIf { it.to == account?.label }?.reason
-        val accountText = account?.let { selected ->
-            switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
-        }
         val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
         // One read of the clock per tick: the spend segment's session start and the limit and warn judgments
         // all hang off this instant, so which segment is built first cannot change what any of them sees.
@@ -82,7 +78,7 @@ internal class StatuslineRenderer(
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(nowMs)
         val segments = listOfNotNull(
             modelSegment(root),
-            accountText,
+            accountSegment(pool),
             spend.segment(bars, root, sessionId, modelId, blob.sessionStartMs(root, nowMs)),
         ) +
             bars.limitSegments(root, shownQuota, selectedQuota != null, nowSeconds) +
@@ -101,6 +97,14 @@ internal class StatuslineRenderer(
         val name = row.label(id) ?: blob.str(model["display_name"]) ?: id ?: return null
         val effort = bars.effort(root)?.let { "${dim("·")}$it" }.orEmpty()
         return "$BOLD$CYAN●$RESET $BOLD$name$RESET$effort"
+    }
+
+    /** The login this session runs on, named only where the head holds more than one: a lone login tells the line
+     *  nothing. The switch reason stays on Accounts, `splice status` and doctor (Marcos, Oct 15: "messages like
+     *  that aren't very helpful"), and the machine prefix `native:` never reaches the line. */
+    private fun accountSegment(pool: HeadAccountPoolView?): String? {
+        val multi = pool?.takeIf { it.accounts.size > 1 } ?: return null
+        return multi.selectedAccount()?.label?.removePrefix(NATIVE_LOGIN_PREFIX)
     }
 
     private fun contextSegment(root: JsonObject, unanswered: Boolean): String? {
@@ -225,6 +229,9 @@ private const val CTX_WARN_PCT = 60
 private const val CACHE_GOOD_PCT = 70
 private const val CACHE_OK_PCT = 40
 private const val K = 1000
+
+// why: the pool labels a Claude login it found on disk `native:<place>`; the prefix is splice's own bookkeeping.
+private const val NATIVE_LOGIN_PREFIX = "native:"
 
 // why: the payload's model object, read by name in three places here, so a renamed field is one edit.
 private const val MODEL_FIELD = "model"

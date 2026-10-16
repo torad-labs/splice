@@ -53,7 +53,7 @@
   its role and team goal, with the lead's address once that slot is bound, and the teams API reports recorded message
   requests, sampled activity, estimated cost and plan-window use per role slot. A session started in a team's repo on
   a member's command can join that member by rule, and the board reads by command, by role or as a timeline.
-- **Every usage-cost dollar figure is an API-rate estimate.** The status line reads `API est. $0.85`, a
+- **Every usage-cost dollar figure is an API-rate estimate.** The status line shows the bare figure, `$0.85`, with no label, a
   budget's warning says "an estimated $2.50 in API cost", and a subscription head bills no token at
   all.
 
@@ -148,7 +148,7 @@ origin.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any
   other service. It does not mean Anthropic is billing you: each head uses the plan, key or GPU you
-  set it up with, and splice's status line shows an estimate at API rates, labelled `API est.`,
+  set it up with, and splice's status line shows an estimate at API rates, never a charge,
   where splice has a rate card for the model. On `claude-splice` signed in with a Claude subscription,
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
@@ -544,8 +544,8 @@ origin.
   with one diagnostic naming it instead of taking the whole head down; a credential that declares
   the wrong kind or label is still refused. Per-session account stickiness is kept for at most
   4096 sessions, least recently used first out.
-  The status line names the session's account and why it switched. `splice status` and
-  `splice doctor` show the head's accounts and its last automatic switch. Doctor names the login
+  When the head holds more than one login, the status line names the one the session runs on.
+  `splice status` and `splice doctor` show the head's accounts and its last automatic switch. Doctor names the login
   carrying requests and reports the newest retained refusal under its owning head or account.
   Labeled credential files are read without following symlinks (a linked file is never loaded and is listed as refused with a reason in
   `/api/accounts`; its label stays taken, so a new sign-in never reuses it), matching how they are written; the primary file is resolved as before.
@@ -1027,7 +1027,7 @@ origin.
   is at least 425,000 tokens, unless Claude Code already knows that row, and scales the token counts it reports so Claude Code still compacts
   at the model's real window. Smaller models keep their names.
 - **Usage-cost figures are API-rate estimates, and the default ChatGPT, Grok, Muse and Claude models have rate cards.** The status line printed a bare `$0.85`, and on a subscription head no token is billed at
-  all, so it read as a charge. It now reads `API est. $0.85`, and a budget's refusal and warning say
+  all, so it read as a charge. It now reads `$0.85` (a label first, `API est.`, then dropped from the line on Oct 15 to keep it short), and a budget's refusal and warning say
   "an estimated $2.50 in API cost". Claude Code prices its own `total_cost_usd` at Anthropic's card
   whatever head it talks to, so that figure now shows only on a head whose upstream is Anthropic; on
   any other head a model splice cannot price shows `no rate card`, where it used to show Anthropic's

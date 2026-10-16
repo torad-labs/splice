@@ -1,10 +1,10 @@
 // NEW: V4-240, the behavioral half of kt-dollar-figure-single-source. Every surface that wall's census
 // found printing a dollar figure (the status line's cost segment, the budget refusal, the budget
-// warning) is driven here, and each figure must say what it is based on: an API-rate estimate
-// ("API est. $0.85", "an estimated $0.85 in API cost"), or the operator's own budget ("$2.00 daily
-// budget"). Anything else is a bare figure, which reads as a charge. And a figure Claude Code priced
-// itself never renders under another vendor's model: that was the $0.85 a resumed Opus session left
-// on the GPT-6-Sol line in rehearsal-resume-2.
+// warning) is driven here. The budget refusal and warning must say what their figure is based on: an API-rate
+// estimate ("an estimated $0.85 in API cost") or the operator's own budget ("$2.00 daily budget"). The status
+// line's short form carries no label since Oct 15, 2026 (Marcos: "the value is useful but we dont need the
+// label"). And a figure Claude Code priced itself never renders under another vendor's model: that was the
+// $0.85 a resumed Opus session left on the GPT-6-Sol line in rehearsal-resume-2.
 package splice.usage
 
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -30,19 +30,17 @@ class DollarFigureBasisTest {
     /** Strips every figure that carries its basis; any dollar figure left over is bare. */
     private fun assertEveryFigureHasItsBasis(text: String) {
         val rest = text.replace(ansi, "")
-            .replace(Regex("""API est\. ≥?\$\d+\.\d{2}"""), "")
             .replace(Regex("""an estimated \$\d+\.\d{2} in API cost"""), "")
             .replace(Regex("""\$\d+\.\d{2} daily budget"""), "")
         assertFalse(Regex("""\$\s*\d""").containsMatchIn(rest), "a bare dollar figure in: $text")
     }
 
     @Test
-    fun `splice's own figure on the status line says it is an API-rate estimate`() {
+    fun `splice's own figure renders on the status line`() {
         val renderer = StatuslineRenderer(label = "codex", spend = StatuslineSpend(SessionCostSource { _, _ -> 0.85 }))
         val text = line(renderer, """{"model":{"id":"gpt-6-sol"},"cost":{"total_cost_usd":3.1}}""")
 
         assertTrue(Regex("""\$\d""").containsMatchIn(text), "the figure itself still renders: $text")
-        assertEveryFigureHasItsBasis(text)
     }
 
     @Test

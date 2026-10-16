@@ -184,7 +184,7 @@ model_slots = { opus = "vendor/model-a", sonnet = "vendor/model-b" }
 
 Use your existing head key and fields in place of the example. Slot names are opus, sonnet, haiku and fable, with one model per slot and one slot per model. Do not combine `model_slots` with slots inside `models`. An unslotted `models` allowlist can have a separate tier map, but its tier ids must be allowed. A mapped model the endpoint does not list stays unmapped, with a boot-log explanation, rather than selecting another model. Restart after changing tier mappings.
 
-Each of the ten rows carries the rate card read on September 29, 2026, and keeps it until you edit the row. A model the daemon discovers with no row is priced from the card OpenRouter lists for it, read when the daemon starts and every hour after. Either way its turns read `API est.` on the status line and count against a budget. A model OpenRouter lists no price for reads `no rate card`. A `rates = { input = …, cache_read = …, output = … }` line on the row wins over the listed price.
+Each of the ten rows carries the rate card read on September 29, 2026, and keeps it until you edit the row. A model the daemon discovers with no row is priced from the card OpenRouter lists for it, read when the daemon starts and every hour after. Either way its turns show a dollar figure on the status line and count against a budget. A model OpenRouter lists no price for reads `no rate card`. A `rates = { input = …, cache_read = …, output = … }` line on the row wins over the listed price.
 
 No export handy? There are two other ways to get the key in. Both land in
 `~/.config/splice/keys.toml` (0600), which the daemon reads on every request, so a saved key needs no restart:
@@ -211,7 +211,7 @@ If the daemon is already running, finish pending work before a full `splice rest
 
 ### The billing word in Claude Code's header
 
-Claude Code's header prints a billing word beside the model. On `claude-splice` signed in with a Claude subscription, it names that plan, for example `Claude Max`. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan, key or GPU you set it up with, and splice's status line shows an estimate at API rates, labelled `API est.`, where splice has a rate card for the model.
+Claude Code's header prints a billing word beside the model. On `claude-splice` signed in with a Claude subscription, it names that plan, for example `Claude Max`. On every other head it reads `API Usage Billing`: Claude Code only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any other service. It does not mean Anthropic is billing you. Each head uses the plan, key or GPU you set it up with, and splice's status line shows an estimate at API rates, never a charge, where splice has a rate card for the model.
 
 ## Manage your sessions
 
@@ -379,7 +379,7 @@ accounts when its quota is exhausted, its credential is rejected or a provider h
 unavailable; it does not return to the primary just because that account's window reset. When a login refuses a turn
 with a limit that waiting cannot clear, and no output has reached the client yet, that same turn moves to a free login. The first turn after a switch pays one cold prompt-cache read, and its perf row says
 so and names the account. When every account is out before a turn starts, the turn is refused
-and names the earliest reset across the pool. If every login runs out during a turn, it ends with the refused login's own limit message. The status line names the session's account and why it switched. `splice status` and `splice doctor`
+and names the earliest reset across the pool. If every login runs out during a turn, it ends with the refused login's own limit message. When the head holds more than one login, the status line names the one the session runs on. `splice status` and `splice doctor`
 show the head's accounts and its last switch, a pinned one included, with its reason; the daemon log
 records each switch once under `[<head>]`.
 

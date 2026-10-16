@@ -490,7 +490,7 @@ class SessionCostTest {
             StatuslineWarn(0, 0),
             sessionId = sessionId,
         ).replace(ansi, "")
-        assertTrue("API est. ≥$0.53" in line, line)
+        assertTrue("≥$0.53" in line, line)
         assertFalse("⚠" in line, "no row was dropped, so no count: $line")
     }
 
@@ -611,7 +611,7 @@ class SessionCostTest {
             StatuslineWarn(0, 0),
             sessionId = sessionId,
         ).replace(ansi, "")
-        assertTrue("API est. $5.25" in line, line)
+        assertTrue("$5.25" in line, line)
         assertFalse("≥" in line, "the whole session is counted: $line")
     }
 }

@@ -327,7 +327,7 @@ tmux command line is quoted from `walks/console-shell/MANAGER-BRIEF.md` (unverif
 | Plan windows | The provider's own used percent for "5 hours" and "Week" ("Month" for Grok) with "Resets <time>" |
 | Limits not reported by provider | API-key heads report no windows; never zero, never unlimited |
 
-- Claude Code's status line calls an estimate `API est.` (and `no rate card`); the console says "at API prices" and "≈". The status line marks a
+- Claude Code's status line draws an estimate as a bare figure such as `$0.85` (and says `no rate card` where there is none); the console says "at API prices" and "≈". The status line marks a
   plan reading with `⚠` at `usageWarnPct` (default 80; 0 turns the early mark off; 98% or more is always marked); it never blocks a request.
 - "No project" holds requests whose session folder is in no project. Compare sends sit in their own group "Compare models", never under "No project".
 - Usage: "Plans" and "Keys" cards, a chart of "Tokens" or "Cost" over "5 hours" or "7 days" (default 7 days), a "Breakdown" by Accounts, Projects,

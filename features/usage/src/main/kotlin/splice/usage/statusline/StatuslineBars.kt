@@ -31,11 +31,11 @@ internal class StatuslineBars(private val zone: ZoneId = ZoneId.systemDefault())
      *  turn by turn at each turn's model, from the session's start, so it shows whenever the blob
      *  carries one and splice's shows only when it does not (V4-240 review, finding 4a).
      *
-     *  V4-240: every figure carries its basis, `API est.` (ApiCostText), because none of them is a
-     *  charge. And the client's own figure is shown only where [fallback] says the head's upstream IS
-     *  Anthropic: on any other head it is an Anthropic price under another vendor's model (the $0.85
-     *  a resumed Opus session left under GPT-6-Sol in rehearsal-resume-2), so a model with no card
-     *  there says so in words. A rated model with nothing spent yet shows nothing, as before.
+     *  V4-240: none of the figures is a charge, and since Oct 15 the status line draws them without the
+     *  `API est.` label (ApiCostText): the line was too long. And the client's own figure is shown only
+     *  where [fallback] says the head's upstream IS Anthropic: on any other head it is an Anthropic price
+     *  under another vendor's model (the $0.85 a resumed Opus session left under GPT-6-Sol in
+     *  rehearsal-resume-2), so a model with no card there says so in words. A rated model with nothing spent yet shows nothing, as before.
      *
      *  [droppedRows] is V4-45's last hop to a human. The cost reader SKIPS a perf row it cannot
      *  parse — a torn append leaves a length-extended run of NULs — so the figure above is summed

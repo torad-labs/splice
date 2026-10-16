@@ -1,5 +1,5 @@
-// A claude-openrouter turn reads "API est." on the status line at the price the shipped catalog (or OpenRouter's own
-// listing, or a rates line on the row) gives its model; a model with no price reads "no rate card".
+// A claude-openrouter turn shows a dollar figure on the status line at the price the shipped catalog (or
+// OpenRouter's own listing, or a rates line on the row) gives its model; a model with no price reads "no rate card".
 //
 // The config is what the real `splice add openrouter` writes under a hermetic home, pointed at a fake OpenRouter;
 // a real daemon boots from it, one turn goes through the head, and the status line is asked the way Claude Code asks.
@@ -48,19 +48,19 @@ class OpenRouterStatuslineCostTest {
     private val transcript = mutableListOf<String>()
 
     @Test
-    fun `a turn on a default model reads API est on the status line at the shipped card`(@TempDir tmp: Path) {
+    fun `a turn on a default model shows its figure on the status line at the shipped card`(@TempDir tmp: Path) {
         val line = statusLineAfterTurn(tmp)
         // 800,000 fresh input at $2, 200,000 cached at $0.20, 100,000 out at $10 per million: Sonnet 5's card.
-        assertTrue("API est. $2.64" in line, line)
+        assertTrue("$2.64" in line, line)
         assertFalse("no rate card" in line, line)
         assertFalse("9.99" in line, "the client's own Anthropic-priced figure must not stand in: $line")
     }
 
     @Test
-    fun `a row added by id outside the ten reads API est at the price OpenRouter lists`(@TempDir tmp: Path) {
+    fun `a row added by id outside the ten shows its figure at the price OpenRouter lists`(@TempDir tmp: Path) {
         val line = statusLineAfterTurn(tmp, model = ADDED, edit = ::listing)
         // The same 800,000 / 200,000 / 100,000 tokens at the listed $2 / $0.20 / $10 per million.
-        assertTrue("API est. $2.64" in line, line)
+        assertTrue("$2.64" in line, line)
         assertFalse("no rate card" in line, line)
     }
 
@@ -73,7 +73,7 @@ class OpenRouterStatuslineCostTest {
             expectFigure = false,
         )
         assertTrue("no rate card" in line, line)
-        assertFalse("API est." in line, line)
+        assertFalse('$' in line, line)
     }
 
     @Test
@@ -91,7 +91,7 @@ class OpenRouterStatuslineCostTest {
             edit = { config -> listing(config).trimEnd('\n') + "\n\n" + written + "\n" },
         )
         // 800,000 at $1, 200,000 at $0.10, 100,000 at $5 per million; the listing's $2.64 is not used.
-        assertTrue("API est. $1.32" in line, line)
+        assertTrue("$1.32" in line, line)
     }
 
     /** The fake endpoint is loopback, so local = false asks its model list as for the real provider.
@@ -200,7 +200,7 @@ class OpenRouterStatuslineCostTest {
         // The perf row lands just after the stream closes; a priced model reads nothing until it does.
         if (turn.awaitFigure) {
             val deadline = System.nanoTime() + SETTLE_NANOS
-            while ("API est." !in line && System.nanoTime() < deadline) {
+            while ('$' !in line && System.nanoTime() < deadline) {
                 delay(POLL_MS)
                 line = statusLine(client, key, controlPort, turn.model)
             }

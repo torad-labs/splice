@@ -137,7 +137,7 @@ class AccountSurfacesTest {
 
         assertEquals("session-7", seenSession)
         assertTrue(line.contains("backup"), line)
-        assertTrue(line.contains("5-hour quota exhausted"), line)
+        assertFalse(line.contains("5-hour quota exhausted"), "the switch reason stays off the line: $line")
         assertTrue(line.contains("87%"), line)
         assertFalse(line.contains(" 1%"), line)
     }

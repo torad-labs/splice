@@ -136,13 +136,13 @@ class StatuslineBarsTest {
         val rated = CostFallback(rated = true, clientPriced = false)
 
         val clean = bars.costSegment(root, computed = 12.5, droppedRows = 0L, fallback = rated)?.replace(ansi, "")
-        assertEquals("API est. $12.50", clean, "nothing dropped, nothing said beyond the figure's basis")
+        assertEquals("$12.50", clean, "nothing dropped, nothing said beyond the figure's basis")
 
         val short = bars.costSegment(root, computed = 12.5, droppedRows = 3L, fallback = rated)?.replace(ansi, "")
-        assertEquals("API est. ≥$12.50 ⚠3", short, "the true spend is AT LEAST this, and 3 rows were unreadable")
+        assertEquals("≥$12.50 ⚠3", short, "the true spend is AT LEAST this, and 3 rows were unreadable")
 
         val bound = bars.costSegment(root, computed = 12.5, fallback = rated, lowerBound = true)?.replace(ansi, "")
-        assertEquals("API est. ≥$12.50", bound, "a lower bound with nothing dropped carries the direction, no count")
+        assertEquals("≥$12.50", bound, "a lower bound with nothing dropped carries the direction, no count")
     }
 
     /** THE FALSE-ALARM GUARD, and it is not a technicality. When the head declares no rates the bar
@@ -154,7 +154,7 @@ class StatuslineBarsTest {
         val root = Json.parseToJsonElement("""{"cost":{"total_cost_usd":61.44}}""").jsonObject
         val fallback = StatuslineBars().costSegment(root, computed = null, droppedRows = 9L)
         assertEquals(
-            "API est. $61.44",
+            "$61.44",
             fallback?.replace(ansi, ""),
             "only OUR figure can be short, so only ours is qualified",
         )
@@ -172,10 +172,10 @@ class StatuslineBarsTest {
         fun seg(rated: Boolean, clientPriced: Boolean) =
             bars.costSegment(root, computed = null, fallback = CostFallback(rated, clientPriced))?.replace(ansi, "")
 
-        assertEquals("API est. $0.85", seg(rated = false, clientPriced = true), "an Anthropic head, no card")
+        assertEquals("$0.85", seg(rated = false, clientPriced = true), "an Anthropic head, no card")
         assertEquals("no rate card", seg(rated = false, clientPriced = false), "the rehearsal's GPT-6-Sol line")
         assertEquals(null, seg(rated = true, clientPriced = false), "a rated model with nothing spent yet")
-        assertEquals("API est. $0.85", seg(rated = true, clientPriced = true), "an Anthropic head with a card")
+        assertEquals("$0.85", seg(rated = true, clientPriced = true), "an Anthropic head with a card")
     }
 
     /** V4-240 review, finding 4a. On a head whose upstream IS Anthropic, Claude Code's own figure is
@@ -188,13 +188,13 @@ class StatuslineBarsTest {
         val anthropicWithCard = CostFallback(rated = true, clientPriced = true)
         val withBlob = Json.parseToJsonElement("""{"cost":{"total_cost_usd":3.69}}""").jsonObject
         assertEquals(
-            "API est. $3.69",
+            "$3.69",
             bars.costSegment(withBlob, computed = 1.25, fallback = anthropicWithCard)?.replace(ansi, ""),
             "Claude Code's cumulative, per-model figure is the right one on an Anthropic head",
         )
         val noBlob = Json.parseToJsonElement("""{"model":{"id":"claude-opus-5-5"}}""").jsonObject
         assertEquals(
-            "API est. $1.25",
+            "$1.25",
             bars.costSegment(noBlob, computed = 1.25, fallback = anthropicWithCard)?.replace(ansi, ""),
             "with no figure in the blob, splice's own stands in",
         )

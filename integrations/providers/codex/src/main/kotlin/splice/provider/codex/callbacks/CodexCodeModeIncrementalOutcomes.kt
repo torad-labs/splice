@@ -30,22 +30,21 @@ internal object CodexCodeModeIncrementalOutcomes {
         )
     }
 
-    fun validateAndSaveCalls(
-        registry: CodexCodeModeRegistry,
+    fun validateCalls(
         validation: CodexCodeModeValidation,
         request: CodeModeAdvanceRequest,
         step: CodeModeStep.Calls,
     ): String? {
-        val record = request.record
         val output = step.output
         if (output != null && !validation.fitsOutput(output)) return "code-mode output exceeds the size limit"
-        validation.calls(record, request.turn.tools, step.calls)?.let { return it }
-        if (output != null) {
-            registry.changes.save(record) { live ->
-                live.progress.output = output
-                live.progress.completionError = step.error
-            }
+        return validation.calls(request.record, request.turn.tools, step.calls)
+    }
+
+    fun saveOutput(registry: CodexCodeModeRegistry, record: CodeModeRecord, step: CodeModeStep.Calls) {
+        val output = step.output ?: return
+        registry.changes.save(record) { live ->
+            live.progress.output = output
+            live.progress.completionError = step.error
         }
-        return null
     }
 }

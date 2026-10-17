@@ -148,6 +148,8 @@ internal class JvmCodeModeCell(
     }
 
     private suspend fun nextInputPart(reply: WorkerReply): CodeModeSourcePart? = when {
+        // Issued calls, including those merged from earlier result frames, leave before more source is read.
+        reply.calls != null -> null
         reply.waitingForInput -> nextRequiredSourcePart()
         reply.waitingForResults -> nextAvailableSourcePart(reply)
         else -> null

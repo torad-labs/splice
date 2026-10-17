@@ -64,14 +64,11 @@ internal class CodexCodeModeCallIssuer(
         step: CodeModeStep.Calls,
     ): TurnOutcome {
         val calls = step.calls
-        CodexCodeModeIncrementalOutcomes.validateAndSaveCalls(
-            registry,
-            validation,
-            request,
-            step,
-        )?.let { return actions.poison.poison(request.record, it) }
+        CodexCodeModeIncrementalOutcomes.validateCalls(validation, request, step)
+            ?.let { return actions.poison.poison(request.record, it) }
         // The empty answer is a second oversized batch from the same script, which ends it (CodeModeOversizedCalls).
         oversized.refused(request.record, calls)?.let { refused ->
+            CodexCodeModeIncrementalOutcomes.saveOutput(registry, request.record, step)
             return if (refused.isEmpty()) {
                 actions.poison.poison(request.record, OVERSIZED_AGAIN)
             } else {
@@ -96,6 +93,8 @@ internal class CodexCodeModeCallIssuer(
             record.progress.pending += pending
             record.progress.updatedAt = config.clock.millis()
         }
+        // The worker already took this wave: a failed output save keeps it pending for a retry to re-emit.
+        CodexCodeModeIncrementalOutcomes.saveOutput(registry, request.record, step)
         // Existing pending calls may still be waiting on the client while this partial result made
         // a new dependent callback ready. Emit only this newly issued wave; replaying the whole
         // visible set would execute the siblings twice in the client.

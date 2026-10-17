@@ -459,9 +459,10 @@ class CodeModeJournalRecoveryTest {
         Files.delete(file)
         first.origin.source = "recovered source"
         store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
-        assertEquals(listOf(first.id, second.id), CodeModeStateJournal.read(file, codec).records.map { it.id })
-        assertEquals(listOf(marker), CodeModeStateJournal.read(file, codec).expired)
-        assertEquals(1, Files.readAllLines(file).size)
+        val recovered = CodeModeStateJournal.read(file, codec)
+        assertEquals(listOf(first.id, second.id), recovered.records.map { it.id })
+        assertEquals(listOf(first.progress.output, second.progress.output), recovered.records.map { it.output })
+        assertEquals(listOf(marker), recovered.expired)
     }
 
     @Test
@@ -493,10 +494,9 @@ class CodeModeJournalRecoveryTest {
         return store to file
     }
 
-    /** [file] is one small checkpoint holding both cells, with these outputs in order, and the marker. */
+    /** [file] is a small checkpoint holding both cells, with these outputs in order, and the marker. */
     private fun assertCompacted(file: Path, outputs: List<String?>) {
         assertTrue(Files.size(file) < MAX_COMPACTED_BYTES, "the journal stayed ${Files.size(file)} bytes")
-        assertEquals(1, Files.readAllLines(file).count(String::isNotBlank), "a compacted journal is one checkpoint")
         val state = CodeModeStateJournal.read(file, Json)
         assertEquals(listOf(first.id, second.id), state.records.map { it.id })
         assertEquals(outputs, state.records.map { it.output })

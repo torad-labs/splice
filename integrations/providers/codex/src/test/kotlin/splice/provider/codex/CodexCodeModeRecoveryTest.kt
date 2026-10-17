@@ -147,6 +147,8 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     fun `future journal fields load through the real bridge without dropping any record or file`() {
         val (file, records) = seedJournal()
         addFutureFields(file)
+        val compatible = CodeModeStateJournal.read(file, Json { ignoreUnknownKeys = true })
+        assertEquals(records.map { it.snapshot() }, compatible.records)
         val manager = bridge(scripted())
         try {
             assertTrue(Files.exists(file), "a newer writer's fields must never cause conversation deletion")
@@ -194,9 +196,15 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a journal missing a required record field remains invalid on the real bridge`() {
         val (file, _) = seedJournal()
-        val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        val records = root.getValue("records").jsonArray.map { JsonObject(it.jsonObject - "source") }
-        Files.writeString(file, JsonObject(root + ("records" to JsonArray(records))).toString() + "\n")
+        val entries = Files.readAllLines(file).map { line ->
+            val entry = Json.parseToJsonElement(line).jsonObject
+            val records = entry.getValue("records").jsonArray.map { JsonObject(it.jsonObject - "source") }
+            JsonObject(entry + ("records" to JsonArray(records))).toString()
+        }
+        Files.writeString(file, entries.joinToString(separator = "\n", postfix = "\n"))
+        assertThrows<kotlinx.serialization.MissingFieldException> {
+            CodeModeStateJournal.read(file, Json)
+        }
         val manager = bridge(scripted())
         try {
             assertTrue(retained(manager).isEmpty())
@@ -219,14 +227,17 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     }
 
     private fun addFutureFields(file: Path) {
-        val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
         val future = "future_field" to JsonPrimitive("synthetic newer-writer metadata")
-        val records = root.getValue("records").jsonArray.map { item ->
-            val record = item.jsonObject
-            val anchors = record.getValue("replayAnchors").jsonObject
-            JsonObject(record + future + ("replayAnchors" to JsonObject(anchors + future)))
+        val entries = Files.readAllLines(file).map { line ->
+            val entry = Json.parseToJsonElement(line).jsonObject
+            val records = entry.getValue("records").jsonArray.map { item ->
+                val record = item.jsonObject
+                val anchors = record.getValue("replayAnchors").jsonObject
+                JsonObject(record + future + ("replayAnchors" to JsonObject(anchors + future)))
+            }
+            JsonObject(entry + future + ("records" to JsonArray(records))).toString()
         }
-        Files.writeString(file, JsonObject(root + future + ("records" to JsonArray(records))).toString() + "\n")
+        Files.writeString(file, entries.joinToString(separator = "\n", postfix = "\n"))
     }
 
     private fun retained(manager: CodexCodeModeBridge): List<CodeModeRecord> {

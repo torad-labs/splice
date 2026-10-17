@@ -425,7 +425,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt" to mapOf(
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 1,
-        "writeAtomic0600(" to 4,
+        "writeAtomic0600(" to 3,
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLoginFiles.kt" to mapOf("writeAtomic0600(" to 5),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt" to mapOf("writeAtomic0600(" to 2),

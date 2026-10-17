@@ -7,33 +7,21 @@ import splice.launch.LaunchSpec
 internal object LaunchAliasSlots {
     // opus/sonnet/haiku/fable → Claude Code's tier env slots.
     //
-    // A head that DECLARES slots gets EXACTLY its declared tiers and nothing else (2026-08-30):
-    // the positional scheme maps four slots onto catalog order, so a roster without sol/terra/luna
-    // names lands two models in four slots — the picker then shows the same names repeatedly, and
-    // the catalog's ORDER becomes load-bearing (splice.toml still carries a banner saying so).
-    // Filling the UNDECLARED tiers positionally just re-created the duplication on any roster
-    // smaller than four (a 2-model head still planted one model in 3 slots — codex redo verdict),
-    // so declaring anything retires positional order outright: a tier the head does not declare is
-    // not emitted, never pointed at an already-claimed model.
+    // Declared tiers take precedence. Fill every remaining client tier from this head's
+    // supported models: an unset tier falls through to a built-in Claude model and is rejected
+    // on a foreign head. A small roster may legitimately serve several tiers with one model.
     fun of(spec: LaunchSpec): List<Pair<String, String>> {
         // V4-449: the client picks its own models on a head that forwards its login, so no tier is planted.
         if (spec.gateway.forwardClientAuth) return emptyList()
         val offered = spec.models.availableModelIds
         val ids = (listOf(spec.models.pinnedModel) + (spec.models.tiers.candidates ?: offered)).distinct()
         val declared = declaredSlots(spec)
-        if (spec.models.tiers.byTier.isNotEmpty()) {
-            return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
-                declared[slot.lowercase()]?.let { model -> slot to model }
-            }
-        }
         val fallback = positionalTiers(ids, offered = offered)
         return listOf(
-            "OPUS" to fallback.frontier,
-            "SONNET" to fallback.mid,
-            "HAIKU" to fallback.fast,
-            // Fable shares the frontier (opus) slot — positional at(2) used to park it on luna
-            // whenever sol/terra/luna were listed in that order.
-            "FABLE" to fallback.frontier,
+            "OPUS" to (declared["opus"] ?: fallback.frontier),
+            "SONNET" to (declared["sonnet"] ?: fallback.mid),
+            "HAIKU" to (declared["haiku"] ?: fallback.fast),
+            "FABLE" to (declared["fable"] ?: declared["opus"] ?: fallback.frontier),
         )
     }
 
@@ -77,7 +65,7 @@ internal object LaunchAliasSlots {
     /** slot name -> model id, keeping only slots this catalog actually offers. A declared slot
      *  naming a model the head does not serve is ignored rather than planted, so a stale row in
      *  splice.toml cannot point a tier at a model every turn would 400 on. Keyed by tier, so two
-     *  tiers on one model both survive; LaunchModelEnvironment plants the repeat off the picker. */
+     *  tiers on one model both survive and resolve to the same allowed client selector. */
     private fun declaredSlots(spec: LaunchSpec): Map<String, String> =
         spec.models.tiers.byTier
             .filterValues { it == spec.models.pinnedModel || it in spec.models.availableModelIds }

@@ -64,9 +64,8 @@ public data class HeadConfig(
         }
     }
 
-    /** The tier-to-id map the launcher consumes, independent of the provider's discovered roster. Keyed
-     *  by TIER, so two tiers may name one model; the launch plants the repeat where the picker never
-     *  draws it (LaunchModelEnvironment). */
+    /** The tier-to-id map the launcher consumes, independent of the provider's discovered roster.
+     *  Several tiers may name one model; each keeps the same allowlisted client selector. */
     public fun tierModels(): Map<String, String> = if (modelSlots.isNotEmpty()) {
         modelSlots.entries.associate { (slot, id) -> slot.trim('"', '\'').lowercase() to id }
     } else {

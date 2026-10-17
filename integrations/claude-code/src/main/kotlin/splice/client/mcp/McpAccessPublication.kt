@@ -50,7 +50,7 @@ internal class McpAccessPublication(stateDir: Path) {
         } catch (_: NoSuchFileException) {
             // SecureFile creates the new directory owner-only, before publishing any bearer.
         }
-        SecureFile.ownerOnlyDirectory(dir)?.let { throw IOException("MCP key directory is not owner-only") }
+        SecureFile.ownerOnlyDirectory(dir)?.let { throw IOException("MCP key directory is not owner-only: $it") }
     }
 
     fun present(): Boolean = try {
@@ -60,14 +60,19 @@ internal class McpAccessPublication(stateDir: Path) {
         false
     }
 
-    /** Whether an explicit rotation ever revoked the bootstrap bearer: boot must never restore it. */
-    fun fenced(): Boolean = fences.any { fence ->
-        try {
-            attributes(fence)
-            true
-        } catch (_: NoSuchFileException) {
-            false
+    /** Whether an explicit rotation ever revoked the bootstrap bearer: boot must never restore it. A fence only the old
+     *  location inside mcp-hub holds is copied beside the management key, so clearing mcp-hub cannot drop it. */
+    fun carryFence(): Boolean {
+        val held = fences.map { fence ->
+            try {
+                attributes(fence)
+                true
+            } catch (_: NoSuchFileException) {
+                false
+            }
         }
+        if (!held.first() && held.last()) SecureFile.writeAtomic0600(fences.first(), REVOCATION_TEXT)
+        return held.any { it }
     }
 
     /** First-run publication. Another bootstrap that already won keeps its complete publication. */
@@ -89,7 +94,7 @@ internal class McpAccessPublication(stateDir: Path) {
 
     /** Publishes a new incarnation. The no-bootstrap fence goes first: even a failed replacement must never let a later
      *  loss of the active publication resurrect the exposed v1 capability. The binding follows the bearer, so a crash
-     *  between them leaves a publication newer than its management key, which adoption binds. */
+     *  between them leaves the old binding beside the new bearer, and the next adoption publishes a fresh one. */
     fun publish(key: String, bound: String) {
         SecureFile.writeAtomic0600(fences.first(), REVOCATION_TEXT)
         SecureFile.writeAtomic0600(file, key + "\n")

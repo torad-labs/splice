@@ -3,6 +3,8 @@ package splice.client.mcp
 
 import splice.core.auth.BearerScheme
 import splice.core.auth.ScopedKey
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
@@ -28,6 +30,8 @@ public class McpAccessKey(
     stateDir: Path? = null,
     /** The management key's file: an unbound publication older than it was issued under an earlier management key. */
     private val managementFile: Path? = null,
+    /** Where a replaced publication and each episode of an unreadable one are said: the daemon log. */
+    private val log: LogSink = LogSink {},
     private val source: McpBearer,
 ) : McpBearer {
     private val publication = stateDir?.let(::McpAccessPublication)
@@ -35,10 +39,19 @@ public class McpAccessKey(
     @Volatile
     private var adopted = false
 
+    // the reason MCP bearers are being refused, said once per episode and cleared when the key reads again
+    @Volatile
+    private var refusing: String? = null
+
     override fun invoke(): String {
         val held = publication ?: return ScopedKey.derive(source(), MCP_SCOPE)
-        if (!adopted) adopt(held)
-        return held.read()
+        return try {
+            if (!adopted) adopt(held)
+            held.read().also { if (refusing != null) episode(null) }
+        } catch (e: IOException) {
+            episode(SafeFailureText.render(e))
+            throw e
+        }
     }
 
     /** Metadata only, safe to return over the management API. */
@@ -76,23 +89,42 @@ public class McpAccessKey(
         synchronized(this) {
             if (adopted) return
             held.prepareDirectory()
-            if (!held.present()) {
-                val fenced = held.fenced()
-                val fresh = if (fenced) incarnation() else ScopedKey.derive(source(), MCP_SCOPE)
-                if (fenced) held.publish(fresh, bindingOf(fresh)) else held.create(fresh, bindingOf(fresh))
-            } else {
-                val key = held.read()
-                val bound = held.binding()
-                if (bound == null && issuedUnderCurrent(key, held)) {
-                    held.bind(bindingOf(key))
-                } else if (bound != bindingOf(key)) {
-                    val fresh = incarnation()
-                    held.publish(fresh, bindingOf(fresh))
-                }
-            }
+            val fenced = held.carryFence()
+            if (held.present()) keepOrRevoke(held) else publishFirst(held, fenced)
             held.read()
             adopted = true
         }
+    }
+
+    /** No publication: the bootstrap bearer on a first run, a fresh incarnation when a rotation fenced the bootstrap. */
+    private fun publishFirst(held: McpAccessPublication, fenced: Boolean) {
+        if (!fenced) {
+            val bootstrap = ScopedKey.derive(source(), MCP_SCOPE)
+            held.create(bootstrap, bindingOf(bootstrap))
+            return
+        }
+        val fresh = incarnation()
+        held.publish(fresh, bindingOf(fresh))
+        log("[mcp-access] the rotated access key was missing; published a fresh one\n")
+    }
+
+    /** A publication the current management key issued is kept, and bound if it predates bindings; any other is
+     *  revoked and replaced, out loud. */
+    private fun keepOrRevoke(held: McpAccessPublication) {
+        val key = held.read()
+        val bound = held.binding()
+        if (bound == null && issuedUnderCurrent(key, held)) {
+            held.bind(bindingOf(key))
+            return
+        }
+        if (bound == bindingOf(key)) return
+        val fresh = incarnation()
+        held.publish(fresh, bindingOf(fresh))
+        val why = if (bound == null) "predates the management key" else "came from another management key"
+        log(
+            "[mcp-access] the MCP access key $why and is revoked; published a fresh one. Sessions " +
+                "holding the old key reach their hosted MCP servers again after a relaunch\n",
+        )
     }
 
     /** A publication from before bindings existed belongs to the current management key when it is that key's v1
@@ -106,6 +138,19 @@ public class McpAccessKey(
         } catch (_: IOException) {
             false
         }
+    }
+
+    /** Says each change of [reason], null meaning the key reads again; a steady state says nothing. */
+    private fun episode(reason: String?) {
+        if (reason == refusing) return
+        refusing = reason
+        log(
+            if (reason == null) {
+                "[mcp-access] the MCP access key reads again; MCP bearers are accepted\n"
+            } else {
+                "[mcp-access] refusing every MCP bearer and hosting no MCP server: $reason\n"
+            },
+        )
     }
 
     private fun incarnation(): String {

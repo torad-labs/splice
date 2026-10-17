@@ -300,10 +300,10 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolders.kt" to mapOf("writeAtomic0600(" to 1),
     // Oct 13: canonical MCP publication replaces McpHubWiring's boot overwrite. One first-run create, then the
-    // no-bootstrap fence, the active key and its management binding, in their MCP publication README rows.
+    // no-bootstrap fence, its copy carried from mcp-hub, the active key and its binding, in their README rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpAccessPublication.kt" to mapOf(
         "createNew0600(" to 1,
-        "writeAtomic0600(" to 3,
+        "writeAtomic0600(" to 4,
     ),
     // Oct 13: selective regeneration backs up each matching file, then publishes only its revoked MCP headers.
     // Both writes are owner-only, in the header-backups and explicitly supplied JSON-file README rows.
@@ -425,7 +425,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigMaterializer.kt" to mapOf(
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 1,
-        "writeAtomic0600(" to 3,
+        "writeAtomic0600(" to 4,
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLoginFiles.kt" to mapOf("writeAtomic0600(" to 5),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt" to mapOf("writeAtomic0600(" to 2),

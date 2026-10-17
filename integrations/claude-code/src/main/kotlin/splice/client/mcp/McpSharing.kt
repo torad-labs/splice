@@ -31,6 +31,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.util.SafeFailureText
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -94,38 +96,42 @@ public class McpSharing(
     }
 
     public fun plan(global: JsonObject, headKey: String? = null): McpPlan {
-        if (!enabled) {
-            return McpPlan(
-                emptyMap(),
-                global.keys.associateWith { "hosting disabled" },
-                global,
-                global.keys.associateWith { McpWhy("hosting_disabled") },
-            )
-        }
+        if (!enabled) return unhosted(global, "hosting disabled", McpWhy("hosting_disabled"))
         val hosted = LinkedHashMap<String, McpServerSpec>()
         val passthrough = LinkedHashMap<String, String>()
         val whys = LinkedHashMap<String, McpWhy>()
         val perSession = LinkedHashMap<String, McpServerSpec>()
-        val rewritten = buildJsonObject {
-            global.forEach { (name, entry) ->
-                val spec = eligible(name, entry, Refusals(passthrough, whys, perSession))
-                if (spec == null) {
-                    put(name, entry)
-                } else {
-                    hosted[name] = spec
-                    putJsonObject(name) {
-                        put("type", "http")
-                        put("url", endpointPrefix + name)
-                        putJsonObject("headers") {
-                            put("Authorization", "Bearer " + bearer())
-                            headKey?.takeIf { it.isNotEmpty() }?.let { put(MCP_HEAD_HEADER, it) }
+        // Read once per plan, and only when a server is hosted: an access key that cannot be read leaves every server
+        // running in the session that loads it, with the reason, rather than failing the launch that asked.
+        val token = lazy { bearer() }
+        val rewritten = try {
+            buildJsonObject {
+                global.forEach { (name, entry) ->
+                    val spec = eligible(name, entry, Refusals(passthrough, whys, perSession))
+                    if (spec == null) {
+                        put(name, entry)
+                    } else {
+                        hosted[name] = spec
+                        putJsonObject(name) {
+                            put("type", "http")
+                            put("url", endpointPrefix + name)
+                            putJsonObject("headers") {
+                                put("Authorization", "Bearer " + token.value)
+                                headKey?.takeIf { it.isNotEmpty() }?.let { put(MCP_HEAD_HEADER, it) }
+                            }
                         }
                     }
                 }
             }
+        } catch (e: IOException) {
+            val reason = "the MCP access key could not be read (${SafeFailureText.render(e)})"
+            return unhosted(global, reason, McpWhy("access_key_unreadable"))
         }
         return McpPlan(hosted, passthrough, rewritten, whys, perSession)
     }
+
+    private fun unhosted(global: JsonObject, reason: String, why: McpWhy): McpPlan =
+        McpPlan(emptyMap(), global.keys.associateWith { reason }, global, global.keys.associateWith { why })
 
     /** The materializer-facing seam: the rewritten object, nothing else. */
     public fun rewrite(): McpRewrite = McpRewrite { global, headKey -> plan(global, headKey).rewritten }

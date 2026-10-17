@@ -19,5 +19,5 @@ internal data class DaemonEnvironment(
     val log: LogSink,
 ) {
     /** The daemon's one MCP access key: one owner of the publication, so first-use adoption runs once per process. */
-    val mcpAccess: McpAccessKey by lazy { McpAccessKey(statePaths.stateDir, statePaths.mgmtKeyFile, mgmtKey::get) }
+    val mcpAccess: McpAccessKey by lazy { McpAccessKey(statePaths.stateDir, statePaths.mgmtKeyFile, log, mgmtKey::get) }
 }

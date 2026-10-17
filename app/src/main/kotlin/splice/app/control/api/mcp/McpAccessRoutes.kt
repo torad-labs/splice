@@ -21,6 +21,7 @@ import splice.app.MCP_HUB_FRONT_PORT
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpHeaderRegeneration
 import splice.client.mcp.McpHeaderUpdate
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Path
 
@@ -56,8 +57,8 @@ internal class McpAccessRoutes(private val key: McpAccessKey) {
                 val replacement = key.rotate(previous)
                 rotated = true
                 publish(call, updates, replacement, rotated)
-            } catch (_: IOException) {
-                failure(call, rotated, "MCP publication or header preflight failed")
+            } catch (e: IOException) {
+                failure(call, rotated, "MCP publication or header preflight failed: ${SafeFailureText.render(e)}")
             } catch (_: IllegalArgumentException) {
                 failure(call, rotated, "MCP header preflight requires valid JSON and file paths")
             } catch (_: UnsupportedOperationException) {
@@ -77,8 +78,8 @@ internal class McpAccessRoutes(private val key: McpAccessKey) {
                 val replacement = key()
                 if (previous == replacement) return@withLock refuse(call, "previous_key is still active")
                 publish(call, prepare(call, request, previous), replacement, rotated = false)
-            } catch (_: IOException) {
-                failure(call, false, "MCP publication or header preflight failed")
+            } catch (e: IOException) {
+                failure(call, false, "MCP publication or header preflight failed: ${SafeFailureText.render(e)}")
             } catch (_: IllegalArgumentException) {
                 failure(call, false, "MCP header preflight requires valid JSON and file paths")
             } catch (_: UnsupportedOperationException) {
@@ -118,8 +119,8 @@ internal class McpAccessRoutes(private val key: McpAccessKey) {
             val error = try {
                 update.publish(replacement)
                 null
-            } catch (_: IOException) {
-                "header publication failed; retry regeneration, not rotation"
+            } catch (e: IOException) {
+                "header publication failed (${SafeFailureText.render(e)}); retry regeneration, not rotation"
             } catch (_: UnsupportedOperationException) {
                 "header publication requires owner-only filesystem permissions"
             }

@@ -156,7 +156,12 @@ public class McpHubLaunch(
     /** The launch's file, owner-only because each entry carries the MCP bearer; the files of launches whose
      *  process is gone are removed first. */
     private fun write(id: String, held: Set<String>): Path? {
-        val key = bearer()
+        // An access key that cannot be read leaves the launch on its own servers: the hub-unreached answer.
+        val key = try {
+            bearer()
+        } catch (_: IOException) {
+            return null
+        }
         val body = buildJsonObject {
             putJsonObject(Keys.MCP_SERVERS) {
                 held.sorted().forEach { name ->

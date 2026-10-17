@@ -99,7 +99,8 @@ internal class McpHubWiring(
         return McpHub(sharing, servers, places, paths, startBound, io, log)
     }
 
-    /** Verifies the canonical publication without writing it. A boot must not resurrect a revoked v1 bearer. */
+    /** Adopts the canonical publication for the current management key, or says why it cannot be read. Adoption
+     *  never restores a revoked v1 bearer. */
     private fun readAccess(access: McpBearer): String? = try {
         access()
         null

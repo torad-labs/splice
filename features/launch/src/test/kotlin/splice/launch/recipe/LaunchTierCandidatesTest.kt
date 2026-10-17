@@ -121,7 +121,7 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `an explicit tier missing from the roster stays unmapped instead of using positional fallback`() {
+    fun `an explicit tier missing from the roster uses a supported positional fallback`() {
         val recipe = service.launch(
             spec(
                 available = listOf("fixture/pinned"),
@@ -130,8 +130,8 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
             emptyList(),
             dangerouslySkipPermissions = false,
         )
-        assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" !in recipe.env, recipe.env.toString())
-        assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" in recipe.unset, recipe.unset.toString())
+        assertEquals("fixture/pinned", recipe.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" !in recipe.unset, recipe.unset.toString())
     }
 
     // Two tiers may name one model (Marcos, 2026-10-15: claudex runs opus and sonnet on gpt-6.1-sol).

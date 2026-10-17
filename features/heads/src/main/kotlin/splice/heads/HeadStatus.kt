@@ -58,6 +58,7 @@ public object HeadStatus {
         put("released", gate.counts.released)
         put("waited", gate.counts.waited)
         put("avg_wait_ms", gate.counts.avgWaitMs)
+        put("refused", gate.counts.refused)
         putJsonArray("live") {
             gate.live.forEach { slot ->
                 addJsonObject {

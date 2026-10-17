@@ -128,6 +128,8 @@ public data class GateCounts(
     val waited: Long = 0,
     /** Mean queue wait of the admissions that waited, rounded; 0 while none has. */
     val avgWaitMs: Long = 0,
+    /** Requests answered AtCapacity because maxQueued was full: never queued, never held a permit. */
+    val refused: Long = 0,
 )
 
 /** Where an admitted turn stands: waiting on the upstream, or hearing from it. */

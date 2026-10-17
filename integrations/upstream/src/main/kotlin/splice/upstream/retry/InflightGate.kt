@@ -56,6 +56,7 @@ public class InflightGate(
     private var released = 0L
     private var waited = 0L
     private var waitMsTotal = 0L
+    private var refused = 0L
 
     // A resumable FIFO cell. Its identity IS its meaning: queue.remove() matches the one cell a
     // waiter parked, and structural equality over these mutable fields would remove a different
@@ -107,6 +108,7 @@ public class InflightGate(
                 released = released,
                 waited = waited,
                 avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
+                refused = refused,
             ),
             live = live.map { it.reading(now) },
             waiting = queue.map { GateWait(it.session, now - it.queuedAt) },
@@ -223,6 +225,7 @@ public class InflightGate(
                     waiter.queuedAt = clock()
                     queue.addLast(waiter)
                 } else {
+                    refused += 1
                     rejected = true
                 }
             }

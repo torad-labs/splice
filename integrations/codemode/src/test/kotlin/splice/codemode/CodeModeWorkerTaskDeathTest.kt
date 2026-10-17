@@ -137,9 +137,11 @@ class CodeModeWorkerTaskDeathTest {
         ),
     ).also { it.observeHostLifecycle(LogSink(messages::add)) }
 
-    /** Spawns the worker with a program that does nothing, outside any bound. */
+    /** Boots the worker under its start deadline and checks its first program before timing a warm answer. */
     private suspend fun warm(runtime: JvmCodeModeRuntime) {
-        run(runtime, "text('warm');", "")
+        val completed = run(runtime, "text('warm');", "") as CodeModeStep.Completed
+        assertEquals("warm", completed.output, completed.toString())
+        assertEquals(null, completed.error, completed.toString())
     }
 
     /** Streams [first] as a part of its own, then completes the source with [last], and runs to the first step. */

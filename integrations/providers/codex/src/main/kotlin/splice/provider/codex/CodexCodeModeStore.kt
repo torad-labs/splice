@@ -213,7 +213,8 @@ internal class CodexCodeModeStore(
 
     private fun persistCells(item: Prepared, progress: WriteProgress) {
         val cells = item.cells.map(PreparedCell::snapshot)
-        capacity.encoding(cells, kept[item.key]?.expired.orEmpty()).use { peak ->
+        val stage: CodeModeSaveHeap.Encoding = capacity.encoding(cells, kept[item.key]?.expired.orEmpty())
+        stage.use { peak ->
             val indexed = checkNotNull(kept[item.key])
             val text = journal.cellPatch(item.key, cells, indexed, files.path(item.key))
             text?.let(peak::retain)

@@ -299,11 +299,11 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The hub's kept listings and holder records (MCP hub steps 3 and 4), in the mcp-listings and mcp-hub rows.
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubListings.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/mcp/src/main/kotlin/splice/control/mcp/hub/HubHolders.kt" to mapOf("writeAtomic0600(" to 1),
-    // Oct 13: canonical MCP publication replaces McpHubWiring's boot overwrite. One first-run create,
-    // then the no-bootstrap marker and active key on explicit rotation, in their MCP publication README rows.
+    // Oct 13: canonical MCP publication replaces McpHubWiring's boot overwrite. One first-run create, then the
+    // no-bootstrap fence, the active key and its management binding, in their MCP publication README rows.
     "integrations/claude-code/src/main/kotlin/splice/client/mcp/McpAccessPublication.kt" to mapOf(
         "createNew0600(" to 1,
-        "writeAtomic0600(" to 2,
+        "writeAtomic0600(" to 3,
     ),
     // Oct 13: selective regeneration backs up each matching file, then publishes only its revoked MCP headers.
     // Both writes are owner-only, in the header-backups and explicitly supplied JSON-file README rows.

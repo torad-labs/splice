@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 
 class McpAccessKeyTest {
     @Test
@@ -32,12 +34,13 @@ class McpAccessKeyTest {
     }
 
     @Test
-    fun `management rotation explicitly revokes the old scoped capability`() {
+    fun `management rotation explicitly revokes the old scoped capability`(@TempDir state: Path) {
         var management = "synthetic-old"
-        val key = McpAccessKey { management }
-        val old = key()
+        val old = McpAccessKey(stateDir = state) { management }()
         management = "synthetic-new"
-        assertFalse(key.matchesBearer("Bearer $old"))
-        assertTrue(key.matchesBearer("Bearer ${key()}"))
+        // The daemon reads its management key once, so a replaced key meets the publication in the next process.
+        val next = McpAccessKey(stateDir = state) { management }
+        assertFalse(next.matchesBearer("Bearer $old"))
+        assertTrue(next.matchesBearer("Bearer ${next()}"))
     }
 }

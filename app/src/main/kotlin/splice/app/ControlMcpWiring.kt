@@ -5,7 +5,6 @@ package splice.app
 
 import splice.app.control.api.McpHubVerdict
 import splice.app.sources.mcp.McpAttached
-import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpHubLive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpRootsVerdicts
@@ -32,7 +31,6 @@ internal class ControlMcpWiring(
     // Views over [daemon], never copies: a stored copy would fix the value at construction.
     private val statePaths get() = daemon.statePaths
     private val config get() = daemon.config
-    private val mgmtKey get() = daemon.mgmtKey
     private val log get() = daemon.log
 
     /** The census the MCP host reports, kept for GET /api/mcp/memory, which names the copies it measures by it. */
@@ -58,7 +56,7 @@ internal class ControlMcpWiring(
         enabled = mcpHosting.enabled,
         exclude = mcpHosting.exclude,
         endpointPrefix = "http://127.0.0.1:$controlPort/mcp/",
-        bearer = McpAccessKey(statePaths.stateDir, mgmtKey::get),
+        bearer = daemon.mcpAccess,
         rootsBound = McpRootsVerdicts(statePaths.stateDir.resolve("mcp-roots-bound"), log),
         shareByDefault = mcpHosting.share,
     )
@@ -80,7 +78,7 @@ internal class ControlMcpWiring(
             config.initializeTimeout,
             ProcessDispatchers().io(),
             log,
-            McpAccessKey(statePaths.stateDir, mgmtKey::get),
+            daemon.mcpAccess,
         )
         this.hub = McpHubVerdict(wiring.offReason)
         attached = McpAttached { hub.attached() }

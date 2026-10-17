@@ -6,6 +6,7 @@
 // is the one place that builds them. The six that stay separate are each owned by one subsystem.
 package splice.app
 
+import splice.client.mcp.McpAccessKey
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -16,4 +17,7 @@ internal data class DaemonEnvironment(
     val config: ConfigService,
     val mgmtKey: MgmtKey,
     val log: LogSink,
-)
+) {
+    /** The daemon's one MCP access key: one owner of the publication, so first-use adoption runs once per process. */
+    val mcpAccess: McpAccessKey by lazy { McpAccessKey(statePaths.stateDir, statePaths.mgmtKeyFile, mgmtKey::get) }
+}

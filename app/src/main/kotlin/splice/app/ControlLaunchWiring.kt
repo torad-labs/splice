@@ -14,7 +14,6 @@ import splice.app.daemon.DaemonMaterializer
 import splice.app.launch.HookProcessExec
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.HostedMcpOverlay
-import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpHubFront
 import splice.client.mcp.McpHubLaunch
 import splice.client.mcp.McpHubLive
@@ -116,7 +115,7 @@ internal class ControlLaunchWiring(
             it.hubLaunch = McpHubLaunch(
                 McpLaunchPlanner(home),
                 sharing,
-                McpAccessKey(statePaths.stateDir, mgmtKey::get),
+                daemon.mcpAccess,
                 McpHubFront(MCP_HUB_FRONT_PORT, statePaths.stateDir.resolve("mcp-hub"), hub = hub),
                 log,
                 PluginFlagGate(TESTED_CLAUDE_CODE, pluginFlags),

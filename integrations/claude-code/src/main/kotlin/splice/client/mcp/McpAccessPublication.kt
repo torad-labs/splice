@@ -13,12 +13,22 @@ import java.nio.file.attribute.PosixFilePermission
 private const val MCP_KEY_LENGTH = 64
 private const val ROTATED_MARKER = "access-key-rotated"
 
-/** The ONE active MCP bearer, also read per HTTP request by the native front. Only a genuinely
- *  absent publication at bootstrap adopts v1. Reads after bootstrap never derive a fallback. */
+// why: beside the management key, so wiping mcp-hub cannot erase the fence that keeps a revoked v1 bearer revoked.
+private const val STATE_ROTATED_MARKER = "mcp-access-rotated"
+private const val BINDING_FILE = "access-key-binding"
+private const val REVOCATION_TEXT = "splice:mcp-revocation:v1\n"
+
+/** The ONE active MCP bearer, also read per HTTP request by the native front, and its binding to the management key
+ *  that issued it. File mechanics only: which bearer to adopt, keep or replace is McpAccessKey's decision. */
 internal class McpAccessPublication(stateDir: Path) {
     val file: Path = stateDir.resolve("mcp-hub").resolve("access-key")
-    private val owner = file.fileSystem.userPrincipalLookupService
-        .lookupPrincipalByName(System.getProperty("user.name"))
+    private val binding: Path = file.resolveSibling(BINDING_FILE)
+    private val fences = listOf(stateDir.resolve(STATE_ROTATED_MARKER), file.resolveSibling(ROTATED_MARKER))
+
+    // Looked up at first use, never construction: a user the system cannot name turns MCP off, not the daemon.
+    private val owner by lazy {
+        file.fileSystem.userPrincipalLookupService.lookupPrincipalByName(System.getProperty("user.name"))
+    }
     private val shape = Regex("[0-9a-f]{$MCP_KEY_LENGTH}")
     private val foreignBits = setOf(
         PosixFilePermission.GROUP_READ,
@@ -29,7 +39,8 @@ internal class McpAccessPublication(stateDir: Path) {
         PosixFilePermission.OTHERS_EXECUTE,
     )
 
-    fun bootstrap(legacy: McpBearer) {
+    /** The owner-only directory every MCP key file lives in, created owner-only before any bearer is published. */
+    fun prepareDirectory() {
         val dir = file.parent
         try {
             val before = attributes(dir)
@@ -40,44 +51,64 @@ internal class McpAccessPublication(stateDir: Path) {
             // SecureFile creates the new directory owner-only, before publishing any bearer.
         }
         SecureFile.ownerOnlyDirectory(dir)?.let { throw IOException("MCP key directory is not owner-only") }
-        try {
-            attributes(file)
-        } catch (_: NoSuchFileException) {
-            bootstrapKey(legacy)
-        }
-        read()
     }
 
-    private fun bootstrapKey(legacy: McpBearer) {
+    fun present(): Boolean = try {
+        attributes(file)
+        true
+    } catch (_: NoSuchFileException) {
+        false
+    }
+
+    /** Whether an explicit rotation ever revoked the bootstrap bearer: boot must never restore it. */
+    fun fenced(): Boolean = fences.any { fence ->
         try {
-            attributes(file.resolveSibling(ROTATED_MARKER))
+            attributes(fence)
+            true
         } catch (_: NoSuchFileException) {
-            try {
-                SecureFile.createNew0600(file, (legacy() + "\n").toByteArray(Charsets.UTF_8))
-            } catch (_: FileAlreadyExistsException) {
-                // Another bootstrap won. Read its complete publication, never overwrite it.
-            }
+            false
+        }
+    }
+
+    /** First-run publication. Another bootstrap that already won keeps its complete publication. */
+    fun create(key: String, bound: String) {
+        try {
+            SecureFile.createNew0600(file, (key + "\n").toByteArray(Charsets.UTF_8))
+        } catch (_: FileAlreadyExistsException) {
             return
         }
-        throw IOException("Rotated MCP key publication is missing; refusing to restore the bootstrap bearer")
+        bind(bound)
     }
 
-    fun read(): String {
-        requireOwnerHeld(attributes(file.parent), "isDirectory")
-        val held = attributes(file)
-        requireOwnerHeld(held, "isRegularFile")
-        requireSize(held)
-        val key = Files.readString(file).trim()
-        if (!shape.matches(key)) throw IOException("MCP key publication is malformed")
-        return key
+    fun read(): String = readKey(file, "MCP key publication")
+
+    /** The stored binding, or null when the publication predates bindings. */
+    fun binding(): String? = if (Files.notExists(binding, NOFOLLOW_LINKS)) null else readKey(binding, "MCP key binding")
+
+    fun bind(bound: String) = SecureFile.writeAtomic0600(binding, bound + "\n")
+
+    /** Publishes a new incarnation. The no-bootstrap fence goes first: even a failed replacement must never let a later
+     *  loss of the active publication resurrect the exposed v1 capability. The binding follows the bearer, so a crash
+     *  between them leaves a publication newer than its management key, which adoption binds. */
+    fun publish(key: String, bound: String) {
+        SecureFile.writeAtomic0600(fences.first(), REVOCATION_TEXT)
+        SecureFile.writeAtomic0600(file, key + "\n")
+        bind(bound)
     }
 
-    fun replace(expected: String, replacement: String) {
+    fun replace(expected: String, key: String, bound: String) {
         if (read() != expected) throw IOException("MCP key changed during rotation; retry with its current publication")
-        // Publish the no-bootstrap fence first. Even a failed replacement must never let later
-        // loss of the active publication resurrect the exposed v1 capability.
-        SecureFile.writeAtomic0600(file.resolveSibling(ROTATED_MARKER), "splice:mcp-revocation:v1\n")
-        SecureFile.writeAtomic0600(file, replacement + "\n")
+        publish(key, bound)
+    }
+
+    private fun readKey(path: Path, what: String): String {
+        requireOwnerHeld(attributes(path.parent), "isDirectory")
+        val held = attributes(path)
+        requireOwnerHeld(held, "isRegularFile")
+        requireSize(held, what)
+        val key = Files.readString(path).trim()
+        if (!shape.matches(key)) throw IOException("$what is malformed")
+        return key
     }
 
     private fun requireOwnerHeld(held: Map<String, Any>, kind: String) {
@@ -90,10 +121,10 @@ internal class McpAccessPublication(stateDir: Path) {
         if (mode.any { it in foreignBits }) throw IOException("MCP key state is not owner-only")
     }
 
-    private fun requireSize(held: Map<String, Any>) {
-        val size = held["size"] as? Long ?: throw IOException("MCP key publication has no size")
+    private fun requireSize(held: Map<String, Any>, what: String) {
+        val size = held["size"] as? Long ?: throw IOException("$what has no size")
         if (size !in MCP_KEY_LENGTH.toLong()..(MCP_KEY_LENGTH + 1).toLong()) {
-            throw IOException("MCP key publication is malformed")
+            throw IOException("$what is malformed")
         }
     }
 

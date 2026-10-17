@@ -79,7 +79,7 @@ internal class McpHubWiring(
 
     /** The hub, or its off answer when this machine cannot run it (McpHubGate, decided once here at boot), with one log
      *  line either way. The front reads <state>/mcp-hub/access-key, the bearer [access] checks every request against.
-     *  McpAccessKey owns that publication, including rotations; boot must not replace it. */
+     *  McpAccessKey owns that publication, including rotations, and adopts it for the current management key. */
     fun hub(
         sharing: McpSharing,
         startBound: McpHandshakeBudget,

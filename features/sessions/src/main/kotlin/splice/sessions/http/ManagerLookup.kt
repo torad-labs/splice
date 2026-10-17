@@ -17,8 +17,6 @@ import splice.sessions.registry.SessionRecord
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val PROJECTS_DIR = "projects"
-private const val TRANSCRIPT_SUFFIX = ".jsonl"
 private const val LOOKUP_NOT_OURS = "splice did not start the manager, so its terminal cannot be read from here"
 private const val LOOKUP_CLOSED = "the manager's terminal is closed"
 
@@ -84,7 +82,7 @@ internal class ManagerLookup(private val ports: ManagerDrive) {
     private fun resumable(folder: Path, pointer: ManagerPointer?): ManagerFound? {
         val dirs = projectDirs(folder)
         val own = pointer?.sessionId
-            ?.takeIf { id -> dirs.any { Files.isRegularFile(it.resolve(id + TRANSCRIPT_SUFFIX)) } }
+            ?.takeIf { id -> dirs.any { Files.isRegularFile(it.resolve(id + ports.transcripts.suffix)) } }
         return (own ?: newest(dirs))?.let { ManagerFound.Resumable(it) }
     }
 
@@ -92,7 +90,8 @@ internal class ManagerLookup(private val ports: ManagerDrive) {
      *  Claude Code names it after the working directory, each character not a letter or digit as '-'. */
     private fun projectDirs(folder: Path): List<Path> {
         val name = folder.toAbsolutePath().normalize().toString().replace(nonAlphanumeric, "-")
-        return ports.roots.treesFor(null).map { it.resolve(PROJECTS_DIR).resolve(name) }
+        val transcripts = ports.transcripts
+        return transcripts.roots.treesFor(null).map { it.resolve(transcripts.projectsDirectory).resolve(name) }
             .filter { Files.isDirectory(it) }
     }
 
@@ -105,6 +104,7 @@ internal class ManagerLookup(private val ports: ManagerDrive) {
     /** The session id a transcript file is named by, or null for any other file. */
     private fun transcriptId(file: Path): String? {
         val name = file.fileName.toString()
-        return name.removeSuffix(TRANSCRIPT_SUFFIX).takeIf { name.endsWith(TRANSCRIPT_SUFFIX) && idShape.matches(it) }
+        val suffix = ports.transcripts.suffix
+        return name.removeSuffix(suffix).takeIf { name.endsWith(suffix) && idShape.matches(it) }
     }
 }

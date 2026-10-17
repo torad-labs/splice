@@ -10,12 +10,14 @@ import io.ktor.server.routing.post
 import splice.app.control.ManagedHead
 import splice.app.control.api.HeadResolver
 import splice.app.manager.ManagerHome
+import splice.client.ClaudeTranscriptFiles
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.core.session.SessionLines
 import splice.sessions.http.ManagerDrive
 import splice.sessions.http.ManagerPointerStore
 import splice.sessions.http.ManagerSession
+import splice.sessions.http.ManagerTranscripts
 import splice.sessions.http.SessionContinue
 import splice.sessions.http.TranscriptRoots
 import splice.sessions.registry.SessionSource
@@ -43,7 +45,11 @@ internal class ManagerMount(
             commands = commands,
             arrival = RegistryArrival(sessions, ProcessWaiter()),
             registry = sessions,
-            roots = TranscriptRoots(wiring.sessionHeads),
+            transcripts = ManagerTranscripts(
+                roots = TranscriptRoots(wiring.sessionHeads),
+                projectsDirectory = ClaudeTranscriptFiles.projectsDirectory,
+                suffix = ClaudeTranscriptFiles.suffix,
+            ),
             continueOn = SessionContinue(
                 drive = wiring.drive,
                 commands = commands,

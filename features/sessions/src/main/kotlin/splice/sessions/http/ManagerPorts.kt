@@ -19,6 +19,13 @@ public fun interface ManagerHeads {
     public fun heads(): List<ManagerHeadChoice>
 }
 
+/** Transcript roots with the client-owned directory and filename format supplied by application composition. */
+public data class ManagerTranscripts(
+    val roots: TranscriptRoots,
+    val projectsDirectory: String,
+    val suffix: String,
+)
+
 /** The machinery the manager is found, started and moved with, the same instances Sessions and Teams use: the one
  *  drive every pane is reached through, each head's launch command, the registry's word that a session came up, the
  *  registry itself, the transcript trees a resume is looked for in, and Continue on. */
@@ -27,6 +34,6 @@ public data class ManagerDrive(
     val commands: StartCommands,
     val arrival: SessionArrival,
     val registry: SessionSource?,
-    val roots: TranscriptRoots,
+    val transcripts: ManagerTranscripts,
     val continueOn: SessionContinue,
 )

@@ -43,9 +43,8 @@ public data class ModelTiers(
     /** tier slot -> model id, as the head declares it (HeadConfig.tierModels); two tiers may name one
      *  model. Empty = fall back to [splice.launch.recipe.LaunchService]'s positional heuristic, which is
      *  what every catalog used before slots existed and is the reason splice.toml carries an "ORDER IS
-     *  LOAD-BEARING" banner. Non-empty = ONLY the declared tiers are emitted — positional order is fully
-     *  retired for that head, and an undeclared tier stays un-set rather than pointing a second alias at
-     *  an already-claimed model (the 2-model duplication this exists to remove). */
+     *  LOAD-BEARING" banner. Non-empty declarations take precedence, while undeclared tiers use the
+     *  supported positional fallback; fable follows declared opus when present, else the frontier model. */
     val byTier: Map<String, String> = emptyMap(),
     /** The ids the positional heuristic may place, in catalog order (ModelCatalog.tierModelIds), or
      *  null for every offered id. 2026-09-22: a model the endpoint lists but no row declares joins

@@ -115,7 +115,9 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
             ),
         )
         assertEquals("fixture/discovered", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-        assertTrue("ANTHROPIC_DEFAULT_SONNET_MODEL" !in env)
+        assertEquals("fixture/pinned", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals("fixture/pinned", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
+        assertEquals("fixture/discovered", env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
     }
 
     @Test
@@ -133,9 +135,9 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
     }
 
     // Two tiers may name one model (Marcos, 2026-10-15: claudex runs opus and sonnet on gpt-6.1-sol).
-    // Both tiers are planted; the repeat carries the head's discovery spelling of the same model.
+    // Both tiers use the same client id, which remains present in the enforced allowlist.
     @Test
-    fun `two tiers declared on one model are both planted`() {
+    fun `two tiers declared on one model use the same allowed client id`() {
         val base = spec(
             available = listOf("gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"),
             tiers = ModelTiers(
@@ -149,7 +151,7 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
         )
         val env = env(base.copy(models = base.models.copy(discoveryPrefix = "claudex--")))
         assertEquals("gpt-6.1-sol", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-        assertEquals("claudex--gpt-6.1-sol", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals("gpt-6.1-sol", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertEquals("gpt-6-luna", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
         assertEquals("gpt-6-astra", env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
     }

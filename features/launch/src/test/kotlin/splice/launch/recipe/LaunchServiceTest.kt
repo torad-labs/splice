@@ -185,11 +185,10 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertEquals("grok-build-latest", env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
     }
 
-    // The exact live target: the grok head serves two models and declares two slots. Positional
-    // fill for HAIKU/FABLE handed both back to grok-4.6 (3 tiers, one model) — the very screen
-    // this feature exists to clean up. Undeclared tiers must not exist in the recipe at all.
+    // The exact live target: the grok head serves two models and declares two slots. Undeclared
+    // tiers use supported fallbacks, and fable follows the explicitly declared opus model.
     @Test
-    fun `a two-model roster declaring opus and sonnet emits no haiku or fable slot`() {
+    fun `a two-model roster fills undeclared tiers from supported fallbacks`() {
         val recipe = service.launch(
             spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5")).let { base ->
                 base.copy(
@@ -205,14 +204,13 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
 
         assertEquals("grok-4.6", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
         assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
-        // Absent from env is not enough: splice-launch execs `env` WITHOUT -i, so a nested launch
-        // inherits the OUTER head's triplets — every un-emitted tier must be actively SCRUBBED or
-        // the tier points at a model this head cannot serve (codex redo verdict, 2026-08-30).
-        for (tier in listOf("HAIKU", "FABLE")) {
+        val fallbacks = mapOf("HAIKU" to "grok-4.5", "FABLE" to "grok-4.6")
+        fallbacks.forEach { (tier, model) ->
+            assertEquals(model, env["ANTHROPIC_DEFAULT_${tier}_MODEL"])
             for (suffix in listOf("MODEL", "MODEL_NAME", "MODEL_DESCRIPTION")) {
                 val name = "ANTHROPIC_DEFAULT_${tier}_$suffix"
-                assertNull(env[name], "$tier must stay un-set, not duplicated")
-                assertTrue(name in recipe.unset, "$name must be scrubbed from the inherited env")
+                assertTrue(name in env, "$name must be set for the supported fallback")
+                assertFalse(name in recipe.unset, "$name must not be scrubbed from the inherited env")
             }
         }
         for (tier in listOf("OPUS", "SONNET")) {
@@ -220,12 +218,10 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         }
     }
 
-    // DR-44d: the two declaredSlots ignore-claims, previously prose-only (LaunchService.kt:206-208).
-    // A stale splice.toml row naming a model the head no longer serves must not plant a tier, and an
-    // unrecognized slot string must not crash or leak a bogus tier env — both degrade to
-    // "tier not emitted, tier scrubbed", never to a planted lie.
+    // DR-44d: stale model declarations are ignored in favor of a supported fallback, and an
+    // unrecognized slot string must not crash or leak a bogus tier env.
     @Test
-    fun `stale-model and unknown-slot declarations are ignored, not planted`() {
+    fun `stale-model declarations use fallback and unknown slots are ignored`() {
         val recipe = service.launch(
             spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5")).let { base ->
                 base.copy(
@@ -246,8 +242,8 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         val env = recipe.env
 
         assertEquals("grok-4.6", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-        assertNull(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "a stale model row must not plant its tier")
-        assertTrue("ANTHROPIC_DEFAULT_SONNET_MODEL" in recipe.unset, "the unplanted tier is still scrubbed")
+        assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "a stale row uses the supported fallback")
+        assertFalse("ANTHROPIC_DEFAULT_SONNET_MODEL" in recipe.unset, "the fallback tier is emitted")
         assertTrue(env.keys.none { "TURBO" in it }, "an unknown slot string must not leak any env")
         assertTrue(recipe.unset.none { "TURBO" in it }, "and cannot be scrubbed — it is not a tier")
     }
@@ -281,21 +277,19 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         dangerouslySkipPermissions = false,
     )
 
-    // 2026-09-04: Claude Code 2.1.257 draws one picker row per PLANTED tier and dedupes by value
-    // ("opus" vs "fable"), so two tiers on one model listed it twice. A repeated tier is planted
-    // under the head's discovery-wrapped id: routed (catalog.contains unwraps), hidden (not on
-    // availableModels). The first tier, the labels and the cache rows are untouched.
+    // Repeated tier slots keep the same allowed client selector. A discovery-wrapped duplicate is
+    // not on availableModels and Claude Code rejects it when the enforced roster is active.
     @Test
-    fun `a tier that repeats an earlier tier's model is planted under the wrapped id`() {
+    fun `a tier that repeats an earlier tier's model keeps the allowed client id`() {
         val env = launchKimiWithRepeatedTier(prefix = "claude-kimi--").env
         assertEquals("kimi-k3", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
         assertEquals("kimi-k2.7-code", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertEquals(
-            "claude-kimi--kimi-k2.7-code",
+            "kimi-k2.7-code",
             env["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
-            "haiku repeats sonnet: wrapped",
+            "haiku repeats sonnet using its allowed id",
         )
-        assertEquals("claude-kimi--kimi-k3", env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "fable repeats opus: wrapped")
+        assertEquals("kimi-k3", env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "fable repeats opus using its allowed id")
         assertEquals("Kimi K2.7 Code", env["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"], "the label stays the model's own")
         assertEquals("Kimi K3 (256k)", env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"])
     }

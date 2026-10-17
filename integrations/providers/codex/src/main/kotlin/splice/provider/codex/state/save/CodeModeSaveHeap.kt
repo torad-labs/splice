@@ -30,7 +30,7 @@ private const val SAVE_METADATA_BYTES = 4096L
 // why: aggregate references and temporary keyed maps survive apart from snapshot payloads.
 private const val SAVE_REFERENCE_BYTES = 128L
 
-// why: streaming JSON and the file writer retain bounded buffers, not a conversation-sized string.
+// why: the file stream and metadata need bounded buffers; serializer character scratch is admitted per cell.
 private const val STREAM_ENCODING_BYTES = 64L * 1024
 
 internal class CodeModeSaveHeap(private val heap: HeapReservations) {

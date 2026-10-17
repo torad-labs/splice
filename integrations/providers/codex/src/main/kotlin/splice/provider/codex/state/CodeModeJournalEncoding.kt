@@ -27,9 +27,8 @@ internal object CodeModeJournalEncoding {
         heap: HeapReservations,
     ): Long = state.records.sumOf { record ->
         if (record.encodedFieldBytes == null) {
-            CodeModeSaveHeap(heap).streaming().use {
-                CodeModeCellEncoding(record, null, json)
-            }
+            val stage: CodeModeSaveHeap.Encoding = CodeModeSaveHeap(heap).encoding(listOf(record), emptyList())
+            stage.use { CodeModeCellEncoding(record, null, json) }
         }
         checkNotNull(record.retainedBytes)
     }
@@ -37,15 +36,17 @@ internal object CodeModeJournalEncoding {
     /** Checkpoints measure fields through a counting stream, never by retaining every cell's encoding. */
     fun measure(state: CodeModePersistedState, prior: CodeModePersistedState?, json: Json, heap: HeapReservations) {
         val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
-        CodeModeSaveHeap(heap).streaming().use {
+        val capacity = CodeModeSaveHeap(heap)
+        capacity.streaming().use {
             state.records.forEach { record ->
                 val old = before[record.id]
                 if (unchanged(record, old)) {
                     record.retainedBytes = old?.retainedBytes
                     record.encodedFieldBytes = old?.encodedFieldBytes
-                } else {
-                    CodeModeCellEncoding(record, old, json)
+                    return@forEach
                 }
+                val stage: CodeModeSaveHeap.Encoding = capacity.encoding(listOf(record), emptyList())
+                stage.use { CodeModeCellEncoding(record, old, json) }
             }
         }
     }

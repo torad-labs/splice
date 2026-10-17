@@ -203,7 +203,7 @@ internal class CodexCodeModeStore(
     private fun persistCheckpoint(key: String, conversation: CodeModePersistedState, progress: WriteProgress) {
         val prior = kept[key]?.snapshot().takeUnless { key in uncertainKeys }
         CodeModeJournalEncoding.measure(conversation, prior, json, heap)
-        progress.bytes = conversation.records.sumOf { it.retainedBytes ?: 0L }
+        progress.bytes = maxOf(1L, conversation.records.sumOf { it.retainedBytes ?: 0L })
         val indexed = CodeModeKeptState(conversation.version, conversation, heap)
         secureDirectory()
         progress.attempted = true

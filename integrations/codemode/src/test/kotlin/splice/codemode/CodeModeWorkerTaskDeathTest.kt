@@ -83,6 +83,8 @@ class CodeModeWorkerTaskDeathTest {
             withTimeout(ANSWER_BOUND_MS) { run(runtime, deep, "") }
             val overflowed = spawned.single()
             withTimeout(ANSWER_BOUND_MS) { overflowed.onExit().await() }
+            // Replacement boot uses the runtime's start deadline, not the warm-answer bound.
+            warm(runtime)
             val next = withTimeout(ANSWER_BOUND_MS) { run(runtime, "text('fresh');\n", "") }
             assertEquals("fresh", (next as CodeModeStep.Completed).output, next.toString())
             assertEquals(2, spawned.size)

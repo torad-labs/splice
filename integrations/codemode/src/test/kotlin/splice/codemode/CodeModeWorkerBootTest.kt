@@ -150,7 +150,10 @@ class CodeModeWorkerBootTest {
             launch = HostLaunch(
                 classpath = archive.classpath,
                 spawn = WorkerSpawn { builder ->
-                    val pinned = Path.of(builder.command()[3].substringBefore(File.pathSeparator))
+                    val command = builder.command()
+                    val classpathIndex = command.indexOf("-cp")
+                    check(classpathIndex >= 0) { "worker command must declare its classpath" }
+                    val pinned = Path.of(command[classpathIndex + 1].substringBefore(File.pathSeparator))
                     hashes.add(archive.hash(pinned))
                     builder.redirectError(ProcessBuilder.Redirect.INHERIT).start().also { processes.add(it) }
                 },

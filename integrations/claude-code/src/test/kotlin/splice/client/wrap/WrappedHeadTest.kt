@@ -205,7 +205,7 @@ class WrappedHeadTest {
     }
 
     @Test
-    fun `unwrap puts back the backups of a wrap that recorded none`(@TempDir home: Path) {
+    fun `legacy unwrap restores settings without consuming its backup`(@TempDir home: Path) {
         val rig = WrapRig(home)
         rig.linkCmdToReal()
         assertTrue(rig.head.wrap() is WrapResult.Ok)
@@ -217,7 +217,8 @@ class WrappedHeadTest {
 
         assertTrue(rig.head.unwrap() is UnwrapResult.Ok)
         assertEquals("""{"before":"wrap"}""", vanilla.resolve("settings.json").readText())
-        assertFalse(backup.exists(), "the backup was moved back, not copied")
+        assertTrue(backup.exists(), "the legacy backup survives an interrupted unwrap and its retry")
+        assertEquals("""{"before":"wrap"}""", backup.readText(), "the retained backup keeps its original contents")
     }
 
     @Test

@@ -36,11 +36,11 @@ public data class ManagerHeadChoice(
 /** How full the manager's context is, as its status line prints it: tokens used of the window, the percent, and the
  *  share of the input the cache served (null before it read any). */
 @Serializable
-public data class ManagerContext(val used: Long, val window: Long, val percent: Int, val cache: Int?)
+internal data class ManagerContext(val used: Long, val window: Long, val percent: Int, val cache: Int?)
 
 /** What the manager's status line last said, and when splice read it ([at], epoch milliseconds). */
 @Serializable
-public data class ManagerLine(
+internal data class ManagerLine(
     val model: String?,
     @SerialName("model_id") val modelId: String?,
     val effort: String?,
@@ -50,7 +50,7 @@ public data class ManagerLine(
 
 /** The manager as the composer draws it. */
 @Serializable
-public data class ManagerState(
+internal data class ManagerState(
     val folder: String,
     val consented: Boolean,
     val state: String,

@@ -35,6 +35,7 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import kotlin.io.path.isSymbolicLink
 
@@ -57,7 +58,9 @@ private object WrapBackups {
             )
             return
         }
-        Files.move(backupFrom, target, REPLACE_EXISTING, ATOMIC_MOVE)
+        // Keep the backup available if the process exits before wrap-state removal; retries can then restore
+        // the same original bytes instead of interpreting a consumed backup as original absence.
+        Files.copy(backupFrom, target, REPLACE_EXISTING, COPY_ATTRIBUTES)
     }
 }
 

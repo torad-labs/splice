@@ -1,11 +1,11 @@
 // NEW: the disk writer streams checkpoints; injected text writers retain their existing boundary.
-package splice.provider.codex
+package splice.provider.codex.state.save
 
 import kotlinx.serialization.json.Json
 import splice.core.memory.HeapReservations
+import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.state.CodeModeJournalText
 import splice.provider.codex.state.CodeModeStateJournal
-import splice.provider.codex.state.save.CodeModeSaveHeap
 import java.nio.file.Path
 
 /** One conversation's forced write. Text-only adapters still see complete checkpoint contents. */

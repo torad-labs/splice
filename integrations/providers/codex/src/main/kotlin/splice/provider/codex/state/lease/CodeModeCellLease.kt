@@ -1,7 +1,8 @@
 // NEW: parked-cell lease policy owns session-liveness evidence and its monotonic clock.
-package splice.provider.codex
+package splice.provider.codex.state.lease
 
 import splice.core.util.ElapsedClock
+import splice.provider.codex.CodeModeBridgeConfig
 import java.util.concurrent.TimeUnit
 
 /** Positive process-liveness evidence for a session. Null means unknown, including headless clients;

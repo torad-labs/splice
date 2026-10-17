@@ -5,7 +5,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
-import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
@@ -16,7 +15,6 @@ import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import java.nio.file.Path
 import java.time.Clock
-import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -28,18 +26,6 @@ private const val DEFAULT_MAX_OUTPUT_CHARS: Int = 1_048_576
  *  (its workers are child JVMs), so a restarted head needs a new one (V4-107). */
 public fun interface CodeModeRuntimes {
     public fun open(): CodeModeRuntime
-}
-
-/** Positive process-liveness evidence for a session. Null means unknown, including headless clients;
- *  absence from the interactive registry is never evidence that a session died. */
-public fun interface CodeModeSessionAlive {
-    public operator fun invoke(sessionId: String): Boolean?
-}
-
-/** Whether a live session sits at its prompt with no turn in flight, as Claude Code's own status says. Its client
- *  cannot be running the tool calls a parked cell waits on, so the cell's quiet is no longer evidence of work. */
-public fun interface CodeModeSessionIdle {
-    public operator fun invoke(sessionId: String): Boolean
 }
 
 // Decoded JSON, strings and transient serialization buffers need several times the stored bytes.
@@ -68,16 +54,6 @@ public data class CodeModeScriptBounds(
     val maxOutputChars: Int = DEFAULT_MAX_OUTPUT_CHARS,
     val maxCalls: Int? = null,
     val maxRounds: Int? = null,
-)
-
-/** How a parked cell is kept alive: the evidence that its session lives, and the monotonic clock its lease runs on. */
-public data class CodeModeCellLease(
-    /** Alive cells survive timer sweeps; capacity may reclaim any parked cell past its five-minute lease. */
-    val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
-    /** A live session idle at its prompt leases its parked cells as an unknown one does. Records are unaffected. */
-    val sessionIdle: CodeModeSessionIdle = CodeModeSessionIdle { false },
-    /** Monotonic lease time; persisted timestamps continue to use [CodeModeBridgeConfig.clock]. */
-    val clock: ElapsedClock = ElapsedClock { TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) },
 )
 
 public data class CodeModeBridgeConfig(

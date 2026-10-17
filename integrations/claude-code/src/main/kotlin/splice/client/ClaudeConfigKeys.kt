@@ -5,6 +5,9 @@ package splice.client
 
 import splice.core.config.UserHome
 
+/** Claude Code's per-working-directory transcript tree below each client state directory. */
+public const val CLAUDE_PROJECTS_DIRECTORY: String = "projects"
+
 /** On-disk items a head may share by symlinking into the operator's global ~/.claude/<item>.
  *  `sessions` is the cross-session-messaging peer registry: sharing it is what lets every head's
  *  ListAgents see every other head's sessions (the message sockets are already machine-global).
@@ -48,5 +51,5 @@ internal object Keys {
     const val COMMANDS = "commands"
     const val HOOKS = "hooks"
     const val SESSIONS = "sessions"
-    const val PROJECTS = "projects"
+    const val PROJECTS = CLAUDE_PROJECTS_DIRECTORY
 }

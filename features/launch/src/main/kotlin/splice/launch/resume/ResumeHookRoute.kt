@@ -26,11 +26,12 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import splice.client.ClaudeTranscriptFiles
+import splice.client.CLAUDE_PROJECTS_DIRECTORY
 import splice.client.resume.CallingRoster
 import splice.client.resume.RESUME_SOURCE
 import splice.client.resume.STARTUP_SOURCE
 import splice.client.resume.SessionOwnership
+import splice.client.resume.TRANSCRIPT_SUFFIX
 import splice.client.resume.TranscriptModelRewrite
 import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.client.FOREGROUND_OWNER_LENGTH
@@ -176,7 +177,7 @@ public class ResumeHookRoute(
     private fun transcriptInsideHead(claimed: String, configDir: Path): Path? {
         if (claimed.isBlank()) return null
         val real = spelled(claimed)?.let(::resolved)
-        val tree = resolved(configDir.resolve(ClaudeTranscriptFiles.projectsDirectory))
+        val tree = resolved(configDir.resolve(CLAUDE_PROJECTS_DIRECTORY))
         if (real == null || tree == null) return null
         val inside = real.startsWith(tree) && Files.isRegularFile(real, NOFOLLOW_LINKS)
         return if (inside) real else null
@@ -189,8 +190,8 @@ public class ResumeHookRoute(
      *  first write. */
     private fun unwrittenTranscriptInsideHead(hook: ResumeCall, configDir: Path): Path? {
         val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let(::spelled)
-        val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + ClaudeTranscriptFiles.suffix }
-        val tree = resolved(configDir.resolve(ClaudeTranscriptFiles.projectsDirectory))
+        val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + TRANSCRIPT_SUFFIX }
+        val tree = resolved(configDir.resolve(CLAUDE_PROJECTS_DIRECTORY))
         val dir = if (tree == null) null else claimed?.parent?.let { projectDir(it, tree) }
         val real = if (name != null && dir != null) dir.resolve(name) else null
         return real?.takeIf { !Files.exists(it, NOFOLLOW_LINKS) || Files.isRegularFile(it, NOFOLLOW_LINKS) }

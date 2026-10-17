@@ -55,7 +55,7 @@ import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
 /** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
-internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
+public const val TRANSCRIPT_SUFFIX: String = ".jsonl"
 
 /** Anthropic's model namespace: a row there is a model a client on its own login can restore. */
 

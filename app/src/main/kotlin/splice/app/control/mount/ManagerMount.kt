@@ -14,12 +14,12 @@ import splice.client.ClaudeTranscriptFiles
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.core.session.SessionLines
-import splice.sessions.http.ManagerDrive
-import splice.sessions.http.ManagerPointerStore
-import splice.sessions.http.ManagerSession
-import splice.sessions.http.ManagerTranscripts
 import splice.sessions.http.SessionContinue
 import splice.sessions.http.TranscriptRoots
+import splice.sessions.manager.ManagerDrive
+import splice.sessions.manager.ManagerPointerStore
+import splice.sessions.manager.ManagerSession
+import splice.sessions.manager.ManagerTranscripts
 import splice.sessions.registry.SessionSource
 import splice.topology.TopologyLoader
 import splice.upstream.codemode.ProcessWaiter

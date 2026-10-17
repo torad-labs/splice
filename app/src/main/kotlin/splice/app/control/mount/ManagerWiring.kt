@@ -9,11 +9,11 @@ import splice.app.manager.ManagerHome
 import splice.core.util.JsonScalars
 import splice.core.wire.ControlFields.KEY
 import splice.core.wire.ControlFields.LABEL
-import splice.sessions.http.ManagerFolder
-import splice.sessions.http.ManagerHeadChoice
-import splice.sessions.http.ManagerHeads
 import splice.sessions.http.StartCommand
 import splice.sessions.http.StartCommands
+import splice.sessions.manager.ManagerFolder
+import splice.sessions.manager.ManagerHeadChoice
+import splice.sessions.manager.ManagerHeads
 import java.nio.file.Path
 
 /** The manager's folder, the parent of splice.toml, with the files ManagerHome ships into it. */

@@ -1,9 +1,11 @@
 // NEW: session-authenticated status-line routes own their session snapshots and legacy-client response.
-package splice.app.control.mount
+package splice.app.control.usage
 
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import splice.app.control.mount.ControlGuard
+import splice.app.control.mount.Door
 import splice.core.config.ConfigService
 import splice.core.session.SessionLines
 import splice.core.version.ClientVersionTracker

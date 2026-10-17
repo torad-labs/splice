@@ -1,6 +1,6 @@
 // NEW: LAYOUT-01 — the usage capability's routes: quota, perf, economics, budgets, alerts and the
 // statusline (features/usage).
-package splice.app.control.mount
+package splice.app.control.usage
 
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
@@ -14,6 +14,8 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.app.control.mount.ControlGuard
+import splice.app.control.mount.ControlReplies
 import splice.app.sources.mcp.McpAttached
 import splice.app.sources.mcp.McpHolders
 import splice.app.sources.mcp.McpMemory

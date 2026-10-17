@@ -1,5 +1,5 @@
 // NEW: (ledger lines 495, 519) owns startup preparation and pending-aware economics and request routes.
-package splice.app.control.mount
+package splice.app.control.usage
 
 import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.routing.Route
@@ -8,6 +8,8 @@ import io.ktor.server.routing.get
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import splice.app.control.mount.ControlGuard
+import splice.app.control.mount.ControlReplies
 import splice.app.sources.mcp.McpMemory
 import splice.core.util.Cancellables
 import splice.core.util.LogSink

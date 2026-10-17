@@ -11,8 +11,8 @@
 // the adapters that project ManagedHead into each feature's contract). One direction of real
 // dependency: api -> domain.
 //
-// LAYOUT-01: the route table is one MOUNT per capability in splice.app.control.mount, each owning its
-// feature's route objects and registering its own rows behind the one ControlGuard. This file keeps
+// LAYOUT-01: each capability owns one MOUNT in splice.app.control.mount or splice.app.control.usage.
+// Each mount owns its feature's route objects and registers its rows behind the one ControlGuard. This file keeps
 // construction, lifecycle and the order the mounts register in. The table had reached 68 rows importing
 // 37 slice packages, which made this one file every feature's edit.
 package splice.app.control
@@ -59,7 +59,7 @@ import splice.app.control.mount.SessionsWiring
 import splice.app.control.mount.TeamsMount
 import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
-import splice.app.control.mount.UsageMount
+import splice.app.control.usage.UsageMount
 import splice.app.head.HeadRemovalAssembly
 import splice.core.config.ConfigService
 import splice.core.util.LogSink

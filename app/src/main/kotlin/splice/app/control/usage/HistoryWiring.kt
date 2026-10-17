@@ -7,7 +7,7 @@
 // edges — trimmed at the same delete_before_epoch_ms by the same PUT. The stores take the new
 // window live, with no restart, because someone who chose "Today only" for privacy and still saw
 // last week's spend on Usage has been told something false.
-package splice.app.control.mount
+package splice.app.control.usage
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receiveText
@@ -23,6 +23,8 @@ import splice.app.control.kept.CodeModeKept
 import splice.app.control.kept.CompactionSummariesKept
 import splice.app.control.kept.StoreKeptRoutes
 import splice.app.control.kept.TranscriptCopiesKept
+import splice.app.control.mount.ControlGuard
+import splice.app.control.mount.KeptHistoryStores
 import splice.app.sources.EconomicsStoreSource
 import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService

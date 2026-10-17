@@ -21,7 +21,6 @@ import splice.app.sources.mcp.McpSignatures
 import splice.control.mcp.APP_MCP_SLICE
 import splice.core.config.ConfigService
 import splice.core.config.Knob
-import splice.core.session.SessionLines
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.upstream.codemode.ProcessDispatchers
@@ -34,14 +33,10 @@ import splice.usage.perf.PerfPayloads
 import splice.usage.perf.RecordedAccounts
 import splice.usage.perf.RequestProjects
 import splice.usage.quota.UsagePayloads
-import splice.usage.statusline.StatuslineRoute
 
 // why: the perf rows /api/perf returns when the request names no ?tail — the recent end the console's
 // table renders first, never the whole ledger.
 private const val DEFAULT_PERF_TAIL = 200
-
-/** What a pre-0.4.0 session's status line prints: it sends no bearer, and 0.4.0 does not answer it with data. */
-private const val STATUSLINE_RELAUNCH = "splice updated: relaunch this session for its status line"
 
 internal class UsageMount(
     heads: Map<String, ManagedHead>,
@@ -58,9 +53,10 @@ internal class UsageMount(
     private val usagePayloads = UsagePayloads(usageHeads)
     private val perfPayloads = PerfPayloads(usageHeads)
 
+    private val statusline = StatuslineMount(usageLookup, config, clientVersions, guard)
+
     /** What each session's status line last said, written by each post and read by the manager's state. */
-    val lines = SessionLines()
-    private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions, lines)
+    val lines get() = statusline.lines
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
@@ -119,12 +115,6 @@ internal class UsageMount(
         route.get("/api/alerts") { guard.guarded(call) { alertRoutes.read().send(call) } }
         route.put("/api/alerts") { guard.guarded(call) { alertRoutes.write(call.receiveText()).send(call) } }
         route.post("/api/alerts/test") { guard.guarded(call) { alertRoutes.test().send(call) } }
-        // A SESSION's statusline command calls these, so its turn key opens them (with the resume hook).
-        route.post("/statusline/{head}") {
-            guard.guarded(call, Door.SESSION, STATUSLINE_RELAUNCH) { statuslineRoute.statusline(call) }
-        }
-        route.get("/statusline/{head}") {
-            guard.guarded(call, Door.SESSION, STATUSLINE_RELAUNCH) { statuslineRoute.statusline(call) }
-        }
+        statusline.register(route)
     }
 }

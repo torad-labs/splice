@@ -1,0 +1,72 @@
+id: kt-no-atomic-in-data-class
+valid:
+  # the compliant form the five findings are pointed at: the owner holds the handle privately and
+  # exposes it as behaviour. Not a data class, so not a value.
+  - |
+    internal class SlotHandoff {
+        private val handedOff = AtomicBoolean(false)
+        fun markHandedOff() { handedOff.set(true) }
+        fun wasHandedOff(): Boolean = handedOff.get()
+    }
+  # compliant owners already in tree
+  - |
+    public class AsyncFileIo(private val queue: Queue) {
+        private val pending = AtomicInteger()
+        private val warned = AtomicBoolean(false)
+    }
+  # a value bundle carrying only values
+  - |
+    internal data class TurnInputs(
+        val built: BuiltTurn,
+        val slot: InflightGate.Slot,
+        val t0: Long,
+    )
+  # a bundle handed a PORT onto the owner's decision instead of the handle itself
+  - |
+    internal data class TurnInputs(
+        val built: BuiltTurn,
+        val slotHandedOff: SlotHandedOff = SlotHandedOff { false },
+    )
+  # DIRECT membership: a nested class owning its own atomic is its own business
+  - |
+    internal data class Outer(val a: String) {
+        private class Inner {
+            private val flag = AtomicBoolean()
+        }
+    }
+  # the name arm must not fire on a bundle with no atomic at all
+  - 'internal data class HeadDeps(val port: Int, val label: String)'
+  - 'internal class TurnMeta(val key: String)'
+invalid:
+  # the named scar — constructor property
+  - |
+    internal data class TurnInputs(
+        val built: BuiltTurn,
+        val slotHandedOff: AtomicBoolean = AtomicBoolean(false),
+    )
+  # fully-qualified spelling must not escape
+  - 'private data class Admitted(val handedOff: java.util.concurrent.atomic.AtomicBoolean)'
+  # several handles, several flavours
+  - |
+    internal data class ClientChannel(
+        val coalesced: ImmediateSseWriter,
+        val clientGone: AtomicBoolean,
+        val socketFrames: AtomicLong = AtomicLong(0),
+    )
+  # BODY property: `copy()` drops it entirely, which is the worse half of the law
+  - |
+    public data class OAuthLoginAccount(val label: String?) {
+        private val reservation = AtomicReference<Lease?>(null)
+    }
+  - |
+    internal data class TurnDrive(val requestBody: JsonObject) {
+        private val rawRoundUsage = AtomicReference<RoundUsage?>(null)
+        private val usageStampClaim = AtomicBoolean(false)
+    }
+  # the NAME arm: dropping the `data` modifier is not an escape from the value-bundle law
+  - 'internal class TurnInputs(val slotHandedOff: AtomicBoolean)'
+  - 'internal class HeadDeps(val flag: AtomicInteger)'
+  - |
+    internal class RoundMeta(val key: String) {
+        private val stamped = AtomicBoolean(false)
+    }

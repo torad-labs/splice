@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage · splice</title>
+<link rel="stylesheet" href="console.css">
+<link rel="stylesheet" href="sessions.css">
+<link rel="stylesheet" href="usage.css">
+<link rel="stylesheet" href="perf-heads.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="mark">splice</div>
+    <!-- The nav is drawn by kit.js from its one PAGES list. -->
+
+    <div class="foot">
+      <button class="icon" data-act="theme" aria-label="Day or night">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </aside>
+  <main class="page">
+    <header class="head">
+      <h1>Usage</h1>
+      <div class="hfilters" id="hf"></div>
+      <div class="switch" role="group" aria-label="Window" id="win"></div>
+    </header>
+    <div class="pickline" id="pickline"></div>
+    <div class="usage" id="usage" aria-live="polite"></div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script src="api.js"></script>
+<script src="reqview.js"></script>
+<script src="knobs.js"></script>
+<script src="perf-heads.js"></script>
+<script src="console.js"></script>
+<script src="usage.js"></script>
+</body>
+</html>

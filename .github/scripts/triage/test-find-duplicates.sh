@@ -102,41 +102,31 @@ fi
 
 mkdir -p "$tmpdir/phase2"
 
-python3 - "$tmpdir/phase2/issues.json" <<'PY'
-import json, sys
+bun - "$tmpdir/phase2/issues.json" <<'TS'
+const targetTitle = "Daemon crashes on startup";
+const targetBody = "When I start the splice daemon, it crashes with a segfault. This happens every time on Ubuntu 24.04 with the latest release.";
 
-target_title = "Daemon crashes on startup"
-target_body = "When I start the splice daemon, it crashes with a segfault. This happens every time on Ubuntu 24.04 with the latest release."
+const issues: object[] = [];
+// 199 realistic, distinct filler issues (~800 bytes each).
+for (let i = 1; i < 200; i++) {
+  if (i === 142) continue;
+  const lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ";
+  issues.push({
+    number: 1000 + i,
+    title: `Filler issue ${i} about component behavior`,
+    body:
+      `This is a long description for issue ${i} that is intentionally unrelated to the daemon ` +
+      `startup crash. It discusses configuration parsing, dependency resolution, logging output, ` +
+      `and platform-specific behavior on various operating systems. ` +
+      lorem.repeat(6) + `End of body for issue ${i}.`,
+    labels: [],
+  });
+}
+// Planted verbatim duplicate of the target (number 142, as specified in the plan).
+issues.push({ number: 142, title: targetTitle, body: targetBody, labels: [] });
 
-issues = []
-# 199 realistic, distinct filler issues (~800 bytes each).
-for i in range(1, 200):
-    if i == 142:
-        continue
-    n = 1000 + i
-    issues.append({
-        "number": n,
-        "title": f"Filler issue {i} about component behavior",
-        "body": (
-            f"This is a long description for issue {i} that is intentionally unrelated to the daemon "
-            f"startup crash. It discusses configuration parsing, dependency resolution, logging output, "
-            f"and platform-specific behavior on various operating systems. "
-            f"Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * 6
-            + f"End of body for issue {i}."
-        ),
-        "labels": []
-    })
-# Planted verbatim duplicate of the target (number 142, as specified in the plan).
-issues.append({
-    "number": 142,
-    "title": target_title,
-    "body": target_body,
-    "labels": []
-})
-
-with open(sys.argv[1], "w") as f:
-    json.dump(issues, f)
-PY
+await Bun.write(Bun.argv[2]!, JSON.stringify(issues));
+TS
 
 bytes=$(wc -c < "$tmpdir/phase2/issues.json")
 if [ "$bytes" -le 131072 ]; then
@@ -215,6 +205,7 @@ fi
 
 probe_dir="$tmpdir/probes"
 mkdir -p "$probe_dir"
+cp "$dir/similarity.ts" "$probe_dir/similarity.ts"
 
 # Probe 1: threshold 0.0 -> candidate #3 (distinct) also gets flagged.
 cp "$dir/find-duplicates.sh" "$probe_dir/find-duplicates-threshold-0.sh"

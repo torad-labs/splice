@@ -45,7 +45,6 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
-        working-directory: gateway
         run: ./gradlew classes --no-daemon --stacktrace
       - name: analyze
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2

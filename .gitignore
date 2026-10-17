@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 __pycache__/
 *.pyc
 .claude/hooks/log/
@@ -13,18 +13,21 @@ __pycache__/
 /dist/
 /.cache/
 
-# gradle (gateway/)
-gateway/.gradle/
-gateway/**/.gradle/
-gateway/**/build/
-gateway/.kotlin/
-gateway/build-logic/.kotlin/
+# gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts
+# them, so the module build outputs are ignored at ANY depth — one rule, not one per module)
+.gradle/
+.kotlin/
+build/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/
+# per-tool agent configs and release-media workspaces that live beside the repo, never in it
+.agents/
+.codex/
+dev/media/
 
 # #924 Phase 1: live contract receipts are per-run artifacts, not source
-checks/e2e/receipts/
+tools/e2e/receipts/
 
 # secrets / credential stores (OSS-A defensive baseline)
 .env
@@ -45,7 +48,6 @@ credentials.json
 
 # --- OSS-K: internal-material untrack ignores (per-file, never blanket) ---
 .claude/skills/
-.claude/ledger-diffs/
 .claude/agents/
 .claude/workflows/
 .claude/commands/
@@ -61,11 +63,25 @@ credentials.json
 
 # transient operator wall grant (/grant) — never committed
 .claude/state/walls-grant.json
+# hook and tool state written beside the repo's settings (gitleaks reports, restart logs)
+/.claude/state/
+# tool output a seat's run drops at the root: Playwright's default outputDir, a Java language
+# server's workspace, tsc's incremental cache; screenshots belong in captures/
+/test-results/
+/workspace/
+*.tsbuildinfo
 .claude/tmp/
 
+# gradle slot lock + holder (bun tools/gate slot)
+/.gradle-slot.lock*
+# A host build wrapper's per-project lock. The gradle slot (tools/gate/src/lib/slot.ts) runs gradle through whatever
+# memory-containment wrapper the box provides, when it provides one, and such a wrapper drops its
+# lock beside the tree it builds — the repository root, where the build is rooted. A machine
+# artifact, never source, and the pattern is the SHAPE rather than one tool's name so a box with a
+# differently-named wrapper needs no edit to this file.
+.*-build.lock
 # per-machine agent tooling installs: skills and hook mirrors for the other seats
 /.agents/
 /.codex/
-
-# the host build semaphore's lock, written beside the gradle tree
-.hostshield-build.lock
+# verifier harnesses, receipts and measurements: never committed (operator rule), so a seat's files here are never unlanded work
+/captures/

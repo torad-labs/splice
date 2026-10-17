@@ -1,0 +1,87 @@
+{
+  "class": "session-start-hook",
+  "about": "SessionStart hook output: repository policy or environment context the operator's hook printed, sent as a role=system message after the first user message.",
+  "carriers": {
+    "hook": "<system-reminder>\nSessionStart:startup hook additional context: policy CONF-HOOK never commit to main directly.\n</system-reminder>"
+  },
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 start the task"
+      },
+      {
+        "role": "system",
+        "content": [
+          {
+            "type": "text",
+            "text": "@hook"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "CONF-A1 noted the policy."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 continue"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@hook"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@hook",
+          "CONF-A1",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@hook"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@hook",
+          "CONF-A1",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@hook"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@hook",
+          "CONF-A1",
+          "CONF-U2"
+        ]
+      }
+    ]
+  }
+}

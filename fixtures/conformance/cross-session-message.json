@@ -1,0 +1,113 @@
+{
+  "class": "cross-session-message",
+  "about": "A message another Claude Code session sent to this one (SendMessage between sessions), delivered as a role=system message between two of this session's tool round trips.",
+  "carriers": {
+    "peer": "<cross-session-message from=\"peer-session\">\nplease rerun the verify step CONF-PEER and report the exit code\n</cross-session-message>"
+  },
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 work on the build"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_p1",
+            "name": "Bash",
+            "input": {
+              "command": "make build"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_p1",
+            "content": "build ok"
+          }
+        ]
+      },
+      {
+        "role": "system",
+        "content": [
+          {
+            "type": "text",
+            "text": "@peer",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "CONF-A1 build is done, checking messages."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 anything new?"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@peer"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@peer",
+          "CONF-A1",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@peer"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@peer",
+          "CONF-A1",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@peer"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "@peer",
+          "CONF-A1",
+          "CONF-U2"
+        ]
+      }
+    ]
+  }
+}

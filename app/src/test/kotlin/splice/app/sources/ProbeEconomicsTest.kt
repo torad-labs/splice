@@ -1,0 +1,299 @@
+// Historical probes leave no economics work; correction never edits history.
+package splice.app.sources
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.turn.AbsorbedRounds
+import splice.core.turn.UsageHistory
+import splice.core.util.WallClock
+import splice.head.usage.TurnEconomics
+import splice.head.usage.TurnTokens
+import splice.usage.UsageHeads
+import splice.usage.economics.EconomicsPayloads
+import java.nio.file.Files
+import java.nio.file.Path
+
+class ProbeEconomicsTest {
+    @Test
+    fun `a reconciled probe cannot erase a real request whose usage is unreported`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val unreported =
+            """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,""" +
+                """"tools_eager":3,"tools_deferred":2}"""
+        Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n" + unreported + "\n")
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        store.record(
+            turn("synthetic", 0, 100, 50, 3L to 2L).copy(
+                tokens = TurnTokens(inTokens = null, cachedTokens = null, cacheWriteTokens = null, outTokens = null),
+            ),
+        )
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val heads = UsageHeads { listOf(head("synthetic", source)) }
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson()).jsonObject
+        val hour = payload.getValue("heads").jsonArray.single().jsonObject
+            .getValue("buckets").jsonArray.single().jsonObject
+        assertEquals("1", hour.getValue("turns").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `probes are subtracted once while modeled and local work survive polls and reload`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW).joinToString("\n") + "\n",
+        )
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(store)
+        store.flushNow()
+        val original = Files.readString(dir.resolve("economics.json"))
+        val control = store(dir.resolve("control"))
+        recordWork(control)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val expected = EconomicsStoreSource(control).rows()
+        assertEquals(expected, source.rows())
+        assertEquals(expected, source.rows())
+        assertEquals(expected, EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).rows())
+        assertEquals(original, Files.readString(dir.resolve("economics.json")))
+        // A healthy second poll must not re-scan history: the frozen deductions still apply.
+        Files.delete(file)
+        assertEquals(expected, source.rows())
+    }
+
+    // Every legacy probe row has an empty model, so a torn line that shows a model is a work row and must not hide the hours
+    // counted before it; one cut before its model shows, or with an empty model, could be a probe and refuses.
+    @Test
+    fun `a torn row that shows a model leaves the day figure, and one that could be a probe refuses it`(
+        @TempDir dir: Path,
+    ) {
+        val rows = listOf(SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW)
+        fun read(torn: String): EconomicsStoreSource {
+            val file = dir.resolve("head-${torn.length}-perf.jsonl")
+            Files.writeString(file, (rows + torn).joinToString("\n") + "\n")
+            val store = store(dir.resolve("store-${torn.length}"))
+            store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+            recordWork(store)
+            return EconomicsStoreSource(store, PerfRowsFileSource(file))
+        }
+        val control = store(dir.resolve("control"))
+        recordWork(control)
+        val whole = EconomicsStoreSource(control).rows()
+        for (ts in listOf(1791707160100L, 4200123L, 3600200L, 3630123L)) {
+            val shown = """{"ts":$ts,"model":"synthetic","outcome":"ok","cache_write_tokens"""
+            assertEquals(whole, read(shown).rows(), "a tear at $ts that shows its model is not a probe")
+        }
+        // the tear a 0.3.x daemon leaves when it is stopped for the upgrade: right after its own last probe, after Oct 1
+        val lastWrite = """{"ts":3630123,"model":"","outcome":"error:upstream-failed","req_bytes":30"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(lastWrite).gap())
+        val beforeModel = """{"ts":3630123,"mod"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(beforeModel).gap())
+        val onlyTs = """{"ts":3630123,"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(onlyTs).gap())
+        val unstamped = """{"model":"synthetic","outcome":"ok","cache_write_tokens"""
+        assertEquals(ProbeGap.UNREADABLE.sentence, read(unstamped).gap())
+    }
+
+    // The rollup meters a turn's absorbed rounds beside its final round, so the perf evidence must sum
+    // them the same way, or every hour with a hidden code-mode round fails to reconcile.
+    @Test
+    fun `a turn's absorbed rounds reconcile between perf evidence and the rollup`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, listOf(SYNTHETIC_PROBE_ROW, ABSORBING_WORK_ROW).joinToString("\n") + "\n")
+        val script = AbsorbedRounds(rounds = 1, inputTokens = 4, cachedTokens = 1, cacheWriteTokens = 1)
+            .copy(outputTokens = 3)
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        store.record(absorbing(script))
+        val control = store(dir.resolve("control"))
+        control.record(absorbing(script))
+
+        val buckets = EconomicsStoreSource(store, PerfRowsFileSource(file)).rows()
+        assertEquals(EconomicsStoreSource(control).rows(), buckets)
+        assertEquals(9L, buckets.single().tokens.inTokens, "the final round's 5 and the absorbed round's 4")
+    }
+
+    @Test
+    fun `a probe-only bucket disappears`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n")
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
+    }
+
+    @Test
+    fun `unreadable perf evidence cannot silently return clean economics`(@TempDir dir: Path) {
+        val file = Files.createDirectory(dir.resolve("head-perf.jsonl"))
+        val store = store(dir)
+        recordWork(store)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        assertEquals(ProbeGap.UNREADABLE.sentence, source.gap())
+    }
+
+    @Test
+    fun `unpriced legacy hours stay unknown after probe correction`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n" + MODELED_WORK_ROW + "\n")
+        Files.writeString(
+            dir.resolve("economics.json"),
+            """[{"hour":3600000,"turns":2,"req_bytes":130,"upstream_req_bytes":65,"tools_eager":5,""" +
+                """"tools_deferred":3,"deferral_turns":2,"unpriced_turns":1,"in_tokens":5,"cached_tokens":2,""" +
+                """"cache_write_tokens":1,"out_tokens":10}]""",
+        )
+        val row = EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).rows().single()
+        assertEquals(1L, row.turns)
+        assertEquals(5L, row.tokens.inTokens)
+        assertEquals(10L, row.tokens.outTokens)
+        assertEquals(2L, row.tokens.cachedTokens)
+        assertEquals(1L, row.tokens.cacheWriteTokens)
+        assertNull(row.cost.costUsd)
+    }
+
+    @Test
+    fun `a torn probe cannot freeze an empty correction and its repaired evidence is retried`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + "\n")
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        assertEquals(ProbeGap.UNREADABLE.sentence, source.gap())
+        Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n")
+        assertEquals(emptyList<Any>(), source.rows())
+    }
+
+    @Test
+    fun `rotated-away probe evidence cannot leave contaminated usage looking clean`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(store)
+        Files.writeString(file, MODELED_WORK_ROW + "\n" + LOCAL_WORK_ROW + "\n")
+        assertEquals(ProbeGap.UNRECONCILED.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
+    }
+
+    @Test
+    fun `later live work cannot invalidate an already reconciled legacy hour`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            SYNTHETIC_PROBE_ROW + "\n" + MODELED_WORK_ROW.replace("3600123", "7200123") + "\n",
+        )
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
+    }
+
+    @Test
+    fun `a probe response id authored by splice is not command provenance`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + ""","response_message_id":"synthetic-id"}""" + "\n")
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
+    }
+
+    @Test
+    fun `perf-only local refusals do not invent a missing economics contribution`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            listOf(
+                SYNTHETIC_PROBE_ROW,
+                MODELED_WORK_ROW,
+                LOCAL_WORK_ROW,
+                """{"ts":3600123,"model":"synthetic","outcome":"error:rate-limited","attempts":0,"req_bytes":100}""",
+            ).joinToString("\n") + "\n",
+        )
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(store)
+        val control = store(dir.resolve("control"))
+        recordWork(control)
+        assertEquals(
+            EconomicsStoreSource(control).rows(),
+            EconomicsStoreSource(store, PerfRowsFileSource(file)).rows(),
+        )
+    }
+
+    @Test
+    fun `a probe crossing an hour cannot erase the preceding genuine bucket`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val before = PROBE_HOUR - 1
+        Files.writeString(
+            file,
+            MODELED_WORK_ROW.replace("3600123", before.toString()) + "\n" +
+                SYNTHETIC_PROBE_ROW.replace("3600123", before.toString()) + "\n",
+        )
+        var now = before
+        val store = store(dir, WallClock { now })
+        store.record(turn("synthetic", 5, 100, 50, 3L to 2L))
+        now = PROBE_HOUR
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        val original = store.read()
+        assertEquals(ProbeGap.SPLIT_HOUR.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
+        assertEquals(original, store.read(), "uncertainty never mutates the genuine bucket")
+    }
+
+    // splice-lead, Oct 4: GET /api/economics failed on every poll from 5:18 AM CT because one head's
+    // evidence threw. A head that cannot reconcile now answers unavailable with its reason, alone.
+    @Test
+    fun `one head whose evidence does not reconcile answers unavailable while the others still answer`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("head-perf.jsonl")
+        // The probe's own row rotated away, so its rollup cannot be cleaned.
+        Files.writeString(file, MODELED_WORK_ROW + "\n" + LOCAL_WORK_ROW + "\n")
+        val contaminated = store(dir.resolve("contaminated"))
+        contaminated.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(contaminated)
+        val healthy = store(dir.resolve("healthy"))
+        recordWork(healthy)
+        val heads = UsageHeads {
+            listOf(
+                head("claudex", EconomicsStoreSource(contaminated, PerfRowsFileSource(file))),
+                head("grok", EconomicsStoreSource(healthy)),
+            )
+        }
+
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson()).jsonObject
+        val (hidden, answering) = payload.getValue("heads").jsonArray.map { it.jsonObject }
+
+        assertEquals(ProbeGap.UNRECONCILED.sentence, hidden.getValue("unavailable").jsonPrimitive.content)
+        assertEquals(JsonArray(emptyList()), hidden.getValue("buckets"), "no hour of the head that cannot be cleaned")
+        assertNull(answering["unavailable"], "the other head is not marked")
+        val hour = answering.getValue("buckets").jsonArray.single().jsonObject
+        val held = EconomicsStoreSource(healthy).rows().single()
+        assertEquals(held.turns, hour.getValue("turns").jsonPrimitive.long, "the other head's hour, whole")
+    }
+
+    // Each hour is judged on its own evidence: an hour of the rollup that predates the log reads Not read, and the
+    // hours the log covers still show their figure.
+    @Test
+    fun `a rollup older than the log shows the hours the log covers and reads the older ones as not read`(
+        @TempDir dir: Path,
+    ) {
+        val today = 20 * PROBE_HOUR + 123
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, atHour(today, MODELED_WORK_ROW, LOCAL_WORK_ROW))
+        var now = 5 * PROBE_HOUR + 10
+        val store = store(dir, WallClock { now })
+        store.record(turn("synthetic", 5, 100, 50, 3L to 2L))
+        now = today
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(5 * PROBE_HOUR), read.notRead)
+    }
+
+    private fun absorbing(script: AbsorbedRounds): TurnEconomics =
+        turn("synthetic", 5, 100, 50, 3L to 2L).copy(history = UsageHistory(absorbed = script))
+}

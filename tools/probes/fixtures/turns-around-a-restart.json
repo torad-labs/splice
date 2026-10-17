@@ -1,0 +1,17 @@
+{
+  "heads": {
+    "claudex": { "heads": [{ "key": "claudex", "label": "claudex", "count": 7, "returned": 7, "truncated": false, "rows": [
+      { "ts": 1000000000000, "outcome": "ok", "total": 9000 },
+      { "ts": 1000000010000, "outcome": "ok", "total": 4000, "empty_retries": 1 },
+      { "ts": 1000000070000, "outcome": "error:restarted", "total": 60000 },
+      { "ts": 1000000085000, "outcome": "error:restarted", "total": 100000 },
+      { "ts": 1000000046000, "outcome": "error:restarted", "total": 2 },
+      { "ts": 1000000047000, "outcome": "error:restarted", "total": 3 },
+      { "ts": 1000000100000, "outcome": "ok", "total": 6000, "empty_retries": 2 }
+    ] }] },
+    "claude-splice": { "heads": [{ "key": "claude-splice", "label": "claude-splice", "count": 2, "returned": 2, "truncated": true, "rows": [
+      { "ts": 1000000020000, "outcome": "ok", "total": 1000 },
+      { "ts": 1000000060000, "outcome": "error:overloaded", "total": 50000 }
+    ] }] }
+  }
+}

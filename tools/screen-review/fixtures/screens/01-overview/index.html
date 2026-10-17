@@ -1,0 +1,20 @@
+<!-- NEW: synthetic full-width, long-page proposal used only by screen-review proof fixtures. -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Synthetic overview</title>
+<style>
+*{box-sizing:border-box}body{margin:0;width:100%;height:5600px;background:#171c20;color:#e6e8e7;font:clamp(16px,.95vw,32px)/1.6 system-ui,sans-serif}
+header{height:200px;padding:2rem 3vw;border-bottom:2px solid #384247;display:flex;gap:2rem;align-items:center;justify-content:space-between}header b{font-size:clamp(24px,1.6vw,52px)}header span{color:#aab6b9;font-size:clamp(14px,.85vw,28px)}
+aside{position:absolute;left:0;top:200px;bottom:0;width:15%;border-right:2px solid #384247;padding:3rem 2vw;background:#14191c}aside p{margin:0 0 2rem;color:#98a6ab}aside p:first-child{color:#f0e9da}
+main{margin-left:15%;padding:3rem 4vw}h1{font-size:clamp(32px,2.7vw,92px);letter-spacing:-.02em;line-height:1.15;margin:0 0 25px;font-weight:520}h2{font-size:clamp(24px,1.6vw,52px);font-weight:500;margin:3rem 0 1rem}p{margin:0;color:#acb8bc}.lede{max-width:1750px;font-size:clamp(16px,1.1vw,36px)}
+.summary{display:flex;gap:2rem;margin-top:3rem;padding:2rem 0;border-top:2px solid #384247;border-bottom:2px solid #384247}.summary div{flex:1}.summary b{display:block;color:#f0e9da;font-size:clamp(20px,1.3vw,43px);font-weight:500}.summary span{color:#acb8bc}
+table{border-collapse:collapse;width:100%;text-align:left;margin-top:2rem}th{font-size:.8em;color:#9dabb0;font-weight:450;padding:1rem 0;border-bottom:2px solid #384247}td{padding:1.5rem 0;border-bottom:2px solid #303a3f}.state{color:#97c7ad}.lower{margin-top:2000px;padding-top:3rem;border-top:2px solid #384247}.event{display:grid;grid-template-columns:1fr 2fr;gap:2rem;padding:2rem 0;border-bottom:2px solid #384247}.event span{color:#9cabb0}
+@media(max-width:600px){body{height:9000px}header{height:140px;display:block}header span{display:block}aside{display:none}main{margin:0;padding:2rem 5vw}.summary{display:block}.summary div+div{margin-top:1rem}th,td{font-size:12px;padding:.8rem .25rem}.event{display:block}.lower{margin-top:4000px}}
+</style></head><body>
+<header><b>Workspace</b><span>Synthetic example · not live data</span></header>
+<aside><p>Overview</p><p>Activity</p><p>Resources</p><p>Settings</p></aside>
+<main><h1>A clear view of the work.</h1><p class="lede">A proposed starting point for the workspace. The entries below are illustrative, not connected to a service.</p>
+<div class="summary"><div><b>Everything is available</b><span>No item needs immediate attention</span></div><div><b>Two tasks in progress</b><span>Last updated just now</span></div></div>
+<h2>Current work</h2><table><thead><tr><th>WORKSPACE</th><th>STATE</th><th>LATEST UPDATE</th></tr></thead><tbody>
+<tr><td>Sample workspace A</td><td class="state">In progress</td><td>Preparing a preview</td></tr><tr><td>Sample workspace B</td><td class="state">Ready</td><td>Waiting for review</td></tr></tbody></table>
+<section class="lower"><h2>Earlier activity</h2><p>This section deliberately sits below the first screenful, so pinned feedback can be tested on the whole page.</p>
+<div class="event"><span>Example event</span><div>Preview prepared for review</div></div><div class="event"><span>Example event</span><div>Workspace settings updated</div></div><div class="event"><span>Example event</span><div>A new task was added</div></div></section>
+</main></body></html>

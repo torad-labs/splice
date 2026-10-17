@@ -1,0 +1,46 @@
+enum class Color { RED, GREEN }
+
+sealed class Shape {
+    class Circle : Shape()
+    class Square : Shape()
+}
+
+open class Animal
+class Dog : Animal()
+
+fun enumAll(c: Color): String = when (c) {
+    Color.RED -> "red"
+    Color.GREEN -> "green"
+}
+
+fun sealedAll(s: Shape): String = when (s) {
+    is Shape.Circle -> "circle"
+    is Shape.Square -> "square"
+}
+
+fun booleanAll(b: Boolean): String = when (b) {
+    true -> "yes"
+    false -> "no"
+}
+
+fun stringNeedsElse(s: String): Int = when (s) {
+    "a" -> 1
+    else -> 0
+}
+
+fun intNeedsElse(i: Int): Int = when (i) {
+    1 -> 1
+    else -> 0
+}
+
+fun openClassNeedsElse(a: Animal): Int = when (a) {
+    is Dog -> 1
+    else -> 0
+}
+
+fun subjectless(x: Int): Int = when {
+    x > 0 -> 1
+    else -> 0
+}
+
+fun ifElse(x: Int): Int = if (x > 0) 1 else 0

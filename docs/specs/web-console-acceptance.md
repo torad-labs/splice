@@ -1,0 +1,181 @@
+# The console, in the words of the person using it
+
+What a splice user comes to the console to do, written as they would ask it. It is walked by eye, in
+a normal-size browser window, as that person: for each question, can I do it, how many clicks did it
+take, and did I have to already know where it was. Wherever the answer is "open a terminal", "read a
+log" or "edit a TOML file", the console does not do it yet.
+
+Owner and gate: Marlin (operator, 2026-09-27: Marlin approves every screen and every page).
+Draft 2, 2026-09-27: draft 1 (a7143498c) with Marlin's changes. Merged from three sources: what
+splice can do today (source-capabilities.md), what users of other proxy consoles can do
+(source-proxy-consoles.md), and how splice has actually been used on the operator's machine (kept
+private, off this repo). Sections follow what splice users want most (Splice-CPO demand research,
+2026-09-25): getting in, limits, models, other plans inside Claude Code, then seeing what several
+agents are doing. Inside each section, questions are ordered by how often the evidence asks for them;
+the build follows that order. "(new)" marks something splice cannot do at all today, in the console
+or anywhere else. Question ids (Q17) are stable handles for the walk and do not change when the order
+does.
+
+Who this person is: a developer who lives in Claude Code and also pays for ChatGPT, maybe Grok, Kimi,
+Muse, an OpenRouter key or a local model. They set splice up once, then type `claudex` or
+`claude-grok` where they used to type `claude`, and mostly forget splice exists. They come to the
+console when a limit hits, when something looks wrong, when they want to change how an agent behaves,
+or when they want to see what their agents are doing.
+
+How the walk runs: by situation, not down the list. A person arrives with a reason, and each
+situation pulls in its questions: the first hour (Q0a-c, Q23, Q24, Q27, Q15, Q16); a limit hitting
+mid-task (Q1, Q2, Q6, Q10, Q11, Q30); something looking wrong (Q47-Q52, Q55); changing how an agent
+behaves (Q31-Q35); a team day (Q39, Q40, Q42, Q45, Q46); upgrading (Q58, Q59). What is left gets a
+straight pass at the end. Each step records what I came to do, where I looked first, the clicks, what
+I expected, what happened, and any drop to terminal, log or TOML, with a normal-size screenshot.
+
+## 0. Getting in
+
+- **Q0b.** The first time I open it, can I tell in a few seconds what I'm looking at and what to do
+  first?
+- **Q0c.** Does every page use my words: my commands (not "heads"), my instructions (not "system
+  prompt mode")?
+- **Q0a.** Can I open the console with one command from my terminal, and is it open only to me?
+
+## 1. My limits, and what happens when I hit one
+
+- **Q1.** Can I see, on one page, how much of every plan I'm signed into is left right now: each
+  Claude, ChatGPT, Grok, Kimi and Muse account, its 5-hour and 7-day windows, and when each resets?
+- **Q12.** Can I see what today cost at API rates, per provider, model and session, and is it clear
+  that on a subscription it's an estimate and nothing was billed?
+- **Q5.** Can I choose what happens when an account hits its limit: which account takes over next,
+  whether to go back to my main account after it resets, or to stop and tell me? (new)
+- **Q11.** Can I tell "out of credits" apart from "signed out"?
+- **Q3.** Can I sign in another ChatGPT, Grok, Kimi or Muse account, from that same page, so splice
+  moves my sessions to it when the first one runs out?
+- **Q14.** Can I see my usage over the last hour, day and week, and click from a spike to the sessions
+  and requests behind it?
+- **Q4.** Can I keep several Claude accounts, switch between them, and see their limits next to my
+  other providers?
+- **Q68.** When one Claude account runs out, can splice move my sessions to my other Claude account
+  on its own, the way it does for my other providers? (new)
+- **Q6.** Can I see when splice moved one of my sessions to another account, and why?
+- **Q9.** Am I warned before I run out, not after, in the console or by a webhook?
+- **Q13.** Can I set a daily cap for a command, and choose whether it warns me or stops?
+- **Q8.** Can I remove an account, or rename it so I can tell mine apart?
+- **Q2.** Can I tell which account each of my running sessions is using right now?
+- **Q7.** Can I keep a session or a command on one account, and let it go again?
+- **Q10.** When I'm out and have no other account, can I see where else I could continue (another
+  provider, a local model) and get the one command that continues my session there, ready to paste?
+
+## 2. My models: which one, how big, how good
+
+- **Q17.** Can I change a model's context window, up to what it really supports, and have it apply
+  without restarting anything?
+- **Q15.** Can I see every model I can use, from every provider I'm signed into, in one list I can
+  search and sort by context window and price?
+- **Q16.** Can I choose which model each of my commands uses when Claude Code asks for Opus, Sonnet or
+  Haiku?
+- **Q18.** Can I add a model a provider just released, and hide the ones I never use?
+- **Q19.** Can I tell whether a model is really served by its provider or local runtime, or only
+  listed?
+- **Q21.** Can I try a prompt against a model without touching my sessions?
+- **Q22.** Can I compare two sessions that ran on different models or with different instructions,
+  and see what changed in what the model received and in how it answered? (new)
+- **Q20.** Can I compare two or three models side by side: context, price, speed?
+
+## 3. Bringing my other plans into Claude Code
+
+- **Q24.** Can I connect a local model (llama.cpp, Ollama, LM Studio, vLLM, a rented GPU) and get a
+  command for it?
+- **Q26.** Can I sign in again when a login expires, right where it tells me it expired?
+- **Q23.** Can I connect a new provider from the console (sign in with ChatGPT, Grok, Kimi or Muse in
+  the browser, or paste an OpenRouter, DeepSeek or any OpenAI-compatible key) and get a command like
+  `claudex` to type in my terminal?
+- **Q30.** Can I take a session to another command, for example from Claude to GPT, by getting the one
+  command that continues it there, ready to paste?
+- **Q29.** Can I see my API keys (masked), and add, replace or remove one?
+- **Q25.** Can I rename one of my commands, or remove one I no longer use?
+- **Q27.** Can I see whether each of my connections works right now, and fix the one that doesn't from
+  where I see it?
+- **Q28.** Can I make my plain `claude` command go through splice, and undo that?
+- **Q69.** Can I continue a session on another command with one click, without going to my terminal?
+  (new)
+
+## 4. How my agents behave
+
+- **Q36.** Can I see what a compaction did to a session, and why one failed?
+- **Q32.** Can I change what a command adds: add to Claude Code's own instructions, replace them, or
+  remove parts of them, and see the result before it applies?
+- **Q31.** Can I read the exact instructions each of my commands sends the model, including what I
+  added?
+- **Q33.** Can I set instructions for one repository, for every command I launch there, or for one
+  command in one repository?
+- **Q35.** Can I set instructions that apply only when a session compacts, per repository or per
+  model, and see which ones a compaction used?
+- **Q34.** Can I see which instructions a specific session actually received?
+- **Q37.** Can I turn code mode on or off for ChatGPT, with a sentence telling me what it does?
+- **Q70.** Can I turn one Claude Code setting (memory, for example) on or off for all my commands at
+  once? (new)
+- **Q38.** Can I keep versions of my instructions and go back to an earlier one? (new)
+
+## 5. What my agents are doing
+
+- **Q39.** Can I see all my sessions by the names I know them by, grouped by repository and by
+  provider, and tell which are working, waiting on me, stuck or finished?
+- **Q40.** Can I open a session and read it like a chat: my messages, its answers, the tools it ran?
+- **Q45.** Can I set up a team (sessions on different models working one goal), edit it, find it
+  again and archive it?
+- **Q42.** Can I see which of my sessions talked to each other, and read those messages as a
+  conversation, per repository or per piece of work, with each message under its sender's name?
+- **Q43.** Can I send a message to one of my sessions from the console? (new)
+- **Q44.** Can I stop a turn that's running?
+- **Q46.** Can I see what each session and each team used and cost?
+- **Q41.** Can I search my sessions for something that was said or done? (new)
+
+## 6. When something looks wrong
+
+- **Q47.** Can I see every request going through splice, newest first, and filter it by command,
+  model, session, status and time?
+- **Q48.** Can I click one and see everything the model received (instructions, messages, tools) and
+  everything it sent back, with tokens, time, cache and cost?
+- **Q52.** Does every error tell me in plain words what happened and what to do?
+- **Q51.** Can I tell whether a quiet turn is still working or hung, and stop it?
+- **Q49.** Can I see on each row, in plain words, whether it was retried, moved to another account, or
+  failed?
+- **Q50.** Can I see where a slow turn spent its time: waiting on the provider, retrying, streaming?
+- **Q54.** Can I read splice's own log for one command, filtered, following live?
+- **Q55.** Can I run the health check and apply each fix from where it's shown?
+- **Q57.** Can I link someone, or myself later, to one request, one session or one filtered view?
+- **Q53.** Can I re-run a request to see if a fix worked?
+- **Q56.** Can I make a report I can share that hides my private details?
+
+## 7. Keeping splice itself healthy
+
+- **Q58.** Can I see which version is running, whether a newer one exists, and upgrade or roll back
+  without cutting turns in flight?
+- **Q59.** Can I tell when a change I made needs a restart, and restart safely when it does?
+- **Q60.** Can I see which tool servers (MCP) my sessions share, and leave one out?
+
+## 8. My data
+
+- **Q62.** Can I choose whether full request content is recorded for a command, with a sentence
+  telling me exactly what that keeps?
+- **Q61.** Can I see what splice keeps on my disk and for how long, and delete it?
+- **Q63.** Can I get my configuration back from before a change?
+
+## 9. Finding my way
+
+- **Q64.** Can I find any setting by typing what I'm looking for, and is each one named for what it
+  does, with its current value and a sentence explaining it?
+- **Q65.** Can I change a thing where I'm looking at it: a command's model where I see the command, an
+  account where I see its usage, a team where I see the team?
+- **Q67.** Does every page load fast on a busy week, and tell me when it can't load something?
+- **Q66.** Can I search everything (sessions, requests, models, settings) from one box? (new)
+
+## What users of other consoles hate, and this one must not do
+
+- A view that loads slower the more history there is.
+- A detail pane that comes up blank without saying why.
+- A limit that shows in the console but doesn't actually enforce.
+- An error that doesn't explain itself.
+- Safe behavior (retrying, waiting) that only happens if I opt in.
+- Big payloads dumped raw so the page crawls.
+- Views with no default time range that time out.
+- A decision that costs money, explained only in a help article.
+- Having to remember which tab a setting lives under.

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compare models · splice</title>
+<link rel="stylesheet" href="console.css">
+<link rel="stylesheet" href="sessions.css">
+<link rel="stylesheet" href="reqview.css">
+<link rel="stylesheet" href="compare.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="mark">splice</div>
+    <!-- The nav is drawn by kit.js from its one PAGES list. -->
+
+    <div class="foot">
+      <button class="icon" data-act="theme" aria-label="Day or night">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </aside>
+  <main class="page">
+    <header class="head">
+      <div class="titles"><h1>Compare models</h1><p class="sub">Ask several models the same thing and compare their answers side by side.</p></div>
+    </header>
+    <div class="pg" id="pg" aria-live="polite"></div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script src="api.js"></script>
+<script src="reqview.js"></script>
+<script src="knobs.js"></script>
+<script src="perf-heads.js"></script>
+<script src="console.js"></script>
+<script src="compare.js"></script>
+</body>
+</html>

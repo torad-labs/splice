@@ -1,0 +1,110 @@
+{
+  "class": "task-notification",
+  "about": "A background subagent or command finishes: Claude Code sends the notification as a role=system message after the turn that started it. V4-277: a replace-mode chat head dropped every role=system message, so the result never reached the model (51 of 55 client requests carried one, 0 of 88 upstream).",
+  "carriers": {
+    "task": "<task-notification>\n<task-id>bg1</task-id>\n<status>completed</status>\n<summary>Background command \"npm run audit\" completed (exit code 0)</summary>\n</task-notification>"
+  },
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 run the audit in the background and tell me when it is done"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "CONF-A1 started it in the background."
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_bg1",
+            "name": "Bash",
+            "input": {
+              "command": "npm run audit",
+              "run_in_background": true
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_bg1",
+            "content": "Command running in background with ID: bg1"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "CONF-A2 it is running, I will wait for the notification."
+          }
+        ]
+      },
+      {
+        "role": "system",
+        "content": "@task"
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 what did it find?"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@task"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "CONF-A2",
+          "@task",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@task"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "CONF-A2",
+          "@task",
+          "CONF-U2"
+        ]
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "item",
+        "role": "system",
+        "text": "@task"
+      },
+      {
+        "kind": "order",
+        "texts": [
+          "CONF-U1",
+          "CONF-A2",
+          "@task",
+          "CONF-U2"
+        ]
+      }
+    ]
+  }
+}

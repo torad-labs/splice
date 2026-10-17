@@ -1,0 +1,215 @@
+// NEW: Claude Code's 30-second activity label, answered by the proxy (2026-09-05).
+//
+// Every 30 s (`kxo=30000`, the AgentSummary timer in Claude Code 2.1.257) the client forks the
+// session's transcript and asks the model to "Describe your most recent action in 3-5 words using
+// present tense (-ing)" — the status line's "Reading runAgent.ts". The fork carries the whole
+// conversation and every tool schema, so each label costs a full-context read: on 2026-09-05 it was
+// 2256 of the claudex head's rounds and 294M input tokens at a 48% cache-hit rate (the same
+// sessions' real turns hit 96%), for 8-13 output tokens apiece. The label is a function of the
+// transcript's last tool call, which the proxy already holds, so it is composed HERE and no
+// upstream turn happens (TurnPreparation → Preparation.Local → LocalResponses). The match is the
+// prompt's verbatim opening sentence: a reworded prompt in a later Claude Code rides upstream
+// exactly as before, and nothing else matches it short of a user typing that sentence.
+//
+// V4-130: THE NEAR MISS IS COUNTED. [looksLikeSideQuery] is a looser test (both key phrases, any case,
+// anywhere in the last user text) run only when the exact match failed, so a reworded prompt shows up
+// as label queries sent upstream (HeadEvents.labelQueryUpstream) instead of as silence.
+//
+// V4-265: THE SIDE QUERY IS NOT EVERY SESSION'S. Claude Code 2.1.282 starts that timer (AgentSummary,
+// `xa=30000`) only inside its background-agent runner, so a session's own loop never sends the query.
+// A recorded four-member team run worked for five minutes and recorded no label at all. Every
+// ordinary turn carries the same transcript tail, so [sampleOf] composes the same label from it, and
+// [ActivitySamples] holds it to the client's pace: one sample per session per interval, with the
+// client's own label counting as that session's sample.
+package splice.head
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import splice.core.session.ActivityAction
+import splice.core.util.ElapsedClock
+import splice.core.wire.AnthropicRequest
+import splice.core.wire.ContentBlock.TextBlock
+import splice.core.wire.ContentBlock.ToolUseBlock
+
+/** One activity sample per session per [SAMPLE_INTERVAL_MS] on [clock], for the last
+ *  [ACTIVITY_SESSIONS_REMEMBERED] sessions seen. */
+internal class ActivitySamples(private val clock: ElapsedClock) {
+    private val lastAt = object : LinkedHashMap<String, Long>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean =
+            size > ACTIVITY_SESSIONS_REMEMBERED
+    }
+
+    /** [session] was sampled now: the client answered its own side query. */
+    fun sampled(session: String): Unit = synchronized(lastAt) {
+        lastAt.remove(session)
+        lastAt[session] = clock()
+    }
+
+    /** True, and [session] counted as sampled now, when its last sample is an interval old or it has none. */
+    fun due(session: String): Boolean = synchronized(lastAt) {
+        val now = clock()
+        val last = lastAt[session]
+        if (last != null && now - last < SAMPLE_INTERVAL_MS) return false
+        lastAt.remove(session)
+        lastAt[session] = now
+        true
+    }
+}
+
+internal class ActivityLabel {
+
+    /** An ordinary turn's sample: its transcript's last tool call, described as the side query would
+     *  be answered. Null when the last assistant message called no tool, or there is none. */
+    fun sampleOf(request: AnthropicRequest): ActivityAction? =
+        request.messages.lastOrNull { it.role == ROLE_ASSISTANT }
+            ?.content?.filterIsInstance<ToolUseBlock>()?.lastOrNull()
+            ?.let(::describe)
+
+    /** The label to answer with, or null when the request is not the activity side query. */
+    fun labelFor(request: AnthropicRequest): ActivityAction? {
+        if (!isSideQuery(request)) return null
+        val lastAssistant = request.messages.lastOrNull { it.role == ROLE_ASSISTANT }
+        val call = lastAssistant?.content?.filterIsInstance<ToolUseBlock>()?.lastOrNull()
+        return when {
+            lastAssistant == null -> ActivityAction(NO_TRANSCRIPT_LABEL)
+            call == null -> ActivityAction(NO_TOOL_LABEL)
+            else -> describe(call)
+        }
+    }
+
+    /** True for a request that is not the side query by its exact opening but carries both of its
+     *  key phrases: a Claude Code that reworded the prompt. Call only after [labelFor] returned null. */
+    fun looksLikeSideQuery(request: AnthropicRequest): Boolean {
+        val text = lastUserText(request)?.lowercase() ?: return false
+        return NEAR_MISS_PHRASES.all { it in text }
+    }
+
+    private fun isSideQuery(request: AnthropicRequest): Boolean =
+        lastUserText(request)?.trimStart()?.startsWith(SIDE_QUERY_OPENING) == true
+
+    private fun lastUserText(request: AnthropicRequest): String? =
+        request.messages.lastOrNull()?.takeIf { it.role == ROLE_USER }
+            ?.content?.filterIsInstance<TextBlock>()?.joinToString("\n") { it.text }
+
+    // Present tense, 3-5 words, the file or function — Claude Code's own examples for the prompt.
+    private fun describe(call: ToolUseBlock): ActivityAction =
+        FIXED_LABELS[call.name]?.let { ActivityAction(it, call.name, fixedSubject(call)) }
+            ?: FILE_TOOLS[call.name]?.let { (verb, key) ->
+                said(call, verb, clip(str(call.input, key)?.trimEnd('/')?.substringAfterLast('/')), "a file")
+            }
+            ?: otherAction(call)
+
+    /** The tools whose object is not a file: a command's head, a pattern, or nothing but the tool's own name. */
+    private fun otherAction(call: ToolUseBlock): ActivityAction = when (call.name) {
+        "Bash" -> said(call, "Running", commandHead(str(call.input, "command")), "a command")
+        "Grep" -> said(call, "Searching for", clip(str(call.input, "pattern")), "a pattern")
+        "Glob" -> said(call, "Finding", clip(str(call.input, "pattern")), "files")
+        else -> ActivityAction(generic(call.name), call.name)
+    }
+
+    /** One sample: [found] is the object when the call named one, and [none] stands in the sentence when it did not. */
+    private fun said(call: ToolUseBlock, verb: String, found: String?, none: String): ActivityAction =
+        ActivityAction("$verb ${found ?: none}", call.name, found)
+
+    /** The object of a call whose sentence is fixed: the subagent a delegation names, the peer a message goes to. */
+    private fun fixedSubject(call: ToolUseBlock): String? = when (call.name) {
+        "Agent", "Task" -> clip(str(call.input, "subagent_type"))
+        "SendMessage" -> clip(str(call.input, "to"))
+        else -> null
+    }
+
+    private fun generic(name: String): String =
+        if (name.startsWith(MCP_PREFIX)) "Calling ${name.substringAfterLast("__")}" else "Using $name"
+
+    /** [segment] past its prelude: assignments, privilege and the shell's own words, and a wrapper with its options and
+     *  duration (`timeout -k 5 600`, `nice -n 10`, `nohup`), so what is left starts at the command they run. */
+    private fun dropPrelude(segment: List<String>): List<String> {
+        val start = segment.indexOfFirst { it !in COMMAND_PREFIXES && !it.contains('=') }
+        if (start < 0 || segment[start] !in WRAPPERS) return if (start < 0) emptyList() else segment.drop(start)
+        var at = start + 1
+        while (at < segment.size && WRAPPER_ARG.matches(segment[at])) {
+            at += if (segment[at] in VALUED_OPTIONS) 2 else 1
+        }
+        return dropPrelude(segment.drop(at))
+    }
+
+    private fun str(input: JsonObject, key: String): String? =
+        (input[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+
+    /** The first real command's program and first argument — "git status", "gradlew test": past the
+     *  `cd`/`export`/assignment prelude and the shell's own words (a `for` header, the `do` before a loop's body),
+     *  before any `| tail` behind it. A line continued with a backslash is one line, so its flags are never a head. */
+    private fun commandHead(command: String?): String? {
+        val words = command.orEmpty().replace(LINE_CONTINUATION, " ").split(SEGMENT_SPLIT).asSequence()
+            .map { segment -> segment.trim().split(WHITESPACE).filter { it.isNotEmpty() }.let(::dropPrelude) }
+            .firstOrNull { segment ->
+                segment.firstOrNull()?.let { it !in NOT_A_COMMAND && !it.startsWith('-') } == true
+            }
+            .orEmpty()
+            .take(2)
+            .map { it.substringAfterLast('/') }
+            .filter { it.any(Char::isLetterOrDigit) }
+        return clip(words.joinToString(" "))
+    }
+
+    private fun clip(text: String?): String? =
+        text?.takeIf { it.isNotBlank() }?.let { if (it.length > MAX_ARG_CHARS) it.take(MAX_ARG_CHARS) + "…" else it }
+}
+
+/** The client's own interval between side queries (`xa=30000` in Claude Code 2.1.282, `Fa=30000` in
+ *  2.1.283, each read as the AgentSummary timer's `intervalMs` default). */
+private const val SAMPLE_INTERVAL_MS = 30_000L
+
+/** How many sessions' last sample a head remembers; a session past it is sampled again at once. Its
+ *  own name: the 4096-session caps in ConsoleWiring and SlotInstructions bound other maps (V4-88). */
+private const val ACTIVITY_SESSIONS_REMEMBERED = 512
+private const val ROLE_USER = "user"
+private const val ROLE_ASSISTANT = "assistant"
+private const val MCP_PREFIX = "mcp__"
+private const val MAX_ARG_CHARS = 32
+private const val SIDE_QUERY_OPENING = "Describe your most recent action in 3-5 words using present tense (-ing)."
+private val NEAR_MISS_PHRASES = listOf("most recent action", "present tense")
+private const val NO_TRANSCRIPT_LABEL = "Reading the request"
+private const val NO_TOOL_LABEL = "Replying to the user"
+private const val FILE_PATH = "file_path"
+private val FILE_TOOLS = mapOf(
+    "Read" to ("Reading" to FILE_PATH),
+    "Edit" to ("Editing" to FILE_PATH),
+    "MultiEdit" to ("Editing" to FILE_PATH),
+    "NotebookEdit" to ("Editing" to "notebook_path"),
+    "Write" to ("Writing" to FILE_PATH),
+)
+private val FIXED_LABELS = mapOf(
+    "Agent" to "Delegating to a subagent",
+    "Task" to "Delegating to a subagent",
+    "WebFetch" to "Searching the web",
+    "WebSearch" to "Searching the web",
+    "TodoWrite" to "Updating the task list",
+    "TaskCreate" to "Updating the task list",
+    "TaskUpdate" to "Updating the task list",
+    "AskUserQuestion" to "Asking the user",
+    "SendMessage" to "Messaging a peer session",
+)
+private val SHELL_PRELUDE = setOf("cd", "pushd", "popd", "export", "set", "source", ".", "echo")
+
+/** Words that lead into a command without being it: privilege and environment, and the shell keywords before a
+ *  condition or a body (`if grep -q`, `do git add`) or alone on their segment (`done`, `fi`). */
+private val SHELL_KEYWORDS = setOf("if", "elif", "while", "until", "then", "else", "do", "done", "fi", "esac", "{", "}")
+private val COMMAND_PREFIXES = setOf("sudo", "env", "time", "!") + SHELL_KEYWORDS
+
+/** Commands that run the command after them, behind their own options and, for `timeout`, a duration. */
+private val WRAPPERS = setOf("timeout", "nice", "nohup", "stdbuf", "ionice")
+
+/** A wrapper's options that take the next word as their value: `timeout -k 5 -s KILL`, `nice -n 10`. */
+private val VALUED_OPTIONS = setOf("-k", "-s", "-n", "-c")
+
+/** A wrapper's own word: an option, or `timeout`'s duration. */
+private val WRAPPER_ARG = Regex("-.*|\\d+(\\.\\d+)?[smhd]?")
+
+/** A segment led by one of these is no command to name: the prelude, or a header whose words are names (`for k in`). */
+private val NOT_A_COMMAND = SHELL_PRELUDE + setOf("for", "select", "case")
+
+private val LINE_CONTINUATION = Regex("\\\\\r?\n")
+
+private val SEGMENT_SPLIT = Regex("&&|\\|\\||[;|\\n]")
+private val WHITESPACE = Regex("\\s+")

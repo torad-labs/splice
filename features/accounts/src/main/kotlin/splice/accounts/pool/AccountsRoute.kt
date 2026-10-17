@@ -1,0 +1,265 @@
+// NEW: V4-132 — GET /api/accounts (FEATURES.md §6, §4.5 "All accounts, one screen"). Every OAuth
+// account of every provider in one payload, joined on the credential path so one login shared by
+// several heads (two heads pointed at the same primary file, HeadAccountPools.kt:54) is one row,
+// not one per head. Windows carry their own reported LENGTH (Grok's is 30 days, not a week);
+// plan is reported only when a provider sends one; exclusion, selection, the operator's pin and
+// the next target follow the REAL selector order (AccountPool.candidates). A head with one login
+// (no pool at all) still appears, read from its /api/auth view, with `single_login: true`.
+package splice.accounts.pool
+
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import splice.accounts.AccountHead
+import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.claude.ClaudeLoginPlaceView
+import splice.accounts.claude.ClaudeLoginRows
+import splice.core.auth.ACCOUNT_REF_FIELD
+import splice.core.auth.AuthDescription
+import splice.core.auth.REFUSAL_FIELD
+import splice.core.topology.API_KEY_WIRE
+import splice.core.topology.AuthKindRegistry
+import splice.core.usage.QuotaReadFailureSource
+import splice.core.usage.QuotaView
+import java.util.concurrent.TimeUnit
+
+// why: the label a head's OAuth pool polls its primary login under (OAuthAccountFiles.discover), which Accounts reads
+// a failed limits read by when the row shows that login with no label.
+private const val POLLED_PRIMARY = "primary"
+
+/** [firsts] answers for a command's first OAuth account, so its row can be renamed and removed. Null leaves it
+ *  fixed. */
+public class AccountsRoute(
+    private val heads: Map<String, AccountHead>,
+    private val firsts: FirstAccounts? = null,
+    /** The names a person chose on the console, by ref; null names nothing beyond what each login carries. */
+    private val names: AccountNameStore? = null,
+    /** Why each login's last limits read failed; null names no failure on any login. */
+    private val readFailures: QuotaReadFailureSource? = null,
+) {
+    private val extras = AccountRowExtras(heads)
+    private val management = AccountRowManagement()
+
+    /** [nowSeconds] decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
+    public suspend fun accountsJson(
+        nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+    ): String = accountsJson(emptyMap(), emptyList(), emptyMap(), nowSeconds)
+
+    /** Provider names come from the declared topology; native windows come only from command-local observations.
+     *  [carrying] maps a head to the place whose credential carried its newest matched request, null before any. */
+    public suspend fun accountsJson(
+        providers: Map<String, String>,
+        native: List<ClaudeLoginPlaceView>,
+        carrying: Map<String, ClaudeLoginPlaceId?>,
+        nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+    ): String {
+        val joined = LinkedHashMap<String, JoinedAccount>()
+        heads.values.forEach { head -> fold(head, joined) }
+        val naming = AccountNaming(names)
+        val poolRows = joined.values.map { row -> buildJsonObject { write(this, row, nowSeconds, providers, naming) } }
+        val nativeRows = ClaudeLoginRows(naming, readFailures).list(native, providers, carrying, heads, nowSeconds)
+        // every row is named before any is settled: whether a ref shows depends on the whole roster
+        val rows = naming.settle(poolRows + nativeRows)
+        return buildJsonObject {
+            putJsonArray("accounts") { rows.forEach { add(it) } }
+            extras.pools(this)
+        }.toString()
+    }
+
+    private suspend fun fold(head: AccountHead, joined: MutableMap<String, JoinedAccount>) {
+        val description = head.auth.describe()
+        val pool = head.activePool
+        // A forwarded head's stored pool logins are real accounts. Only its unheld caller is represented by places.
+        if (description.kind == "client" && pool == null) return
+        if (!AuthKindRegistry.isOAuth(description.kind) && description.kind !in listOf("api-key", "client")) return
+        if (pool == null || description.kind == "api-key") {
+            foldSingleLogin(head.key, description, head.quota?.quota(), joined)
+            return
+        }
+        foldPooled(head.key, description.kind, pool.view(null), head.accountAuth?.descriptions().orEmpty(), joined)
+    }
+
+    private fun foldSingleLogin(
+        headKey: String,
+        description: AuthDescription,
+        quota: QuotaView?,
+        joined: MutableMap<String, JoinedAccount>,
+    ) {
+        val authPath = description.fields["auth_path"]
+        merge(joined, authPath ?: "$headKey:single", headKey) {
+            JoinedAccount(
+                credential = JoinedCredential(path = authPath, kind = description.kind, singleLogin = true),
+                label = null,
+                primary = true,
+                quota = JoinedQuota(
+                    plan = quota?.plan,
+                    // The length the provider reported rides the head's QuotaView (null when it gave none), so a long
+                    // window is 30 days where the provider says 30 days, never a week by default.
+                    fiveHour = QuotaWindowView(
+                        quota?.fiveHour?.usedPct?.toDouble(),
+                        quota?.fiveHour?.resetsAt,
+                        quota?.fiveHour?.windowSeconds,
+                    ),
+                    sevenDay = QuotaWindowView(
+                        quota?.sevenDay?.usedPct?.toDouble(),
+                        quota?.sevenDay?.resetsAt,
+                        quota?.sevenDay?.windowSeconds,
+                    ),
+                    observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
+                    noUsageAt = quota?.noUsageAt,
+                ),
+                authExclusion = AuthExclusionView(
+                    null,
+                    null,
+                    ref = description.fields[ACCOUNT_REF_FIELD],
+                    email = description.fields["email"],
+                ),
+                flags = AccountFlags(
+                    available = null,
+                    credentialPresent = description.present,
+                    selected = null,
+                ),
+            )
+        }
+    }
+
+    private fun foldPooled(
+        headKey: String,
+        kind: String,
+        view: HeadAccountPoolView,
+        described: Map<String, AuthDescription>,
+        joined: MutableMap<String, JoinedAccount>,
+    ) {
+        view.accounts.forEach { account ->
+            if (kind == "client" && account.primary) return@forEach
+            val fields = described[account.label]?.fields.orEmpty()
+            if (fields["native_place"] != null) return@forEach
+            val row = merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey, account.label) {
+                pooledAccount(kind, account, fields)
+            }
+            if (account.label == view.pinnedLabel) row.pinnedHeads += headKey
+        }
+    }
+
+    /** [fields] is the account's own [AuthDescription] fields: its credential path, and (V4-410) `refusal`
+     *  for a credential splice will not load. That lives there, not on [HeadAccountView], whose width the
+     *  constructor-width ratchet has recorded. */
+    private fun pooledAccount(
+        kind: String,
+        account: HeadAccountView,
+        fields: Map<String, String>,
+    ): JoinedAccount = JoinedAccount(
+        credential = JoinedCredential(path = fields["auth_path"], kind = kind, singleLogin = false),
+        label = account.label,
+        primary = account.primary,
+        quota = JoinedQuota(
+            plan = account.plan,
+            fiveHour = QuotaWindowView(
+                account.quota.fiveHour.usedPercent,
+                account.quota.fiveHour.resetEpochSeconds,
+                account.quota.fiveHour.windowSeconds,
+            ),
+            sevenDay = QuotaWindowView(
+                account.quota.sevenDay.usedPercent,
+                account.quota.sevenDay.resetEpochSeconds,
+                account.quota.sevenDay.windowSeconds,
+            ),
+            observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
+            sevenDayModels = account.quota.sevenDayModels,
+            noUsageAt = account.quota.noUsageAtEpochSeconds,
+        ),
+        authExclusion = AuthExclusionView(
+            account.credential.excludedUntilEpochMillis,
+            account.credential.exclusionReason,
+            fields[REFUSAL_FIELD],
+            fields[ACCOUNT_REF_FIELD],
+            fields["display_name"],
+            fields["email"],
+        ),
+        flags = AccountFlags(
+            available = account.available,
+            credentialPresent = account.credential.present,
+            selected = account.selected,
+        ),
+    )
+
+    // The one join point: an existing row (another head sharing this credential path) only grows
+    // its per-head selector map; a new key builds the row once, from whichever head reached it first. inline
+    // (kt-no-lambda-seam exemption): a raw () -> JoinedAccount here would need a named fun
+    // interface for one two-call-site builder.
+    private inline fun merge(
+        joined: MutableMap<String, JoinedAccount>,
+        key: String,
+        headKey: String,
+        label: String? = null,
+        build: () -> JoinedAccount,
+    ): JoinedAccount {
+        val row = joined.getOrPut(key) { build() }
+        row.labelsByHead[headKey] = label
+        return row
+    }
+
+    private fun write(
+        into: JsonObjectBuilder,
+        row: JoinedAccount,
+        nowSeconds: Long,
+        providers: Map<String, String>,
+        naming: AccountNaming,
+    ) {
+        extras.write(into, row.labelsByHead, providers)
+        val first = first(row)
+        // a login with a ref can always be named: the name lives in splice's own state, never in its credential file
+        val edit = management.edit(row.label, row.primary, first)
+            .let { if (row.authExclusion.ref != null) it.copy(canRename = true) else it }
+        management.write(into, name(row, first, naming), row.authExclusion.ref != null, edit)
+        writeQuota(into, row, nowSeconds)
+        // A credential two heads share is read once per head: the newest failure is the one the page names. A head's
+        // primary login is polled under "primary" when its OAuth pool lists it, though the page shows it as the head's
+        // one login with no label, so that row asks both (marlin, Oct 12: claudex read Not read with no reason).
+        val failure = row.labelsByHead.flatMap { (head, label) ->
+            val asked = if (label == null && row.primary) listOf(null, POLLED_PRIMARY) else listOf(label)
+            asked.mapNotNull { readFailures?.failure(head, it) }
+        }.maxByOrNull { it.atEpochSeconds }
+        into.put("last_read_failure", failure?.json() ?: JsonNull)
+        val answer = row.labelsByHead.mapNotNull { (head, label) -> heads[head]?.answers?.answer(label) }
+            .maxByOrNull { it.observedAtEpochMs }
+        AccountAnswerJson.write(into, answer)
+    }
+
+    /** A login is named by a chosen label, its proved email, or its plan fallback. A key row keeps its own label. */
+    private fun name(row: JoinedAccount, first: FirstAccountEdit?, naming: AccountNaming): AccountName {
+        val given = row.authExclusion.displayName ?: first?.name
+        val ref = row.authExclusion.ref
+        if (row.credential.kind == API_KEY_WIRE) {
+            return AccountName(given ?: row.label ?: "Primary", ref, isDefault = false)
+        }
+        return naming.name(AccountNameFacts(given, row.label, ref, row.quota.plan, row.authExclusion.email))
+    }
+
+    /** A first OAuth account's name and whether it may be removed; null for every other row. */
+    private fun first(row: JoinedAccount): FirstAccountEdit? {
+        val path = row.credential.path?.takeIf { row.primary && AuthKindRegistry.isOAuth(row.credential.kind) }
+        val facts = firsts ?: return null
+        val kind = row.credential.kind
+        return path?.let { FirstAccountEdit(facts.name(kind, it), !facts.shared(kind, it)) }
+    }
+
+    private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
+        row.quota.writeInto(into, nowSeconds)
+        into.put("kind", row.credential.kind)
+        into.put("label", row.label)
+        into.put("primary", row.primary)
+        into.put("single_login", row.credential.singleLogin)
+        into.put("available", row.flags.available)
+        into.put("credential_present", row.flags.credentialPresent)
+        into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
+        into.put("auth_exclusion_reason", row.authExclusion.reason)
+        into.put("refusal", row.authExclusion.refusal)
+        into.put("selected", row.flags.selected)
+        into.putJsonArray("pinned_heads") { row.pinnedHeads.forEach { add(it) } }
+        into.putJsonArray("heads") { row.heads.sorted().forEach { add(it) } }
+    }
+}

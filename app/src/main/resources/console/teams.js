@@ -1,0 +1,1325 @@
+// Teams: a team is his. Members on different models, each a role on a command, with a goal; splice carries the
+// members' sessions and reports what they do. Create one and start its members; track each member's state, their
+// messages to each other, what each is doing and what it has cost.
+//
+// WHERE EVERY VALUE COMES FROM. The page carries no data of its own and keeps no copy of one:
+//   GET  /api/teams                        the teams and their slots, archived included
+//   GET  /api/sessions                     each bound session's own state, as its client registered it
+//   GET  /api/heads · /api/models · /api/auth   the commands, the models each serves and its accounts
+//   GET  /api/teams/{id}/economics         turns, tokens and dollars per slot, over every session it held
+//   GET  /api/teams/{id}/chat?from=&to=    the day's messages between members, from the sender's own transcript
+//   GET  /api/teams/{id}/activity?from=&to=   the day's tool work per member, each a tool and its object
+//   PUT  /api/teams · /api/teams/{id} · /api/teams/{id}/sessions · .../slots/{slot}/instructions
+//   POST /api/teams/{id}/archive · /api/teams/{id}/restore · .../slots/{slot}/start · .../slots/{slot}/stop
+// The day panels take the VIEWER's own day in epoch milliseconds, so the board turns over at his midnight.
+//
+// A REFUSAL IS SHOWN WHERE IT HAPPENED, in the words the daemon used. A start that does not come up puts its own
+// sentence on the member's card beside Try again, because "the terminal is still showing a trust prompt" is the
+// only thing that tells him what to do next.
+CONSOLE.page("teams.html", (scope) => {
+  "use strict";
+  const { document, window, API, setTimeout, clearTimeout, setInterval, clearInterval, requestAnimationFrame, cancelAnimationFrame, addEventListener, removeEventListener } = scope;
+
+// ---------- the marks this page adds to the kit's own (kit.js holds esc, G, COLORS, colorOf, clock) ----------
+const GLYPH = {
+  Edit: G('<path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5z"/><path d="M13.5 7l3 3"/>', 'aria-hidden="true"'),
+  Read: G('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>', 'aria-hidden="true"'),
+  Bash: G('<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15.5h4.5"/>', 'aria-hidden="true"'),
+  Grep: G('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>', 'aria-hidden="true"'),
+  msg: G('<path d="M4 12h15M14 6.5l5.5 5.5-5.5 5.5"/>', 'aria-hidden="true"'),
+  Agent: G('<circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="7" r="2.2"/><path d="M6 7.2v9.6M18 9.2c0 4.5-6 3.6-11.3 7.4"/>', 'aria-hidden="true"'),
+  tool: G('<path d="M14.5 6.5a4 4 0 1 0 3 6.8L21 17l-2 2-3.7-3.5A4 4 0 0 1 8.5 9"/><path d="M3 20l6-6"/>', 'aria-hidden="true"'),
+  folder: G('<path d="M3 6.5h6l2 2h10v10.5H3z"/>', 'aria-hidden="true"'),
+  more: G('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>', 'aria-hidden="true"'),
+  back: G('<path d="M15 5l-7 7 7 7"/>', 'aria-hidden="true"'),
+  next: G('<path d="M9 5l7 7-7 7"/>', 'aria-hidden="true"'),
+  caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
+  trace: '<svg class="wave" viewBox="0 0 40 40" aria-hidden="true"><polyline class="base" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/><polyline class="beat" points="5,20 13,20 16,12 20,28 24,15 27,20 35,20"/></svg>',
+  ask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11h-9l-4.5 3.5V16H4z"/><path d="M12 13.2h0"/><path d="M10 9.2a2 2 0 1 1 2.6 1.9"/></svg>',
+};
+// Write and the notebook editor draw the same mark as their neighbours; a tool with no mark of its own gets the wrench.
+GLYPH.Write = GLYPH.Edit;
+GLYPH.MultiEdit = GLYPH.Edit;
+GLYPH.NotebookEdit = GLYPH.Edit;
+GLYPH.Glob = GLYPH.Grep;
+GLYPH.Task = GLYPH.Agent;
+GLYPH.SendMessage = GLYPH.msg;
+
+// A slot names its HEAD; the kit colours a PROVIDER, and /api/models says which head runs which.
+const headColor = (head) => colorOf(state.providerOf[head]);
+// Every time on this page is epoch millis, as its routes report them; the kit's clock reads a Date.
+const hhmm = (ms) => clock(new Date(ms));
+const monthDay = (ms) => {
+  const d = new Date(ms);
+  return `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+};
+const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n ?? 0));
+
+// ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
+const state = {
+  teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {}, modelLabel: {}, plans: [],
+  economics: {}, priceWhy: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
+  // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
+  // its transcript, which is a permission prompt, since those choices belong to the client's own version.
+  screens: {},
+  // What a member's screen asks before its session registered (its folder trust question), by slot id: the start
+  // stopped there and left the pane open for him to answer (Marlin, Oct 12).
+  pending: {},
+  error: null, loading: true,
+};
+const ui = { project: PICK.get(), pmenu: false, team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), startedAt: new Map(), unstarted: new Map(), trusting: new Map(), screenOpen: new Set(), ending: new Map(), armedEnd: new Map(), armedStop: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
+// From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
+// Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
+const ANSWER_HOLD_MS = 30_000;
+const root = document.getElementById("teams");
+const sheet = document.getElementById("sheet");
+
+const team = () => state.teams.find((t) => t.id === ui.team) || null;
+// a member that left still names its own messages and its own figures: its history stays on the team (spec §14)
+const leftOf = (tm) => (tm.left_slots || []).map((l) => ({ ...l.slot, left_epoch_millis: l.left_epoch_millis }));
+const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || leftOf(tm).find((s) => s.id === id) || null;
+const sessOf = (slot) => (slot.session ? state.sessions[slot.session] : null);
+// ONE ACTIVE TEAM PER SESSION is what PUT refuses (Marlin), but older data may hold a session on two. Never pick one
+// silently: a session that looks single-homed when it is not is the worse failure, so each team that holds it names
+// the other. Archived teams do not count, they have let go.
+const alsoOn = (tm, session) => state.teams
+  .filter((t) => t.id !== tm.id && !t.archived && t.slots.some((y) => y.session === session))
+  .map((t) => t.name);
+
+// The day the panels are asked for, as the VIEWER's own: midnight to midnight here, [from, to).
+function dayWindow(back) {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  from.setDate(from.getDate() - back);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 1);
+  return { from: +from, to: +to };
+}
+const dayName = (back) => (back === 0 ? "Today" : back === 1 ? "Yesterday" : monthDay(dayWindow(back).from));
+
+// ---------- reading ----------
+/** The turns running now, by session: what a Stalled or Resumes line is read from (kit stallOf). */
+async function readLive() {
+  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
+  state.live = {};
+  state.heads.forEach((h, i) => {
+    for (const turn of lives[i].body?.turns || []) if (turn.session && !turn.stopped) state.live[turn.session] = { head: h.key, ...turn };
+  });
+}
+
+// Read again stays off until the read it started has landed, its team's own reads included (splice-lead, Oct 12): a
+// second click mid-read started a second read racing the first.
+async function read() {
+  const again = document.querySelector('.head [data-act="read"]');
+  if (again) again.disabled = true;
+  try {
+    await readAll();
+  } finally {
+    if (again) again.disabled = false;
+  }
+}
+
+async function readAll() {
+  state.loading = true;
+  render();
+  const [teams, sessions, heads, models, auth, plans] = await Promise.all([
+    API.get("/api/teams"), API.get("/api/sessions"), API.get("/api/heads"), API.get("/api/models"), API.get("/api/auth"),
+    API.get("/api/accounts"),
+  ]);
+  // each plan's windows as its provider reads them, Accounts' and Usage's numbers, for a member's plan line
+  if (plans.ok) state.plans = plans.body?.accounts || [];
+  // one read that fails keeps the teams already on the page and says so above them; only a first read that fails
+  // has nothing to show but its refusal (Marlin p223: a failed launch's reread blanked every team)
+  const refused = teams.ok ? null : refusedAs(teams, "Not read", "/api/teams");
+  state.error = refused && !state.everRead ? refused : null;
+  state.stale = refused && state.everRead ? refused : null;
+  if (teams.ok) { state.teams = teams.body?.teams || []; state.everRead = true; state.readAt = Date.now(); }
+  state.reading = sessions.body?.reading !== false; // off: a waiting member shows no question, as Sessions does
+  state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null, idleMs: h.gate?.stream_idle_ms ?? null, firstByteMs: h.gate?.first_byte_timeout_ms ?? null }));
+  await readLive();
+  state.models = {};
+  state.providerOf = {};
+  for (const row of models.body?.heads || []) {
+    state.providerOf[row.head] = row.provider;
+    learnModels(state.modelLabel, row); // every page names a model the same way: kit's labels, then its words
+    state.models[row.head] = (row.models || []).filter((m) => m.resolved !== false).map((m) => ({ id: m.id, label: m.label || m.id }));
+  }
+  // /api/auth answers one entry per HEAD, keyed by its key; a head with two or more logins lists them under account_pool
+  // (AccountPoolJson). A slot picks by head, so each head offers its own pool's labels; a head with one login offers none.
+  state.accounts = {};
+  for (const [head, entry] of Object.entries(auth.body || {})) {
+    const labels = (entry?.account_pool?.accounts || []).map((account) => account.label).filter(Boolean);
+    if (labels.length) state.accounts[head] = labels;
+  }
+  if (!state.teams.some((t) => t.id === ui.team)) ui.team = state.teams.find((t) => !t.archived)?.id ?? state.teams[0]?.id ?? null;
+  state.loading = false;
+  render();
+  await readTeam();
+}
+
+/** The selected team's own three reads, each of which can refuse on its own. Only the newest read draws: one asked for
+ *  another team or day that lands after it is dropped, and the day panels show their reading state until their own
+ *  day lands, never the day before under the new day's name (marlin, Oct 13: Yesterday read No messages over 295). */
+let teamRead = { gen: 0, key: null };
+async function readTeam() {
+  const tm = team();
+  if (!tm) return;
+  const key = `${tm.id}/${ui.day}`, gen = ++teamRead.gen, day0 = ui.day;
+  if (teamRead.key !== key) { state.chat = null; state.activity = null; teamRead.key = key; }
+  // Cleared before the first draw, not after: slot ids repeat across teams ("lead", "builder"), so a screen
+  // left over from the team before would draw its choices on this team's card for one frame.
+  state.screens = {};
+  state.pending = {};
+  render();
+  const { from, to } = dayWindow(day0);
+  const day = `from=${from}&to=${to}`;
+  const [economics, chat, activity, perHead] = await Promise.all([
+    API.get(`/api/teams/${tm.id}/economics`),
+    API.get(`/api/teams/${tm.id}/chat?${day}`),
+    API.get(`/api/teams/${tm.id}/activity?${day}`),
+    API.get("/api/economics"),
+  ]);
+  if (gen !== teamRead.gen) return;
+  // why a command's turns with no price have none, decided by the daemon once (as Accounts reads it): "plan" or not
+  state.priceWhy = Object.fromEntries((perHead.body?.heads || []).map((h) => [h.key, h.unpriced_reason]));
+  state.economics[tm.id] = economics.ok ? economics.body : { error: refusedAs(economics, "Not read", `economics ${tm.id}`) };
+  state.chat = chat.ok ? chat.body : { error: refusedAs(chat, "Not read", `chat ${tm.id}`) };
+  state.activity = activity.ok ? activity.body : { error: refusedAs(activity, "Not read", `activity ${tm.id}`) };
+  state.today = day0 === 0 ? state.activity : await readToday(tm);
+  if (gen !== teamRead.gen) return;
+  render();
+  await readScreens(tm);
+}
+
+/** Today's activity, read on its own when the page shows another day, so a card's line is never a stepped day's. */
+async function readToday(tm) {
+  const { from, to } = dayWindow(0);
+  const today = await API.get(`/api/teams/${tm.id}/activity?from=${from}&to=${to}`);
+  return today.ok ? today.body : null;
+}
+
+/** The choices a waiting member is showing, for the asks its transcript does not carry: a permission prompt's
+ *  words belong to the client's version, so they are read off the screen or not drawn at all. A screen that
+ *  offers nothing leaves the card on its fallback, because "splice could not read a choice" is not "nothing is
+ *  pending", and the two must never look alike. */
+async function readScreens(tm) {
+  const waiting = tm.slots.filter((slot) => {
+    const s = sessOf(slot);
+    return s?.waiting_for && !(s.last?.asks || []).length;
+  });
+  // a slot bound to a session that never registered: a start that stopped on a question, which its screen still shows
+  const asking = tm.slots.filter((slot) => slot.session && !sessOf(slot));
+  if (!waiting.length && !asking.length) return;
+  const read = await Promise.all([...waiting, ...asking].map((slot) => API.get(`/api/teams/${tm.id}/slots/${slot.id}/screen`)));
+  waiting.forEach((slot, i) => {
+    if (read[i].ok && read[i].body?.choices?.length) state.screens[slot.id] = read[i].body;
+  });
+  asking.forEach((slot, i) => {
+    const r = read[waiting.length + i];
+    if (r.ok && r.body?.choices?.length) state.pending[slot.id] = r.body;
+  });
+  render();
+}
+
+/** A refused call's word on the page (fin, Oct 13): [word] for a refusal, "Not answering" when splice did not answer at
+ *  all, and the daemon's sentence, or the status it answered, to the console's log under [what], never on the screen. */
+function refusedAs(answer, word, what) {
+  console.warn(`${what}: ${answer.status === 0 ? "splice is not answering" : answer.body?.error || `splice answered ${answer.status}`}`);
+  return answer.status === 0 ? "Not answering" : word;
+}
+
+// ---------- a member's state, in the words its own client registered ----------
+const WAITING = { "input needed": "Needs you", "permission prompt": "Needs you" };
+/** What the member's running turn says about its silence: Stalled with the retries or the silence counter, or the resume
+ *  countdown, drawn by the kit's own look() so Teams and Sessions say it alike. Null when nothing is wrong.
+ *  An idle member whose newest request was turned away reads At limit or Signed out from the row's ended_by. */
+function stallLook(slot, session) {
+  if (!session || session.waiting_for || session.availability === "gone") return null;
+  const running = session.status === "working" || session.status === "busy";
+  // with no request in flight, the row's ended_by says how the newest one ended: At limit, or Signed out
+  const turn = running ? state.live[slot.session] : undefined;
+  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head), running ? undefined : session.ended_by);
+  if (!stall) return null;
+  state.stalls[slot.id] = stall;
+  return look({ id: slot.id, state: running ? "working" : "idle", stall });
+}
+function stateOf(session) {
+  if (!session) return { cls: "ended", lamp: "<i></i>", word: "Gone", detail: "" };
+  if (session.availability === "gone") return { cls: "ended", lamp: "<i></i>", word: "Ended", detail: "" };
+  // No detail beside the word: the card's own ask, right below it, says what is wanted better than
+  // Claude Code's "input needed" does, and the drawing has nothing there for the same reason.
+  if (session.waiting_for) {
+    // the two asks keep their own glyphs, as Sessions draws them: a permission is the shield, a question the bubble
+    const lamp = session.waiting_for === "permission prompt" ? ICON.dialog : ICON.input;
+    return { cls: "needs", lamp, word: WAITING[session.waiting_for] || "Needs you", detail: "" };
+  }
+  if (session.status === "working" || session.status === "busy") return { cls: "working", lamp: GLYPH.trace, word: "Working", detail: "" };
+  const word = session.status ? session.status[0].toUpperCase() + session.status.slice(1) : "Idle";
+  return { cls: session.availability === "stale" ? "stopped" : "idle", lamp: "<i></i>", word, detail: "" };
+}
+const liveNow = (session) => Boolean(session) && session.availability === "live" && !session.waiting_for &&
+  (session.status === "working" || session.status === "busy");
+
+// ---------- the figures: turns, tokens and dollars, and the turns no rate card priced ----------
+/** A member's checks, drawn only when the team's economics row carries a value: a member with none draws nothing,
+ *  since a source sentence on every idle card is plumbing (marlin, Oct 13). Packet has no column at all: the message is
+ *  the unit, and the chat shows it. Named apart from the panels' keptHtml. */
+function checksHtml(tm, slotId) {
+  const row = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId);
+  return row?.checks ? `<div class="meta"><span>${esc(row.checks)}</span></div>` : "";
+}
+
+function useOf(tm, slotId) {
+  const row = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId);
+  if (!row) return null;
+  // The tokens figure is everything the slot's turns moved, the two cache counts included, as the route reports them.
+  const t = row.tokens || {};
+  const tokens = (t.input || 0) + (t.cache_read || 0) + (t.cache_write || 0) + (t.output || 0);
+  // a request that moved no tokens is in no money share (the route counts the ones that did, and the priced of those)
+  const priced = row.priced_moved_turns ?? 0, unpriced = (row.moved_turns ?? 0) - priced, head = tm.slots.find((x) => x.id === slotId)?.head;
+  // a daemon that splits plan from key counts the slot's plan requests itself (plan_turns, as the economics buckets do);
+  // before that, a head whose unpriced requests are on a plan counts them all there
+  const onPlan = row.plan_turns ?? (state.priceWhy[head] === "plan" ? unpriced : 0);
+  return { turns: row.turns ?? 0, tokens, usd: row.cost_usd ?? null, priced, unpriced, onPlan };
+}
+// `scope` says what the request count covers: a slot counts the requests of the sessions it held, from the moment each
+// joined, so the figure reads "since joining" and never as the session's own total (the Sessions page shows that)
+function figures(u, since, scope = "since joining") {
+  if (!u) return "";
+  // One money form on every page (Marlin, Oct 10): dollars first, tied to the requests that were priced when some were
+  // not, then each count of the unpriced above nothing, the bigger first. A cost is never summed over some as though it
+  // were the whole, so "≈$0.92 for 55 · 322 on your plan"; "≈$0.92" alone means every request was priced.
+  const priced = u.priced;
+  const shares = [[u.onPlan, "on your plan"], [u.unpriced - u.onPlan, "with no price"]].filter(([n]) => n > 0).sort((a, b) => b[0] - a[0])
+    .map(([n, w]) => `${n.toLocaleString("en-US")} ${w}`);
+  const spent = u.usd != null && priced > 0 ? [`${dollars(u.usd)}${shares.length ? ` for ${priced.toLocaleString("en-US")}` : ""}`] : [];
+  const money = [...spent, ...shares].join(" · ");
+  // no requests, no tokens: "0 tokens" beside "0 requests" says nothing more (fin, Oct 12)
+  return `<span class="figs"><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"} ${scope}</span>${u.turns ? `<span>${u.tokens ? `${big(u.tokens)} tokens` : "Tokens not reported"}</span>` : ""}${money ? `<span>${money}</span>` : ""}` +
+    `${since ? `<span class="since">Since ${monthDay(since)}</span>` : ""}</span>`;
+}
+function totals(tm) {
+  const us = [...tm.slots, ...leftOf(tm)].map((s) => useOf(tm, s.id)).filter(Boolean);
+  if (!us.length) return null;
+  const priced = us.filter((u) => u.usd != null);
+  return {
+    turns: us.reduce((a, u) => a + u.turns, 0),
+    tokens: us.reduce((a, u) => a + u.tokens, 0),
+    usd: priced.length ? priced.reduce((a, u) => a + u.usd, 0) : null,
+    priced: us.reduce((a, u) => a + u.priced, 0),
+    unpriced: us.reduce((a, u) => a + u.unpriced, 0),
+    onPlan: us.reduce((a, u) => a + u.onPlan, 0),
+  };
+}
+/** The oldest turn the perf files still hold, named only when it is after the team was made. */
+function sinceOf(tm) {
+  const oldest = state.economics[tm.id]?.oldest_turn_epoch_millis;
+  return oldest && oldest > (tm.created_epoch_millis || 0) ? oldest : null;
+}
+
+// ---------- a member's plan windows: what it moved on a plan, beside the plan's own window (web-console §4.13; marlin) ----------
+// The daemon counts the member's requests and tokens on each plan account over the last 5 hours and 7 days, the windows
+// Usage reads a plan over (TeamsEconomics). The plan's used percent is the provider's own, joined as Usage joins it
+// (usage.js planRowOf), and only set beside the member's count: splice never says what share of the window is the member's.
+const planRowOf = (head, label) => state.plans.find((a) => (a.heads || []).includes(head) && a.kind !== "api-key"
+  && (a.ref ? a.ref === label : [a.account_labels?.[head], a.selector_key, a.label, a.display_name]
+    .some((x) => x && String(x).toLowerCase() === String(label).toLowerCase())));
+const PLAN_WINDOWS = { "5h": ["Last 5 hours", "5-hour window", "five_hour_used_percent"], "7d": ["Last 7 days", "week", "seven_day_used_percent"] };
+function planUseHtml(tm, slotId) {
+  const uses = (state.economics[tm.id]?.slots || []).find((r) => r.slot === slotId)?.plan_windows || [];
+  if (!uses.length) return "";
+  return `<div class="planuse">${uses.map((u) => {
+    const [when, word, field] = PLAN_WINDOWS[u.window] || [u.window, "window", null];
+    const plan = u.account ? planRowOf(u.head, u.account) : null;
+    // a long window of four weeks or more is the plan's month, as Usage names it
+    const named = u.window === "7d" && (plan?.seven_day_window_seconds ?? 0) >= 28 * 86400 ? "month" : word;
+    const pct = plan && field && plan[field] != null ? `<span>the plan's ${named} is ${Math.round(plan[field])}% used</span>` : "";
+    return `<p><b>${when}</b><span>${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}, ${u.tokens ? `${big(u.tokens)} tokens` : "tokens not reported"} on ${esc(plan?.display_name || u.account || "a plan")}</span>${pct}</p>`;
+  }).join("")}</div>`;
+}
+
+// ---------- the pick: Sessions' projects, one pick across the pages (kit PICK) ----------
+// A team is where its repo resolves; with no repo, where its lead works. A pick shows every team with a member in the
+// project, so a team across two projects appears under each of them wherever its people are (PROJECTS.md).
+const leadOf = (tm) => tm.slots.find((s) => s.lead) || tm.slots[0] || null;
+const homeOf = (tm) => (tm.project ? tm : leadOf(tm)?.project ? leadOf(tm) : null);
+const teamKey = (tm) => rowProjKey(homeOf(tm));
+const groupsNow = () => projectGroups(Object.values(state.sessions), state.live, state.heads);
+const picked = () => { const g = groupsNow(); return g.length >= 2 ? (ui.project = reconcilePick(ui.project, g)) : null; };
+// a tile counts the teams its pick would show, archived ones left out as the tabs leave them
+const teamCount = () => {
+  const on = state.teams.filter((t) => !t.archived);
+  return { of: (k) => on.filter((t) => inPick(t, k)).length, all: on.length, unit: "team" };
+};
+const inPick = (tm, pick = picked()) => pick == null || teamKey(tm) === pick || tm.slots.some((s) => rowProjKey(s) === pick);
+
+// ---------- the tabs: one per team, its members' colours on it ----------
+function tabHtml(tm) {
+  const needs = tm.slots.some((s) => sessOf(s)?.waiting_for);
+  // a member is filled only while its session runs: one that ended draws hollow, as one never started does (marlin p227)
+  const running = (x) => { const s = sessOf(x); return Boolean(s) && s.availability !== "gone"; };
+  const blots = tm.slots.map((s) => `<i style="--c:${headColor(s.head)}"${running(s) ? "" : ' class="open"'}></i>`).join("");
+  const members = tm.slots.length, live = tm.slots.filter(running).length;
+  const dots = `${members} ${members === 1 ? "member" : "members"}, ${live} running; a hollow dot is not running`;
+  return `<button class="tab${needs ? " needs" : ""}" data-act="team" data-t="${esc(tm.id)}" title="${esc(dots)}" aria-current="${ui.team === tm.id}">` +
+    `<span class="tname">${esc(tm.name)}</span><span class="blots" aria-hidden="true">${blots}</span></button>`;
+}
+/** Every project's teams under its muted name, in Sessions' group order; a project Sessions has no live session in
+ *  follows by name, and No project comes last. One cluster, or a project picked, draws the tabs alone. */
+function clustersHtml(on) {
+  const order = groupsNow().map((g) => g.key);
+  const m = new Map();
+  for (const tm of on) { const k = teamKey(tm); if (!m.has(k)) m.set(k, []); m.get(k).push(tm); }
+  if (picked() != null || m.size < 2) return on.map(tabHtml).join("");
+  const name = (k) => rowProjName(homeOf(m.get(k)[0]));
+  const at = (k) => { const i = order.indexOf(k); return i < 0 ? order.length : i; };
+  const keys = [...m.keys()].sort((a, b) => (a === NO_PROJECT_KEY) - (b === NO_PROJECT_KEY) || at(a) - at(b) || name(a).localeCompare(name(b)));
+  return keys.map((k) => `<span class="tcluster" role="group" aria-label="${esc(name(k))}"><span class="tproj">${esc(name(k))}</span>${m.get(k).map(tabHtml).join("")}</span>`).join("");
+}
+function tabsHtml() {
+  const on = state.teams.filter((t) => !t.archived && inPick(t));
+  const off = state.teams.filter((t) => t.archived && inPick(t));
+  const fold = off.length ? `<button class="act quiet fold" data-act="archived" aria-expanded="${ui.archived}">${off.length} archived</button>` : "";
+  const newT = `<button class="act quiet new" data-act="new" aria-pressed="${ui.compose?.id === null}"><span class="plus" aria-hidden="true">+</span>New team</button>`;
+  const offTabs = ui.archived ? `<span class="rule" aria-hidden="true"></span>${off.map(tabHtml).join("")}` : "";
+  return `<nav class="tabs" aria-label="Teams">${clustersHtml(on)}${newT}${offTabs}${fold}</nav>`;
+}
+
+// ---------- a member: the slot's role on its command, its session's state as the lamp ----------
+function memberHtml(tm, slot) {
+  const s = sessOf(slot);
+  const key = `${tm.id}/${slot.id}`;
+  const ro = tm.archived;
+  // the tag says what the role does not: a role that already reads Lead carries none (fin, Oct 12)
+  const lead = slot.lead && !/^lead$/i.test((slot.role || "").trim()) ? `<span class="lead">Lead</span>` : "";
+  const command = commandOf(slot.head);
+  const chip = `<span class="chip">${s && liveNow(s) ? "<i></i>" : ""}${esc(command)}</span>`;
+  // the model its session runs, which the sessions route carries; the slot's own only until the session says
+  const model = s?.model ? modelLabel(slot.head, s.model) : modelLabel(slot.head, slot.model);
+  if (!s || s.availability === "gone") return vacantHtml(tm, slot, { key, ro, lead, chip, model, ended: Boolean(s) });
+  state.stalls[slot.id] = null;
+  const L = stallLook(slot, s) ?? stateOf(s);
+  const stop = !liveNow(s) || ro || ui.armedStop.has(key) ? ""
+    : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
+    : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
+  // a refused Stop leaves the card where it is, Stop back in its place, and the refusal beside it
+  const refused = ui.failed.get(`stop:${key}`) || ui.failed.get(`end:${key}`);
+  const refusal = refused ? `<span class="refusal" role="status">${esc(refused)}</span>` : "";
+  // End closes the session in any state, beside Stop, which only halts a turn and keeps the agent (fin, Marlin p218)
+  const ending = ui.ending.get(key);
+  const end = ro || ui.armedEnd.has(key) ? ""
+    : ending ? `<button class="act quiet small stopping" disabled>${ICON.wait}Ending${secsSince(ending) ? ` · ${secsSince(ending)} s` : ""}</button>`
+    : `<button class="act quiet small" data-act="end" data-s="${esc(slot.id)}">End</button>`;
+  const now = L.cls === "ended" ? null : lastActivity(slot.id);
+  const body = L.cls === "needs" && s.waiting_for ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
+  // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
+  const folder = s.repo?.root || s.cwd || "";
+  const where = s.name || folder.split("/").pop();
+  const heard = s.updated_at || s.status_updated_at;
+  const also = alsoOn(tm, slot.session).join(", ");
+  const opens = slot.session ? ` go" tabindex="0" data-go="${esc(slot.session)}` : "";
+  return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
+    `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
+    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}${end}</div>` +
+    `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span class="mdl">${esc(model)}</span>` +
+    `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${backWord(new Date(heard))}</span>` : ""}</div>` +
+    `${body}${liveNow(s) && !ro ? armedStopHtml(key, slot.id, now) : ""}${armedEndHtml(key, slot.id)}${checksHtml(tm, slot.id)}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
+}
+
+const secsSince = (t) => Math.floor((Date.now() - t) / 1000);
+/** Stop armed, End's pattern (Marlin, Oct 13): the first press names the turn it would end, by the member's last tool
+ *  call, and only the second press stops it; Keep running, Escape or a tap elsewhere disarms it. */
+function armedStopHtml(key, slotId, now) {
+  if (!ui.armedStop.has(key)) return "";
+  const turn = now ? `Ends the turn on ${activityHtml(now)}` : "Ends the running turn";
+  return `<div class="armed end"><span class="word working">${ICON.wait}${turn}</span>` +
+    `<button class="act danger small" data-act="stop-now" data-s="${esc(slotId)}">Stop</button>` +
+    `<button class="act quiet small" data-act="stop-keep" data-s="${esc(slotId)}">Keep running</button></div>`;
+}
+/** End armed: what ending would lose, the Working word or his unsent words verbatim and muted, then the danger End and
+ *  Restart's own no, Keep running. Nothing of ours is said: his words after Unsent say what goes (fin, Marlin p218). */
+function armedEndHtml(key, slotId) {
+  const armed = ui.armedEnd.get(key);
+  if (!armed) return "";
+  const lost = armed.draft != null ? `<span class="said">Unsent</span><span class="unsent">${esc(armed.draft)}</span>`
+    : `<span class="word working">${ICON.wait}Working</span>`;
+  return `<div class="armed end">${lost}<button class="act danger small" data-act="end-now" data-s="${esc(slotId)}">End</button>` +
+    `<button class="act quiet small" data-act="end-keep" data-s="${esc(slotId)}">Keep running</button></div>`;
+}
+
+// ---------- what a waiting member is asking, and answering it where it waits ----------
+// The question is a READ: /api/sessions carries each session's last transcript line, and an AskUserQuestion call
+// brings its question and option labels with it (`last.asks`). Answering is the key the person would press — the
+// option's own number, 1 to 9 as the screen lists them — sent to the member's pane by POST .../answer.
+// A PERMISSION PROMPT carries no labels splice may spell: its choices belong to the client's version, and only the
+// screen says which this one offers. So the card shows what is being asked and leaves the answer to the terminal.
+// (This whole block moves to kit.js with Sessions, which draws the same ask on its own cards.)
+function askHtml(session, slotId, readOnly, key) {
+  const asked = (session.last?.asks || [])[0];
+  const held = ui.answered.get(key);
+  const going = held && Date.now() - held.at < ANSWER_HOLD_MS ? held : null;
+  const busy = going ? " disabled" : "";
+  // the pressed answer keeps its words with the ring; the rest wait disabled
+  const pick = (choice, label, i) => going?.choice === choice
+    ? `<button class="act answering" disabled>${ICON.wait}${esc(label)}</button>`
+    : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
+  const failed = ui.failed.get(key);
+  const why = failed ? `<p class="why limit">${esc(failed)}</p>` : "";
+  // reading off: the question and its choices are the conversation, so the card says only where to answer it, with a
+  // quiet door to the switch (Marlin 5:12 AM CT; fin; hitstop b5a39e3)
+  if (!state.reading) {
+    return `<div class="ask"><p class="why">Answer it in the terminal it runs in · <a class="door" href="settings.html#data">Reading off${ICON.door}</a></p>${why}</div>`;
+  }
+  if (!asked) {
+    const offer = going?.offer ?? state.screens[slotId];
+    const what = prompted(session.last, offer);
+    // The choices the client itself drew, each pressing the digit beside it on the screen. When splice could
+    // not read one, the card says where the answer is given rather than offering an act it cannot carry —
+    // the second half of the sentence the answer route returns for a pane it cannot drive.
+    if (!offer || readOnly) {
+      return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in</p>${why}</div>`;
+    }
+    const acts = offer.choices.map((c, i) => pick(c.choice, c.label, i)).join("");
+    return `<div class="ask">${what}<div class="answers">${acts}</div>${why}</div>`;
+  }
+  const buttons = readOnly || asked.multi ? "" :
+    `<div class="answers">${asked.options.map((o, i) => pick(i + 1, o, i)).join("")}</div>`;
+  const chips = asked.multi
+    ? `<div class="answers">${asked.options.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`
+    : "";
+  return `<div class="ask"><p class="q">${esc(asked.question)}</p>${buttons}${chips}${why}</div>`;
+}
+
+/** What is being asked, in the client's own words when the screen could be read: its first line is the call, as
+ *  Bash(npm test) — the person approving a command has to see the command — and what follows is what it is for.
+ *  Without a screen it is the transcript's own line, which names the tool and what it is for but never a command. */
+function prompted(call, offer) {
+  const said = (offer?.asked || "").split("\n").filter((line) => line.trim());
+  if (!said.length) {
+    return call?.tool ? `<p class="cmd"><span class="tname">${esc(call.tool)}</span>${esc(call.text || "")}</p>` : "";
+  }
+  const why = said.slice(1).join(" ") || call?.text || "";
+  return `<p class="cmd">${esc(said[0])}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
+}
+
+/** How many turns a session has run, beside its name in the "Add existing" menu: a name does not say which of two quiet
+ *  sessions is the one meant, the count does (fin). The row carries `turns` only when it was measured, so an absent key
+ *  draws nothing, never a zero or a dash: a count nobody watched must not read as "ran nothing". A real 0 is drawn,
+ *  because "0 turns" is what tells a reader this is not the session they meant. */
+const turnsOf = (session) => {
+  if (!Number.isInteger(session.turns)) return "";
+  // `turns_partial` is the server's own comparison of where counting began against where the session began: true
+  // means the count is a floor (and an unknown session start reads true), so it is drawn "12+". The client never
+  // compares the two timestamps itself, because `started_at` carries no unit on the wire.
+  const floor = session.turns_partial === true ? "+" : "";
+  return ` · ${session.turns}${floor} ${session.turns === 1 && !floor ? "request" : "requests"}`;
+};
+
+/** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
+function vacantHtml(tm, slot, { key, ro, lead, chip, model, ended = false }) {
+  const failed = ui.failed.get(key), unstarted = ui.unstarted.get(key), asked = state.pending[slot.id];
+  // a slot whose session ended reads the word Sessions shows for it; one that never had one, No session (fin)
+  let word = `<span class="word">${ended ? "Ended" : "No session"}</span>`;
+  let acts = "";
+  let why = "";
+  let lamp = `<span class="lamp open" aria-hidden="true"></span>`;
+  if (ui.starting.has(key)) {
+    // counting up, as Testing does on Settings, so a start that waits reads as waiting and not as stuck (fin)
+    const secs = Math.floor((Date.now() - (ui.startedAt.get(key) || Date.now())) / 1000);
+    word = `<span class="word starting">${ICON.wait}Starting${secs ? ` · ${secs} s` : ""}</span>`;
+  } else if (asked && !ro) {
+    // stopped at Claude Code's own question before it came up: his to answer, in the client's words, in the family of
+    // a member's ask (Marlin, Oct 12; hitstop da3d8b2)
+    lamp = `<span class="lamp needs" aria-hidden="true">${ICON.dialog}</span>`;
+    word = `<span class="word needs">Needs you</span>`;
+    why = trustHtml(slot.id, asked, ui.trusting.get(key));
+  } else if (unstarted) {
+    // one word for a member that did not come up, whoever ended it; only the timeout has a screen he has not seen, behind
+    // a door that stays shut until he opens it (fin; hitstop da3d8b2)
+    word = `<span class="word limit">Not started</span>`;
+    // why it did not come up, on the card, as a given-up row says why (Marlin p223)
+    why = (unstarted.why ? `<p class="why limit">${esc(unstarted.why)}</p>` : "")
+      + (unstarted.path ? `<div class="ask trust"><p class="cmd">${esc(unstarted.path)}</p></div>` : "");
+    acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
+    if (unstarted.screen) {
+      const open = ui.screenOpen.has(key);
+      acts += `<button class="act quiet small" data-act="screen" data-s="${esc(slot.id)}" aria-expanded="${open}">Last screen</button>` +
+        (open ? `<pre class="screen">${esc(unstarted.screen)}</pre>` : "");
+    }
+  } else if (failed) {
+    word = `<span class="word limit">Not started</span>`;
+    why = `<p class="why limit">${esc(failed)}</p>`;
+    acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
+  } else if (!ro) {
+    const bindFailed = ui.failed.get(`bind:${key}`);
+    if (bindFailed) why = `<p class="why limit">${esc(bindFailed)}</p>`;
+    const free = Object.values(state.sessions).filter((x) =>
+      x.head === slot.head && x.availability !== "gone" && !state.teams.some((t) => !t.archived && t.slots.some((y) => y.session === x.session_id)));
+    acts = `<button class="act primary" data-act="start" data-s="${esc(slot.id)}">Start new</button>` +
+      (free.length ? `<button class="act" data-act="use" data-s="${esc(slot.id)}" aria-expanded="${ui.menu === key}">Add existing</button>` : "");
+    if (ui.menu === key) {
+      acts += `<div class="menu use">${free.map((x) =>
+        `<button data-act="bind" data-s="${esc(slot.id)}" data-to="${esc(x.session_id)}"><span>${esc(x.name || x.repo?.root?.split("/").pop() || x.session_id.slice(0, 8))}</span>` +
+        `<span class="mmeta">${esc(x.model ? modelLabel(x.head, x.model) : commandOf(x.head))}${turnsOf(x)}</span></button>`).join("")}</div>`;
+    }
+  }
+  return `<article class="card m ${asked && !ro && !ui.starting.has(key) ? "needs trust" : "vacant"}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
+    lamp +
+    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}</div>` +
+    `<div class="meta">${word}<span class="mdl">${esc(model)}</span>${slot.account ? `<span>${esc(slot.account)}</span>` : ""}</div>` +
+    (slot.bind_by_rule ? `<p class="rulehint">${esc(ruleLine(tm.repo, slot.head))}</p>` : "") +
+    `${why}${acts ? `<div class="slot-acts">${acts}</div>` : ""}<div class="use">${figures(useOf(tm, slot.id))}${planUseHtml(tm, slot.id)}</div></article>`;
+}
+
+// A member that joins by rule says what it takes, since the toggle's name alone cannot (web-console §4.13; marlin, Oct 13)
+const ruleLine = (repo, head) => {
+  const where = repo?.trim() ? repo.trim().split("/").filter(Boolean).pop() : "the team's repo";
+  return `A ${commandOf(head) || "session"} session started in ${where} joins this member when it has none running`;
+};
+// a head key no configured command has (one removed from config) names nothing; the sessions route's own "unknown head" still prints
+const commandOf = (head) => state.heads.find((h) => h.key === head)?.command || (head === "unknown head" ? head : "");
+const modelLabel = (head, id) => {
+  const rows = state.models[head] || [];
+  // a session reports its model as the command's prefix, two dashes, then the model's id: the label is under the id
+  const bare = id?.includes("--") ? id.slice(id.indexOf("--") + 2) : id;
+  // an id this command does not declare reads as Sessions names it (kit modelName), never as the raw id (marlin, Oct 13)
+  return (id ? rows.find((m) => m.id === id || m.id === bare)?.label || modelName(state.modelLabel, bare) : rows[0]?.label) || "";
+};
+
+// ---------- what a member did: the tool's mark and its object, never splice's sentence ----------
+const activityRows = () => (state.activity?.entries || []);
+// the card's line is TODAY's latest tool work, whatever day the chat is showing (readTeam keeps today's own read)
+const todayRows = () => (state.today?.entries || []);
+const lastActivity = (slotId) => todayRows().filter((a) => a.slot === slotId && a.tool).at(-1) || null;
+const activityHtml = (a) => `${GLYPH[a.tool] || GLYPH.tool}<span class="obj">${esc(a.object || a.tool)}</span>`;
+
+// ---------- the room: members, their messages to each other, what each did ----------
+/** A panel the history window no longer holds says so in the daemon's own words, at its own moment. */
+function keptHtml(panel) {
+  if (!panel) return "";
+  if (panel.error) return `<p class="empty limit">${esc(panel.error)}</p>`;
+  if (panel.state === "not_kept" || panel.state === "deleted" || panel.state === "off") {
+    return `<p class="empty">${esc(panel.reason || "Not kept")}</p>`;
+  }
+  if (panel.state === "partially_kept") {
+    return `<p class="cut"><span>Kept from ${hhmm(panel.oldest_kept_epoch_millis)}</span></p>`;
+  }
+  return "";
+}
+const gone = (panel) => Boolean(panel?.error) || ["not_kept", "deleted", "off"].includes(panel?.state);
+
+function chatHtml(tm) {
+  const panel = state.chat;
+  if (!panel) return GHOST.lines([22, 16, 19, 12]);
+  if (gone(panel)) return keptHtml(panel);
+  const msgs = panel.messages || [];
+  if (!msgs.length) return `<p class="empty">No messages</p>`;
+  // A message whose text is not in its sender's transcript is drawn as who and when, with no box; the day says so
+  // once, at its top (marlin, Oct 13). splice keeps no message text of its own: it reads the sender's transcript.
+  const bare = msgs.filter((m) => !m.text?.trim()).length;
+  // the line is a state, in fin's word (Oct 13), with the count only when some of the day's messages have their text
+  const said = bare === msgs.length ? "Not in the transcript" : `${bare} of ${msgs.length} not in the transcript`;
+  const lead = bare ? `<p class="cut"><span>${said}</span></p>` : "";
+  return keptHtml(panel) + lead + msgs.map((m) => {
+    const from = m.from_slot ? slotOf(tm, m.from_slot) : null;
+    const body = m.text?.trim() ? `<div class="body">${md(m.text)}</div>` : "";
+    return `<div class="tm${from ? "" : " outside"}${body ? "" : " bare"}" style="--c:${from ? headColor(from.head) : "var(--track-line)"}">` +
+      `<div class="who">${party(tm, m.from_slot, m.from)}${GLYPH.msg}${party(tm, m.to_slot, m.to)}<time>${hhmm(m.at)}</time></div>${body}</div>`;
+  }).join("");
+}
+
+/** A member or a session outside the team, as the chat and the feed name it: its role in its command's colour. */
+// A PARTY IS NEVER SHOWN AS AN ID (marlin): a session id outside the team takes the name the registry or history
+// gives it, as Usage names an ended agent; a socket, or an id nothing names, reads Outside.
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const pastNames = new Map(); // session id -> its name from history, null when history has none, undefined while asked
+function pastName(id) {
+  if (pastNames.has(id)) return pastNames.get(id);
+  pastNames.set(id, undefined);
+  API.get(`/api/sessions/history?limit=1&query=${encodeURIComponent(id)}`).then((res) => {
+    const row = (res.body?.sessions || []).find((x) => x.session_id === id);
+    pastNames.set(id, row?.name || row?.title || null);
+    if (pastNames.get(id)) render();
+  });
+  return undefined;
+}
+function partyName(address) {
+  const a = String(address || "");
+  if (!a || a.startsWith("uds:")) return "";
+  if (!SESSION_ID.test(a)) return a; // a name the sender typed
+  const live = state.sessions[a];
+  return live?.name || live?.title || pastName(a) || "";
+}
+function party(tm, slotId, address) {
+  const s = slotId ? slotOf(tm, slotId) : null;
+  if (s) return `<span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span>`;
+  return `<span class="party out">${esc(partyName(address) || "Outside")}</span>`;
+}
+
+function feedHtml(tm) {
+  const panel = state.activity;
+  if (!panel) return GHOST.lines([18, 21, 14]);
+  if (gone(panel)) return keptHtml(panel);
+  const rows = activityRows().filter((a) => a.slot);
+  if (!rows.length) return `<p class="empty">No activity</p>`;
+  return keptHtml(panel) + `<ol>${rows.map((a) => {
+    const s = slotOf(tm, a.slot);
+    return `<li style="--c:${s ? headColor(s.head) : "var(--track-line)"}"><time>${hhmm(a.at)}</time>${party(tm, a.slot, null)}` +
+      `<span class="what">${activityHtml(a)}</span></li>`;
+  }).join("")}</ol>`;
+}
+
+// ---------- the views: one team read four ways (web-console §4.13 "Team board"; marlin, Oct 13) ----------
+// Board is the walked default. By command racks the members under the command each runs on, with the day's hand-offs
+// between commands under the bays. By role racks them by role, the lead's first, with the day's hand-offs as marks on a
+// time rule. Timeline runs the day down the page, one column per member: what each did, and each message drawn from
+// its sender's column to its receiver's at its time, with each member's requests and cost at the column's head. Chat
+// and Activity stay beside every view. The choice is kept per team in this browser.
+const VIEWS = [["board", "Board"], ["command", "By command"], ["role", "By role"], ["timeline", "Timeline"]];
+const VIEW_STORE = "splice-teams-view:";
+const viewChoice = new Map();
+function viewOf(tm) {
+  if (!viewChoice.has(tm.id)) {
+    let v = null;
+    try { v = localStorage.getItem(VIEW_STORE + tm.id); } catch { /* storage off: Board */ }
+    viewChoice.set(tm.id, VIEWS.some(([k]) => k === v) ? v : "board");
+  }
+  return viewChoice.get(tm.id);
+}
+function setView(tm, v) {
+  viewChoice.set(tm.id, v);
+  try { localStorage.setItem(VIEW_STORE + tm.id, v); } catch { /* storage off: the choice holds until the page reloads */ }
+}
+const viewsHtml = (tm) => `<nav class="views" aria-label="Views">${VIEWS.map(([k, w]) =>
+  `<button class="view" data-act="view" data-v="${k}" aria-pressed="${viewOf(tm) === k}">${w}</button>`).join("")}</nav>`;
+
+/** The day's messages from one member to another, oldest first: the hand-offs the views draw. */
+const handoffs = () => (state.chat?.messages || []).filter((m) => m.from_slot && m.to_slot && m.from_slot !== m.to_slot);
+/** A day panel still being read, or one the history no longer holds, in the words the chat uses for it. */
+const panelWord = (panel) => (!panel ? GHOST.lines([16, 20]) : gone(panel) ? keptHtml(panel) : null);
+
+function baysHtml(tm, groups) {
+  return groups.map(({ name, color, slots }) =>
+    `<section class="bay"${color ? ` style="--c:${color}"` : ""}><h3 class="bayname">${color ? `<i aria-hidden="true"></i>` : ""}${esc(name)}` +
+    `<span class="bcount">${slots.length} ${slots.length === 1 ? "member" : "members"}</span></h3>` +
+    `${slots.map((s) => memberHtml(tm, s)).join("")}</section>`).join("");
+}
+const handoffsHtml = (body) => `<section class="handoffs"><h3>Hand-offs<span class="dname">${dayName(ui.day)}</span></h3>${body}</section>`;
+
+function byCommandHtml(tm) {
+  const heads = [...new Set(tm.slots.map((s) => s.head))];
+  const bays = baysHtml(tm, heads.map((h) => ({ name: commandOf(h) || h, color: headColor(h), slots: tm.slots.filter((s) => s.head === h) })));
+  const between = new Map();
+  for (const m of handoffs()) {
+    const a = slotOf(tm, m.from_slot)?.head, b = slotOf(tm, m.to_slot)?.head;
+    if (!a || !b) continue;
+    const k = `${a} ${b}`;
+    between.set(k, { a, b, n: (between.get(k)?.n || 0) + 1, last: m.at });
+  }
+  const cmd = (h) => `<span class="party" style="--c:${headColor(h)}"><i></i>${esc(commandOf(h) || h)}</span>`;
+  const rows = [...between.values()].sort((x, y) => y.n - x.n || y.last - x.last);
+  const body = panelWord(state.chat) ?? (rows.length
+    ? `<ul class="pairs">${rows.map((r) => `<li>${cmd(r.a)}${GLYPH.msg}${cmd(r.b)}<span class="n">${r.n} ${r.n === 1 ? "message" : "messages"}</span>` +
+      `<time>last ${hhmm(r.last)}</time></li>`).join("")}</ul>`
+    : `<p class="empty">No messages between members</p>`);
+  return `<div class="mcol"><div class="members bays">${bays}</div>${handoffsHtml(body)}</div>`;
+}
+
+function byRoleHtml(tm) {
+  const key = (s) => (s.role || s.id).trim().toLowerCase();
+  const order = [...new Set([...tm.slots.filter((s) => s.lead), ...tm.slots].map(key))];
+  const bays = baysHtml(tm, order.map((k) => {
+    const slots = tm.slots.filter((s) => key(s) === k);
+    return { name: slots[0].role || slots[0].id, color: null, slots };
+  }));
+  const { from, to } = dayWindow(ui.day);
+  const span = Math.max(1, to - from);
+  const at = (t) => `${Math.min(100, Math.max(0, ((t - from) / span) * 100)).toFixed(2)}%`;
+  const all = handoffs();
+  const ticks = all.map((m) => {
+    const a = slotOf(tm, m.from_slot), b = slotOf(tm, m.to_slot);
+    return `<i style="left:${at(m.at)};--c:${headColor(a?.head)}" title="${esc(`${hhmm(m.at)} ${a?.role || m.from_slot} to ${b?.role || m.to_slot}`)}"></i>`;
+  }).join("");
+  const hours = [0, 1, 2, 3, 4].map((q) => { const t = from + (q * span) / 4; return `<span style="left:${at(t)}">${hhmm(t)}</span>`; }).join("");
+  const body = panelWord(state.chat) ?? (all.length
+    ? `<div class="timerule" role="img" aria-label="${all.length} messages between members">${ticks}</div><div class="hours">${hours}</div>` +
+      `<p class="note">${all.length} ${all.length === 1 ? "message" : "messages"}</p>`
+    : `<p class="empty">No messages between members</p>`);
+  return `<div class="mcol"><div class="members bays">${bays}</div>${handoffsHtml(body)}</div>`;
+}
+
+// a day of activity samples is hundreds of rows; the timeline draws the latest this many and says how many it left out
+const TIMELINE_ROWS = 400;
+const costLine = (u) => [`${u.turns.toLocaleString("en-US")} ${u.turns === 1 ? "request" : "requests"}`,
+  ...(u.usd != null && u.priced > 0 ? [`${dollars(u.usd)}${u.unpriced ? ` for ${u.priced.toLocaleString("en-US")}` : ""}`] : [])].join(" · ");
+
+function timelineHtml(tm) {
+  const cols = tm.slots;
+  const col = (id) => cols.findIndex((s) => s.id === id);
+  const heads = cols.map((s, i) => { const u = useOf(tm, s.id);
+    return `<div class="tlhead" style="grid-column:${i + 2};--c:${headColor(s.head)}"><span class="party"><i></i>${esc(s.role)}</span>` +
+      `${u ? `<span class="tlcost">${costLine(u)} since joining</span>` : ""}</div>`; }).join("");
+  const waiting = panelWord(state.chat) && panelWord(state.activity);
+  const events = [
+    ...(state.chat && !gone(state.chat) ? state.chat.messages || [] : []).filter((m) => col(m.from_slot) >= 0 || col(m.to_slot) >= 0).map((m) => ({ at: m.at, m })),
+    ...activityRows().filter((a) => a.tool && col(a.slot) >= 0).map((a) => ({ at: a.at, a })),
+  ].sort((x, y) => x.at - y.at);
+  const shown = events.slice(-TIMELINE_ROWS);
+  const rows = shown.map((e, r) => {
+    const row = `grid-row:${r + 2}`;
+    const time = `<time style="${row}">${hhmm(e.at)}</time>`;
+    if (e.a) {
+      const i = col(e.a.slot);
+      return `${time}<div class="tlact" style="${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}">${activityHtml(e.a)}</div>`;
+    }
+    const f = col(e.m.from_slot), t = col(e.m.to_slot), tip = esc((e.m.text || "").slice(0, 160));
+    if (f >= 0 && t >= 0) {
+      const lo = Math.min(f, t), hi = Math.max(f, t);
+      return `${time}<div class="tlmsg${t < f ? " back" : ""}" style="${row};grid-column:${lo + 2} / ${hi + 3};--c:${headColor(cols[f].head)}" title="${tip}"></div>`;
+    }
+    const i = f >= 0 ? f : t;
+    const other = partyName(f >= 0 ? e.m.to : e.m.from) || "Outside";
+    return `${time}<div class="tlnote" style="${row};grid-column:${i + 2};--c:${headColor(cols[i].head)}" title="${tip}">${GLYPH.msg}<span>${f >= 0 ? "to" : "from"} ${esc(other)}</span></div>`;
+  }).join("");
+  const cut = events.length > shown.length ? `<p class="cut"><span>The latest ${shown.length} of ${events.length}</span></p>` : "";
+  const empty = waiting || (!events.length ? `<p class="empty">Nothing on ${ui.day === 0 ? "this day yet" : "this day"}</p>` : "");
+  return `<div class="mcol tlcol">${cut}` +
+    `<div class="tl" style="--n:${cols.length}">${heads}${rows}</div>${empty}</div>`;
+}
+
+/** The members as the chosen view draws them; Board keeps the walked markup as it was. */
+function membersHtml(tm) {
+  const view = viewOf(tm);
+  if (view === "command") return byCommandHtml(tm);
+  if (view === "role") return byRoleHtml(tm);
+  if (view === "timeline") return timelineHtml(tm);
+  return `<div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}${leftHtml(tm)}</div>`;
+}
+/** The members removed from the team, each with when it left and what it did while it was on it (spec §14). */
+function leftHtml(tm) {
+  const gone = leftOf(tm);
+  if (!gone.length) return "";
+  return `<section class="gone" aria-label="Left"><h3>Left</h3><ul>${gone.map((s) =>
+    `<li><span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span><span class="ghead">${esc(s.head)}</span>` +
+    `${s.left_epoch_millis ? `<time>Left ${monthDay(s.left_epoch_millis)}, ${hhmm(s.left_epoch_millis)}</time>` : ""}` +
+    `<div class="use">${figures(useOf(tm, s.id))}</div></li>`).join("")}</ul></section>`;
+}
+
+function boardHtml(tm) {
+  const T = totals(tm);
+  const ro = tm.archived;
+  // End all: every started member's session ended, the team kept; armed with a chip per member it would cost (fin)
+  const started = tm.slots.filter((x) => { const s = sessOf(x); return s && s.availability !== "gone"; });
+  const tkey = `team:${tm.id}`, armed = ui.armedEnd.get(tkey), endingAll = ui.ending.get(tkey);
+  const endAll = ro || !started.length ? ""
+    : armed ? `<div class="armed end">${armed.members.map((m) => { const x = tm.slots.find((y) => y.id === m.slot);
+        return `<span class="chip${m.reason === "working" ? " live" : ""}" title="${m.reason === "draft" ? esc(`Unsent: ${m.draft || ""}`) : "Working"}"><i aria-hidden="true"></i>${esc(x?.role || m.slot)}</span>`; }).join("")}` +
+      `<button class="act danger small" data-act="end-all-now">End all</button><button class="act quiet small" data-act="end-all-keep">Keep running</button></div>`
+    : endingAll ? `<button class="act quiet small stopping" disabled>${ICON.wait}Ending · ${secsSince(endingAll)} s</button>`
+    : `<button class="act quiet" data-act="end-all">End all</button>`;
+  const allFailed = ui.failed.get(tkey) ? `<span class="refusal" role="status">${esc(ui.failed.get(tkey))}</span>` : "";
+  // an archived team's one way back: restoring it is what lets its members start again (TeamStart refuses until then)
+  const more = ro ? `<button class="act" data-act="restore">Restore</button>` : allFailed + endAll + `<button class="act" data-act="edit">Edit</button>` +
+    `<button class="icon" data-act="more" aria-label="More" aria-expanded="${ui.menu === "more"}">${GLYPH.more}</button>` +
+    (ui.menu === "more" ? `<div class="menu"><button data-act="archive">Archive</button></div>` : "");
+  const day = `<div class="day"><button class="icon" data-act="day" data-d="1" aria-label="Earlier day"${ui.day >= 6 ? " disabled" : ""}>${GLYPH.back}</button>` +
+    `<span class="dname">${dayName(ui.day)}</span>` +
+    `<button class="icon" data-act="day" data-d="-1" aria-label="Later day"${ui.day === 0 ? " disabled" : ""}>${GLYPH.next}</button></div>`;
+  return `<section class="team${ro ? " archived" : ""}" data-key="team:${esc(tm.id)}">` +
+    `<header class="team-head"><div class="who"><h2>${esc(tm.name)}</h2>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
+    `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm), "since members joined") : ""}</div></div>` +
+    `<div class="acts">${ro && ui.failed.has(`restore:${tm.id}`) ? `<span class="refusal" role="status">${["Not restored", ...ui.failed.get(`restore:${tm.id}`)].join(" · ")}</span>` : ""}${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
+    viewsHtml(tm) +
+    `<div class="room${viewOf(tm) === "timeline" ? " tlroom" : ""}">${membersHtml(tm)}` +
+    `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +
+    `<section class="feed"><header><h3>Activity</h3><span class="sampled">Sampled every 30 s</span><span class="dname">${dayName(ui.day)}</span></header>` +
+    `<div class="flow">${feedHtml(tm)}</div></section></div></section>`;
+}
+
+// ---------- the composer: name, goal, repo, and the members as rows ----------
+const blank = () => ({ role: "", head: null, model: null, account: null, lead: false, bind_by_rule: false, instructions: "", open: false });
+function composeFrom(tm) {
+  return {
+    id: tm ? tm.id : null, name: tm?.name || "", goal: tm?.goal || "", repo: tm?.repo || "", error: null,
+    slots: tm ? tm.slots.map((s) => ({ ...blank(), ...s, open: false })) : [{ ...blank(), lead: true }, blank()],
+  };
+}
+const ready = (c) => c.name.trim() && c.slots.length && c.slots.every((s) => s.head);
+
+function pickHtml(c, i) {
+  const p = ui.pick;
+  const s = c.slots[i];
+  if (!p || p.i !== i) return "";
+  if (p.what === "head") {
+    return `<div class="menu pick-menu" data-what="head">${state.heads.map((h) =>
+      `<button data-act="set" data-i="${i}" data-what="head" data-v="${esc(h.key)}"><span class="blot" style="--c:${headColor(h.key)}"></span>${esc(h.command)}</button>`).join("")}</div>`;
+  }
+  if (p.what === "model") {
+    const rows = state.models[s.head] || [];
+    if (!rows.length) return `<div class="menu pick-menu" data-what="model"><p class="empty">This command declares no models.</p></div>`;
+    return `<div class="menu pick-menu" data-what="model">${rows.map((m) =>
+      `<button data-act="set" data-i="${i}" data-what="model" data-v="${esc(m.id)}">${esc(m.label)}</button>`).join("")}</div>`;
+  }
+  return `<div class="menu pick-menu" data-what="account">${(state.accounts[s.head] || []).map((a) =>
+    `<button data-act="set" data-i="${i}" data-what="account" data-v="${esc(a)}">${esc(a)}</button>`).join("")}</div>`;
+}
+
+function slotRowHtml(c, s, i) {
+  const btn = (what, val, label) => `<button class="pickbtn${val ? "" : " unset"}" data-act="pick" data-i="${i}" data-what="${what}" ` +
+    `aria-expanded="${ui.pick?.i === i && ui.pick.what === what}">${val ? label : what === "head" ? "Command" : what === "model" ? "Model" : "Account"}${GLYPH.caret}</button>`;
+  const head = btn("head", s.head, `<span class="blot" style="--c:${headColor(s.head)}"></span>${esc(commandOf(s.head) || "")}`);
+  const model = s.head ? btn("model", s.model, esc(modelLabel(s.head, s.model))) : "";
+  const account = s.head && (state.accounts[s.head] || []).length ? btn("account", s.account, esc(s.account || "")) : "";
+  return `<article class="card slot-row" style="--c:${s.head ? headColor(s.head) : "var(--track-line)"}" data-key="row:${i}">` +
+    `<div class="top"><input class="field role-in" data-i="${i}" value="${esc(s.role)}" placeholder="Role" aria-label="Role" list="roles" autocomplete="off" spellcheck="false">` +
+    `${head}${model}${account}<button class="leadtog" data-act="lead" data-i="${i}" aria-pressed="${s.lead}">Lead</button>` +
+    `<button class="act quiet small" data-act="instr" data-i="${i}" aria-expanded="${s.open}">Instructions</button>` +
+    `<button class="act quiet small" data-act="rm" data-i="${i}"${c.slots.length < 2 ? " disabled" : ""}>Remove</button>${pickHtml(c, i)}</div>` +
+    `<div class="rulerow"><button class="leadtog" data-act="rule" data-i="${i}" aria-pressed="${Boolean(s.bind_by_rule)}">Joins on its own</button>` +
+    `${s.bind_by_rule ? `<p class="rulehint">${esc(ruleLine(c.repo, s.head))}</p>` : ""}</div>` +
+    (s.open ? `<textarea class="field instr" data-i="${i}" rows="4" aria-label="Instructions">${esc(s.instructions || "")}</textarea>` : "") +
+    `</article>`;
+}
+
+function composerHtml() {
+  const c = ui.compose;
+  const ok = ready(c) && !c.saving;
+  // Not saved sits on the save row; Repo's row has a word only for the three refusals TeamRules makes of the repo (fin)
+  const word = c.repoWord ? `<span class="state limit" role="status">${esc(c.repoWord)}</span>` : "";
+  const repoRefused = Boolean(c.repoWord);
+  return `<section class="compose" data-key="compose" role="dialog" aria-modal="true" aria-labelledby="t-title">` +
+    `<h2 id="t-title">${c.id ? esc(state.teams.find((t) => t.id === c.id)?.name) : "New team"}</h2>` +
+    `<div class="frow"><label for="t-name">Name</label><input class="field" id="t-name" value="${esc(c.name)}" autocomplete="off" spellcheck="false"></div>` +
+    `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="2">${esc(c.goal)}</textarea></div>` +
+    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><input class="field" id="t-repo" value="${esc(c.repo)}" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}>${word}</div></div>` +
+    `<h3>Members</h3><div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
+    `<button class="add" data-act="add-slot"><span class="plus" aria-hidden="true">+</span>Add member</button></div>` +
+    `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
+    `<footer><p class="foothint">Save keeps the team. Start team also starts a session for every member that has none.</p>` +
+    (c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "") +
+    `<button class="act quiet" data-act="cancel">Cancel</button>` +
+    `<button class="act quiet" data-act="save"${ok ? "" : " disabled"}>Save</button>` +
+    `<button class="act primary" data-act="start-team"${ok ? "" : " disabled"}>Start team</button></footer></section>`;
+}
+
+// ---------- render ----------
+function render() {
+  const a = document.activeElement;
+  const kind = a?.closest?.(".compose") && ["#t-name", "#t-goal", "#t-repo", ".role-in", ".instr"].find((k) => a.matches(k));
+  const focus = kind ? { sel: kind.startsWith("#") ? kind : `${kind}[data-i="${a.dataset.i}"]`, pos: a.selectionStart } : null;
+  const shown = state.teams.filter((t) => (!t.archived || ui.archived) && inPick(t));
+  if (!shown.some((t) => t.id === ui.team)) ui.team = shown.find((t) => !t.archived)?.id ?? shown[0]?.id ?? null;
+  const tm = shown.length ? team() : null;
+  root.innerHTML = state.error
+    ? `<p class="empty limit">${esc(state.error)}</p>`
+    : state.loading
+      ? `<div class="ghost-teams" aria-busy="true" aria-label="Reading teams">${[[11, 26, 18], [9, 22, 15], [12, 24, 17]].map((w, i) => GHOST.card(w, i)).join("")}</div>`
+      : !state.teams.length
+        ? `<div class="no-teams"><div class="say"><p>No teams</p><p class="what">A team is a few sessions working toward one goal, each with its own role and model.</p></div><button class="act primary" data-act="new">New team</button></div>`
+        : (state.stale ? `<p class="why limit stale">${esc(state.stale)}${state.readAt ? ` · Last read ${hhmm(state.readAt)}` : ""}</p>` : "")
+          + pickLineHtml(groupsNow(), picked(), ui.pmenu, teamCount()) + tabsHtml() + (tm ? boardHtml(tm) : "");
+  sheet.innerHTML = ui.compose ? `<div class="scrim">${composerHtml()}</div>` : "";
+  document.querySelector(".app").inert = Boolean(ui.compose);
+  for (const log of root.querySelectorAll(".log.chat, .feed .flow")) log.scrollTop = log.scrollHeight;
+  const el = focus && sheet.querySelector(focus.sel);
+  if (el) { el.focus(); if (focus.pos != null) el.setSelectionRange(focus.pos, focus.pos); }
+  (sheet.querySelector(".menu button") || root.querySelector(".menu button"))?.focus();
+}
+
+// ---------- the acts ----------
+// A new slot's id comes from its role: builder, then builder-2. A slot that exists keeps its id, so its messages and
+// its usage stay its own when he renames the role.
+function slugs(slots) {
+  const taken = new Set(slots.map((s) => s.id).filter(Boolean));
+  return slots.map((s) => {
+    if (s.id) return s.id;
+    const base = (s.role.trim() || commandOf(s.head)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "member";
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+    taken.add(id);
+    return id;
+  });
+}
+
+/** Saves the composer. The store judges the repo and the composition; its refusal is what the person reads. Save and
+ *  Start team hold while one save is in flight, and a new team's form keeps one Idempotency-Key from its first press,
+ *  so a press after a failed or unanswered create can never make a second team (marlin, from splice-turns' audit). */
+async function save(startAfter) {
+  const c = ui.compose;
+  if (c.saving) return;
+  c.saving = true;
+  render();
+  if (!c.id) c.once ??= `console-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  const ids = slugs(c.slots);
+  const body = {
+    name: c.name.trim(),
+    goal: c.goal.trim(),
+    repo: c.repo.trim(),
+    slots: c.slots.map((s, i) => ({
+      id: ids[i], role: s.role.trim() || ids[i], head: s.head,
+      model: s.model || undefined, account: s.account || undefined,
+      lead: s.lead, bind_by_rule: s.bind_by_rule || undefined, instructions: s.instructions?.trim() || undefined,
+    })),
+  };
+  const answer = c.id ? await API.put(`/api/teams/${c.id}`, { ...body, id: c.id }) : await createTeam(body, c.once);
+  c.saving = false;
+  if (!answer.ok) {
+    c.error = refusedAs(answer, "Not saved", "save team");
+    c.repoWord = answer.status === 0 ? null : repoWordOf(answer.body?.error);
+    render();
+    if (c.repoWord) sheet.querySelector("#t-repo")?.focus(); // a refusal of the repo leaves the person on Repo's row
+    return;
+  }
+  const saved = answer.body;
+  ui.compose = null;
+  ui.pick = null;
+  ui.team = saved?.id || ui.team;
+  await read();
+  if (startAfter && saved) {
+    const fresh = state.teams.find((t) => t.id === saved.id);
+    for (const slot of fresh?.slots.filter((s) => !s.session) || []) await startSlot(fresh, slot);
+  }
+}
+
+/** A create needs an Idempotency-Key, so a retried create cannot make a second team, and api.js sends no custom
+ *  header: this one call is made here, with the form's one key [once]. */
+async function createTeam(body, once) {
+  const mgmt = localStorage.getItem("splice-console-key") || "";
+  try {
+    const res = await fetch("/api/teams", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${mgmt}`, "Content-Type": "application/json", "Idempotency-Key": once },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+    return { ok: res.ok, status: res.status, body: parsed };
+  } catch {
+    return { ok: false, status: 0, body: null };
+  }
+}
+
+/** Starting a member opens a Claude Code session on its command, bound to the slot. A start that stops on a question
+ *  (202, needs_you) leaves it on the card for him; asked again for that slot, the start waits on the same terminal. */
+async function startSlot(tm, slot, path = null) {
+  const key = `${tm.id}/${slot.id}`;
+  ui.failed.delete(key);
+  ui.unstarted.delete(key);
+  ui.screenOpen.delete(key);
+  ui.starting.add(key);
+  ui.startedAt.set(key, Date.now());
+  render();
+  const tick = setInterval(render, 1000);
+  const answer = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/start`);
+  clearInterval(tick);
+  ui.starting.delete(key);
+  ui.startedAt.delete(key);
+  // the daemon's sentence goes to the console's log; the card says the fact and keeps what he has not seen (fin)
+  if (answer.status === 504) {
+    console.warn(`start ${key}: ${answer.body?.error || 504}`);
+    ui.unstarted.set(key, { screen: answer.body?.screen || "", why: reasonOf(answer.body?.error) });
+  } else if (answer.status === 409 && answer.body?.reason === "closed") {
+    ui.unstarted.set(key, { path, why: "Terminal closed" });
+  } else if (!answer.ok) {
+    // the card's own Not started, with no reason line; Not answering when splice did not answer (fin)
+    const word = refusedAs(answer, "Not started", `start ${key}`);
+    if (answer.status === 0) ui.failed.set(key, word);
+    else ui.unstarted.set(key, { why: null });
+  }
+  await read();
+}
+
+/** The reason line a start that gave up keeps on its card, as a state (fin; Marlin p223): "Claude Code had not registered
+ *  after 45s" reads "Waited 45 s". Any other reason has no line; its sentence is already in the console's log. */
+/** Repo's word for the three refusals TeamRules.kt makes of the repo, matched whole so no other refusal outlines Repo
+ *  (fin): needed when a member joins by rule, a path that does not exist, and one that is not a folder. */
+const repoWordOf = (said) => {
+  const why = String(said || "");
+  if (/^repo is needed when a member joins by rule\b/.test(why)) return "Needed";
+  if (/^repo '.*' does not exist$/s.test(why)) return "Not found";
+  return /^repo '.*' is not a directory$/s.test(why) ? "Not a folder" : null;
+};
+const reasonOf = (said) => {
+  const waited = String(said || "").match(/had not registered after (\d+)\s*s/);
+  return waited ? `Waited ${waited[1]} s` : null;
+};
+/** The folder a question names: its panel's line that is a path, as the client drew it. */
+const pathOf = (offer) => (offer?.panel || []).map((l) => l.text).find((t) => /^[~/]/.test(t)) || null;
+/** The client's question in its own words: the panel's lines up to its question mark, from after the last line that
+ *  is a path or a heading ending in a colon, so "Accessing workspace:" and the advice after the question stay off. */
+function questionOf(offer) {
+  let said = [];
+  for (const { text } of offer.panel || []) {
+    if (/^[~/]/.test(text) || /:$/.test(text)) { said = []; continue; }
+    said.push(text);
+    const at = said.join(" ").indexOf("?");
+    if (at >= 0) return said.join(" ").slice(0, at + 1);
+  }
+  return offer.asked || "";
+}
+
+/** The client's question as it drew it: the question verbatim, its folder as code, and its options as the buttons,
+ *  verbatim, neither primary (the client itself points at No). Nothing is answered until he clicks, and splice never
+ *  picks one for him. The pressed one holds the wait ring until the terminal has it, the rest wait disabled. */
+function trustHtml(slotId, offer, pressed) {
+  const path = pathOf(offer);
+  const acts = offer.choices.map((c) => pressed !== undefined
+    ? `<button class="act${pressed === c.choice ? " answering" : ""}" disabled>${pressed === c.choice ? ICON.wait : ""}${esc(c.label)}</button>`
+    : `<button class="act" data-act="trust" data-s="${esc(slotId)}" data-i="${c.choice}" data-l="${esc(c.label)}">${esc(c.label)}</button>`).join("");
+  return `<div class="ask trust"><p class="q">${esc(questionOf(offer))}</p>${path ? `<p class="cmd">${esc(path)}</p>` : ""}` +
+    `<div class="answers">${acts}</div></div>`;
+}
+
+/** End: the member's session closed where it runs. With nothing to lose it goes on the first press; a turn mid-work or
+ *  unsent words arm the card instead, and the second press ends it anyway. A refusal reads Not ended, its cause in the
+ *  log (fin). */
+async function endSlot(tm, slot, confirm) {
+  const key = `${tm.id}/${slot.id}`;
+  ui.armedEnd.delete(key); ui.failed.delete(`end:${key}`);
+  ui.ending.set(key, Date.now());
+  render();
+  const tick = setInterval(render, 1000);
+  const res = await API.post(`/api/sessions/${slot.session}/end`, confirm ? { confirm: true } : {});
+  clearInterval(tick);
+  ui.ending.delete(key);
+  if (res.ok || res.body?.reason === "ended") { await read(); return; }
+  const why = res.body?.reason;
+  if (!confirm && why === "working") ui.armedEnd.set(key, {});
+  else if (!confirm && why === "draft") ui.armedEnd.set(key, { draft: res.body?.draft ?? "" });
+  else {
+    if (res.body?.error) console.warn(`end ${key}:`, res.body.error);
+    ui.failed.set(`end:${key}`, why === "not_ours" ? "Not ended · Started elsewhere" : "Not ended");
+  }
+  render();
+}
+
+/** End all: every started member ended; armed first with a chip for each member that is working or holds unsent words. */
+async function endTeam(tm, confirm) {
+  const key = `team:${tm.id}`;
+  ui.armedEnd.delete(key);
+  ui.ending.set(key, Date.now());
+  render();
+  const tick = setInterval(render, 1000);
+  const res = await API.post(`/api/teams/${tm.id}/end`, confirm ? { confirm: true } : {});
+  clearInterval(tick);
+  ui.ending.delete(key);
+  if (!confirm && res.status === 409 && res.body?.reason === "costs") ui.armedEnd.set(key, { members: res.body.members || [] });
+  else if (!res.ok) { console.warn(`end all ${tm.id}:`, res.body?.error || res.status); ui.failed.set(key, "Not ended"); }
+  else for (const m of res.body?.members || []) if (m.status >= 400 && m.reason !== "ended") ui.failed.set(`end:${tm.id}/${m.slot}`, m.reason === "not_ours" ? "Not ended · Started elsewhere" : "Not ended");
+  await read();
+}
+
+/** His answer to the question a start stopped on, then the start again on that same terminal: after Yes it waits for
+ *  the member to come up, after No the terminal has closed and the slot is given back. */
+async function answerTrust(tm, slot, choice, label) {
+  const key = `${tm.id}/${slot.id}`;
+  if (ui.trusting.has(key)) return;
+  const path = pathOf(state.pending[slot.id]);
+  ui.trusting.set(key, choice);
+  render();
+  const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice, label });
+  ui.trusting.delete(key);
+  if (!answered.ok) {
+    ui.failed.set(key, refusedAs(answered, "Not sent", `answer ${key}`));
+    await read();
+    return;
+  }
+  delete state.pending[slot.id];
+  await startSlot(tm, slot, path);
+}
+
+/** Answering presses the option's own number in the member's terminal; a refusal stays on its card. */
+async function answerSlot(tm, slot, choice) {
+  const key = `${tm.id}/${slot.id}`;
+  ui.failed.delete(key);
+  ui.answered.set(key, { at: Date.now(), choice, offer: state.screens[slot.id] });
+  render();
+  const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice });
+  if (!answered.ok) {
+    ui.answered.delete(key);
+    ui.failed.set(key, refusedAs(answered, "Not sent", `answer ${key}`));
+  }
+  await read();
+}
+
+/** A refused act keeps the board: its word sits by the control that was refused, [where] in ui.failed. */
+async function act(answer, whenRefused, where) {
+  if (!answer.ok) {
+    ui.failed.set(where, refusedAs(answer, whenRefused, where));
+    render();
+    return false;
+  }
+  await read();
+  return true;
+}
+
+sheet.addEventListener("input", (e) => {
+  const c = ui.compose;
+  if (!c) return;
+  const el = e.target;
+  if (el.id === "t-name") c.name = el.value;
+  else if (el.id === "t-goal") c.goal = el.value;
+  else if (el.id === "t-repo") {
+    c.repo = el.value;
+    if (c.error || c.repoWord) { // typing in Repo answers the refusal: its words and outline go, the field keeps its focus
+      c.error = null;
+      c.repoWord = null;
+      el.removeAttribute("aria-invalid");
+      sheet.querySelector(".withword .state")?.remove();
+      sheet.querySelector(".compose footer .state")?.remove();
+    }
+    return;
+  }
+  else if (el.matches(".role-in")) c.slots[+el.dataset.i].role = el.value;
+  else if (el.matches(".instr")) { c.slots[+el.dataset.i].instructions = el.value; return; }
+  const ok = Boolean(ready(c)) && !c.saving;
+  for (const b of sheet.querySelectorAll('[data-act="save"], [data-act="start-team"]')) b.disabled = !ok;
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && (ui.armedEnd.size || ui.armedStop.size)) { ui.armedEnd.clear(); ui.armedStop.clear(); render(); return; }
+  if (e.key !== "Escape") return;
+  if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
+  else if (ui.compose) { ui.compose = null; ui.pick = null; render(); }
+});
+
+/** A member card bound to a session opens it in Sessions, which reads its door from the hash. */
+function openSession(card) {
+  CONSOLE.navigate(`sessions.html#${encodeURIComponent(card.dataset.go)}`);
+}
+document.addEventListener("keydown", (e) => {
+  const card = e.target.closest?.(".card[data-go]");
+  if (card && e.target === card && e.key === "Enter") openSession(card);
+});
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-act]");
+  const card = e.target.closest(".card[data-go]");
+  if (!b && card && !e.target.closest("a, button, input, textarea, select")) { openSession(card); return; }
+  // an armed End is disarmed by a tap anywhere but its own row, as Restart's is (fin)
+  if ((ui.armedEnd.size || ui.armedStop.size) && !e.target.closest(".armed.end")) {
+    ui.armedEnd.clear(); ui.armedStop.clear(); if (!b) { render(); return; }
+  }
+  if (ui.pmenu && !e.target.closest(".pmenu, [data-act=projmenu]")) { ui.pmenu = false; if (!b) { render(); return; } }
+  if (!b) {
+    if (ui.menu || ui.pick) { ui.menu = null; ui.pick = null; render(); }
+    return;
+  }
+  const tm = team();
+  const c = ui.compose;
+  const i = +b.dataset.i;
+  const slot = tm && b.dataset.s ? slotOf(tm, b.dataset.s) : null;
+  switch (b.dataset.act) {
+    case "theme": toggleTheme(); break;
+    case "read": await read(); break;
+    case "team": Object.assign(ui, { team: b.dataset.t, compose: null, pick: null, menu: null, day: 0 }); render(); await readTeam(); break;
+    case "projmenu": ui.pmenu = !ui.pmenu; render(); break;
+    // the same pick as Sessions and Requests; the open team stays when it has a member there, else the first that does
+    case "pickproj": { const was = ui.team; ui.project = b.dataset.p || null; ui.pmenu = false; PICK.set(ui.project);
+      Object.assign(ui, { menu: null, pick: null }); render(); if (ui.team !== was) { ui.day = 0; await readTeam(); } break; }
+    case "archived": ui.archived = !ui.archived; render(); break;
+    case "view": if (tm) { setView(tm, b.dataset.v); render(); } break;
+    case "new": Object.assign(ui, { compose: composeFrom(null), menu: null, pick: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
+    case "edit": Object.assign(ui, { compose: composeFrom(tm), menu: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
+    case "more": ui.menu = ui.menu === "more" ? null : "more"; render(); break;
+    case "archive":
+      ui.menu = null; ui.failed.delete("archive");
+      await act(await API.post(`/api/teams/${tm.id}/archive`), "Not archived", "archive");
+      break;
+    case "restore": {
+      ui.failed.delete(`restore:${tm.id}`);
+      const answer = await API.post(`/api/teams/${tm.id}/restore`);
+      if (answer.ok) { await read(); break; }
+      // fin: "Not restored", then each held member as its chip, "on", and the active team that holds it, read from the
+      // teams this page already has; the daemon's own sentence goes to the console log, never onto the screen
+      refusedAs(answer, "Not restored", `restore ${tm.id}`);
+      ui.failed.set(`restore:${tm.id}`, tm.slots.filter((s) => s.session).flatMap((s) => alsoOn(tm, s.session).map((name) =>
+        `<span class="party" style="--c:${headColor(s.head)}"><i></i>${esc(s.role)}</span> on ${esc(name)}`)));
+      render();
+      break;
+    }
+    case "day": ui.day = Math.max(0, Math.min(6, ui.day + +b.dataset.d)); render(); await readTeam(); break;
+    case "start": await startSlot(tm, slot); break;
+    case "use": { const k = `${tm.id}/${slot.id}`; ui.menu = ui.menu === k ? null : k; render(); break; }
+    case "bind":
+      ui.menu = null;
+      ui.failed.delete(`bind:${tm.id}/${slot.id}`);
+      await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }),
+        "Not added", `bind:${tm.id}/${slot.id}`);
+      break;
+    case "stop": ui.armedStop.add(`${tm.id}/${slot.id}`); render(); break;
+    case "stop-keep": ui.armedStop.delete(`${tm.id}/${slot.id}`); render(); break;
+    case "stop-now": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
+      const key = `${tm.id}/${slot.id}`;
+      ui.armedStop.delete(key); ui.failed.delete(`stop:${key}`); ui.stopping.add(key); render();
+      const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
+      ui.stopping.delete(key);
+      const refused = stopRefusal(res);
+      if (refused) { ui.failed.set(`stop:${key}`, refused); render(); } else await read();
+      break;
+    }
+    case "answer": await answerSlot(tm, slot, Number(b.dataset.i)); break;
+    case "trust": await answerTrust(tm, slot, Number(b.dataset.i), b.dataset.l); break;
+    case "end": await endSlot(tm, slot, false); break;
+    case "end-now": await endSlot(tm, slot, true); break;
+    case "end-keep": ui.armedEnd.delete(`${tm.id}/${slot.id}`); render(); break;
+    case "end-all": await endTeam(tm, false); break;
+    case "end-all-now": await endTeam(tm, true); break;
+    case "end-all-keep": ui.armedEnd.delete(`team:${tm.id}`); render(); break;
+    case "screen": { const k = `${tm.id}/${slot.id}`; if (!ui.screenOpen.delete(k)) ui.screenOpen.add(k); render(); break; }
+    // the composer
+    case "pick": ui.pick = ui.pick?.i === i && ui.pick.what === b.dataset.what ? null : { i, what: b.dataset.what }; render(); break;
+    case "set": {
+      const s = c.slots[i];
+      if (b.dataset.what === "head" && s.head !== b.dataset.v) Object.assign(s, { head: b.dataset.v, model: null, account: null });
+      else s[b.dataset.what] = b.dataset.v;
+      ui.pick = null;
+      render();
+      break;
+    }
+    case "lead": c.slots[i].lead = !c.slots[i].lead; render(); break;
+    case "rule": c.slots[i].bind_by_rule = !c.slots[i].bind_by_rule; render(); break;
+    case "instr":
+      c.slots[i].open = !c.slots[i].open;
+      render();
+      if (c.slots[i].open) sheet.querySelector(`.instr[data-i="${i}"]`)?.focus();
+      break;
+    case "rm": c.slots.splice(i, 1); ui.pick = null; render(); break;
+    case "add-slot": c.slots.push(blank()); render(); sheet.querySelectorAll(".role-in")[c.slots.length - 1]?.focus(); break;
+    case "cancel": Object.assign(ui, { compose: null, pick: null }); render(); break;
+    case "save": await save(false); break;
+    case "start-team": await save(true); break;
+  }
+});
+
+read();
+
+// A countdown or a silence is only true as of the read it came from, so the turns and the sessions are read again every
+// five seconds while the page is shown and nothing is being edited; without it Resumes in sat at 0:00 and a turn that
+// had ended stayed Working until he pressed Read again (desk walk, Oct 10).
+setInterval(async () => {
+  // a locked console (api.js set body.locked on a 401) sends nothing until it is unlocked (gap 386b)
+  if (document.hidden || document.body.classList.contains("locked") || state.loading || ui.compose || ui.pick || ui.menu) return;
+  const sessions = await API.get("/api/sessions");
+  if (sessions.ok) state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
+  await readLive();
+  render();
+}, 5000);
+
+// the silence counter and the resume countdown move each second between reads, from when the turn was read
+setInterval(() => {
+  for (const el of root.querySelectorAll("[data-silent], [data-resume]")) {
+    const st = state.stalls[el.dataset.silent || el.dataset.resume];
+    if (!st) continue;
+    const gone = Date.now() - st.at, ms = el.dataset.silent ? st.ms + gone : Math.max(0, st.resumeMs - gone);
+    el.lastElementChild.textContent = el.dataset.silent ? counter(ms) : `Resumes in ${counter(ms)}`;
+    el.querySelector(".hand")?.style.setProperty("transform", `rotate(${Math.floor(ms / 1000) * 6}deg)`);
+  }
+}, 1000);
+// the tiles come and go with the page's width, as Sessions' do
+let wasWide = null;
+addEventListener("resize", () => { const w = tilesWide(); if (w !== wasWide) { wasWide = w; if (!state.loading) render(); } });
+
+});

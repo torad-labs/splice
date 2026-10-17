@@ -1,0 +1,132 @@
+// An hour of a command's history is judged on its own evidence against the request log.
+package splice.app.sources
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.util.WallClock
+import splice.usage.UsageHeads
+import splice.usage.economics.EconomicsPayloads
+import java.nio.file.Files
+import java.nio.file.Path
+
+class ProbeEconomicsHoursTest {
+    // An hour before the newest probe whose rollup is ahead of the log may hide a probe the log lost, so it reads Not read.
+    @Test
+    fun `a mismatch before the newest probe refuses only its own hour`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(19 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 19 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 20 * PROBE_HOUR + 123
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(19 * PROBE_HOUR, 21 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(20 * PROBE_HOUR), read.notRead, "the log holds one request of the two the rollup counted")
+    }
+
+    // Live, Oct 11: claude-splice's archives hold probes from Oct 1, and that held every later hour. Probes are retired, so
+    // an hour more than one past the newest one has none to take off.
+    @Test
+    fun `an hour well after the newest probe stands though an older hour holds one`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(19 * PROBE_HOUR + 123, MODELED_WORK_ROW) +
+                atHour(20 * PROBE_HOUR + 123, SYNTHETIC_PROBE_ROW, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(22 * PROBE_HOUR + 123, MODELED_WORK_ROW),
+        )
+        var now = 19 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 20 * PROBE_HOUR + 123
+        store.record(turn("", 0, 30, 15, 2L to 1L), outcome = "error:upstream-failed")
+        recordWork(store)
+        now = 22 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(22 * PROBE_HOUR), read.rows.map { it.hour }.filter { it > 20 * PROBE_HOUR })
+        assertEquals(
+            emptyList<Long>(),
+            read.notRead.filter { it > 20 * PROBE_HOUR },
+            "the rollup stands after the probe",
+        )
+    }
+
+    // Live, Oct 11: a hard stop tore request-log lines the rollup had already counted. A log with no probe row has nothing
+    // to take off, so the rollup's own count stands for every hour after the one the log begins in.
+    @Test
+    fun `a rollup ahead of a log that holds no probe stands for the hours after the log begins`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR, 21 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(emptyList<Long>(), read.notRead, "no probe is in the span, so the rollup stands")
+        assertEquals(1L, read.rows.last().localSteps, "the figure is the rollup's, as counted")
+    }
+
+    @Test
+    fun `the hour a log begins in is partial and stays not read when its rollup is ahead`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW),
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(21 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(20 * PROBE_HOUR), read.notRead, "the log may have begun part-way through that hour")
+    }
+
+    @Test
+    fun `a torn line that could be a probe refuses only the hour it was written in`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val torn = """{"ts":${21 * PROBE_HOUR + 5},"model":"","outcome":"error:upstream-failed","req_bytes":30"""
+        Files.writeString(
+            file,
+            atHour(20 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) +
+                atHour(21 * PROBE_HOUR + 123, MODELED_WORK_ROW, LOCAL_WORK_ROW) + torn + "\n",
+        )
+        var now = 20 * PROBE_HOUR + 123
+        val store = store(dir, WallClock { now })
+        recordWork(store)
+        now = 21 * PROBE_HOUR + 123
+        recordWork(store)
+        val read = shown(store, file)
+        assertEquals(listOf(20 * PROBE_HOUR), read.rows.map { it.hour })
+        assertEquals(listOf(21 * PROBE_HOUR), read.notRead)
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val heads = UsageHeads { listOf(head("a", source)) }
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson())
+        val named = payload.jsonObject.getValue("heads").jsonArray.single().jsonObject.getValue("not_read_hours")
+        assertEquals(listOf(21 * PROBE_HOUR), named.jsonArray.map { it.jsonPrimitive.long }, "the route names them")
+    }
+}

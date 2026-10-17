@@ -1,0 +1,145 @@
+// `splice login <head> [--label <name>]` (v0.4.0, FEATURES.md §11): the label rides the parsed
+// command as data, wherever the flag sits after the verb, and its absence is null, not "".
+package splice.app.cli
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+
+class CommandParserTest {
+
+    private val parser = CommandParser()
+
+    @Test
+    fun `internal ownership protocols reject incomplete or malformed declarations`() {
+        val valid = arrayOf("record-launch", "42", "fixture", "http://127.0.0.1:3101", "session", "other")
+        org.junit.jupiter.api.Assertions.assertTrue(parser.parse(valid) is LaunchOwnerCommand)
+        // a launch inside tmux adds its pane and socket (console TMUX.md); one word of the pair is no declaration
+        val inTmux = valid + arrayOf("%12", "/tmp/tmux-1000/default")
+        org.junit.jupiter.api.Assertions.assertTrue(parser.parse(inTmux) is LaunchOwnerCommand)
+        for (args in listOf(
+            valid.dropLast(1).toTypedArray(),
+            valid + arrayOf("%12"),
+            arrayOf("record-launch", "0", "fixture", "", "login", "hook"),
+            arrayOf("record-launch", "42", "fixture", "", "wrong", "hook"),
+            arrayOf("record-launch", "42", "fixture", "", "login", "wrong"),
+        )) assertEquals(null, parser.parse(args))
+        org.junit.jupiter.api.Assertions.assertTrue(
+            parser.parse(arrayOf("pending-login", "/fixture.jar", "fixture")) is PendingLoginCommand,
+        )
+        assertEquals(null, parser.parse(arrayOf("pending-login", "/fixture.jar")))
+        assertEquals(null, parser.parse(arrayOf("pending-login", "", "fixture")))
+    }
+
+    @Test
+    fun `doctor hands its report flags to the command whole, in the order typed`() {
+        assertEquals(Command.Doctor(emptyList()), parser.parse(arrayOf("doctor")))
+        assertEquals(Command.Doctor(listOf("--json")), parser.parse(arrayOf("doctor", "--json")))
+        val shareable = arrayOf("doctor", "--json", "--with-logs", "--out", "report.json")
+        assertEquals(
+            Command.Doctor(listOf("--json", "--with-logs", "--out", "report.json")),
+            parser.parse(shareable),
+        )
+    }
+
+    @Test
+    fun `login carries the head and the optional label`() {
+        assertEquals(Command.Login("claudex", null), parser.parse(arrayOf("login", "claudex")))
+        assertEquals(Command.Login("claudex", "work"), parser.parse(arrayOf("login", "claudex", "--label", "work")))
+        assertEquals(Command.Login("claudex", "work"), parser.parse(arrayOf("login", "--label", "work", "claudex")))
+        assertEquals(Command.Login(null, "work"), parser.parse(arrayOf("login", "--label", "work")))
+        assertEquals(null, parser.parse(arrayOf("login", "claudex", "--label")), "a bare --label is refused")
+        val twice = arrayOf("login", "claudex", "--label", "work", "--label", "other")
+        assertEquals(null, parser.parse(twice), "a second --label is refused, not dropped")
+        assertEquals(null, parser.parse(arrayOf("login", "claudex", "extra")), "a second word is refused")
+    }
+
+    // V4-276: --discard lets a switch of the Claude head drop a login saved under no label. It is a
+    // flag, never the head, and it means nothing without --label.
+    @Test
+    fun `login carries --discard beside a label, and refuses it alone or twice`() {
+        val switch = arrayOf("login", "claude-splice", "--label", "work", "--discard")
+        assertEquals(Command.Login("claude-splice", "work", discard = true), parser.parse(switch))
+        val first = arrayOf("login", "--discard", "claude-splice", "--label", "work")
+        assertEquals(Command.Login("claude-splice", "work", discard = true), parser.parse(first))
+        assertEquals(null, parser.parse(arrayOf("login", "claude-splice", "--discard")), "--discard needs --label")
+        val twice = arrayOf("login", "claude-splice", "--label", "work", "--discard", "--discard")
+        assertEquals(null, parser.parse(twice), "a second --discard is refused")
+    }
+
+    // JW-08: `splice logs` is the answer to every remediation that used to end at "daemon.log", a
+    // path in a directory doctor printed wrongly for years. LogsCommandTest drives the command
+    // object directly, so it stays green even if the VERB is removed from the parse table and the
+    // operator can no longer reach it. This is the seam that makes the verb exist.
+    @Test
+    fun `the logs verb reaches the logs command, arguments and all`() {
+        assertEquals(Command.Logs(emptyList()), parser.parse(arrayOf("logs")))
+        assertEquals(Command.Logs(listOf("--tail", "50")), parser.parse(arrayOf("logs", "--tail", "50")))
+        assertEquals(
+            Command.Logs(listOf("--head", "codex", "--follow")),
+            parser.parse(arrayOf("logs", "--head", "codex", "--follow")),
+            "the verb passes its arguments through untouched — the command owns their meaning",
+        )
+    }
+
+    // V4-309: `splice restart --help` restarted the live daemon (Sep 26, 7:42 AM CT) because the arm
+    // kept the one word it knew and dropped the rest. A verb takes only the words it names; anything
+    // else, a help flag included, parses to null, so usage prints and nothing runs.
+    @Test
+    fun `a verb refuses a word it does not name, help flags included`() {
+        val noArg = listOf("version", "shim-version", "init", "setup", "status", "sessions", "restart", "add-model")
+        val refused = listOf(
+            listOf("restart", "--help"),
+            listOf("restart", "--now", "--help"),
+            listOf("restart", "--now", "--now"),
+            listOf("status", "x"),
+            listOf("install", "a", "b"),
+            listOf("install", "--help"),
+            listOf("uninstall", "-h"),
+            listOf("uninstall", "a", "b"),
+        ) + noArg.flatMap { verb -> listOf("--help", "-h", "x").map { listOf(verb, it) } }
+        val ran = refused.associateWith { parser.parse(it.toTypedArray()) }.filterValues { it != null }
+        assertEquals(emptyMap<List<String>, Command?>(), ran, "argv that parsed despite a word the verb does not name")
+    }
+
+    @Test
+    fun `only exact help flags are reserved and other argument bytes stay unchanged`() {
+        assertEquals(Command.Login("head--help"), parser.parse(arrayOf("login", "head--help")))
+        assertEquals(
+            Command.Login("claudex", "-helpful"),
+            parser.parse(arrayOf("login", "claudex", "--label", "-helpful")),
+        )
+        assertEquals(Command.Models(listOf("provider-h")), parser.parse(arrayOf("models", "provider-h")))
+    }
+
+    @Test
+    fun `the words a verb names still parse`() {
+        assertEquals(Command.Restart(now = false), parser.parse(arrayOf("restart")))
+        assertEquals(Command.Restart(now = true), parser.parse(arrayOf("restart", "--now")))
+        assertEquals(Command.Install(null), parser.parse(arrayOf("install")))
+        assertEquals(Command.Install("codex"), parser.parse(arrayOf("install", "codex")))
+        assertEquals(Command.Uninstall(null), parser.parse(arrayOf("uninstall")))
+        assertEquals(Command.Uninstall("codex"), parser.parse(arrayOf("uninstall", "codex")))
+        assertEquals(Command.Install("--all"), parser.parse(arrayOf("install", "--all")), "--all is a word it names")
+        assertEquals(Command.Uninstall("--all"), parser.parse(arrayOf("uninstall", "--all")))
+        assertEquals(Command.Status, parser.parse(arrayOf("status")))
+        assertEquals(Command.AddModel, parser.parse(arrayOf("add-model")))
+    }
+
+    // v0.4.0 compatibility statement (README "Compatibility"): the verbs a release ships are a contract
+    // until the next minor release names the break. Frozen here rather than read from the table, so a
+    // verb dropped from the table fails by name instead of vanishing from both sides. `daemon` and
+    // `start` never reach the parser (Main dispatches them). A new verb is additive and joins this list.
+    @Test
+    fun `every verb 0_4_0 ships still parses`() {
+        val shipped = listOf(
+            "setup", "add", "add-model", "models", "upgrade", "status", "sessions", "perf", "wire", "trace",
+            "restart", "login", "key", "logs", "install", "uninstall", "init", "doctor",
+            "version", "shim-version",
+        )
+        val lost = shipped.filter { parser.parse(arrayOf(it)) == null }
+        assertEquals(emptyList<String>(), lost, "verbs 0.4.0 shipped that no longer parse")
+        // The console came back on Oct 10, 2026, opened by `splice console`; the old verb stays gone.
+        assertEquals(Command.Console, parser.parse(arrayOf("console")))
+        assertEquals(null, parser.parse(arrayOf("dashboard")), "splice dashboard opened the removed console")
+    }
+}

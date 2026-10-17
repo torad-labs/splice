@@ -111,7 +111,7 @@ public class McpLaunchPlanner(
         } else {
             emptyList()
         }
-        return (listOf(configDir.resolve(Keys.SETTINGS_FILE_NAME)) + repo + managedSettings).map(json::topLevel)
+        return (listOf(configDir.resolve(Keys.SETTINGS_FILE_NAME)) + repo + listOf(managedSettings)).map(json::topLevel)
     }
 
     /** Every `.mcp.json` from the filesystem root down to [folder], the nearer file winning a name. */

@@ -118,7 +118,7 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
     }.getOrNull().orEmpty()
 
     private fun template(name: String): ByteArray? =
-        javaClass.getResourceAsStream("$RESOURCES/$name")?.use { it.readBytes() }
+        javaClass.getResourceAsStream("$HUB_UNITS_RESOURCE_ROOT/$name")?.use { it.readBytes() }
 
     private fun sha256(bytes: ByteArray): String =
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
@@ -153,7 +153,7 @@ public class HubUnits(private val unitDir: Path, private val record: Path, priva
 }
 
 private val UNITS = listOf("app-mcp.slice", "splice-mcp-front.socket", "splice-mcp-front.service")
-private const val RESOURCES = "/splice/lifecycle/hub"
+private const val HUB_UNITS_RESOURCE_ROOT = "/splice/lifecycle/hub"
 private const val LOAD_STATE_NOT_FOUND = "not-found"
 
 // why: the bound on one systemctl --user call; a call still running past it is killed and reads as no answer.

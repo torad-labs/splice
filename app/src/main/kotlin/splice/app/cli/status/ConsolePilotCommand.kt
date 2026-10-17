@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.app.cli.AdminSupport
+import splice.app.cli.END_OF_FLAGS
 import splice.core.terminal.TerminalOutput
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
@@ -26,10 +27,11 @@ internal const val CONSOLE_PILOT_USAGE: String =
         "highlight <target>... [--note TEXT] | highlight --clear | goto <page|back>] [--json] [-- <words as typed>]"
 
 private const val JSON_FLAG = "--json"
-private const val END_OF_FLAGS = "--"
 private const val NOTE_FLAG = "--note"
 private const val CLEAR_FLAG = "--clear"
 private const val HIGHLIGHT = "highlight"
+
+// An invalid action word is a CLI usage error, so it exits with the usage status.
 private const val USAGE_EXIT = 2
 
 /** Longer than the daemon's own wait for the page's answer (ConsolePilot), so the daemon's sentence arrives first. */

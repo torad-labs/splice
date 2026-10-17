@@ -66,7 +66,7 @@ private const val EVERY_HEAD_FLAG = "--all"
 private val helpFlags = setOf("--help", "-h")
 
 /** Words after `--` are a verb's own text, never flags: `splice console fill e3 -- -h` types "-h" (Oct 16, 2026). */
-private const val END_OF_FLAGS = "--"
+internal const val END_OF_FLAGS = "--"
 
 /** Each table entry owns its arguments and factory; help never reaches that factory. */
 private class CommandRegistration(val usage: String, private val factory: CommandFactory) : CommandFactory {

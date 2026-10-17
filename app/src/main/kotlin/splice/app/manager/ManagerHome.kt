@@ -115,7 +115,7 @@ internal class ManagerHome(
     private fun write(target: Path, name: String, bytes: ByteArray): Boolean {
         val attempt = Cancellables.runCatchingBestEffort {
             Files.createDirectories(target.parent)
-            if (name == SETTINGS) {
+            if (name == MANAGER_SETTINGS_RELATIVE_PATH) {
                 SecureFile.writeAtomic0600(target, bytes.toString(Charsets.UTF_8))
             } else {
                 writeShared(target, bytes)
@@ -153,21 +153,24 @@ internal class ManagerHome(
     private fun shipped(): List<String> {
         val manifest = resource(MANIFEST)?.toString(Charsets.UTF_8)
         if (manifest == null) {
-            log("[manager] this release ships no $RESOURCES/$MANIFEST; the manager's folder gets no files\n")
+            log(
+                "[manager] this release ships no $MANAGER_HOME_RESOURCE_ROOT/$MANIFEST; " +
+                    "the manager's folder gets no files\n",
+            )
             return emptyList()
         }
         return manifest.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
     }
 
     private fun resource(name: String): ByteArray? =
-        javaClass.getResourceAsStream("$RESOURCES/$name")?.use { it.readBytes() }
+        javaClass.getResourceAsStream("$MANAGER_HOME_RESOURCE_ROOT/$name")?.use { it.readBytes() }
 
     /** The settings fence with this machine's folders in it: the settings folder (the manager's parent) and a `[daemon]
      *  state_dir` or a SPLICE_CONFIG elsewhere are denied by their absolute paths (`//<path>`), beside the shipped defaults. Every caller resolves the same two folders,
      *  so the bytes, and the SHA-256 recorded for them, are the same on every run until a folder moves; then a fence
      *  nobody edited is refreshed to the new one. The other files ship as they are. */
     private fun render(name: String, folder: Path, bytes: ByteArray): ByteArray {
-        if (name != SETTINGS) return bytes
+        if (name != MANAGER_SETTINGS_RELATIVE_PATH) return bytes
         return bytes.toString(Charsets.UTF_8)
             .replace(CONFIG_DIR_TOKEN, jsonText(folder.parent))
             .replace(STATE_DIR_TOKEN, jsonText(stateDir.toAbsolutePath().normalize()))
@@ -202,9 +205,9 @@ internal class ManagerHome(
 @Serializable
 internal data class ManagerHomeRecord(val files: Map<String, String> = emptyMap())
 
-private const val RESOURCES = "/manager-home"
+private const val MANAGER_HOME_RESOURCE_ROOT = "/manager-home"
 private const val MANIFEST = "manifest.txt"
-private const val SETTINGS = "${UserHome.CLAUDE_DIR}/settings.json"
+private const val MANAGER_SETTINGS_RELATIVE_PATH = "${UserHome.CLAUDE_DIR}/settings.json"
 private const val SHARED_MODE = "rw-r--r--"
 private const val MANAGER_DIR = "manager"
 

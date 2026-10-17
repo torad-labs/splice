@@ -16,8 +16,8 @@ import splice.core.config.UserHome
  *  and the operator named their removal a regression. Whether a head shares them is the operator's
  *  share/isolate policy, never a forced link or a forced un-link (ProjectsLink's header). */
 internal val sharedLinkItems: List<String> = listOf(
-    Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS, Keys.SESSIONS,
-    Keys.PROJECTS,
+    Keys.SETTINGS_FILE_NAME, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD,
+    Keys.MCPS, Keys.SESSIONS, Keys.PROJECTS,
 )
 
 /** ~/.claude.json keys carried into a head's isolated state (only when absent locally). */
@@ -35,7 +35,7 @@ internal object Keys {
      *  module's readers on the one spelling without each importing core's config package. */
     const val VANILLA_DIR = UserHome.CLAUDE_DIR
     const val CLAUDE_JSON = ".claude.json"
-    const val SETTINGS = "settings.json"
+    const val SETTINGS_FILE_NAME = "settings.json"
     const val CLAUDE_MD = "CLAUDE.md"
     const val MCPS = "mcps"
     const val MODEL = "model"

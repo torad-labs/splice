@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.app.probe.MS_PER_SECOND
 import splice.core.util.JsonScalars
 import splice.http.JsonReply
 import java.util.UUID
@@ -27,7 +28,6 @@ private const val GONE_MS = ASK_MS + 10_000L
 /** How long an order waits for the page's answer: a tap on a link waits for the next page, and an act waits for the
  *  calls it started to settle (pilot.js), so this sits well above both. */
 private const val ANSWER_MS = 25_000L
-private const val MS_PER_SECOND = 1000L
 
 /** A tab names itself with a random word the page draws once; anything longer is not one of ours. */
 private const val MAX_TAB_NAME = 64

@@ -21,7 +21,7 @@ import splice.http.JsonReply
 import splice.sessions.registry.SessionRecord
 import java.nio.file.Path
 
-private const val WAITING = "waiting"
+private const val MANAGER_WAITING_STATUS = "waiting"
 
 /** One head the person can pick; [why] says in plain words why it cannot carry the manager now, when [ready] is
  *  false. */
@@ -115,8 +115,8 @@ internal class ManagerReplies(
     /** A pane still asking before Claude Code registers waits on him, as a registered session waiting on an answer
      *  does. */
     private fun statusOf(record: SessionRecord?): String = when {
-        record == null || record.status.waitingFor != null -> WAITING
-        record.status.state == WAITING -> WAITING
+        record == null || record.status.waitingFor != null -> MANAGER_WAITING_STATUS
+        record.status.state == MANAGER_WAITING_STATUS -> MANAGER_WAITING_STATUS
         record.status.state in busy -> "working"
         else -> "idle"
     }

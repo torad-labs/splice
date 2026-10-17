@@ -33,7 +33,7 @@ import kotlinx.serialization.json.put
 /** The status word an accepted restart answers with: the phase the daemon is entering, not one it has
  *  reached. */
 private const val DRAINING = "draining"
-private const val WAITING = "waiting"
+private const val RESTART_WAITING_STATUS = "waiting"
 private const val IDLE = "idle"
 
 /** The query values that skip the compaction wait, as `splice restart --now` does. */
@@ -103,7 +103,7 @@ public class DaemonRoutes(private val restarts: DaemonRestarts, private val drai
             RestartPhase.Idle -> put("status", IDLE)
             RestartPhase.Draining -> put("status", DRAINING)
             is RestartPhase.Waiting -> {
-                put("status", WAITING)
+                put("status", RESTART_WAITING_STATUS)
                 // How many compactions the restart waits on: Settings says the count, never which head or how old.
                 put("compactions", phase.compactions.size)
             }

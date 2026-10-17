@@ -14,7 +14,7 @@
 
 # Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-22"
+SPLICE_SHIM_VERSION="shim-21"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 SPLICE_GATEWAY_VERSION="0.4.0"
 
@@ -159,17 +159,6 @@ control_port_for() {
 exec_argv() {
   if ! command -v "$1" >/dev/null 2>&1; then fail "splice: $1: command not found on PATH"; fi
   exec "$@"
-}
-
-# Admission replaces this shell, then the client replaces the gate in the same pid. The gate resolves the project
-# from the actual cwd, not HOME, and owns inherited ticket validation. Never fall back to an unadmitted session.
-exec_session_argv() {
-  if ! command -v "$1" >/dev/null 2>&1; then fail "splice: $1: command not found on PATH"; fi
-  if [ ! -f /usr/local/bin/hostshieldd ] || [ ! -x /usr/local/bin/hostshieldd ]; then
-    warn "splice: session admission unavailable: /usr/local/bin/hostshieldd is not executable"
-    exit 75
-  fi
-  exec /usr/local/bin/hostshieldd session-capacity run -- "$@"
 }
 
 # A launch inside tmux records its pane and the tmux server's socket with it, so the console can drive the session
@@ -699,15 +688,6 @@ native_subcommand() {
   return 1
 }
 
-# Classify the caller before recipe flags are added. A utility invocation does not consume session capacity.
-non_session_command() {
-  native_subcommand "${1-}" && return 0
-  case ${1-} in
-    -h | --help | -v | --version) return 0 ;;
-  esac
-  return 1
-}
-
 # A name that is not a bare identifier is not an environment variable: it is rejected here, never handed on.
 # A subcommand (native_subcommand) takes the recipe's environment, so it reads the head's config and reaches the head,
 # and runs the recipe's Claude Code binary with the caller's arguments exactly as given: none of the recipe's flags go
@@ -721,7 +701,6 @@ apply_recipe() {
   ar_warning=""
   ar_end=0
   ar_bin=""
-  if non_session_command "$@"; then ar_admit=0; else ar_admit=1; fi
   if native_subcommand "${1-}"; then ar_native=1; else ar_native=0; set --; fi
   while IFS= read -r ar_line; do
     case $ar_line in
@@ -761,7 +740,7 @@ EOF
   [ -z "$ar_warning" ] || warn "splice: $ar_warning"
   [ "$ar_native" = 1 ] && exec_argv "$ar_bin" "$@"
   record_launch "$HEAD" "${ANTHROPIC_BASE_URL-}" session
-  if [ "$ar_admit" = 1 ]; then exec_session_argv "$@"; else exec_argv "$@"; fi
+  exec_argv "$@"
 }
 
 # The plain wrapped command still means Claude Code in a scratch HOME. Its owning profile records the real binary;
@@ -790,7 +769,7 @@ unwrapped_claude() {
     fail "splice: wrapped Claude's recorded real binary is the launcher itself; no daemon was contacted"
   fi
   warn "splice: another HOME's wrapped claude is running Claude Code unwrapped"
-  if non_session_command "$@"; then exec_argv "$uc_binary" "$@"; else exec_session_argv "$uc_binary" "$@"; fi
+  exec_argv "$uc_binary" "$@"
 }
 
 # Wrap publishes this locator before replacing claude, and reconcile backfills older wraps. It lives beside the real

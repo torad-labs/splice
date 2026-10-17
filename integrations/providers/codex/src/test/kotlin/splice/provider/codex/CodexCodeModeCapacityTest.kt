@@ -42,7 +42,10 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 stateLocation(),
                 clock = clock,
                 log = LogSink { logLines += it },
-                cellLease = CodeModeCellLease(CodeModeSessionAlive { true }, ElapsedClock(clock::millis)),
+                cellLease = CodeModeCellLease(
+                    sessionAlive = CodeModeSessionAlive { true },
+                    clock = ElapsedClock(clock::millis),
+                ),
             ),
         )
         try {

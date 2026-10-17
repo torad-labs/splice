@@ -26,13 +26,10 @@ package splice.client
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import splice.client.login.HeadLogin
 import splice.client.login.HookExec
 import splice.client.login.HookExecProbe
@@ -40,6 +37,7 @@ import splice.client.login.HookInstaller
 import splice.client.login.HookScriptFiles
 import splice.client.login.LoginInterception
 import splice.client.mcp.McpRewrite
+import splice.client.models.ClaudeModelSettings
 import splice.client.resume.ResumeHook
 import splice.client.resume.ResumeHookTarget
 import splice.client.resume.SessionRegistryLink
@@ -306,7 +304,6 @@ public class ClaudeConfigMaterializer(
         modelOverrides: Map<String, String>,
         hookOrigins: JsonObject,
     ) {
-        val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS_FILE_NAME)
         val global = if (spec.policy.shares(Keys.SETTINGS_FILE_NAME)) {
             jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS_FILE_NAME))
@@ -320,7 +317,7 @@ public class ClaudeConfigMaterializer(
         // rebuild, and then throws from here — the half-built config dir the header forbids.
         // JsonScalars is the sanctioned throw-free read (and filters JsonNull, which this chain
         // used to leak as the literal string "null"; both shapes now fall back to the default).
-        val model = chosenModel(JsonScalars.str(existing[Keys.MODEL]), spec)
+        val base = ClaudeModelSettings.base(global, JsonScalars.str(existing[Keys.MODEL]), spec)
         val inherited = HookSettings.inherited(hookOrigins, existing[Keys.HOOKS])
         val hooks = HookSettings.merge(
             global[Keys.HOOKS],
@@ -330,12 +327,7 @@ public class ClaudeConfigMaterializer(
             inherited,
         )
         val merged = buildJsonObject {
-            global.forEach { (k, v) -> if (isCarriedGlobalKey(k, clientPicks = allow == null)) put(k, v) }
-            if (allow != null) {
-                putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
-                put("enforceAvailableModels", true)
-            }
-            model?.let { put(Keys.MODEL, it) }
+            base.forEach { (key, value) -> put(key, value) }
             put(
                 Keys.STATUS_LINE,
                 buildJsonObject {
@@ -345,7 +337,7 @@ public class ClaudeConfigMaterializer(
                 },
             )
             hooks.hooks?.let { put(Keys.HOOKS, it) }
-            mergedOverrides(global, modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
+            ClaudeModelSettings.overrides(global, modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
         // old truncate-then-write let it observe a torn settings.json mid-launch.
@@ -389,26 +381,6 @@ public class ClaudeConfigMaterializer(
             }
     }
 
-    /** V4-232: the head's [own] overrides merged OVER the shared settings' map, the head winning a key,
-     *  so this head's rows are the ones the client resolves while an operator's own mapping of another
-     *  Claude model still stands. Null when the head presents nothing: the shared value is carried as is. */
-    private fun mergedOverrides(global: JsonObject, own: Map<String, String>): JsonObject? {
-        if (own.isEmpty()) return null
-        val shared = global[Keys.MODEL_OVERRIDES] as? JsonObject ?: EMPTY_JSON
-        return JsonObject(shared + own.mapValues { (_, id) -> JsonPrimitive(id) })
-    }
-
-    /** V4-449: with no roster the client picks its own models, so a saved choice stands and none is invented. */
-    private fun chosenModel(saved: String?, spec: MaterializeSpec): String? {
-        val allow = spec.availableModelIds ?: return saved
-        return if (saved != null && saved in allow) saved else spec.defaultModel
-    }
-
-    /** The operator's own model and allowlist carry over only where the client picks its models (V4-449). */
-    private fun isCarriedGlobalKey(key: String, clientPicks: Boolean): Boolean =
-        key != Keys.STATUS_LINE && key != Keys.HOOKS &&
-            (clientPicks || key != Keys.MODEL && key != Keys.AVAILABLE_MODELS)
-
     /** A null [modelOptionsCache] is a head whose client picks its models: an earlier launch's cache is removed. */
     private fun writeClaudeJson(
         configDir: Path,
@@ -423,7 +395,7 @@ public class ClaudeConfigMaterializer(
         // mutation (DR-11 redo). global stays a tolerant SOURCE read here — it never aborts.
         var mcpCount = 0
         val built = buildJsonObject {
-            ModelOptionsCache.withLaunchCache(local, modelOptionsCache).forEach { (k, v) -> put(k, v) }
+            ClaudeModelSettings.withLaunchCache(local, modelOptionsCache).forEach { (k, v) -> put(k, v) }
             val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { mcpHead != null }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size
@@ -464,11 +436,3 @@ private val EMPTY_JSON = JsonObject(emptyMap())
 // via .claude.json. A set rather than two `!=` legs so the loop stays under its complexity budget
 // now that it dispatches two generated-vs-linked shapes (sessions, everything else).
 private val MERGED_ITEMS = setOf(Keys.SETTINGS_FILE_NAME, Keys.MCPS)
-
-/** Owns the picker-cache field: provider heads replace it, while client-login heads remove a stale head roster. */
-private object ModelOptionsCache {
-    private const val MODEL_OPTIONS_CACHE = "additionalModelOptionsCache"
-
-    fun withLaunchCache(local: JsonObject, cache: JsonElement?): JsonObject =
-        JsonObject(if (cache == null) local - MODEL_OPTIONS_CACHE else local + (MODEL_OPTIONS_CACHE to cache))
-}

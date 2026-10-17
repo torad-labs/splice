@@ -45,7 +45,12 @@ internal class HostControlFixture(val factory: ControlledHostEngines = Controlle
         return request
     }
 
-    suspend fun reply(request: Long): JsonObject = withTimeout(5_000) {
+    suspend fun reply(request: Long): JsonObject = awaitReply(request, 5_000)
+
+    suspend fun initialOpenReply(request: Long): JsonObject =
+        awaitReply(request, DEFAULT_WORKER_START_TIMEOUT_MS)
+
+    private suspend fun awaitReply(request: Long, timeoutMs: Long): JsonObject = withTimeout(timeoutMs) {
         var found = seen.remove(request)
         while (found == null) {
             replies.poll()?.let { seen[it.request] = it.payload }

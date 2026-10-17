@@ -15,7 +15,7 @@ class CodeModeHostControlTest {
     @Test
     fun `another engine opening cannot stop the frame reader from resuming a parked cell`() = runBlocking<Unit> {
         HostControlFixture().use { fixture ->
-            fixture.reply(fixture.send(1, HostProtocol.command("session-open")))
+            fixture.initialOpenReply(fixture.send(1, HostProtocol.command("session-open")))
             val start = CodeModeWire.startFrame("return await tools.Read({});", setOf("Read"))
             val parked = fixture.reply(fixture.send(1, start))
             assertEquals(1, CodeModeFrames.parseReply(parked, setOf("Read"), 1).calls?.size)
@@ -37,7 +37,7 @@ class CodeModeHostControlTest {
     fun `two held opens cannot consume another session's close controls`() = runBlocking<Unit> {
         val factory = ControlledHostEngines(heldOpens = 2)
         HostControlFixture(factory).use { fixture ->
-            fixture.reply(fixture.send(1, HostProtocol.command("session-open")))
+            fixture.initialOpenReply(fixture.send(1, HostProtocol.command("session-open")))
             factory.blockCreations.addAll(listOf(2, 3))
             val second = fixture.send(2, HostProtocol.command("session-open"))
             val third = fixture.send(3, HostProtocol.command("session-open"))

@@ -3,8 +3,6 @@
 package splice.client.transcript.capture
 
 import splice.client.transcript.BAD_CURSOR
-import splice.core.memory.HeapCapacityException
-import splice.core.util.Cancellables
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import java.nio.file.Path
@@ -55,13 +53,11 @@ public class CapturedTranscripts(
         return readCapture(sessionId, cursor, backwards, limit)
     }
 
+    /** A capture that cannot be read fails the request: the route's failure answer logs it and says 500, where
+     *  swallowing it read as a missing transcript or as a cursor this daemon never minted. */
     private fun readCapture(sessionId: String, cursor: String?, backwards: Boolean, limit: Int): TranscriptLookup? {
         val unavailable = if (cursor == null) null else TranscriptLookup.Refused(BAD_CURSOR)
-        return Cancellables.runCatchingBestEffort {
-            captured.open(sessionId)?.use { sent -> pages.read(sent, sessionId, cursor, backwards, limit) }
-        }.getOrElse { failure ->
-            if (failure is HeapCapacityException) throw failure
-            null
-        } ?: unavailable
+        val page = captured.open(sessionId)?.use { sent -> pages.read(sent, sessionId, cursor, backwards, limit) }
+        return page ?: unavailable
     }
 }

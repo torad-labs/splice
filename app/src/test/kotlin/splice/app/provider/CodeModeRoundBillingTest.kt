@@ -760,7 +760,8 @@ class CodeModeNativeSourceTest {
         val logs = ConcurrentLinkedQueue<String>()
         val bridge = nativeBridge(tmp, runtime, logs)
         val head = HeadServer(withWs(upstream.url, bridge, ws, replayReasoning = true), 0, headDeps(tmp))
-        var client = HttpClient(CIO)
+        // Each request is bounded by TURN_BOUND_MS; CIO's shorter default must not preempt that owner.
+        var client = HttpClient(CIO) { engine { requestTimeout = 0 } }
         try {
             head.start()
             val url = "http://127.0.0.1:${head.port}/v1/messages"
@@ -771,7 +772,7 @@ class CodeModeNativeSourceTest {
             assertEquals(1, native.size, "the client must actually receive its native reasoning envelope: $first")
             assertEquals(1, toolUses(first).size, "the held raw round must publish a real callback")
             assertPersistedNative(tmp, deliveredNative.single())
-            client = HttpClient(CIO)
+            client = HttpClient(CIO) { engine { requestTimeout = 0 } }
             if (completed) {
                 ws.endSource()
                 assertEquals(SOURCE_INPUT, rows(tmp, 1).single().count(PerfKeys.IN_TOKENS))
@@ -1024,7 +1025,9 @@ class CodeModeCrossScriptSourceTest {
             ),
         )
         private val head = HeadServer(withWs(upstream.url, bridge, ws, replayReasoning = false), 0, headDeps(tmp))
-        val client = HttpClient(CIO)
+
+        // TURN_BOUND_MS already owns the scenario's request deadline, including cold worker startup.
+        val client = HttpClient(CIO) { engine { requestTimeout = 0 } }
         val url: String get() = "http://127.0.0.1:${head.port}/v1/messages"
 
         suspend fun begin(): MutableList<JsonObject> {
@@ -1119,7 +1122,10 @@ class CodeModeTerminalBillingTest {
             head.start()
             val history = listOf(message("user", JsonPrimitive("read the synthetic fixture")))
             val url = "http://127.0.0.1:${head.port}/v1/messages"
-            val first = withTimeout(TURN_BOUND_MS) { sendAndDisconnect(HttpClient(CIO), url, history) }
+            // Keep the product-derived outer deadline as the sole request timer.
+            val first = withTimeout(TURN_BOUND_MS) {
+                sendAndDisconnect(HttpClient(CIO) { engine { requestTimeout = 0 } }, url, history)
+            }
             assertTrue(first.contains("message_stop"), first)
             ws.endSource()
             awaitCleanRounds(ws, 1)

@@ -8,6 +8,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
+import splice.provider.codex.state.lease.CodeModeCellLease
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.provider.codex.stream.CodeModeRuntimeRun
 import splice.upstream.RoundInterceptor

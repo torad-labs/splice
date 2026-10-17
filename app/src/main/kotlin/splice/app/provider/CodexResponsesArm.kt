@@ -24,12 +24,9 @@ import splice.core.util.SafeFailureText
 import splice.dialect.responses.stream.LiveFoldConfig
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeCellLease
 import splice.provider.codex.CodeModeJournaling
 import splice.provider.codex.CodeModeOnlyModels
 import splice.provider.codex.CodeModeReplayReasoning
-import splice.provider.codex.CodeModeSessionAlive
-import splice.provider.codex.CodeModeSessionIdle
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
@@ -37,6 +34,9 @@ import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
+import splice.provider.codex.state.lease.CodeModeSessionIdle
 import splice.topology.TopologyLoader
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName

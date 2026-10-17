@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import java.lang.ref.Reference

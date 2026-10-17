@@ -25,6 +25,8 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.provider.codex.stream.CodeModeStreams
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost

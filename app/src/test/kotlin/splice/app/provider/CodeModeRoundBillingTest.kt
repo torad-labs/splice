@@ -68,12 +68,12 @@ import splice.head.HeadServer
 import splice.head.NoHeadEvents
 import splice.head.headDeps
 import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeCellLease
-import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName

@@ -28,7 +28,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
 import splice.core.util.SecureFile
 import splice.models.discovery.Discovery
-import splice.provider.codex.CodeModeSessionAlive
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 

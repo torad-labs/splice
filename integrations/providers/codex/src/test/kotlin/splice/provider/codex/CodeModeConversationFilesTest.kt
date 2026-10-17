@@ -13,6 +13,7 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.provider.codex.state.save.CodeModeStateWrite
 import splice.upstream.codemode.CodeModeResult
 import java.io.IOException
 import java.nio.file.Files

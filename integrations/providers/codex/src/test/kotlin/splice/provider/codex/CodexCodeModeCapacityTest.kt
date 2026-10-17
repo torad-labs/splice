@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell

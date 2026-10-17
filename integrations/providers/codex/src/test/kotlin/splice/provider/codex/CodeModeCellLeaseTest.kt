@@ -19,6 +19,8 @@ import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.provider.codex.state.lease.CodeModeCellLease
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell

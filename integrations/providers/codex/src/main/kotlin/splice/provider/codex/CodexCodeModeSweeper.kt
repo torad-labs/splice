@@ -19,6 +19,7 @@ import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.collection.CodeModeRecordKeys
+import splice.provider.codex.state.lease.CodeModeSessionAlive
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors

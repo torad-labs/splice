@@ -10,8 +10,8 @@ import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
-import splice.provider.codex.CodeModeSessionAlive
-import splice.provider.codex.CodeModeSessionIdle
+import splice.provider.codex.state.lease.CodeModeSessionAlive
+import splice.provider.codex.state.lease.CodeModeSessionIdle
 import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRegistry

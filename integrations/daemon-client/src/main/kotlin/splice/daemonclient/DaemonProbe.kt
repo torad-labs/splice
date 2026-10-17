@@ -124,7 +124,20 @@ public object DaemonProbe {
     /** What listens on [port], as its /health says. Unlike AdminSupport.daemonUp this accepts a STALE
      *  daemon: restart must be able to stop one. */
     public fun healthProbe(port: Int): HealthProbe =
-        Cancellables.runCatchingCancellable { answered(port) }.getOrElse { failure ->
+        Cancellables.runCatchingCancellable {
+            val connection = open("http://127.0.0.1:$port/health")
+            try {
+                val status = connection.responseCode
+                val text = if (status in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE) {
+                    body(connection)
+                } else {
+                    ""
+                }
+                healthAnswer(status, text)
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrElse { failure ->
             when (failure) {
                 is ConnectException -> HealthProbe.Down
                 is SocketTimeoutException -> HealthProbe.Slow(PROBE_TIMEOUT_MS)
@@ -132,21 +145,14 @@ public object DaemonProbe {
             }
         }
 
-    private fun answered(port: Int): HealthProbe {
-        val connection = open("http://127.0.0.1:$port/health")
-        return try {
-            val status = connection.responseCode
-            if (status !in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE) {
-                HealthProbe.Odd("it answered HTTP $status")
-            } else {
-                val body = body(connection)
-                Cancellables.runCatchingCancellable { HealthProbe.Up(parseHealth(body)) }
-                    .getOrElse { HealthProbe.Odd("its answer is not splice's /health") }
-            }
-        } finally {
-            connection.disconnect()
+    /** Classifies an answer already received; the HTTP path alone owns the probe's timing window. */
+    internal fun healthAnswer(status: Int, body: String): HealthProbe =
+        if (status !in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE) {
+            HealthProbe.Odd("it answered HTTP $status")
+        } else {
+            Cancellables.runCatchingCancellable { HealthProbe.Up(parseHealth(body)) }
+                .getOrElse { HealthProbe.Odd("its answer is not splice's /health") }
         }
-    }
 
     /** The /health payload of any splice-shaped listener, or null when none answered: the probe's
      *  other cases, for a caller that only asks whether one did. */

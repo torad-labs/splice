@@ -51,14 +51,14 @@ class HealthProbeTest {
     }
 
     @Test
-    fun `a listener that answers but not as splice is odd, and says how`() {
+    fun `an answer that is not splice health is odd, and says how`() {
         assertEquals(
             DaemonProbe.HealthProbe.Odd("it answered HTTP 503"),
-            DaemonProbe.healthProbe(listener(status = 503)),
+            DaemonProbe.healthAnswer(503, ""),
         )
         assertEquals(
             DaemonProbe.HealthProbe.Odd("its answer is not splice's /health"),
-            DaemonProbe.healthProbe(listener(body = "<html>not json</html>")),
+            DaemonProbe.healthAnswer(200, "<html>not json</html>"),
         )
     }
 

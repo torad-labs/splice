@@ -11,12 +11,20 @@ private const val CHAR_SCRATCH_FIRST = 128
 
 // why: each UTF-8 trailing byte is 10xxxxxx, six payload bits under its continuation marker.
 private const val UTF8_PAYLOAD_BITS = 6
+
+// why: a continuation byte carries the code point's low six bits.
 private const val UTF8_PAYLOAD_MASK = 0x3f
+
+// why: the leading 10 bits identify a UTF-8 continuation byte.
 private const val UTF8_CONTINUATION = 0x80
 
 // why: the lead byte of a two, three and four byte sequence is 110xxxxx, 1110xxxx and 11110xxx.
 private const val UTF8_TWO_BYTE_LEAD = 0xc0
+
+// why: 1110 opens a three-byte UTF-8 sequence.
 private const val UTF8_THREE_BYTE_LEAD = 0xe0
+
+// why: 11110 opens a four-byte UTF-8 sequence.
 private const val UTF8_FOUR_BYTE_LEAD = 0xf0
 
 // why: the JVM's UTF-8 encoder (CharsetEncoder REPLACE, String.getBytes) writes this for an unpaired surrogate.

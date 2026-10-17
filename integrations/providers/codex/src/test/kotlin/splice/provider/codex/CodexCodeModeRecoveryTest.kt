@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.state.CodeModeHistoryAnchor
 import splice.provider.codex.state.CodeModeReplayAnchors

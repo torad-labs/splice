@@ -76,7 +76,7 @@ internal object CodeModeNativeCopies {
         }
     }
 
-    private fun dropped(record: CodeModeRecordSnapshot): CodeModeRecordSnapshot {
+    fun dropped(record: CodeModeRecordSnapshot): CodeModeRecordSnapshot {
         val seen = mutableMapOf<Int, MutableSet<JsonElement>>()
         val segments = record.nativeSegments.mapNotNull { segment ->
             val slot = seen.getOrPut(segment.logicalOffset) { mutableSetOf() }

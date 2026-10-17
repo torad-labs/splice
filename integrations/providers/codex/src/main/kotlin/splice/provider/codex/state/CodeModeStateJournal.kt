@@ -11,7 +11,9 @@ import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.state.save.CodeModeSaveHeap
 import splice.upstream.memory.JvmHeap
+import java.io.BufferedOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -73,14 +75,35 @@ internal object CodeModeStateJournal {
         }
     }
 
+    /** A checkpoint is published only after every bounded entry and its final newline have been forced. */
+    fun checkpoint(path: Path, state: CodeModePersistedState, heap: HeapReservations = JvmHeap.budget) {
+        CodeModeSaveHeap(heap).streaming().use {
+            Checkpoint(JsonlForce { _, channel -> channel.force(true) }).write(path, state)
+        }
+    }
+
     private class Checkpoint(private val force: JsonlForce) {
-        fun write(path: Path, text: String) {
+        fun write(path: Path, text: String) = replace(path) { temporary ->
+            // Preserve the text adapter's replacement of unpaired surrogates, without changing credential writes.
+            SecureFile.writeAtomic0600(temporary, String((text + "\n").toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+        }
+
+        fun write(path: Path, state: CodeModePersistedState) = replace(path) { temporary ->
+            when (val tightening = SecureFile.ownerOnlyFile(temporary)) {
+                is FileTightening.Open -> throw IOException(tightening.why)
+                is FileTightening.Held, is FileTightening.Tightened -> Unit
+            }
+            BufferedOutputStream(Files.newOutputStream(temporary)).use { output ->
+                CodeModeCheckpointEncoding(codec).write(state, output)
+            }
+        }
+
+        private inline fun replace(path: Path, write: (Path) -> Unit) {
             val parent = path.toAbsolutePath().parent
             Files.createDirectories(parent)
             val temporary = Files.createTempFile(parent, ".code-mode", ".tmp")
             try {
-                // Reuse the secure writer without changing credential writes' existing contract.
-                SecureFile.writeAtomic0600(temporary, String((text + "\n").toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+                write(temporary)
                 FileChannel.open(temporary, StandardOpenOption.WRITE).use { force.force(temporary, it) }
                 Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
                 FileChannel.open(parent, StandardOpenOption.READ).use { force.force(parent, it) }
@@ -104,7 +127,7 @@ internal object CodeModeStateJournal {
             } catch (failure: IllegalArgumentException) {
                 throw IOException("code-mode journal has corrupt committed state", failure)
             }
-            write(path, encode("", null, recovered, codec))
+            checkpoint(path, recovered)
         }
     }
 

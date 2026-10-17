@@ -16,6 +16,7 @@ import splice.core.memory.HeapRelease
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.util.JsonScalars
+import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
 
@@ -130,16 +131,42 @@ internal class CodeModeStateReplay(
     }
 
     fun finish(): CodeModePersistedState {
-        val bytes = charges.values.fold(base.bytes + checkNotNull(expiry).bytes) { sum, lease ->
-            HeapJson.add(sum, lease.bytes)
+        val referenceBytes = HeapJson.add(base.bytes, records.size.toLong() * REPLAY_ENTRY_BYTES)
+        if (!base.resize(referenceBytes)) throw HeapCapacityException()
+        val restored = ArrayList<CodeModeRecordSnapshot>(records.size)
+        val iterator = records.entries.iterator()
+        while (iterator.hasNext()) {
+            val (id, value) = iterator.next()
+            restored += restoreRecord(value)
+            // The independently owned snapshot now covers the payload shared with this raw cell.
+            charges.remove(id)?.close()
+            iterator.remove()
         }
-        val peak = heap.reserve(HeapWeights.multiply(bytes, REPLAY_DECODE_FACTOR), HeapCategory.REPLAY)
-            ?: throw HeapCapacityException()
+        val version = json.decodeFromJsonElement<CodeModePersistedState>(metadata).version
+        val state = CodeModePersistedState(version, restored, restoreExpiry())
+        return CodeModeHeap.ownState(state, heap)
+    }
+
+    private fun restoreRecord(value: JsonObject): CodeModeRecordSnapshot {
+        val bytes = HeapWeights.multiply(HeapJson.bytes(value) + REPLAY_ENTRY_BYTES, REPLAY_DECODE_FACTOR)
+        val peak = heap.reserve(bytes, HeapCategory.REPLAY) ?: throw HeapCapacityException()
         return peak.use {
-            val graph = JsonObject(
-                metadata + mapOf(REPLAY_RECORDS to JsonArray(records.values.toList()), REPLAY_EXPIRED to expired),
-            )
-            CodeModeHeap.ownState(CodeModeNativeCopies.dropped(json.decodeFromJsonElement(graph)), heap)
+            val record = CodeModeNativeCopies.dropped(json.decodeFromJsonElement<CodeModeRecordSnapshot>(value))
+            CodeModeHeap.own(record, heap)
+            record
+        }
+    }
+
+    private fun restoreExpiry(): List<CodeModeExpiredSnapshot> {
+        val bytes = HeapWeights.multiply(HeapJson.bytes(expired) + REPLAY_ENTRY_BYTES, REPLAY_DECODE_FACTOR)
+        val peak = heap.reserve(bytes, HeapCategory.REPLAY) ?: throw HeapCapacityException()
+        return peak.use {
+            val markers = json.decodeFromJsonElement<List<CodeModeExpiredSnapshot>>(expired)
+            markers.forEach { CodeModeHeap.own(it, heap) }
+            expiry?.close()
+            expiry = null
+            expired = JsonArray(emptyList())
+            markers
         }
     }
 

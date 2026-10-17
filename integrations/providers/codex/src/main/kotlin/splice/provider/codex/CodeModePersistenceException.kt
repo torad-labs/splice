@@ -1,6 +1,7 @@
 // NEW: distinguishes local durable-state failures from upstream or JavaScript runtime failures.
 package splice.provider.codex
 
+import splice.core.memory.HeapCapacityException
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -13,11 +14,13 @@ internal class CodeModePersistenceException(cause: IOException, diskFull: Boolea
     CodeModeSourcePersistenceException(cause) {
     /** V4-397: the reason in words. A full disk throws a plain IOException, whose text
      *  SafeFailureText withholds, so the store's own free-space reading names it. */
-    override val message: String = if (diskFull) {
-        "code-mode state could not be saved: the disk that holds splice's state is full, " +
-            "so free space on it; source was not rerun"
-    } else {
-        "code-mode state could not be saved (${SafeFailureText.render(cause)}); source was not rerun"
+    override val message: String = when {
+        cause is HeapCapacityException ->
+            "code-mode state could not be saved: the daemon heap reservation was refused; source was not rerun"
+        diskFull ->
+            "code-mode state could not be saved: the disk that holds splice's state is full, " +
+                "so free space on it; source was not rerun"
+        else -> "code-mode state could not be saved (${SafeFailureText.render(cause)}); source was not rerun"
     }
 
     fun outcome(): TurnOutcome.Failure = TurnOutcome.Failure(

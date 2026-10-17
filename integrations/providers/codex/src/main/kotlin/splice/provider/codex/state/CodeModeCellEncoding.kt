@@ -8,9 +8,11 @@ import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToStream
 import kotlinx.serialization.modules.SerializersModule
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeRecordSnapshot
+import java.io.OutputStream
 
 /** One cell's changed encodings and measured field sizes, without visiting unchanged heavy trees. */
 internal class CodeModeCellEncoding(
@@ -22,15 +24,12 @@ internal class CodeModeCellEncoding(
     private val before = prior?.let { RecordFields(json).of(it) }.orEmpty()
     private val encoded = linkedMapOf<String, String>()
 
+    private val changed = values.filter { (name, field) -> field.changed(before[name]) }.keys
+
     init {
-        values.forEach { (name, field) ->
-            if (field.changed(before[name])) encoded[name] = field.text.encode()
-        }
         val sizes = prior?.encodedFieldBytes.orEmpty().toMutableMap()
-        values.keys.forEach { name ->
-            val text = encoded[name]
-            if (text != null) sizes[name] = CodeModeStateText(text).bytes
-            if (sizes[name] == null) sizes[name] = CodeModeStateText(encoding(name)).bytes
+        values.forEach { (name, field) ->
+            if (name in changed || sizes[name] == null) sizes[name] = field.text.bytes()
         }
         snapshot.encodedFieldBytes = sizes
         snapshot.retainedBytes = 2L + (values.size - 1).coerceAtLeast(0) + values.keys.sumOf { name ->
@@ -42,7 +41,7 @@ internal class CodeModeCellEncoding(
         append("{\"id\":")
         append(encoded["id"] ?: JsonWire.string(JsonPrimitive(snapshot.id)))
         append(",\"fields\":")
-        append(fields(encoded.keys))
+        append(fields(changed))
         append('}')
     }
 
@@ -62,11 +61,31 @@ internal class CodeModeCellEncoding(
         append('}')
     }
 
-    private fun interface FieldText {
-        fun encode(): String
+    @OptIn(ExperimentalSerializationApi::class)
+    private class FieldText<T>(
+        private val json: Json,
+        private val serializer: SerializationStrategy<T>,
+        private val value: T,
+    ) {
+        fun encode(): String = json.encodeToString(serializer, value)
+
+        fun bytes(): Long = ByteCount().also { json.encodeToStream(serializer, value, it) }.count
     }
 
-    private data class Field<V>(val value: V, val text: FieldText) {
+    private class ByteCount : OutputStream() {
+        var count = 0L
+            private set
+
+        override fun write(value: Int) {
+            count++
+        }
+
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            count += length
+        }
+    }
+
+    private data class Field<V>(val value: V, val text: FieldText<*>) {
         fun changed(previous: Field<*>?): Boolean {
             if (previous == null) return true
             if (value === previous.value) return false
@@ -94,7 +113,7 @@ internal class CodeModeCellEncoding(
         }
 
         override fun encodeNull() {
-            values[name] = Field(null, FieldText { "null" })
+            values[name] = Field(null, FieldText(json, JsonElement.serializer(), kotlinx.serialization.json.JsonNull))
         }
 
         // The scalar kinds CodeModeRecordSnapshot reaches. Any other kind falls through to kotlinx's encodeValue,
@@ -106,11 +125,11 @@ internal class CodeModeCellEncoding(
         override fun encodeString(value: String) = scalar(value, JsonPrimitive(value))
 
         private fun <V : Any> scalar(value: V, primitive: JsonPrimitive) {
-            values[name] = Field(value, FieldText { json.encodeToString(JsonElement.serializer(), primitive) })
+            values[name] = Field(value, FieldText(json, JsonElement.serializer(), primitive))
         }
 
         override fun <T> encodeSerializableValue(serializer: SerializationStrategy<T>, value: T) {
-            values[name] = Field(value, FieldText { json.encodeToString(serializer, value) })
+            values[name] = Field(value, FieldText(json, serializer, value))
         }
     }
 }

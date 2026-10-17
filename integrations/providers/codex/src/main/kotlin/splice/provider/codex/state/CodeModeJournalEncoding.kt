@@ -27,11 +27,27 @@ internal object CodeModeJournalEncoding {
         heap: HeapReservations,
     ): Long = state.records.sumOf { record ->
         if (record.encodedFieldBytes == null) {
-            CodeModeSaveHeap(heap).encoding(listOf(record), emptyList()).use {
+            CodeModeSaveHeap(heap).streaming().use {
                 CodeModeCellEncoding(record, null, json)
             }
         }
         checkNotNull(record.retainedBytes)
+    }
+
+    /** Checkpoints measure fields through a counting stream, never by retaining every cell's encoding. */
+    fun measure(state: CodeModePersistedState, prior: CodeModePersistedState?, json: Json, heap: HeapReservations) {
+        val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
+        CodeModeSaveHeap(heap).streaming().use {
+            state.records.forEach { record ->
+                val old = before[record.id]
+                if (unchanged(record, old)) {
+                    record.retainedBytes = old?.retainedBytes
+                    record.encodedFieldBytes = old?.encodedFieldBytes
+                } else {
+                    CodeModeCellEncoding(record, old, json)
+                }
+            }
+        }
     }
 }
 
@@ -50,14 +66,18 @@ internal class CodeModeJournalText(private val json: Json) {
                 cellText(key, cells, prior, path, peak).also(peak::retain)
             }
         }
+        cellPatch(key, cells, prior, path)?.let { return it }
+        capacity.checkpoint(prior, cells)
+        return CodeModeStateEncoding(json).checkpoint(prior.withCells(cells), emptyList())
+    }
+
+    /** Null asks the store for a streamed checkpoint, without allocating its full text first. */
+    fun cellPatch(key: String, cells: List<CodeModeRecordSnapshot>, prior: CodeModeKeptState, path: Path): String? {
         val encoded = cells.map { CodeModeCellEncoding(it, prior.records[it.id], json) }
-        val encoding = CodeModeStateEncoding(json)
         return if (CodeModeStateJournal.appendable(path, prior.liveBytesWith(cells))) {
-            encoding.patch(key, encoded, prior.expired)
+            CodeModeStateEncoding(json).patch(key, encoded, prior.expired)
         } else {
-            // Changed fields were admitted first. The full envelope is admitted before its allocation.
-            capacity.checkpoint(prior, cells)
-            encoding.checkpoint(prior.withCells(cells), encoded)
+            null
         }
     }
 

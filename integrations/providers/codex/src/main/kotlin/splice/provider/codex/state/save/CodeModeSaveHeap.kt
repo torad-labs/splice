@@ -30,6 +30,9 @@ private const val SAVE_METADATA_BYTES = 4096L
 // why: aggregate references and temporary keyed maps survive apart from snapshot payloads.
 private const val SAVE_REFERENCE_BYTES = 128L
 
+// why: streaming JSON and the file writer retain bounded buffers, not a conversation-sized string.
+private const val STREAM_ENCODING_BYTES = 64L * 1024
+
 internal class CodeModeSaveHeap(private val heap: HeapReservations) {
     /** Changed-field encoding grows to a checkpoint only after its exact append decision is known. */
     inner class Encoding(private val peak: HeapLease) : AutoCloseable {
@@ -132,6 +135,8 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
     }
 
     fun full(state: CodeModePersistedState): Encoding = encoding(state.records, state.expired)
+
+    fun streaming(): HeapLease = reserve(STREAM_ENCODING_BYTES, 1L)
 
     /** Restored conversations usually append only LOST/expiry changes. Admit the actual changed records first;
      *  the journal grows this lease before encoding a checkpoint if its append decision requires one. */

@@ -10,11 +10,11 @@ import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModeOmission
-import splice.provider.codex.CodeModeOwnership
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.TYPE_CUSTOM_OUTPUT
 import splice.provider.codex.state.native.CodeModeCapturedOrder
+import splice.provider.codex.state.native.CodeModeOwnership
 
 internal data class CodeModeCanonicalResult(
     val input: ResponsesCodeModeInput,

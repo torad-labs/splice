@@ -14,10 +14,10 @@ import splice.provider.codex.CODE_MODE_FIELD_ROLE
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeExtra
 import splice.provider.codex.CodeModeIssuedStep
-import splice.provider.codex.CodeModeOwnership
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.state.native.CodeModeOwnership
 
 internal class CodeModeExtraContent(
     private val codec: CodexCodeModeHistoryCodec,

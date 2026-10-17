@@ -1,12 +1,11 @@
 // NEW: an atomic checkpoint uses the existing journal grammar with one full cell per entry.
-package splice.provider.codex.state
+package splice.provider.codex.state.save
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToStream
 import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModePersistedState
-import splice.provider.codex.state.save.CodeModeSaveHeap
 import java.io.OutputStream
 
 /** Bounded entries also bound the initial checkpoint text and each replay decode after a restart. */

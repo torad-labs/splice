@@ -11,6 +11,7 @@ import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.provider.codex.state.save.CodeModeCheckpointEncoding
 import splice.provider.codex.state.save.CodeModeSaveHeap
 import splice.upstream.memory.JvmHeap
 import java.io.BufferedOutputStream

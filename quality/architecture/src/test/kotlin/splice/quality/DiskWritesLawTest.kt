@@ -282,6 +282,13 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.newBufferedWriter(" to 1,
         "Files.writeString(" to 1,
     ),
+    // The manager's shipped home and owner-only write inventory, in the manager-home README row.
+    "app/src/main/kotlin/splice/app/manager/ManagerHome.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "Files.createTempFile(" to 1,
+        "Files.move(" to 1,
+        "writeAtomic0600(" to 2,
+    ),
     "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt" to mapOf("FileChannel.open(" to 1),
     // The MCP hub front's environment file, in the mcp-front.env README row.
     "app/src/main/kotlin/splice/app/McpFrontEnv.kt" to mapOf("writeAtomic0600(" to 1),
@@ -379,6 +386,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/teams/TeamStore.kt" to mapOf("writeAtomic0600(" to 2),
     "features/sessions/src/main/kotlin/splice/sessions/registry/RememberedPanes.kt" to mapOf("writeAtomic0600(" to 1),
     "features/sessions/src/main/kotlin/splice/sessions/registry/SeenSessions.kt" to mapOf("writeAtomic0600(" to 1),
+    // The latest manager session, head and consent, in the manager.json README row.
+    "features/sessions/src/main/kotlin/splice/sessions/http/ManagerPointer.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
     // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into
@@ -517,6 +526,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "FileChannel.open(" to 1,
         "Files.createTempFile(" to 1,
         "Files.move(" to 1,
+        "Files.newOutputStream(" to 1,
         "writeAtomic0600(" to 1,
         "JsonlSink.appendLine(" to 1,
     ),

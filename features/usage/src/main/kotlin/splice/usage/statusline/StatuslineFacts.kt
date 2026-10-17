@@ -19,14 +19,14 @@ internal class StatuslineFacts(catalog: ModelCatalog?) {
     /** The post [root]'s facts. [unanswered] is StatuslineRenderer's: this head has not answered the session since it
      *  took it over, so a usage the post carries is another head's last turn and is not read as this one's context. */
     fun read(root: JsonObject, unanswered: Boolean): SessionLine {
-        val model = root[MODEL] as? JsonObject
+        val model = root["model"] as? JsonObject
         val id = text(model?.get("id"))
         val name = row.label(id) ?: text(model?.get("display_name")) ?: id
         return SessionLine(id, name, bars.effort(root), context(root, id, unanswered))
     }
 
     private fun context(root: JsonObject, id: String?, unanswered: Boolean): SessionContext? {
-        val window = (root[CONTEXT_WINDOW] as? JsonObject)
+        val window = (root["context_window"] as? JsonObject)
             ?.takeUnless { unanswered && it[CURRENT_USAGE] is JsonObject }
             ?: return null
         val usage = window[CURRENT_USAGE] as? JsonObject
@@ -34,8 +34,8 @@ internal class StatuslineFacts(catalog: ModelCatalog?) {
         val input = number(usage?.get("input_tokens")) + read + number(usage?.get("cache_creation_input_tokens"))
         val reported = if (usage == null) number(window["total_input_tokens"]) else input
         val (size, used) = row.window(id, number(window["context_window_size"]), reported)
-        val ratio = if (size > 0) (used * PERCENT / size).toInt() else 0
-        val cache = if (input > 0) (read * PERCENT / input).toInt() else null
+        val ratio = if (size > 0) (used * STATUSLINE_PERCENT_SCALE / size).toInt() else 0
+        val cache = if (input > 0) (read * STATUSLINE_PERCENT_SCALE / input).toInt() else null
         return SessionContext(used, size, figure(window["used_percentage"])?.toInt() ?: ratio, cache)
     }
 
@@ -46,7 +46,7 @@ internal class StatuslineFacts(catalog: ModelCatalog?) {
     private fun number(element: JsonElement?): Long = figure(element) ?: 0
 }
 
-private const val MODEL = "model"
-private const val CONTEXT_WINDOW = "context_window"
 private const val CURRENT_USAGE = "current_usage"
-private const val PERCENT = 100
+
+// why: the status line reports context and cache ratios as whole percentages, not fractions.
+private const val STATUSLINE_PERCENT_SCALE = 100

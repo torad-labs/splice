@@ -195,6 +195,7 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     fun `a journal missing a required record field remains invalid on the real bridge`() {
         val (file, _) = seedJournal()
         val entries = Files.readAllLines(file).map { line ->

@@ -21,7 +21,7 @@ public data class ClaudePolicy(
      */
     internal fun shares(item: String): Boolean {
         val aliases = when (item.lowercase()) {
-            Keys.SETTINGS -> setOf(Keys.SETTINGS, "settings")
+            Keys.SETTINGS_FILE_NAME -> setOf(Keys.SETTINGS_FILE_NAME, "settings")
             "claude.md" -> setOf(Keys.CLAUDE_MD, "claude_md", "claude.md", "claudemd")
             Keys.MCPS -> setOf(Keys.MCPS, "mcp")
             else -> setOf(item)

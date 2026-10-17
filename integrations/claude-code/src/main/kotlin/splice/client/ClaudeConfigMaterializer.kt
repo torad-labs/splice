@@ -120,7 +120,7 @@ public class ClaudeConfigMaterializer(
         // half-built config dir the paragraph above promises cannot happen. Safe to hoist:
         // linkShared explicitly skips settings.json (merged, never linked), so nothing between
         // here and writeSettings can change what this read observes.
-        val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
+        val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS_FILE_NAME))
         val hookOrigins = jsonReads.tolerant(spec.configDir.resolve(HookSettings.ORIGINS))
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy, spec.signIn.headKey)
@@ -307,9 +307,9 @@ public class ClaudeConfigMaterializer(
         hookOrigins: JsonObject,
     ) {
         val allow = spec.availableModelIds
-        val dst = spec.configDir.resolve(Keys.SETTINGS)
-        val global = if (spec.policy.shares(Keys.SETTINGS)) {
-            jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS))
+        val dst = spec.configDir.resolve(Keys.SETTINGS_FILE_NAME)
+        val global = if (spec.policy.shares(Keys.SETTINGS_FILE_NAME)) {
+            jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS_FILE_NAME))
         } else {
             EMPTY_JSON
         }
@@ -463,7 +463,7 @@ private val EMPTY_JSON = JsonObject(emptyMap())
 // The two shared items linkShared never links: settings is merged into a real file and mcps arrive
 // via .claude.json. A set rather than two `!=` legs so the loop stays under its complexity budget
 // now that it dispatches two generated-vs-linked shapes (sessions, everything else).
-private val MERGED_ITEMS = setOf(Keys.SETTINGS, Keys.MCPS)
+private val MERGED_ITEMS = setOf(Keys.SETTINGS_FILE_NAME, Keys.MCPS)
 
 /** Owns the picker-cache field: provider heads replace it, while client-login heads remove a stale head roster. */
 private object ModelOptionsCache {

@@ -103,8 +103,15 @@ public class McpLaunchPlanner(
      *  local ones once it is trusted, then managed settings. */
     private fun settings(configDir: Path, folder: Path, trusted: Boolean): List<JsonObject> {
         val own = folder.resolve(Keys.VANILLA_DIR)
-        val repo = if (trusted) listOf(own.resolve(Keys.SETTINGS), own.resolve(PLAN_LOCAL_SETTINGS)) else emptyList()
-        return (listOf(configDir.resolve(Keys.SETTINGS)) + repo + managedSettings).map(json::topLevel)
+        val repo = if (trusted) {
+            listOf(
+                own.resolve(Keys.SETTINGS_FILE_NAME),
+                own.resolve(PLAN_LOCAL_SETTINGS),
+            )
+        } else {
+            emptyList()
+        }
+        return (listOf(configDir.resolve(Keys.SETTINGS_FILE_NAME)) + repo + managedSettings).map(json::topLevel)
     }
 
     /** Every `.mcp.json` from the filesystem root down to [folder], the nearer file winning a name. */

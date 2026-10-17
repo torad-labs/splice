@@ -241,7 +241,7 @@ public class WrappedHead(
         // A wrap made before V4-445 copied the operator's settings.json and .claude.json aside and rewrote
         // both; its backups go back. A wrap now records none.
         if (state.settingsBackupPath.isNotBlank()) {
-            WrapBackups.restore(vanillaDir.resolve(Keys.SETTINGS), Paths.get(state.settingsBackupPath))
+            WrapBackups.restore(vanillaDir.resolve(Keys.SETTINGS_FILE_NAME), Paths.get(state.settingsBackupPath))
         }
         if (state.claudeJsonBackupPath.isNotBlank()) {
             WrapBackups.restore(vanillaDir.resolve(Keys.CLAUDE_JSON), Paths.get(state.claudeJsonBackupPath))

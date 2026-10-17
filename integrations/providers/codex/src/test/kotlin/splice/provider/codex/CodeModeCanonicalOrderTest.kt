@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeResult

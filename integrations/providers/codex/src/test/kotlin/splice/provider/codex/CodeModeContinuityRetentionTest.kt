@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.upstream.RoundBody

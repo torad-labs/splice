@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import splice.dialect.responses.request.ResponsesCodeModeReplay
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.RoundBody
 

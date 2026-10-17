@@ -1,4 +1,4 @@
-package splice.provider.codex.state.native
+package splice.provider.codex.history
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

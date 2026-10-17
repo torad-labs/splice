@@ -14,6 +14,7 @@ import splice.core.parse.AnthropicParse
 import splice.dialect.responses.buildResponsesTestRequest
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.upstream.RoundBody

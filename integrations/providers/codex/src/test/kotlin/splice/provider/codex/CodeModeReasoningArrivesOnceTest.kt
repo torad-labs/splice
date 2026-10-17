@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.dialect.responses.request.ResponsesContextMessage
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.upstream.codemode.CodeModeResult
 

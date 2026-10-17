@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.diagnostics.CodeModeHistoryLog

@@ -1,11 +1,20 @@
 // NEW: canonicalizes completed code-mode records at their persisted logical history boundaries.
-package splice.provider.codex
+package splice.provider.codex.history
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.core.perf.InputItemDigests
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
+import splice.provider.codex.CODE_MODE_METADATA_VERSION
+import splice.provider.codex.CodeModeBody
+import splice.provider.codex.CodeModeCallReplay
+import splice.provider.codex.CodeModeExtra
+import splice.provider.codex.CodeModeInputBoundary
+import splice.provider.codex.CodeModePending
+import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodeModeRewrite
+import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeMetadataValidator
@@ -14,7 +23,6 @@ import splice.provider.codex.state.CodeModeNativeReplay
 import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.provider.codex.state.native.CodeModeCanonicalRequests
 import splice.provider.codex.state.native.CodeModeLegacyCanonicalization
-import splice.provider.codex.state.native.CodeModeOwnership
 import splice.upstream.RoundBody
 import splice.provider.codex.state.diagnostics.CodeModeProjectedRewrite as ProjectedRewrite
 

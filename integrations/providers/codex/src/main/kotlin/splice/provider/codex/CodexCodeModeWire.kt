@@ -16,6 +16,7 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesPriorReasoning
+import splice.provider.codex.history.CodexCodeModeHistory
 import splice.provider.codex.state.diagnostics.CodeModeHistoryOmissions
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement

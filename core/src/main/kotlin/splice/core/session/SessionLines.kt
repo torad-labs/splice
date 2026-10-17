@@ -13,7 +13,8 @@ package splice.core.session
 import splice.core.util.LruSizing
 import splice.core.util.WallClock
 
-private const val DEFAULT_CAPACITY = 256
+// why: bound retained status-line snapshots as sessions come and go over the daemon's lifetime.
+private const val SESSION_LINE_CAPACITY = 256
 
 /** How full a session's context is, in the picked row's own units (the status line's `used/window · percent`).
  *  [cachePercent] is the share of the input that came from the cache, null when nothing was read yet. */
@@ -38,7 +39,7 @@ public data class SessionLine(
 /** Session id -> its last [SessionLine]. Bounded (least-recently-touched eviction) since sessions come and go for the
  *  daemon's whole life. */
 public class SessionLines(
-    private val capacity: Int = DEFAULT_CAPACITY,
+    private val capacity: Int = SESSION_LINE_CAPACITY,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val lock = Any()

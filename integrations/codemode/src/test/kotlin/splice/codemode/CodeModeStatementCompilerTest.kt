@@ -10,14 +10,15 @@ import org.junit.jupiter.api.Test
 
 // why: GraalJS parses a member chain in a loop and the compiler walks it recursively, so on the stack below this chain
 // leaves the compiler about five bytes a level, which no JVM frame fits; the overflow is always the compiler's.
-private const val COMPILER_OVERFLOW_CHAIN = 50_000
+private const val COMPILER_OVERFLOW_CHAIN = 200_000
 
-// why: a quarter of the JVM's default 1 MB thread stack; the boundary parse of one statement needs a few kilobytes.
-private const val SMALL_STACK_BYTES = 256L * 1024
+// why: keep the JVM's normal 1 MB stack, rather than exercising its native minimum-stack guard.
+// The deeper chain retains the same five-byte-per-level bound that forces the compiler to overflow.
+private const val COMPILER_STACK_BYTES = 1024L * 1024
 
 class CodeModeStatementCompilerTest {
     /** CI run 37234377673: on a worker whose stack and JIT state let an 8,000 member chain compile, the end-to-end
-     *  test met the engine's RangeError instead. On a thread with a fixed small stack the compiler overflows every
+     *  test met the engine's RangeError instead. With a deeper chain and fixed normal stack the compiler overflows every
      *  time, so this pins the compile catch: the overflow is the program's SyntaxError, recorded for the worker's
      *  retirement, and never escapes the parser. */
     @Test
@@ -39,8 +40,8 @@ class CodeModeStatementCompilerTest {
                 }
                 read = runCatching { parser.next() }
             },
-            "small-stack",
-            SMALL_STACK_BYTES,
+            "compiler-overflow",
+            COMPILER_STACK_BYTES,
         )
         reader.start()
         reader.join()

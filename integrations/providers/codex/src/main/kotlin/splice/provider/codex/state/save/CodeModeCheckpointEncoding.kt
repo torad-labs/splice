@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToStream
 import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModePersistedState
+import splice.provider.codex.state.CodeModeStateDelta
 import java.io.OutputStream
 
 /** Bounded entries also bound the initial checkpoint text and each replay decode after a restart. */

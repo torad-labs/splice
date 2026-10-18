@@ -292,7 +292,7 @@ class CodeModeRoundBillingTest {
                 assertWsReuse(ws, upstream)
             }
 
-            assertParkedRows(rows(tmp, 3))
+            assertParkedRows(rows(tmp, 3), listOf(parked, step, answer))
         } finally {
             head.stop()
             runtime.close()
@@ -383,8 +383,9 @@ class CodeModeRoundBillingTest {
             val step = withTimeout(TURN_BOUND_MS) { next.await() }
             history += message("assistant", JsonArray(toolUses(step)))
             history += message("user", JsonArray(toolUses(step).map(::result)))
-            assertTrue(withTimeout(TURN_BOUND_MS) { send(client, url, history) }.contains("fixture read"))
-            assertParkedRows(rows(tmp, 3))
+            val answer = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(answer.contains("fixture read"))
+            assertParkedRows(rows(tmp, 3), listOf(first, step, answer))
             if (webSocket) assertWsReuse(ws, upstream)
         } finally {
             ws.endSource()
@@ -415,8 +416,16 @@ class CodeModeRoundBillingTest {
         withTimeout(TURN_BOUND_MS) { continuation.await() }
     }
 
-    private fun assertParkedRows(rows: List<JsonObject>) {
-        val (posting, local, finishing) = rows.sortedBy { it.count("ts") }
+    private fun assertParkedRows(rows: List<JsonObject>, responses: List<String>) {
+        // A disconnected posting request can finish its cleanup after its callback. Match the
+        // client-visible response identities, not the scheduling order of their ending timestamps.
+        val (posting, local, finishing) = responses.map { wire ->
+            val messageId = wire.lineSequence().filter { it.startsWith("data: ") }
+                .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }
+                .first { it["type"]?.jsonPrimitive?.content == "message_start" }
+                .getValue("message").jsonObject.getValue("id")
+            rows.single { it["response_message_id"] == messageId }
+        }
         assertEquals(SOURCE_INPUT, posting.count(PerfKeys.IN_TOKENS), "$posting")
         assertEquals(SOURCE_OUTPUT, posting.count(PerfKeys.OUT_TOKENS), "$posting")
         assertEquals(SOURCE_CACHED, posting.count(PerfKeys.CACHED_TOKENS), "$posting")

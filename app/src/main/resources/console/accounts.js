@@ -107,13 +107,16 @@ function askSessions() {
     render();
   });
 }
+let loadVersion = 0, accountRevision = 0;
 async function load({ asks = true } = {}) {
+  const version = ++loadVersion, revision = accountRevision;
   tick();
   if (asks) askEconomics();
   askSessions();
   const [st, ac, ks, bg, md, hd, au] = await Promise.all(["/api/status", "/api/accounts", "/api/keys", "/api/budgets", "/api/models", "/api/heads", "/api/auth"].map((p) => API.get(p)));
   // each login's name by the label its pool knows it by on a head, so a session's last switch reads in Accounts' names
   for (const r of ac.body?.accounts || []) for (const h of r.heads || []) LOGIN_NAME.set(`${h}|${r.account_labels?.[h] || r.label}`, r.display_name || r.label);
+  if (version !== loadVersion || revision !== accountRevision || ui.orderSaving || ui.removing) return;
   if (!st.ok || !ac.ok) { data = []; offline = true; return; }
   offline = false;
   const ec = economics || { ok: true, body: { heads: (st.body?.registry || []).map((h) => ({ key: h.key, read_pending: true })) } };
@@ -263,7 +266,8 @@ async function load({ asks = true } = {}) {
     // the pool's own picks, named by label on this command
     c.serving = byLabel(o.body?.next_target) ?? null; c.following = byLabel(o.body?.following_target) ?? null;
   })));
-  data = [...provs.values()];
+  // An earlier reading must not undo a removal or order that is still being saved.
+  if (version === loadVersion && revision === accountRevision && !ui.orderSaving && !ui.removing) data = [...provs.values()];
 }
 
 let data = [];
@@ -271,6 +275,7 @@ let offline = false;
 const FRESH_UI = () => ({ lane: {}, signin: {}, editor: null, addProv: null, menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, pulse: null, naming: null });
 const ui = { probing: false, grow: null, ...FRESH_UI() };
 const board = document.getElementById("board");
+let drag = null;
 // ---------- time: what a person reads ----------
 // A time from the instant splice gave, rounded once to the minute, so every view of one reset prints the same minute (the
 // walkers saw 5:38 and 5:39 for one reset when it was rebuilt from minutes left at each load).
@@ -672,10 +677,9 @@ function menuItems(p, a) {
 function menuHtml(p, a, spot) {
   const armed = ui.armed === spot, refused = ui.removeErr && ui.removeErr.spot === spot;
   return `<div class="menu${refused ? " failed" : ""}" role="menu">${menuItems(p, a).map(([act, label]) => {
-    if (act === "remove" && refused) return `<span class="state limit menu-state" role="status">${ui.removeErr.word}</span>`;
     const text = act === "remove" && armed ? `Remove ${p.kind === "key" ? "API key" : a.name}` : label;
-    return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}">${esc(text)}</button>`;
-  }).join("")}</div>`;
+    return `<button role="menuitem" class="${act === "remove" ? `danger${armed ? " armed" : ""}` : ""}" data-act="${act}" data-p="${p.id}" data-a="${a.id}" data-s="${spot}"${act === "remove" && ui.removing === spot ? " disabled" : ""}>${act === "remove" && ui.removing === spot ? "Removing…" : esc(text)}</button>`;
+  }).join("")}${refused ? `<span class="state limit menu-state" role="status">${esc(ui.removeErr.word)}</span>` : ""}</div>`;
 }
 const keyDayWord = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // a key card's day, "Oct 12"
 function nameHtml(p, a, spot) {
@@ -714,7 +718,8 @@ function sessionsHtml(a) {
 function cardHtml(p, c, a, i, serves) {
   const spot = `${p.id}/${a.id}`;
   const cls = ["card", serves.length ? "serving" : "", a.out || (p.kind === "key" && !a.has) ? "out" : "", held(a) ? "held" : ""].join(" ");
-  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}">${GLYPH.grip}</button>` : "";
+  const canMove = c && laneAccts(p, c).length > 1 && c.orderable?.has(labelOn(a, c.head));
+  const grip = p.kind === "plan" ? `<button class="grip" data-grip="${p.id}" data-c="${c.cmd}" data-a="${a.id}" aria-label="Move ${esc(a.name)}" title="Drag to reorder, or use the up and down arrow keys"${!canMove || ui.orderSaving || ui.removing ? " disabled" : ""}>${GLYPH.grip}</button>` : "";
   // a default name starts with its plan word ("Max", "Max · 1a2b3c4d", later "Max 2"): the tag beside it shows only
   // when it says more than that word, such as a tier "Max 5x" (fin, Oct 12)
   const said = a.row?.label_default && String(a.name ?? "").split(/[\s·]/)[0].toLowerCase() === String(a.plan ?? "").trim().toLowerCase();
@@ -778,7 +783,8 @@ function addTileHtml(p, c) {
 }
 function switchHtml(p, c) {
   if (laneAccts(p, c).length < 2) return "";
-  const b = (v, label) => `<button data-act="mode" data-p="${p.id}" data-c="${c.cmd}" data-v="${v}" aria-pressed="${c.mode === v}">${label}</button>`;
+  const disabled = ui.orderSaving || ui.removing || c.orderable.size < 2;
+  const b = (v, label) => `<button data-act="mode" data-p="${p.id}" data-c="${c.cmd}" data-v="${v}" aria-pressed="${c.mode === v}"${disabled ? " disabled" : ""}>${label}</button>`;
   return `<div class="switch" role="group" aria-label="Account order${p.cmds.length > 1 ? `, ${esc(c.cmd)}` : ""}">${b("soonest", "Soonest reset")}${b("mine", "My order")}</div>`;
 }
 function railHtml(p, c, span = 1) {
@@ -838,7 +844,8 @@ function providerHtml(p, span = 1) {
   }
   const c = laneOf(p), many = p.cmds.length > 1;
   const meters = p.cmds.map((x) => meterHtml(x, many ? { p, on: x === c } : null)).join("");
-  return `${head(switchHtml(p, c))}${span > 1 ? `<div class="meters">${meters}</div>` : meters}${railHtml(p, c, span)}${movedHtml(p)}</section>`;
+  const error = ui.orderErr?.cmd === c.cmd ? `<p class="state limit order-err" role="status">${esc(ui.orderErr.word)}</p>` : "";
+  return `${head(switchHtml(p, c))}${error}${span > 1 ? `<div class="meters">${meters}</div>` : meters}${railHtml(p, c, span)}${movedHtml(p)}</section>`;
 }
 function addProviderHtml() {
   const have = new Set(data.map((p) => p.id));
@@ -905,7 +912,7 @@ addEventListener("resize", () => { const n = layout?.n; if (columns().n !== n) r
 // Chrome fires focusout on a focused field as the board replaces it; `drawing` keeps that from reading as him leaving it.
 let drawing = false;
 function render({ flip = false } = {}) {
-  if (!board.isConnected) return;
+  if (!board.isConnected || drag) return;
   const before = new Map();
   if (flip) for (const el of document.querySelectorAll("[data-key]")) before.set(el.dataset.key, el.getBoundingClientRect());
   const L = columns();
@@ -1077,25 +1084,78 @@ function keyState(field, word) {
 // An order names only the accounts splice holds in this command's order (its effective_order): it refuses a whole order
 // naming one it doesn't, such as a login place that never held a sign-in, and My order then fell back to Soonest reset.
 const orderLabels = (c, list) => list.map((x) => labelOn(x, c.head)).filter((l) => c.orderable?.has(l));
+const mutationError = (res, fallback) => typeof res.body?.error === "string" ? res.body.error
+  : res.status === 0 ? "Could not reach splice. Try again." : fallback;
+async function saveOrder(c, list, mode, unpin = false) {
+  if (ui.orderSaving || ui.removing) return;
+  accountRevision++;
+  ui.orderSaving = c.cmd; ui.orderErr = null;
+  if (mode === "mine") c.order = list.map((a) => a.id);
+  c.mode = mode;
+  if (unpin) c.pin = null;
+  render({ flip: true });
+  let res = await API.put(headPath(c, "order"), { order: mode === "mine" ? orderLabels(c, list) : [] });
+  if (res.ok && unpin) res = await API.del(headPath(c, "switch"));
+  if (!res.ok) ui.orderErr = { cmd: c.cmd, word: mutationError(res, "Order was not saved. Try again.") };
+  ui.orderSaving = null;
+  await refresh();
+}
 // ---------- reorder: drag by the grip, or arrows on it ----------
 // The new order is the command's own (PUT /api/auth/{head}/order); a refused one reads the order splice still holds.
 async function moveTo(p, c, aid, index) {
+  if (!p || !c || ui.orderSaving || ui.removing) return;
   const list = [...ordered(p, c)], from = list.findIndex((a) => a.id === aid);
-  const [a] = list.splice(from, 1); list.splice(Math.max(0, Math.min(index, list.length)), 0, a);
-  const unpin = c.pin === aid; // moving the pinned account by hand is placing it: the pin gives way
-  c.order = list.map((x) => x.id); c.mode = "mine"; if (unpin) c.pin = null; render({ flip: true });
-  if (unpin) await API.del(`/api/auth/${encodeURIComponent(c.head)}/switch`);
-  await API.put(`/api/auth/${encodeURIComponent(c.head)}/order`, { order: orderLabels(c, list) });
-  await refresh();
+  index = Math.max(0, Math.min(index, list.length - 1));
+  if (from < 0 || from === index) return;
+  const [a] = list.splice(from, 1); list.splice(index, 0, a);
+  // Placing another account before the pin also gives the pin way to the chosen order.
+  await saveOrder(c, list, "mine", !!c.pin && list[0].id !== c.pin);
+  board.querySelector(`[data-grip][data-c="${CSS.escape(c.cmd)}"][data-a="${CSS.escape(aid)}"]`)?.focus();
 }
+const clearDrop = () => board.querySelectorAll(".drop-before, .drop-after").forEach((el) => el.classList.remove("drop-before", "drop-after"));
+function finishDrag(cancel = false) {
+  if (!drag) return;
+  const moved = drag; drag = null;
+  if (board.hasPointerCapture(moved.pointer)) board.releasePointerCapture(moved.pointer);
+  clearDrop(); board.querySelector(".dragging")?.classList.remove("dragging");
+  if (cancel || !moved.active || moved.index == null) { render(); return; }
+  const { p, c } = findCmd(moved.cmd);
+  moveTo(p, c, moved.aid, moved.index);
+}
+board.addEventListener("pointerdown", (e) => {
+  const g = e.target.closest("[data-grip]");
+  if (!g || g.disabled || !e.isPrimary || e.button !== 0 || ui.orderSaving || ui.removing) return;
+  e.preventDefault(); g.focus();
+  drag = { pointer: e.pointerId, cmd: g.dataset.c, aid: g.dataset.a, x: e.clientX, y: e.clientY, active: false, index: null };
+  board.setPointerCapture(e.pointerId);
+});
+board.addEventListener("pointermove", (e) => {
+  if (!drag || drag.pointer !== e.pointerId) return;
+  if (!drag.active && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
+  drag.active = true; e.preventDefault(); clearDrop(); drag.index = null;
+  const { p, c } = findCmd(drag.cmd), list = ordered(p, c);
+  board.querySelector(`[data-grip][data-a="${CSS.escape(drag.aid)}"]`)?.closest(".card")?.classList.add("dragging");
+  const card = document.elementFromPoint(e.clientX, e.clientY)?.closest(".card[data-a]");
+  const target = card?.querySelector("[data-grip]");
+  if (!target || target.dataset.c !== drag.cmd) return;
+  const from = list.findIndex((a) => a.id === drag.aid), to = list.findIndex((a) => a.id === target.dataset.a);
+  if (to < 0 || from < 0 || to === from) return;
+  const rect = card.getBoundingClientRect(), after = e.clientY >= rect.top + rect.height / 2;
+  drag.index = to + (after ? 1 : 0) - (from < to ? 1 : 0);
+  card.classList.add(after ? "drop-after" : "drop-before");
+});
+board.addEventListener("pointerup", (e) => { if (drag?.pointer === e.pointerId) finishDrag(); });
+board.addEventListener("pointercancel", () => finishDrag(true));
+board.addEventListener("lostpointercapture", () => finishDrag(true));
+addEventListener("blur", () => finishDrag(true));
 // ---------- keys: arrows on a grip, Enter and Escape in the fields ----------
 board.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && drag) { e.preventDefault(); finishDrag(true); return; }
   const g = e.target.closest("[data-grip]");
-  if (g && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+  if (g && !g.disabled && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
     e.preventDefault();
     const p = findProv(g.dataset.grip), c = findCmd(g.dataset.c).c, i = ordered(p, c).findIndex((a) => a.id === g.dataset.a);
     moveTo(p, c, g.dataset.a, i + (e.key === "ArrowUp" ? -1 : 1));
-    board.querySelector(`[data-grip][data-c="${c.cmd}"][data-a="${g.dataset.a}"]`)?.focus();
     return;
   }
   if (e.key !== "Enter") return;
@@ -1175,8 +1235,7 @@ document.addEventListener("click", async (e) => {
     // Soonest reset is no order of his own (AccountPool.kt:101, :259); My order keeps the order shown, as his.
     case "mode": {
       const order = t.dataset.v === "mine" ? ruled(p, k) : [];
-      k.mode = t.dataset.v; if (order.length) k.order = order.map((x) => x.id); render({ flip: true });
-      await API.put(headPath(k, "order"), { order: orderLabels(k, order) }); await refresh(); break;
+      await saveOrder(k, order, t.dataset.v); break;
     }
     // Use now pins the account on that command: it serves from the next request, the rule stays, and the pin undoes it
     // (SwitchRoute.kt).
@@ -1208,14 +1267,18 @@ document.addEventListener("click", async (e) => {
     case "cancel-replace": ui.replace = null; render(); break;
     // Remove takes two presses on the same item; removal deletes the sign-in, so nothing comes back from it.
     case "remove": {
+      if (ui.removing || ui.orderSaving) break;
+      ui.removeErr = null;
       if (ui.armed !== t.dataset.s) { ui.armed = t.dataset.s; render(); board.querySelector(".menu .armed")?.focus(); break; }
+      accountRevision++; ui.removing = t.dataset.s; render();
       const res = p.kind === "key" ? await API.del(`/api/keys/${encodeURIComponent(a.env)}`) : await API.del(editPath(a));
-      if (!res.ok) { // refused: the menu stays open and says why. In use: Claude Code's own sign-in, carrying a request now
-        ui.removeErr = { spot: t.dataset.s, word: a.native ? "In use" : "Not removed" }; ui.armed = null; render(); break;
+      ui.removing = null;
+      if (!res.ok) {
+        ui.removeErr = { spot: t.dataset.s, word: mutationError(res, "Account was not removed. Try again.") }; ui.armed = null; render(); break;
       }
       ui.menu = null; ui.armed = null;
       board.querySelectorAll(`.card[data-a="${CSS.escape(a.id)}"]`).forEach((el) => el.classList.add("leaving"));
-      setTimeout(() => refresh(), 170);
+      await refresh();
       break;
     }
     case "save-replace": {

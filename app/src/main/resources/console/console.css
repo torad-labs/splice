@@ -222,6 +222,12 @@ a.act { text-decoration: none; }  /* an act that happens to be a link still look
   display: grid; place-items: center; border-radius: .3rem;
 }
 .grip:hover { color: var(--text); background: var(--track); }
+.grip { touch-action: none; }
+.grip:disabled { cursor: default; opacity: .4; }
+.card.dragging { opacity: .55; }
+.card.drop-before { background-image: linear-gradient(var(--key-light), var(--key-light)); background-size: 100% .25rem; background-position: top; background-repeat: no-repeat; }
+.card.drop-after { background-image: linear-gradient(var(--key-light), var(--key-light)); background-size: 100% .25rem; background-position: bottom; background-repeat: no-repeat; }
+.order-err { margin: .6rem 0; }
 .grip svg { width: .8rem; height: 1.35rem; }
 .card .name { font: 500 1.1rem/1.15 var(--font-name); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .name .var { font: 500 .92rem/1.15 var(--font-data); letter-spacing: .01em; }  /* a key's variable */
@@ -449,7 +455,8 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .menu button:hover, .menu button:focus-visible { background: var(--track); outline: none; }
 .menu .danger { color: var(--limit); margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
 .menu .danger.armed, .menu .danger.armed:hover { background: var(--limit); color: #fff7ea; box-shadow: none; border-radius: .35rem; }
-.menu .menu-state { padding: .6rem .75rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }  /* the refusal takes the place of the act */
+.menu .menu-state { display: block; max-width: 19rem; white-space: normal; line-height: 1.35; padding: .6rem .75rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }
+.menu button:disabled { cursor: wait; opacity: .6; }
 .field.rename { flex: 0 1 14rem; min-width: 7rem; font: 500 1.1rem/1.15 var(--font-name); padding: .3rem .5rem; }
 .field.rename + .act { flex: none; }  /* Save keeps its width beside the name */
 .field.add-name { font: 500 1.1rem/1.15 var(--font-name); }  /* a new login is named in the type its card will show */

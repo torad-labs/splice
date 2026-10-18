@@ -8,11 +8,9 @@ import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.encodeToStream
 import kotlinx.serialization.modules.SerializersModule
 import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeRecordSnapshot
-import java.io.OutputStream
 
 /** One cell's changed encodings and measured field sizes, without visiting unchanged heavy trees. */
 internal class CodeModeCellEncoding(
@@ -61,28 +59,14 @@ internal class CodeModeCellEncoding(
         append('}')
     }
 
-    @OptIn(ExperimentalSerializationApi::class)
     private class FieldText<T>(
         private val json: Json,
         private val serializer: SerializationStrategy<T>,
         private val value: T,
     ) {
-        fun encode(): String = json.encodeToString(serializer, value)
+        fun encode(): String = JsonWire.string(json.encodeToJsonElement(serializer, value))
 
-        fun bytes(): Long = ByteCount().also { json.encodeToStream(serializer, value, it) }.count
-    }
-
-    private class ByteCount : OutputStream() {
-        var count = 0L
-            private set
-
-        override fun write(value: Int) {
-            count++
-        }
-
-        override fun write(bytes: ByteArray, offset: Int, length: Int) {
-            count += length
-        }
+        fun bytes(): Long = JsonWire.byteSize(json.encodeToJsonElement(serializer, value))
     }
 
     private data class Field<V>(val value: V, val text: FieldText<*>) {

@@ -1,9 +1,10 @@
 // NEW: journal entries assemble each cell's single encoding into patches or full recovery checkpoints.
 package splice.provider.codex.state
 
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
+import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 
@@ -22,7 +23,7 @@ internal class CodeModeStateEncoding(private val json: Json) {
             append(cell.patch())
         }
         append("],\"expired\":")
-        append(json.encodeToString(expired))
+        append(JsonWire.string(json.encodeToJsonElement(expired)))
         append('}')
     }
 
